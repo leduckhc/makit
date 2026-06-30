@@ -21,7 +21,9 @@ enum MsgType {
   err,
   presence,
   ping,
-  pong;
+  pong,
+  srvRequest,
+  srvResponse;
 
   String get wire => switch (this) {
         MsgType.hello => 'hello',
@@ -35,6 +37,8 @@ enum MsgType {
         MsgType.presence => 'presence',
         MsgType.ping => 'ping',
         MsgType.pong => 'pong',
+        MsgType.srvRequest => 'srv.request',
+        MsgType.srvResponse => 'srv.response',
       };
 
   static MsgType? fromWire(String s) {

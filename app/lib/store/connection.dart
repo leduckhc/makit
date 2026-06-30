@@ -108,6 +108,16 @@ class ConnectionController extends StateNotifier<PinoConnState> {
 
   Stream<Envelope> get incoming => _inFrames.stream;
 
+  /// Reverse-RPC requests from server: `srv.request` envelopes that need
+  /// a UI to answer them. Subscribe at app startup; respond with [respondTo].
+  Stream<Envelope> get srvRequests =>
+      _inFrames.stream.where((e) => e.t == MsgType.srvRequest);
+
+  /// Send the matching `srv.response` for a previously-received [requestId].
+  void respondTo(String requestId, Map<String, dynamic> body) {
+    send(Envelope(t: MsgType.srvResponse, id: requestId, body: body));
+  }
+
   Future<void> _boot() async {
     if (_wsUrl.isNotEmpty) {
       // Dev override: connect directly, no pairing.

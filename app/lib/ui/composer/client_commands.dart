@@ -129,4 +129,16 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       );
     },
   ),
+  ClientCommand(
+    name: 'ask',
+    description: 'Debug: ask the server to ask you a question (round-trip test)',
+    handler: (context, ref, {required sessionId}) async {
+      try {
+        await ref.read(connectionControllerProvider.notifier).request(
+          MsgType.cmd,
+          {'kind': 'debug.ask', 'sessionId': sessionId},
+        );
+      } catch (_) {/* best-effort */}
+    },
+  ),
 ];

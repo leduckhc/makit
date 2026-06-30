@@ -18,7 +18,9 @@ export type MsgType =
   | "err"
   | "presence"
   | "ping"
-  | "pong";
+  | "pong"
+  | "srv.request"    // server → app: ask the user something (id correlates)
+  | "srv.response"; // app → server: answer to a previous srv.request
 
 export interface Envelope {
   v: number;

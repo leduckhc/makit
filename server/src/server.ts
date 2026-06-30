@@ -52,6 +52,8 @@ export function startWsServer(opts: ServerOpts) {
     console.log(`[pino] wss error: ${err.message}`);
   });
   const clients = new Map<WebSocket, ClientState>();
+  const pendingRequests = new Map<string, { resolve: (env: Envelope) => void; timer: NodeJS.Timeout }>();
+  let reqCounter = 0;
 
   for (const s of manager.allSessions()) wireSession(s);
 
@@ -87,7 +89,7 @@ export function startWsServer(opts: ServerOpts) {
     console.log(`[pino] wss listening on wss://${host}:${port}`);
   });
 
-  return { wss, https };
+  return { wss, https, askDevice };
 
   // -------- handlers ------------------------------------------------------
 
@@ -135,6 +137,15 @@ export function startWsServer(opts: ServerOpts) {
       case "ping":
         send(state, { t: "pong", id: env.id, ts: env.ts });
         return;
+
+      case "srv.response": {
+        const pending = pendingRequests.get(env.id);
+        if (pending) {
+          pendingRequests.delete(env.id);
+          pending.resolve(env);
+        }
+        return;
+      }
 
       default:
         return;
@@ -222,6 +233,25 @@ export function startWsServer(opts: ServerOpts) {
           send(state, { t: "ack", id: env.id, sessionId: newSession.id });
           return;
         }
+        case "debug.ask": {
+          // Test path for AskUserQuestion round-trip. Server emits a
+          // srv.request; the phone renders a dialog; the chosen answer
+          // returns here.
+          send(state, { t: "ack", id: env.id });
+          const resp = await askDevice({
+            kind: "askUserQuestion",
+            header: "Test",
+            question: String(env.question ?? "Pick one"),
+            options: env.options ?? [
+              { label: "Yes" },
+              { label: "No" },
+              { label: "Maybe", description: "If you must" },
+            ],
+            multi: env.multi === true,
+          });
+          console.log(`[pino] debug.ask answered: ${JSON.stringify(resp.body)}`);
+          return;
+        }
         default:
           sendErr(state, env.id, `unknown cmd: ${kind}`);
       }
@@ -260,6 +290,48 @@ export function startWsServer(opts: ServerOpts) {
 
   function sendEvent(state: ClientState, event: SessionEvent) {
     send(state, { t: "event", id: newId("ev"), kind: "session.event", event });
+  }
+
+  /// Ask any authed client (typically the user's phone) something and wait
+  /// for an `srv.response`. Used by server-side tool implementations that
+  /// need user input (e.g. AskUserQuestion).
+  ///
+  /// Sends `srv.request` to every subscribed client of [sessionId] (or all
+  /// authed clients if no sessionId is given). The first response wins.
+  function askDevice(
+    body: Record<string, unknown>,
+    opts: { sessionId?: string; timeoutMs?: number } = {},
+  ): Promise<Envelope> {
+    const id = `srv-${Date.now()}-${++reqCounter}`;
+    const timeoutMs = opts.timeoutMs ?? 5 * 60 * 1000; // 5 min default
+    const envelope = { t: "srv.request" as const, id, ...body, ...(opts.sessionId ? { sessionId: opts.sessionId } : {}) };
+
+    return new Promise<Envelope>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingRequests.delete(id);
+        reject(new Error(`srv.request timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      pendingRequests.set(id, { resolve, timer });
+
+      let sent = 0;
+      for (const c of clients.values()) {
+        if (!c.authed) continue;
+        if (opts.sessionId && !c.subscribed.has(opts.sessionId)) continue;
+        send(c, envelope);
+        sent++;
+      }
+      if (sent === 0) {
+        clearTimeout(timer);
+        pendingRequests.delete(id);
+        reject(new Error("no subscribed clients to ask"));
+      }
+    }).finally(() => {
+      const p = pendingRequests.get(id);
+      if (p) {
+        clearTimeout(p.timer);
+        pendingRequests.delete(id);
+      }
+    });
   }
 
   function send(state: ClientState, body: Omit<Envelope, "v">) {

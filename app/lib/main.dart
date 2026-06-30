@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
 import 'app/theme.dart';
+import 'ui/widgets/srv_request_handler.dart';
 
 void main() {
   runApp(const ProviderScope(child: PinoApp()));
@@ -20,6 +21,7 @@ class PinoApp extends ConsumerWidget {
       darkTheme: pinoDarkTheme,
       themeMode: ThemeMode.system,
       routerConfig: router,
+      builder: (context, child) => SrvRequestHandler(child: child ?? const SizedBox()),
       debugShowCheckedModeBanner: false,
     );
   }
