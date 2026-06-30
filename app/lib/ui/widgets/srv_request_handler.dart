@@ -1,13 +1,19 @@
 /// Listens for `srv.request` envelopes from the server and presents the
 /// appropriate UI (currently: AskUserQuestion dialog). Mount once at app
 /// root so any screen sees the dialog.
+///
+/// We render against the router's Navigator (`pinoNavigatorKey`) rather
+/// than our own `BuildContext`, because this widget sits in
+/// `MaterialApp.builder` — above the Navigator created by GoRouter.
 library;
 
 import 'dart:async';
 
+// `visibleForTesting` is re-exported by Flutter material.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/router.dart';
 import '../../store/connection.dart';
 import '../../transport/protocol.dart';
 
@@ -25,112 +31,90 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
   @override
   void initState() {
     super.initState();
-    // Subscribe after first frame so we have a Navigator overlay available.
     WidgetsBinding.instance.addPostFrameCallback((_) => _subscribe());
   }
 
   void _subscribe() {
     _sub?.cancel();
-    _sub = ref.read(connectionControllerProvider.notifier).srvRequests.listen((
-      env,
-    ) async {
-      final kind = env.body['kind'] as String? ?? 'unknown';
-      final ctx = context;
-      if (!ctx.mounted) return;
+    _sub = ref
+        .read(connectionControllerProvider.notifier)
+        .srvRequests
+        .listen(_dispatch);
+  }
 
-      switch (kind) {
-        case 'askUserQuestion':
-          await _showAskUserQuestion(ctx, env);
-          return;
-        default:
-          await _showGeneric(ctx, env);
+  Future<void> _dispatch(Envelope env) async {
+    // Use the router's Navigator, not this widget's context — we're above it.
+    final navCtx = pinoNavigatorKey.currentContext;
+    if (navCtx == null) return;
+
+    final kind = env.body['kind'] as String? ?? 'unknown';
+
+    // Normalise: pi's "askUserQuestion" tool can arrive as either
+    //   { question, options, multi?, recommended? }                 (single)
+    //   { questions: [{header, question, options, multi?, ...}] }   (wizard)
+    // We support both — the wizard form is what the Anthropic-standard
+    // schema uses and what pi's LLM training expects.
+    if (kind == 'askUserQuestion') {
+      final questions = _normaliseQuestions(env.body);
+      if (questions.isEmpty) {
+        _respond(env.id, {'ok': false, 'error': 'no questions'});
+        return;
       }
+      await _showAskUserQuestion(navCtx, env.id, questions);
+      return;
+    }
+
+    await _showGeneric(navCtx, env);
+  }
+
+  List<Map<String, dynamic>> _normaliseQuestions(Map<String, dynamic> body) {
+    final raw = body['questions'];
+    if (raw is List) {
+      return raw
+          .whereType<Map<dynamic, dynamic>>()
+          .map(Map<String, dynamic>.from)
+          .toList();
+    }
+    // Single-question form — wrap as one-element wizard.
+    if (body['question'] is String) {
+      return [
+        {
+          'header': body['header'],
+          'question': body['question'],
+          'options': body['options'],
+          'multi': body['multi'],
+          'recommended': body['recommended'],
+        },
+      ];
+    }
+    return const [];
+  }
+
+  Future<void> _showAskUserQuestion(
+    BuildContext ctx,
+    String requestId,
+    List<Map<String, dynamic>> questions,
+  ) async {
+    final result = await showDialog<List<dynamic>?>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dctx) => _AskWizard(questions: questions),
+    );
+
+    if (result == null) {
+      _respond(requestId, {'ok': false, 'cancelled': true});
+      return;
+    }
+    _respond(requestId, {
+      'ok': true,
+      // For the multi-question wizard form, return an array of answers.
+      'answers': result,
+      // Convenience for the single-question case.
+      'answer': questions.length == 1 ? result.first : result,
     });
   }
 
-  Future<void> _showAskUserQuestion(BuildContext ctx, Envelope env) async {
-    final question = env.body['question'] as String? ?? 'Question';
-    final header = env.body['header'] as String?;
-    final rawOptions = (env.body['options'] as List?) ?? const [];
-    final options = rawOptions
-        .whereType<Map<dynamic, dynamic>>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
-    final multi = env.body['multi'] == true;
-
-    final Set<int> picked = {};
-
-    final result = await showDialog<List<int>?>(
-      context: ctx,
-      barrierDismissible: false,
-      builder: (dctx) => StatefulBuilder(
-        builder: (dctx, setSt) => AlertDialog(
-          title: Text(header ?? 'Question'),
-          content: SizedBox(
-            width: 400,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(question),
-                  const SizedBox(height: 12),
-                  for (var i = 0; i < options.length; i++)
-                    _OptionTile(
-                      label: options[i]['label']?.toString() ?? '?',
-                      description: options[i]['description']?.toString(),
-                      recommended:
-                          (env.body['recommended'] as num?)?.toInt() == i,
-                      selected: picked.contains(i),
-                      onTap: () => setSt(() {
-                        if (multi) {
-                          picked.contains(i) ? picked.remove(i) : picked.add(i);
-                        } else {
-                          picked
-                            ..clear()
-                            ..add(i);
-                        }
-                      }),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dctx, null),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: picked.isEmpty
-                  ? null
-                  : () => Navigator.pop(dctx, picked.toList()..sort()),
-              child: const Text('Submit'),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (!mounted) return;
-    final conn = ref.read(connectionControllerProvider.notifier);
-    if (result == null) {
-      conn.respondTo(env.id, {'ok': false, 'cancelled': true});
-    } else {
-      final answers = result
-          .map((i) => options[i]['label']?.toString() ?? '')
-          .toList();
-      conn.respondTo(env.id, {
-        'ok': true,
-        'indices': result,
-        'answers': answers,
-        'answer': multi ? answers : answers.first,
-      });
-    }
-  }
-
   Future<void> _showGeneric(BuildContext ctx, Envelope env) async {
-    // Generic free-text fallback for unknown kinds.
     final controller = TextEditingController();
     final text = await showDialog<String?>(
       context: ctx,
@@ -155,7 +139,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dctx, null),
+            onPressed: () => Navigator.pop(dctx),
             child: const Text('Cancel'),
           ),
           FilledButton(
@@ -165,13 +149,15 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
         ],
       ),
     );
-    if (!mounted) return;
-    final conn = ref.read(connectionControllerProvider.notifier);
     if (text == null) {
-      conn.respondTo(env.id, {'ok': false, 'cancelled': true});
+      _respond(env.id, {'ok': false, 'cancelled': true});
     } else {
-      conn.respondTo(env.id, {'ok': true, 'text': text});
+      _respond(env.id, {'ok': true, 'text': text});
     }
+  }
+
+  void _respond(String id, Map<String, dynamic> body) {
+    ref.read(connectionControllerProvider.notifier).respondTo(id, body);
   }
 
   @override
@@ -182,6 +168,135 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// A multi-question wizard. One question per page; Next/Submit advances.
+/// Returns a list of answers (each answer is either a `String` for
+/// single-select or a `List<String>` for multi-select).
+class _AskWizard extends StatefulWidget {
+  const _AskWizard({required this.questions});
+  final List<Map<String, dynamic>> questions;
+
+  @override
+  State<_AskWizard> createState() => _AskWizardState();
+}
+
+class _AskWizardState extends State<_AskWizard> {
+  int _i = 0;
+  late final List<Set<int>> _picks = List.generate(
+    widget.questions.length,
+    (_) => <int>{},
+  );
+
+  Map<String, dynamic> get _q => widget.questions[_i];
+
+  List<Map<String, dynamic>> _options() {
+    final raw = _q['options'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map(Map<String, dynamic>.from)
+        .toList();
+  }
+
+  bool get _multi => _q['multi'] == true;
+
+  bool get _isLast => _i == widget.questions.length - 1;
+
+  bool get _canAdvance => _picks[_i].isNotEmpty;
+
+  void _toggle(int idx) {
+    setState(() {
+      if (_multi) {
+        _picks[_i].contains(idx) ? _picks[_i].remove(idx) : _picks[_i].add(idx);
+      } else {
+        _picks[_i]
+          ..clear()
+          ..add(idx);
+      }
+    });
+  }
+
+  void _next() {
+    if (_isLast) {
+      final answers = <dynamic>[];
+      for (var qi = 0; qi < widget.questions.length; qi++) {
+        final opts =
+            (widget.questions[qi]['options'] as List?)
+                ?.whereType<Map<dynamic, dynamic>>()
+                .map(Map<String, dynamic>.from)
+                .toList() ??
+            const [];
+        final pickedSorted = _picks[qi].toList()..sort();
+        final labels = pickedSorted
+            .map((i) => opts[i]['label']?.toString() ?? '')
+            .toList();
+        final isMulti = widget.questions[qi]['multi'] == true;
+        answers.add(isMulti ? labels : labels.first);
+      }
+      Navigator.of(context).pop(answers);
+      return;
+    }
+    setState(() => _i++);
+  }
+
+  void _back() {
+    if (_i == 0) return;
+    setState(() => _i--);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final header = _q['header']?.toString();
+    final question = _q['question']?.toString() ?? '?';
+    final recommended = (_q['recommended'] as num?)?.toInt();
+    final opts = _options();
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Expanded(child: Text(header ?? 'Question')),
+          if (widget.questions.length > 1)
+            Text(
+              '${_i + 1}/${widget.questions.length}',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+        ],
+      ),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(question),
+              const SizedBox(height: 12),
+              for (var i = 0; i < opts.length; i++)
+                _OptionTile(
+                  label: opts[i]['label']?.toString() ?? '?',
+                  description: opts[i]['description']?.toString(),
+                  recommended: recommended == i,
+                  selected: _picks[_i].contains(i),
+                  onTap: () => _toggle(i),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        if (_i > 0) TextButton(onPressed: _back, child: const Text('Back')),
+        FilledButton(
+          onPressed: _canAdvance ? _next : null,
+          child: Text(_isLast ? 'Submit' : 'Next'),
+        ),
+      ],
+    );
+  }
 }
 
 class _OptionTile extends StatelessWidget {
@@ -271,3 +386,9 @@ class _OptionTile extends StatelessWidget {
     );
   }
 }
+
+/// Test-only entrypoint to render the wizard with a given question list.
+/// Use in widget tests via `showDialog(builder: (_) => debugAskWizardFor(qs))`.
+@visibleForTesting
+Widget debugAskWizardFor(List<Map<String, dynamic>> questions) =>
+    _AskWizard(questions: questions);

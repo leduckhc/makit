@@ -61,15 +61,30 @@ else
   green "  ✓ analyze clean"
 fi
 
-# ------------------------------------------------------------ 4. format check
-step "4. dart format --set-exit-if-changed ."
+# ----------------------------------------------------------- 4. unit/widget tests
+step "4. flutter test"
+set +e
+"$FLUTTER_BIN" test > /tmp/pino-test.log 2>&1
+test_exit=$?
+set -e
+if (( test_exit != 0 )); then
+  red "  ✗ tests failed — see /tmp/pino-test.log"
+  tail -20 /tmp/pino-test.log >&2
+  fail=1
+else
+  passed=$(grep -oE "All tests passed|\+[0-9]+: All tests passed!" /tmp/pino-test.log | head -1)
+  count=$(grep -oE "\+[0-9]+:" /tmp/pino-test.log | tail -1 | tr -d '+:' || echo 0)
+  green "  ✓ ${count:-?} tests passed"
+fi
+
+# ------------------------------------------------------------ 5. format check
+step "5. dart format --set-exit-if-changed ."
 if "$DART_BIN" format --set-exit-if-changed --output=none . >/dev/null 2>&1; then
   green "  ✓ formatted"
 else
   yellow "  ! files need formatting — run: dart format ."
   warn=1
 fi
-
 # --------------------------------------------------------- 5. outdated check
 # Dart/pub does not ship a built-in advisory scanner equivalent to
 # `npm audit` or `pnpm audit`. We run `pub outdated` to flag stale deps

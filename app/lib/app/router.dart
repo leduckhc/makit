@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
 import '../pairing/pairing_screen.dart';
@@ -8,10 +9,15 @@ import '../ui/session/session_screen.dart';
 import '../ui/session/tool_call_detail_screen.dart';
 import '../ui/settings/settings_screen.dart';
 
+/// Exposed so widgets sitting in `MaterialApp.builder` (above the Navigator)
+/// can still push dialogs via the router's Navigator.
+final pinoNavigatorKey = GlobalKey<NavigatorState>();
+
 final routerProvider = Provider<GoRouter>((ref) {
   final connection = ref.watch(connectionProvider);
 
   return GoRouter(
+    navigatorKey: pinoNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) {
       final paired = connection.paired;

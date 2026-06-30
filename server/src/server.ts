@@ -234,20 +234,20 @@ export function startWsServer(opts: ServerOpts) {
           return;
         }
         case "debug.ask": {
-          // Test path for AskUserQuestion round-trip. Server emits a
-          // srv.request; the phone renders a dialog; the chosen answer
-          // returns here.
           send(state, { t: "ack", id: env.id });
           const resp = await askDevice({
             kind: "askUserQuestion",
-            header: "Test",
-            question: String(env.question ?? "Pick one"),
-            options: env.options ?? [
-              { label: "Yes" },
-              { label: "No" },
-              { label: "Maybe", description: "If you must" },
+            questions: [
+              {
+                header: "Test",
+                question: String(env.question ?? "Pick one"),
+                options: [
+                  { label: "Yes" },
+                  { label: "No" },
+                  { label: "Maybe", description: "If you must" },
+                ],
+              },
             ],
-            multi: env.multi === true,
           });
           console.log(`[pino] debug.ask answered: ${JSON.stringify(resp.body)}`);
           return;
