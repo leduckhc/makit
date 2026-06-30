@@ -48,17 +48,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   Future<void> _scanQr() async {
-    final result = await Navigator.of(context).push<String>(
+    final info = await Navigator.of(context).push<PairInfo>(
       MaterialPageRoute(builder: (_) => const QrScannerScreen()),
     );
-    if (result == null) return;
-    final info = PairInfo.tryParse(result);
-    if (info == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not a pino pairing QR.')),
-      );
-      return;
-    }
+    if (info == null) return;
     await _pair(info);
   }
 
