@@ -155,7 +155,15 @@ class WsClient {
   void _send(Envelope env) {
     final ch = _ch;
     if (ch == null) return;
-    ch.sink.add(jsonEncode(env.toJson()));
+    // The sink can be closed mid-flight (during reconnect). Writing to a closed
+    // sink throws "Bad state: Cannot add event after closing" and bubbles up
+    // through the scheduler. Swallow it — the next reconnect will replay subs.
+    try {
+      ch.sink.add(jsonEncode(env.toJson()));
+    } catch (e) {
+      // ignore: avoid_print
+      print('[pino] ws send dropped (channel closing): $e');
+    }
   }
 
   void _onMessage(dynamic raw) {

@@ -28,7 +28,7 @@ allowBuilds:
   # pi-decimals is a transitive of `pi`. Postinstall compiles platform-specific
   # native code. Pi is widely used in the agent ecosystem; pi-decimals is a
   # standard build. Low risk.
-  pi-decimals: true
+  pi-decimals: false
 
 # Refuse downgrades from provenance-published versions (Trusted Publisher
 # signal). Early indicator of account compromise.

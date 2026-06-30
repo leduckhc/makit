@@ -127,7 +127,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
             },
           });
         }
-        this.emit("status", "idle");
+        // Don't emit("status","idle") here — the session has actually exited,
+        // not gone idle. The emitEvent below conveys the right status and
+        // Session.status will be updated from the event-log replay path.
         this.emitEvent({
           ts: Date.now(),
           kind: "session.status",
@@ -161,6 +163,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     }
     if (!evt || typeof evt !== "object") return;
 
+    console.log(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
     switch (evt.type) {
       case "response":
         if (evt.command === "get_commands" && evt.success && evt.data?.commands) {
@@ -194,12 +197,10 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
       case "agent_end":
         this.isStreaming = false;
+        // Status emit alone — Session synthesises the corresponding
+        // session.status SessionEvent. Emitting emitEvent here too would
+        // double-fire the event to subscribed clients.
         this.emit("status", "idle");
-        this.emitEvent({
-          ts: Date.now(),
-          kind: "session.status",
-          payload: { status: "idle" },
-        });
         return;
 
       case "message_update": {

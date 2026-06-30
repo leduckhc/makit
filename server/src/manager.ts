@@ -6,6 +6,7 @@
  * Multi-project / multi-session arrives with the home-screen FAB in M3.
  */
 
+import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import { PiAdapter } from "./adapters/pi.js";
@@ -27,12 +28,13 @@ interface ProjectEntry {
   dto: ProjectDTO;
 }
 
-export class SessionManager {
+export class SessionManager extends EventEmitter {
   private readonly projects = new Map<string, ProjectEntry>();
   private readonly sessions = new Map<string, Session>();
   private bridge?: BridgeBinding;
 
   constructor(opts: ManagerOpts) {
+    super();
     for (const path of opts.projects) {
       const id = randomUUID();
       this.projects.set(id, {
@@ -93,6 +95,7 @@ export class SessionManager {
       extensions: this.bridge ? this.bridge.extensionPaths : [],
     });
     this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
     return session;
   }
 

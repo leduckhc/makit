@@ -56,6 +56,9 @@ export function startWsServer(opts: ServerOpts) {
   let reqCounter = 0;
 
   for (const s of manager.allSessions()) wireSession(s);
+  // Also wire any sessions created later (e.g. via ensureDefaultSessions
+  // which runs after startWsServer, or via the session.new cmd handler).
+  manager.on("sessionCreated", (s: Session) => wireSession(s));
 
   wss.on("connection", (ws, req) => {
     const remote = req.socket.remoteAddress ?? "";
