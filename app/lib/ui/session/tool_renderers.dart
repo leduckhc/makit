@@ -1,0 +1,288 @@
+/// Tool renderer registry.
+///
+/// Each entry knows how to render a specific tool name (e.g. `read`, `edit`,
+/// `askUserQuestion`). Pick a renderer for an item via [rendererFor]; if no
+/// match, the caller falls back to [GenericToolRenderer].
+///
+/// To add support for a new tool, write a [ToolRenderer] subclass and
+/// register it in [toolRenderers]. The card view is shown inline in the chat
+/// transcript; tapping it opens [detail] full-screen.
+library;
+
+import 'package:flutter/material.dart';
+
+import '../../store/models.dart';
+
+abstract class ToolRenderer {
+  const ToolRenderer();
+
+  /// Logical name (matches [ToolCallItem.name]).
+  String get name;
+
+  /// One-line description for the card header.
+  String? subtitle(ToolCallItem item) => null;
+
+  /// Material icon shown on the card.
+  IconData get icon => Icons.terminal;
+
+  /// Whether this renderer should display approve/deny / input controls
+  /// inline (otherwise the user just taps through to [detail]).
+  bool get inlineInteractive => false;
+
+  /// Inline card. Default: generic title + subtitle. Override for richer
+  /// inline UIs (e.g. AskUserQuestion options).
+  Widget card(BuildContext context, ToolCallItem item, VoidCallback onTap) {
+    return _DefaultCard(renderer: this, item: item, onTap: onTap);
+  }
+
+  /// Full-screen detail view. Default: dump args + deltas.
+  Widget detail(BuildContext context, ToolCallItem item) {
+    return _DefaultDetail(renderer: this, item: item);
+  }
+}
+
+class _DefaultCard extends StatelessWidget {
+  const _DefaultCard({required this.renderer, required this.item, required this.onTap});
+  final ToolRenderer renderer;
+  final ToolCallItem item;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final sub = renderer.subtitle(item);
+    return Material(
+      color: cs.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              Icon(renderer.icon, size: 18, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(renderer.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (sub != null && sub.isNotEmpty)
+                      Text(sub,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              if (!item.ended)
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (item.exitCode != null && item.exitCode != 0)
+                Icon(Icons.error_outline, size: 18, color: cs.error),
+              const Icon(Icons.chevron_right, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DefaultDetail extends StatelessWidget {
+  const _DefaultDetail({required this.renderer, required this.item});
+  final ToolRenderer renderer;
+  final ToolCallItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(renderer.name)),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          const Text('Arguments', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          SelectableText(
+            item.args.toString(),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          SelectableText(
+            item.deltas.join(),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          if (item.summary != null) ...[
+            const SizedBox(height: 16),
+            const Text('Summary', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            SelectableText(item.summary!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in renderers
+// ---------------------------------------------------------------------------
+
+class _ReadRenderer extends ToolRenderer {
+  const _ReadRenderer();
+  @override
+  String get name => 'read';
+  @override
+  IconData get icon => Icons.menu_book_outlined;
+  @override
+  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
+}
+
+class _WriteRenderer extends ToolRenderer {
+  const _WriteRenderer();
+  @override
+  String get name => 'write';
+  @override
+  IconData get icon => Icons.edit_note_outlined;
+  @override
+  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
+}
+
+class _EditRenderer extends ToolRenderer {
+  const _EditRenderer();
+  @override
+  String get name => 'edit';
+  @override
+  IconData get icon => Icons.difference_outlined;
+  @override
+  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
+
+  @override
+  Widget detail(BuildContext context, ToolCallItem item) {
+    return _EditDiffView(item: item);
+  }
+}
+
+class _BashRenderer extends ToolRenderer {
+  const _BashRenderer();
+  @override
+  String get name => 'bash';
+  @override
+  IconData get icon => Icons.code;
+  @override
+  String? subtitle(ToolCallItem item) {
+    final cmd = item.args['command']?.toString();
+    if (cmd == null) return null;
+    return cmd.length > 80 ? '${cmd.substring(0, 80)}…' : cmd;
+  }
+}
+
+class _GrepRenderer extends ToolRenderer {
+  const _GrepRenderer();
+  @override
+  String get name => 'grep';
+  @override
+  IconData get icon => Icons.search;
+  @override
+  String? subtitle(ToolCallItem item) {
+    final p = item.args['pattern']?.toString();
+    final g = item.args['glob']?.toString();
+    return [p, if (g != null) 'glob:$g'].whereType<String>().join(' · ');
+  }
+}
+
+/// Registry. Order does not matter — first matching name wins.
+const List<ToolRenderer> toolRenderers = [
+  _ReadRenderer(),
+  _WriteRenderer(),
+  _EditRenderer(),
+  _BashRenderer(),
+  _GrepRenderer(),
+];
+
+/// Pick a renderer for [item] by exact name match. Returns null if no renderer
+/// is registered — caller should fall back to a generic card.
+ToolRenderer? rendererFor(ToolCallItem item) {
+  for (final r in toolRenderers) {
+    if (r.name == item.name) return r;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Edit diff viewer — extracted because it's noticeably bigger than the
+// generic detail page.
+// ---------------------------------------------------------------------------
+
+class _EditDiffView extends StatelessWidget {
+  const _EditDiffView({required this.item});
+  final ToolCallItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final path = item.args['path']?.toString() ?? '(no path)';
+    final oldText = item.args['oldText']?.toString() ?? item.args['old']?.toString() ?? '';
+    final newText = item.args['newText']?.toString() ?? item.args['new']?.toString() ?? '';
+
+    return Scaffold(
+      appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
+      body: ListView(
+        padding: const EdgeInsets.all(8),
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: cs.errorContainer.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('− Removed', style: TextStyle(color: cs.error, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                SelectableText(oldText,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('+ Added',
+                    style: TextStyle(
+                        color: Colors.green, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                SelectableText(newText,
+                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+              ],
+            ),
+          ),
+          if (item.deltas.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            SelectableText(item.deltas.join(),
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+          ],
+        ],
+      ),
+    );
+  }
+}

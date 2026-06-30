@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../store/models.dart';
+import 'tool_renderers.dart';
 
 /// Collapsed tool-call card. Tap → fullscreen drilldown (handled by caller).
 class ToolCallCard extends StatelessWidget {
@@ -12,11 +13,12 @@ class ToolCallCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final renderer = rendererFor(item);
     final risk = item.risk;
     final (riskColor, riskIcon) = switch (risk) {
       'risky' => (Colors.orange, Icons.warning_amber_rounded),
       'destructive' => (Colors.red, Icons.dangerous_outlined),
-      _ => (cs.outline, Icons.bolt_outlined),
+      _ => (cs.outline, renderer?.icon ?? Icons.bolt_outlined),
     };
 
     final running = !item.ended;
@@ -58,7 +60,7 @@ class ToolCallCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    item.summary ?? _previewArgs(item.args),
+                    item.summary ?? renderer?.subtitle(item) ?? _previewArgs(item.args),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context)

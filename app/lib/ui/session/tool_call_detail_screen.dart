@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import 'tool_renderers.dart';
 
 /// Fullscreen drilldown for a tool call. Shows args, streamed deltas (output),
 /// and a placeholder for a richer diff viewer when the tool name == 'edit'.
@@ -17,39 +18,41 @@ class ToolCallDetailScreen extends ConsumerWidget {
     final items = ref.watch(chatItemsProvider(sessionId));
     final tool = items.whereType<ToolCallItem>().where((t) => t.callId == callId).firstOrNull;
 
+    if (tool == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('tool call')),
+        body: const Center(child: Text('Tool call not found')),
+      );
+    }
+    // Delegate to the renderer's detail view if one is registered for this tool.
+    final renderer = rendererFor(tool);
+    if (renderer != null) return renderer.detail(context, tool);
+
+    // Generic fallback.
     return Scaffold(
       appBar: AppBar(
-        title: Text(tool?.name ?? 'tool call'),
+        title: Text(tool.name),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () => context.go('/session/$sessionId'),
         ),
       ),
-      body: tool == null
-          ? const Center(child: Text('Tool call not found'))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                _Section(title: 'Arguments', child: _Mono(_pretty(tool.args))),
-                if (tool.deltas.isNotEmpty)
-                  _Section(title: 'Output', child: _Mono(tool.deltas.join())),
-                if (tool.ended)
-                  _Section(
-                    title: 'Result',
-                    child: Text(
-                      tool.summary ?? 'exit ${tool.exitCode ?? 0}',
-                      style: const TextStyle(fontFamily: 'monospace'),
-                    ),
-                  ),
-                if (tool.name == 'edit')
-                  const _Section(
-                    title: 'Diff',
-                    child: Text(
-                      '(diff viewer coming in M6 — render a unified diff with syntax highlighting)',
-                    ),
-                  ),
-              ],
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _Section(title: 'Arguments', child: _Mono(_pretty(tool.args))),
+          if (tool.deltas.isNotEmpty)
+            _Section(title: 'Output', child: _Mono(tool.deltas.join())),
+          if (tool.ended)
+            _Section(
+              title: 'Result',
+              child: Text(
+                tool.summary ?? 'exit ${tool.exitCode ?? 0}',
+                style: const TextStyle(fontFamily: 'monospace'),
+              ),
             ),
+        ],
+      ),
     );
   }
 
