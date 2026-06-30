@@ -105,23 +105,35 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     String requestId,
     List<Map<String, dynamic>> questions,
   ) async {
-    final result = await showDialog<List<dynamic>?>(
+    final result = await showDialog<Map<String, dynamic>?>(
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => _AskWizard(questions: questions),
     );
 
     if (result == null) {
-      _respond(requestId, {'ok': false, 'cancelled': true});
+      // User cancelled — still send a canonical-shaped response so the
+      // connector can dispatch back to the agent cleanly.
+      _respond(requestId, {
+        'kind': 'askUserQuestion',
+        'indices': <int>[],
+        'answers': <String>[],
+        'cancelled': true,
+      });
       return;
     }
-    _respond(requestId, {
-      'ok': true,
-      // For the multi-question wizard form, return an array of answers.
-      'answers': result,
-      // Convenience for the single-question case.
-      'answer': questions.length == 1 ? result.first : result,
-    });
+    // result is already canonical {indices, answers}; just add kind +
+    // a convenience `answer` for the single-question form.
+    final body = <String, dynamic>{
+      'kind': 'askUserQuestion',
+      'indices': result['indices'],
+      'answers': result['answers'],
+    };
+    if (questions.length == 1) {
+      final answers = result['answers'] as List;
+      if (answers.isNotEmpty) body['answer'] = answers.first;
+    }
+    _respond(requestId, body);
   }
 
   Future<void> _showConfirmAction(
@@ -278,7 +290,11 @@ class _AskWizardState extends State<_AskWizard> {
 
   void _next() {
     if (_isLast) {
-      final answers = <dynamic>[];
+      // Canonical shape (mirrors AskUserQuestionResponse in uicall.ts):
+      //   indices: int[]  — first-picked index per question
+      //   answers: string[] — label per question; multi-select joined with " + "
+      final indices = <int>[];
+      final answers = <String>[];
       for (var qi = 0; qi < widget.questions.length; qi++) {
         final opts =
             (widget.questions[qi]['options'] as List?)
@@ -290,10 +306,10 @@ class _AskWizardState extends State<_AskWizard> {
         final labels = pickedSorted
             .map((i) => opts[i]['label']?.toString() ?? '')
             .toList();
-        final isMulti = widget.questions[qi]['multi'] == true;
-        answers.add(isMulti ? labels : labels.first);
+        indices.add(pickedSorted.isEmpty ? -1 : pickedSorted.first);
+        answers.add(labels.join(' + '));
       }
-      Navigator.of(context).pop(answers);
+      Navigator.of(context).pop({'indices': indices, 'answers': answers});
       return;
     }
     setState(() => _i++);

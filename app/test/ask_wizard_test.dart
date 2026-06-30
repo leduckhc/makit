@@ -45,9 +45,10 @@ void main() {
         await tester.tap(submit);
         await tester.pumpAndSettle();
 
-        // The handler resolves with a List<dynamic> of length 1.
-        expect(_lastResult, isA<List<dynamic>>());
-        expect(_lastResult, ['Terse']);
+        // The wizard resolves with the canonical UIResponse shape.
+        expect(_lastResult, isA<Map<String, dynamic>>());
+        expect((_lastResult as Map)['indices'], [0]);
+        expect((_lastResult as Map)['answers'], ['Terse']);
       },
     );
 
