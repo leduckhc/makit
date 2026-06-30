@@ -9,12 +9,23 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
+import type { AgentAdapter } from "./adapters/adapter.js";
 import { PiAdapter } from "./adapters/pi.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
+
+export interface AdapterFactoryContext {
+  projectPath: string;
+  sessionId: string;
+}
+
+export type AdapterFactory = (context: AdapterFactoryContext) => AgentAdapter;
+
 export interface ManagerOpts {
   /** Project roots to expose. */
   projects: string[];
+  /** Override the production pi adapter, used by deterministic e2e tests. */
+  adapterFactory?: AdapterFactory;
 }
 
 export interface BridgeBinding {
@@ -31,10 +42,12 @@ interface ProjectEntry {
 export class SessionManager extends EventEmitter {
   private readonly projects = new Map<string, ProjectEntry>();
   private readonly sessions = new Map<string, Session>();
+  private readonly adapterFactory?: AdapterFactory;
   private bridge?: BridgeBinding;
 
   constructor(opts: ManagerOpts) {
     super();
+    this.adapterFactory = opts.adapterFactory;
     for (const path of opts.projects) {
       const id = randomUUID();
       this.projects.set(id, {
@@ -77,12 +90,17 @@ export class SessionManager extends EventEmitter {
     const adapter = new PiAdapter();
     const session = new Session({
       projectId,
-      agent: "pi",
-      title: title ?? "pi session",
+      agent: this.adapterFactory ? "stub" : "pi",
+      title: title ?? (this.adapterFactory ? "stub session" : "pi session"),
       adapter,
     });
+    const activeAdapter = this.adapterFactory?.({
+      projectPath: project.dto.path,
+      sessionId: session.id,
+    }) ?? adapter;
+    if (activeAdapter !== adapter) session.replaceAdapter(activeAdapter);
 
-    await adapter.start({
+    await activeAdapter.start({
       cwd: project.dto.path,
       sessionId: session.id,
       env: this.bridge

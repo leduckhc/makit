@@ -77,8 +77,20 @@ else
   green "  ✓ ${count:-?} tests passed"
 fi
 
-# ------------------------------------------------------------ 5. format check
-step "5. dart format --set-exit-if-changed ."
+# --------------------------------------------------------- 5. E2E smoke tests
+step "5. flutter integration_test (E2E smoke suite)"
+set +e
+if tool/e2e.sh --mode=stub >/tmp/pino-e2e.log 2>&1; then
+  green "  ✓ E2E smoke tests passed (stub mode)"
+else
+  red "  ✗ E2E smoke tests failed — see /tmp/pino-e2e.log"
+  tail -30 /tmp/pino-e2e.log >&2
+  fail=1
+fi
+set -e
+
+# ------------------------------------------------------------ 6. format check
+step "6. dart format --set-exit-if-changed ."
 if "$DART_BIN" format --set-exit-if-changed --output=none . >/dev/null 2>&1; then
   green "  ✓ formatted"
 else
@@ -104,7 +116,7 @@ else
 fi
 
 # --------------------------------------------------------- 6. dependency_overrides
-step "6. No unjustified dependency_overrides"
+step "7. No unjustified dependency_overrides"
 if grep -A1 "^dependency_overrides:" pubspec.yaml | grep -q "^  [a-zA-Z]"; then
   yellow "  ! pubspec.yaml has dependency_overrides — verify each has a comment justification"
   grep -B1 -A20 "^dependency_overrides:" pubspec.yaml || true

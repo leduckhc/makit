@@ -1,0 +1,39 @@
+import 'dart:convert';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+const _testHost = String.fromEnvironment('PINO_TEST_HOST');
+const _testPort = String.fromEnvironment('PINO_TEST_PORT');
+const _testBearer = String.fromEnvironment('PINO_TEST_BEARER');
+const _testFingerprint = String.fromEnvironment('PINO_TEST_FP');
+
+const _pairedServerKey = 'paired_server';
+const _testServerLabel = 'e2e test server';
+
+Future<void> seedTestPairingIfRequested({
+  FlutterSecureStorage storage = const FlutterSecureStorage(),
+}) async {
+  if (_testHost.isEmpty) return;
+
+  final port = int.tryParse(_testPort);
+  if (port == null || port <= 0 || port > 65535) {
+    throw StateError('PINO_TEST_PORT must be a valid TCP port');
+  }
+  if (_testBearer.isEmpty) {
+    throw StateError('PINO_TEST_BEARER must be non-empty when PINO_TEST_HOST is set');
+  }
+  if (_testFingerprint.isEmpty) {
+    throw StateError('PINO_TEST_FP must be non-empty when PINO_TEST_HOST is set');
+  }
+
+  await storage.write(
+    key: _pairedServerKey,
+    value: jsonEncode({
+      'host': _testHost,
+      'port': port,
+      'fingerprint': _testFingerprint,
+      'bearer': _testBearer,
+      'label': _testServerLabel,
+    }),
+  );
+}

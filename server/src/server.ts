@@ -233,7 +233,9 @@ export function startWsServer(opts: ServerOpts) {
           const projectId = String(env.projectId ?? "");
           const title = env.title ? String(env.title) : undefined;
           const newSession = await manager.spawnPiSession(projectId, title);
-          wireSession(newSession);
+          // wireSession is invoked via the manager's "sessionCreated" listener
+          // registered above — don't call it explicitly or every event fans
+          // out twice.
           broadcastSnapshots();
           send(state, { t: "ack", id: env.id, sessionId: newSession.id });
           return;
@@ -255,6 +257,37 @@ export function startWsServer(opts: ServerOpts) {
             ],
           });
           console.log(`[pino] debug.ask answered: ${JSON.stringify(resp.body)}`);
+          return;
+        }
+        case "debug.ask-multi": {
+          if (!session) { sendErr(state, env.id, "no such session"); return; }
+          send(state, { t: "ack", id: env.id });
+          const resp = await askDevice(
+            {
+              kind: "askUserQuestion",
+              questions: [
+                {
+                  header: "Language",
+                  question: "Which language?",
+                  options: [{ label: "Dart" }, { label: "TypeScript" }],
+                  recommended: 0,
+                },
+                {
+                  header: "Tools",
+                  question: "Which tools?",
+                  multi: true,
+                  options: [{ label: "Simulator" }, { label: "Server" }, { label: "Logs" }],
+                },
+              ],
+            },
+            { sessionId: sid },
+          );
+          console.log(`[pino] debug.ask-multi answered: ${JSON.stringify(resp.body)}`);
+          session.adapter.emit("event", {
+            ts: Date.now(),
+            kind: "agent.message",
+            payload: { text: JSON.stringify(resp.body) },
+          });
           return;
         }
         default:

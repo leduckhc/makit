@@ -11,9 +11,17 @@ import { join } from "node:path";
 import { createHash, X509Certificate } from "node:crypto";
 import selfsigned from "selfsigned";
 
-const PINO_DIR = join(homedir(), ".pino");
-const CRT_PATH = join(PINO_DIR, "server.crt");
-const KEY_PATH = join(PINO_DIR, "server.key");
+function pinoHome(): string {
+  return process.env.PINO_HOME || join(homedir(), ".pino");
+}
+
+function certPath(): string {
+  return join(pinoHome(), "server.crt");
+}
+
+function keyPath(): string {
+  return join(pinoHome(), "server.key");
+}
 
 export interface ServerCert {
   cert: string;       // PEM
@@ -23,11 +31,13 @@ export interface ServerCert {
 }
 
 export function loadOrCreateCert(): ServerCert {
-  mkdirSync(PINO_DIR, { recursive: true });
+  mkdirSync(pinoHome(), { recursive: true });
+  const crtPath = certPath();
+  const keyFilePath = keyPath();
 
-  if (existsSync(CRT_PATH) && existsSync(KEY_PATH)) {
-    const cert = readFileSync(CRT_PATH, "utf8");
-    const key = readFileSync(KEY_PATH, "utf8");
+  if (existsSync(crtPath) && existsSync(keyFilePath)) {
+    const cert = readFileSync(crtPath, "utf8");
+    const key = readFileSync(keyFilePath, "utf8");
     return { cert, key, fingerprint: fingerprintOf(cert) };
   }
 
@@ -58,8 +68,8 @@ export function loadOrCreateCert(): ServerCert {
     ],
   });
 
-  writeFileSync(CRT_PATH, pems.cert, { mode: 0o600 });
-  writeFileSync(KEY_PATH, pems.private, { mode: 0o600 });
+  writeFileSync(crtPath, pems.cert, { mode: 0o600 });
+  writeFileSync(keyFilePath, pems.private, { mode: 0o600 });
 
   return { cert: pems.cert, key: pems.private, fingerprint: fingerprintOf(pems.cert) };
 }

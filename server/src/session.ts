@@ -34,7 +34,7 @@ export class Session extends EventEmitter {
   lastPreview = "";
 
   readonly events: SessionEvent[] = [];
-  readonly adapter: AgentAdapter;
+  adapter: AgentAdapter;
 
   constructor(init: SessionInit) {
     super();
@@ -44,7 +44,17 @@ export class Session extends EventEmitter {
     this.adapter = init.adapter;
     this.policy = init.policy ?? "ask-on-risky";
 
-    this.adapter.on("event", (e) => {
+    this.bindAdapter(this.adapter);
+
+  }
+
+  replaceAdapter(adapter: AgentAdapter): void {
+    this.adapter = adapter;
+    this.bindAdapter(adapter);
+  }
+
+  private bindAdapter(adapter: AgentAdapter): void {
+    adapter.on("event", (e) => {
       const event: SessionEvent = {
         seq: this.events.length + 1,
         sessionId: this.id,
@@ -69,7 +79,7 @@ export class Session extends EventEmitter {
       this.emit("event", event);
     });
 
-    this.adapter.on("status", (s) => {
+    adapter.on("status", (s) => {
       this.status = s === "running" ? "running" : "idle";
       const evt: SessionEvent = {
         seq: this.events.length + 1,

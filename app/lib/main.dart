@@ -3,10 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/router.dart';
 import 'app/theme.dart';
+import 'app/test_bootstrap.dart';
+import 'store/store.dart';
 import 'ui/widgets/srv_request_handler.dart';
 
-void main() {
-  runApp(const ProviderScope(child: PinoApp()));
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await seedTestPairingIfRequested();
+  // The store listens to a broadcast stream that drops events without
+  // listeners. Eagerly create the controller so it's subscribed before the
+  // WS connects and starts pushing projects/sessions snapshots.
+  final container = ProviderContainer();
+  container.read(storeControllerProvider);
+  runApp(UncontrolledProviderScope(container: container, child: const PinoApp()));
 }
 
 class PinoApp extends ConsumerWidget {

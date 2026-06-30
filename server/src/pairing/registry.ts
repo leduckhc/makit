@@ -14,8 +14,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 
-const PINO_DIR = join(homedir(), ".pino");
-const DEVICES_PATH = join(PINO_DIR, "devices.json");
+function pinoHome(): string {
+  return process.env.PINO_HOME || join(homedir(), ".pino");
+}
+
+function devicesPath(): string {
+  return join(pinoHome(), "devices.json");
+}
 
 interface PairToken {
   token: string;
@@ -37,10 +42,11 @@ export class DeviceRegistry {
   private pendingTokens = new Map<string, PairToken>();
 
   constructor() {
-    mkdirSync(PINO_DIR, { recursive: true });
-    if (existsSync(DEVICES_PATH)) {
+    mkdirSync(pinoHome(), { recursive: true });
+    const path = devicesPath();
+    if (existsSync(path)) {
       try {
-        const arr = JSON.parse(readFileSync(DEVICES_PATH, "utf8")) as PairedDevice[];
+        const arr = JSON.parse(readFileSync(path, "utf8")) as PairedDevice[];
         for (const d of arr) {
           this.devices.set(d.id, d);
           this.byBearer.set(d.bearer, d);
@@ -107,7 +113,7 @@ export class DeviceRegistry {
   }
 
   private persist() {
-    writeFileSync(DEVICES_PATH, JSON.stringify([...this.devices.values()], null, 2), {
+    writeFileSync(devicesPath(), JSON.stringify([...this.devices.values()], null, 2), {
       mode: 0o600,
     });
   }
