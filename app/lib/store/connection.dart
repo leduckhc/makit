@@ -246,7 +246,14 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     _ws = ws;
     _wsSub = ws.frames.listen(_inFrames.add);
     _wsStateSub = ws.state.listen((s) {
-      state = state.copyWith(wsState: s, useFake: false);
+      // Clear any stale "unreachable" error once we're actually connected, so
+      // the connection chip doesn't keep showing a dead-server message after a
+      // successful (re)connect.
+      state = state.copyWith(
+        wsState: s,
+        useFake: false,
+        clearError: s == WsState.connected,
+      );
     });
     state = state.copyWith(
       useFake: false,
