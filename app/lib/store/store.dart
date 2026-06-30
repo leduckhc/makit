@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../transport/protocol.dart';
+import '../transport/ws_client.dart';
 import 'connection.dart';
 import 'models.dart';
 
@@ -38,7 +40,22 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
         .read(connectionControllerProvider.notifier)
         .incoming
         .listen(_onFrame);
-    // Kick off a subscribe-all once connected. Fake server pushes snapshots on hello.
+
+    // Re-issue every active `sub` whenever the WS reconnects. The server
+    // forgets per-client subscriptions on disconnect, so without this the
+    // app stops receiving `session.event` updates after any reconnect
+    // (server restart, hot restart, network blip) until the user manually
+    // navigates back into the session screen.
+    _ref.listen<PinoConnState>(connectionControllerProvider, (prev, next) {
+      final wasConnected = prev?.wsState == WsState.connected;
+      final nowConnected = next.wsState == WsState.connected;
+      if (!wasConnected && nowConnected) {
+        for (final sid in _subscribed) { _sendSub(sid); }
+      }
+    });
+
+    // Kick off a subscribe-all once connected. Fake server pushes snapshots
+    // on hello.
     _ref
         .read(connectionControllerProvider.notifier)
         .send(Envelope(t: MsgType.hello, id: 'boot', body: {}));
@@ -93,6 +110,7 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
   }
 
   void _appendEvent(SessionEvent ev) {
+    debugPrint('[pino] _appendEvent: session=${ev.sessionId} kind=${ev.kind.wire}');
     // session.commands updates the slash palette, not the chat.
     if (ev.kind == EventKind.sessionCommands) {
       final raw = (ev.payload['commands'] as List?) ?? const [];
@@ -147,7 +165,15 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
     );
   }
 
+  /// Currently-subscribed sessionIds. We replay these on every reconnect.
+  final Set<String> _subscribed = <String>{};
+
   void subscribeSession(String sessionId) {
+    _subscribed.add(sessionId);
+    _sendSub(sessionId);
+  }
+
+  void _sendSub(String sessionId) {
     _ref
         .read(connectionControllerProvider.notifier)
         .send(
@@ -279,7 +305,9 @@ final chatItemsProvider = Provider.family<List<ChatItem>, String>((
   sessionId,
 ) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
-  return foldEvents(events);
+  final items = foldEvents(events);
+  debugPrint('[pino] chatItemsProvider($sessionId) computed ${items.length} items');
+  return items;
 });
 
 /// Slash commands advertised by the agent for a given session.
