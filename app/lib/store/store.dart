@@ -115,7 +115,21 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
 
   void _appendEvent(SessionEvent ev) {
     debugPrint('[pino] _appendEvent: session=${ev.sessionId} kind=${ev.kind.wire} seq=${ev.seq}');
-    // session.commands updates the slash palette, not the chat.
+    final cursors = Map<String, int>.from(state.cursors);
+    final lastSeen = cursors[ev.sessionId] ?? 0;
+    // Idempotency: drop if this seq (or a later one) was already processed.
+    // The cursor tracks the max seq seen across ALL events — including
+    // session.commands, which isn't stored in the chat list — so the client's
+    // seq space stays aligned with the server's. Without this, the optimistic
+    // user bubble (seq N) and the server's user.message echo (also seq N) get
+    // different seqs and both render as duplicate bubbles.
+    if (lastSeen >= ev.seq) {
+      debugPrint('[pino] _appendEvent drop: seq=${ev.seq} <= cursor=$lastSeen');
+      return;
+    }
+    cursors[ev.sessionId] = ev.seq;
+
+    // session.commands updates the slash palette, not the chat list.
     if (ev.kind == EventKind.sessionCommands) {
       final raw = (ev.payload['commands'] as List?) ?? const [];
       final list = raw
@@ -125,29 +139,14 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
           .toList();
       final commands = Map<String, List<SlashCmd>>.from(state.commands);
       commands[ev.sessionId] = list;
-      state = state.copyWith(commands: commands);
+      state = state.copyWith(commands: commands, cursors: cursors);
       return;
     }
 
     final events = Map<String, List<SessionEvent>>.from(state.events);
-    final cursors = Map<String, int>.from(state.cursors);
     final list = List<SessionEvent>.from(events[ev.sessionId] ?? const []);
-    // Idempotency: drop if seq already seen.
-    if (list.isNotEmpty && list.last.seq >= ev.seq) {
-      debugPrint('[pino] _appendEvent drop: server seq=${ev.seq} <= last=${list.last.seq}');
-      return;
-    }
-    // Gap detection: if server seq jumps ahead, trim optimistic entries.
-    if (list.isNotEmpty && ev.seq > list.last.seq + 1) {
-      debugPrint('[pino] _appendEvent gap: seq ${list.last.seq} → ${ev.seq}; trimming optimistic');
-      final cursorSeq = cursors[ev.sessionId] ?? 0;
-      if (cursorSeq < list.length) {
-        list.removeRange(cursorSeq, list.length);
-      }
-    }
     list.add(ev);
     events[ev.sessionId] = list;
-    cursors[ev.sessionId] = ev.seq;
 
     // Bubble up session-level status / preview.
     var sessions = state.sessions;
@@ -201,13 +200,16 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
   }
 
   void appendOptimisticMessage(String sessionId, String text) {
-    // Inject a local UserMessageItem immediately. May be superseded by the server
-    // echo if seq conflicts, but avoids the "hung input" feeling.
-    debugPrint('[pino] appendOptimisticMessage sid=${sessionId.substring(0, 8)} text="$text"');
+    // Inject a local user bubble immediately so the input doesn't feel hung.
+    // The optimistic event takes the next seq after the cursor; the server's
+    // user.message echo arrives with the SAME seq (the server assigns seqs in
+    // emission order, and the user message is the next thing it emits) and is
+    // dropped by _appendEvent's idempotency guard — so the optimistic bubble
+    // is the single rendered user message, seamlessly "confirmed" by the echo.
+    final lastSeen = state.cursors[sessionId] ?? 0;
+    debugPrint('[pino] appendOptimisticMessage sid=${sessionId.substring(0, 8)} text="$text" seq=${lastSeen + 1}');
     _appendEvent(SessionEvent(
-      seq: (state.events[sessionId]?.isNotEmpty ?? false)
-          ? state.events[sessionId]!.last.seq + 1
-          : 1,
+      seq: lastSeen + 1,
       sessionId: sessionId,
       ts: DateTime.now().millisecondsSinceEpoch,
       kind: EventKind.userMessage,
