@@ -102,10 +102,11 @@ void main() {
         await tester.pumpAndSettle();
 
         // Q1 single-select → String; Q2 multi-select → List<String>.
-        expect(_lastResult, isA<List<dynamic>>());
-        expect((_lastResult as List).length, 2);
-        expect((_lastResult as List)[0], 'TypeScript');
-        expect((_lastResult as List)[1], ['Vim', 'Xcode']);
+        // Canonical shape: indices/answers parallel arrays, multi-select
+        // labels joined with " + ".
+        expect(_lastResult, isA<Map<String, dynamic>>());
+        expect((_lastResult as Map)['indices'], [1, 0]);
+        expect((_lastResult as Map)['answers'], ['TypeScript', 'Vim + Xcode']);
       },
     );
 
@@ -216,7 +217,7 @@ dynamic _lastResult;
 /// and capture the popped result into [_lastResult].
 ///
 /// `_AskWizard` is a private class; we drive it the same way real code does
-/// — through `showDialog<List<dynamic>?>(...)` against [SrvRequestHandler]'s
+/// — through `showDialog<Map<String, dynamic>?>(...)` against [SrvRequestHandler]'s
 /// internal helper. To keep this test isolated we use a published builder
 /// function that mirrors the production dispatch logic. See
 /// [debugAskWizardFor] in srv_request_handler.dart (added below if missing).
@@ -232,7 +233,7 @@ Future<void> _pumpWizard(
           body: Center(
             child: ElevatedButton(
               onPressed: () async {
-                _lastResult = await showDialog<List<dynamic>?>(
+                _lastResult = await showDialog<Map<String, dynamic>?>(
                   context: ctx,
                   barrierDismissible: false,
                   builder: (dctx) => debugAskWizardFor(questions),
