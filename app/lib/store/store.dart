@@ -34,7 +34,10 @@ class EventsState {
 
 class StoreController extends StateNotifier<_StoreSnapshot> {
   StoreController(this._ref) : super(_StoreSnapshot.empty()) {
-    _sub = _ref.read(connectionControllerProvider.notifier).incoming.listen(_onFrame);
+    _sub = _ref
+        .read(connectionControllerProvider.notifier)
+        .incoming
+        .listen(_onFrame);
     // Kick off a subscribe-all once connected. Fake server pushes snapshots on hello.
     _ref.read(connectionControllerProvider.notifier).send(
           Envelope(t: MsgType.hello, id: 'boot', body: {}),
@@ -42,7 +45,7 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
   }
 
   final Ref _ref;
-  StreamSubscription? _sub;
+  StreamSubscription<Envelope>? _sub;
 
   void _onFrame(Envelope env) {
     if (env.t != MsgType.event) return;
@@ -52,32 +55,37 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
       case 'projects.snapshot':
         final list = (env.body['projects'] as List)
             .cast<Map<String, dynamic>>()
-            .map((j) => Project(
-                  id: j['id'] as String,
-                  name: j['name'] as String,
-                  path: j['path'] as String,
-                  pinned: j['pinned'] as bool? ?? false,
-                  lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
-                ),)
+            .map(
+              (j) => Project(
+                id: j['id'] as String,
+                name: j['name'] as String,
+                path: j['path'] as String,
+                pinned: j['pinned'] as bool? ?? false,
+                lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
+              ),
+            )
             .toList();
         state = state.copyWith(projects: list);
       case 'sessions.snapshot':
         final list = (env.body['sessions'] as List)
             .cast<Map<String, dynamic>>()
-            .map((j) => Session(
-                  id: j['id'] as String,
-                  projectId: j['projectId'] as String,
-                  agent: j['agent'] as String,
-                  title: j['title'] as String? ?? '',
-                  status: parseStatus(j['status'] as String? ?? 'idle'),
-                  policy: parsePolicy(j['policy'] as String? ?? 'ask-on-risky'),
-                  lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
-                  lastPreview: j['lastPreview'] as String? ?? '',
-                ),)
+            .map(
+              (j) => Session(
+                id: j['id'] as String,
+                projectId: j['projectId'] as String,
+                agent: j['agent'] as String,
+                title: j['title'] as String? ?? '',
+                status: parseStatus(j['status'] as String? ?? 'idle'),
+                policy: parsePolicy(j['policy'] as String? ?? 'ask-on-risky'),
+                lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
+                lastPreview: j['lastPreview'] as String? ?? '',
+              ),
+            )
             .toList();
         state = state.copyWith(sessions: list);
       case 'session.event':
-        final ev = SessionEvent.fromJson(Map<String, dynamic>.from(env.body['event'] as Map));
+        final ev = SessionEvent.fromJson(
+            Map<String, dynamic>.from(env.body['event'] as Map));
         if (ev == null) return;
         _appendEvent(ev);
     }
@@ -88,7 +96,7 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
     if (ev.kind == EventKind.sessionCommands) {
       final raw = (ev.payload['commands'] as List?) ?? const [];
       final list = raw
-          .whereType<Map>()
+          .whereType<Map<dynamic, dynamic>>()
           .map((m) => SlashCmd.fromJson(Map<String, dynamic>.from(m)))
           .whereType<SlashCmd>()
           .toList();
@@ -116,7 +124,8 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
       String? newPreview;
       if (ev.kind == EventKind.sessionStatus) {
         newStatus = parseStatus(ev.payload['status'] as String? ?? '');
-      } else if (ev.kind == EventKind.userMessage || ev.kind == EventKind.agentMessage) {
+      } else if (ev.kind == EventKind.userMessage ||
+          ev.kind == EventKind.agentMessage) {
         newPreview = ev.payload['text'] as String?;
       } else if (ev.kind == EventKind.approvalRequest) {
         newStatus = SessionStatus.awaitingApproval;
@@ -130,22 +139,26 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
       );
     }
 
-    state = state.copyWith(events: events, cursors: cursors, sessions: sessions);
+    state =
+        state.copyWith(events: events, cursors: cursors, sessions: sessions);
   }
 
   void subscribeSession(String sessionId) {
-    _ref
-        .read(connectionControllerProvider.notifier)
-        .send(Envelope(t: MsgType.sub, id: 's-$sessionId', body: {'sessionId': sessionId}));
+    _ref.read(connectionControllerProvider.notifier).send(Envelope(
+        t: MsgType.sub, id: 's-$sessionId', body: {'sessionId': sessionId}));
   }
 
   void sendMessage(String sessionId, String text) {
     _ref.read(connectionControllerProvider.notifier).send(
-          Envelope(t: MsgType.cmd, id: 'm-${DateTime.now().microsecondsSinceEpoch}', body: {
-            'kind': 'send.message',
-            'sessionId': sessionId,
-            'text': text,
-          },),
+          Envelope(
+            t: MsgType.cmd,
+            id: 'm-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'send.message',
+              'sessionId': sessionId,
+              'text': text,
+            },
+          ),
         );
   }
 
@@ -153,13 +166,13 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
   /// session id once the server acks.
   Future<String> spawnSession(String projectId, {String? title}) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
-          MsgType.cmd,
-          {
-            'kind': 'session.spawn',
-            'projectId': projectId,
-            if (title != null) 'title': title,
-          },
-        );
+      MsgType.cmd,
+      {
+        'kind': 'session.spawn',
+        'projectId': projectId,
+        if (title != null) 'title': title,
+      },
+    );
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
     return sid;
@@ -167,11 +180,15 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
 
   void approve(String sessionId, String callId, {required bool ok}) {
     _ref.read(connectionControllerProvider.notifier).send(
-          Envelope(t: MsgType.cmd, id: 'a-${DateTime.now().microsecondsSinceEpoch}', body: {
-            'kind': ok ? 'approve' : 'deny',
-            'sessionId': sessionId,
-            'callId': callId,
-          },),
+          Envelope(
+            t: MsgType.cmd,
+            id: 'a-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': ok ? 'approve' : 'deny',
+              'sessionId': sessionId,
+              'callId': callId,
+            },
+          ),
         );
   }
 
@@ -203,6 +220,7 @@ class _StoreSnapshot {
   final List<Session> sessions;
   final Map<String, List<SessionEvent>> events;
   final Map<String, int> cursors;
+
   /// Per-session list of slash commands advertised by the agent.
   final Map<String, List<SlashCmd>> commands;
 
@@ -223,7 +241,8 @@ class _StoreSnapshot {
 }
 
 final storeControllerProvider =
-    StateNotifierProvider<StoreController, _StoreSnapshot>((ref) => StoreController(ref));
+    StateNotifierProvider<StoreController, _StoreSnapshot>(
+        (ref) => StoreController(ref));
 
 final projectsProvider = Provider<ProjectsState>((ref) {
   final s = ref.watch(storeControllerProvider);
@@ -240,14 +259,15 @@ final eventsProvider = Provider<EventsState>((ref) {
   return EventsState(s.events, s.cursors);
 });
 
-final chatItemsProvider = Provider.family<List<ChatItem>, String>((ref, sessionId) {
+final chatItemsProvider =
+    Provider.family<List<ChatItem>, String>((ref, sessionId) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
   return foldEvents(events);
 });
 
 /// Slash commands advertised by the agent for a given session.
-final commandsProvider = Provider.family<List<SlashCmd>, String>((ref, sessionId) {
+final commandsProvider =
+    Provider.family<List<SlashCmd>, String>((ref, sessionId) {
   final s = ref.watch(storeControllerProvider);
   return s.commands[sessionId] ?? const [];
 });
-

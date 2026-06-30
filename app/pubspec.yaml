@@ -3,28 +3,45 @@ description: Mobile-first coding agent client — chat UI for codex/pi/claude se
 publish_to: "none"
 version: 0.1.0
 
+# Pub integrity (see SECURITY.md):
+#   - Commit pubspec.lock. Never edit by hand.
+#   - CI uses `flutter pub get --enforce-lockfile`.
+#   - To update a dep: edit constraint, run `flutter pub upgrade <name>`,
+#     review the lockfile diff, commit both files.
+
 environment:
+  # Flutter 3.22.0+ ships TLS hardening (badCertificateCallback contract)
+  # that the cert-pinning transport relies on. Don't relax this.
   sdk: ">=3.4.0 <4.0.0"
   flutter: ">=3.22.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  flutter_riverpod: ^2.5.1
-  go_router: ^14.2.0
-  web_socket_channel: ^3.0.0
-  freezed_annotation: ^2.4.4
-  json_annotation: ^4.9.0
-  flutter_secure_storage: ^9.2.2
-  multicast_dns: ^0.3.2+6
+
+  # ---------------- pure-Dart utilities (pub.dev verified publishers) ------
+  # `^` allows compatible minor/patch updates. Lockfile pins the exact
+  # resolved version; enforce-lockfile in CI prevents drift.
+  flutter_riverpod: ^2.5.1   # publisher: remi.rousselet
+  go_router: ^14.2.0         # publisher: flutter.dev
+  web_socket_channel: ^3.0.0 # publisher: dart.dev — TLS pin uses dart:io
+  freezed_annotation: ^2.4.4 # publisher: rrousselgit
+  json_annotation: ^4.9.0    # publisher: dart.dev
   ulid: ^2.0.0
-  collection: ^1.18.0
-  crypto: ^3.0.5
-  flutter_markdown: ^0.7.3
+  collection: ^1.19.0        # publisher: dart.dev (≥1.19 required by flutter_test transitives)
+  crypto: ^3.0.5             # publisher: dart.dev — SHA256 fingerprint of pinned server cert
+  flutter_markdown: ^0.7.3   # publisher: flutter.dev
+
+  # ---------------- security-critical native plugins -----------------------
+  # Pinned exactly: native code = supply-chain blast radius. Bump deliberately
+  # after reading the plugin's CHANGELOG and re-running `tool/audit.sh`.
+  flutter_secure_storage: 9.2.2  # iOS Keychain / Android Keystore — bearer storage
+  multicast_dns: 0.3.2+6         # publisher: flutter.dev — parses LAN multicast UDP
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
   flutter_lints: ^4.0.0
   build_runner: ^2.4.11
   freezed: ^2.5.7

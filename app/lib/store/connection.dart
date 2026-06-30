@@ -33,7 +33,7 @@ class PairedServer {
   final String fingerprint;
   final String bearer;
   final String label;
-  
+
   /// mDNS service name (e.g., 'pino._tcp.local'). If present, we'll resolve
   /// this at connect time instead of using [host] directly, making the
   /// connection resilient to DHCP IP changes.
@@ -103,8 +103,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
 
   FakeServer? _fake;
   WsClient? _ws;
-  StreamSubscription? _wsSub;
-  StreamSubscription? _wsStateSub;
+  StreamSubscription<Envelope>? _wsSub;
+  StreamSubscription<WsState>? _wsStateSub;
 
   Stream<Envelope> get incoming => _inFrames.stream;
 
@@ -121,13 +121,15 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   Future<void> _boot() async {
     if (_wsUrl.isNotEmpty) {
       // Dev override: connect directly, no pairing.
-      await _attachReal(_wsUrl, fingerprint: _wsFp.isEmpty ? null : _wsFp, helloBody: const {});
+      await _attachReal(_wsUrl,
+          fingerprint: _wsFp.isEmpty ? null : _wsFp, helloBody: const {});
       return;
     }
     final raw = await _storage.read(key: _kPairedServerKey);
     if (raw != null) {
       try {
-        final server = PairedServer.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        final server =
+            PairedServer.fromJson(jsonDecode(raw) as Map<String, dynamic>);
         state = state.copyWith(server: server);
         await _connectPaired(server);
         return;
@@ -175,9 +177,11 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       await Future<void>.delayed(const Duration(seconds: 2));
       if (state.wsState == WsState.connected) return;
 
-      debugPrint('[pino] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…');
+      debugPrint(
+          '[pino] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…');
       final found = await browseLan(timeout: const Duration(seconds: 4));
-      final matches = found.where((d) => d.fingerprint == server.fingerprint).toList();
+      final matches =
+          found.where((d) => d.fingerprint == server.fingerprint).toList();
       if (matches.isEmpty) {
         debugPrint('[pino] no mDNS match for stored fingerprint.');
         state = state.copyWith(
@@ -188,7 +192,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       final match = matches.first;
       if (match.host == server.host && match.port == server.port) return;
 
-      debugPrint('[pino] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}');
+      debugPrint(
+          '[pino] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}');
       final updated = PairedServer(
         host: match.host,
         port: match.port,
@@ -197,7 +202,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
         label: server.label,
         mdnsName: server.mdnsName,
       );
-      await _storage.write(key: _kPairedServerKey, value: jsonEncode(updated.toJson()));
+      await _storage.write(
+          key: _kPairedServerKey, value: jsonEncode(updated.toJson()));
       state = state.copyWith(server: updated, clearError: true);
       await _attachReal(
         updated.wssUrl,
@@ -234,7 +240,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     _wsStateSub = ws.state.listen((s) {
       state = state.copyWith(wsState: s, useFake: false);
     });
-    state = state.copyWith(useFake: false, wsState: WsState.connecting, clearError: true);
+    state = state.copyWith(
+        useFake: false, wsState: WsState.connecting, clearError: true);
     await ws.connect(url, helloBody: helloBody, pinnedFingerprint: fingerprint);
   }
 
@@ -253,7 +260,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       if (env.t == MsgType.helloAck) {
         final bearer = env.body['bearer'] as String?;
         if (bearer == null) {
-          completer.completeError(StateError('server did not return a bearer token'));
+          completer.completeError(
+              StateError('server did not return a bearer token'));
           return;
         }
         completer.complete(PairedServer(
@@ -262,10 +270,12 @@ class ConnectionController extends StateNotifier<PinoConnState> {
           fingerprint: info.fingerprint,
           bearer: bearer,
           label: label,
-          mdnsName: 'pino._tcp.local', // Store the service name for future mDNS resolution.
+          mdnsName:
+              'pino._tcp.local', // Store the service name for future mDNS resolution.
         ));
       } else if (env.t == MsgType.err) {
-        completer.completeError(StateError(env.body['message'] as String? ?? 'pair failed'));
+        completer.completeError(
+            StateError(env.body['message'] as String? ?? 'pair failed'));
       }
     });
 
@@ -291,7 +301,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     });
 
     // Persist + switch the live connection over to the new paired creds.
-    await _storage.write(key: _kPairedServerKey, value: jsonEncode(result.toJson()));
+    await _storage.write(
+        key: _kPairedServerKey, value: jsonEncode(result.toJson()));
     state = state.copyWith(server: result, clearError: true);
     await _attachReal(
       result.wssUrl,
@@ -306,20 +317,22 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     final id = 'req-${DateTime.now().microsecondsSinceEpoch}';
     final env = Envelope(t: t, id: id, body: body);
     final completer = Completer<Map<String, dynamic>>();
-    late StreamSubscription sub;
+    late StreamSubscription<Envelope> sub;
     sub = _inFrames.stream.listen((frame) {
       if (frame.id != id) return;
       if (frame.t == MsgType.ack) {
         if (!completer.isCompleted) completer.complete(frame.body);
       } else if (frame.t == MsgType.err) {
         if (!completer.isCompleted) {
-          completer.completeError(StateError(frame.body['message'] as String? ?? 'error'));
+          completer.completeError(
+              StateError(frame.body['message'] as String? ?? 'error'));
         }
       }
     });
     send(env);
     return completer.future
-        .timeout(const Duration(seconds: 10), onTimeout: () => throw TimeoutException('$t request timed out'))
+        .timeout(const Duration(seconds: 10),
+            onTimeout: () => throw TimeoutException('$t request timed out'))
         .whenComplete(() => sub.cancel());
   }
 
@@ -353,17 +366,21 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   }
 }
 
-final _secureStorageProvider = Provider<FlutterSecureStorage>((_) => const FlutterSecureStorage());
+final _secureStorageProvider =
+    Provider<FlutterSecureStorage>((_) => const FlutterSecureStorage());
 
 final connectionControllerProvider =
     StateNotifierProvider<ConnectionController, PinoConnState>((ref) {
   return ConnectionController(ref.watch(_secureStorageProvider));
 });
 
-final connectionProvider = Provider<PinoConnState>((ref) => ref.watch(connectionControllerProvider));
+final connectionProvider =
+    Provider<PinoConnState>((ref) => ref.watch(connectionControllerProvider));
 
 final connectionListenableProvider = Provider<Listenable>((ref) {
-  final notifier = ValueNotifier<PinoConnState>(ref.read(connectionControllerProvider));
-  ref.listen<PinoConnState>(connectionControllerProvider, (_, next) => notifier.value = next);
+  final notifier =
+      ValueNotifier<PinoConnState>(ref.read(connectionControllerProvider));
+  ref.listen<PinoConnState>(
+      connectionControllerProvider, (_, next) => notifier.value = next);
   return notifier;
 });

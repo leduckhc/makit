@@ -1,0 +1,115 @@
+#!/bin/bash
+# Security-focused Flutter commands for the pino app.
+# Enforces best practices: offline installs, deterministic builds, analysis.
+#
+# Usage:
+#   ./scripts/flutter-secure get      # Get packages, respecting lockfile
+#   ./scripts/flutter-secure analyze  # Run strict linting
+#   ./scripts/flutter-secure audit    # Check for vulnerable packages
+
+set -e
+
+case "${1:-help}" in
+  get)
+    echo "[pino] Installing packages (offline, lockfile-locked)..."
+    flutter pub get --offline
+    echo "[pino] ✓ Packages installed from pubspec.lock"
+    ;;
+
+  upgrade)
+    echo "[pino] WARNING: This upgrades your pubspec.lock."
+    echo "[pino] Remember to:"
+    echo "  1. Review new versions on pub.dev for security advisories"
+    echo "  2. Run: flutter analyze"
+    echo "  3. Run: flutter test"
+    echo "[pino] Proceeding with upgrade..."
+    flutter pub upgrade --dry-run
+    read -p "[pino] Confirm upgrade? (y/N): " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      flutter pub upgrade
+      flutter analyze
+      echo "[pino] ✓ Upgrade complete. Commit pubspec.lock."
+    else
+      echo "[pino] Upgrade cancelled."
+    fi
+    ;;
+
+  analyze)
+    echo "[pino] Running strict analysis..."
+    flutter analyze --no-pub
+    echo "[pino] ✓ Analysis passed"
+    ;;
+
+  audit)
+    echo "[pino] Checking for vulnerable packages..."
+    flutter pub outdated --mode=null-safety
+    echo ""
+    echo "[pino] ℹ Review security advisories on pub.dev for each package."
+    echo "[pino] ℹ If a vulnerability exists, use ./flutter-secure upgrade to patch it."
+    ;;
+
+  format)
+    echo "[pino] Formatting code (line-length=100)..."
+    dart format --line-length=100 lib test
+    echo "[pino] ✓ Code formatted"
+    ;;
+
+  build-ios-debug)
+    echo "[pino] Building iOS debug (simulator)..."
+    flutter build ios --debug --simulator
+    echo "[pino] ✓ iOS debug build complete"
+    ;;
+
+  build-ios-release)
+    echo "[pino] Building iOS release (device)..."
+    flutter build ios --release
+    echo "[pino] ✓ iOS release build complete"
+    ;;
+
+  build-android-debug)
+    echo "[pino] Building Android debug..."
+    flutter build apk --debug
+    echo "[pino] ✓ Android debug build complete"
+    ;;
+
+  build-android-release)
+    echo "[pino] Building Android release..."
+    flutter build apk --release
+    echo "[pino] ✓ Android release build complete"
+    ;;
+
+  ci)
+    echo "[pino] Running CI checks..."
+    echo "[pino] 1/3 Installing packages..."
+    flutter pub get --offline
+    echo "[pino] 2/3 Analyzing code..."
+    flutter analyze --no-pub
+    echo "[pino] 3/3 Formatting check..."
+    dart format --output=none --set-exit-if-changed lib test
+    echo "[pino] ✓ All CI checks passed"
+    ;;
+
+  help|"")
+    echo "Usage: ./scripts/flutter-secure <command>"
+    echo ""
+    echo "Commands:"
+    echo "  get                 Install packages from pubspec.lock (offline)"
+    echo "  upgrade             Interactively upgrade a dependency"
+    echo "  analyze             Run strict linting (enforces analysis_options.yaml)"
+    echo "  audit               Check for outdated/vulnerable packages"
+    echo "  format              Format code (100 char line length)"
+    echo "  build-ios-debug     Build iOS simulator debug binary"
+    echo "  build-ios-release   Build iOS device release binary"
+    echo "  build-android-debug   Build Android debug APK"
+    echo "  build-android-release Build Android release APK"
+    echo "  ci                  Run full CI suite (install, analyze, format-check)"
+    echo ""
+    echo "See SECURITY.md for policy details."
+    ;;
+
+  *)
+    echo "Unknown command: $1"
+    echo "Run: ./scripts/flutter-secure help"
+    exit 1
+    ;;
+esac

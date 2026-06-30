@@ -42,7 +42,8 @@ abstract class ToolRenderer {
 }
 
 class _DefaultCard extends StatelessWidget {
-  const _DefaultCard({required this.renderer, required this.item, required this.onTap});
+  const _DefaultCard(
+      {required this.renderer, required this.item, required this.onTap});
   final ToolRenderer renderer;
   final ToolCallItem item;
   final VoidCallback onTap;
@@ -67,7 +68,8 @@ class _DefaultCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(renderer.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(renderer.name,
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     if (sub != null && sub.isNotEmpty)
                       Text(sub,
                           maxLines: 1,
@@ -108,7 +110,8 @@ class _DefaultDetail extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          const Text('Arguments', style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text('Arguments',
+              style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           SelectableText(
             item.args.toString(),
@@ -123,7 +126,8 @@ class _DefaultDetail extends StatelessWidget {
           ),
           if (item.summary != null) ...[
             const SizedBox(height: 16),
-            const Text('Summary', style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text('Summary',
+                style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             SelectableText(item.summary!),
           ],
@@ -231,8 +235,10 @@ class _EditDiffView extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final path = item.args['path']?.toString() ?? '(no path)';
-    final oldText = item.args['oldText']?.toString() ?? item.args['old']?.toString() ?? '';
-    final newText = item.args['newText']?.toString() ?? item.args['new']?.toString() ?? '';
+    final oldText =
+        item.args['oldText']?.toString() ?? item.args['old']?.toString() ?? '';
+    final newText =
+        item.args['newText']?.toString() ?? item.args['new']?.toString() ?? '';
 
     return Scaffold(
       appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
@@ -248,10 +254,13 @@ class _EditDiffView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('− Removed', style: TextStyle(color: cs.error, fontWeight: FontWeight.w600)),
+                Text('− Removed',
+                    style: TextStyle(
+                        color: cs.error, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 SelectableText(oldText,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                    style:
+                        const TextStyle(fontFamily: 'monospace', fontSize: 12)),
               ],
             ),
           ),
@@ -270,7 +279,8 @@ class _EditDiffView extends StatelessWidget {
                         color: Colors.green, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
                 SelectableText(newText,
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                    style:
+                        const TextStyle(fontFamily: 'monospace', fontSize: 12)),
               ],
             ),
           ),

@@ -22,7 +22,7 @@ class WsClient {
   WsClient();
 
   WebSocketChannel? _ch;
-  StreamSubscription? _sub;
+  StreamSubscription<dynamic>? _sub;
   Timer? _retry;
   Timer? _pinger;
   int _attempt = 0;
@@ -132,8 +132,10 @@ class WsClient {
     if (uri.scheme == 'wss' && _pinnedFingerprint != null) {
       // Custom HttpClient that pins the server cert fingerprint instead of
       // requiring CA trust. dart:io exposes the X.509 DER via `cert.der`.
-      final client = HttpClient(context: SecurityContext(withTrustedRoots: false));
-      client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+      final client =
+          HttpClient(context: SecurityContext(withTrustedRoots: false));
+      client.badCertificateCallback =
+          (X509Certificate cert, String host, int port) {
         final fp = _hexSha256(cert.der);
         return fp == _pinnedFingerprint;
       };
@@ -157,7 +159,8 @@ class WsClient {
     final pending = _pending.remove(env.id);
     if (pending != null && (env.t == MsgType.ack || env.t == MsgType.err)) {
       if (env.t == MsgType.err) {
-        pending.completeError(StateError(env.body['message'] as String? ?? 'error'));
+        pending.completeError(
+            StateError(env.body['message'] as String? ?? 'error'));
       } else {
         pending.complete(env);
       }
@@ -186,5 +189,8 @@ class WsClient {
   }
 }
 
-String _hexSha256(Uint8List bytes) =>
-    sha256.convert(bytes).bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+String _hexSha256(Uint8List bytes) => sha256
+    .convert(bytes)
+    .bytes
+    .map((b) => b.toRadixString(16).padLeft(2, '0'))
+    .join();

@@ -16,8 +16,10 @@ class SlashCmd {
   /// Without the leading `/`. e.g. `skill:foo`, `fix-tests`, `session-name`.
   final String name;
   final String description;
+
   /// `extension` | `prompt` | `skill`
   final String source;
+
   /// `user` | `project` | `path` — optional.
   final String? location;
 
@@ -51,7 +53,14 @@ class Project {
   final int lastActivityAt;
 }
 
-enum SessionStatus { idle, running, awaitingInput, awaitingApproval, error, exited }
+enum SessionStatus {
+  idle,
+  running,
+  awaitingInput,
+  awaitingApproval,
+  error,
+  exited
+}
 
 SessionStatus parseStatus(String s) => switch (s) {
       'idle' => SessionStatus.idle,
@@ -204,9 +213,11 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
   for (final e in events) {
     switch (e.kind) {
       case EventKind.userMessage:
-        items.add(UserMessageItem(seq: e.seq, ts: e.ts, text: e.payload['text'] as String? ?? ''));
+        items.add(UserMessageItem(
+            seq: e.seq, ts: e.ts, text: e.payload['text'] as String? ?? ''));
       case EventKind.agentMessage:
-        items.add(AgentMessageItem(seq: e.seq, ts: e.ts, text: e.payload['text'] as String? ?? ''));
+        items.add(AgentMessageItem(
+            seq: e.seq, ts: e.ts, text: e.payload['text'] as String? ?? ''));
       case EventKind.agentThinking:
         // M0: ignore reasoning trace; could render as a faint card later.
         break;
@@ -217,7 +228,8 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ts: e.ts,
           callId: callId,
           name: e.payload['name'] as String? ?? 'tool',
-          args: Map<String, dynamic>.from(e.payload['args'] as Map? ?? const {}),
+          args:
+              Map<String, dynamic>.from(e.payload['args'] as Map? ?? const {}),
           risk: e.payload['risk'] as String? ?? 'safe',
         );
         byCall[callId] = items.length;
@@ -227,7 +239,8 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         final idx = byCall[callId];
         if (idx != null && items[idx] is ToolCallItem) {
           final cur = items[idx] as ToolCallItem;
-          items[idx] = cur.copyWith(deltas: [...cur.deltas, e.payload['chunk'] as String? ?? '']);
+          items[idx] = cur.copyWith(
+              deltas: [...cur.deltas, e.payload['chunk'] as String? ?? '']);
         }
       case EventKind.toolCallEnd:
         final callId = e.payload['callId'] as String;
@@ -241,19 +254,23 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           );
         }
       case EventKind.approvalRequest:
-        items.add(ApprovalRequestItem(
-          seq: e.seq,
-          ts: e.ts,
-          callId: e.payload['callId'] as String,
-          tool: e.payload['tool'] as String? ?? 'tool',
-          preview: e.payload['preview'] as String? ?? '',
-        ),);
+        items.add(
+          ApprovalRequestItem(
+            seq: e.seq,
+            ts: e.ts,
+            callId: e.payload['callId'] as String,
+            tool: e.payload['tool'] as String? ?? 'tool',
+            preview: e.payload['preview'] as String? ?? '',
+          ),
+        );
       case EventKind.approvalDecision:
         // Mark the most recent matching approval request as decided.
         final callId = e.payload['callId'] as String;
         for (var i = items.length - 1; i >= 0; i--) {
           final item = items[i];
-          if (item is ApprovalRequestItem && item.callId == callId && !item.decided) {
+          if (item is ApprovalRequestItem &&
+              item.callId == callId &&
+              !item.decided) {
             items[i] = ApprovalRequestItem(
               seq: item.seq,
               ts: item.ts,
@@ -270,7 +287,10 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         // Handled at session level, not as chat item.
         break;
       case EventKind.sessionError:
-        items.add(ErrorItem(seq: e.seq, ts: e.ts, message: e.payload['message'] as String? ?? 'error'));
+        items.add(ErrorItem(
+            seq: e.seq,
+            ts: e.ts,
+            message: e.payload['message'] as String? ?? 'error'));
       case EventKind.sessionCommands:
         // Handled by store, not as a chat item.
         break;

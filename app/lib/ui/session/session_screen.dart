@@ -27,7 +27,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     super.initState();
     // Subscribe so the fake server replays this session's events.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(storeControllerProvider.notifier).subscribeSession(widget.sessionId);
+      ref
+          .read(storeControllerProvider.notifier)
+          .subscribeSession(widget.sessionId);
     });
   }
 
@@ -53,7 +55,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(session?.title ?? widget.sessionId, overflow: TextOverflow.ellipsis),
+            Text(session?.title ?? widget.sessionId,
+                overflow: TextOverflow.ellipsis),
             Text(
               '${session?.agent ?? '?'} · ${_statusLabel(session?.status)}',
               style: Theme.of(context).textTheme.bodySmall,
@@ -113,7 +116,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       );
       if (handled) return;
     }
-    ref.read(storeControllerProvider.notifier).sendMessage(widget.sessionId, text);
+    ref
+        .read(storeControllerProvider.notifier)
+        .sendMessage(widget.sessionId, text);
   }
 
   String _statusLabel(SessionStatus? s) => switch (s) {
@@ -155,8 +160,10 @@ class _ApprovalChip extends ConsumerWidget {
             children: [
               const Icon(Icons.gavel, size: 18),
               const SizedBox(width: 8),
-              Text('Approval needed: ${item.tool}',
-                  style: Theme.of(context).textTheme.titleSmall,),
+              Text(
+                'Approval needed: ${item.tool}',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -166,11 +173,13 @@ class _ApprovalChip extends ConsumerWidget {
               color: cs.surface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(item.preview, style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            child: Text(item.preview,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
           ),
           const SizedBox(height: 8),
           if (item.decided)
-            Text('Decision: ${item.decision}', style: Theme.of(context).textTheme.bodySmall)
+            Text('Decision: ${item.decision}',
+                style: Theme.of(context).textTheme.bodySmall)
           else
             Row(
               children: [

@@ -30,7 +30,8 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: 'settings', builder: (_, __) => const SettingsScreen()),
           GoRoute(
             path: 'session/:id',
-            builder: (_, s) => SessionScreen(sessionId: s.pathParameters['id']!),
+            builder: (_, s) =>
+                SessionScreen(sessionId: s.pathParameters['id']!),
             routes: [
               GoRoute(
                 path: 'tool/:callId',

@@ -2,8 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pino/store/models.dart';
 import 'package:pino/transport/protocol.dart';
 
-SessionEvent _ev(int seq, EventKind k, Map<String, dynamic> p) =>
-    SessionEvent(seq: seq, sessionId: 's1', ts: seq * 1000, kind: k, payload: p);
+SessionEvent _ev(int seq, EventKind k, Map<String, dynamic> p) => SessionEvent(
+    seq: seq, sessionId: 's1', ts: seq * 1000, kind: k, payload: p);
 
 void main() {
   group('foldEvents', () {
@@ -21,11 +21,16 @@ void main() {
 
     test('tool start + delta + end folds into one card', () {
       final items = foldEvents([
-        _ev(1, EventKind.toolCallStart,
-            {'callId': 'c', 'name': 'edit', 'args': {'path': 'x.dart'}, 'risk': 'risky'}),
+        _ev(1, EventKind.toolCallStart, {
+          'callId': 'c',
+          'name': 'edit',
+          'args': {'path': 'x.dart'},
+          'risk': 'risky'
+        }),
         _ev(2, EventKind.toolCallDelta, {'callId': 'c', 'chunk': 'aaa'}),
         _ev(3, EventKind.toolCallDelta, {'callId': 'c', 'chunk': 'bbb'}),
-        _ev(4, EventKind.toolCallEnd, {'callId': 'c', 'exitCode': 0, 'summary': 'ok'}),
+        _ev(4, EventKind.toolCallEnd,
+            {'callId': 'c', 'exitCode': 0, 'summary': 'ok'}),
       ]);
       expect(items.length, 1);
       final tool = items.single as ToolCallItem;
@@ -41,7 +46,8 @@ void main() {
       final items = foldEvents([
         _ev(1, EventKind.approvalRequest,
             {'callId': 'c', 'tool': 'edit', 'preview': '...'}),
-        _ev(2, EventKind.approvalDecision, {'callId': 'c', 'decision': 'approve'}),
+        _ev(2, EventKind.approvalDecision,
+            {'callId': 'c', 'decision': 'approve'}),
       ]);
       expect(items.length, 1);
       final ar = items.single as ApprovalRequestItem;

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/connection.dart';
+import '../../transport/protocol.dart';
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
   const SrvRequestHandler({super.key, required this.child});
@@ -19,7 +20,7 @@ class SrvRequestHandler extends ConsumerStatefulWidget {
 }
 
 class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
-  StreamSubscription? _sub;
+  StreamSubscription<Envelope>? _sub;
 
   @override
   void initState() {
@@ -47,12 +48,12 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     );
   }
 
-  Future<void> _showAskUserQuestion(BuildContext ctx, env) async {
+  Future<void> _showAskUserQuestion(BuildContext ctx, Envelope env) async {
     final question = env.body['question'] as String? ?? 'Question';
     final header = env.body['header'] as String?;
     final rawOptions = (env.body['options'] as List?) ?? const [];
     final options = rawOptions
-        .whereType<Map>()
+        .whereType<Map<dynamic, dynamic>>()
         .map((m) => Map<String, dynamic>.from(m))
         .toList();
     final multi = env.body['multi'] == true;
@@ -101,7 +102,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: picked.isEmpty ? null : () => Navigator.pop(dctx, picked.toList()..sort()),
+              onPressed: picked.isEmpty
+                  ? null
+                  : () => Navigator.pop(dctx, picked.toList()..sort()),
               child: const Text('Submit'),
             ),
           ],
@@ -114,7 +117,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     if (result == null) {
       conn.respondTo(env.id, {'ok': false, 'cancelled': true});
     } else {
-      final answers = result.map((i) => options[i]['label']?.toString() ?? '').toList();
+      final answers =
+          result.map((i) => options[i]['label']?.toString() ?? '').toList();
       conn.respondTo(env.id, {
         'ok': true,
         'indices': result,
@@ -124,7 +128,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     }
   }
 
-  Future<void> _showGeneric(BuildContext ctx, env) async {
+  Future<void> _showGeneric(BuildContext ctx, Envelope env) async {
     // Generic free-text fallback for unknown kinds.
     final controller = TextEditingController();
     final text = await showDialog<String?>(
@@ -135,7 +139,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(env.body['message']?.toString() ?? env.body['kind']?.toString() ?? ''),
+            Text(env.body['message']?.toString() ??
+                env.body['kind']?.toString() ??
+                ''),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
@@ -217,18 +223,22 @@ class _OptionTile extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(label,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
                           if (recommended) ...[
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
                               decoration: BoxDecoration(
                                 color: cs.tertiary.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
                                 'Recommended',
-                                style: TextStyle(fontSize: 10, color: cs.tertiary),
+                                style:
+                                    TextStyle(fontSize: 10, color: cs.tertiary),
                               ),
                             ),
                           ],

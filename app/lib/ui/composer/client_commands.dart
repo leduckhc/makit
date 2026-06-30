@@ -71,7 +71,8 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
         if (!context.mounted) return;
         context.go('/session/$newId');
       } catch (e) {
-        messenger.showSnackBar(SnackBar(content: Text('Could not spawn session: $e')));
+        messenger.showSnackBar(
+            SnackBar(content: Text('Could not spawn session: $e')));
       }
     },
   ),
@@ -131,7 +132,8 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ),
   ClientCommand(
     name: 'ask',
-    description: 'Debug: ask the server to ask you a question (round-trip test)',
+    description:
+        'Debug: ask the server to ask you a question (round-trip test)',
     handler: (context, ref, {required sessionId}) async {
       try {
         await ref.read(connectionControllerProvider.notifier).request(

@@ -13,7 +13,9 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
-        leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => context.go('/')),
+        leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.go('/')),
       ),
       body: ListView(
         children: [
@@ -25,7 +27,9 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.dns_outlined),
             title: const Text('Server'),
-            subtitle: Text(conn.useFake ? 'Dev fake server (in-process)' : conn.server?.host ?? 'not paired'),
+            subtitle: Text(conn.useFake
+                ? 'Dev fake server (in-process)'
+                : conn.server?.host ?? 'not paired'),
           ),
           const ListTile(
             leading: Icon(Icons.notifications_outlined),
@@ -40,7 +44,8 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text('Unpair this device', style: TextStyle(color: Colors.red)),
+            title: const Text('Unpair this device',
+                style: TextStyle(color: Colors.red)),
             onTap: () async {
               await ref.read(connectionControllerProvider.notifier).unpair();
               if (context.mounted) context.go('/pair');

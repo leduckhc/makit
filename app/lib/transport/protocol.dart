@@ -81,7 +81,8 @@ class Envelope {
       t: t,
       id: m['id'] as String? ?? '',
       v: m['v'] as int? ?? protocolVersion,
-      body: Map<String, dynamic>.from(m)..removeWhere((k, _) => k == 'v' || k == 't' || k == 'id'),
+      body: Map<String, dynamic>.from(m)
+        ..removeWhere((k, _) => k == 'v' || k == 't' || k == 'id'),
     );
   }
 }

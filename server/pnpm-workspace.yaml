@@ -1,0 +1,40 @@
+# pnpm workspace + security settings. See SECURITY.md.
+
+# Refuse to install any package whose lifecycle/build script is not on the
+# allowBuilds list below. Hard failure, not a warning.
+strictDepBuilds: true
+
+# Reject transitive deps that pull git/tarball sources.
+blockExoticSubdeps: true
+
+# 7-day cooldown — refuse to install a version published less than 7 days
+# ago. Catches the typical malicious-publish window.
+minimumReleaseAge: 10080
+
+# Bypass list — only for packages where waiting 7 days is impractical
+# (typescript, @types/*). Add new entries with a one-line justification.
+minimumReleaseAgeExclude:
+  - typescript
+  - "@types/node"
+  - "@types/qrcode-terminal"
+  - "@types/ws"
+
+# Lifecycle-script allow-list. Each entry is a security review: confirm the
+# script doesn't phone home or write to $HOME on install.
+allowBuilds:
+  # esbuild is a transitive of `tsx`. Postinstall downloads a platform-
+  # specific native binary from npm. Widely audited, low risk.
+  esbuild: true
+
+# Refuse downgrades from provenance-published versions (Trusted Publisher
+# signal). Early indicator of account compromise.
+trustPolicy: no-downgrade
+
+# Targeted bypasses for trustPolicy. Each entry is a security review.
+trustPolicyExclude:
+  # `@types/node@22.20.0` pulls `undici-types@6.21.0` (2 years old, no
+  # provenance) while later versions had provenance. Pinning to this
+  # specific selector means a future genuine downgrade still trips the
+  # policy. Revisit when @types/node ships a build that doesn't depend on
+  # the un-provenanced undici-types release.
+  - "undici-types@6.21.0"

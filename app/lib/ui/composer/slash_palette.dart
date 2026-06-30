@@ -5,7 +5,8 @@ import 'client_commands.dart';
 
 /// Built-in client commands as `SlashCmd`s, fed into the palette so they
 /// list alongside agent-provided commands.
-List<SlashCmd> get _builtins => clientCommands.map((c) => c.toSlashCmd()).toList();
+List<SlashCmd> get _builtins =>
+    clientCommands.map((c) => c.toSlashCmd()).toList();
 
 class SlashPalette extends StatelessWidget {
   const SlashPalette({
@@ -22,7 +23,9 @@ class SlashPalette extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Strip the leading '/' from the filter, lowercase for matching.
-    final q = filter.startsWith('/') ? filter.substring(1).toLowerCase() : filter.toLowerCase();
+    final q = filter.startsWith('/')
+        ? filter.substring(1).toLowerCase()
+        : filter.toLowerCase();
 
     // Combine builtins + agent-provided commands, dedup by name, filter.
     final all = <SlashCmd>[..._builtins, ...commands];
@@ -32,7 +35,9 @@ class SlashPalette extends StatelessWidget {
       if (seen.contains(c.name)) continue;
       seen.add(c.name);
       // Match if the query appears anywhere in name or description (fuzzy enough for v1).
-      if (q.isEmpty || c.name.toLowerCase().contains(q) || c.description.toLowerCase().contains(q)) {
+      if (q.isEmpty ||
+          c.name.toLowerCase().contains(q) ||
+          c.description.toLowerCase().contains(q)) {
         matches.add(c);
       }
     }
@@ -45,6 +50,7 @@ class SlashPalette extends StatelessWidget {
         if (n.contains(q)) return 1;
         return 2;
       }
+
       final s = score(a).compareTo(score(b));
       return s != 0 ? s : a.name.compareTo(b.name);
     });
@@ -56,7 +62,8 @@ class SlashPalette extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Padding(
             padding: EdgeInsets.all(12),
-            child: Text('No matching commands. Skills appear once pi finishes loading.'),
+            child: Text(
+                'No matching commands. Skills appear once pi finishes loading.'),
           ),
         ),
       );
@@ -69,7 +76,8 @@ class SlashPalette extends StatelessWidget {
         child: ListView.builder(
           shrinkWrap: true,
           itemCount: matches.length,
-          itemBuilder: (context, i) => _CmdTile(cmd: matches[i], onPick: onPick),
+          itemBuilder: (context, i) =>
+              _CmdTile(cmd: matches[i], onPick: onPick),
         ),
       ),
     );

@@ -21,7 +21,8 @@ class PinoApp extends ConsumerWidget {
       darkTheme: pinoDarkTheme,
       themeMode: ThemeMode.system,
       routerConfig: router,
-      builder: (context, child) => SrvRequestHandler(child: child ?? const SizedBox()),
+      builder: (context, child) =>
+          SrvRequestHandler(child: child ?? const SizedBox()),
       debugShowCheckedModeBanner: false,
     );
   }

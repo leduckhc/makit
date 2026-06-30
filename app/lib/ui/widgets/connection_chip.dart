@@ -45,8 +45,7 @@ class ConnectionChip extends ConsumerWidget {
           color: Colors.orange,
           icon: Icons.sync_problem_outlined,
           label: 'Reconnecting',
-          onTap: () =>
-              ref.read(connectionControllerProvider.notifier).retry(),
+          onTap: () => ref.read(connectionControllerProvider.notifier).retry(),
         );
       case WsState.closed:
       case WsState.idle:
@@ -55,8 +54,7 @@ class ConnectionChip extends ConsumerWidget {
           color: cs.error,
           icon: Icons.cloud_off_outlined,
           label: 'Offline',
-          onTap: () =>
-              ref.read(connectionControllerProvider.notifier).retry(),
+          onTap: () => ref.read(connectionControllerProvider.notifier).retry(),
         );
       case WsState.connected:
         // Connected but lastError is set (e.g. mDNS rediscovery failed

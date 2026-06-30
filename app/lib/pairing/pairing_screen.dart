@@ -24,12 +24,14 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   }
 
   void _refresh() {
-    setState(() { _browse = browseLan(); });
+    setState(() {
+      _browse = browseLan();
+    });
   }
 
   Future<void> _pair(PairInfo info) async {
     final messenger = ScaffoldMessenger.of(context);
-    showDialog(
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
@@ -68,8 +70,11 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           maxLines: 3,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Pair')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Pair')),
         ],
       ),
     );
@@ -137,28 +142,32 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               if (servers.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.all(16),
-                  child: Text('No servers found. Make sure `pino serve` is running on the same Wi-Fi.'),
+                  child: Text(
+                      'No servers found. Make sure `pino serve` is running on the same Wi-Fi.'),
                 );
               }
               return Column(
-                children: servers.map((s) => Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.dns_outlined),
-                    title: Text(s.name),
-                    subtitle: Text('${s.host}:${s.port}\nfp ${_short(s.fingerprint)}'),
-                    isThreeLine: true,
-                    trailing: const Icon(Icons.qr_code_scanner),
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                              'Found via mDNS. Still need to scan the QR to get a pairing token.'),
-                        ),
-                      );
-                      _scanQr();
-                    },
-                  ),
-                )).toList(),
+                children: servers
+                    .map((s) => Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.dns_outlined),
+                            title: Text(s.name),
+                            subtitle: Text(
+                                '${s.host}:${s.port}\nfp ${_short(s.fingerprint)}'),
+                            isThreeLine: true,
+                            trailing: const Icon(Icons.qr_code_scanner),
+                            onTap: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Found via mDNS. Still need to scan the QR to get a pairing token.'),
+                                ),
+                              );
+                              _scanQr();
+                            },
+                          ),
+                        ))
+                    .toList(),
               );
             },
           ),
@@ -170,7 +179,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Dev mode', style: Theme.of(context).textTheme.titleSmall),
+                  Text('Dev mode',
+                      style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: 4),
                   const Text(
                     'Skip pairing and open the app with seeded fake data. Useful for UI iteration when no server is around.',
@@ -178,7 +188,9 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   const SizedBox(height: 8),
                   FilledButton.tonal(
                     onPressed: () {
-                      ref.read(connectionControllerProvider.notifier).useFakeServer();
+                      ref
+                          .read(connectionControllerProvider.notifier)
+                          .useFakeServer();
                       context.go('/');
                     },
                     child: const Text('Open with fake data'),
@@ -192,5 +204,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     );
   }
 
-  String _short(String fp) => fp.length > 16 ? '${fp.substring(0, 8)}…${fp.substring(fp.length - 8)}' : fp;
+  String _short(String fp) => fp.length > 16
+      ? '${fp.substring(0, 8)}…${fp.substring(fp.length - 8)}'
+      : fp;
 }

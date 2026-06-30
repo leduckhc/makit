@@ -90,45 +90,68 @@ class FakeServer {
     // Push projects.
     final projects = <String, Map<String, dynamic>>{};
     for (final s in _sessions.values) {
-      projects.putIfAbsent(s.projectId, () => {
-            'id': s.projectId,
-            'name': s.projectName,
-            'path': s.projectPath,
-            'pinned': true,
-            'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
-          },);
+      projects.putIfAbsent(
+        s.projectId,
+        () => {
+          'id': s.projectId,
+          'name': s.projectName,
+          'path': s.projectPath,
+          'pinned': true,
+          'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
     }
-    _emit(Envelope(t: MsgType.event, id: Ulid().toString(), body: {
-      'kind': 'projects.snapshot',
-      'projects': projects.values.toList(),
-    },),);
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {
+          'kind': 'projects.snapshot',
+          'projects': projects.values.toList(),
+        },
+      ),
+    );
 
     // Push session list summaries.
-    _emit(Envelope(t: MsgType.event, id: Ulid().toString(), body: {
-      'kind': 'sessions.snapshot',
-      'sessions': _sessions.values
-          .map((s) => {
-                'id': s.id,
-                'projectId': s.projectId,
-                'agent': s.agent,
-                'title': s.title,
-                'status': s.status,
-                'policy': 'ask-on-risky',
-                'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
-                'lastPreview': s.preview,
-              },)
-          .toList(),
-    },),);
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {
+          'kind': 'sessions.snapshot',
+          'sessions': _sessions.values
+              .map(
+                (s) => {
+                  'id': s.id,
+                  'projectId': s.projectId,
+                  'agent': s.agent,
+                  'title': s.title,
+                  'status': s.status,
+                  'policy': 'ask-on-risky',
+                  'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+                  'lastPreview': s.preview,
+                },
+              )
+              .toList(),
+        },
+      ),
+    );
   }
 
   void _replaySession(String sessionId) {
     final s = _sessions[sessionId];
     if (s == null) return;
     for (final e in s.events) {
-      _emit(Envelope(t: MsgType.event, id: Ulid().toString(), body: {
-        'kind': 'session.event',
-        'event': e.toJson(),
-      },),);
+      _emit(
+        Envelope(
+          t: MsgType.event,
+          id: Ulid().toString(),
+          body: {
+            'kind': 'session.event',
+            'event': e.toJson(),
+          },
+        ),
+      );
     }
   }
 
@@ -137,7 +160,8 @@ class FakeServer {
     final sid = env.body['sessionId'] as String? ?? '';
     final session = _sessions[sid];
     if (session == null) {
-      _emit(Envelope(t: MsgType.err, id: env.id, body: {'message': 'no such session'}));
+      _emit(Envelope(
+          t: MsgType.err, id: env.id, body: {'message': 'no such session'}));
       return;
     }
 
@@ -168,7 +192,8 @@ class FakeServer {
     });
   }
 
-  void _appendEvent(_FakeSession s, EventKind kind, Map<String, dynamic> payload) {
+  void _appendEvent(
+      _FakeSession s, EventKind kind, Map<String, dynamic> payload) {
     final ev = SessionEvent(
       seq: s.events.length + 1,
       sessionId: s.id,
@@ -177,10 +202,16 @@ class FakeServer {
       payload: payload,
     );
     s.events.add(ev);
-    _emit(Envelope(t: MsgType.event, id: Ulid().toString(), body: {
-      'kind': 'session.event',
-      'event': ev.toJson(),
-    },),);
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {
+          'kind': 'session.event',
+          'event': ev.toJson(),
+        },
+      ),
+    );
   }
 
   void _emit(Envelope env) {
@@ -192,12 +223,14 @@ class FakeServer {
   List<SessionEvent> _scriptCodex(String sid) {
     int seq = 0;
     int ts = DateTime.now().millisecondsSinceEpoch - 60000;
-    SessionEvent ev(EventKind k, Map<String, dynamic> p) =>
-        SessionEvent(seq: ++seq, sessionId: sid, ts: ts += 1000, kind: k, payload: p);
+    SessionEvent ev(EventKind k, Map<String, dynamic> p) => SessionEvent(
+        seq: ++seq, sessionId: sid, ts: ts += 1000, kind: k, payload: p);
     return [
-      ev(EventKind.userMessage, {'text': 'Wire up the pairing screen with mDNS discovery.'}),
+      ev(EventKind.userMessage,
+          {'text': 'Wire up the pairing screen with mDNS discovery.'}),
       ev(EventKind.agentMessage, {
-        'text': 'I will inspect the current pairing module, then add an mDNS browse list.',
+        'text':
+            'I will inspect the current pairing module, then add an mDNS browse list.',
       }),
       ev(EventKind.toolCallStart, {
         'callId': 'c1',
@@ -205,7 +238,8 @@ class FakeServer {
         'args': {'path': 'app/lib/pairing/pairing_screen.dart'},
         'risk': 'safe',
       }),
-      ev(EventKind.toolCallEnd, {'callId': 'c1', 'exitCode': 0, 'summary': '74 lines read'}),
+      ev(EventKind.toolCallEnd,
+          {'callId': 'c1', 'exitCode': 0, 'summary': '74 lines read'}),
       ev(EventKind.toolCallStart, {
         'callId': 'c2',
         'name': 'edit',
@@ -213,7 +247,11 @@ class FakeServer {
         'risk': 'risky',
       }),
       ev(EventKind.toolCallDelta, {'callId': 'c2', 'chunk': '+12 −3\n'}),
-      ev(EventKind.toolCallEnd, {'callId': 'c2', 'exitCode': 0, 'summary': 'edit src/foo.dart · +12 −3'}),
+      ev(EventKind.toolCallEnd, {
+        'callId': 'c2',
+        'exitCode': 0,
+        'summary': 'edit src/foo.dart · +12 −3'
+      }),
       ev(EventKind.agentMessage, {'text': 'Done. Ready for the next step.'}),
       ev(EventKind.sessionStatus, {'status': 'awaiting-input'}),
     ];
@@ -222,12 +260,14 @@ class FakeServer {
   List<SessionEvent> _scriptPi(String sid) {
     int seq = 0;
     int ts = DateTime.now().millisecondsSinceEpoch - 120000;
-    SessionEvent ev(EventKind k, Map<String, dynamic> p) =>
-        SessionEvent(seq: ++seq, sessionId: sid, ts: ts += 1500, kind: k, payload: p);
+    SessionEvent ev(EventKind k, Map<String, dynamic> p) => SessionEvent(
+        seq: ++seq, sessionId: sid, ts: ts += 1500, kind: k, payload: p);
     return [
-      ev(EventKind.userMessage, {'text': 'Review docs/ARCHITECTURE.md for inconsistencies.'}),
+      ev(EventKind.userMessage,
+          {'text': 'Review docs/ARCHITECTURE.md for inconsistencies.'}),
       ev(EventKind.agentMessage, {
-        'text': '3 notes:\n1. Wire protocol claims JSON but mentions Noise-IK — clarify those are different layers.\n2. SQLite vs SQLCipher decision is deferred but mentioned in §11.\n3. Mobile uses Riverpod — pin a state-shape convention.',
+        'text':
+            '3 notes:\n1. Wire protocol claims JSON but mentions Noise-IK — clarify those are different layers.\n2. SQLite vs SQLCipher decision is deferred but mentioned in §11.\n3. Mobile uses Riverpod — pin a state-shape convention.',
       }),
       ev(EventKind.sessionStatus, {'status': 'idle'}),
     ];
@@ -236,11 +276,13 @@ class FakeServer {
   List<SessionEvent> _scriptClaude(String sid) {
     int seq = 0;
     int ts = DateTime.now().millisecondsSinceEpoch - 30000;
-    SessionEvent ev(EventKind k, Map<String, dynamic> p) =>
-        SessionEvent(seq: ++seq, sessionId: sid, ts: ts += 1200, kind: k, payload: p);
+    SessionEvent ev(EventKind k, Map<String, dynamic> p) => SessionEvent(
+        seq: ++seq, sessionId: sid, ts: ts += 1200, kind: k, payload: p);
     return [
-      ev(EventKind.userMessage, {'text': 'Fix the tab drag-and-drop regression on macOS 15.'}),
-      ev(EventKind.agentMessage, {'text': 'Suspect Sources/Tabs/TabBar.swift — patching now.'}),
+      ev(EventKind.userMessage,
+          {'text': 'Fix the tab drag-and-drop regression on macOS 15.'}),
+      ev(EventKind.agentMessage,
+          {'text': 'Suspect Sources/Tabs/TabBar.swift — patching now.'}),
       ev(EventKind.toolCallStart, {
         'callId': 'c-approve',
         'name': 'edit',
@@ -250,7 +292,8 @@ class FakeServer {
       ev(EventKind.approvalRequest, {
         'callId': 'c-approve',
         'tool': 'edit',
-        'preview': '─ TabBar.swift ─\n- onDrop(of: ...)\n+ onDrop(of: ...) with allowsDuplicate: false',
+        'preview':
+            '─ TabBar.swift ─\n- onDrop(of: ...)\n+ onDrop(of: ...) with allowsDuplicate: false',
       }),
     ];
   }

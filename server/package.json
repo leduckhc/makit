@@ -3,14 +3,22 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.8.0",
   "bin": {
     "pino": "./dist/index.js"
   },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=11.0.0"
+  },
   "scripts": {
+    "preinstall": "node -e \"const ua=process.env.npm_config_user_agent||'';if(!ua.startsWith('pnpm')){console.error('\\n[pino] Use pnpm: corepack enable && pnpm install\\n');process.exit(1)}\"",
     "dev": "tsx watch src/index.ts serve",
     "start": "tsx src/index.ts serve",
     "build": "tsc -p .",
-    "typecheck": "tsc -p . --noEmit"
+    "typecheck": "tsc -p . --noEmit",
+    "secure:install": "pnpm install --frozen-lockfile",
+    "secure:audit": "pnpm audit --prod"
   },
   "dependencies": {
     "bonjour-service": "^1.2.1",

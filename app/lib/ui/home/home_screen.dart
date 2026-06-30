@@ -85,7 +85,8 @@ class HomeScreen extends ConsumerWidget {
                 ListTile(
                   leading: const Icon(Icons.folder_outlined),
                   title: Text(p.name),
-                  subtitle: Text(p.path, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(p.path,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
                   onTap: () => Navigator.pop(ctx, p),
                 ),
               const SizedBox(height: 8),
@@ -151,7 +152,8 @@ class _ProjectSection extends StatelessWidget {
             children: [
               const Icon(Icons.folder_outlined, size: 18),
               const SizedBox(width: 8),
-              Text(project.name, style: Theme.of(context).textTheme.titleMedium),
+              Text(project.name,
+                  style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(width: 8),
               if (_workingCount(sessions) > 0)
                 _WorkingBadge(count: _workingCount(sessions)),
@@ -232,7 +234,9 @@ class _StatusChip extends StatelessWidget {
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w600)),
     );
   }
 }
@@ -282,7 +286,8 @@ class _WorkingBadgeState extends State<_WorkingBadge>
             child: Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(color: cs.primary, shape: BoxShape.circle),
+              decoration:
+                  BoxDecoration(color: cs.primary, shape: BoxShape.circle),
             ),
           ),
           const SizedBox(width: 6),
@@ -306,10 +311,12 @@ class _GlobalRunningStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final working = sessions.where((s) =>
-        s.status == SessionStatus.running ||
-        s.status == SessionStatus.awaitingInput ||
-        s.status == SessionStatus.awaitingApproval).toList();
+    final working = sessions
+        .where((s) =>
+            s.status == SessionStatus.running ||
+            s.status == SessionStatus.awaitingInput ||
+            s.status == SessionStatus.awaitingApproval)
+        .toList();
     if (working.isEmpty) return const SizedBox.shrink();
 
     final cs = Theme.of(context).colorScheme;

@@ -58,9 +58,12 @@ class _ComposerState extends State<Composer> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.steering && !_showSlash)
-            _SteeringBanner(),
-          if (_showSlash) SlashPalette(filter: _ctrl.text, commands: widget.commands, onPick: _onSlashPicked),
+          if (widget.steering && !_showSlash) _SteeringBanner(),
+          if (_showSlash)
+            SlashPalette(
+                filter: _ctrl.text,
+                commands: widget.commands,
+                onPick: _onSlashPicked),
           Container(
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
             decoration: BoxDecoration(
@@ -78,14 +81,17 @@ class _ComposerState extends State<Composer> {
                 Expanded(
                   child: Shortcuts(
                     shortcuts: const {
-                      SingleActivator(LogicalKeyboardKey.enter, meta: true): _SendIntent(),
+                      SingleActivator(LogicalKeyboardKey.enter, meta: true):
+                          _SendIntent(),
                     },
                     child: Actions(
                       actions: <Type, Action<Intent>>{
-                        _SendIntent: CallbackAction<_SendIntent>(onInvoke: (_) {
-                          _send();
-                          return null;
-                        },),
+                        _SendIntent: CallbackAction<_SendIntent>(
+                          onInvoke: (_) {
+                            _send();
+                            return null;
+                          },
+                        ),
                       },
                       child: TextField(
                         controller: _ctrl,
@@ -95,9 +101,11 @@ class _ComposerState extends State<Composer> {
                         textCapitalization: TextCapitalization.sentences,
                         onChanged: _onChanged,
                         decoration: const InputDecoration(
-                          hintText: 'Message…  (/ for commands,  @ for mentions)',
+                          hintText:
+                              'Message…  (/ for commands,  @ for mentions)',
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                         ),
                       ),
                     ),
@@ -109,7 +117,8 @@ class _ComposerState extends State<Composer> {
                     // TODO(M6): voice dictation.
                   },
                 ),
-                IconButton.filled(icon: const Icon(Icons.arrow_upward), onPressed: _send),
+                IconButton.filled(
+                    icon: const Icon(Icons.arrow_upward), onPressed: _send),
               ],
             ),
           ),
