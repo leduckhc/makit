@@ -31,7 +31,6 @@
     "@types/node": "^22.7.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.5.12",
-    "pi": "^2.0.5",
     "tsx": "^4.19.0",
     "typescript": "^5.5.4"
   }

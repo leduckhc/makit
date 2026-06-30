@@ -21,8 +21,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve as resolvePath } from "node:path";
+// (no path/url imports needed — pi binary is resolved from PATH)
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
 
 export class PiAdapter extends EventEmitter implements AgentAdapter {
@@ -88,11 +87,11 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     for (const ext of this.extensions) {
       args.push("-e", ext);
     }
-    // Use the pi binary bundled in node_modules so all native deps are available.
-    const piBin = resolvePath(
-      dirname(fileURLToPath(import.meta.url)),
-      "../../node_modules/.bin/pi",
-    );
+    // The real pi coding agent (@earendil-works/pi-coding-agent) — resolved
+    // from PATH (e.g. /opt/homebrew/bin/pi) or an explicit override. NOTE: do
+    // NOT use node_modules/.bin/pi — that resolves to the unrelated "pi" npm
+    // package (a trivial stub that just prints "3" and exits).
+    const piBin = process.env.PINO_PI_BIN || "pi";
     const child = spawn(piBin, args, {
       cwd: this.cwd,
       env: { ...process.env, ...this.extraEnv },
