@@ -19,7 +19,8 @@ export interface ManagerOpts {
 export interface BridgeBinding {
   url: string;
   token: string;
-  extensionPath: string;
+  /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
+  extensionPaths: string[];
 }
 
 interface ProjectEntry {
@@ -89,7 +90,7 @@ export class SessionManager {
             PINO_SESSION_ID: session.id,
           }
         : undefined,
-      extensions: this.bridge ? [this.bridge.extensionPath] : [],
+      extensions: this.bridge ? this.bridge.extensionPaths : [],
     });
     this.sessions.set(session.id, session);
     return session;

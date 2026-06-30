@@ -85,14 +85,32 @@ async function main() {
     trustLocalhost: opts.noAuth,
   });
 
-  // Loopback HTTP bridge so the pino-pi extension (loaded inside each pi
-  // process) can ask the phone questions and await answers.
+  // Loopback HTTP bridge so agent connectors (loaded inside each spawned
+  // agent process) can talk back to pino.
   const bridge = await startBridge({ askDevice: ws.askDevice });
-  const extensionPath = resolvePath(
+
+  // Auto-discover every `.ts` connector in `server/connectors/`. Each one
+  // gets loaded into the spawned `pi --mode rpc` process via `-e`. To add
+  // a new agent, drop a file there — no code changes needed in pino.
+  const connectorsDir = resolvePath(
     dirname(fileURLToPath(import.meta.url)),
-    "../extensions/pino-pi.ts",
+    "../connectors",
   );
-  manager.setBridge({ url: bridge.url, token: bridge.token, extensionPath });
+  const { readdirSync, existsSync } = await import("node:fs");
+  const extensionPaths = existsSync(connectorsDir)
+    ? readdirSync(connectorsDir)
+        .filter((f) => f.endsWith(".ts"))
+        .map((f) => resolvePath(connectorsDir, f))
+    : [];
+  if (extensionPaths.length === 0) {
+    console.log("[pino] no agent connectors found in", connectorsDir);
+  } else {
+    console.log(
+      `[pino] loading ${extensionPaths.length} connector(s):`,
+      extensionPaths.map((p) => p.split("/").pop()).join(", "),
+    );
+  }
+  manager.setBridge({ url: bridge.url, token: bridge.token, extensionPaths });
 
   await manager.ensureDefaultSessions();
 
