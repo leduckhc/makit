@@ -12,42 +12,36 @@
  *                        subscribed clients
  *
  * To write a new connector for another agent (claude / codex / piano):
- *   1. Copy this file.
- *   2. Replace `registerTool({...})` calls with the equivalent in your
- *      agent's extension API.
- *   3. In each tool's execute(), translate the agent-native params into
- *      one of the canonical UICall variants from `../src/uicall.ts`.
- *   4. Drop the file in `server/connectors/` — pino auto-loads everything
- *      there into the spawned agent.
+ *   1. Copy this file into server/connectors/.
+ *   2. Replace the registerTool({...}) calls with your agent's equivalent.
+ *   3. In execute(), translate the agent-native params into one of the
+ *      canonical UICall variants from `../src/uicall.ts`.
+ *   4. pino auto-loads every `.ts` file in server/connectors/.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { AskMultipleChoice, UICallResponse } from "../src/uicall.js";
+import type { UICall, UIResponse } from "../src/uicall.js";
 
 const BRIDGE_URL = process.env.PINO_BRIDGE_URL;
 const BRIDGE_TOKEN = process.env.PINO_BRIDGE_TOKEN;
 const SESSION_ID = process.env.PINO_SESSION_ID;
 
 /** Post a UICall to the loopback bridge, await the user's response. */
-async function uicall(call: AskMultipleChoice): Promise<UICallResponse> {
-  const res = await fetch(`${BRIDGE_URL}/ask`, {
+async function uicall(call: UICall): Promise<UIResponse> {
+  const res = await fetch(`${BRIDGE_URL}/uicall`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${BRIDGE_TOKEN}`,
     },
-    body: JSON.stringify({
-      sessionId: SESSION_ID,
-      timeoutMs: 10 * 60 * 1000,
-      ...call,
-    }),
+    body: JSON.stringify({ sessionId: SESSION_ID, ...call }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`pino-pi: bridge returned ${res.status}: ${text}`);
   }
-  return (await res.json()) as UICallResponse;
+  return (await res.json()) as UIResponse;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -85,34 +79,24 @@ export default function (pi: ExtensionAPI) {
       ),
     }),
     async execute(_toolCallId, params) {
-      // pi's native schema already matches the canonical AskMultipleChoice
-      // questions shape — just forward.
-      const response = await uicall({
-        kind: "askMultipleChoice",
+      const resp = await uicall({
+        kind: "askUserQuestion",
         questions: params.questions,
       });
-      if (response.ok === false) {
+      if (resp.kind !== "askUserQuestion") {
         return {
-          content: [
-            {
-              type: "text",
-              text: response.cancelled
-                ? "(user cancelled)"
-                : `(error: ${response.error ?? "unknown"})`,
-            },
-          ],
-          details: { cancelled: !!response.cancelled },
+          content: [{ type: "text", text: "(error: wrong response kind)" }],
+          details: resp,
         };
       }
-      const answers = Array.isArray(response.answers) ? response.answers : [];
-      const lines = answers.map((a, i) => {
-        const q = (params.questions[i] as { question: string } | undefined)?.question ?? `Q${i + 1}`;
-        const text = Array.isArray(a) ? (a as string[]).join(", ") : String(a);
-        return `Q: ${q}\nA: ${text}`;
+      // Format as readable Q/A pairs for the agent.
+      const lines = resp.answers.map((a, i) => {
+        const q = params.questions[i]?.question ?? `Q${i + 1}`;
+        return `Q: ${q}\nA: ${a}`;
       });
       return {
         content: [{ type: "text", text: lines.join("\n\n") }],
-        details: response,
+        details: resp,
       };
     },
   });

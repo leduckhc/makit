@@ -87,7 +87,15 @@ async function main() {
 
   // Loopback HTTP bridge so agent connectors (loaded inside each spawned
   // agent process) can talk back to pino.
-  const bridge = await startBridge({ askDevice: ws.askDevice });
+  // The ws server's askDevice returns the raw envelope; the bridge wants a
+  // typed UIResponse. Unwrap the envelope body here.
+  const bridge = await startBridge({
+    askDevice: async (body) => {
+      const { sessionId, ...rest } = body;
+      const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
+      return env.body as import("./uicall.js").UIResponse;
+    },
+  });
 
   // Auto-discover every `.ts` connector in `server/connectors/`. Each one
   // gets loaded into the spawned `pi --mode rpc` process via `-e`. To add

@@ -57,10 +57,20 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     if (kind == 'askUserQuestion') {
       final questions = _normaliseQuestions(env.body);
       if (questions.isEmpty) {
-        _respond(env.id, {'ok': false, 'error': 'no questions'});
+        _respond(env.id, {
+          'kind': 'askUserQuestion',
+          'indices': <int>[],
+          'answers': <String>[],
+          'error': 'no questions',
+        });
         return;
       }
       await _showAskUserQuestion(navCtx, env.id, questions);
+      return;
+    }
+
+    if (kind == 'confirmAction') {
+      await _showConfirmAction(navCtx, env.id, env.body);
       return;
     }
 
@@ -111,6 +121,55 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
       'answers': result,
       // Convenience for the single-question case.
       'answer': questions.length == 1 ? result.first : result,
+    });
+  }
+
+  Future<void> _showConfirmAction(
+    BuildContext ctx,
+    String requestId,
+    Map<String, dynamic> body,
+  ) async {
+    final approved = await showDialog<bool>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dctx) => AlertDialog(
+        title: Text(body['title']?.toString() ?? 'Confirm'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(body['message']?.toString() ?? ''),
+            if (body['preview'] != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(dctx).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: SelectableText(
+                  body['preview'].toString(),
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Deny'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+    _respond(requestId, {
+      'kind': 'confirmAction',
+      'approved': approved ?? false,
     });
   }
 

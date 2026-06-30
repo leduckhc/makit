@@ -1,220 +1,154 @@
-# Agent Connectors — The pino Adapter Protocol
+# Agent connectors
 
-**Goal:** Any developer can write an adapter (connector) for their agent without forking pino code. Connectors run in-process alongside agents and translate their native tool schemas into a canonical language pino understands.
+pino is **agent-agnostic** by design. Different coding agents — pi, codex,
+claude-code, custom wrappers like piano — have their own tool schemas and
+extension APIs. To bridge any of them into pino's mobile UI, you write a
+small per-agent **connector**.
+
+A connector translates the agent's native tool calls into pino's canonical
+`UICall` schema. The phone app speaks `UICall` and nothing else, so once
+the connector exists, every pino client (current and future) can drive that
+agent without code changes.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│   Agent Process                     │
-│   (pi, codex, claude, piano, etc.)  │
-│                                     │
-│  ┌─────────────────────────────┐   │
-│  │ Agent Connector             │   │
-│  │ (pino-pi.ts, pino-codex.ts) │   │
-│  │                             │   │
-│  │ Native Tool Params          │   │
-│  │      ↓                      │   │
-│  │ UICall (canonical)          │   │
-│  │      ↓                      │   │
-│  │ HTTP POST to bridge         │   │
-│  └─────────────────────────────┘   │
-└──────────────────┬──────────────────┘
-                   │
-         ┌─────────▼──────────┐
-         │ Loopback Bridge    │ http://127.0.0.1:PORT/uicall
-         │ (bridge.ts)        │ ± Bearer token
-         └──────────┬─────────┘
-                    │
-   ┌────────────────▼────────────────┐
-   │ pino Server                     │
-   │                                 │
-   │ srv.request(UICall)             │
-   │      ↓                          │
-   │ WS → app                        │
-   │                                 │
-   └─────────────────────────────────┘
-          ▲              │
-          │              ▼
-          │     ┌─────────────────────┐
-          │     │ Flutter App         │
-          │     │                     │
-          │     │ srv.request         │
-          │     │   → showDialog      │
-          │     │                     │
-          │     │ User picks answer   │
-          │     │   → respondTo       │
-          │     └─────────────────────┘
-          │
-     srv.response(UIResponse)
-          │
-     HTTP POST ←─────┘
-          │
-   ┌──────▼──────────────┐
-   │ Agent Connector     │
-   │                     │
-   │ Parse UIResponse    │
-   │ → callback(answer)  │
-   │                     │
-   └─────────────────────┘
-          │
-          └─→ Agent tool returns answer
+┌────────────────────────────────────────────────────────────────┐
+│   Agent (pi / codex / claude / piano)                          │
+│   speaks its own native tool API                               │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ tool.execute(params)
+                           ▼
+┌────────────────────────────────────────────────────────────────┐
+│   Agent connector  ── server/connectors/<your-agent>.ts        │
+│   maps native params → canonical UICall variant                │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ POST /uicall  (loopback HTTPS, Bearer)
+                           ▼
+┌────────────────────────────────────────────────────────────────┐
+│   pino bridge  ── server/src/bridge.ts                         │
+│   forwards to askDevice() → srv.request envelope               │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ WSS srv.request {kind, ...}
+                           ▼
+┌────────────────────────────────────────────────────────────────┐
+│   pino app  ── SrvRequestHandler dispatches on `kind`          │
+│   renders the appropriate Material dialog                      │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ WSS srv.response (same id)
+                           ▼
+                       back through the same chain to the agent
 ```
 
-## The Canonical Schemas
+## The canonical `UICall` schema
 
-### UICall — Agent → Connector → Bridge → Server → App
+Defined in [`server/src/uicall.ts`](../server/src/uicall.ts). The mirror
+on the app side is the dispatcher in
+[`app/lib/ui/widgets/srv_request_handler.dart`](../app/lib/ui/widgets/srv_request_handler.dart).
 
-```typescript
-export type UICall =
-  | AskUserQuestionCall
-  | ConfirmActionCall;
+Currently supported `kind`s:
 
-export interface AskUserQuestionCall {
-  kind: "askUserQuestion";
-  questions: {
-    header?: string;
-    question: string;
-    options: {
-      label: string;
-      description?: string;
-    }[];
-    multi?: boolean;
-    recommended?: number;
-  }[];
+| `kind`              | Use case                                  | Response shape                                              |
+| ------------------- | ----------------------------------------- | ----------------------------------------------------------- |
+| `askUserQuestion`   | 1–4 multi-choice questions in a wizard    | `{ indices: number[], answers: string[], answer?: string }` |
+| `confirmAction`     | Approve/deny a risky action               | `{ approved: boolean }`                                     |
+
+Adding a new variant:
+
+1. Add the interface to `server/src/uicall.ts` (TypeScript side).
+2. Add a `_show…` method in `SrvRequestHandler._dispatch` (Flutter side).
+3. Document it here.
+4. Add a widget test in `app/test/ask_wizard_test.dart` (or a new file
+   following the same pattern).
+
+## Writing a connector
+
+The working example is [`server/connectors/pino-pi.ts`](../server/connectors/pino-pi.ts).
+A drop-in template lives at [`server/connectors/pino-piano.ts`](../server/connectors/pino-piano.ts).
+
+A connector is a TypeScript file with a `default export` function that
+receives the agent's extension API. The function registers tools that:
+
+1. Take agent-native parameters.
+2. Translate them into a canonical `UICall`.
+3. POST that to the bridge.
+4. Translate the `UIResponse` back into whatever shape the agent expects.
+
+Minimum viable connector:
+
+```ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
+import type { UICall, UIResponse } from "../src/uicall.js";
+
+const BRIDGE_URL = process.env.PINO_BRIDGE_URL!;
+const BRIDGE_TOKEN = process.env.PINO_BRIDGE_TOKEN!;
+const SESSION_ID = process.env.PINO_SESSION_ID;
+
+async function uicall(call: UICall): Promise<UIResponse> {
+  const res = await fetch(`${BRIDGE_URL}/uicall`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${BRIDGE_TOKEN}`,
+    },
+    body: JSON.stringify({ sessionId: SESSION_ID, ...call }),
+  });
+  if (!res.ok) throw new Error(`bridge: ${res.status}`);
+  return (await res.json()) as UIResponse;
 }
 
-export interface ConfirmActionCall {
-  kind: "confirmAction";
-  title: string;
-  message: string;
-  preview?: string;
-  action: string;
-}
-```
+export default function (api: ExtensionAPI) {
+  if (!BRIDGE_URL || !BRIDGE_TOKEN) return;
 
-### UIResponse — App → Bridge → Connector → Agent
-
-```typescript
-export type UIResponse =
-  | AskUserQuestionResponse
-  | ConfirmActionResponse;
-
-export interface AskUserQuestionResponse {
-  kind: "askUserQuestion";
-  indices: number[];
-  answers: string[];
-  answer?: string;
-}
-
-export interface ConfirmActionResponse {
-  kind: "confirmAction";
-  approved: boolean;
+  api.registerTool({
+    name: "my_tool",
+    label: "…",
+    description: "…",
+    parameters: Type.Object({ /* … */ }),
+    async execute(_id, params) {
+      const resp = await uicall({ kind: "askUserQuestion", questions: [/* … */] });
+      // …translate `resp` into your agent's expected return shape…
+      return { content: [{ type: "text", text: "ok" }], details: resp };
+    },
+  });
 }
 ```
 
-## Writing a Connector
+## Loading
 
-### 1. File structure
+Connectors are **auto-discovered** at server startup. Anything matching
+`server/connectors/*.ts` is passed to every spawned agent process via
+`pi -e <path>`. No code changes in pino itself.
+
+You'll see this in the server log:
 
 ```
-server/connectors/
-  pino-pi.ts          ← for pi agent
-  pino-codex.ts       ← for codex agent
-  pino-claude.ts      ← for claude agent
-  pino-piano.ts       ← for Milan's piano agent
+[pino] loading 2 connector(s): pino-pi.ts, pino-piano.ts
 ```
 
-### 2. Export a factory function
+## Environment contract
 
-The server auto-discovers and loads all `.ts` files in `server/connectors/`:
+Each connector runs **inside** the agent's process. pino injects three env
+vars when it spawns the agent:
 
-```typescript
-// server/connectors/pino-codex.ts
+| Variable             | Purpose                                                                      |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `PINO_BRIDGE_URL`    | Loopback HTTP bridge base URL, e.g. `http://127.0.0.1:54321`                 |
+| `PINO_BRIDGE_TOKEN`  | Bearer for the bridge — random per server start                              |
+| `PINO_SESSION_ID`    | pino's sessionId — routes `srv.request` to the right subscribed phones       |
 
-import { type UICall } from "../src/uicall.js";
+If a connector loads without these set (e.g. you ran `pi` standalone),
+it should be a silent no-op — see the `if (!BRIDGE_URL)` guard.
 
-/**
- * When the server spawns a Codex session, it injects PINO_BRIDGE_URL +
- * PINO_BRIDGE_TOKEN into the process env. This connector picks them up and
- * registers a tool with Codex. When Codex calls the tool, we translate its
- * params to a UICall, POST to the bridge, and await the user's response.
- */
-export async function setupCodexConnector(agentCwd: string): Promise<void> {
-  const bridgeUrl = process.env.PINO_BRIDGE_URL!;
-  const bridgeToken = process.env.PINO_BRIDGE_TOKEN!;
-  const sessionId = process.env.PINO_SESSION_ID;
+## Security
 
-  // Register a tool with Codex (pseudocode):
-  // await codex.registerTool({
-  //   name: "ask_user",
-  //   handler: async (params) => {
-  //     const uicall: UICall = {
-  //       kind: "askUserQuestion",
-  //       questions: [{
-  //         question: params.question,
-  //         options: params.options.map((o) => ({
-  //           label: o,
-  //           description: undefined,
-  //         })),
-  //       }],
-  //     };
-  //     const resp = await fetch(`${bridgeUrl}/uicall`, {
-  //       method: "POST",
-  //       headers: { Authorization: `Bearer ${bridgeToken}` },
-  //       body: JSON.stringify({ ...uicall, sessionId }),
-  //     });
-  //     const answer = await resp.json() as UIResponse;
-  //     if (answer.kind !== "askUserQuestion") throw new Error("schema mismatch");
-  //     return answer.answers[0];
-  //   },
-  // });
-}
-```
-
-### 3. Contract with the server
-
-- **On startup:** server calls `setupConnectorName(cwd)` with the agent process working directory
-- **In-process:** connector registers a tool/hook with its agent
-- **On tool call:** connector translates native params → `UICall`, POSTs to bridge, awaits `UIResponse`
-- **Return:** connector unpacks `UIResponse` and feeds it back to the agent
-- **On error:** connector should gracefully handle timeouts, network failures, dismissed dialogs, and invalid responses
-
-## Examples
-
-See:
-- [`server/connectors/pino-pi.ts`](./pino-pi.ts) — pi's standard tool call → UICall mapping
-- [`server/connectors/pino-piano.ts`](./pino-piano.ts) — minimal skeleton for Milan's piano agent
-
-## Adding a New UICall Kind
-
-If no existing `kind` (like `askUserQuestion`) fits your agent's needs:
-
-1. **Define the schema** in `server/src/uicall.ts`:
-   ```typescript
-   export interface MyNewUICall {
-     kind: "myNewKind";
-     foo: string;
-     bar?: number;
-   }
-   ```
-
-2. **Define the response** in `server/src/uicall.ts`:
-   ```typescript
-   export interface MyNewResponse {
-     kind: "myNewKind";
-     chosen: string;
-   }
-   ```
-
-3. **Add a renderer** in `app/lib/ui/widgets/srv_request_handler.dart`:
-   ```dart
-   case "myNewKind":
-     return _MyNewKindDialog(env: env, onResponse: onResponse);
-   ```
-
-4. **Test the round-trip** with a debug endpoint (see `server/src/server.ts` → `debug.ask` for the pattern)
-
----
-
-**Design principle:** The canonical schema is the contract. Agents and app evolve independently as long as they respect UICall/UIResponse. No pino library dependency required to write a connector — just HTTP + JSON.
+- **Loopback only.** The bridge listens on `127.0.0.1` and never on the
+  LAN interface. Token is required on every request.
+- **Token rotates** on every pino server start.
+- **Connector code runs with the agent's full permissions.** Treat it
+  like server code you wrote, not like a third-party library. Review
+  diffs.
+- **No state in the connector.** Each request to the bridge is
+  independent. The bridge's job is just to fan the question to whichever
+  phones are currently subscribed to the session.
