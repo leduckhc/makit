@@ -34,10 +34,19 @@ SIM_NAME="iPhone 17"
 SERVER_LOG="$(mktemp -t pino-e2e-server.XXXXXX.log)"
 SERVER_PID=""
 
+APP_BUNDLE_ID="dev.pino.pino"
+
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+  # Uninstall the test app so its seeded stub pairing (PINO_TEST_* written into
+  # the simulator keychain by test_bootstrap) never leaks into a manual
+  # `flutter run` session. Without this, the next live app boots trying to
+  # reach the dead stub server instead of the user's real paired server.
+  if [[ -n "${SIM_ID:-}" ]]; then
+    xcrun simctl uninstall "$SIM_ID" "$APP_BUNDLE_ID" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM
