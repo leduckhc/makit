@@ -11,10 +11,15 @@ import { basename } from "node:path";
 import { PiAdapter } from "./adapters/pi.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
-
 export interface ManagerOpts {
   /** Project roots to expose. */
   projects: string[];
+}
+
+export interface BridgeBinding {
+  url: string;
+  token: string;
+  extensionPath: string;
 }
 
 interface ProjectEntry {
@@ -24,6 +29,7 @@ interface ProjectEntry {
 export class SessionManager {
   private readonly projects = new Map<string, ProjectEntry>();
   private readonly sessions = new Map<string, Session>();
+  private bridge?: BridgeBinding;
 
   constructor(opts: ManagerOpts) {
     for (const path of opts.projects) {
@@ -53,19 +59,37 @@ export class SessionManager {
     return this.sessions.get(id);
   }
 
+  /** Set the loopback bridge so subsequently-spawned pi sessions can use
+   *  the pino-pi extension for AskUserQuestion round-trip. */
+  setBridge(bridge: BridgeBinding) {
+    this.bridge = bridge;
+  }
+
   /** Spawn a fresh pi session inside `projectId`. */
   async spawnPiSession(projectId: string, title?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
 
+    // Create the session first so we have an id to thread into the bridge.
     const adapter = new PiAdapter();
-    await adapter.start({ cwd: project.dto.path });
-
     const session = new Session({
       projectId,
       agent: "pi",
       title: title ?? "pi session",
       adapter,
+    });
+
+    await adapter.start({
+      cwd: project.dto.path,
+      sessionId: session.id,
+      env: this.bridge
+        ? {
+            PINO_BRIDGE_URL: this.bridge.url,
+            PINO_BRIDGE_TOKEN: this.bridge.token,
+            PINO_SESSION_ID: session.id,
+          }
+        : undefined,
+      extensions: this.bridge ? [this.bridge.extensionPath] : [],
     });
     this.sessions.set(session.id, session);
     return session;

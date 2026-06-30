@@ -13,6 +13,12 @@ export interface SpawnOpts {
   cwd: string;
   /** Optional initial system prompt or model overrides. */
   systemPrompt?: string;
+  /** Extra env vars for the spawned process (e.g. PINO_BRIDGE_*). */
+  env?: Record<string, string>;
+  /** Paths to pi extensions to load via `-e`. */
+  extensions?: string[];
+  /** Session id used for routing reverse-RPC. */
+  sessionId?: string;
 }
 
 export interface UserInput {

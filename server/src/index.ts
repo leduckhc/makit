@@ -22,6 +22,9 @@ import { resolve } from "node:path";
 import qrcode from "qrcode-terminal";
 import { SessionManager } from "./manager.js";
 import { startWsServer } from "./server.js";
+import { startBridge } from "./bridge.js";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve as resolvePath } from "node:path";
 import { loadOrCreateCert, localIPv4s } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
@@ -72,9 +75,8 @@ async function main() {
   }
 
   const manager = new SessionManager({ projects: opts.projects });
-  await manager.ensureDefaultSessions();
 
-  startWsServer({
+  const ws = startWsServer({
     host: opts.host,
     port: opts.port,
     manager,
@@ -82,6 +84,17 @@ async function main() {
     registry,
     trustLocalhost: opts.noAuth,
   });
+
+  // Loopback HTTP bridge so the pino-pi extension (loaded inside each pi
+  // process) can ask the phone questions and await answers.
+  const bridge = await startBridge({ askDevice: ws.askDevice });
+  const extensionPath = resolvePath(
+    dirname(fileURLToPath(import.meta.url)),
+    "../extensions/pino-pi.ts",
+  );
+  manager.setBridge({ url: bridge.url, token: bridge.token, extensionPath });
+
+  await manager.ensureDefaultSessions();
 
   const mdns = new MdnsAd();
   mdns.start({ port: opts.port, fingerprint: cert.fingerprint });

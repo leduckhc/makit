@@ -29,6 +29,8 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   private cwd = process.cwd();
   private piSessionId = randomUUID();
   private child?: ChildProcess;
+  private extraEnv: Record<string, string> = {};
+  private extensions: string[] = [];
 
   /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
   private isStreaming = false;
@@ -38,6 +40,8 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
   async start(opts: SpawnOpts): Promise<void> {
     this.cwd = opts.cwd;
+    this.extraEnv = opts.env ?? {};
+    this.extensions = opts.extensions ?? [];
     await this.ensureProcess();
     this.emit("status", "idle");
   }
@@ -79,9 +83,12 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     if (this.child && !this.child.killed) return;
 
     const args = ["--mode", "rpc", "--session-id", this.piSessionId];
+    for (const ext of this.extensions) {
+      args.push("-e", ext);
+    }
     const child = spawn("pi", args, {
       cwd: this.cwd,
-      env: process.env,
+      env: { ...process.env, ...this.extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;
