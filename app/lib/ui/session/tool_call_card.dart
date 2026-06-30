@@ -44,8 +44,10 @@ class ToolCallCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(item.name,
-                          style: Theme.of(context).textTheme.titleSmall),
+                      Text(
+                        item.name,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                       const SizedBox(width: 8),
                       if (running)
                         const SizedBox(
@@ -56,8 +58,11 @@ class ToolCallCard extends StatelessWidget {
                       else if (failed)
                         Icon(Icons.error_outline, size: 14, color: cs.error)
                       else
-                        Icon(Icons.check_circle_outline,
-                            size: 14, color: cs.primary),
+                        Icon(
+                          Icons.check_circle_outline,
+                          size: 14,
+                          color: cs.primary,
+                        ),
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -67,10 +72,9 @@ class ToolCallCard extends StatelessWidget {
                         _previewArgs(item.args),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(fontFamily: 'monospace'),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
                   ),
                 ],
               ),

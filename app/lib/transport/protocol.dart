@@ -26,20 +26,20 @@ enum MsgType {
   srvResponse;
 
   String get wire => switch (this) {
-        MsgType.hello => 'hello',
-        MsgType.helloAck => 'hello.ack',
-        MsgType.sub => 'sub',
-        MsgType.unsub => 'unsub',
-        MsgType.event => 'event',
-        MsgType.cmd => 'cmd',
-        MsgType.ack => 'ack',
-        MsgType.err => 'err',
-        MsgType.presence => 'presence',
-        MsgType.ping => 'ping',
-        MsgType.pong => 'pong',
-        MsgType.srvRequest => 'srv.request',
-        MsgType.srvResponse => 'srv.response',
-      };
+    MsgType.hello => 'hello',
+    MsgType.helloAck => 'hello.ack',
+    MsgType.sub => 'sub',
+    MsgType.unsub => 'unsub',
+    MsgType.event => 'event',
+    MsgType.cmd => 'cmd',
+    MsgType.ack => 'ack',
+    MsgType.err => 'err',
+    MsgType.presence => 'presence',
+    MsgType.ping => 'ping',
+    MsgType.pong => 'pong',
+    MsgType.srvRequest => 'srv.request',
+    MsgType.srvResponse => 'srv.response',
+  };
 
   static MsgType? fromWire(String s) {
     for (final v in MsgType.values) {
@@ -63,12 +63,7 @@ class Envelope {
   final int v;
   final Map<String, dynamic> body;
 
-  Map<String, dynamic> toJson() => {
-        'v': v,
-        't': t.wire,
-        'id': id,
-        ...body,
-      };
+  Map<String, dynamic> toJson() => {'v': v, 't': t.wire, 'id': id, ...body};
 
   String encode() => jsonEncode(toJson());
 
@@ -105,18 +100,18 @@ enum EventKind {
   sessionCommands;
 
   String get wire => switch (this) {
-        EventKind.userMessage => 'user.message',
-        EventKind.agentMessage => 'agent.message',
-        EventKind.agentThinking => 'agent.thinking',
-        EventKind.toolCallStart => 'tool.call.start',
-        EventKind.toolCallDelta => 'tool.call.delta',
-        EventKind.toolCallEnd => 'tool.call.end',
-        EventKind.approvalRequest => 'approval.request',
-        EventKind.approvalDecision => 'approval.decision',
-        EventKind.sessionStatus => 'session.status',
-        EventKind.sessionError => 'session.error',
-        EventKind.sessionCommands => 'session.commands',
-      };
+    EventKind.userMessage => 'user.message',
+    EventKind.agentMessage => 'agent.message',
+    EventKind.agentThinking => 'agent.thinking',
+    EventKind.toolCallStart => 'tool.call.start',
+    EventKind.toolCallDelta => 'tool.call.delta',
+    EventKind.toolCallEnd => 'tool.call.end',
+    EventKind.approvalRequest => 'approval.request',
+    EventKind.approvalDecision => 'approval.decision',
+    EventKind.sessionStatus => 'session.status',
+    EventKind.sessionError => 'session.error',
+    EventKind.sessionCommands => 'session.commands',
+  };
 
   static EventKind? fromWire(String s) {
     for (final v in EventKind.values) {
@@ -168,12 +163,12 @@ enum CmdKind {
   setApprovalPolicy;
 
   String get wire => switch (this) {
-        CmdKind.sendMessage => 'send.message',
-        CmdKind.approve => 'approve',
-        CmdKind.deny => 'deny',
-        CmdKind.cancel => 'cancel',
-        CmdKind.spawnSession => 'session.spawn',
-        CmdKind.killSession => 'session.kill',
-        CmdKind.setApprovalPolicy => 'session.policy',
-      };
+    CmdKind.sendMessage => 'send.message',
+    CmdKind.approve => 'approve',
+    CmdKind.deny => 'deny',
+    CmdKind.cancel => 'cancel',
+    CmdKind.spawnSession => 'session.spawn',
+    CmdKind.killSession => 'session.kill',
+    CmdKind.setApprovalPolicy => 'session.policy',
+  };
 }

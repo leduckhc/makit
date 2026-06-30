@@ -15,11 +15,12 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
 
-typedef ClientCmdHandler = Future<void> Function(
-  BuildContext context,
-  WidgetRef ref, {
-  required String sessionId,
-});
+typedef ClientCmdHandler =
+    Future<void> Function(
+      BuildContext context,
+      WidgetRef ref, {
+      required String sessionId,
+    });
 
 class ClientCommand {
   const ClientCommand({
@@ -72,7 +73,8 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
         context.go('/session/$newId');
       } catch (e) {
         messenger.showSnackBar(
-            SnackBar(content: Text('Could not spawn session: $e')));
+          SnackBar(content: Text('Could not spawn session: $e')),
+        );
       }
     },
   ),
@@ -85,7 +87,9 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
           MsgType.cmd,
           {'kind': 'cancel', 'sessionId': sessionId},
         );
-      } catch (_) {/* best-effort */}
+      } catch (_) {
+        /* best-effort */
+      }
     },
   ),
   ClientCommand(
@@ -140,7 +144,9 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
           MsgType.cmd,
           {'kind': 'debug.ask', 'sessionId': sessionId},
         );
-      } catch (_) {/* best-effort */}
+      } catch (_) {
+        /* best-effort */
+      }
     },
   ),
 ];

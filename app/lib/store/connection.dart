@@ -42,22 +42,22 @@ class PairedServer {
   String get wssUrl => 'wss://$host:$port';
 
   Map<String, dynamic> toJson() => {
-        'host': host,
-        'port': port,
-        'fingerprint': fingerprint,
-        'bearer': bearer,
-        'label': label,
-        if (mdnsName != null) 'mdnsName': mdnsName,
-      };
+    'host': host,
+    'port': port,
+    'fingerprint': fingerprint,
+    'bearer': bearer,
+    'label': label,
+    if (mdnsName != null) 'mdnsName': mdnsName,
+  };
 
   static PairedServer fromJson(Map<String, dynamic> j) => PairedServer(
-        host: j['host'] as String,
-        port: j['port'] as int,
-        fingerprint: j['fingerprint'] as String,
-        bearer: j['bearer'] as String,
-        label: j['label'] as String? ?? 'server',
-        mdnsName: j['mdnsName'] as String?,
-      );
+    host: j['host'] as String,
+    port: j['port'] as int,
+    fingerprint: j['fingerprint'] as String,
+    bearer: j['bearer'] as String,
+    label: j['label'] as String? ?? 'server',
+    mdnsName: j['mdnsName'] as String?,
+  );
 }
 
 class PinoConnState {
@@ -82,13 +82,12 @@ class PinoConnState {
     String? lastError,
     bool clearError = false,
     bool clearServer = false,
-  }) =>
-      PinoConnState(
-        server: clearServer ? null : (server ?? this.server),
-        wsState: wsState ?? this.wsState,
-        useFake: useFake ?? this.useFake,
-        lastError: clearError ? null : (lastError ?? this.lastError),
-      );
+  }) => PinoConnState(
+    server: clearServer ? null : (server ?? this.server),
+    wsState: wsState ?? this.wsState,
+    useFake: useFake ?? this.useFake,
+    lastError: clearError ? null : (lastError ?? this.lastError),
+  );
 }
 
 const _kPairedServerKey = 'paired_server';
@@ -121,15 +120,19 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   Future<void> _boot() async {
     if (_wsUrl.isNotEmpty) {
       // Dev override: connect directly, no pairing.
-      await _attachReal(_wsUrl,
-          fingerprint: _wsFp.isEmpty ? null : _wsFp, helloBody: const {});
+      await _attachReal(
+        _wsUrl,
+        fingerprint: _wsFp.isEmpty ? null : _wsFp,
+        helloBody: const {},
+      );
       return;
     }
     final raw = await _storage.read(key: _kPairedServerKey);
     if (raw != null) {
       try {
-        final server =
-            PairedServer.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+        final server = PairedServer.fromJson(
+          jsonDecode(raw) as Map<String, dynamic>,
+        );
         state = state.copyWith(server: server);
         await _connectPaired(server);
         return;
@@ -178,10 +181,12 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       if (state.wsState == WsState.connected) return;
 
       debugPrint(
-          '[pino] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…');
+        '[pino] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
+      );
       final found = await browseLan(timeout: const Duration(seconds: 4));
-      final matches =
-          found.where((d) => d.fingerprint == server.fingerprint).toList();
+      final matches = found
+          .where((d) => d.fingerprint == server.fingerprint)
+          .toList();
       if (matches.isEmpty) {
         debugPrint('[pino] no mDNS match for stored fingerprint.');
         state = state.copyWith(
@@ -193,7 +198,8 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       if (match.host == server.host && match.port == server.port) return;
 
       debugPrint(
-          '[pino] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}');
+        '[pino] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
+      );
       final updated = PairedServer(
         host: match.host,
         port: match.port,
@@ -203,7 +209,9 @@ class ConnectionController extends StateNotifier<PinoConnState> {
         mdnsName: server.mdnsName,
       );
       await _storage.write(
-          key: _kPairedServerKey, value: jsonEncode(updated.toJson()));
+        key: _kPairedServerKey,
+        value: jsonEncode(updated.toJson()),
+      );
       state = state.copyWith(server: updated, clearError: true);
       await _attachReal(
         updated.wssUrl,
@@ -241,7 +249,10 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       state = state.copyWith(wsState: s, useFake: false);
     });
     state = state.copyWith(
-        useFake: false, wsState: WsState.connecting, clearError: true);
+      useFake: false,
+      wsState: WsState.connecting,
+      clearError: true,
+    );
     await ws.connect(url, helloBody: helloBody, pinnedFingerprint: fingerprint);
   }
 
@@ -261,21 +272,25 @@ class ConnectionController extends StateNotifier<PinoConnState> {
         final bearer = env.body['bearer'] as String?;
         if (bearer == null) {
           completer.completeError(
-              StateError('server did not return a bearer token'));
+            StateError('server did not return a bearer token'),
+          );
           return;
         }
-        completer.complete(PairedServer(
-          host: info.host,
-          port: info.port,
-          fingerprint: info.fingerprint,
-          bearer: bearer,
-          label: label,
-          mdnsName:
-              'pino._tcp.local', // Store the service name for future mDNS resolution.
-        ));
+        completer.complete(
+          PairedServer(
+            host: info.host,
+            port: info.port,
+            fingerprint: info.fingerprint,
+            bearer: bearer,
+            label: label,
+            mdnsName:
+                'pino._tcp.local', // Store the service name for future mDNS resolution.
+          ),
+        );
       } else if (env.t == MsgType.err) {
         completer.completeError(
-            StateError(env.body['message'] as String? ?? 'pair failed'));
+          StateError(env.body['message'] as String? ?? 'pair failed'),
+        );
       }
     });
 
@@ -289,20 +304,24 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     );
 
     // Race with a 15s timeout.
-    final result = await completer.future.timeout(
-      const Duration(seconds: 15),
-      onTimeout: () {
-        throw TimeoutException('pairing timed out');
-      },
-    ).whenComplete(() async {
-      await frameSub.cancel();
-      await stateSub.cancel();
-      await ws.close();
-    });
+    final result = await completer.future
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            throw TimeoutException('pairing timed out');
+          },
+        )
+        .whenComplete(() async {
+          await frameSub.cancel();
+          await stateSub.cancel();
+          await ws.close();
+        });
 
     // Persist + switch the live connection over to the new paired creds.
     await _storage.write(
-        key: _kPairedServerKey, value: jsonEncode(result.toJson()));
+      key: _kPairedServerKey,
+      value: jsonEncode(result.toJson()),
+    );
     state = state.copyWith(server: result, clearError: true);
     await _attachReal(
       result.wssUrl,
@@ -325,14 +344,17 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       } else if (frame.t == MsgType.err) {
         if (!completer.isCompleted) {
           completer.completeError(
-              StateError(frame.body['message'] as String? ?? 'error'));
+            StateError(frame.body['message'] as String? ?? 'error'),
+          );
         }
       }
     });
     send(env);
     return completer.future
-        .timeout(const Duration(seconds: 10),
-            onTimeout: () => throw TimeoutException('$t request timed out'))
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => throw TimeoutException('$t request timed out'),
+        )
         .whenComplete(() => sub.cancel());
   }
 
@@ -366,21 +388,26 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   }
 }
 
-final _secureStorageProvider =
-    Provider<FlutterSecureStorage>((_) => const FlutterSecureStorage());
+final _secureStorageProvider = Provider<FlutterSecureStorage>(
+  (_) => const FlutterSecureStorage(),
+);
 
 final connectionControllerProvider =
     StateNotifierProvider<ConnectionController, PinoConnState>((ref) {
-  return ConnectionController(ref.watch(_secureStorageProvider));
-});
+      return ConnectionController(ref.watch(_secureStorageProvider));
+    });
 
-final connectionProvider =
-    Provider<PinoConnState>((ref) => ref.watch(connectionControllerProvider));
+final connectionProvider = Provider<PinoConnState>(
+  (ref) => ref.watch(connectionControllerProvider),
+);
 
 final connectionListenableProvider = Provider<Listenable>((ref) {
-  final notifier =
-      ValueNotifier<PinoConnState>(ref.read(connectionControllerProvider));
+  final notifier = ValueNotifier<PinoConnState>(
+    ref.read(connectionControllerProvider),
+  );
   ref.listen<PinoConnState>(
-      connectionControllerProvider, (_, next) => notifier.value = next);
+    connectionControllerProvider,
+    (_, next) => notifier.value = next,
+  );
   return notifier;
 });

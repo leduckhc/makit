@@ -12,8 +12,8 @@ version: 0.1.0
 environment:
   # Flutter 3.22.0+ ships TLS hardening (badCertificateCallback contract)
   # that the cert-pinning transport relies on. Don't relax this.
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.22.0"
+  sdk: ">=3.10.0 <4.0.0"
+  flutter: ">=3.38.0"  # multicast_dns 0.3.3+ requires Flutter 3.38
 
 dependencies:
   flutter:
@@ -36,7 +36,7 @@ dependencies:
   # Pinned exactly: native code = supply-chain blast radius. Bump deliberately
   # after reading the plugin's CHANGELOG and re-running `tool/audit.sh`.
   flutter_secure_storage: 9.2.2  # iOS Keychain / Android Keystore — bearer storage
-  multicast_dns: 0.3.2+6         # publisher: flutter.dev — parses LAN multicast UDP
+  multicast_dns: 0.3.3+1         # publisher: flutter.dev — parses LAN multicast UDP
 
 dev_dependencies:
   flutter_test:
@@ -45,7 +45,7 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   build_runner: ^2.4.11
   freezed: ^2.5.7
-  json_serializable: ^6.8.0
+  json_serializable: ^6.9.5
 
 flutter:
   uses-material-design: true

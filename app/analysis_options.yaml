@@ -28,7 +28,7 @@ linter:
     avoid_print: true                       # don't leak data via stdout
     avoid_web_libraries_in_flutter: true    # no dart:html in app code
     secure_pubspec_urls: true               # https-only urls in pubspec
-    unsafe_html: true                       # SafeHtml in any web bits
+    # `unsafe_html` was removed in Dart 3.7; SafeHtml is now the only path
     use_build_context_synchronously: true   # no stale-context after await
 
     # — Correctness / null safety —

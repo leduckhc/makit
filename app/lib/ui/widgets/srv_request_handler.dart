@@ -31,21 +31,21 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
 
   void _subscribe() {
     _sub?.cancel();
-    _sub = ref.read(connectionControllerProvider.notifier).srvRequests.listen(
-      (env) async {
-        final kind = env.body['kind'] as String? ?? 'unknown';
-        final ctx = context;
-        if (!ctx.mounted) return;
+    _sub = ref.read(connectionControllerProvider.notifier).srvRequests.listen((
+      env,
+    ) async {
+      final kind = env.body['kind'] as String? ?? 'unknown';
+      final ctx = context;
+      if (!ctx.mounted) return;
 
-        switch (kind) {
-          case 'askUserQuestion':
-            await _showAskUserQuestion(ctx, env);
-            return;
-          default:
-            await _showGeneric(ctx, env);
-        }
-      },
-    );
+      switch (kind) {
+        case 'askUserQuestion':
+          await _showAskUserQuestion(ctx, env);
+          return;
+        default:
+          await _showGeneric(ctx, env);
+      }
+    });
   }
 
   Future<void> _showAskUserQuestion(BuildContext ctx, Envelope env) async {
@@ -117,8 +117,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     if (result == null) {
       conn.respondTo(env.id, {'ok': false, 'cancelled': true});
     } else {
-      final answers =
-          result.map((i) => options[i]['label']?.toString() ?? '').toList();
+      final answers = result
+          .map((i) => options[i]['label']?.toString() ?? '')
+          .toList();
       conn.respondTo(env.id, {
         'ok': true,
         'indices': result,
@@ -139,9 +140,11 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(env.body['message']?.toString() ??
-                env.body['kind']?.toString() ??
-                ''),
+            Text(
+              env.body['message']?.toString() ??
+                  env.body['kind']?.toString() ??
+                  '',
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
@@ -223,22 +226,27 @@ class _OptionTile extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Text(label,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(
+                            label,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           if (recommended) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: cs.tertiary.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
                                 'Recommended',
-                                style:
-                                    TextStyle(fontSize: 10, color: cs.tertiary),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: cs.tertiary,
+                                ),
                               ),
                             ),
                           ],

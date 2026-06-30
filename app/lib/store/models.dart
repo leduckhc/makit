@@ -59,27 +59,27 @@ enum SessionStatus {
   awaitingInput,
   awaitingApproval,
   error,
-  exited
+  exited,
 }
 
 SessionStatus parseStatus(String s) => switch (s) {
-      'idle' => SessionStatus.idle,
-      'running' => SessionStatus.running,
-      'awaiting-input' => SessionStatus.awaitingInput,
-      'awaiting-approval' => SessionStatus.awaitingApproval,
-      'error' => SessionStatus.error,
-      'exited' => SessionStatus.exited,
-      _ => SessionStatus.idle,
-    };
+  'idle' => SessionStatus.idle,
+  'running' => SessionStatus.running,
+  'awaiting-input' => SessionStatus.awaitingInput,
+  'awaiting-approval' => SessionStatus.awaitingApproval,
+  'error' => SessionStatus.error,
+  'exited' => SessionStatus.exited,
+  _ => SessionStatus.idle,
+};
 
 enum ApprovalPolicy { yolo, askOnRisky, askAlways }
 
 ApprovalPolicy parsePolicy(String s) => switch (s) {
-      'yolo' => ApprovalPolicy.yolo,
-      'ask-on-risky' => ApprovalPolicy.askOnRisky,
-      'ask-always' => ApprovalPolicy.askAlways,
-      _ => ApprovalPolicy.askOnRisky,
-    };
+  'yolo' => ApprovalPolicy.yolo,
+  'ask-on-risky' => ApprovalPolicy.askOnRisky,
+  'ask-always' => ApprovalPolicy.askAlways,
+  _ => ApprovalPolicy.askOnRisky,
+};
 
 class Session {
   Session({
@@ -108,17 +108,16 @@ class Session {
     String? title,
     int? lastActivityAt,
     String? lastPreview,
-  }) =>
-      Session(
-        id: id,
-        projectId: projectId,
-        agent: agent,
-        title: title ?? this.title,
-        status: status ?? this.status,
-        policy: policy ?? this.policy,
-        lastActivityAt: lastActivityAt ?? this.lastActivityAt,
-        lastPreview: lastPreview ?? this.lastPreview,
-      );
+  }) => Session(
+    id: id,
+    projectId: projectId,
+    agent: agent,
+    title: title ?? this.title,
+    status: status ?? this.status,
+    policy: policy ?? this.policy,
+    lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+    lastPreview: lastPreview ?? this.lastPreview,
+  );
 }
 
 /// A folded view of the event stream — what the chat list actually renders.
@@ -166,19 +165,18 @@ class ToolCallItem extends ChatItem {
     bool? ended,
     int? exitCode,
     String? summary,
-  }) =>
-      ToolCallItem(
-        seq: seq,
-        ts: ts,
-        callId: callId,
-        name: name,
-        args: args,
-        risk: risk,
-        deltas: deltas ?? this.deltas,
-        ended: ended ?? this.ended,
-        exitCode: exitCode ?? this.exitCode,
-        summary: summary ?? this.summary,
-      );
+  }) => ToolCallItem(
+    seq: seq,
+    ts: ts,
+    callId: callId,
+    name: name,
+    args: args,
+    risk: risk,
+    deltas: deltas ?? this.deltas,
+    ended: ended ?? this.ended,
+    exitCode: exitCode ?? this.exitCode,
+    summary: summary ?? this.summary,
+  );
 }
 
 class ApprovalRequestItem extends ChatItem {
@@ -213,11 +211,21 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
   for (final e in events) {
     switch (e.kind) {
       case EventKind.userMessage:
-        items.add(UserMessageItem(
-            seq: e.seq, ts: e.ts, text: e.payload['text'] as String? ?? ''));
+        items.add(
+          UserMessageItem(
+            seq: e.seq,
+            ts: e.ts,
+            text: e.payload['text'] as String? ?? '',
+          ),
+        );
       case EventKind.agentMessage:
-        items.add(AgentMessageItem(
-            seq: e.seq, ts: e.ts, text: e.payload['text'] as String? ?? ''));
+        items.add(
+          AgentMessageItem(
+            seq: e.seq,
+            ts: e.ts,
+            text: e.payload['text'] as String? ?? '',
+          ),
+        );
       case EventKind.agentThinking:
         // M0: ignore reasoning trace; could render as a faint card later.
         break;
@@ -228,8 +236,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ts: e.ts,
           callId: callId,
           name: e.payload['name'] as String? ?? 'tool',
-          args:
-              Map<String, dynamic>.from(e.payload['args'] as Map? ?? const {}),
+          args: Map<String, dynamic>.from(
+            e.payload['args'] as Map? ?? const {},
+          ),
           risk: e.payload['risk'] as String? ?? 'safe',
         );
         byCall[callId] = items.length;
@@ -240,7 +249,8 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         if (idx != null && items[idx] is ToolCallItem) {
           final cur = items[idx] as ToolCallItem;
           items[idx] = cur.copyWith(
-              deltas: [...cur.deltas, e.payload['chunk'] as String? ?? '']);
+            deltas: [...cur.deltas, e.payload['chunk'] as String? ?? ''],
+          );
         }
       case EventKind.toolCallEnd:
         final callId = e.payload['callId'] as String;
@@ -287,10 +297,13 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         // Handled at session level, not as chat item.
         break;
       case EventKind.sessionError:
-        items.add(ErrorItem(
+        items.add(
+          ErrorItem(
             seq: e.seq,
             ts: e.ts,
-            message: e.payload['message'] as String? ?? 'error'));
+            message: e.payload['message'] as String? ?? 'error',
+          ),
+        );
       case EventKind.sessionCommands:
         // Handled by store, not as a chat item.
         break;

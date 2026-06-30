@@ -71,10 +71,13 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Pair')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Pair'),
+          ),
         ],
       ),
     );
@@ -82,9 +85,9 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
     final info = PairInfo.tryParse(url);
     if (info == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not a pino pairing URL.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not a pino pairing URL.')));
       return;
     }
     await _pair(info);
@@ -125,8 +128,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           const SizedBox(height: 24),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text('On this network',
-                style: Theme.of(context).textTheme.titleSmall),
+            child: Text(
+              'On this network',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
           ),
           const SizedBox(height: 8),
           FutureBuilder<List<DiscoveredServer>>(
@@ -143,30 +148,35 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                 return const Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
-                      'No servers found. Make sure `pino serve` is running on the same Wi-Fi.'),
+                    'No servers found. Make sure `pino serve` is running on the same Wi-Fi.',
+                  ),
                 );
               }
               return Column(
                 children: servers
-                    .map((s) => Card(
-                          child: ListTile(
-                            leading: const Icon(Icons.dns_outlined),
-                            title: Text(s.name),
-                            subtitle: Text(
-                                '${s.host}:${s.port}\nfp ${_short(s.fingerprint)}'),
-                            isThreeLine: true,
-                            trailing: const Icon(Icons.qr_code_scanner),
-                            onTap: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                      'Found via mDNS. Still need to scan the QR to get a pairing token.'),
-                                ),
-                              );
-                              _scanQr();
-                            },
+                    .map(
+                      (s) => Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.dns_outlined),
+                          title: Text(s.name),
+                          subtitle: Text(
+                            '${s.host}:${s.port}\nfp ${_short(s.fingerprint)}',
                           ),
-                        ))
+                          isThreeLine: true,
+                          trailing: const Icon(Icons.qr_code_scanner),
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Found via mDNS. Still need to scan the QR to get a pairing token.',
+                                ),
+                              ),
+                            );
+                            _scanQr();
+                          },
+                        ),
+                      ),
+                    )
                     .toList(),
               );
             },
@@ -179,8 +189,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Dev mode',
-                      style: Theme.of(context).textTheme.titleSmall),
+                  Text(
+                    'Dev mode',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
                   const SizedBox(height: 4),
                   const Text(
                     'Skip pairing and open the app with seeded fake data. Useful for UI iteration when no server is around.',

@@ -61,9 +61,10 @@ class _ComposerState extends State<Composer> {
           if (widget.steering && !_showSlash) _SteeringBanner(),
           if (_showSlash)
             SlashPalette(
-                filter: _ctrl.text,
-                commands: widget.commands,
-                onPick: _onSlashPicked),
+              filter: _ctrl.text,
+              commands: widget.commands,
+              onPick: _onSlashPicked,
+            ),
           Container(
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
             decoration: BoxDecoration(
@@ -104,8 +105,10 @@ class _ComposerState extends State<Composer> {
                           hintText:
                               'Message…  (/ for commands,  @ for mentions)',
                           border: InputBorder.none,
-                          contentPadding:
-                              EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 12,
+                          ),
                         ),
                       ),
                     ),
@@ -118,7 +121,9 @@ class _ComposerState extends State<Composer> {
                   },
                 ),
                 IconButton.filled(
-                    icon: const Icon(Icons.arrow_upward), onPressed: _send),
+                  icon: const Icon(Icons.arrow_upward),
+                  onPressed: _send,
+                ),
               ],
             ),
           ),

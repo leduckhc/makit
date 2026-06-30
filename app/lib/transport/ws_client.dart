@@ -70,10 +70,13 @@ class WsClient {
     final c = Completer<Envelope>();
     _pending[id] = c;
     _send(env);
-    return c.future.timeout(const Duration(seconds: 30), onTimeout: () {
-      _pending.remove(id);
-      throw TimeoutException('request $id timed out');
-    });
+    return c.future.timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        _pending.remove(id);
+        throw TimeoutException('request $id timed out');
+      },
+    );
   }
 
   void send(MsgType t, Map<String, dynamic> body) {
@@ -113,10 +116,13 @@ class WsClient {
       cancelOnError: true,
     );
 
-    _send(Envelope(t: MsgType.hello, id: Ulid().toString(), body: {
-      ..._helloBody,
-      'resumeFrom': _resumeCursors,
-    }));
+    _send(
+      Envelope(
+        t: MsgType.hello,
+        id: Ulid().toString(),
+        body: {..._helloBody, 'resumeFrom': _resumeCursors},
+      ),
+    );
 
     _attempt = 0;
     _setState(WsState.connected);
@@ -132,13 +138,14 @@ class WsClient {
     if (uri.scheme == 'wss' && _pinnedFingerprint != null) {
       // Custom HttpClient that pins the server cert fingerprint instead of
       // requiring CA trust. dart:io exposes the X.509 DER via `cert.der`.
-      final client =
-          HttpClient(context: SecurityContext(withTrustedRoots: false));
+      final client = HttpClient(
+        context: SecurityContext(withTrustedRoots: false),
+      );
       client.badCertificateCallback =
           (X509Certificate cert, String host, int port) {
-        final fp = _hexSha256(cert.der);
-        return fp == _pinnedFingerprint;
-      };
+            final fp = _hexSha256(cert.der);
+            return fp == _pinnedFingerprint;
+          };
       // Allow short-lived connection upgrade.
       return IOWebSocketChannel.connect(uri, customClient: client);
     }
@@ -160,7 +167,8 @@ class WsClient {
     if (pending != null && (env.t == MsgType.ack || env.t == MsgType.err)) {
       if (env.t == MsgType.err) {
         pending.completeError(
-            StateError(env.body['message'] as String? ?? 'error'));
+          StateError(env.body['message'] as String? ?? 'error'),
+        );
       } else {
         pending.complete(env);
       }

@@ -48,8 +48,10 @@ class _QrScannerScreenState extends State<QrScannerScreen> {
       setState(() => _error = e.message ?? 'Scanner failed');
     } on MissingPluginException {
       if (!mounted) return;
-      setState(() => _error =
-          'Camera scanner not available on this platform — use "Paste pairing URL" instead.');
+      setState(
+        () => _error =
+            'Camera scanner not available on this platform — use "Paste pairing URL" instead.',
+      );
     }
   }
 

@@ -86,10 +86,7 @@ class ConnectionChip extends ConsumerWidget {
             SizedBox(
               width: 12,
               height: 12,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: color,
-              ),
+              child: CircularProgressIndicator(strokeWidth: 2, color: color),
             )
           else
             Icon(icon, size: 14, color: color),

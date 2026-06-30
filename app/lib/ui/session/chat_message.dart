@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 class ChatBubble extends StatelessWidget {
   const ChatBubble._({required this.text, required this.isUser});
   const ChatBubble.user({required String text})
-      : this._(text: text, isUser: true);
+    : this._(text: text, isUser: true);
   const ChatBubble.agent({required String text})
-      : this._(text: text, isUser: false);
+    : this._(text: text, isUser: false);
 
   final String text;
   final bool isUser;
@@ -18,8 +18,9 @@ class ChatBubble extends StatelessWidget {
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.82,
+        ),
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -32,10 +33,7 @@ class ChatBubble extends StatelessWidget {
               bottomRight: Radius.circular(isUser ? 4 : 14),
             ),
           ),
-          child: SelectableText(
-            text,
-            style: TextStyle(color: fg),
-          ),
+          child: SelectableText(text, style: TextStyle(color: fg)),
         ),
       ),
     );

@@ -39,9 +39,9 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
         .incoming
         .listen(_onFrame);
     // Kick off a subscribe-all once connected. Fake server pushes snapshots on hello.
-    _ref.read(connectionControllerProvider.notifier).send(
-          Envelope(t: MsgType.hello, id: 'boot', body: {}),
-        );
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(Envelope(t: MsgType.hello, id: 'boot', body: {}));
   }
 
   final Ref _ref;
@@ -85,7 +85,8 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
         state = state.copyWith(sessions: list);
       case 'session.event':
         final ev = SessionEvent.fromJson(
-            Map<String, dynamic>.from(env.body['event'] as Map));
+          Map<String, dynamic>.from(env.body['event'] as Map),
+        );
         if (ev == null) return;
         _appendEvent(ev);
     }
@@ -139,17 +140,29 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
       );
     }
 
-    state =
-        state.copyWith(events: events, cursors: cursors, sessions: sessions);
+    state = state.copyWith(
+      events: events,
+      cursors: cursors,
+      sessions: sessions,
+    );
   }
 
   void subscribeSession(String sessionId) {
-    _ref.read(connectionControllerProvider.notifier).send(Envelope(
-        t: MsgType.sub, id: 's-$sessionId', body: {'sessionId': sessionId}));
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.sub,
+            id: 's-$sessionId',
+            body: {'sessionId': sessionId},
+          ),
+        );
   }
 
   void sendMessage(String sessionId, String text) {
-    _ref.read(connectionControllerProvider.notifier).send(
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
           Envelope(
             t: MsgType.cmd,
             id: 'm-${DateTime.now().microsecondsSinceEpoch}',
@@ -179,7 +192,9 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
   }
 
   void approve(String sessionId, String callId, {required bool ok}) {
-    _ref.read(connectionControllerProvider.notifier).send(
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
           Envelope(
             t: MsgType.cmd,
             id: 'a-${DateTime.now().microsecondsSinceEpoch}',
@@ -209,12 +224,12 @@ class _StoreSnapshot {
   });
 
   factory _StoreSnapshot.empty() => _StoreSnapshot(
-        projects: const [],
-        sessions: const [],
-        events: const {},
-        cursors: const {},
-        commands: const {},
-      );
+    projects: const [],
+    sessions: const [],
+    events: const {},
+    cursors: const {},
+    commands: const {},
+  );
 
   final List<Project> projects;
   final List<Session> sessions;
@@ -230,19 +245,19 @@ class _StoreSnapshot {
     Map<String, List<SessionEvent>>? events,
     Map<String, int>? cursors,
     Map<String, List<SlashCmd>>? commands,
-  }) =>
-      _StoreSnapshot(
-        projects: projects ?? this.projects,
-        sessions: sessions ?? this.sessions,
-        events: events ?? this.events,
-        cursors: cursors ?? this.cursors,
-        commands: commands ?? this.commands,
-      );
+  }) => _StoreSnapshot(
+    projects: projects ?? this.projects,
+    sessions: sessions ?? this.sessions,
+    events: events ?? this.events,
+    cursors: cursors ?? this.cursors,
+    commands: commands ?? this.commands,
+  );
 }
 
 final storeControllerProvider =
     StateNotifierProvider<StoreController, _StoreSnapshot>(
-        (ref) => StoreController(ref));
+      (ref) => StoreController(ref),
+    );
 
 final projectsProvider = Provider<ProjectsState>((ref) {
   final s = ref.watch(storeControllerProvider);
@@ -259,15 +274,19 @@ final eventsProvider = Provider<EventsState>((ref) {
   return EventsState(s.events, s.cursors);
 });
 
-final chatItemsProvider =
-    Provider.family<List<ChatItem>, String>((ref, sessionId) {
+final chatItemsProvider = Provider.family<List<ChatItem>, String>((
+  ref,
+  sessionId,
+) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
   return foldEvents(events);
 });
 
 /// Slash commands advertised by the agent for a given session.
-final commandsProvider =
-    Provider.family<List<SlashCmd>, String>((ref, sessionId) {
+final commandsProvider = Provider.family<List<SlashCmd>, String>((
+  ref,
+  sessionId,
+) {
   final s = ref.watch(storeControllerProvider);
   return s.commands[sessionId] ?? const [];
 });

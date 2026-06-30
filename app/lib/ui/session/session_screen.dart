@@ -55,8 +55,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(session?.title ?? widget.sessionId,
-                overflow: TextOverflow.ellipsis),
+            Text(
+              session?.title ?? widget.sessionId,
+              overflow: TextOverflow.ellipsis,
+            ),
             Text(
               '${session?.agent ?? '?'} · ${_statusLabel(session?.status)}',
               style: Theme.of(context).textTheme.bodySmall,
@@ -82,15 +84,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   UserMessageItem() => ChatBubble.user(text: item.text),
                   AgentMessageItem() => ChatBubble.agent(text: item.text),
                   ToolCallItem() => ToolCallCard(
-                      item: item,
-                      onTap: () => context.go(
-                        '/session/${widget.sessionId}/tool/${item.callId}',
-                      ),
+                    item: item,
+                    onTap: () => context.go(
+                      '/session/${widget.sessionId}/tool/${item.callId}',
                     ),
+                  ),
                   ApprovalRequestItem() => _ApprovalChip(
-                      sessionId: widget.sessionId,
-                      item: item,
-                    ),
+                    sessionId: widget.sessionId,
+                    item: item,
+                  ),
                   ErrorItem() => _ErrorBanner(message: item.message),
                 };
               },
@@ -122,14 +124,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   }
 
   String _statusLabel(SessionStatus? s) => switch (s) {
-        SessionStatus.idle => 'idle',
-        SessionStatus.running => 'running',
-        SessionStatus.awaitingInput => 'waiting for you',
-        SessionStatus.awaitingApproval => 'awaiting approval',
-        SessionStatus.error => 'error',
-        SessionStatus.exited => 'exited',
-        null => '…',
-      };
+    SessionStatus.idle => 'idle',
+    SessionStatus.running => 'running',
+    SessionStatus.awaitingInput => 'waiting for you',
+    SessionStatus.awaitingApproval => 'awaiting approval',
+    SessionStatus.error => 'error',
+    SessionStatus.exited => 'exited',
+    null => '…',
+  };
 
   @override
   void dispose() {
@@ -173,13 +175,17 @@ class _ApprovalChip extends ConsumerWidget {
               color: cs.surface,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text(item.preview,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            child: Text(
+              item.preview,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
           ),
           const SizedBox(height: 8),
           if (item.decided)
-            Text('Decision: ${item.decision}',
-                style: Theme.of(context).textTheme.bodySmall)
+            Text(
+              'Decision: ${item.decision}',
+              style: Theme.of(context).textTheme.bodySmall,
+            )
           else
             Row(
               children: [

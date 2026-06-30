@@ -47,24 +47,18 @@ fi
 
 # --------------------------------------------------------- 3. analysis (lint)
 # --------------------------------------------------------- 3. analysis (lint)
-# Fail on warnings + errors. Infos are tracked separately so the strict
-# lint set (avoid_dynamic_calls, prefer_const_*, etc.) doesn't block CI
-# while we iterate on pre-existing code. Flip to --fatal-infos once the
-# codebase is clean.
-step "3. flutter analyze — fail on warning/error, not info"
+# Strict: any analyze issue (warning/error/info) fails the gate.
+# Codebase is currently zero-issues — keep it that way.
+step "3. flutter analyze (strict — fail on any issue)"
 set +e
-"$FLUTTER_BIN" analyze > /tmp/pino-analyze.log 2>&1
+"$FLUTTER_BIN" analyze --fatal-infos > /tmp/pino-analyze.log 2>&1
+analyze_exit=$?
 set -e
-warn_or_err=$(grep -cE "(warning|error) • " /tmp/pino-analyze.log || true)
-info_count=$(grep -c "info • " /tmp/pino-analyze.log || true)
-if (( warn_or_err > 0 )); then
-  red "  ✗ $warn_or_err warnings/errors — see /tmp/pino-analyze.log"
+if (( analyze_exit != 0 )); then
+  red "  ✗ analyze found issues — see /tmp/pino-analyze.log"
   fail=1
 else
-  green "  ✓ no warnings or errors"
-  if (( info_count > 0 )); then
-    yellow "  ! $info_count info-level lints to clean up (non-blocking)"
-  fi
+  green "  ✓ analyze clean"
 fi
 
 # ------------------------------------------------------------ 4. format check

@@ -42,8 +42,11 @@ abstract class ToolRenderer {
 }
 
 class _DefaultCard extends StatelessWidget {
-  const _DefaultCard(
-      {required this.renderer, required this.item, required this.onTap});
+  const _DefaultCard({
+    required this.renderer,
+    required this.item,
+    required this.onTap,
+  });
   final ToolRenderer renderer;
   final ToolCallItem item;
   final VoidCallback onTap;
@@ -68,13 +71,17 @@ class _DefaultCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(renderer.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      renderer.name,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     if (sub != null && sub.isNotEmpty)
-                      Text(sub,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        sub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                   ],
                 ),
               ),
@@ -110,8 +117,10 @@ class _DefaultDetail extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(12),
         children: [
-          const Text('Arguments',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text(
+            'Arguments',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 4),
           SelectableText(
             item.args.toString(),
@@ -126,8 +135,10 @@ class _DefaultDetail extends StatelessWidget {
           ),
           if (item.summary != null) ...[
             const SizedBox(height: 16),
-            const Text('Summary',
-                style: TextStyle(fontWeight: FontWeight.w600)),
+            const Text(
+              'Summary',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 4),
             SelectableText(item.summary!),
           ],
@@ -254,13 +265,18 @@ class _EditDiffView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('− Removed',
-                    style: TextStyle(
-                        color: cs.error, fontWeight: FontWeight.w600)),
+                Text(
+                  '− Removed',
+                  style: TextStyle(
+                    color: cs.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                SelectableText(oldText,
-                    style:
-                        const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                SelectableText(
+                  oldText,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -274,13 +290,18 @@ class _EditDiffView extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('+ Added',
-                    style: TextStyle(
-                        color: Colors.green, fontWeight: FontWeight.w600)),
+                const Text(
+                  '+ Added',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                SelectableText(newText,
-                    style:
-                        const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                SelectableText(
+                  newText,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -288,8 +309,10 @@ class _EditDiffView extends StatelessWidget {
             const SizedBox(height: 16),
             const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            SelectableText(item.deltas.join(),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+            SelectableText(
+              item.deltas.join(),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
           ],
         ],
       ),

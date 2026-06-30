@@ -63,7 +63,8 @@ class SlashPalette extends StatelessWidget {
           child: const Padding(
             padding: EdgeInsets.all(12),
             child: Text(
-                'No matching commands. Skills appear once pi finishes loading.'),
+              'No matching commands. Skills appear once pi finishes loading.',
+            ),
           ),
         ),
       );

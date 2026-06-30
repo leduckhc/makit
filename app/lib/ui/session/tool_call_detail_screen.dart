@@ -9,8 +9,11 @@ import 'tool_renderers.dart';
 /// Fullscreen drilldown for a tool call. Shows args, streamed deltas (output),
 /// and a placeholder for a richer diff viewer when the tool name == 'edit'.
 class ToolCallDetailScreen extends ConsumerWidget {
-  const ToolCallDetailScreen(
-      {super.key, required this.sessionId, required this.callId});
+  const ToolCallDetailScreen({
+    super.key,
+    required this.sessionId,
+    required this.callId,
+  });
   final String sessionId;
   final String callId;
 
@@ -98,6 +101,8 @@ class _Mono extends StatelessWidget {
   final String text;
 
   @override
-  Widget build(BuildContext context) => SelectableText(text,
-      style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5));
+  Widget build(BuildContext context) => SelectableText(
+    text,
+    style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+  );
 }
