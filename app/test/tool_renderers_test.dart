@@ -5,6 +5,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pino/store/models.dart';
+import 'package:pino/transport/protocol.dart';
 import 'package:pino/ui/session/tool_renderers.dart';
 
 ToolCallItem _tool(String name, Map<String, dynamic> args) => ToolCallItem(
@@ -92,6 +93,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('A'), findsOneWidget);
       expect(find.text('B'), findsOneWidget);
+    });
+  });
+
+  group('foldEvents — tool result plumbing', () {
+    test('tool.call.end output + summary flow into the ToolCallItem', () {
+      SessionEvent ev(EventKind kind, Map<String, dynamic> payload, int seq) =>
+          SessionEvent(seq: seq, sessionId: 's', ts: 0, kind: kind, payload: payload);
+
+      final items = foldEvents([
+        ev(EventKind.toolCallStart, {'callId': 'c1', 'name': 'read', 'args': {'path': 'x'}}, 1),
+        ev(EventKind.toolCallEnd, {
+          'callId': 'c1',
+          'exitCode': 0,
+          'summary': 'first line',
+          'output': 'first line\nsecond line',
+        }, 2),
+      ]);
+
+      final tool = items.whereType<ToolCallItem>().single;
+      expect(tool.ended, isTrue);
+      expect(tool.summary, 'first line');
+      expect(tool.output, 'first line\nsecond line');
+      expect(tool.exitCode, 0);
     });
   });
 }

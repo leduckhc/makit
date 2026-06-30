@@ -252,13 +252,17 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
       case "tool_execution_end": {
         const callId = String(evt.toolCallId ?? "");
+        const output = extractResultText(evt.result);
         this.emitEvent({
           ts: Date.now(),
           kind: "tool.call.end",
           payload: {
             callId,
             exitCode: evt.isError ? 1 : 0,
-            summary: summarizeResult(evt.toolName, evt.result),
+            // summary = first non-empty line for the collapsed card; output =
+            // the full result text for the detail view.
+            summary: summarizeText(evt.toolName, output),
+            output,
           },
         });
         return;
@@ -309,21 +313,44 @@ function stringifyDelta(v: unknown): string {
   }
 }
 
-function summarizeResult(toolName: unknown, result: unknown): string {
-  const name = String(toolName ?? "tool");
-  if (typeof result === "string") {
-    const trimmed = result.trim();
-    return trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed || `${name} ok`;
-  }
-  if (result && typeof result === "object") {
+/**
+ * Pull human-readable text out of a pi tool result. pi returns several shapes:
+ *   - a plain string
+ *   - `{ content: [{ type: "text", text: "…" }, …] }`  (most tools)
+ *   - `{ stdout: "…" }` or `{ summary: "…" }`
+ * Falls back to compact JSON so nothing is silently dropped.
+ */
+function extractResultText(result: unknown): string {
+  if (result == null) return "";
+  if (typeof result === "string") return result;
+  if (typeof result === "object") {
     const r = result as Record<string, unknown>;
-    if (typeof r.summary === "string") return r.summary;
-    if (typeof r.stdout === "string") {
-      const t = r.stdout.trim();
-      return t.length > 120 ? `${t.slice(0, 117)}…` : t || `${name} ok`;
+    if (Array.isArray(r.content)) {
+      const parts = r.content
+        .map((c) =>
+          c && typeof c === "object" && typeof (c as any).text === "string"
+            ? (c as any).text
+            : "",
+        )
+        .filter((s) => s.length > 0);
+      if (parts.length > 0) return parts.join("\n");
     }
+    if (typeof r.summary === "string") return r.summary;
+    if (typeof r.stdout === "string") return r.stdout;
   }
-  return `${name} ok`;
+  try {
+    return JSON.stringify(result);
+  } catch {
+    return String(result);
+  }
+}
+
+/** First non-empty line of [text], truncated for the collapsed card. */
+function summarizeText(toolName: unknown, text: string): string {
+  const name = String(toolName ?? "tool");
+  const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  if (!firstLine) return `${name} ok`;
+  return firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : firstLine;
 }
 
 function classifyRisk(name: string): "safe" | "risky" | "destructive" {

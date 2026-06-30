@@ -49,7 +49,9 @@ class ToolCallDetailScreen extends ConsumerWidget {
         children: [
           _Section(title: 'Arguments', child: _Mono(_pretty(tool.args))),
           if (tool.deltas.isNotEmpty)
-            _Section(title: 'Output', child: _Mono(tool.deltas.join())),
+            _Section(title: 'Output', child: _Mono(tool.deltas.join()))
+          else if (tool.output?.isNotEmpty ?? false)
+            _Section(title: 'Output', child: _Mono(tool.output!)),
           if (tool.ended)
             _Section(
               title: 'Result',

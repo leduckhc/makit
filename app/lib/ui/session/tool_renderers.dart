@@ -129,19 +129,24 @@ class _DefaultDetail extends StatelessWidget {
           const SizedBox(height: 16),
           const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          SelectableText(
-            item.deltas.join(),
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          Builder(
+            builder: (context) {
+              // Streaming tools (e.g. bash) accumulate deltas; one-shot tools
+              // (read, grep, …) carry the full text in output.
+              final text = item.deltas.isNotEmpty
+                  ? item.deltas.join()
+                  : (item.output ?? '');
+              final failed = item.ended && (item.exitCode ?? 0) != 0;
+              return SelectableText(
+                text.isEmpty ? '(no output)' : text,
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: failed ? Theme.of(context).colorScheme.error : null,
+                ),
+              );
+            },
           ),
-          if (item.summary != null) ...[
-            const SizedBox(height: 16),
-            const Text(
-              'Summary',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 4),
-            SelectableText(item.summary!),
-          ],
         ],
       ),
     );
@@ -305,12 +310,12 @@ class _EditDiffView extends StatelessWidget {
               ],
             ),
           ),
-          if (item.deltas.isNotEmpty) ...[
+          if (item.deltas.isNotEmpty || (item.output?.isNotEmpty ?? false)) ...[
             const SizedBox(height: 16),
             const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             SelectableText(
-              item.deltas.join(),
+              item.deltas.isNotEmpty ? item.deltas.join() : item.output!,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
           ],

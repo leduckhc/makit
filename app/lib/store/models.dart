@@ -148,6 +148,7 @@ class ToolCallItem extends ChatItem {
     this.ended = false,
     this.exitCode,
     this.summary,
+    this.output,
     this.risk = 'safe',
   });
 
@@ -158,6 +159,10 @@ class ToolCallItem extends ChatItem {
   final bool ended;
   final int? exitCode;
   final String? summary;
+
+  /// Full tool result text (file contents, bash stdout, error message). Shown
+  /// in the detail view; [summary] is its first line for the collapsed card.
+  final String? output;
   final String risk;
 
   ToolCallItem copyWith({
@@ -165,6 +170,7 @@ class ToolCallItem extends ChatItem {
     bool? ended,
     int? exitCode,
     String? summary,
+    String? output,
   }) => ToolCallItem(
     seq: seq,
     ts: ts,
@@ -176,6 +182,7 @@ class ToolCallItem extends ChatItem {
     ended: ended ?? this.ended,
     exitCode: exitCode ?? this.exitCode,
     summary: summary ?? this.summary,
+    output: output ?? this.output,
   );
 }
 
@@ -261,6 +268,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             ended: true,
             exitCode: (e.payload['exitCode'] as num?)?.toInt(),
             summary: e.payload['summary'] as String?,
+            output: e.payload['output'] as String?,
           );
         }
       case EventKind.approvalRequest:
