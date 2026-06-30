@@ -185,6 +185,21 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
         );
   }
 
+  void appendOptimisticMessage(String sessionId, String text) {
+    // Inject a local UserMessageItem immediately. May be superseded by the server
+    // echo if seq conflicts, but avoids the "hung input" feeling.
+    debugPrint('[pino] appendOptimisticMessage sid=${sessionId.substring(0, 8)} text="$text"');
+    _appendEvent(SessionEvent(
+      seq: (state.events[sessionId]?.isNotEmpty ?? false)
+          ? state.events[sessionId]!.last.seq + 1
+          : 1,
+      sessionId: sessionId,
+      ts: DateTime.now().millisecondsSinceEpoch,
+      kind: EventKind.userMessage,
+      payload: {'text': text},
+    ));
+  }
+
   void sendMessage(String sessionId, String text) {
     _ref
         .read(connectionControllerProvider.notifier)
@@ -305,8 +320,9 @@ final chatItemsProvider = Provider.family<List<ChatItem>, String>((
   sessionId,
 ) {
   final events = ref.watch(eventsProvider).forSession(sessionId);
+  debugPrint('[pino] chatItemsProvider($sessionId) raw events: ${events.length}');
   final items = foldEvents(events);
-  debugPrint('[pino] chatItemsProvider($sessionId) computed ${items.length} items');
+  debugPrint('[pino] chatItemsProvider($sessionId) computed ${items.length} items (first: ${items.isEmpty ? "none" : items.first.runtimeType})');
   return items;
 });
 

@@ -37,6 +37,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
+    debugPrint('[pino] SessionScreen.build sid=${widget.sessionId.substring(0, 8)} items=${items.length}');
 
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
@@ -118,6 +119,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       );
       if (handled) return;
     }
+    // Optimistic UI: show the message immediately so it doesn't look hung.
+    // The server will echo it back; if there's a conflict we reconcile by seq.
+    ref
+        .read(storeControllerProvider.notifier)
+        .appendOptimisticMessage(widget.sessionId, text);
+    // Send to server (may arrive out of order w.r.t. the local append, but seq resolves it).
     ref
         .read(storeControllerProvider.notifier)
         .sendMessage(widget.sessionId, text);
