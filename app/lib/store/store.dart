@@ -114,7 +114,7 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
   }
 
   void _appendEvent(SessionEvent ev) {
-    debugPrint('[pino] _appendEvent: session=${ev.sessionId} kind=${ev.kind.wire}');
+    debugPrint('[pino] _appendEvent: session=${ev.sessionId} kind=${ev.kind.wire} seq=${ev.seq}');
     // session.commands updates the slash palette, not the chat.
     if (ev.kind == EventKind.sessionCommands) {
       final raw = (ev.payload['commands'] as List?) ?? const [];
@@ -133,7 +133,18 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
     final cursors = Map<String, int>.from(state.cursors);
     final list = List<SessionEvent>.from(events[ev.sessionId] ?? const []);
     // Idempotency: drop if seq already seen.
-    if (list.isNotEmpty && list.last.seq >= ev.seq) return;
+    if (list.isNotEmpty && list.last.seq >= ev.seq) {
+      debugPrint('[pino] _appendEvent drop: server seq=${ev.seq} <= last=${list.last.seq}');
+      return;
+    }
+    // Gap detection: if server seq jumps ahead, trim optimistic entries.
+    if (list.isNotEmpty && ev.seq > list.last.seq + 1) {
+      debugPrint('[pino] _appendEvent gap: seq ${list.last.seq} → ${ev.seq}; trimming optimistic');
+      final cursorSeq = cursors[ev.sessionId] ?? 0;
+      if (cursorSeq < list.length) {
+        list.removeRange(cursorSeq, list.length);
+      }
+    }
     list.add(ev);
     events[ev.sessionId] = list;
     cursors[ev.sessionId] = ev.seq;
