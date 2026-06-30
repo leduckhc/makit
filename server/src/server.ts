@@ -118,6 +118,7 @@ export function startWsServer(opts: ServerOpts) {
           return;
         }
         state.subscribed.add(sid);
+        console.log(`[pino] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${session.events.length} events)`);
         for (const e of session.events) sendEvent(state, e);
         send(state, { t: "ack", id: env.id });
         return;
@@ -213,6 +214,7 @@ export function startWsServer(opts: ServerOpts) {
     try {
       switch (kind) {
         case "send.message": {
+          console.log(`[pino] send.message sid=${sid.slice(0,8)} session=${!!session} text="${String(env.text ?? "").slice(0,40)}"`);
           if (!session) { sendErr(state, env.id, "no such session"); return; }
           send(state, { t: "ack", id: env.id });
           await session.sendUserMessage(String(env.text ?? ""));
@@ -262,9 +264,14 @@ export function startWsServer(opts: ServerOpts) {
 
   function wireSession(session: Session) {
     session.on("event", (event) => {
+      let sent = 0;
       for (const c of clients.values()) {
-        if (c.authed && c.subscribed.has(session.id)) sendEvent(c, event);
+        if (c.authed && c.subscribed.has(session.id)) {
+          sendEvent(c, event);
+          sent++;
+        }
       }
+      console.log(`[pino] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`);
       broadcastSessionsSnapshot();
     });
   }

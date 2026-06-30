@@ -25,6 +25,10 @@ allowBuilds:
   # esbuild is a transitive of `tsx`. Postinstall downloads a platform-
   # specific native binary from npm. Widely audited, low risk.
   esbuild: true
+  # pi-decimals is a transitive of `pi`. Postinstall compiles platform-specific
+  # native code. Pi is widely used in the agent ecosystem; pi-decimals is a
+  # standard build. Low risk.
+  pi-decimals: true
 
 # Refuse downgrades from provenance-published versions (Trusted Publisher
 # signal). Early indicator of account compromise.

@@ -33,6 +33,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.12
         version: 8.18.1
+      pi:
+        specifier: ^2.0.5
+        version: 2.0.5
       tsx:
         specifier: ^4.19.0
         version: 4.22.4
@@ -241,6 +244,13 @@ packages:
     resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
     engines: {node: '>= 6.13.0'}
 
+  pi-decimals@2.0.4:
+    resolution: {integrity: sha512-30tvrHizmUuNgdi94b1p5vhyzuYBmd98odjTGR/VqksneWv3JW7clTIFISO/zFcohM3xPIHunMajfRpsrM/VUg==}
+
+  pi@2.0.5:
+    resolution: {integrity: sha512-X06gf4Jgq60P9IxB/g5jX6DPMf07cKstkzENMos19XbZdiOg1vUcCwkONChuCjmGjuzEUUFK0ZLzRNIFvkGs6w==}
+    hasBin: true
+
   qrcode-terminal@0.12.0:
     resolution: {integrity: sha512-EXtzRZmC+YGmGlDFbXKxQiMZNwCLEO6BANKXG4iCtSIM0yqc/pappSx3RIKr4r0uh5JsBckOXeKrB3Iz7mdQpQ==}
     hasBin: true
@@ -425,6 +435,12 @@ snapshots:
       thunky: 1.1.0
 
   node-forge@1.4.0: {}
+
+  pi-decimals@2.0.4: {}
+
+  pi@2.0.5:
+    dependencies:
+      pi-decimals: 2.0.4
 
   qrcode-terminal@0.12.0: {}
 

@@ -49,8 +49,12 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
     _ref.listen<PinoConnState>(connectionControllerProvider, (prev, next) {
       final wasConnected = prev?.wsState == WsState.connected;
       final nowConnected = next.wsState == WsState.connected;
+      debugPrint('[pino] connState ${prev?.wsState}→${next.wsState} subs=${_subscribed.length}');
       if (!wasConnected && nowConnected) {
-        for (final sid in _subscribed) { _sendSub(sid); }
+        debugPrint('[pino] reconnect: replaying ${_subscribed.length} sub(s)');
+        for (final sid in _subscribed) {
+          _sendSub(sid);
+        }
       }
     });
 
