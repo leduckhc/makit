@@ -87,13 +87,14 @@ async function main() {
 
   // Loopback HTTP bridge so agent connectors (loaded inside each spawned
   // agent process) can talk back to pino.
-  // The ws server's askDevice returns the raw envelope; the bridge wants a
-  // typed UIResponse. Unwrap the envelope body here.
+  // The ws server's askDevice resolves with the srv.response envelope, which
+  // is FLAT — the canonical UIResponse fields (kind, indices, answers, …) live
+  // at the top level alongside v/t/id, not under a `.body`. Return it as-is.
   const bridge = await startBridge({
     askDevice: async (body) => {
       const { sessionId, ...rest } = body;
       const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
-      return env.body as import("./uicall.js").UIResponse;
+      return env as unknown as import("./uicall.js").UIResponse;
     },
   });
 

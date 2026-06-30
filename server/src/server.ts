@@ -256,7 +256,7 @@ export function startWsServer(opts: ServerOpts) {
               },
             ],
           });
-          console.log(`[pino] debug.ask answered: ${JSON.stringify(resp.body)}`);
+          console.log(`[pino] debug.ask answered: ${JSON.stringify(resp)}`);
           return;
         }
         case "debug.ask-multi": {
@@ -282,11 +282,11 @@ export function startWsServer(opts: ServerOpts) {
             },
             { sessionId: sid },
           );
-          console.log(`[pino] debug.ask-multi answered: ${JSON.stringify(resp.body)}`);
+          console.log(`[pino] debug.ask-multi answered: ${JSON.stringify(resp)}`);
           session.adapter.emit("event", {
             ts: Date.now(),
             kind: "agent.message",
-            payload: { text: JSON.stringify(resp.body) },
+            payload: { text: JSON.stringify(resp) },
           });
           return;
         }
