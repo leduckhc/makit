@@ -1,0 +1,328 @@
+/**
+ * PiAdapter — drives `pi --mode rpc` as a long-running JSON-RPC subprocess.
+ *
+ * Compared to the previous `--mode json -p` adapter, this gives us:
+ *   - All of pi's slash commands, skills, extensions, prompt templates
+ *     (they only activate in the long-running modes)
+ *   - Mid-turn steering — phone messages sent while the agent is busy are
+ *     queued as `steer` instead of dropped
+ *   - Abort, model switching, compaction, follow-up queueing
+ *
+ * Lifetime: one pi process per pino Session, started lazily on first send,
+ * killed on Session shutdown.
+ *
+ * Framing: per pi's rpc.md, we MUST split on `\n` only — Node's `readline`
+ * also splits on U+2028/U+2029 which are valid inside JSON strings. So we
+ * roll a tiny LF-only splitter over the raw stdout stream.
+ */
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+import { spawn, type ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
+import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+
+export class PiAdapter extends EventEmitter implements AgentAdapter {
+  readonly agent = "pi";
+
+  private cwd = process.cwd();
+  private piSessionId = randomUUID();
+  private child?: ChildProcess;
+
+  /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
+  private isStreaming = false;
+
+  /** Accumulates text per content-index, flushed at text_end. */
+  private textBuffers = new Map<number, string>();
+
+  async start(opts: SpawnOpts): Promise<void> {
+    this.cwd = opts.cwd;
+    await this.ensureProcess();
+    this.emit("status", "idle");
+  }
+
+  async send(input: UserInput): Promise<void> {
+    await this.ensureProcess();
+
+    // Echo the user message into our event log so transcripts are complete.
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "user.message",
+      payload: { text: input.text },
+    });
+
+    const cmd: any = {
+      id: `prompt-${Date.now()}`,
+      type: "prompt",
+      message: input.text,
+    };
+    // If pi is mid-turn, queue as a steering message rather than rejecting.
+    if (this.isStreaming) cmd.streamingBehavior = "steer";
+
+    this.writeCommand(cmd);
+  }
+
+  async cancel(): Promise<void> {
+    if (this.child) this.writeCommand({ type: "abort" });
+  }
+
+  async kill(signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
+    if (this.child) this.child.kill(signal);
+    this.child = undefined;
+    this.emit("exit", null);
+  }
+
+  // ---- subprocess lifecycle ------------------------------------------------
+
+  private async ensureProcess(): Promise<void> {
+    if (this.child && !this.child.killed) return;
+
+    const args = ["--mode", "rpc", "--session-id", this.piSessionId];
+    const child = spawn("pi", args, {
+      cwd: this.cwd,
+      env: process.env,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    this.child = child;
+
+    // pi.stdout — JSON-line stream of events and command responses.
+    bindLfLines(child.stdout!, (line) => this.handleLine(line));
+
+    // pi.stderr — pi's own diagnostic output. Forward to our log; if it's
+    // really bad, surface as a session.error.
+    let stderrBuf = "";
+    child.stderr!.on("data", (chunk: Buffer) => {
+      const s = chunk.toString();
+      stderrBuf += s;
+      if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-8192);
+      process.stderr.write(`[pi] ${s}`);
+    });
+
+    child.on("exit", (code, signal) => {
+      this.isStreaming = false;
+      const wasAlive = !!this.child;
+      this.child = undefined;
+      if (wasAlive) {
+        if (code !== 0 && code !== null) {
+          this.emitEvent({
+            ts: Date.now(),
+            kind: "session.error",
+            payload: {
+              message: `pi exited with code ${code}${signal ? ` (${signal})` : ""}: ${stderrBuf.slice(-500)}`,
+            },
+          });
+        }
+        this.emit("status", "idle");
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.status",
+          payload: { status: "exited" },
+        });
+        this.emit("exit", code);
+      }
+    });
+
+    // Give pi a moment to initialize, then ask for available commands so the
+    // app can populate its slash palette with real extensions/skills/prompts.
+    await new Promise((r) => setTimeout(r, 100));
+    this.writeCommand({ id: "boot-commands", type: "get_commands" });
+  }
+
+  private writeCommand(cmd: Record<string, unknown>): void {
+    const stdin = this.child?.stdin;
+    if (!stdin || stdin.destroyed) return;
+    stdin.write(JSON.stringify(cmd) + "\n");
+  }
+
+  // ---- pi → wire mapping --------------------------------------------------
+
+  private handleLine(line: string): void {
+    if (!line.trim()) return;
+    let evt: any;
+    try {
+      evt = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (!evt || typeof evt !== "object") return;
+
+    switch (evt.type) {
+      case "response":
+        if (evt.command === "get_commands" && evt.success && evt.data?.commands) {
+          this.emitEvent({
+            ts: Date.now(),
+            kind: "session.commands",
+            payload: { commands: evt.data.commands },
+          });
+        }
+        return;
+
+      case "session":
+      case "agent_start":
+      case "message_start":
+      case "message_end":
+      case "queue_update":
+      case "compaction_start":
+      case "compaction_end":
+      case "auto_retry_start":
+      case "auto_retry_end":
+        return;
+
+      case "turn_start":
+        this.isStreaming = true;
+        this.emit("status", "running");
+        return;
+
+      case "turn_end":
+        // Stay "streaming" — agent may have more tool calls / turns ahead.
+        return;
+
+      case "agent_end":
+        this.isStreaming = false;
+        this.emit("status", "idle");
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "session.status",
+          payload: { status: "idle" },
+        });
+        return;
+
+      case "message_update": {
+        const e = evt.assistantMessageEvent;
+        if (!e || typeof e !== "object") return;
+        const idx: number = typeof e.contentIndex === "number" ? e.contentIndex : 0;
+        if (e.type === "text_start") {
+          this.textBuffers.set(idx, "");
+        } else if (e.type === "text_delta") {
+          const prev = this.textBuffers.get(idx) ?? "";
+          this.textBuffers.set(idx, prev + (typeof e.delta === "string" ? e.delta : ""));
+        } else if (e.type === "text_end") {
+          const text =
+            this.textBuffers.get(idx) ??
+            (typeof e.content === "string" ? e.content : "");
+          this.textBuffers.delete(idx);
+          if (text.length > 0) {
+            this.emitEvent({
+              ts: Date.now(),
+              kind: "agent.message",
+              payload: { text },
+            });
+          }
+        }
+        return;
+      }
+
+      case "tool_execution_start": {
+        const callId = String(evt.toolCallId ?? `c-${Date.now()}`);
+        const name = String(evt.toolName ?? "tool");
+        const args = evt.args ?? {};
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "tool.call.start",
+          payload: { callId, name, args, risk: classifyRisk(name) },
+        });
+        return;
+      }
+
+      case "tool_execution_update": {
+        const callId = String(evt.toolCallId ?? "");
+        if (!callId || evt.partialResult === undefined) return;
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "tool.call.delta",
+          payload: { callId, chunk: stringifyDelta(evt.partialResult) },
+        });
+        return;
+      }
+
+      case "tool_execution_end": {
+        const callId = String(evt.toolCallId ?? "");
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "tool.call.end",
+          payload: {
+            callId,
+            exitCode: evt.isError ? 1 : 0,
+            summary: summarizeResult(evt.toolName, evt.result),
+          },
+        });
+        return;
+      }
+
+      default:
+        return;
+    }
+  }
+
+  private emitEvent(e: AdapterEvent) {
+    this.emit("event", e);
+  }
+}
+
+// ---------- helpers ---------------------------------------------------------
+
+/**
+ * LF-only line splitter — required by pi's RPC mode framing rules. We can't
+ * use `readline` because it also splits on U+2028/U+2029 which are valid
+ * inside JSON strings.
+ */
+function bindLfLines(stream: NodeJS.ReadableStream, onLine: (line: string) => void): void {
+  let buf = "";
+  stream.setEncoding?.("utf8");
+  stream.on("data", (chunk: string | Buffer) => {
+    buf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    let i: number;
+    while ((i = buf.indexOf("\n")) !== -1) {
+      let line = buf.slice(0, i);
+      buf = buf.slice(i + 1);
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      onLine(line);
+    }
+  });
+  stream.on("end", () => {
+    if (buf.length > 0) onLine(buf);
+  });
+}
+
+function stringifyDelta(v: unknown): string {
+  if (typeof v === "string") return v;
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
+
+function summarizeResult(toolName: unknown, result: unknown): string {
+  const name = String(toolName ?? "tool");
+  if (typeof result === "string") {
+    const trimmed = result.trim();
+    return trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed || `${name} ok`;
+  }
+  if (result && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    if (typeof r.summary === "string") return r.summary;
+    if (typeof r.stdout === "string") {
+      const t = r.stdout.trim();
+      return t.length > 120 ? `${t.slice(0, 117)}…` : t || `${name} ok`;
+    }
+  }
+  return `${name} ok`;
+}
+
+function classifyRisk(name: string): "safe" | "risky" | "destructive" {
+  switch (name) {
+    case "read":
+    case "ls":
+    case "grep":
+    case "find":
+      return "safe";
+    case "edit":
+    case "write":
+    case "bash":
+      return "risky";
+    default:
+      return "safe";
+  }
+}

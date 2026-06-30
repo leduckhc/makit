@@ -1,0 +1,23 @@
+# Build artifacts
+build/
+.dart_tool/
+.pub-cache/
+.pub/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+*.iml
+.idea/
+.vscode/
+
+# Generated platform folders (re-created by `flutter create .`)
+ios/
+android/
+macos/
+linux/
+windows/
+web/
+
+# Generated code
+*.g.dart
+*.freezed.dart
