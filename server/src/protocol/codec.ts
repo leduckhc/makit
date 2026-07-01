@@ -1,8 +1,10 @@
 /**
  * Pure wire codec — validate + (de)serialize protocol frames and session
  * events with no side effects. Returns typed values on success or `null` on
- * malformed input (never throws). Server adoption lives in `server.ts`; this
- * module is the single validation surface the contract test locks in.
+ * malformed input (never throws). NOTE: `server.ts` does not yet route through
+ * this codec — runtime adoption (replacing raw JSON.parse/stringify + typed
+ * command validation) is the WS-SERVER stream's job (backlog B2-server/B5).
+ * For now this is the single validation surface the contract test locks in.
  */
 
 import {

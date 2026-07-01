@@ -135,12 +135,20 @@ class SessionEvent {
   static SessionEvent? fromJson(Map<String, dynamic> j) {
     final kind = EventKind.fromWire(j['kind'] as String? ?? '');
     if (kind == null) return null;
+    // Defensive: malformed scalars yield null (dropped + logged by the codec),
+    // never a runtime throw — this is the untrusted-input boundary (F2).
+    final seq = j['seq'];
+    final ts = j['ts'];
+    final sessionId = j['sessionId'];
+    if (seq is! num || ts is! num || sessionId is! String) return null;
     return SessionEvent(
-      seq: (j['seq'] as num).toInt(),
-      sessionId: j['sessionId'] as String,
-      ts: (j['ts'] as num).toInt(),
+      seq: seq.toInt(),
+      sessionId: sessionId,
+      ts: ts.toInt(),
       kind: kind,
-      payload: Map<String, dynamic>.from(j['payload'] as Map? ?? const {}),
+      payload: j['payload'] is Map
+          ? Map<String, dynamic>.from(j['payload'] as Map)
+          : const {},
     );
   }
 }

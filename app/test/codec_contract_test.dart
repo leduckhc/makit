@@ -90,5 +90,43 @@ void main() {
       );
       expect(WireCodec.decode(env), isNull);
     });
+    test('valid-kind event with bad scalar seq returns null, never throws', () {
+      final env = Envelope(
+        t: MsgType.event,
+        id: 'x',
+        body: {
+          'kind': 'session.event',
+          'event': {
+            'seq': 'not-a-number', // bad scalar
+            'sessionId': 's1',
+            'ts': 1,
+            'kind': 'user.message',
+            'payload': {'text': 'hi'},
+          },
+        },
+      );
+      expect(WireCodec.decode(env), isNull);
+    });
+
+    test('snapshot entry with bad-scalar lastActivityAt does not throw', () {
+      final env = Envelope(
+        t: MsgType.event,
+        id: 'x',
+        body: {
+          'kind': 'sessions.snapshot',
+          'sessions': [
+            {
+              'id': 's1',
+              'projectId': 'p1',
+              'agent': 'pi',
+              'lastActivityAt': 'oops', // bad scalar, must not throw
+            },
+          ],
+        },
+      );
+      final decoded = WireCodec.decode(env);
+      expect(decoded, isA<SessionsSnapshot>());
+      expect((decoded as SessionsSnapshot).sessions.single.lastActivityAt, 0);
+    });
   });
 }

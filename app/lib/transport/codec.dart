@@ -40,7 +40,17 @@ class WireCodec {
   /// Decode an `event` [Envelope] into a typed [Decoded], or null if the frame
   /// is unrecognized or malformed. Logs a warning on malformed known frames.
   static Decoded? decode(Envelope env) {
-    if (env.t != MsgType.event) return null;
+    try {
+      return _decode(env);
+    } catch (e) {
+      // Belt-and-suspenders: the boundary must never throw into the frame
+      // stream, whatever malformed shape arrives.
+      debugPrint('[pino] WireCodec: dropped frame (decode threw: $e)');
+      return null;
+    }
+  }
+
+  static Decoded? _decode(Envelope env) {
     final kind = env.body['kind'];
     if (kind is! String) return null;
     switch (kind) {
@@ -87,7 +97,7 @@ class WireCodec {
           name: name,
           path: path,
           pinned: j['pinned'] is bool ? j['pinned'] as bool : false,
-          lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
+          lastActivityAt: j['lastActivityAt'] is num ? (j['lastActivityAt'] as num).toInt() : 0,
         ),
       );
     }
@@ -117,7 +127,7 @@ class WireCodec {
           policy: parsePolicy(
             j['policy'] is String ? j['policy'] as String : 'ask-on-risky',
           ),
-          lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
+          lastActivityAt: j['lastActivityAt'] is num ? (j['lastActivityAt'] as num).toInt() : 0,
           lastPreview: j['lastPreview'] is String ? j['lastPreview'] as String : '',
         ),
       );
