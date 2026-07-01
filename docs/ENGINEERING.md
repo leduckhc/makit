@@ -79,6 +79,16 @@ Severity: 🔴 correctness/security · 🟠 maintainability/test-gap · 🟡 pol
 Each item: **RED** (write this failing test first) → **GREEN** (smallest change)
 → **REFACTOR** (clean up under green) → **VERIFY**. Ordered by value/risk.
 
+> **Status (shipped via parallel worktree agents + two-pass review):**
+> ✅ B1 approvals deleted · ✅ B2 wire validation (both ends) · ✅ B3 codec +
+> contract fixtures · ✅ B4 reducer tests · ✅ B5 `startWsServer` decomposed
+> (auth_gate/command_router/subscription_hub/reverse_rpc) · ✅ B6 registry
+> security (constant-time compare; DoS-prone lockout dropped) · ✅ B7 transport
+> seam · ✅ B8 leveled loggers · ✅ B9a codegen deps removed, B9b `debug.ask*`
+> gated behind `PINO_DEV`. **Deferred:** B9c (`agent.thinking`/`tool.call.delta`
+> finish-or-drop — low value, cross-cutting). Two-pass review caught a real
+> codec-throws BLOCKER, a pairing DoS, and a reverse-RPC timer leak.
+
 ### B1 — Finish or delete approvals (F1) 🔴
 - **RED**: server test — `handleCmd({kind:'approve', sessionId, callId})` emits an
   `approval.decision` event and resolves the pending tool; `deny` likewise.
