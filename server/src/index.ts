@@ -21,6 +21,7 @@
 import { resolve } from "node:path";
 import qrcode from "qrcode-terminal";
 import { SessionManager } from "./manager.js";
+import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
@@ -129,6 +130,8 @@ async function main() {
       const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
       return env as unknown as import("./uicall.js").UIResponse;
     },
+    // Exclude TUI-only packages that can't run headless (see UI-TRANSPORT.md).
+    agentDir: buildFilteredAgentDir(["@mammothb/pi-ask"]),
   });
 
   await manager.ensureDefaultSessions();

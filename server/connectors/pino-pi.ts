@@ -101,13 +101,12 @@ export default function (pi: ExtensionAPI) {
     };
   }
 
-  // Register BOTH casings. pi resolves duplicate tool names by "first
-  // registration wins" (ExtensionRunner.getAllRegisteredTools), and pino's
-  // connectors load ahead of user config extensions — so this shadows the
-  // TUI-only `@mammothb/pi-ask` `AskUserQuestion`, which calls `ui.custom()`
-  // and crashes in pi's headless rpc mode (custom() returns undefined →
-  // "Cannot read properties of undefined (reading 'cancelled')"). Routing
-  // through the loopback bridge to the phone works in rpc mode.
+  // pino's canonical ask, routed to the phone via the loopback bridge. We
+  // register both casings so the model reaches it whichever it emits. The
+  // TUI-only `@mammothb/pi-ask` (which uses ui.custom and crashes headless) is
+  // filtered out at spawn (PI_CODING_AGENT_DIR, see server/src/pi-agent-dir.ts),
+  // so there is no tool-name conflict. Generic ctx.ui.select/confirm/input from
+  // other extensions are transported by the PiAdapter interceptor instead.
   for (const name of ["AskUserQuestion", "askUserQuestion"]) {
     pi.registerTool({
       name,

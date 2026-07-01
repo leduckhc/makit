@@ -33,13 +33,17 @@ export interface BridgeBinding {
   url: string;
   token: string;
   /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
-  /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
   extensionPaths: string[];
   /**
    * Present a UICall on the phone and resolve with the answer. Used by the
    * PiAdapter UI interceptor to transport pi's ctx.ui.* calls to the app.
    */
   askUser?: AskUser;
+  /**
+   * Override for pi's config dir (PI_CODING_AGENT_DIR). Used to load a
+   * filtered settings.json that excludes TUI-only packages like pi-ask.
+   */
+  agentDir?: string;
 }
 
 interface ProjectEntry {
@@ -115,6 +119,9 @@ export class SessionManager extends EventEmitter {
             PINO_BRIDGE_URL: this.bridge.url,
             PINO_BRIDGE_TOKEN: this.bridge.token,
             PINO_SESSION_ID: session.id,
+            ...(this.bridge.agentDir
+              ? { PI_CODING_AGENT_DIR: this.bridge.agentDir }
+              : {}),
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
