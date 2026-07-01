@@ -47,57 +47,74 @@ async function uicall(call: UICall): Promise<UIResponse> {
 export default function (pi: ExtensionAPI) {
   if (!BRIDGE_URL || !BRIDGE_TOKEN) return; // not running under pino
 
-  pi.registerTool({
-    name: "askUserQuestion",
-    label: "Ask the user",
-    description:
-      "Ask the user (on their phone) one or more multiple-choice questions and wait for the answers. Use when you need a decision the user must make. 1–4 questions per call; each question has 2–4 options.",
-    parameters: Type.Object({
-      questions: Type.Array(
-        Type.Object({
-          header: Type.Optional(
-            Type.String({
-              description: "Short label (max ~12 chars) shown in the dialog header.",
-            }),
-          ),
-          question: Type.String({ description: "The question to display." }),
-          options: Type.Array(
-            Type.Object({
-              label: Type.String({ description: "Option label (1–5 words)." }),
-              description: Type.Optional(Type.String()),
-            }),
-            { description: "2 to 4 options. An implicit 'Other' free-text option is always available." },
-          ),
-          multi: Type.Optional(
-            Type.Boolean({ description: "Allow multiple selections for this question." }),
-          ),
-          recommended: Type.Optional(
-            Type.Integer({ description: "Index of the recommended option (0-based)." }),
-          ),
-        }),
-        { description: "1 to 4 questions to present as a wizard." },
-      ),
-    }),
-    async execute(_toolCallId, params) {
-      const resp = await uicall({
-        kind: "askUserQuestion",
-        questions: params.questions,
-      });
-      if (resp.kind !== "askUserQuestion") {
-        return {
-          content: [{ type: "text", text: "(error: wrong response kind)" }],
-          details: resp,
-        };
-      }
-      // Format as readable Q/A pairs for the agent.
-      const lines = resp.answers.map((a, i) => {
-        const q = params.questions[i]?.question ?? `Q${i + 1}`;
-        return `Q: ${q}\nA: ${a}`;
-      });
+  const questionsParam = Type.Object({
+    questions: Type.Array(
+      Type.Object({
+        header: Type.Optional(
+          Type.String({
+            description: "Short label (max ~12 chars) shown in the dialog header.",
+          }),
+        ),
+        question: Type.String({ description: "The question to display." }),
+        options: Type.Array(
+          Type.Object({
+            label: Type.String({ description: "Option label (1–5 words)." }),
+            description: Type.Optional(Type.String()),
+          }),
+          { description: "2 to 4 options. An implicit 'Other' free-text option is always available." },
+        ),
+        multi: Type.Optional(
+          Type.Boolean({ description: "Allow multiple selections for this question." }),
+        ),
+        recommended: Type.Optional(
+          Type.Integer({ description: "Index of the recommended option (0-based)." }),
+        ),
+      }),
+      { description: "1 to 4 questions to present as a wizard." },
+    ),
+  });
+
+  const description =
+    "Ask the user (on their phone) one or more multiple-choice questions and wait for the answers. Use when you need a decision the user must make. 1–4 questions per call; each question has 2–4 options.";
+
+  async function execute(
+    _toolCallId: string,
+    params: { questions: unknown[] },
+  ) {
+    const resp = await uicall({
+      kind: "askUserQuestion",
+      questions: params.questions as never,
+    });
+    if (resp.kind !== "askUserQuestion") {
       return {
-        content: [{ type: "text", text: lines.join("\n\n") }],
+        content: [{ type: "text" as const, text: "(error: wrong response kind)" }],
         details: resp,
       };
-    },
-  });
+    }
+    const lines = resp.answers.map((a, i) => {
+      const q = (params.questions[i] as { question?: string })?.question ?? `Q${i + 1}`;
+      return `Q: ${q}\nA: ${a}`;
+    });
+    return {
+      content: [{ type: "text" as const, text: lines.join("\n\n") }],
+      details: resp,
+    };
+  }
+
+  // Register BOTH casings. pi resolves duplicate tool names by "first
+  // registration wins" (ExtensionRunner.getAllRegisteredTools), and pino's
+  // connectors load ahead of user config extensions — so this shadows the
+  // TUI-only `@mammothb/pi-ask` `AskUserQuestion`, which calls `ui.custom()`
+  // and crashes in pi's headless rpc mode (custom() returns undefined →
+  // "Cannot read properties of undefined (reading 'cancelled')"). Routing
+  // through the loopback bridge to the phone works in rpc mode.
+  for (const name of ["AskUserQuestion", "askUserQuestion"]) {
+    pi.registerTool({
+      name,
+      label: "Ask the user",
+      description,
+      parameters: questionsParam,
+      execute,
+    });
+  }
 }
