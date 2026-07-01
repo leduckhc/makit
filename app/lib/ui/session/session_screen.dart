@@ -42,18 +42,31 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     debugPrint('[pino] SessionScreen.build sid=${widget.sessionId.substring(0, 8)} items=${items.length}');
 
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
+      final firstLoad = _lastSeq == 0;
       _lastSeq = items.last.seq;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_scroll.hasClients) return;
-        _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+        if (firstLoad) {
+          // Opening the session: jump straight to the newest message. Markdown
+          // / code blocks can settle a frame later, so jump again next frame.
+          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_scroll.hasClients) {
+              _scroll.jumpTo(_scroll.position.maxScrollExtent);
+            }
+          });
+        } else {
+          _scroll.animateTo(
+            _scroll.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
       });
     }
 
     final fake = ref.watch(fakeGlassProvider);
+    final cs = Theme.of(context).colorScheme;
     final topInset = MediaQuery.of(context).padding.top;
     // Session titles are usually gibberish ids — prefer the repo/project name.
     final project = ref
@@ -93,7 +106,54 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               };
             },
           ),
-          // Top floating glass bar: back · title/status · glass toggle · chip.
+          // Scrim: fade the transcript under the top edge so the floating
+          // controls stay legible (≈30%→20%→transparent).
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: topInset + 96,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      cs.surface.withValues(alpha: 0.30),
+                      cs.surface.withValues(alpha: 0.20),
+                      cs.surface.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.5, 1],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Scrim: fade the transcript under the bottom composer.
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 150,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      cs.surface.withValues(alpha: 0.30),
+                      cs.surface.withValues(alpha: 0.20),
+                      cs.surface.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.5, 1],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Top controls: three separate pieces — (back) label (toggle) chip.
           Positioned(
             top: 0,
             left: 0,
@@ -101,55 +161,35 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             child: SafeArea(
               bottom: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
-                child: GlassSurface(
-                  borderRadius: 24,
-                  child: SizedBox(
-                    height: 52,
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back, size: 20),
-                          onPressed: () => context.go('/'),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .surface
-                                .withValues(alpha: 0.45),
-                            shape: const CircleBorder(),
-                          ),
-                        ),
-                        Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(left: 10),
-                            child: Text(
-                              label,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: fake ? 'Fake glass (fast)' : 'Liquid glass',
-                          icon: Icon(
-                            fake ? Icons.blur_off : Icons.blur_on,
-                            size: 20,
-                          ),
-                          onPressed: () =>
-                              ref.read(fakeGlassProvider.notifier).state = !fake,
-                          style: IconButton.styleFrom(
-                            backgroundColor: Theme.of(context)
-                                .colorScheme
-                                .surface
-                                .withValues(alpha: 0.45),
-                            shape: const CircleBorder(),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const ConnectionChip(circular: true),
-                      ],
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Row(
+                  children: [
+                    _glassCircle(
+                      icon: Icons.arrow_back,
+                      onTap: () => context.go('/'),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _glassCircle(
+                      icon: fake ? Icons.blur_off : Icons.blur_on,
+                      tooltip: fake ? 'Fake glass (fast)' : 'Liquid glass',
+                      onTap: () =>
+                          ref.read(fakeGlassProvider.notifier).state = !fake,
+                    ),
+                    const SizedBox(width: 6),
+                    const ConnectionChip(circular: true),
+                  ],
                 ),
               ),
             ),
@@ -182,6 +222,27 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// A round glass button for the top bar (back / toggle).
+  Widget _glassCircle({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? tooltip,
+  }) {
+    return GlassSurface(
+      borderRadius: 23,
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: IconButton(
+          tooltip: tooltip,
+          padding: EdgeInsets.zero,
+          icon: Icon(icon, size: 20),
+          onPressed: onTap,
+        ),
       ),
     );
   }
