@@ -1,0 +1,51 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_renderer/liquid_glass_renderer.dart';
+
+/// Runtime toggle for the whole app:
+///   false → real shader-based [LiquidGlass] (best looking, heavier GPU)
+///   true  → cheap [FakeGlass] (backdrop blur, no refraction)
+///
+/// Flip it live from the session bar to feel the perf difference on-device.
+final fakeGlassProvider = StateProvider<bool>((_) => false);
+
+/// A floating Liquid-Glass surface for bars/toolbars. It refracts + blurs
+/// whatever is painted *behind* it, so it must be stacked over scrolling
+/// content (see [SessionScreen]). Honours [fakeGlassProvider].
+class GlassSurface extends ConsumerWidget {
+  const GlassSurface({
+    super.key,
+    required this.child,
+    this.borderRadius = 26,
+  });
+
+  final Widget child;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fake = ref.watch(fakeGlassProvider);
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final shape = LiquidRoundedSuperellipse(borderRadius: borderRadius);
+
+    // Subtle tint; alpha carries the "glassiness". Slightly stronger in dark
+    // mode so the bar stays legible over bright content.
+    final settings = LiquidGlassSettings(
+      thickness: 14,
+      blur: 6,
+      glassColor: dark ? const Color(0x24FFFFFF) : const Color(0x1AFFFFFF),
+      lightIntensity: 1.2,
+      ambientStrength: 0.4,
+      saturation: 1.1,
+    );
+
+    if (fake) {
+      return FakeGlass(shape: shape, settings: settings, child: child);
+    }
+    return LiquidGlass.withOwnLayer(
+      shape: shape,
+      settings: settings,
+      child: child,
+    );
+  }
+}

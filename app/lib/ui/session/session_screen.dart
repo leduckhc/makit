@@ -9,6 +9,7 @@ import '../composer/composer.dart';
 import 'chat_message.dart';
 import 'tool_call_card.dart';
 import '../widgets/connection_chip.dart';
+import '../widgets/glass.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({super.key, required this.sessionId});
@@ -51,60 +52,113 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       });
     }
 
+    final fake = ref.watch(fakeGlassProvider);
+    final topInset = MediaQuery.of(context).padding.top;
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              session?.title ?? widget.sessionId,
-              overflow: TextOverflow.ellipsis,
-            ),
-            Text(
-              '${session?.agent ?? '?'} · ${_statusLabel(session?.status)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.go('/'),
-        ),
-        actions: const [ConnectionChip()],
-      ),
-      body: Column(
+      // Edge-to-edge so the transcript scrolls *behind* the glass bars.
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      body: Stack(
         children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scroll,
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: items.length,
-              itemBuilder: (context, i) {
-                final item = items[i];
-                return switch (item) {
-                  UserMessageItem() =>
-                    ChatBubble.user(text: item.text, ts: item.ts),
-                  AgentMessageItem() =>
-                    AgentMessage(text: item.text, ts: item.ts),
-                  ToolCallItem() => ToolCallCard(
-                    item: item,
-                    onTap: () => context.go(
-                      '/session/${widget.sessionId}/tool/${item.callId}',
+          ListView.builder(
+            controller: _scroll,
+            // Leave room so the first/last items clear the floating glass bars.
+            padding: EdgeInsets.only(top: topInset + 60, bottom: 96),
+            itemCount: items.length,
+            itemBuilder: (context, i) {
+              final item = items[i];
+              return switch (item) {
+                UserMessageItem() =>
+                  ChatBubble.user(text: item.text, ts: item.ts),
+                AgentMessageItem() =>
+                  AgentMessage(text: item.text, ts: item.ts),
+                ToolCallItem() => ToolCallCard(
+                  item: item,
+                  onTap: () => context.go(
+                    '/session/${widget.sessionId}/tool/${item.callId}',
+                  ),
+                ),
+                ApprovalRequestItem() => _ApprovalChip(
+                  sessionId: widget.sessionId,
+                  item: item,
+                ),
+                ErrorItem() => _ErrorBanner(message: item.message),
+              };
+            },
+          ),
+          // Top floating glass bar: back · title/status · glass toggle · chip.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
+                child: GlassSurface(
+                  borderRadius: 24,
+                  child: SizedBox(
+                    height: 52,
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back),
+                          onPressed: () => context.go('/'),
+                        ),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                session?.title ?? widget.sessionId,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
+                              Text(
+                                '${session?.agent ?? '?'} · '
+                                '${_statusLabel(session?.status)}',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: fake ? 'Fake glass (fast)' : 'Liquid glass',
+                          icon: Icon(fake ? Icons.blur_off : Icons.blur_on),
+                          onPressed: () => ref
+                              .read(fakeGlassProvider.notifier)
+                              .state = !fake,
+                        ),
+                        const ConnectionChip(),
+                        const SizedBox(width: 4),
+                      ],
                     ),
                   ),
-                  ApprovalRequestItem() => _ApprovalChip(
-                    sessionId: widget.sessionId,
-                    item: item,
-                  ),
-                  ErrorItem() => _ErrorBanner(message: item.message),
-                };
-              },
+                ),
+              ),
             ),
           ),
-          Composer(
-            commands: ref.watch(commandsProvider(widget.sessionId)),
-            steering: session?.status == SessionStatus.running,
-            onSend: (text) => _handleSend(text),
+          // Bottom floating glass composer.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: GlassSurface(
+                  borderRadius: 28,
+                  child: Composer(
+                    glass: true,
+                    commands: ref.watch(commandsProvider(widget.sessionId)),
+                    steering: session?.status == SessionStatus.running,
+                    onSend: (text) => _handleSend(text),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),

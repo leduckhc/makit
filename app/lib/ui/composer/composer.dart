@@ -11,9 +11,14 @@ class Composer extends StatefulWidget {
     required this.onSend,
     this.commands = const [],
     this.steering = false,
+    this.glass = false,
   });
   final void Function(String text) onSend;
   final List<SlashCmd> commands;
+
+  /// When true, drop the opaque background/border — a [GlassSurface] parent
+  /// provides the surface, so the composer must be transparent.
+  final bool glass;
 
   /// When true, the agent is mid-turn — the next message will steer it
   /// instead of starting a new turn.
@@ -67,10 +72,12 @@ class _ComposerState extends State<Composer> {
             ),
           Container(
             padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-            decoration: BoxDecoration(
-              color: cs.surface,
-              border: Border(top: BorderSide(color: cs.outlineVariant)),
-            ),
+            decoration: widget.glass
+                ? null
+                : BoxDecoration(
+                    color: cs.surface,
+                    border: Border(top: BorderSide(color: cs.outlineVariant)),
+                  ),
             child: Row(
               children: [
                 IconButton(
