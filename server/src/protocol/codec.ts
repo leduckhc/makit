@@ -1,10 +1,10 @@
 /**
  * Pure wire codec — validate + (de)serialize protocol frames and session
  * events with no side effects. Returns typed values on success or `null` on
- * malformed input (never throws). NOTE: `server.ts` does not yet route through
- * this codec — runtime adoption (replacing raw JSON.parse/stringify + typed
- * command validation) is the WS-SERVER stream's job (backlog B2-server/B5).
- * For now this is the single validation surface the contract test locks in.
+ * malformed input (never throws). `server.ts` routes all incoming frames
+ * through `decodeFrame` and outgoing session events through `encodeEvent`; the
+ * app mirrors this in `app/lib/transport/codec.dart`. Shared JSON fixtures in
+ * both test trees + the contract test lock the two ends together.
  */
 
 import {

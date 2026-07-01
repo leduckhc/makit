@@ -38,6 +38,10 @@ export class ReverseRpc {
   handleResponse(env: Envelope): void {
     const pending = this.pending.get(env.id);
     if (pending) {
+      // Clear the timeout BEFORE deleting: the promise's `.finally` looks the
+      // entry up by id, so once it's gone the timer would otherwise leak until
+      // it fires (up to 5 min) on every successful askDevice.
+      clearTimeout(pending.timer);
       this.pending.delete(env.id);
       pending.resolve(env);
     }
