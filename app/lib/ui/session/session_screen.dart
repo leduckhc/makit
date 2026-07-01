@@ -47,14 +47,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!_scroll.hasClients) return;
         if (firstLoad) {
-          // Opening the session: jump straight to the newest message. Markdown
-          // / code blocks can settle a frame later, so jump again next frame.
-          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (_scroll.hasClients) {
-              _scroll.jumpTo(_scroll.position.maxScrollExtent);
-            }
-          });
+          // Opening the session: land on the newest message. Markdown / code /
+          // images settle over several frames, so re-jump a few times.
+          _jumpToBottom();
+          for (final ms in const [60, 180, 360, 600]) {
+            Future<void>.delayed(Duration(milliseconds: ms), _jumpToBottom);
+          }
         } else {
           _scroll.animateTo(
             _scroll.position.maxScrollExtent,
@@ -86,7 +84,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             // (bottom = safe-area inset + composer height + a breathing gap).
             padding: EdgeInsets.only(
               top: topInset + 60,
-              bottom: MediaQuery.of(context).padding.bottom + 108,
+              bottom: MediaQuery.of(context).padding.bottom + 160,
             ),
             itemCount: items.length,
             itemBuilder: (context, i) {
@@ -240,6 +238,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         ],
       ),
     );
+  }
+
+  void _jumpToBottom() {
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    }
   }
 
   /// A round glass button for the top bar (back / toggle).
