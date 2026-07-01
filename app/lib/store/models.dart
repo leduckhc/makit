@@ -192,24 +192,6 @@ class ToolCallItem extends ChatItem {
   );
 }
 
-class ApprovalRequestItem extends ChatItem {
-  ApprovalRequestItem({
-    required super.seq,
-    required super.ts,
-    required this.callId,
-    required this.tool,
-    required this.preview,
-    this.decided = false,
-    this.decision,
-  });
-
-  final String callId;
-  final String tool;
-  final String preview;
-  final bool decided;
-  final String? decision; // 'approve' | 'deny'
-}
-
 class ErrorItem extends ChatItem {
   ErrorItem({required super.seq, required super.ts, required this.message});
   final String message;
@@ -277,36 +259,6 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             output: e.payload['output'] as String?,
             details: (e.payload['details'] as Map?)?.cast<String, dynamic>(),
           );
-        }
-      case EventKind.approvalRequest:
-        items.add(
-          ApprovalRequestItem(
-            seq: e.seq,
-            ts: e.ts,
-            callId: e.payload['callId'] as String,
-            tool: e.payload['tool'] as String? ?? 'tool',
-            preview: e.payload['preview'] as String? ?? '',
-          ),
-        );
-      case EventKind.approvalDecision:
-        // Mark the most recent matching approval request as decided.
-        final callId = e.payload['callId'] as String;
-        for (var i = items.length - 1; i >= 0; i--) {
-          final item = items[i];
-          if (item is ApprovalRequestItem &&
-              item.callId == callId &&
-              !item.decided) {
-            items[i] = ApprovalRequestItem(
-              seq: item.seq,
-              ts: item.ts,
-              callId: item.callId,
-              tool: item.tool,
-              preview: item.preview,
-              decided: true,
-              decision: e.payload['decision'] as String?,
-            );
-            break;
-          }
         }
       case EventKind.sessionStatus:
         // Handled at session level, not as chat item.

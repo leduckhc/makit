@@ -39,7 +39,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
-    debugPrint('[pino] SessionScreen.build sid=${widget.sessionId.substring(0, 8)} items=${items.length}');
 
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       final firstLoad = _lastSeq == 0;
@@ -99,10 +98,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   onTap: () => context.go(
                     '/session/${widget.sessionId}/tool/${item.callId}',
                   ),
-                ),
-                ApprovalRequestItem() => _ApprovalChip(
-                  sessionId: widget.sessionId,
-                  item: item,
                 ),
                 ErrorItem() => _ErrorBanner(message: item.message),
               };
@@ -292,76 +287,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   void dispose() {
     _scroll.dispose();
     super.dispose();
-  }
-}
-
-class _ApprovalChip extends ConsumerWidget {
-  const _ApprovalChip({required this.sessionId, required this.item});
-  final String sessionId;
-  final ApprovalRequestItem item;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cs.tertiaryContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.gavel, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                'Approval needed: ${item.tool}',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: cs.surface,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              item.preview,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (item.decided)
-            Text(
-              'Decision: ${item.decision}',
-              style: Theme.of(context).textTheme.bodySmall,
-            )
-          else
-            Row(
-              children: [
-                FilledButton(
-                  onPressed: () => ref
-                      .read(storeControllerProvider.notifier)
-                      .approve(sessionId, item.callId, ok: true),
-                  child: const Text('Approve'),
-                ),
-                const SizedBox(width: 8),
-                OutlinedButton(
-                  onPressed: () => ref
-                      .read(storeControllerProvider.notifier)
-                      .approve(sessionId, item.callId, ok: false),
-                  child: const Text('Deny'),
-                ),
-              ],
-            ),
-        ],
-      ),
-    );
   }
 }
 

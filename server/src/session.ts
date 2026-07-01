@@ -72,8 +72,6 @@ export class Session extends EventEmitter {
       } else if (event.kind === "session.status") {
         const s = (event.payload as { status?: SessionStatus }).status;
         if (s) this.status = s;
-      } else if (event.kind === "approval.request") {
-        this.status = "awaiting-approval";
       }
 
       this.emit("event", event);
