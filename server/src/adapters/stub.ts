@@ -8,10 +8,23 @@ export interface StubAdapterOptions {
 
 const echoDelayMs = 50;
 
+/// Deterministic markdown reply exercised by the app's markdown_render E2E:
+/// heading, bold, a link, and a fenced dart code block (copy + highlight).
+const MARKDOWN_SAMPLE = [
+  "# Markdown demo",
+  "",
+  "Some **bold** text and a [link](https://flutter.dev).",
+  "",
+  "```dart",
+  "void main() {}",
+  "```",
+].join("\n");
+
 /// Deterministic in-process adapter used by `e2e-server.ts --mode=stub`.
 /// No subprocess, no LLM, no flakiness — scripted replies based on user text:
 ///   - "ASK_MULTI"     → multi-question / multi-select askUserQuestion round-trip
 ///   - "ASK_QUESTION"  → single-question askUserQuestion round-trip
+///   - "MARKDOWN"      → a markdown reply (heading, link, fenced dart code block)
 ///   - anything else   → `echo: <text>` after 50ms
 export class StubAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "stub";
@@ -55,6 +68,16 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }
     if (input.text.includes("ASK_QUESTION")) {
       await this.askSingleQuestion();
+      return;
+    }
+    if (input.text.includes("MARKDOWN")) {
+      setTimeout(() => {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "agent.message",
+          payload: { text: MARKDOWN_SAMPLE },
+        });
+      }, echoDelayMs);
       return;
     }
 
