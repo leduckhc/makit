@@ -23,6 +23,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 // (no path/url imports needed — pi binary is resolved from PATH)
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import { log } from "../log.js";
 
 export class PiAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "pi";
@@ -240,7 +241,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
           reply({ cancelled: true });
       }
     } catch (e) {
-      console.log(`[pino] ui interceptor error (${method}): ${(e as Error).message}`);
+      log.warn(`[pino] ui interceptor error (${method}): ${(e as Error).message}`);
       reply({ cancelled: true });
     }
   }
@@ -257,7 +258,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     }
     if (!evt || typeof evt !== "object") return;
 
-    console.log(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
+    log.debug(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
 
     // UI interceptor: pi extensions calling ctx.ui.select/confirm/input/editor
     // emit an extension_ui_request and block until we reply. Transport it to
@@ -383,7 +384,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   }
 
   private emitEvent(e: AdapterEvent) {
-    console.log(`[pino] pi.emitEvent kind=${e.kind}`);
+    log.debug(`[pino] pi.emitEvent kind=${e.kind}`);
     this.emit("event", e);
   }
 }
