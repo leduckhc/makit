@@ -8,7 +8,7 @@
 
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import { basename } from "node:path";
+import { basename, resolve } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { PiAdapter } from "./adapters/pi.js";
@@ -28,6 +28,11 @@ export interface ManagerOpts {
   projects: string[];
   /** Override the production pi adapter, used by deterministic e2e tests. */
   adapterFactory?: AdapterFactory;
+  /**
+   * Called with the current list of project paths after every add/remove so
+   * the caller can persist them. Injected to keep the manager fs-agnostic.
+   */
+  onProjectsChanged?: (paths: string[]) => void;
 }
 
 export interface BridgeBinding {
@@ -59,11 +64,13 @@ export class SessionManager extends EventEmitter {
   /** In-flight attaches, so concurrent attach calls collapse onto one process. */
   private readonly attachInFlight = new Map<string, Promise<Session>>();
   private readonly adapterFactory?: AdapterFactory;
+  private readonly onProjectsChanged?: (paths: string[]) => void;
   private bridge?: BridgeBinding;
 
   constructor(opts: ManagerOpts) {
     super();
     this.adapterFactory = opts.adapterFactory;
+    this.onProjectsChanged = opts.onProjectsChanged;
     for (const path of opts.projects) {
       const id = randomUUID();
       this.projects.set(id, {
@@ -81,6 +88,43 @@ export class SessionManager extends EventEmitter {
   /** Listing for the home screen. */
   listProjects(): ProjectDTO[] {
     return [...this.projects.values()].map((p) => p.dto);
+  }
+
+  /**
+   * Add a project by path. Resolves + dedupes by resolved path: if an existing
+   * project already points at the same directory its DTO is returned unchanged
+   * (no persist hook fired). Otherwise a new unpinned project is created and
+   * the persist hook is notified.
+   */
+  addProject(path: string): ProjectDTO {
+    const resolved = resolve(path);
+    const existing = [...this.projects.values()].find(
+      (p) => resolve(p.dto.path) === resolved,
+    );
+    if (existing) return existing.dto;
+
+    const id = randomUUID();
+    const dto: ProjectDTO = {
+      id,
+      name: basename(resolved),
+      path: resolved,
+      pinned: false,
+      lastActivityAt: Date.now(),
+    };
+    this.projects.set(id, { dto });
+    this.notifyProjectsChanged();
+    return dto;
+  }
+
+  /** Remove a project by id. Throws on an unknown id. Sessions are left as-is. */
+  removeProject(id: string): void {
+    if (!this.projects.has(id)) throw new Error(`unknown project: ${id}`);
+    this.projects.delete(id);
+    this.notifyProjectsChanged();
+  }
+
+  private notifyProjectsChanged(): void {
+    this.onProjectsChanged?.([...this.projects.values()].map((p) => p.dto.path));
   }
 
   listSessions() {

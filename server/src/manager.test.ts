@@ -80,6 +80,62 @@ test("attachPiSession backfills history, resumes via path, and dedups", async ()
   }
 });
 
+test("addProject dedupes by resolved path and fires onProjectsChanged", () => {
+  const a = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const b = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  try {
+    const changes: string[][] = [];
+    const manager = new SessionManager({
+      projects: [a],
+      onProjectsChanged: (paths) => changes.push(paths),
+    });
+
+    const first = manager.addProject(b);
+    assert.equal(manager.listProjects().length, 2);
+    assert.deepEqual(changes.at(-1), [a, b]);
+
+    const again = manager.addProject(b + "/");
+    assert.equal(again.id, first.id);
+    assert.equal(manager.listProjects().length, 2);
+    assert.equal(changes.length, 1);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
+  }
+});
+
+test("removeProject removes the entry and fires onProjectsChanged", () => {
+  const a = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const b = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  try {
+    const changes: string[][] = [];
+    const manager = new SessionManager({
+      projects: [a, b],
+      onProjectsChanged: (paths) => changes.push(paths),
+    });
+    const target = manager.listProjects()[0];
+
+    manager.removeProject(target.id);
+    assert.equal(manager.listProjects().length, 1);
+    assert.ok(!manager.listProjects().some((p) => p.id === target.id));
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].length, 1);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
+  }
+});
+
+test("removeProject throws on an unknown id", () => {
+  const a = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  try {
+    const manager = new SessionManager({ projects: [a] });
+    assert.throws(() => manager.removeProject("nope"));
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
 test("attachPiSession rejects an unknown pi session id", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
   try {

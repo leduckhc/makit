@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -19,6 +20,11 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('pino'),
         actions: [
           const ConnectionChip(),
+          IconButton(
+            icon: const Icon(Icons.create_new_folder_outlined),
+            tooltip: 'Add project',
+            onPressed: () => showFolderBrowser(context),
+          ),
           if (projects.isNotEmpty)
             IconButton(
               icon: const Icon(Icons.add),
@@ -32,7 +38,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       body: projects.isEmpty
-          ? const _EmptyState()
+          ? _EmptyState(onAdd: () => showFolderBrowser(context))
           : Column(
               children: [
                 _GlobalRunningStrip(sessions: sessions.sessions),
@@ -116,21 +122,28 @@ class HomeScreen extends ConsumerWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({required this.onAdd});
+  final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.folder_open, size: 64),
-            SizedBox(height: 12),
-            Text(
-              'No projects yet.\nStart an agent on the desktop server and it will appear here.',
+            const Icon(Icons.folder_open, size: 64),
+            const SizedBox(height: 12),
+            const Text(
+              'No projects yet.\nAdd a repo or folder to get started.',
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.create_new_folder_outlined),
+              label: const Text('Add project'),
             ),
           ],
         ),
@@ -139,40 +152,60 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _ProjectSection extends StatelessWidget {
+class _ProjectSection extends ConsumerWidget {
   const _ProjectSection({required this.project, required this.sessions});
   final Project project;
   final List<Session> sessions;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
-          child: Row(
-            children: [
-              const Icon(Icons.folder_outlined, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                project.name,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(width: 8),
-              if (_workingCount(sessions) > 0)
-                _WorkingBadge(count: _workingCount(sessions)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  project.path,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
+        InkWell(
+          onLongPress: () => _confirmRemove(context, ref),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 8, 4),
+            child: Row(
+              children: [
+                const Icon(Icons.folder_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  project.name,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(width: 8),
+                if (_workingCount(sessions) > 0)
+                  _WorkingBadge(count: _workingCount(sessions)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    project.path,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 20),
+                  tooltip: 'Project actions',
+                  onSelected: (value) {
+                    if (value == 'remove') _confirmRemove(context, ref);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'remove',
+                      child: ListTile(
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Remove from pino'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         ...sessions.map((s) => _SessionTile(session: s)),
@@ -188,6 +221,41 @@ class _ProjectSection extends StatelessWidget {
         const Divider(height: 1),
       ],
     );
+  }
+
+  Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remove ${project.name}?'),
+        content: const Text(
+          'This removes the project from pino. Files on disk are not touched.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await store.removeProject(project.id);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Removed ${project.name}')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not remove project: $e')),
+      );
+    }
   }
 }
 

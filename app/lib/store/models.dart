@@ -82,6 +82,65 @@ class PiSessionMeta {
   }
 }
 
+/// A directory entry returned by `project.browse`. Directories only; [isRepo]
+/// marks git repositories so the picker can highlight them.
+class FolderEntry {
+  const FolderEntry({
+    required this.name,
+    required this.path,
+    required this.isRepo,
+  });
+
+  final String name;
+  final String path;
+  final bool isRepo;
+
+  /// Defensive: returns null when [name] or [path] is missing/wrong-typed so
+  /// the caller can skip the bad entry instead of throwing.
+  static FolderEntry? fromJson(Map<String, dynamic> j) {
+    final name = j['name'];
+    final path = j['path'];
+    if (name is! String || path is! String) return null;
+    return FolderEntry(
+      name: name,
+      path: path,
+      isRepo: j['isRepo'] == true,
+    );
+  }
+}
+
+/// Result of a `project.browse` request: the resolved absolute [path], its
+/// [parent] (null at the filesystem root), and the child directory [entries].
+class BrowseResult {
+  const BrowseResult({
+    required this.path,
+    required this.parent,
+    required this.entries,
+  });
+
+  final String path;
+  final String? parent;
+  final List<FolderEntry> entries;
+
+  /// Defensive parse: bad [entries] are skipped, a bad [parent] becomes null,
+  /// and a missing [path] falls back to empty — never throws.
+  static BrowseResult fromJson(Map<String, dynamic> j) {
+    final raw = j['entries'];
+    final entries = raw is List
+        ? raw
+              .whereType<Map<dynamic, dynamic>>()
+              .map((m) => FolderEntry.fromJson(Map<String, dynamic>.from(m)))
+              .whereType<FolderEntry>()
+              .toList()
+        : <FolderEntry>[];
+    return BrowseResult(
+      path: j['path'] is String ? j['path'] as String : '',
+      parent: j['parent'] is String ? j['parent'] as String : null,
+      entries: entries,
+    );
+  }
+}
+
 enum SessionStatus {
   idle,
   running,

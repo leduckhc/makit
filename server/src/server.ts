@@ -22,6 +22,9 @@
  * malformed input yields an `err {code: bad_request}` and is never thrown.
  */
 
+import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Envelope } from "./protocol.js";
@@ -32,6 +35,7 @@ import type { Session } from "./session.js";
 import type { DeviceRegistry } from "./pairing/registry.js";
 import type { ServerCert } from "./pairing/cert.js";
 import { log } from "./log.js";
+import { browseDirectory } from "./project-store.js";
 import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
@@ -227,6 +231,48 @@ export function startWsServer(opts: ServerOpts) {
       } catch (e) {
         ctx.err(WireErrorCode.BadRequest, (e as Error).message);
       }
+    });
+
+    r.register("project.browse", async (ctx) => {
+      const raw = ctx.env.path;
+      const path = typeof raw === "string" && raw.length > 0 ? raw : homedir();
+      try {
+        ctx.ack({ ...browseDirectory(path) });
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+      }
+    });
+
+    r.register("project.add", async (ctx) => {
+      const path = typeof ctx.env.path === "string" ? ctx.env.path : "";
+      if (!path) {
+        ctx.err(WireErrorCode.BadRequest, "project.add requires a string `path`");
+        return;
+      }
+      const full = resolve(path);
+      if (!existsSync(full) || !statSync(full).isDirectory()) {
+        ctx.err(WireErrorCode.BadRequest, `not a directory: ${full}`);
+        return;
+      }
+      const project = manager.addProject(full);
+      broadcastSnapshots();
+      ctx.ack({ projectId: project.id });
+    });
+
+    r.register("project.remove", async (ctx) => {
+      const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : "";
+      if (!projectId) {
+        ctx.err(WireErrorCode.BadRequest, "project.remove requires a string `projectId`");
+        return;
+      }
+      try {
+        manager.removeProject(projectId);
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+        return;
+      }
+      broadcastSnapshots();
+      ctx.ack({});
     });
 
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.

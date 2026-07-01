@@ -21,6 +21,7 @@
 import { resolve } from "node:path";
 import qrcode from "qrcode-terminal";
 import { SessionManager } from "./manager.js";
+import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
 import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
 import { startBridge } from "./bridge.js";
@@ -50,10 +51,22 @@ function parseArgs(argv: string[]) {
   if (args.projects.length === 0) args.projects.push(process.cwd());
   return args;
 }
-
 function bestLanHost(): string {
   const ips = localIPv4s();
   return ips[0] ?? "127.0.0.1";
+}
+
+/** Dedupe paths by their resolved absolute form, preserving first-seen order. */
+function dedupeResolved(paths: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of paths) {
+    const key = resolve(p);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
 }
 
 async function main() {
@@ -74,8 +87,17 @@ async function main() {
     printPairQr(registry, opts.port, cert.fingerprint);
     process.exit(0);
   }
-
-  const manager = new SessionManager({ projects: opts.projects });
+  // Merge persisted projects with any CLI `--project` roots, deduping by
+  // resolved path so a restart neither loses nor duplicates entries. Persist
+  // the merged set once at startup so a fresh `--project` gets recorded.
+  const file = projectsFile();
+  const persisted = loadProjectPaths(file);
+  const merged = dedupeResolved([...persisted, ...opts.projects]);
+  saveProjectPaths(file, merged);
+  const manager = new SessionManager({
+    projects: merged,
+    onProjectsChanged: (paths) => saveProjectPaths(file, paths),
+  });
 
   const ws = startWsServer({
     host: opts.host,

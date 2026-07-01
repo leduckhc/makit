@@ -284,6 +284,38 @@ class StoreController extends StateNotifier<StoreState> {
     return sid;
   }
 
+  /// Browse the server's filesystem for candidate project folders. Pass null
+  /// for the server's default/home dir. Resolves with the resolved dir, its
+  /// parent, and child directories.
+  Future<BrowseResult> browse(String? path) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'project.browse', 'path': ?path},
+    );
+    return BrowseResult.fromJson(ack);
+  }
+
+  /// Register a new project rooted at [path]. Resolves with the new project id
+  /// once the server acks; the fresh `projects.snapshot` updates the store.
+  Future<String> addProject(String path) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'project.add', 'path': path},
+    );
+    final id = ack['projectId'] as String?;
+    if (id == null) throw StateError('server did not return projectId');
+    return id;
+  }
+
+  /// Remove a project from pino. The server broadcasts a fresh snapshot that
+  /// drops the project (and its sessions) from the store.
+  Future<void> removeProject(String id) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'project.remove', 'projectId': id},
+    );
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
