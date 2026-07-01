@@ -83,7 +83,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 final item = items[i];
                 return switch (item) {
                   UserMessageItem() => ChatBubble.user(text: item.text),
-                  AgentMessageItem() => ChatBubble.agent(text: item.text),
+                  AgentMessageItem() => AgentMessage(text: item.text),
                   ToolCallItem() => ToolCallCard(
                     item: item,
                     onTap: () => context.go(
