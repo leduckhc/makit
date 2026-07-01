@@ -25,6 +25,25 @@ void main() {
       expect(rendererFor(_tool('bash', {})), isNotNull);
       expect(rendererFor(_tool('grep', {})), isNotNull);
       expect(rendererFor(_tool('write', {})), isNotNull);
+      expect(rendererFor(_tool('askUserQuestion', {})), isNotNull);
+      expect(rendererFor(_tool('AskUserQuestion', {})), isNotNull);
+    });
+
+    test('askUserQuestion subtitle summarises the chosen answers', () {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'askUserQuestion',
+        args: const {
+          'questions': [
+            {'question': 'Lang?', 'options': [{'label': 'EN'}, {'label': 'ES'}]},
+          ],
+        },
+        ended: true,
+        details: const {'kind': 'askUserQuestion', 'indices': [0], 'answers': ['EN']},
+      );
+      expect(rendererFor(item)!.subtitle(item), 'EN');
     });
 
     test('returns null for unknown tools (caller falls back to generic)', () {

@@ -149,6 +149,7 @@ class ToolCallItem extends ChatItem {
     this.exitCode,
     this.summary,
     this.output,
+    this.details,
     this.risk = 'safe',
   });
 
@@ -161,8 +162,11 @@ class ToolCallItem extends ChatItem {
   final String? summary;
 
   /// Full tool result text (file contents, bash stdout, error message). Shown
-  /// in the detail view; [summary] is its first line for the collapsed card.
   final String? output;
+
+  /// Structured tool result (e.g. askUserQuestion's {indices, answers}) for
+  /// renderers that want more than the text. Null for most tools.
+  final Map<String, dynamic>? details;
   final String risk;
 
   ToolCallItem copyWith({
@@ -171,6 +175,7 @@ class ToolCallItem extends ChatItem {
     int? exitCode,
     String? summary,
     String? output,
+    Map<String, dynamic>? details,
   }) => ToolCallItem(
     seq: seq,
     ts: ts,
@@ -183,6 +188,7 @@ class ToolCallItem extends ChatItem {
     exitCode: exitCode ?? this.exitCode,
     summary: summary ?? this.summary,
     output: output ?? this.output,
+    details: details ?? this.details,
   );
 }
 
@@ -269,6 +275,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             exitCode: (e.payload['exitCode'] as num?)?.toInt(),
             summary: e.payload['summary'] as String?,
             output: e.payload['output'] as String?,
+            details: (e.payload['details'] as Map?)?.cast<String, dynamic>(),
           );
         }
       case EventKind.approvalRequest:

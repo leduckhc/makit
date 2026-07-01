@@ -367,6 +367,11 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
             // the full result text for the detail view.
             summary: summarizeText(evt.toolName, output),
             output,
+            // Structured tool result (e.g. askUserQuestion's {indices,answers})
+            // for renderers that want more than the text. Best-effort.
+            ...(evt.result && typeof evt.result === "object" && evt.result.details
+              ? { details: evt.result.details }
+              : {}),
           },
         });
         return;
