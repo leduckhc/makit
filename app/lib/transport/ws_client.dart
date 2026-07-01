@@ -9,6 +9,7 @@ import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'protocol.dart';
+import 'transport.dart';
 
 /// State of the underlying WebSocket.
 enum WsState { idle, connecting, connected, reconnecting, closed }
@@ -18,7 +19,7 @@ enum WsState { idle, connecting, connected, reconnecting, closed }
 /// If [pinnedFingerprint] is set, we accept any TLS cert whose DER sha256
 /// matches it — that's how we trust the server's self-signed cert without
 /// adding it to the OS trust store.
-class WsClient {
+class WsClient implements Transport {
   WsClient();
 
   WebSocketChannel? _ch;
@@ -36,7 +37,9 @@ class WsClient {
   Map<String, dynamic> _helloBody = const {};
   String? _pinnedFingerprint;
 
+  @override
   Stream<WsState> get state => _stateCtrl.stream;
+  @override
   Stream<Envelope> get frames => _frameCtrl.stream;
 
   WsState _current = WsState.idle;
@@ -44,6 +47,7 @@ class WsClient {
 
   void setResumeCursors(Map<String, int> cursors) => _resumeCursors = cursors;
 
+  @override
   Future<void> connect(
     String url, {
     Map<String, dynamic> helloBody = const {},
@@ -55,6 +59,7 @@ class WsClient {
     await _open();
   }
 
+  @override
   Future<void> close() async {
     _retry?.cancel();
     _pinger?.cancel();
@@ -85,6 +90,7 @@ class WsClient {
 
   /// Like [send] but preserves a caller-supplied envelope id, so callers
   /// that correlate ack/err by id (see ConnectionController.request) match.
+  @override
   void sendEnvelope(Envelope env) {
     _send(env);
   }
