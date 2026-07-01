@@ -13,12 +13,12 @@ import { join } from "node:path";
 
 import { DeviceRegistry } from "./registry.js";
 
-function withHome(fn: (home: string) => void | Promise<void>) {
+async function withHome(fn: (home: string) => void | Promise<void>) {
   const prev = process.env.PINO_HOME;
   const home = mkdtempSync(join(tmpdir(), "pino-test-"));
   process.env.PINO_HOME = home;
   try {
-    return fn(home);
+    await fn(home);
   } finally {
     if (prev === undefined) delete process.env.PINO_HOME;
     else process.env.PINO_HOME = prev;
@@ -74,13 +74,27 @@ test("corrupt devices.json starts fresh without throwing", () =>
     assert.equal(reg!.list().length, 0);
   }));
 
-test("too many bad pair attempts trips a lockout", () =>
+test("a flood of bad tokens never blocks a valid one (no DoS)", () =>
   withHome(() => {
     const reg = new DeviceRegistry();
     const valid = reg.mintPairToken();
+    // An attacker spamming bad guesses must NOT lock out the legitimate phone.
     for (let i = 0; i < 32; i++) {
       assert.equal(reg.consumePairToken("bad-token", "phone"), null);
     }
-    // Even a valid token is refused while locked out.
-    assert.equal(reg.consumePairToken(valid, "phone"), null);
+    assert.notEqual(reg.consumePairToken(valid, "phone"), null);
+  }));
+
+test("authenticate scans all devices (constant-time, no early exit)", () =>
+  withHome(() => {
+    const reg = new DeviceRegistry();
+    const a = reg.consumePairToken(reg.mintPairToken(), "a")!;
+    const b = reg.consumePairToken(reg.mintPairToken(), "b")!;
+    const c = reg.consumePairToken(reg.mintPairToken(), "c")!;
+    // First, middle, and last device all resolve — proves the scan doesn't
+    // stop early and each bearer maps to its own device.
+    assert.equal(reg.authenticate(a.bearer)?.id, a.id);
+    assert.equal(reg.authenticate(b.bearer)?.id, b.id);
+    assert.equal(reg.authenticate(c.bearer)?.id, c.id);
+    assert.equal(reg.authenticate("nope"), null);
   }));

@@ -41,11 +41,11 @@ export class DeviceRegistry {
   private byBearer = new Map<string, PairedDevice>();
   private pendingTokens = new Map<string, PairToken>();
 
-  // In-memory brute-force guard for consumePairToken.
-  private static readonly MAX_FAILED_ATTEMPTS = 10;
-  private static readonly LOCKOUT_MS = 60 * 1000;
-  private failedAttempts = 0;
-  private lockedUntil = 0;
+  // NOTE: brute-forcing a 128-bit pair token is infeasible, so there is no
+  // registry-level attempt lockout — a global counter here would let any LAN
+  // peer's bad guesses block the legitimate phone's *valid* token (a local
+  // DoS). Abuse throttling, if ever needed, belongs at the connection layer
+  // (WS `hello` handler, where the source IP is available).
 
   constructor() {
     mkdirSync(pinoHome(), { recursive: true });
@@ -73,20 +73,9 @@ export class DeviceRegistry {
 
   /** Consume a pair token and create a new device. Returns the bearer. */
   consumePairToken(token: string, label: string): PairedDevice | null {
-    // Brute-force guard: refuse while locked out, regardless of token validity.
-    const now = Date.now();
-    if (now < this.lockedUntil) return null;
-
     this.gcTokens();
     const t = this.pendingTokens.get(token);
-    if (!t) {
-      if (++this.failedAttempts >= DeviceRegistry.MAX_FAILED_ATTEMPTS) {
-        this.lockedUntil = now + DeviceRegistry.LOCKOUT_MS;
-        this.failedAttempts = 0;
-      }
-      return null;
-    }
-    this.failedAttempts = 0;
+    if (!t) return null;
     this.pendingTokens.delete(token);
     const device: PairedDevice = {
       id: randomUUID(),
