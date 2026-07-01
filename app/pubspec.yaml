@@ -31,12 +31,15 @@ dependencies:
   collection: ^1.19.0        # publisher: dart.dev (≥1.19 required by flutter_test transitives)
   crypto: ^3.0.5             # publisher: dart.dev — SHA256 fingerprint of pinned server cert
   flutter_markdown: ^0.7.3   # publisher: flutter.dev
+  flutter_highlight: ^0.7.0  # publisher: pd4d10 — pure-Dart code syntax highlight
+  markdown: ^7.2.1           # publisher: dart.dev — md.Element for the code builder
 
   # ---------------- security-critical native plugins -----------------------
   # Pinned exactly: native code = supply-chain blast radius. Bump deliberately
   # after reading the plugin's CHANGELOG and re-running `tool/audit.sh`.
   flutter_secure_storage: 9.2.2  # iOS Keychain / Android Keystore — bearer storage
   multicast_dns: 0.3.3+1         # publisher: flutter.dev — parses LAN multicast UDP
+  url_launcher: 6.3.1            # publisher: flutter.dev — opens markdown links externally
 
 dev_dependencies:
   flutter_test:

@@ -82,8 +82,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               itemBuilder: (context, i) {
                 final item = items[i];
                 return switch (item) {
-                  UserMessageItem() => ChatBubble.user(text: item.text),
-                  AgentMessageItem() => AgentMessage(text: item.text),
+                  UserMessageItem() =>
+                    ChatBubble.user(text: item.text, ts: item.ts),
+                  AgentMessageItem() =>
+                    AgentMessage(text: item.text, ts: item.ts),
                   ToolCallItem() => ToolCallCard(
                     item: item,
                     onTap: () => context.go(
