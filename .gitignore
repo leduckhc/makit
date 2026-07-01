@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Logs & temp
+*.log
+.DS_Store
+
+# Agent job dirs & worktrees
+.piano/
+.worktrees/
+.firecrawl/
+
+# Env / secrets
+.env
+.env.*
