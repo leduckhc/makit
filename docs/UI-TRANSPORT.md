@@ -100,3 +100,68 @@ Both feed the same `askDevice` → app path and reuse the canonical UICall types
 3. Do we surface fire-and-forget `notify`/`setStatus` in the app at all?
 4. Keep the `AskUserQuestion` shadow permanently, or retire it if `@mammothb/pi-ask`
    gains a non-`custom` path?
+
+---
+
+## Postmortem: the `AskUserQuestion` "cancelled" crash (resolved)
+
+### Symptom
+In the app, the agent's `AskUserQuestion` tool errored with:
+
+```
+AskUserQuestion -> Cannot read properties of undefined (reading 'cancelled')
+```
+
+Confusingly, a **lowercase** `askUserQuestion` worked while the **capital**
+`AskUserQuestion` failed — same session, same schema.
+
+### Investigation (what threw us off)
+1. `cancelled` is written by the app on cancel, but **never read** by pino's
+   server/connector — so the crash was **inside pi**, not our code.
+2. We first assumed our bridge response shape was wrong. It wasn't; a
+   standalone rpc repro (real `pi` + `pino-pi.ts` + a mock bridge returning a
+   well-formed response) completed cleanly.
+3. Capital `AskUserQuestion` turned out **not to be our tool** at all — it is
+   the user's global extension **`@mammothb/pi-ask`** (a Claude-Code-style
+   ask tool). Lowercase `askUserQuestion` was pino's own connector tool.
+
+### Root cause
+- `@mammothb/pi-ask` renders its form with **`ctx.ui.custom(factory)`** — a
+  closure that draws a live TUI component.
+- pino drives pi **headless** (`pi --mode rpc`). In rpc, `ui.custom()` is
+  hard-coded to `return undefined` (the factory can't cross the rpc boundary).
+- pi-ask guards with `if (!ctx.hasUI) throw`. But `hasUI` is
+  `uiContext !== noOpUIContext`, and **rpc installs a real uiContext**, so
+  `hasUI === true`. pi-ask passes the guard, calls `custom()`, gets `undefined`,
+  then does `undefined.cancelled` → the crash.
+- pino's own `askUserQuestion` connector uses the **HTTP bridge → phone**, which
+  works fine in rpc. That's why lowercase worked and capital didn't.
+
+Separately, a **real** bug was found and fixed while chasing this: the server
+bridge unwrapped `env.body` (undefined — envelopes are flat), so *every*
+askUserQuestion through the live server returned undefined. Fixed to `return env`
+(commit "fix(bridge): return the flat srv.response envelope, not env.body").
+
+### Resolution
+- **Short term (shipped):** `pino-pi.ts` registers a pino-native ask under both
+  `AskUserQuestion` and `askUserQuestion`. pi resolves duplicate tool names by
+  "first registration wins" and pino connectors load first, so it cleanly
+  supersedes `@mammothb/pi-ask` (pi logs `Tool "AskUserQuestion" conflicts …`
+  and skips it). The phone wizard now answers whichever casing the model emits.
+- **Long term (designed + POC-proven):** the **interceptor** above. pino
+  transports pi's standard `ctx.ui.select/confirm/input/editor` calls to the
+  phone and back, without owning tools. Proven end-to-end in `server/poc/`
+  (`poc-ui-ext.ts` + `poc-interceptor.mjs`): select/confirm/input all
+  round-trip. `ui.custom` remains un-transportable by design, so `custom`-based
+  extensions (like pi-ask) still need a native pino tool.
+
+### Rules of thumb for the future
+- A tool error prefixed `ToolName -> …` is thrown **inside pi / the extension**,
+  not in pino. Reproduce with a standalone `pi --mode rpc -e <ext>` + a mock
+  bridge before touching pino code.
+- `hasUI` is **true** under pino rpc. Extensions *will* attempt UI. Only
+  `select/confirm/input/editor` emit `extension_ui_request`; `custom` silently
+  returns `undefined`.
+- Keep test harnesses (e.g. `e2e-server.ts`) byte-identical to production wiring
+  for shared code paths — the `env` vs `env.body` divergence hid a live bug
+  behind green stub tests.
