@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   process.env.PINO_HOME = pinoHome;
   seedDeviceRegistry(pinoHome, args.bearer);
 
-  const cert = loadOrCreateCert();
+  const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
   let wsHandle: ReturnType<typeof startWsServer>;
 

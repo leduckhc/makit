@@ -64,14 +64,14 @@ async function main() {
   }
   const opts = parseArgs(process.argv.slice(3));
 
-  const cert = loadOrCreateCert();
+  const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
 
   if (cmd === "pair") {
     // One-shot mint-and-print mode. Useful if the server is started elsewhere
     // and you just need a fresh QR. In M1 we share the same registry file so
     // tokens minted here are honoured by the running server.
-    printPairQr(registry, opts.port);
+    printPairQr(registry, opts.port, cert.fingerprint);
     process.exit(0);
   }
 
@@ -151,7 +151,7 @@ async function main() {
     if (registry.list().length === 0 && opts.printPair) {
       console.log("");
       console.log("[pino] no paired devices yet — scan this QR with the app:");
-      printPairQr(registry, opts.port);
+      printPairQr(registry, opts.port, cert.fingerprint);
       // Re-mint just before the 5-minute TTL expires.
       rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
     } else {
@@ -163,7 +163,7 @@ async function main() {
   // SIGUSR1 → print a fresh pair QR on demand. Handy without restarting.
   process.on("SIGUSR1", () => {
     clearTimeout(rotateTimer);
-    printPairQr(registry, opts.port);
+    printPairQr(registry, opts.port, cert.fingerprint);
     if (registry.list().length === 0) {
       rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
     }
@@ -175,11 +175,10 @@ async function main() {
   }
 }
 
-function printPairQr(registry: DeviceRegistry, port: number) {
+function printPairQr(registry: DeviceRegistry, port: number, fingerprint: string) {
   const host = bestLanHost();
-  const cert = loadOrCreateCert();
   const token = registry.mintPairToken();
-  const url = buildPairUrl({ host, port, fingerprint: cert.fingerprint, token });
+  const url = buildPairUrl({ host, port, fingerprint, token });
   console.log("");
   qrcode.generate(url, { small: true });
   console.log(`[pino] ${url}`);

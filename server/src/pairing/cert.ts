@@ -30,7 +30,7 @@ export interface ServerCert {
   fingerprint: string;
 }
 
-export function loadOrCreateCert(): ServerCert {
+export async function loadOrCreateCert(): Promise<ServerCert> {
   mkdirSync(pinoHome(), { recursive: true });
   const crtPath = certPath();
   const keyFilePath = keyPath();
@@ -45,15 +45,15 @@ export function loadOrCreateCert(): ServerCert {
   // when the app dials the server by IP from a phone.
   const ips = localIPv4s();
   const altNames = [
-    { type: 2, value: "localhost" }, // DNS
-    { type: 7, ip: "127.0.0.1" },    // IP
-    ...ips.map((ip) => ({ type: 7, ip })),
+    { type: 2 as const, value: "localhost" }, // DNS
+    { type: 7 as const, ip: "127.0.0.1" }, // IP
+    ...ips.map((ip) => ({ type: 7 as const, ip })),
   ];
 
   const attrs = [{ name: "commonName", value: "pino" }];
-  const pems = selfsigned.generate(attrs, {
+  const pems = await selfsigned.generate(attrs, {
     keySize: 2048,
-    days: 3650,
+    notAfterDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000), // ~10y
     algorithm: "sha256",
     extensions: [
       { name: "basicConstraints", cA: false },
