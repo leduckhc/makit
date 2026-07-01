@@ -41,7 +41,7 @@ dependencies:
   # after reading the plugin's CHANGELOG and re-running `tool/audit.sh`.
   flutter_secure_storage: 9.2.2  # iOS Keychain / Android Keystore — bearer storage
   multicast_dns: 0.3.3+1         # publisher: flutter.dev — parses LAN multicast UDP
-  url_launcher: 6.3.1            # publisher: flutter.dev — opens markdown links externally
+  url_launcher: 6.3.2            # publisher: flutter.dev — opens markdown links externally
 
 dev_dependencies:
   flutter_test:
