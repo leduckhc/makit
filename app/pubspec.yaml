@@ -22,8 +22,8 @@ dependencies:
   # ---------------- pure-Dart utilities (pub.dev verified publishers) ------
   # `^` allows compatible minor/patch updates. Lockfile pins the exact
   # resolved version; enforce-lockfile in CI prevents drift.
-  flutter_riverpod: ^2.5.1   # publisher: remi.rousselet
-  go_router: ^14.2.0         # publisher: flutter.dev
+  flutter_riverpod: ^3.0.0   # publisher: remi.rousselet
+  go_router: ^17.0.0         # publisher: flutter.dev
   web_socket_channel: ^3.0.0 # publisher: dart.dev — TLS pin uses dart:io
   freezed_annotation: ^3.1.0 # publisher: rrousselgit
   json_annotation: ^4.12.0   # publisher: dart.dev
@@ -39,7 +39,7 @@ dependencies:
   # ---------------- security-critical native plugins -----------------------
   # Pinned exactly: native code = supply-chain blast radius. Bump deliberately
   # after reading the plugin's CHANGELOG and re-running `tool/audit.sh`.
-  flutter_secure_storage: 9.2.2  # iOS Keychain / Android Keystore — bearer storage
+  flutter_secure_storage: 10.3.1  # iOS Keychain / Android Keystore — bearer storage
   multicast_dns: 0.3.3+1         # publisher: flutter.dev — parses LAN multicast UDP
   url_launcher: 6.3.2            # publisher: flutter.dev — opens markdown links externally
 
