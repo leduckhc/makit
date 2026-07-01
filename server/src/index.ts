@@ -119,7 +119,17 @@ async function main() {
       extensionPaths.map((p) => p.split("/").pop()).join(", "),
     );
   }
-  manager.setBridge({ url: bridge.url, token: bridge.token, extensionPaths });
+  manager.setBridge({
+    url: bridge.url,
+    token: bridge.token,
+    extensionPaths,
+    // Same flat-envelope askDevice, reused by the PiAdapter UI interceptor.
+    askUser: async (call) => {
+      const { sessionId, ...rest } = call;
+      const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
+      return env as unknown as import("./uicall.js").UIResponse;
+    },
+  });
 
   await manager.ensureDefaultSessions();
 

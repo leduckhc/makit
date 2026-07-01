@@ -17,7 +17,15 @@
 
 export type UICall =
   | AskUserQuestionCall
-  | ConfirmActionCall;
+  | ConfirmActionCall
+  | InputCall;
+
+/**
+ * A callback that presents a UICall on the user's phone and resolves with
+ * their answer. Used by both the HTTP bridge (connector tools) and the
+ * PiAdapter UI interceptor (transparent ctx.ui.* transport).
+ */
+export type AskUser = (call: UICall & { sessionId?: string }) => Promise<UIResponse>;
 
 /**
  * Prompt the user to pick from 1–4 survey-style questions, each with 2–4 options.
@@ -64,7 +72,8 @@ export interface ConfirmActionCall {
  */
 export type UIResponse =
   | AskUserQuestionResponse
-  | ConfirmActionResponse;
+  | ConfirmActionResponse
+  | InputResponse;
 
 export interface AskUserQuestionResponse {
   kind: "askUserQuestion";
@@ -79,4 +88,26 @@ export interface AskUserQuestionResponse {
 export interface ConfirmActionResponse {
   kind: "confirmAction";
   approved: boolean;
+}
+
+/**
+ * Prompt the user for a single free-text value. Maps pi's `ctx.ui.input` and
+ * `ctx.ui.editor` (multiline). Used by the PiAdapter UI interceptor.
+ *
+ * Response: `{ kind: "input", value?: string, cancelled?: boolean }`
+ */
+export interface InputCall {
+  kind: "input";
+  title: string;
+  placeholder?: string;
+  /** Prefilled text (from ctx.ui.editor). */
+  prefill?: string;
+  /** Render a multiline editor (ctx.ui.editor) vs a single-line field. */
+  multiline?: boolean;
+}
+
+export interface InputResponse {
+  kind: "input";
+  value?: string;
+  cancelled?: boolean;
 }

@@ -10,6 +10,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
+import type { AskUser } from "./uicall.js";
 import { PiAdapter } from "./adapters/pi.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
@@ -32,7 +33,13 @@ export interface BridgeBinding {
   url: string;
   token: string;
   /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
+  /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
   extensionPaths: string[];
+  /**
+   * Present a UICall on the phone and resolve with the answer. Used by the
+   * PiAdapter UI interceptor to transport pi's ctx.ui.* calls to the app.
+   */
+  askUser?: AskUser;
 }
 
 interface ProjectEntry {
@@ -111,6 +118,7 @@ export class SessionManager extends EventEmitter {
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
+      askUser: this.bridge?.askUser,
     });
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);

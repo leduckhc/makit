@@ -5,6 +5,7 @@
 
 import { EventEmitter } from "node:events";
 import type { SessionEvent } from "../protocol.js";
+import type { AskUser } from "../uicall.js";
 
 /** Event payload from an adapter — server fills in seq + sessionId. */
 export type AdapterEvent = Omit<SessionEvent, "seq" | "sessionId">;
@@ -18,7 +19,14 @@ export interface SpawnOpts {
   /** Paths to pi extensions to load via `-e`. */
   extensions?: string[];
   /** Session id used for routing reverse-RPC. */
+  /** Session id used for routing reverse-RPC. */
   sessionId?: string;
+  /**
+   * Present a UICall on the user's phone and resolve with their answer. When
+   * set, the adapter transports the agent's UI requests (e.g. pi's
+   * ctx.ui.select/confirm/input) to the app instead of failing headless.
+   */
+  askUser?: AskUser;
 }
 
 export interface UserInput {

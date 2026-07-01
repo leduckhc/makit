@@ -32,6 +32,8 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   private child?: ChildProcess;
   private extraEnv: Record<string, string> = {};
   private extensions: string[] = [];
+  private sessionId = "";
+  private askUser?: import("../uicall.js").AskUser;
 
   /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
   private isStreaming = false;
@@ -43,6 +45,8 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     this.cwd = opts.cwd;
     this.extraEnv = opts.env ?? {};
     this.extensions = opts.extensions ?? [];
+    this.sessionId = opts.sessionId ?? "";
+    this.askUser = opts.askUser;
     await this.ensureProcess();
     this.emit("status", "idle");
   }
@@ -150,6 +154,97 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     stdin.write(JSON.stringify(cmd) + "\n");
   }
 
+  /**
+   * Transport a pi `extension_ui_request` to the phone and reply with an
+   * `extension_ui_response`. Maps pi's ui methods → canonical UICall → app,
+   * then the app's answer → the per-method response shape pi expects:
+   *   select  → { value } | { cancelled }
+   *   confirm → { confirmed } | { cancelled }
+   *   input   → { value } | { cancelled }
+   *   editor  → { value } | { cancelled }
+   * Fire-and-forget methods (notify/setStatus/…) need no reply.
+   */
+  private async handleUiRequest(evt: any): Promise<void> {
+    const id: string = evt.id;
+    const method: string = evt.method;
+    const reply = (fields: Record<string, unknown>) =>
+      this.writeCommand({ type: "extension_ui_response", id, ...fields });
+
+    // Fire-and-forget UI methods — no response expected.
+    if (["notify", "setStatus", "setWidget", "setTitle", "set_editor_text"].includes(method)) {
+      return;
+    }
+
+    // No phone attached → cancel so pi doesn't hang.
+    if (!this.askUser) {
+      reply({ cancelled: true });
+      return;
+    }
+
+    try {
+      switch (method) {
+        case "select": {
+          const options: string[] = Array.isArray(evt.options) ? evt.options : [];
+          const resp = await this.askUser({
+            kind: "askUserQuestion",
+            sessionId: this.sessionId,
+            questions: [
+              {
+                header: "Select",
+                question: String(evt.title ?? "Pick one"),
+                options: options.map((label) => ({ label: String(label) })),
+              },
+            ],
+          });
+          if (resp.kind === "askUserQuestion" && !(resp as any).cancelled && resp.answers?.[0]) {
+            reply({ value: resp.answers[0] });
+          } else {
+            reply({ cancelled: true });
+          }
+          return;
+        }
+        case "confirm": {
+          const resp = await this.askUser({
+            kind: "confirmAction",
+            sessionId: this.sessionId,
+            title: String(evt.title ?? "Confirm"),
+            message: String(evt.message ?? ""),
+            action: "confirm",
+          });
+          if (resp.kind === "confirmAction" && !(resp as any).cancelled) {
+            reply({ confirmed: resp.approved });
+          } else {
+            reply({ cancelled: true });
+          }
+          return;
+        }
+        case "input":
+        case "editor": {
+          const resp = await this.askUser({
+            kind: "input",
+            sessionId: this.sessionId,
+            title: String(evt.title ?? (method === "editor" ? "Edit" : "Input")),
+            placeholder: typeof evt.placeholder === "string" ? evt.placeholder : undefined,
+            prefill: typeof evt.prefill === "string" ? evt.prefill : undefined,
+            multiline: method === "editor",
+          });
+          if (resp.kind === "input" && !resp.cancelled && typeof resp.value === "string") {
+            reply({ value: resp.value });
+          } else {
+            reply({ cancelled: true });
+          }
+          return;
+        }
+        default:
+          // custom (pi never emits it in rpc) or unknown → cancel.
+          reply({ cancelled: true });
+      }
+    } catch (e) {
+      console.log(`[pino] ui interceptor error (${method}): ${(e as Error).message}`);
+      reply({ cancelled: true });
+    }
+  }
+
   // ---- pi → wire mapping --------------------------------------------------
 
   private handleLine(line: string): void {
@@ -163,6 +258,15 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     if (!evt || typeof evt !== "object") return;
 
     console.log(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
+
+    // UI interceptor: pi extensions calling ctx.ui.select/confirm/input/editor
+    // emit an extension_ui_request and block until we reply. Transport it to
+    // the phone and write back an extension_ui_response. See docs/UI-TRANSPORT.md.
+    if (evt.type === "extension_ui_request") {
+      void this.handleUiRequest(evt);
+      return;
+    }
+
     switch (evt.type) {
       case "response":
         if (evt.command === "get_commands" && evt.success && evt.data?.commands) {

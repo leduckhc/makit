@@ -74,6 +74,11 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
       return;
     }
 
+    if (kind == 'input') {
+      await _showInput(navCtx, env.id, env.body);
+      return;
+    }
+
     await _showGeneric(navCtx, env);
   }
 
@@ -183,6 +188,50 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
       'kind': 'confirmAction',
       'approved': approved ?? false,
     });
+  }
+
+  /// Free-text input (maps pi's ctx.ui.input / ctx.ui.editor via the PiAdapter
+  /// UI interceptor). Responds with the canonical `input` shape.
+  Future<void> _showInput(
+    BuildContext ctx,
+    String requestId,
+    Map<String, dynamic> body,
+  ) async {
+    final controller = TextEditingController(
+      text: body['prefill']?.toString() ?? '',
+    );
+    final multiline = body['multiline'] == true;
+    final value = await showDialog<String?>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dctx) => AlertDialog(
+        title: Text(body['title']?.toString() ?? 'Input'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: multiline ? 3 : 1,
+          maxLines: multiline ? 8 : 1,
+          decoration: InputDecoration(
+            hintText: body['placeholder']?.toString(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, controller.text),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+    if (value == null) {
+      _respond(requestId, {'kind': 'input', 'cancelled': true});
+    } else {
+      _respond(requestId, {'kind': 'input', 'value': value});
+    }
   }
 
   Future<void> _showGeneric(BuildContext ctx, Envelope env) async {
