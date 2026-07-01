@@ -10,9 +10,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'protocol.dart';
 import 'transport.dart';
-
-/// State of the underlying WebSocket.
-enum WsState { idle, connecting, connected, reconnecting, closed }
+// WsState now lives in transport.dart (breaks the interface↔impl import cycle);
+// re-export so existing `import 'ws_client.dart'` consumers are unaffected.
+export 'transport.dart' show WsState;
 
 /// Reconnecting WebSocket client with fingerprint-pinned TLS.
 ///

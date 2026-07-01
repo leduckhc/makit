@@ -1,5 +1,7 @@
 import 'protocol.dart';
-import 'ws_client.dart' show WsState;
+
+/// State of the underlying transport connection.
+enum WsState { idle, connecting, connected, reconnecting, closed }
 
 /// The transport seam consumed by `ConnectionController`.
 ///

@@ -7,7 +7,6 @@ import 'package:pino/pairing/mdns_browser.dart';
 import 'package:pino/store/connection.dart';
 import 'package:pino/transport/protocol.dart';
 import 'package:pino/transport/transport.dart';
-import 'package:pino/transport/ws_client.dart';
 
 const _kPairedServerKey = 'paired_server';
 
@@ -15,9 +14,9 @@ const _kPairedServerKey = 'paired_server';
 const _fingerprint =
     'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
 
-// The controller gives the first connect a 2s stall window before browsing
-// mDNS. Wait a touch longer than that so rediscovery has run.
-const _pastStallWindow = Duration(seconds: 3);
+// The stall window is injected as Duration.zero, so a brief pump lets the
+// async rediscovery chain (browseLan → re-attach) settle.
+const _pastStallWindow = Duration(milliseconds: 50);
 
 /// Hand-written in-memory transport (mirrors the `fake_server.dart` pattern):
 /// records what it was asked to connect to and never emits `connected`, so the
@@ -154,6 +153,7 @@ void main() {
               fingerprint: _fingerprint, // MATCHES stored fingerprint
             ),
           ]),
+          rediscoverStall: Duration.zero,
         );
 
         // Latest state via the public listener API.
@@ -207,6 +207,7 @@ void main() {
               fingerprint: 'deadbeef' * 8, // does NOT match
             ),
           ]),
+          rediscoverStall: Duration.zero,
         );
 
         var latest = PinoConnState();

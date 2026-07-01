@@ -104,8 +104,10 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     this._storage, {
     Transport Function()? transportFactory,
     BrowseLan? browseLan,
+    Duration? rediscoverStall,
   }) : _transportFactory = transportFactory ?? (() => WsClient()),
        _browseLan = browseLan ?? _defaultBrowseLan,
+       _rediscoverStall = rediscoverStall ?? const Duration(seconds: 2),
        super(PinoConnState()) {
     _boot();
   }
@@ -113,6 +115,10 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   final FlutterSecureStorage _storage;
   final Transport Function() _transportFactory;
   final BrowseLan _browseLan;
+
+  /// How long to wait for the fast-path connect before browsing mDNS to
+  /// rediscover a moved server. Injectable so unit tests run instantly.
+  final Duration _rediscoverStall;
   final _inFrames = StreamController<Envelope>.broadcast();
 
   FakeServer? _fake;
@@ -192,7 +198,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     _rediscovering = true;
     try {
       // Give the first attempt a brief window to succeed.
-      await Future<void>.delayed(const Duration(seconds: 2));
+      await Future<void>.delayed(_rediscoverStall);
       if (state.wsState == WsState.connected) return;
 
       debugPrint(
