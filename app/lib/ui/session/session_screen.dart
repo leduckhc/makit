@@ -120,32 +120,33 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                           ),
                         ),
                         Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                label,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                              Text(
-                                '${session?.agent ?? '?'} · '
-                                '${_statusLabel(session?.status)}',
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ],
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 10),
+                            child: Text(
+                              label,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
                           ),
                         ),
                         IconButton(
                           tooltip: fake ? 'Fake glass (fast)' : 'Liquid glass',
-                          icon: Icon(fake ? Icons.blur_off : Icons.blur_on),
-                          onPressed: () => ref
-                              .read(fakeGlassProvider.notifier)
-                              .state = !fake,
+                          icon: Icon(
+                            fake ? Icons.blur_off : Icons.blur_on,
+                            size: 20,
+                          ),
+                          onPressed: () =>
+                              ref.read(fakeGlassProvider.notifier).state = !fake,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surface
+                                .withValues(alpha: 0.45),
+                            shape: const CircleBorder(),
+                          ),
                         ),
-                        const ConnectionChip(),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 6),
+                        const ConnectionChip(circular: true),
                       ],
                     ),
                   ),
@@ -166,10 +167,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   borderRadius: 28,
                   // Composer sits over the keyboard/typing — frostier + less
                   // transparent than the top bar so text stays legible.
-                  blur: 18,
+                  blur: 24,
                   tint: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0x59FFFFFF)
-                      : const Color(0x4DFFFFFF),
+                      ? const Color(0x66FFFFFF)
+                      : const Color(0x59FFFFFF),
                   child: Composer(
                     glass: true,
                     commands: ref.watch(commandsProvider(widget.sessionId)),
@@ -205,16 +206,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         .read(storeControllerProvider.notifier)
         .sendMessage(widget.sessionId, text);
   }
-
-  String _statusLabel(SessionStatus? s) => switch (s) {
-    SessionStatus.idle => 'idle',
-    SessionStatus.running => 'running',
-    SessionStatus.awaitingInput => 'waiting for you',
-    SessionStatus.awaitingApproval => 'awaiting approval',
-    SessionStatus.error => 'error',
-    SessionStatus.exited => 'exited',
-    null => '…',
-  };
 
   @override
   void dispose() {

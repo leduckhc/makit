@@ -11,14 +11,18 @@ import '../../transport/ws_client.dart';
 /// - `reconnecting`      → orange dot + "Reconnecting"
 /// - `closed` / error    → red dot + "Offline" — tap to retry
 class ConnectionChip extends ConsumerWidget {
-  const ConnectionChip({super.key});
+  const ConnectionChip({super.key, this.circular = false});
+
+  /// When true, render as a round icon-only button (label moves to a tooltip)
+  /// to match the circular glass-bar buttons. Otherwise a labelled pill.
+  final bool circular;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final conn = ref.watch(connectionProvider);
     final cs = Theme.of(context).colorScheme;
 
-    // Hide entirely on the happy path so the AppBar stays clean.
+    // Hide entirely on the happy path so the bar stays clean.
     if (conn.wsState == WsState.connected && conn.lastError == null) {
       return const SizedBox.shrink();
     }
@@ -77,6 +81,16 @@ class ConnectionChip extends ConsumerWidget {
     required String label,
     VoidCallback? onTap,
   }) {
+    if (circular) {
+      return _circle(
+        color: color,
+        icon: icon,
+        spinner: spinner,
+        label: label,
+        onTap: onTap,
+      );
+    }
+
     final child = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       child: Row(
@@ -115,6 +129,35 @@ class ConnectionChip extends ConsumerWidget {
                   onTap: onTap,
                   child: child,
                 ),
+        ),
+      ),
+    );
+  }
+
+  /// Round icon-only variant for the glass bar; label becomes a tooltip.
+  Widget _circle({
+    required Color color,
+    IconData? icon,
+    bool spinner = false,
+    required String label,
+    VoidCallback? onTap,
+  }) {
+    final content = spinner
+        ? SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+          )
+        : Icon(icon, size: 20, color: color);
+    return Tooltip(
+      message: label,
+      child: Material(
+        color: color.withValues(alpha: 0.18),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(width: 40, height: 40, child: Center(child: content)),
         ),
       ),
     );

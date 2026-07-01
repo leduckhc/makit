@@ -38,9 +38,9 @@ class GlassSurface extends ConsumerWidget {
     final shape = LiquidRoundedSuperellipse(borderRadius: borderRadius);
 
     final settings = LiquidGlassSettings(
-      thickness: 14,
-      blur: blur ?? 6,
-      glassColor: tint ?? (dark ? const Color(0x24FFFFFF) : const Color(0x1AFFFFFF)),
+      thickness: 26,
+      blur: blur ?? 12,
+      glassColor: tint ?? (dark ? const Color(0x40FFFFFF) : const Color(0x33FFFFFF)),
       lightIntensity: 1.2,
       ambientStrength: 0.4,
       saturation: 1.1,
