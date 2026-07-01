@@ -81,6 +81,36 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
+    // "STREAM" → emit running status, a few agent.message.delta tokens, then
+    // the final authoritative agent.message, then idle. Exercises live token
+    // streaming + the working indicator end-to-end.
+    if (input.text.includes("STREAM")) {
+      this.emit("status", "running");
+      const msgId = `am-${Date.now()}`;
+      const chunks = ["Stream", "ing ", "reply"];
+      let i = 0;
+      const tick = () => {
+        if (i < chunks.length) {
+          this.emitEvent({
+            ts: Date.now(),
+            kind: "agent.message.delta",
+            payload: { msgId, chunk: chunks[i] },
+          });
+          i += 1;
+          setTimeout(tick, 30);
+        } else {
+          this.emitEvent({
+            ts: Date.now(),
+            kind: "agent.message",
+            payload: { msgId, text: "Streaming reply" },
+          });
+          this.emit("status", "idle");
+        }
+      };
+      setTimeout(tick, echoDelayMs);
+      return;
+    }
+
     setTimeout(() => {
       this.emitEvent({
         ts: Date.now(),

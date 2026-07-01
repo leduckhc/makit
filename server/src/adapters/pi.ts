@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 // (no path/url imports needed — pi binary is resolved from PATH)
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
 import { log } from "../log.js";
+import { newId } from "../protocol.js";
 
 export class PiAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "pi";
@@ -41,6 +42,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
   /** Accumulates text per content-index, flushed at text_end. */
   private textBuffers = new Map<number, string>();
+
+  /** Stable streamed-message id per content-index (ties deltas to the final). */
+  private msgIds = new Map<number, string>();
 
   async start(opts: SpawnOpts): Promise<void> {
     this.cwd = opts.cwd;
@@ -312,20 +316,34 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
         if (!e || typeof e !== "object") return;
         const idx: number = typeof e.contentIndex === "number" ? e.contentIndex : 0;
         if (e.type === "text_start") {
+          this.msgIds.set(idx, newId("am"));
           this.textBuffers.set(idx, "");
         } else if (e.type === "text_delta") {
-          const prev = this.textBuffers.get(idx) ?? "";
-          this.textBuffers.set(idx, prev + (typeof e.delta === "string" ? e.delta : ""));
+          const delta = typeof e.delta === "string" ? e.delta : "";
+          this.textBuffers.set(idx, (this.textBuffers.get(idx) ?? "") + delta);
+          // Stream the token to the phone so the bubble grows live.
+          const msgId = this.msgIds.get(idx);
+          if (msgId && delta.length > 0) {
+            this.emitEvent({
+              ts: Date.now(),
+              kind: "agent.message.delta",
+              payload: { msgId, chunk: delta },
+            });
+          }
         } else if (e.type === "text_end") {
           const text =
             this.textBuffers.get(idx) ??
             (typeof e.content === "string" ? e.content : "");
+          const msgId = this.msgIds.get(idx);
           this.textBuffers.delete(idx);
+          this.msgIds.delete(idx);
           if (text.length > 0) {
+            // Final authoritative message — carries msgId so the app finalizes
+            // the streamed bubble instead of appending a duplicate.
             this.emitEvent({
               ts: Date.now(),
               kind: "agent.message",
-              payload: { text },
+              payload: { text, ...(msgId ? { msgId } : {}) },
             });
           }
         }

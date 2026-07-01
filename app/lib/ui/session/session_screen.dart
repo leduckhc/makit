@@ -85,8 +85,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               top: topInset + 60,
               bottom: MediaQuery.of(context).padding.bottom + 160,
             ),
-            itemCount: items.length,
+            itemCount:
+                items.length +
+                (session?.status == SessionStatus.running ? 1 : 0),
             itemBuilder: (context, i) {
+              // Trailing "working…" indicator while the agent is running.
+              if (i >= items.length) return const _WorkingIndicator();
               final item = items[i];
               return switch (item) {
                 UserMessageItem() =>
@@ -309,6 +313,59 @@ class _ErrorBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ],
+      ),
+    );
+  }
+}
+
+/// Three softly-pulsing dots shown at the tail of the transcript while the
+/// session status is `running` — the "agent is working" cue.
+class _WorkingIndicator extends StatefulWidget {
+  const _WorkingIndicator();
+
+  @override
+  State<_WorkingIndicator> createState() => _WorkingIndicatorState();
+}
+
+class _WorkingIndicatorState extends State<_WorkingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(3, (i) {
+          return AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) {
+              // Stagger each dot's phase so they ripple.
+              final phase = (_c.value + i * 0.2) % 1.0;
+              final t = (phase < 0.5 ? phase : 1 - phase) * 2; // 0→1→0
+              return Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.only(right: 5),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color.withValues(alpha: 0.3 + 0.5 * t),
+                ),
+              );
+            },
+          );
+        }),
       ),
     );
   }

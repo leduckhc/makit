@@ -89,6 +89,7 @@ class Envelope {
 enum EventKind {
   userMessage,
   agentMessage,
+  agentMessageDelta,
   agentThinking,
   toolCallStart,
   toolCallDelta,
@@ -100,6 +101,7 @@ enum EventKind {
   String get wire => switch (this) {
     EventKind.userMessage => 'user.message',
     EventKind.agentMessage => 'agent.message',
+    EventKind.agentMessageDelta => 'agent.message.delta',
     EventKind.agentThinking => 'agent.thinking',
     EventKind.toolCallStart => 'tool.call.start',
     EventKind.toolCallDelta => 'tool.call.delta',

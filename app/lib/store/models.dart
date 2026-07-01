@@ -133,8 +133,30 @@ class UserMessageItem extends ChatItem {
 }
 
 class AgentMessageItem extends ChatItem {
-  AgentMessageItem({required super.seq, required super.ts, required this.text});
+  AgentMessageItem({
+    required super.seq,
+    required super.ts,
+    required this.text,
+    this.msgId,
+    this.streaming = false,
+  });
   final String text;
+
+  /// Stable id tying a streamed message's deltas together. Null for
+  /// non-streamed messages (stub echoes, backfilled transcript).
+  final String? msgId;
+
+  /// True while deltas are still arriving; false once the final message lands.
+  final bool streaming;
+
+  AgentMessageItem copyWith({String? text, bool? streaming}) =>
+      AgentMessageItem(
+        seq: seq,
+        ts: ts,
+        text: text ?? this.text,
+        msgId: msgId,
+        streaming: streaming ?? this.streaming,
+      );
 }
 
 class ToolCallItem extends ChatItem {
@@ -202,6 +224,7 @@ class ErrorItem extends ChatItem {
 List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
   final items = <ChatItem>[];
   final byCall = <String, int>{}; // callId -> index in items
+  final byMsg = <String, int>{}; // streamed msgId -> index in items
 
   for (final e in events) {
     switch (e.kind) {
@@ -214,13 +237,39 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ),
         );
       case EventKind.agentMessage:
-        items.add(
-          AgentMessageItem(
-            seq: e.seq,
-            ts: e.ts,
-            text: e.payload['text'] as String? ?? '',
-          ),
-        );
+        // Final (authoritative) message. If it finalizes a streamed msgId,
+        // replace the in-progress bubble's text; otherwise it's a fresh
+        // (non-streamed) message — a new bubble.
+        final msgId = e.payload['msgId'] as String?;
+        final text = e.payload['text'] as String? ?? '';
+        final idx = msgId != null ? byMsg[msgId] : null;
+        if (idx != null && items[idx] is AgentMessageItem) {
+          items[idx] =
+              (items[idx] as AgentMessageItem).copyWith(text: text, streaming: false);
+        } else {
+          items.add(AgentMessageItem(seq: e.seq, ts: e.ts, text: text));
+        }
+      case EventKind.agentMessageDelta:
+        // Streaming token. Append to the bubble for this msgId, creating it on
+        // the first delta.
+        final msgId = e.payload['msgId'] as String? ?? '';
+        final chunk = e.payload['chunk'] as String? ?? '';
+        final idx = byMsg[msgId];
+        if (idx != null && items[idx] is AgentMessageItem) {
+          final cur = items[idx] as AgentMessageItem;
+          items[idx] = cur.copyWith(text: cur.text + chunk);
+        } else {
+          byMsg[msgId] = items.length;
+          items.add(
+            AgentMessageItem(
+              seq: e.seq,
+              ts: e.ts,
+              text: chunk,
+              msgId: msgId,
+              streaming: true,
+            ),
+          );
+        }
       case EventKind.agentThinking:
         // M0: ignore reasoning trace; could render as a faint card later.
         break;

@@ -52,6 +52,7 @@ test("events.json covers every EventKind exactly once", () => {
     [...seen].sort(),
     [
       "agent.message",
+      "agent.message.delta",
       "agent.thinking",
       "session.commands",
       "session.error",

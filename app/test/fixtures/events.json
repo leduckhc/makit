@@ -7,5 +7,6 @@
   { "seq": 6, "sessionId": "s1", "ts": 6000, "kind": "tool.call.end", "payload": { "callId": "c1", "exitCode": 0, "summary": "ok", "output": "done" } },
   { "seq": 7, "sessionId": "s1", "ts": 7000, "kind": "session.status", "payload": { "status": "running" } },
   { "seq": 8, "sessionId": "s1", "ts": 8000, "kind": "session.error", "payload": { "message": "boom" } },
-  { "seq": 9, "sessionId": "s1", "ts": 9000, "kind": "session.commands", "payload": { "commands": [ { "name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "location": "project" } ] } }
+  { "seq": 9, "sessionId": "s1", "ts": 9000, "kind": "session.commands", "payload": { "commands": [ { "name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "location": "project" } ] } },
+  { "seq": 10, "sessionId": "s1", "ts": 10000, "kind": "agent.message.delta", "payload": { "msgId": "m1", "chunk": "hel" } }
 ]

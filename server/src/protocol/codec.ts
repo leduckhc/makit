@@ -43,6 +43,7 @@ const MSG_TYPES: ReadonlySet<MsgType> = new Set<MsgType>([
 const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "user.message",
   "agent.message",
+  "agent.message.delta",
   "agent.thinking",
   "tool.call.start",
   "tool.call.delta",

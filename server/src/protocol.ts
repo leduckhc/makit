@@ -32,6 +32,7 @@ export interface Envelope {
 export type EventKind =
   | "user.message"
   | "agent.message"
+  | "agent.message.delta"
   | "agent.thinking"
   | "tool.call.start"
   | "tool.call.delta"
