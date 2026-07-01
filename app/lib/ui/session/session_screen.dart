@@ -120,8 +120,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      cs.surface.withValues(alpha: 0.30),
-                      cs.surface.withValues(alpha: 0.20),
+                      cs.surface.withValues(alpha: 0.80),
+                      cs.surface.withValues(alpha: 0.70),
                       cs.surface.withValues(alpha: 0),
                     ],
                     stops: const [0, 0.5, 1],
@@ -143,8 +143,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      cs.surface.withValues(alpha: 0.30),
-                      cs.surface.withValues(alpha: 0.20),
+                      cs.surface.withValues(alpha: 0.80),
+                      cs.surface.withValues(alpha: 0.70),
                       cs.surface.withValues(alpha: 0),
                     ],
                     stops: const [0, 0.5, 1],
@@ -177,7 +177,19 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                         style: Theme.of(context)
                             .textTheme
                             .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              shadows: [
+                                Shadow(
+                                  color: cs.surface,
+                                  blurRadius: 6,
+                                ),
+                                Shadow(
+                                  color: cs.surface,
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
                       ),
                     ),
                     const SizedBox(width: 8),
