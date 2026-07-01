@@ -377,7 +377,7 @@ class _AskUserQuestionRenderer extends ToolRenderer {
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: questions.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 20),
+        separatorBuilder: (_, _) => const SizedBox(height: 20),
         itemBuilder: (context, qi) {
           final q = questions[qi];
           final chosen = _chosen(item, qi).toSet();

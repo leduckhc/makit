@@ -241,7 +241,7 @@ class StoreController extends StateNotifier<_StoreSnapshot> {
       {
         'kind': 'session.spawn',
         'projectId': projectId,
-        if (title != null) 'title': title,
+        'title': ?title,
       },
     );
     final sid = ack['sessionId'] as String?;

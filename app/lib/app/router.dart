@@ -28,12 +28,12 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     refreshListenable: ref.watch(connectionListenableProvider),
     routes: [
-      GoRoute(path: '/pair', builder: (_, __) => const PairingScreen()),
+      GoRoute(path: '/pair', builder: (_, _) => const PairingScreen()),
       GoRoute(
         path: '/',
-        builder: (_, __) => const HomeScreen(),
+        builder: (_, _) => const HomeScreen(),
         routes: [
-          GoRoute(path: 'settings', builder: (_, __) => const SettingsScreen()),
+          GoRoute(path: 'settings', builder: (_, _) => const SettingsScreen()),
           GoRoute(
             path: 'session/:id',
             builder: (_, s) =>
