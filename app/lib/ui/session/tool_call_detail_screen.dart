@@ -52,9 +52,14 @@ class ToolCallDetailScreen extends ConsumerWidget {
             _Section(title: 'Output', child: _Mono(tool.deltas.join()))
           else if (tool.output?.isNotEmpty ?? false)
             _Section(title: 'Output', child: _Mono(tool.output!)),
-          if (tool.ended)
+          // Only show a separate Result when it adds info beyond Output:
+          // on failure (exit code), or when there was no Output to show.
+          // Otherwise `summary` just repeats Output's first line.
+          if (tool.ended &&
+              ((tool.exitCode ?? 0) != 0 ||
+                  (tool.deltas.isEmpty && !(tool.output?.isNotEmpty ?? false))))
             _Section(
-              title: 'Result',
+              title: (tool.exitCode ?? 0) != 0 ? 'Error' : 'Result',
               child: Text(
                 tool.summary ?? 'exit ${tool.exitCode ?? 0}',
                 style: const TextStyle(fontFamily: 'monospace'),
