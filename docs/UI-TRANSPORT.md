@@ -26,8 +26,12 @@ pi extensions call methods on `ctx.ui`. In rpc mode:
 | `custom(factory)`         | returns `undefined` immediately — **no event emitted** (needs a live TUI to draw the component) | ❌ **no** |
 
 `@mammothb/pi-ask`'s `AskUserQuestion` uses `custom`, which is why it cannot be
-transported and instead crashes (`undefined.cancelled`) under headless rpc.
-That specific tool is handled by the shadow in `pino-pi.ts`.
+transported and crashes (`undefined.cancelled`) under headless rpc. pino now
+**filters it out at spawn**: `server/src/pi-agent-dir.ts` points pi at a
+`$TMPDIR/pino-pi-agent` dir that symlinks everything from `~/.pi/agent` except a
+rewritten `settings.json` with pi-ask removed (via `PI_CODING_AGENT_DIR`). pino
+still provides its own phone-native `AskUserQuestion`/`askUserQuestion` in
+`pino-pi.ts`; other extensions (hermes-memory, subagents, piano) load normally.
 
 ### Why `ctx.hasUI` is `true` even headless
 
