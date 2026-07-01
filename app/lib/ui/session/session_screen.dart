@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -54,6 +55,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
 
     final fake = ref.watch(fakeGlassProvider);
     final topInset = MediaQuery.of(context).padding.top;
+    // Session titles are usually gibberish ids — prefer the repo/project name.
+    final project = ref
+        .watch(projectsProvider)
+        .projects
+        .firstWhereOrNull((p) => p.id == session?.projectId);
+    final label = project?.name ?? session?.title ?? widget.sessionId;
     return Scaffold(
       // Edge-to-edge so the transcript scrolls *behind* the glass bars.
       extendBodyBehindAppBar: true,
@@ -102,8 +109,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     child: Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back),
+                          icon: const Icon(Icons.arrow_back, size: 20),
                           onPressed: () => context.go('/'),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surface
+                                .withValues(alpha: 0.45),
+                            shape: const CircleBorder(),
+                          ),
                         ),
                         Expanded(
                           child: Column(
@@ -111,7 +125,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                session?.title ?? widget.sessionId,
+                                label,
                                 overflow: TextOverflow.ellipsis,
                                 style: Theme.of(context).textTheme.titleSmall,
                               ),
@@ -150,6 +164,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: GlassSurface(
                   borderRadius: 28,
+                  // Composer sits over the keyboard/typing — frostier + less
+                  // transparent than the top bar so text stays legible.
+                  blur: 18,
+                  tint: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0x59FFFFFF)
+                      : const Color(0x4DFFFFFF),
                   child: Composer(
                     glass: true,
                     commands: ref.watch(commandsProvider(widget.sessionId)),

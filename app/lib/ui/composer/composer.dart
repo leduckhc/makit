@@ -109,8 +109,7 @@ class _ComposerState extends State<Composer> {
                         textCapitalization: TextCapitalization.sentences,
                         onChanged: _onChanged,
                         decoration: const InputDecoration(
-                          hintText:
-                              'Message…  (/ for commands,  @ for mentions)',
+                          hintText: 'Message …',
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 8,

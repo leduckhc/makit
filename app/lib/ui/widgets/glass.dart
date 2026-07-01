@@ -17,10 +17,19 @@ class GlassSurface extends ConsumerWidget {
     super.key,
     required this.child,
     this.borderRadius = 26,
+    this.blur,
+    this.tint,
   });
 
   final Widget child;
   final double borderRadius;
+
+  /// Background blur strength. Higher = frostier / less see-through.
+  final double? blur;
+
+  /// Glass tint; the alpha channel controls opacity (higher = less
+  /// transparent). Defaults to a very subtle white.
+  final Color? tint;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,12 +37,10 @@ class GlassSurface extends ConsumerWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final shape = LiquidRoundedSuperellipse(borderRadius: borderRadius);
 
-    // Subtle tint; alpha carries the "glassiness". Slightly stronger in dark
-    // mode so the bar stays legible over bright content.
     final settings = LiquidGlassSettings(
       thickness: 14,
-      blur: 6,
-      glassColor: dark ? const Color(0x24FFFFFF) : const Color(0x1AFFFFFF),
+      blur: blur ?? 6,
+      glassColor: tint ?? (dark ? const Color(0x24FFFFFF) : const Color(0x1AFFFFFF)),
       lightIntensity: 1.2,
       ambientStrength: 0.4,
       saturation: 1.1,
