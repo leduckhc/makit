@@ -1,0 +1,4 @@
+[
+  { "v": 1, "t": "event", "id": "snap1", "kind": "projects.snapshot", "projects": [ { "id": "p1", "name": "pino", "path": "/repo/pino", "pinned": true, "lastActivityAt": 1000 } ] },
+  { "v": 1, "t": "event", "id": "snap2", "kind": "sessions.snapshot", "sessions": [ { "id": "s1", "projectId": "p1", "agent": "pi", "title": "work", "status": "running", "policy": "ask-on-risky", "lastActivityAt": 2000, "lastPreview": "hi" } ] }
+]

@@ -1,7 +1,7 @@
 /// In-process fake "server" used for M0 development so UI work doesn't block
 /// on the real Node/TS server. Behaviour is the bare minimum to exercise the
 /// chat UI: seeds two projects with sessions, replays a scripted agent
-/// transcript with delays, handles `send.message` / approvals.
+/// transcript with delays, handles `send.message`.
 ///
 /// Delete (or gate behind a `--dart-define`) once the real server is wired up.
 library;
@@ -81,8 +81,8 @@ class FakeServer {
       projectPath: '/Users/le/Work/Vibe/cmux',
       agent: 'claude',
       title: 'fix tab drag-and-drop',
-      preview: 'Awaiting approval to edit Sources/Tabs/TabBar.swift',
-      status: 'awaiting-approval',
+      preview: 'Editing Sources/Tabs/TabBar.swift',
+      status: 'running',
     )..events.addAll(_scriptClaude('s-claude-1'));
   }
 
@@ -173,14 +173,6 @@ class FakeServer {
         _appendEvent(session, EventKind.userMessage, {'text': text});
         _emit(Envelope(t: MsgType.ack, id: env.id));
         _scriptAgentReply(session, text);
-      case 'approve':
-      case 'deny':
-        final callId = env.body['callId'] as String? ?? '';
-        _appendEvent(session, EventKind.approvalDecision, {
-          'callId': callId,
-          'decision': kind,
-        });
-        _emit(Envelope(t: MsgType.ack, id: env.id));
       default:
         _emit(Envelope(t: MsgType.ack, id: env.id));
     }
@@ -308,16 +300,10 @@ class FakeServer {
         'text': 'Suspect Sources/Tabs/TabBar.swift — patching now.',
       }),
       ev(EventKind.toolCallStart, {
-        'callId': 'c-approve',
+        'callId': 'c-edit',
         'name': 'edit',
         'args': {'path': 'Sources/Tabs/TabBar.swift'},
         'risk': 'risky',
-      }),
-      ev(EventKind.approvalRequest, {
-        'callId': 'c-approve',
-        'tool': 'edit',
-        'preview':
-            '─ TabBar.swift ─\n- onDrop(of: ...)\n+ onDrop(of: ...) with allowsDuplicate: false',
       }),
     ];
   }

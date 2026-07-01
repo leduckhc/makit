@@ -36,8 +36,6 @@ export type EventKind =
   | "tool.call.start"
   | "tool.call.delta"
   | "tool.call.end"
-  | "approval.request"
-  | "approval.decision"
   | "session.status"
   | "session.error"
   | "session.commands";

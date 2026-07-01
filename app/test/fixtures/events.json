@@ -1,0 +1,11 @@
+[
+  { "seq": 1, "sessionId": "s1", "ts": 1000, "kind": "user.message", "payload": { "text": "hi" } },
+  { "seq": 2, "sessionId": "s1", "ts": 2000, "kind": "agent.message", "payload": { "text": "hello" } },
+  { "seq": 3, "sessionId": "s1", "ts": 3000, "kind": "agent.thinking", "payload": { "text": "pondering" } },
+  { "seq": 4, "sessionId": "s1", "ts": 4000, "kind": "tool.call.start", "payload": { "callId": "c1", "name": "edit", "args": { "path": "x.dart" }, "risk": "risky" } },
+  { "seq": 5, "sessionId": "s1", "ts": 5000, "kind": "tool.call.delta", "payload": { "callId": "c1", "chunk": "aaa" } },
+  { "seq": 6, "sessionId": "s1", "ts": 6000, "kind": "tool.call.end", "payload": { "callId": "c1", "exitCode": 0, "summary": "ok", "output": "done" } },
+  { "seq": 7, "sessionId": "s1", "ts": 7000, "kind": "session.status", "payload": { "status": "running" } },
+  { "seq": 8, "sessionId": "s1", "ts": 8000, "kind": "session.error", "payload": { "message": "boom" } },
+  { "seq": 9, "sessionId": "s1", "ts": 9000, "kind": "session.commands", "payload": { "commands": [ { "name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "location": "project" } ] } }
+]

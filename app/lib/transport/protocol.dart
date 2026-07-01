@@ -93,8 +93,6 @@ enum EventKind {
   toolCallStart,
   toolCallDelta,
   toolCallEnd,
-  approvalRequest,
-  approvalDecision,
   sessionStatus,
   sessionError,
   sessionCommands;
@@ -106,8 +104,6 @@ enum EventKind {
     EventKind.toolCallStart => 'tool.call.start',
     EventKind.toolCallDelta => 'tool.call.delta',
     EventKind.toolCallEnd => 'tool.call.end',
-    EventKind.approvalRequest => 'approval.request',
-    EventKind.approvalDecision => 'approval.decision',
     EventKind.sessionStatus => 'session.status',
     EventKind.sessionError => 'session.error',
     EventKind.sessionCommands => 'session.commands',
@@ -155,8 +151,6 @@ class SessionEvent {
 
 enum CmdKind {
   sendMessage,
-  approve,
-  deny,
   cancel,
   spawnSession,
   killSession,
@@ -164,8 +158,6 @@ enum CmdKind {
 
   String get wire => switch (this) {
     CmdKind.sendMessage => 'send.message',
-    CmdKind.approve => 'approve',
-    CmdKind.deny => 'deny',
     CmdKind.cancel => 'cancel',
     CmdKind.spawnSession => 'session.spawn',
     CmdKind.killSession => 'session.kill',

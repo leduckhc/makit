@@ -50,24 +50,6 @@ void main() {
       expect(tool.summary, 'ok');
     });
 
-    test('approval decision marks request as decided', () {
-      final items = foldEvents([
-        _ev(1, EventKind.approvalRequest, {
-          'callId': 'c',
-          'tool': 'edit',
-          'preview': '...',
-        }),
-        _ev(2, EventKind.approvalDecision, {
-          'callId': 'c',
-          'decision': 'approve',
-        }),
-      ]);
-      expect(items.length, 1);
-      final ar = items.single as ApprovalRequestItem;
-      expect(ar.decided, true);
-      expect(ar.decision, 'approve');
-    });
-
     test('interleaved tool calls fold to separate cards', () {
       final items = foldEvents([
         _ev(1, EventKind.toolCallStart, {'callId': 'a', 'name': 'read'}),

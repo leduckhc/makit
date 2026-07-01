@@ -1,0 +1,15 @@
+[
+  { "v": 1, "t": "hello", "id": "h1", "token": "bearer-abc", "protocolVersion": 1 },
+  { "v": 1, "t": "hello.ack", "id": "h1", "ok": true, "deviceId": "d1" },
+  { "v": 1, "t": "sub", "id": "s-sess1", "sessionId": "sess1" },
+  { "v": 1, "t": "unsub", "id": "u-sess1", "sessionId": "sess1" },
+  { "v": 1, "t": "event", "id": "ev1", "kind": "session.event", "event": { "seq": 1, "sessionId": "sess1", "ts": 1000, "kind": "user.message", "payload": { "text": "hi" } } },
+  { "v": 1, "t": "cmd", "id": "m1", "kind": "send.message", "sessionId": "sess1", "text": "hi" },
+  { "v": 1, "t": "ack", "id": "m1", "sessionId": "sess1" },
+  { "v": 1, "t": "err", "id": "m1", "code": "no_such_session", "message": "no such session" },
+  { "v": 1, "t": "presence", "id": "p1", "devices": [] },
+  { "v": 1, "t": "ping", "id": "ping1", "ts": 1000 },
+  { "v": 1, "t": "pong", "id": "ping1", "ts": 1000 },
+  { "v": 1, "t": "srv.request", "id": "r1", "kind": "askUserQuestion", "sessionId": "sess1" },
+  { "v": 1, "t": "srv.response", "id": "r1", "approved": true }
+]
