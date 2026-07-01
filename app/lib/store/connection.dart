@@ -9,6 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../pairing/mdns_browser.dart';
 import '../pairing/pair_info.dart';
 import '../transport/protocol.dart';
+import '../transport/transport.dart';
 import '../transport/ws_client.dart';
 import 'fake_server.dart';
 
@@ -93,16 +94,29 @@ class PinoConnState {
 
 const _kPairedServerKey = 'paired_server';
 
+/// Signature of the mDNS LAN browse used for rediscovery. Mirrors the
+/// top-level [browseLan] so it can be swapped for a fake in tests.
+typedef BrowseLan =
+    Future<List<DiscoveredServer>> Function({Duration timeout});
+
 class ConnectionController extends StateNotifier<PinoConnState> {
-  ConnectionController(this._storage) : super(PinoConnState()) {
+  ConnectionController(
+    this._storage, {
+    Transport Function()? transportFactory,
+    BrowseLan? browseLan,
+  }) : _transportFactory = transportFactory ?? (() => WsClient()),
+       _browseLan = browseLan ?? _defaultBrowseLan,
+       super(PinoConnState()) {
     _boot();
   }
 
   final FlutterSecureStorage _storage;
+  final Transport Function() _transportFactory;
+  final BrowseLan _browseLan;
   final _inFrames = StreamController<Envelope>.broadcast();
 
   FakeServer? _fake;
-  WsClient? _ws;
+  Transport? _ws;
   StreamSubscription<Envelope>? _wsSub;
   StreamSubscription<WsState>? _wsStateSub;
 
@@ -184,7 +198,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       debugPrint(
         '[pino] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
       );
-      final found = await browseLan(timeout: const Duration(seconds: 4));
+      final found = await _browseLan(timeout: const Duration(seconds: 4));
       final matches = found
           .where((d) => d.fingerprint == server.fingerprint)
           .toList();
@@ -243,7 +257,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     _fake?.stop();
     _fake = null;
 
-    final ws = WsClient();
+    final ws = _transportFactory();
     _ws = ws;
     _wsSub = ws.frames.listen(_inFrames.add);
     _wsStateSub = ws.state.listen((s) {
@@ -267,7 +281,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   /// Run the full QR pair handshake: connect, present pair token, receive
   /// bearer + deviceId in `hello.ack`, persist.
   Future<PairedServer> pairWith(PairInfo info, {String label = 'phone'}) async {
-    final ws = WsClient();
+    final ws = _transportFactory();
     final completer = Completer<PairedServer>();
 
     // We're the only thing on this socket during pairing, so we just take
@@ -395,6 +409,10 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     super.dispose();
   }
 }
+
+/// Real mDNS browse used by the production composition root. Captured as a
+/// top-level tear-off so the constructor default doesn't shadow it.
+const BrowseLan _defaultBrowseLan = browseLan;
 
 final _secureStorageProvider = Provider<FlutterSecureStorage>(
   (_) => const FlutterSecureStorage(),
