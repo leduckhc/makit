@@ -12,7 +12,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
 function pinoHome(): string {
   return process.env.PINO_HOME || join(homedir(), ".pino");
@@ -41,6 +41,12 @@ export class DeviceRegistry {
   private byBearer = new Map<string, PairedDevice>();
   private pendingTokens = new Map<string, PairToken>();
 
+  // In-memory brute-force guard for consumePairToken.
+  private static readonly MAX_FAILED_ATTEMPTS = 10;
+  private static readonly LOCKOUT_MS = 60 * 1000;
+  private failedAttempts = 0;
+  private lockedUntil = 0;
+
   constructor() {
     mkdirSync(pinoHome(), { recursive: true });
     const path = devicesPath();
@@ -67,9 +73,20 @@ export class DeviceRegistry {
 
   /** Consume a pair token and create a new device. Returns the bearer. */
   consumePairToken(token: string, label: string): PairedDevice | null {
+    // Brute-force guard: refuse while locked out, regardless of token validity.
+    const now = Date.now();
+    if (now < this.lockedUntil) return null;
+
     this.gcTokens();
     const t = this.pendingTokens.get(token);
-    if (!t) return null;
+    if (!t) {
+      if (++this.failedAttempts >= DeviceRegistry.MAX_FAILED_ATTEMPTS) {
+        this.lockedUntil = now + DeviceRegistry.LOCKOUT_MS;
+        this.failedAttempts = 0;
+      }
+      return null;
+    }
+    this.failedAttempts = 0;
     this.pendingTokens.delete(token);
     const device: PairedDevice = {
       id: randomUUID(),
@@ -86,10 +103,25 @@ export class DeviceRegistry {
 
   /** Look up a paired device by its bearer token. */
   authenticate(bearer: string): PairedDevice | null {
-    const d = this.byBearer.get(bearer);
+    const d = this.constantTimeLookup(bearer);
     if (!d) return null;
     d.lastSeenAt = Date.now();
     return d;
+  }
+
+  /**
+   * Constant-time bearer lookup. Scans every known device (no early exit on a
+   * Map hit, which would leak timing) and compares fixed-length SHA-256 digests
+   * so `timingSafeEqual` never sees mismatched lengths.
+   */
+  private constantTimeLookup(bearer: string): PairedDevice | null {
+    const target = createHash("sha256").update(bearer).digest();
+    let match: PairedDevice | null = null;
+    for (const d of this.byBearer.values()) {
+      const candidate = createHash("sha256").update(d.bearer).digest();
+      if (timingSafeEqual(target, candidate)) match = d;
+    }
+    return match;
   }
 
   list(): PairedDevice[] {
