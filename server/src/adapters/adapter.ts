@@ -27,6 +27,11 @@ export interface SpawnOpts {
    * ctx.ui.select/confirm/input) to the app instead of failing headless.
    */
   askUser?: AskUser;
+  /**
+   * Resume an existing pi session from its on-disk transcript. When set, pi is
+   * launched with `--session <path>` instead of a fresh `--session-id`.
+   */
+  resumeSessionPath?: string;
 }
 
 export interface UserInput {

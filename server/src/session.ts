@@ -7,7 +7,7 @@
 
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
-import type { AgentAdapter } from "./adapters/adapter.js";
+import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
 import type {
   ApprovalPolicy,
   SessionDTO,
@@ -51,6 +51,33 @@ export class Session extends EventEmitter {
   replaceAdapter(adapter: AgentAdapter): void {
     this.adapter = adapter;
     this.bindAdapter(adapter);
+  }
+
+  /**
+   * Seed the event log from a prior transcript BEFORE the adapter goes live.
+   * Populates `this.events[]` (assigning seqs, sessionId, and bubbling up
+   * status/preview) but does NOT emit — history is replayed to clients on
+   * `sub` (see SubscriptionHub), so emitting here would double-fire.
+   */
+  backfill(events: AdapterEvent[]): void {
+    for (const e of events) {
+      const event: SessionEvent = {
+        seq: this.events.length + 1,
+        sessionId: this.id,
+        ts: e.ts,
+        kind: e.kind,
+        payload: e.payload,
+      };
+      this.events.push(event);
+      this.lastActivityAt = event.ts;
+      if (event.kind === "user.message" || event.kind === "agent.message") {
+        const t = (event.payload as { text?: string }).text;
+        if (typeof t === "string") this.lastPreview = t.slice(0, 200);
+      } else if (event.kind === "session.status") {
+        const s = (event.payload as { status?: SessionStatus }).status;
+        if (s) this.status = s;
+      }
+    }
   }
 
   private bindAdapter(adapter: AgentAdapter): void {

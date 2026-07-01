@@ -176,6 +176,7 @@ class _ProjectSection extends StatelessWidget {
           ),
         ),
         ...sessions.map((s) => _SessionTile(session: s)),
+        _AttachPastButton(project: project),
         if (sessions.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -188,6 +189,104 @@ class _ProjectSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// A subtle affordance to list & resume a project's prior on-disk pi sessions.
+class _AttachPastButton extends ConsumerWidget {
+  const _AttachPastButton({required this.project});
+  final Project project;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 20, 4),
+        child: TextButton.icon(
+          icon: const Icon(Icons.history, size: 18),
+          label: const Text('Attach past session…'),
+          onPressed: () => _attach(context, ref),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _attach(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
+    List<PiSessionMeta> metas;
+    try {
+      metas = await store.listPiSessions(project.id);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not list past sessions: $e')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+
+    final chosen = await showModalBottomSheet<PiSessionMeta>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: metas.isEmpty
+            ? const Padding(
+                padding: EdgeInsets.all(24),
+                child: Text('No past sessions.', textAlign: TextAlign.center),
+              )
+            : ListView(
+                shrinkWrap: true,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Text(
+                      'Resume a past session in ${project.name}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  for (final m in metas)
+                    ListTile(
+                      leading: const Icon(Icons.history),
+                      title: Text(
+                        m.name.isEmpty ? '(untitled)' : m.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${m.messageCount} msgs · ${_ago(m.lastActivityAt)}'
+                        '${m.preview.isEmpty ? '' : ' · ${m.preview}'}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => Navigator.pop(ctx, m),
+                    ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+      ),
+    );
+    if (chosen == null || !context.mounted) return;
+
+    try {
+      final sid = await store.attachSession(project.id, chosen.piSessionId);
+      if (!context.mounted) return;
+      context.go('/session/$sid');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not attach session: $e')),
+      );
+    }
+  }
+}
+
+/// Compact "x ago" from an epoch-ms timestamp.
+String _ago(int epochMs) {
+  if (epochMs <= 0) return 'unknown';
+  final d = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(epochMs));
+  if (d.inDays > 0) return '${d.inDays}d ago';
+  if (d.inHours > 0) return '${d.inHours}h ago';
+  if (d.inMinutes > 0) return '${d.inMinutes}m ago';
+  return 'just now';
 }
 
 class _SessionTile extends StatelessWidget {

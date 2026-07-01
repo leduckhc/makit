@@ -36,6 +36,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   private extensions: string[] = [];
   private sessionId = "";
   private askUser?: import("../uicall.js").AskUser;
+  private resumeSessionPath?: string;
 
   /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
   private isStreaming = false;
@@ -52,6 +53,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     this.extensions = opts.extensions ?? [];
     this.sessionId = opts.sessionId ?? "";
     this.askUser = opts.askUser;
+    this.resumeSessionPath = opts.resumeSessionPath;
     await this.ensureProcess();
     this.emit("status", "idle");
   }
@@ -92,7 +94,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   private async ensureProcess(): Promise<void> {
     if (this.child && !this.child.killed) return;
 
-    const args = ["--mode", "rpc", "--session-id", this.piSessionId];
+    const args = this.resumeSessionPath
+      ? ["--mode", "rpc", "--session", this.resumeSessionPath]
+      : ["--mode", "rpc", "--session-id", this.piSessionId];
     for (const ext of this.extensions) {
       args.push("-e", ext);
     }

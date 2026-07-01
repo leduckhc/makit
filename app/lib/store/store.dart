@@ -258,6 +258,32 @@ class StoreController extends StateNotifier<StoreState> {
     return sid;
   }
 
+  /// List a project's prior on-disk pi sessions (newest first).
+  Future<List<PiSessionMeta>> listPiSessions(String projectId) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.list', 'projectId': projectId},
+    );
+    final raw = (ack['sessions'] as List?) ?? const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => PiSessionMeta.fromJson(Map<String, dynamic>.from(m)))
+        .whereType<PiSessionMeta>()
+        .toList();
+  }
+
+  /// Attach (resume) a prior pi session. Resolves with the pino session id
+  /// once the server has backfilled its transcript and resumed it.
+  Future<String> attachSession(String projectId, String piSessionId) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.attach', 'projectId': projectId, 'piSessionId': piSessionId},
+    );
+    final sid = ack['sessionId'] as String?;
+    if (sid == null) throw StateError('server did not return sessionId');
+    return sid;
+  }
+
   @override
   void dispose() {
     _sub?.cancel();

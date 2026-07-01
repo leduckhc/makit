@@ -53,6 +53,35 @@ class Project {
   final int lastActivityAt;
 }
 
+/// Metadata about a prior on-disk pi session, for the "attach" list.
+class PiSessionMeta {
+  const PiSessionMeta({
+    required this.piSessionId,
+    required this.name,
+    required this.lastActivityAt,
+    required this.preview,
+    required this.messageCount,
+  });
+
+  final String piSessionId;
+  final String name;
+  final int lastActivityAt;
+  final String preview;
+  final int messageCount;
+
+  static PiSessionMeta? fromJson(Map<String, dynamic> j) {
+    final id = j['piSessionId'] as String?;
+    if (id == null) return null;
+    return PiSessionMeta(
+      piSessionId: id,
+      name: (j['name'] as String?) ?? '',
+      lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
+      preview: (j['preview'] as String?) ?? '',
+      messageCount: (j['messageCount'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 enum SessionStatus {
   idle,
   running,

@@ -163,6 +163,8 @@ enum CmdKind {
   sendMessage,
   cancel,
   spawnSession,
+  listSessions,
+  attachSession,
   killSession,
   setApprovalPolicy;
 
@@ -170,6 +172,8 @@ enum CmdKind {
     CmdKind.sendMessage => 'send.message',
     CmdKind.cancel => 'cancel',
     CmdKind.spawnSession => 'session.spawn',
+    CmdKind.listSessions => 'session.list',
+    CmdKind.attachSession => 'session.attach',
     CmdKind.killSession => 'session.kill',
     CmdKind.setApprovalPolicy => 'session.policy',
   };

@@ -1,0 +1,247 @@
+/**
+ * pi-sessions — read pi's on-disk JSONL session transcripts.
+ *
+ * pi persists EVERY session it runs as a JSONL file under
+ *   `<agentDir>/sessions/<slug>/<ISO-ts>_<uuid>.jsonl`
+ * where <slug> is derived from the session's cwd (see {@link piSessionsDir}).
+ *
+ * This module lets pino (1) list a project's prior on-disk sessions and
+ * (2) replay a transcript into AdapterEvents so the whole history can be
+ * backfilled into the chat before resuming the session live.
+ *
+ * Boundary rule (docs/ENGINEERING.md): the parser reads untrusted files on
+ * disk. It MUST NEVER throw on a malformed/unknown record — skip it and keep
+ * going.
+ */
+
+import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import type { AdapterEvent } from "./adapters/adapter.js";
+
+/** Metadata about one on-disk pi session, for the app's "attach" list. */
+export interface PiSessionMeta {
+  /** pi's session uuid (the JSONL header `id`). */
+  piSessionId: string;
+  /** Full path to the .jsonl transcript (server-internal; harmless to app). */
+  path: string;
+  /** Human label — first user message, else the timestamp. */
+  name: string;
+  /** First user message, truncated. */
+  preview: string;
+  /** Count of user+assistant message records. */
+  messageCount: number;
+  /** File mtime in epoch ms — used for "x ago" and sorting. */
+  lastActivityAt: number;
+}
+
+const PREVIEW_MAX = 200;
+
+/** The real pi agent dir, overridable via PINO_PI_AGENT_DIR for tests. */
+export function realAgentDir(): string {
+  return process.env.PINO_PI_AGENT_DIR || join(homedir(), ".pi", "agent");
+}
+
+/**
+ * Directory holding a cwd's pi sessions. Slug algorithm is verbatim from pi's
+ * session-manager: strip a leading slash, then replace path separators and
+ * colons with `-`, wrapped in `--…--`.
+ */
+export function piSessionsDir(cwd: string, agentDir: string = realAgentDir()): string {
+  const slug = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+  return join(agentDir, "sessions", slug);
+}
+
+interface Header {
+  type: "session";
+  id: string;
+  timestamp: string;
+  cwd: string;
+}
+
+function readHeader(path: string): Header | undefined {
+  try {
+    const first = readFileSync(path, "utf8").split("\n", 1)[0];
+    const o = JSON.parse(first);
+    if (o && o.type === "session" && typeof o.id === "string" && typeof o.cwd === "string") {
+      return o as Header;
+    }
+  } catch {
+    // Unreadable / non-JSON header → skip this file.
+  }
+  return undefined;
+}
+
+/**
+ * List a cwd's prior pi sessions, newest first. Filters by the transcript's
+ * own header.cwd (authoritative, resilient to symlinks) and never throws.
+ */
+export function listPiSessions(cwd: string, agentDir: string = realAgentDir()): PiSessionMeta[] {
+  const dir = piSessionsDir(cwd, agentDir);
+  if (!existsSync(dir)) return [];
+
+  let entries: string[];
+  try {
+    entries = readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+  } catch {
+    return [];
+  }
+
+  const target = resolve(cwd);
+  const metas: PiSessionMeta[] = [];
+  for (const entry of entries) {
+    const path = join(dir, entry);
+    const header = readHeader(path);
+    if (!header || resolve(header.cwd) !== target) continue;
+    metas.push(summarize(path, header));
+  }
+  metas.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  return metas;
+}
+
+/** Build metadata (preview / count / mtime) for a single transcript. */
+function summarize(path: string, header: Header): PiSessionMeta {
+  let preview = "";
+  let messageCount = 0;
+  try {
+    for (const line of readFileSync(path, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      let o: any;
+      try {
+        o = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const role = o?.type === "message" ? o.message?.role : undefined;
+      if (role === "user" || role === "assistant") {
+        messageCount++;
+        if (!preview && role === "user") {
+          preview = extractText(o.message?.content).slice(0, PREVIEW_MAX);
+        }
+      }
+    }
+  } catch {
+    // Best-effort; a partially-read file still yields a usable meta.
+  }
+
+  let lastActivityAt = 0;
+  try {
+    lastActivityAt = statSync(path).mtimeMs;
+  } catch {
+    lastActivityAt = Date.parse(header.timestamp) || 0;
+  }
+
+  return {
+    piSessionId: header.id,
+    path,
+    name: preview || header.timestamp,
+    preview,
+    messageCount,
+    lastActivityAt,
+  };
+}
+
+/** Join the text of every `{type:"text"}` part in a message `content` array. */
+function extractText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  const parts: string[] = [];
+  for (const part of content) {
+    if (part && typeof part === "object" && (part as any).type === "text" && typeof (part as any).text === "string") {
+      parts.push((part as any).text);
+    }
+  }
+  return parts.join("\n");
+}
+
+/**
+ * Replay a pi transcript into AdapterEvents (the same shapes PiAdapter emits
+ * live), so a session can be backfilled before it resumes. Faithful mapping:
+ *   user text          → user.message   { text }
+ *   assistant text     → agent.message  { text }
+ *   assistant toolCall → tool.call.start{ callId, name, args, risk }
+ *   toolResult         → tool.call.end  { callId, exitCode, summary, output }
+ * Unknown parts/records (thinking, model_change, …) are skipped. Never throws.
+ */
+export function parseTranscript(path: string): AdapterEvent[] {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return [];
+  }
+
+  const events: AdapterEvent[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let o: any;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!o || o.type !== "message" || !o.message) continue;
+
+    const ts = Date.parse(o.timestamp) || Date.now();
+    const { role, content } = o.message;
+
+    if (role === "user") {
+      const text = extractText(content);
+      if (text) events.push({ ts, kind: "user.message", payload: { text } });
+      continue;
+    }
+
+    if (role === "assistant" && Array.isArray(content)) {
+      for (const part of content) {
+        if (!part || typeof part !== "object") continue;
+        if (part.type === "text" && typeof part.text === "string" && part.text) {
+          events.push({ ts, kind: "agent.message", payload: { text: part.text } });
+        } else if (part.type === "toolCall" && typeof part.id === "string") {
+          const name = String(part.name ?? "tool");
+          events.push({
+            ts,
+            kind: "tool.call.start",
+            payload: { callId: part.id, name, args: part.arguments ?? {}, risk: classifyRisk(name) },
+          });
+        }
+      }
+      continue;
+    }
+
+    if (role === "toolResult" && typeof o.message.toolCallId === "string") {
+      const output = extractText(content);
+      // Preserve the historical failure state — a previously-errored tool must
+      // not render green after backfill (mirrors PiAdapter's live mapping).
+      const isError = o.message.isError === true;
+      events.push({
+        ts,
+        kind: "tool.call.end",
+        payload: {
+          callId: o.message.toolCallId,
+          exitCode: isError ? 1 : 0,
+          summary: summarizeText(o.message.toolName, output),
+          output,
+        },
+      });
+    }
+  }
+  return events;
+}
+
+/** First non-empty line of [text], truncated for the collapsed card. */
+function summarizeText(toolName: unknown, text: string): string {
+  const name = String(toolName ?? "tool");
+  const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+  if (!firstLine) return `${name} ok`;
+  return firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : firstLine;
+}
+
+function classifyRisk(name: string): "safe" | "risky" | "destructive" {
+  switch (name) {
+    case "edit":
+    case "write":
+    case "bash":
+      return "risky";
+    default:
+      return "safe";
+  }
+}

@@ -14,6 +14,7 @@ import type { AskUser } from "./uicall.js";
 import { PiAdapter } from "./adapters/pi.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
+import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 
 export interface AdapterFactoryContext {
   projectPath: string;
@@ -53,6 +54,10 @@ interface ProjectEntry {
 export class SessionManager extends EventEmitter {
   private readonly projects = new Map<string, ProjectEntry>();
   private readonly sessions = new Map<string, Session>();
+  /** pi session uuid → live pino session id, so re-attach reuses the process. */
+  private readonly attachedByPi = new Map<string, string>();
+  /** In-flight attaches, so concurrent attach calls collapse onto one process. */
+  private readonly attachInFlight = new Map<string, Promise<Session>>();
   private readonly adapterFactory?: AdapterFactory;
   private bridge?: BridgeBinding;
 
@@ -96,13 +101,68 @@ export class SessionManager extends EventEmitter {
   async spawnPiSession(projectId: string, title?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
+    return this.createSession(project, { title });
+  }
 
+  /** List a project's prior on-disk pi sessions (newest first). */
+  listPiSessions(projectId: string): PiSessionMeta[] {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    return listPiSessions(project.dto.path);
+  }
+
+  /**
+   * Resume a prior on-disk pi session: backfill its full transcript into a new
+   * pino session, then launch pi with `--session <path>` to continue it live.
+   * Idempotent — attaching the same pi session twice returns the existing
+   * pino session (never two pi processes on one file).
+   */
+  async attachPiSession(projectId: string, piSessionId: string): Promise<Session> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+
+    const existingId = this.attachedByPi.get(piSessionId);
+    if (existingId) {
+      const existing = this.sessions.get(existingId);
+      if (existing) return existing;
+      this.attachedByPi.delete(piSessionId);
+    }
+
+    // Collapse concurrent attaches of the same pi session onto one in-flight
+    // promise so we never launch two pi processes against one transcript file.
+    const pending = this.attachInFlight.get(piSessionId);
+    if (pending) return pending;
+
+    const task = (async () => {
+      const meta = listPiSessions(project.dto.path).find((m) => m.piSessionId === piSessionId);
+      if (!meta) throw new Error(`unknown pi session: ${piSessionId}`);
+      const session = await this.createSession(project, {
+        title: meta.name,
+        resumeSessionPath: meta.path,
+        backfill: parseTranscript(meta.path),
+      });
+      this.attachedByPi.set(piSessionId, session.id);
+      return session;
+    })();
+    this.attachInFlight.set(piSessionId, task);
+    try {
+      return await task;
+    } finally {
+      this.attachInFlight.delete(piSessionId);
+    }
+  }
+
+  /** Shared session construction for spawn + attach. */
+  private async createSession(
+    project: ProjectEntry,
+    opts: { title?: string; resumeSessionPath?: string; backfill?: import("./adapters/adapter.js").AdapterEvent[] },
+  ): Promise<Session> {
     // Create the session first so we have an id to thread into the bridge.
     const adapter = new PiAdapter();
     const session = new Session({
-      projectId,
+      projectId: project.dto.id,
       agent: this.adapterFactory ? "stub" : "pi",
-      title: title ?? (this.adapterFactory ? "stub session" : "pi session"),
+      title: opts.title ?? (this.adapterFactory ? "stub session" : "pi session"),
       adapter,
     });
     const activeAdapter = this.adapterFactory?.({
@@ -111,9 +171,13 @@ export class SessionManager extends EventEmitter {
     }) ?? adapter;
     if (activeAdapter !== adapter) session.replaceAdapter(activeAdapter);
 
+    // Seed history BEFORE the adapter goes live so it precedes new events.
+    if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
+
     await activeAdapter.start({
       cwd: project.dto.path,
       sessionId: session.id,
+      resumeSessionPath: opts.resumeSessionPath,
       env: this.bridge
         ? {
             PINO_BRIDGE_URL: this.bridge.url,
@@ -131,7 +195,6 @@ export class SessionManager extends EventEmitter {
     this.emit("sessionCreated", session);
     return session;
   }
-
   /** Ensure each project has at least one default session. Convenience for M0. */
   async ensureDefaultSessions() {
     for (const p of this.projects.values()) {

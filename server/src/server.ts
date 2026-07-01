@@ -195,6 +195,40 @@ export function startWsServer(opts: ServerOpts) {
       ctx.ack({ sessionId: newSession.id });
     });
 
+    r.register("session.list", async (ctx) => {
+      const projectId = String(ctx.env.projectId ?? "");
+      if (!projectId) {
+        ctx.err(WireErrorCode.BadRequest, "session.list requires a projectId");
+        return;
+      }
+      try {
+        // Omit the server-internal filesystem `path` from the wire — the app
+        // attaches by piSessionId and never needs the transcript path.
+        const sessions = manager.listPiSessions(projectId).map(
+          ({ path: _path, ...meta }) => meta,
+        );
+        ctx.ack({ sessions });
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+      }
+    });
+
+    r.register("session.attach", async (ctx) => {
+      const projectId = String(ctx.env.projectId ?? "");
+      const piSessionId = String(ctx.env.piSessionId ?? "");
+      if (!projectId || !piSessionId) {
+        ctx.err(WireErrorCode.BadRequest, "session.attach requires projectId and piSessionId");
+        return;
+      }
+      try {
+        const session = await manager.attachPiSession(projectId, piSessionId);
+        broadcastSnapshots();
+        ctx.ack({ sessionId: session.id });
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+      }
+    });
+
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.
     if (process.env.PINO_DEV) registerDebugCommands(r);
 
