@@ -82,8 +82,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         children: [
           ListView.builder(
             controller: _scroll,
-            // Leave room so the first/last items clear the floating glass bars.
-            padding: EdgeInsets.only(top: topInset + 60, bottom: 96),
+            // Leave room so the first/last items clear the floating glass bars
+            // (bottom = safe-area inset + composer height + a breathing gap).
+            padding: EdgeInsets.only(
+              top: topInset + 60,
+              bottom: MediaQuery.of(context).padding.bottom + 108,
+            ),
             itemCount: items.length,
             itemBuilder: (context, i) {
               final item = items[i];
