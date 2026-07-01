@@ -1,8 +1,9 @@
 # pino UI Transport Architecture
 
-> Status: **design / refining** (no interceptor code yet as of this doc).
-> The `AskUserQuestion` shadow in `pino-pi.ts` is a stopgap and is kept until
-> the generic interceptor lands.
+> Status: **implemented** — server `PiAdapter` intercepts
+> `ctx.ui.select/confirm/input/editor`; app renders the `input` dialog.
+> `ui.custom` remains un-transportable, so the pino-native `AskUserQuestion`
+> tool in `pino-pi.ts` stays as the phone ask (supersedes `@mammothb/pi-ask`).
 
 ## Principle
 
