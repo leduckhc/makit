@@ -33,6 +33,8 @@ export interface PiSessionMeta {
   messageCount: number;
   /** File mtime in epoch ms — used for "x ago" and sorting. */
   lastActivityAt: number;
+  /** True when this pi session is currently attached to a live pino session. */
+  attached: boolean;
 }
 
 const PREVIEW_MAX = 200;
@@ -138,6 +140,7 @@ function summarize(path: string, header: Header): PiSessionMeta {
     preview,
     messageCount,
     lastActivityAt,
+    attached: false,
   };
 }
 

@@ -152,7 +152,13 @@ export class SessionManager extends EventEmitter {
   listPiSessions(projectId: string): PiSessionMeta[] {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
-    return listPiSessions(project.dto.path);
+    return listPiSessions(project.dto.path).map((m) => ({
+      ...m,
+      // A past session is "alive" when attached to a live pino session.
+      attached:
+        this.attachedByPi.has(m.piSessionId) &&
+        this.sessions.has(this.attachedByPi.get(m.piSessionId)!),
+    }));
   }
 
   /**

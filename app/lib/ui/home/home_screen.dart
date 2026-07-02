@@ -307,7 +307,10 @@ class _AttachPastButton extends ConsumerWidget {
                   ),
                   for (final m in metas)
                     ListTile(
-                      leading: const Icon(Icons.history),
+                      leading: Icon(
+                        m.attached ? Icons.bolt : Icons.history,
+                        color: m.attached ? Colors.green : null,
+                      ),
                       title: Text(
                         m.name.isEmpty ? '(untitled)' : m.name,
                         maxLines: 1,
@@ -319,6 +322,26 @@ class _AttachPastButton extends ConsumerWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      trailing: m.attached
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text(
+                                'live',
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            )
+                          : null,
                       onTap: () => Navigator.pop(ctx, m),
                     ),
                   const SizedBox(height: 8),

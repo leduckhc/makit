@@ -61,6 +61,7 @@ class PiSessionMeta {
     required this.lastActivityAt,
     required this.preview,
     required this.messageCount,
+    this.attached = false,
   });
 
   final String piSessionId;
@@ -68,6 +69,7 @@ class PiSessionMeta {
   final int lastActivityAt;
   final String preview;
   final int messageCount;
+  final bool attached;
 
   static PiSessionMeta? fromJson(Map<String, dynamic> j) {
     final id = j['piSessionId'] as String?;
@@ -78,6 +80,7 @@ class PiSessionMeta {
       lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
       preview: (j['preview'] as String?) ?? '',
       messageCount: (j['messageCount'] as num?)?.toInt() ?? 0,
+      attached: j['attached'] == true,
     );
   }
 }
