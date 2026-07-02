@@ -39,6 +39,7 @@ function parseArgs(argv: string[]) {
     projects: [] as string[],
     noAuth: false,
     printPair: true,
+    advertise: process.env.PINO_ADVERTISE_HOST ?? "",
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -47,6 +48,7 @@ function parseArgs(argv: string[]) {
     else if (a === "--project" || a === "-C") args.projects.push(resolve(String(argv[++i])));
     else if (a === "--no-auth") args.noAuth = true;
     else if (a === "--no-pair-qr") args.printPair = false;
+    else if (a === "--advertise") args.advertise = String(argv[++i]);
   }
   if (args.projects.length === 0) args.projects.push(process.cwd());
   return args;
@@ -173,7 +175,7 @@ async function main() {
     if (registry.list().length === 0 && opts.printPair) {
       console.log("");
       console.log("[pino] no paired devices yet — scan this QR with the app:");
-      printPairQr(registry, opts.port, cert.fingerprint);
+      printPairQr(registry, opts.port, cert.fingerprint, opts.advertise);
       // Re-mint just before the 5-minute TTL expires.
       rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
     } else {
@@ -185,7 +187,7 @@ async function main() {
   // SIGUSR1 → print a fresh pair QR on demand. Handy without restarting.
   process.on("SIGUSR1", () => {
     clearTimeout(rotateTimer);
-    printPairQr(registry, opts.port, cert.fingerprint);
+    printPairQr(registry, opts.port, cert.fingerprint, opts.advertise);
     if (registry.list().length === 0) {
       rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
     }
@@ -197,8 +199,8 @@ async function main() {
   }
 }
 
-function printPairQr(registry: DeviceRegistry, port: number, fingerprint: string) {
-  const host = bestLanHost();
+function printPairQr(registry: DeviceRegistry, port: number, fingerprint: string, advertise?: string) {
+  const host = advertise && advertise.length > 0 ? advertise : bestLanHost();
   const token = registry.mintPairToken();
   const url = buildPairUrl({ host, port, fingerprint, token });
   console.log("");
