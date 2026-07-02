@@ -110,6 +110,23 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       setTimeout(tick, echoDelayMs);
       return;
     }
+    // "THINK" → emit a reasoning trace (folded thinking card) then a reply.
+    if (input.text.includes("THINK")) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "agent.thinking",
+        payload: {
+          text: "Let me reason about this step by step before answering.",
+        },
+      });
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "agent.message",
+        payload: { text: "Done reasoning." },
+      });
+      return;
+    }
+
 
     setTimeout(() => {
       this.emitEvent({

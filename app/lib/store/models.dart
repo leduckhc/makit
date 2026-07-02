@@ -250,6 +250,11 @@ class AgentMessageItem extends ChatItem {
       );
 }
 
+class ThinkingItem extends ChatItem {
+  ThinkingItem({required super.seq, required super.ts, required this.text});
+  final String text;
+}
+
 class ToolCallItem extends ChatItem {
   ToolCallItem({
     required super.seq,
@@ -362,8 +367,10 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           );
         }
       case EventKind.agentThinking:
-        // M0: ignore reasoning trace; could render as a faint card later.
-        break;
+        final text = e.payload['text'] as String? ?? '';
+        if (text.trim().isNotEmpty) {
+          items.add(ThinkingItem(seq: e.seq, ts: e.ts, text: text));
+        }
       case EventKind.toolCallStart:
         final callId = e.payload['callId'] as String;
         final item = ToolCallItem(

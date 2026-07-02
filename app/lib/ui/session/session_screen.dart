@@ -62,7 +62,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       });
     }
 
-    final fake = ref.watch(fakeGlassProvider);
     final cs = Theme.of(context).colorScheme;
     final topInset = MediaQuery.of(context).padding.top;
     // Session titles are usually gibberish ids — prefer the repo/project name.
@@ -97,6 +96,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   ChatBubble.user(text: item.text, ts: item.ts),
                 AgentMessageItem() =>
                   AgentMessage(text: item.text, ts: item.ts),
+                ThinkingItem() => _ThinkingCard(text: item.text),
                 ToolCallItem() => ToolCallCard(
                   item: item,
                   onTap: () => context.go(
@@ -198,13 +198,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                       icon: Icons.power_settings_new,
                       tooltip: 'Quit session',
                       onTap: _confirmQuit,
-                    ),
-                    const SizedBox(width: 8),
-                    _glassCircle(
-                      icon: fake ? Icons.blur_off : Icons.blur_on,
-                      tooltip: fake ? 'Fake glass (fast)' : 'Liquid glass',
-                      onTap: () =>
-                          ref.read(fakeGlassProvider.notifier).state = !fake,
                     ),
                     const SizedBox(width: 6),
                     const ConnectionChip(circular: true),
@@ -350,6 +343,57 @@ class _ErrorBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ],
+      ),
+    );
+  }
+}
+
+/// Reasoning/thinking trace. Folded to a single greyed one-liner with an
+/// ellipsis; tap to expand the full text.
+class _ThinkingCard extends StatefulWidget {
+  const _ThinkingCard({required this.text});
+  final String text;
+
+  @override
+  State<_ThinkingCard> createState() => _ThinkingCardState();
+}
+
+class _ThinkingCardState extends State<_ThinkingCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final style = TextStyle(
+      color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+      fontSize: 13,
+      fontStyle: FontStyle.italic,
+      height: 1.3,
+    );
+    return InkWell(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.psychology_outlined,
+              size: 15,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                widget.text.trim(),
+                style: style,
+                maxLines: _expanded ? null : 1,
+                overflow:
+                    _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

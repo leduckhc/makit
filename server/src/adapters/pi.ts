@@ -47,6 +47,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   /** Stable streamed-message id per content-index (ties deltas to the final). */
   private msgIds = new Map<number, string>();
 
+  /** Accumulates reasoning/thinking text per content-index, flushed at end. */
+  private thinkingBuffers = new Map<number, string>();
+
   async start(opts: SpawnOpts): Promise<void> {
     this.cwd = opts.cwd;
     this.extraEnv = opts.env ?? {};
@@ -348,6 +351,26 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
               ts: Date.now(),
               kind: "agent.message",
               payload: { text, ...(msgId ? { msgId } : {}) },
+            });
+          }
+        } else if (e.type === "thinking_start") {
+          this.thinkingBuffers.set(idx, "");
+        } else if (e.type === "thinking_delta") {
+          const delta = typeof e.delta === "string" ? e.delta : "";
+          this.thinkingBuffers.set(
+            idx,
+            (this.thinkingBuffers.get(idx) ?? "") + delta,
+          );
+        } else if (e.type === "thinking_end") {
+          const text =
+            this.thinkingBuffers.get(idx) ??
+            (typeof e.content === "string" ? e.content : "");
+          this.thinkingBuffers.delete(idx);
+          if (text.trim().length > 0) {
+            this.emitEvent({
+              ts: Date.now(),
+              kind: "agent.thinking",
+              payload: { text },
             });
           }
         }
