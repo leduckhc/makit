@@ -54,13 +54,6 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ],
             ),
-      floatingActionButton: projects.isEmpty
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: () => _spawn(context, ref, projects),
-              icon: const Icon(Icons.add),
-              label: const Text('New session'),
-            ),
     );
   }
 
