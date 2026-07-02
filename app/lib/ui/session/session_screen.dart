@@ -413,22 +413,22 @@ class _WorkingIndicator extends StatefulWidget {
 class _WorkingIndicatorState extends State<_WorkingIndicator>
     with SingleTickerProviderStateMixin {
   static const _words = [
-    'Thinking…',
-    'Cooking…',
-    'Pondering…',
-    'Crunching…',
-    'Conjuring…',
-    'Reasoning…',
-    'Tinkering…',
-    'Brewing…',
-    'Computing…',
-    'Noodling…',
-    'Scheming…',
-    'Percolating…',
-    'Wrangling…',
-    'Munching…',
-    'Plotting…',
-    'Untangling…',
+    'Thinking',
+    'Cooking',
+    'Pondering',
+    'Crunching',
+    'Conjuring',
+    'Reasoning',
+    'Tinkering',
+    'Brewing',
+    'Computing',
+    'Noodling',
+    'Scheming',
+    'Percolating',
+    'Wrangling',
+    'Analyzing',
+    'Plotting',
+    'Untangling',
   ];
 
   late final String _word =
@@ -448,8 +448,8 @@ class _WorkingIndicatorState extends State<_WorkingIndicator>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final base = cs.onSurfaceVariant.withValues(alpha: 0.35);
-    final highlight = cs.onSurfaceVariant;
+    final base = cs.onSurfaceVariant.withValues(alpha: 0.18);
+    final highlight = cs.onSurface;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
       child: AnimatedBuilder(
