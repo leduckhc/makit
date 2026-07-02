@@ -397,6 +397,14 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     ws.sendEnvelope(env);
   }
 
+  /// Force a fresh connection to the currently-paired server. No-op if we're
+  /// only attached to the dev fake or have no paired server.
+  Future<void> reconnect() async {
+    final server = state.server;
+    if (server == null) return;
+    await _connectPaired(server);
+  }
+
   Future<void> unpair() async {
     await _storage.delete(key: _kPairedServerKey);
     await _ws?.close();
