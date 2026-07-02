@@ -383,9 +383,10 @@ class _SessionTile extends ConsumerWidget {
       onDismissed: (_) => _quit(context, ref),
       child: ListTile(
         onTap: () => context.go('/session/${session.id}'),
-        leading: CircleAvatar(
-          backgroundColor: cs.secondaryContainer,
-          child: Text(session.agent.substring(0, 1).toUpperCase()),
+        leading: _AvatarWithLiveness(
+          label: session.agent.substring(0, 1).toUpperCase(),
+          alive: session.status != SessionStatus.exited,
+          running: session.status == SessionStatus.running,
         ),
         title: Row(
           children: [
@@ -434,6 +435,48 @@ class _SessionTile extends ConsumerWidget {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
     }
+  }
+}
+
+/// Agent avatar with a liveness dot: green = alive (process up), grey = exited.
+class _AvatarWithLiveness extends StatelessWidget {
+  const _AvatarWithLiveness({
+    required this.label,
+    required this.alive,
+    required this.running,
+  });
+  final String label;
+  final bool alive;
+  final bool running;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dot = !alive
+        ? Colors.grey
+        : (running ? Colors.green : Colors.green.shade600);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CircleAvatar(
+          backgroundColor: cs.secondaryContainer,
+          child: Text(label),
+        ),
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              color: dot,
+              shape: BoxShape.circle,
+              border: Border.all(color: cs.surface, width: 2),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
