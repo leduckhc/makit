@@ -357,43 +357,55 @@ class _SessionTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      onTap: () => context.go('/session/${session.id}'),
-      leading: CircleAvatar(
-        backgroundColor: cs.secondaryContainer,
-        child: Text(session.agent.substring(0, 1).toUpperCase()),
-      ),
-      title: Row(
-        children: [
-          Expanded(child: Text(session.title, overflow: TextOverflow.ellipsis)),
-          _StatusChip(status: session.status),
-        ],
-      ),
-      subtitle: Text(
-        session.lastPreview,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: PopupMenuButton<String>(
-        onSelected: (v) {
-          if (v == 'quit') _confirmQuit(context, ref);
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(
-            value: 'quit',
-            child: ListTile(
-              leading: Icon(Icons.power_settings_new),
-              title: Text('Quit session'),
-              contentPadding: EdgeInsets.zero,
+    return Dismissible(
+      key: ValueKey('sess-${session.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        color: cs.errorContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.power_settings_new, color: cs.onErrorContainer),
+            const SizedBox(width: 8),
+            Text(
+              'Quit',
+              style: TextStyle(
+                color: cs.onErrorContainer,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+      ),
+      confirmDismiss: (_) => _confirmQuit(context),
+      onDismissed: (_) => _quit(context, ref),
+      child: ListTile(
+        onTap: () => context.go('/session/${session.id}'),
+        leading: CircleAvatar(
+          backgroundColor: cs.secondaryContainer,
+          child: Text(session.agent.substring(0, 1).toUpperCase()),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(session.title, overflow: TextOverflow.ellipsis),
+            ),
+            _StatusChip(status: session.status),
+          ],
+        ),
+        subtitle: Text(
+          session.lastPreview,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
     );
   }
 
-  Future<void> _confirmQuit(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
+  /// Confirm before the swipe completes. Returns true to dismiss + quit.
+  Future<bool> _confirmQuit(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
@@ -412,7 +424,11 @@ class _SessionTile extends ConsumerWidget {
         ],
       ),
     );
-    if (ok != true) return;
+    return ok == true;
+  }
+
+  Future<void> _quit(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(storeControllerProvider.notifier).killSession(session.id);
     } catch (e) {
