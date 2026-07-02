@@ -357,12 +357,12 @@ String _ago(int epochMs) {
   return 'just now';
 }
 
-class _SessionTile extends StatelessWidget {
+class _SessionTile extends ConsumerWidget {
   const _SessionTile({required this.session});
   final Session session;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
       onTap: () => context.go('/session/${session.id}'),
@@ -381,7 +381,50 @@ class _SessionTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
+      trailing: PopupMenuButton<String>(
+        onSelected: (v) {
+          if (v == 'quit') _confirmQuit(context, ref);
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(
+            value: 'quit',
+            child: ListTile(
+              leading: Icon(Icons.power_settings_new),
+              title: Text('Quit session'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  Future<void> _confirmQuit(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Quit session?'),
+        content: Text('Stop “${session.title}” and remove it? '
+            'The transcript stays on disk and can be re-attached.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('Quit'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await ref.read(storeControllerProvider.notifier).killSession(session.id);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+    }
   }
 }
 

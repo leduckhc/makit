@@ -258,6 +258,15 @@ class StoreController extends StateNotifier<StoreState> {
     return sid;
   }
 
+  /// Quit a session: kill its agent process and drop it server-side. The
+  /// server broadcasts a fresh sessions.snapshot so the list updates.
+  Future<void> killSession(String sessionId) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.kill', 'sessionId': sessionId},
+    );
+  }
+
   /// List a project's prior on-disk pi sessions (newest first).
   Future<List<PiSessionMeta>> listPiSessions(String projectId) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(

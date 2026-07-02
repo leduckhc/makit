@@ -196,6 +196,18 @@ export class SessionManager extends EventEmitter {
     }
   }
 
+  /** Kill a session's agent process and drop it from the registry. */
+  async killSession(id: string): Promise<void> {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error(`no such session: ${id}`);
+    await session.adapter.kill();
+    this.sessions.delete(id);
+    // Drop any attach mapping so the underlying pi session can be re-attached.
+    for (const [piId, sid] of this.attachedByPi) {
+      if (sid === id) this.attachedByPi.delete(piId);
+    }
+  }
+
   /** Shared session construction for spawn + attach. */
   private async createSession(
     project: ProjectEntry,

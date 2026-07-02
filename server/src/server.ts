@@ -188,6 +188,18 @@ export function startWsServer(opts: ServerOpts) {
       ctx.ack();
     });
 
+    r.register("session.kill", async (ctx) => {
+      const sid = String(ctx.env.sessionId ?? "");
+      try {
+        await manager.killSession(sid);
+      } catch {
+        ctx.err(WireErrorCode.NoSuchSession, "no such session");
+        return;
+      }
+      broadcastSnapshots();
+      ctx.ack();
+    });
+
     r.register("session.spawn", async (ctx) => {
       const projectId = String(ctx.env.projectId ?? "");
       const title = ctx.env.title ? String(ctx.env.title) : undefined;

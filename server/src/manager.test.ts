@@ -148,3 +148,34 @@ test("attachPiSession rejects an unknown pi session id", async () => {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test("killSession kills the adapter, drops it from the registry, and errors on unknown id", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      let killed = 0;
+      const manager = new SessionManager({
+        projects: [cwd],
+        adapterFactory: () => {
+          const a = stubAdapter([]);
+          (a as any).kill = async () => {
+            killed++;
+          };
+          return a;
+        },
+      });
+      const projectId = manager.listProjects()[0].id;
+      const session = await manager.spawnPiSession(projectId);
+      assert.ok(manager.getSession(session.id));
+
+      await manager.killSession(session.id);
+      assert.equal(killed, 1);
+      assert.equal(manager.getSession(session.id), undefined);
+      assert.equal(manager.listSessions().length, 0);
+
+      await assert.rejects(() => manager.killSession("nope"));
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

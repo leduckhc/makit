@@ -195,6 +195,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     ),
                     const SizedBox(width: 8),
                     _glassCircle(
+                      icon: Icons.power_settings_new,
+                      tooltip: 'Quit session',
+                      onTap: _confirmQuit,
+                    ),
+                    const SizedBox(width: 8),
+                    _glassCircle(
                       icon: fake ? Icons.blur_off : Icons.blur_on,
                       tooltip: fake ? 'Fake glass (fast)' : 'Liquid glass',
                       onTap: () =>
@@ -264,6 +270,37 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmQuit() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Quit session?'),
+        content: const Text(
+          'This stops the agent process and removes the session. '
+          'The transcript stays on disk and can be re-attached later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('Quit'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(storeControllerProvider.notifier).killSession(widget.sessionId);
+      if (mounted) context.go('/');
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+    }
   }
 
   Future<void> _handleSend(String text) async {
