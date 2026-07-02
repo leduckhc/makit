@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -399,8 +401,8 @@ class _ThinkingCardState extends State<_ThinkingCard> {
   }
 }
 
-/// Three softly-pulsing dots shown at the tail of the transcript while the
-/// session status is `running` — the "agent is working" cue.
+/// Shimmering "working" text shown at the tail of the transcript while the
+/// session status is `running`. Picks a random work-flavoured word per turn.
 class _WorkingIndicator extends StatefulWidget {
   const _WorkingIndicator();
 
@@ -410,9 +412,31 @@ class _WorkingIndicator extends StatefulWidget {
 
 class _WorkingIndicatorState extends State<_WorkingIndicator>
     with SingleTickerProviderStateMixin {
+  static const _words = [
+    'Thinking…',
+    'Cooking…',
+    'Pondering…',
+    'Crunching…',
+    'Conjuring…',
+    'Reasoning…',
+    'Tinkering…',
+    'Brewing…',
+    'Computing…',
+    'Noodling…',
+    'Scheming…',
+    'Percolating…',
+    'Wrangling…',
+    'Munching…',
+    'Plotting…',
+    'Untangling…',
+  ];
+
+  late final String _word =
+      _words[Random().nextInt(_words.length)];
+
   late final AnimationController _c = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1200),
+    duration: const Duration(milliseconds: 1400),
   )..repeat();
 
   @override
@@ -423,31 +447,46 @@ class _WorkingIndicatorState extends State<_WorkingIndicator>
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final cs = Theme.of(context).colorScheme;
+    final base = cs.onSurfaceVariant.withValues(alpha: 0.35);
+    final highlight = cs.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(3, (i) {
-          return AnimatedBuilder(
-            animation: _c,
-            builder: (context, _) {
-              // Stagger each dot's phase so they ripple.
-              final phase = (_c.value + i * 0.2) % 1.0;
-              final t = (phase < 0.5 ? phase : 1 - phase) * 2; // 0→1→0
-              return Container(
-                width: 7,
-                height: 7,
-                margin: const EdgeInsets.only(right: 5),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: color.withValues(alpha: 0.3 + 0.5 * t),
-                ),
-              );
-            },
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, child) {
+          return ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (bounds) => LinearGradient(
+              colors: [base, highlight, base],
+              stops: const [0.35, 0.5, 0.65],
+              transform: _SlideGradient(_c.value),
+            ).createShader(bounds),
+            child: child,
           );
-        }),
+        },
+        child: Text(
+          _word,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
       ),
     );
+  }
+}
+
+/// Slides a gradient horizontally across its bounds as [t] goes 0→1, so the
+/// highlight band sweeps left→right (a shimmer). Clamp tiling keeps the
+/// off-band area the base colour.
+class _SlideGradient extends GradientTransform {
+  const _SlideGradient(this.t);
+  final double t;
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    return Matrix4.translationValues((t * 2 - 1) * bounds.width, 0, 0);
   }
 }
