@@ -32,7 +32,7 @@ import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
 import { randomBytes } from "node:crypto";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 
 function parseArgs(argv: string[]) {
@@ -138,6 +138,7 @@ async function main() {
     hostToken,
   });
   writeHostFile(opts.port, cert.fingerprint, hostToken);
+  ensureMirrorExtensionInstalled();
 
   // Loopback HTTP bridge so agent connectors (loaded inside each spawned
   // agent process) can talk back to pino.
@@ -225,6 +226,36 @@ async function main() {
   if (opts.noAuth) {
     console.log("[pino] --no-auth: localhost connections bypass auth (dev only)");
     console.log(`[pino] dev: flutter run --dart-define=PINO_WS_URL=wss://127.0.0.1:${opts.port} --dart-define=PINO_FP=${cert.fingerprint}`);
+  }
+}
+
+/**
+ * Make `pino-mirror` auto-load into every `pi` by symlinking it (and its lone
+ * runtime dep, `ws`) into pi's global extensions dir. Idempotent + best-effort,
+ * so `pino serve` is all it takes for any `pi` to mirror while pino runs.
+ */
+function ensureMirrorExtensionInstalled(): void {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url)); // server/src
+    const extSrc = resolvePath(here, "../extensions/pino-mirror.ts");
+    const wsPkg = resolvePath(here, "../node_modules/ws");
+    if (!existsSync(extSrc) || !existsSync(wsPkg)) return;
+
+    const extDir = resolvePath(homedir(), ".pi", "agent", "extensions");
+    mkdirSync(resolvePath(extDir, "node_modules"), { recursive: true });
+    const relink = (target: string, linkPath: string) => {
+      try {
+        rmSync(linkPath, { force: true });
+        symlinkSync(target, linkPath);
+      } catch {
+        /* best-effort */
+      }
+    };
+    relink(extSrc, resolvePath(extDir, "pino-mirror.ts"));
+    relink(wsPkg, resolvePath(extDir, "node_modules", "ws"));
+    console.log("[pino] mirror extension installed — any `pi` auto-mirrors while pino runs.");
+  } catch {
+    /* non-fatal */
   }
 }
 

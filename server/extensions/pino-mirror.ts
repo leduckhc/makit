@@ -37,6 +37,9 @@ function classifyRisk(name: string): "safe" | "risky" | "destructive" {
 }
 
 export default function (pi: ExtensionAPI): void {
+  // Skip pino's OWN spawned pi (it already talks to pino directly) — otherwise
+  // an auto-loaded copy would recursively mirror pino's sessions back to pino.
+  if (process.env.PINO_BRIDGE_URL) return;
   const host = loadHost();
   if (!host) return; // pino isn't running — behave as a normal pi.
 
