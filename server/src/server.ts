@@ -336,6 +336,21 @@ export function startWsServer(opts: ServerOpts) {
       await paneBridge.keys(target, keys);
       ctx.ack();
     });
+    r.register("session.mirror", async (ctx) => {
+      const pane = typeof ctx.env.pane === "string" ? ctx.env.pane : "";
+      if (!pane) {
+        ctx.err(WireErrorCode.BadRequest, "session.mirror requires a string `pane`");
+        return;
+      }
+      const sessionPath =
+        typeof ctx.env.sessionPath === "string" ? ctx.env.sessionPath : undefined;
+      const projectId =
+        typeof ctx.env.projectId === "string" ? ctx.env.projectId : undefined;
+      const session = await manager.mirrorTuiSession({ paneTarget: pane, sessionPath, projectId });
+      broadcastSnapshots();
+      ctx.ack({ sessionId: session.id });
+    });
+
 
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.
     if (process.env.PINO_DEV) registerDebugCommands(r);

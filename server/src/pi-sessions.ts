@@ -176,56 +176,66 @@ export function parseTranscript(path: string): AdapterEvent[] {
   const events: AdapterEvent[] = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
-    let o: any;
+    let o: unknown;
     try {
       o = JSON.parse(line);
     } catch {
       continue;
     }
-    if (!o || o.type !== "message" || !o.message) continue;
+    events.push(...recordToEvents(o));
+  }
+  return events;
+}
 
-    const ts = Date.parse(o.timestamp) || Date.now();
-    const { role, content } = o.message;
+/**
+ * Map ONE pi session record to AdapterEvents (same shapes PiAdapter emits
+ * live). Shared by {@link parseTranscript} (bulk backfill) and the live tail
+ * follower behind the TUI-mirror adapter. Never throws; unknown records → [].
+ */
+export function recordToEvents(o: unknown): AdapterEvent[] {
+  const rec = o as any;
+  if (!rec || rec.type !== "message" || !rec.message) return [];
 
-    if (role === "user") {
-      const text = extractText(content);
-      if (text) events.push({ ts, kind: "user.message", payload: { text } });
-      continue;
-    }
+  const ts = Date.parse(rec.timestamp) || Date.now();
+  const { role, content } = rec.message;
+  const events: AdapterEvent[] = [];
 
-    if (role === "assistant" && Array.isArray(content)) {
-      for (const part of content) {
-        if (!part || typeof part !== "object") continue;
-        if (part.type === "text" && typeof part.text === "string" && part.text) {
-          events.push({ ts, kind: "agent.message", payload: { text: part.text } });
-        } else if (part.type === "toolCall" && typeof part.id === "string") {
-          const name = String(part.name ?? "tool");
-          events.push({
-            ts,
-            kind: "tool.call.start",
-            payload: { callId: part.id, name, args: part.arguments ?? {}, risk: classifyRisk(name) },
-          });
-        }
+  if (role === "user") {
+    const text = extractText(content);
+    if (text) events.push({ ts, kind: "user.message", payload: { text } });
+    return events;
+  }
+
+  if (role === "assistant" && Array.isArray(content)) {
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      if (part.type === "text" && typeof part.text === "string" && part.text) {
+        events.push({ ts, kind: "agent.message", payload: { text: part.text } });
+      } else if (part.type === "toolCall" && typeof part.id === "string") {
+        const name = String(part.name ?? "tool");
+        events.push({
+          ts,
+          kind: "tool.call.start",
+          payload: { callId: part.id, name, args: part.arguments ?? {}, risk: classifyRisk(name) },
+        });
       }
-      continue;
     }
+    return events;
+  }
 
-    if (role === "toolResult" && typeof o.message.toolCallId === "string") {
-      const output = extractText(content);
-      // Preserve the historical failure state — a previously-errored tool must
-      // not render green after backfill (mirrors PiAdapter's live mapping).
-      const isError = o.message.isError === true;
-      events.push({
-        ts,
-        kind: "tool.call.end",
-        payload: {
-          callId: o.message.toolCallId,
-          exitCode: isError ? 1 : 0,
-          summary: summarizeText(o.message.toolName, output),
-          output,
-        },
-      });
-    }
+  if (role === "toolResult" && typeof rec.message.toolCallId === "string") {
+    const output = extractText(content);
+    const isError = rec.message.isError === true;
+    events.push({
+      ts,
+      kind: "tool.call.end",
+      payload: {
+        callId: rec.message.toolCallId,
+        exitCode: isError ? 1 : 0,
+        summary: summarizeText(rec.message.toolName, output),
+        output,
+      },
+    });
   }
   return events;
 }

@@ -12,6 +12,8 @@ import { basename, resolve } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { PiAdapter } from "./adapters/pi.js";
+import { MirrorAdapter } from "./adapters/mirror.js";
+import { herdrReader } from "./pane/herdr.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
@@ -212,6 +214,42 @@ export class SessionManager extends EventEmitter {
     for (const [piId, sid] of this.attachedByPi) {
       if (sid === id) this.attachedByPi.delete(piId);
     }
+  }
+
+  /**
+   * Mirror a real `pi` TUI running in a multiplexer pane (World B): tail its
+   * session file for output and inject the phone's input via send-keys. No pi
+   * process is spawned — the TUI stays the sole writer of the session file.
+   * If `sessionPath` is omitted, the most-recent session for the project is used.
+   */
+  async mirrorTuiSession(opts: {
+    paneTarget: string;
+    sessionPath?: string;
+    projectId?: string;
+    title?: string;
+  }): Promise<Session> {
+    const project = opts.projectId
+      ? this.projects.get(opts.projectId)
+      : [...this.projects.values()][0];
+    if (!project) throw new Error("no project for mirror session");
+
+    const sessionPath =
+      opts.sessionPath ?? listPiSessions(project.dto.path)[0]?.path;
+    if (!sessionPath) {
+      throw new Error(`no session file found for project ${project.dto.id}`);
+    }
+
+    const adapter = new MirrorAdapter(sessionPath, opts.paneTarget, herdrReader);
+    const session = new Session({
+      projectId: project.dto.id,
+      agent: "pi",
+      title: opts.title ?? `TUI ${opts.paneTarget}`,
+      adapter,
+    });
+    await adapter.start({ cwd: project.dto.path });
+    this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
+    return session;
   }
 
   /** Shared session construction for spawn + attach. */
