@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pino — final mark</title>
+<style>
+  :root {
+    --bg:      #1a1a1a;
+    --bg2:     #0e0e0e;
+    --accent:  #4ade80;
+    --ink:     #f4f4f5;
+    --muted:   #888;
+    --radius:  22%;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: var(--bg2);
+    color: #ddd;
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 48px 24px;
+  }
+  h1 { font-size: 22px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; margin-bottom: 4px; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--ink); margin: 40px 0 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; max-width: 720px; }
+  .section-sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; max-width: 600px; }
+
+  .row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; margin: 16px 0; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .label { font-size: 12px; color: var(--ink); font-weight: 600; }
+  .desc  { font-size: 11px; color: var(--muted); }
+
+  .icon {
+    background: var(--bg);
+    border-radius: var(--radius);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+  .icon.s160 { width: 160px; height: 160px; }
+  .icon.s120 { width: 120px; height: 120px; }
+  .icon.s80  { width: 80px;  height: 80px;  }
+  .icon.s64  { width: 64px;  height: 64px;  box-shadow: none; }
+  .icon.s48  { width: 48px;  height: 48px;  box-shadow: none; }
+  .icon.s32  { width: 32px;  height: 32px;  box-shadow: none; }
+  .icon.s24  { width: 24px;  height: 24px;  box-shadow: none; }
+  .icon.s16  { width: 16px;  height: 16px;  box-shadow: none; }
+
+  .mark-osl { width: 92%; height: 72%; }
+  .mark-osl svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .mark-osl .stroke { stroke: var(--accent); fill: none; stroke-linecap: round; }
+  .mark-osl .head   { fill: var(--accent); }
+
+  .swatches { display: flex; gap: 16px; margin: 16px 0; flex-wrap: wrap; }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .chip { width: 56px; height: 56px; border-radius: 12px; }
+</style>
+</head>
+<body>
+  <h1>pino — final mark</h1>
+  <div class="sub">B4: medium head (o) + two thick forward slashes (//) clapping. Head r=26, arm stroke 14, arms far apart, round caps, lean ~29°.</div>
+
+  <h2>App icon — all sizes</h2>
+  <div class="section-sub">The mark on the dark frame, at the sizes Flutter / iOS / Android need.</div>
+
+  <div class="row">
+    <div class="col"><div class="icon s160"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">160</div></div>
+
+    <div class="col"><div class="icon s120"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">120</div></div>
+
+    <div class="col"><div class="icon s80"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">80</div></div>
+
+    <div class="col"><div class="icon s64"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">64</div></div>
+
+    <div class="col"><div class="icon s48"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">48</div></div>
+
+    <div class="col"><div class="icon s32"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">32</div></div>
+
+    <div class="col"><div class="icon s24"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">24</div></div>
+
+    <div class="col"><div class="icon s16"><div class="mark-osl">
+      <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+        <circle class="head" cx="38" cy="50" r="26" />
+        <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+        <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+      </svg>
+    </div></div><div class="label">16</div></div>
+  </div>
+
+  <h2>Palette</h2>
+  <div class="swatches">
+    <div class="swatch"><div class="chip" style="background:#4ade80"></div><div class="label">#4ade80</div><div class="desc">accent</div></div>
+    <div class="swatch"><div class="chip" style="background:#1a1a1a"></div><div class="label">#1a1a1a</div><div class="desc">frame</div></div>
+    <div class="swatch"><div class="chip" style="background:#0e0e0e"></div><div class="label">#0e0e0e</div><div class="desc">page</div></div>
+  </div>
+
+  <h2>Source SVG</h2>
+  <div class="section-sub">Saved to docs/pino-mark.svg — the canonical vector source for the mark (no frame).</div>
+  <pre style="background:#1a1a1a;color:#aaffcc;padding:16px;border-radius:8px;font-size:12px;overflow:auto;max-width:720px;margin-top:12px">&lt;svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 100"&gt;
+  &lt;circle cx="38" cy="50" r="26" fill="#4ade80" /&gt;
+  &lt;line x1="72" y1="82" x2="106" y2="18" stroke="#4ade80" stroke-width="14" stroke-linecap="round" /&gt;
+  &lt;line x1="100" y1="82" x2="134" y2="18" stroke="#4ade80" stroke-width="14" stroke-linecap="round" /&gt;
+&lt;/svg&gt;</pre>
+
+</body>
+</html>

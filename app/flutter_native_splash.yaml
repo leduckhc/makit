@@ -1,0 +1,15 @@
+# flutter_native_splash config — run `dart run flutter_native_splash:create`
+# Source mark PNG in app/assets/. Generates iOS LaunchImage + Android launch screens.
+
+flutter_native_splash:
+  color: "#1A1A1A"                       # dark frame background
+  image: assets/pino-splash-mark.png     # green o// mark, transparent bg (480x300)
+
+  # Android 12+ themed splash (the runtime can tint these).
+  android_12:
+    color: "#1A1A1A"
+    image: assets/pino-splash-mark.png
+    icon_background_color: "#1A1A1A"
+
+  # The static native splash is replaced by the Flutter PinoSplash (clap anim)
+  # once the engine is up — see app/lib/ui/widgets/pino_mark.dart.

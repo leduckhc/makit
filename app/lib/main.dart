@@ -5,6 +5,7 @@ import 'app/router.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
 import 'store/store.dart';
+import 'ui/widgets/pino_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
 
 Future<void> main() async {
@@ -18,11 +19,25 @@ Future<void> main() async {
   runApp(UncontrolledProviderScope(container: container, child: const PinoApp()));
 }
 
-class PinoApp extends ConsumerWidget {
+class PinoApp extends ConsumerStatefulWidget {
   const PinoApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PinoApp> createState() => _PinoAppState();
+}
+
+class _PinoAppState extends ConsumerState<PinoApp> {
+  bool _showSplash = true;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showSplash) {
+      return PinoSplash(
+        onCompleted: () {
+          if (mounted) setState(() => _showSplash = false);
+        },
+      );
+    }
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: 'pino',

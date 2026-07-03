@@ -1,0 +1,11 @@
+# flutter_launcher_icons config — run `dart run flutter_launcher_icons`
+# Source assets live in app/assets/. Generated into ios/Runner and android/app/src/main/res.
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/pino-icon-1024.png          # mark on dark frame (1024x1024)
+  min_android_version: 21                         # adaptive icons require API 21+
+  adaptive_icon_background: "#1A1A1A"             # dark frame color
+  adaptive_icon_foreground: assets/pino-adaptive-fg.png  # mark only, centered in safe zone
+  remove_alpha_ios: true                          # iOS icons must be opaque

@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pino — mark animation</title>
+<style>
+  :root {
+    --bg:      #1a1a1a;
+    --bg2:     #0e0e0e;
+    --accent:  #4ade80;
+    --ink:     #f4f4f5;
+    --muted:   #888;
+    --radius:  22%;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: var(--bg2);
+    color: #ddd;
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 48px 24px;
+  }
+  h1 { font-size: 22px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; margin-bottom: 4px; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--ink); margin: 40px 0 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; max-width: 760px; }
+  .section-sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; max-width: 640px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 36px 28px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .label { font-size: 12px; color: var(--ink); font-weight: 600; text-align: center; }
+  .desc  { font-size: 11px; color: var(--muted); text-align: center; max-width: 200px; line-height: 1.5; }
+
+  .icon {
+    width: 160px; height: 160px;
+    background: var(--bg);
+    border-radius: var(--radius);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+
+  .mark { width: 92%; height: 72%; position: relative; }
+  .mark svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .stroke { stroke: var(--accent); fill: none; stroke-linecap: round; }
+  .head   { fill: var(--accent); }
+
+  /* Replay buttons */
+  .replay {
+    font: 11px ui-sans-serif, system-ui; color: var(--ink);
+    background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; margin-top: 2px;
+  }
+  .replay:hover { background: #333; }
+
+  /* ============================================================
+     A — CLAP. Arms pivot from the shoulder (end nearest the head)
+     and swing inward, like hands clapping. Head stays still.
+     ============================================================ */
+  .anim-clap .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;   /* bottom-left = shoulder, near the head */
+    animation: clap 1.6s cubic-bezier(.4,0,.2,1) infinite;
+  }
+  .anim-clap .arm.r { animation-delay: 0s; }
+  .anim-clap .arm.l { animation-delay: 0s; }
+  @keyframes clap {
+    0%   { transform: translateX(0) rotate(0deg); }
+    35%  { transform: translateX(12px) rotate(-32deg); }  /* shoulder slides right (away from head) as arms swing in */
+    50%  { transform: translateX(12px) rotate(-32deg); }
+    65%  { transform: translateX(0) rotate(0deg); }
+    100% { transform: translateX(0) rotate(0deg); }
+  }
+
+  /* ============================================================
+     B — BREATHE. Whole mark gently scales + a subtle glow.
+     ============================================================ */
+  .anim-breathe svg { animation: breathe 2.4s ease-in-out infinite; transform-origin: center; }
+  @keyframes breathe {
+    0%,100% { transform: scale(1);    filter: drop-shadow(0 0 0 rgba(74,222,128,0)); }
+    50%     { transform: scale(1.06); filter: drop-shadow(0 0 12px rgba(74,222,128,0.45)); }
+  }
+
+  /* ============================================================
+     C — DRAW IN. Head fades in; arms draw via stroke-dashoffset.
+     ============================================================ */
+  .anim-draw .head { opacity: 0; animation: pop 1.2s ease-out 0.1s forwards; transform-box: fill-box; transform-origin: center; }
+  .anim-draw .arm  { stroke-dasharray: 80; stroke-dashoffset: 80; animation: draw 0.9s ease-out forwards; }
+  .anim-draw .arm.l { animation-delay: 0.5s; }
+  .anim-draw .arm.r { animation-delay: 0.75s; }
+  @keyframes pop  { 0% { opacity:0; transform: scale(0.4); } 60% { opacity:1; transform: scale(1.1); } 100% { opacity:1; transform: scale(1); } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  /* ============================================================
+     D — WAVE. Arms pivot from the shoulder (near the head) and
+     sway back and forth, slightly staggered — a friendly wave.
+     ============================================================ */
+  .anim-wave .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;   /* bottom-left = shoulder, near the head */
+    animation: wave 1.4s ease-in-out infinite;
+  }
+  .anim-wave .arm.l { animation-delay: 0s; }
+  .anim-wave .arm.r { animation-delay: 0.15s; }
+  @keyframes wave {
+    0%,100% { transform: rotate(0deg); }
+    25%     { transform: rotate(-18deg); }
+    75%     { transform: rotate(14deg); }
+  }
+
+  /* ============================================================
+     E — SLIDE IN. Arms slide in from the head side (left),
+     extending outward into place. Head fades in.
+     ============================================================ */
+  .anim-slide .head { opacity: 0; animation: fade 0.6s ease-out 0.2s forwards; }
+  .anim-slide .arm  { opacity: 0; animation: slidein 0.7s cubic-bezier(.2,.7,.3,1) forwards; }
+  .anim-slide .arm.l { animation-delay: 0.5s; }
+  .anim-slide .arm.r { animation-delay: 0.7s; }
+  @keyframes fade   { to { opacity: 1; } }
+  @keyframes slidein { 0% { opacity:0; transform: translateX(40px); } 100% { opacity:1; transform: translateX(0); } }
+
+  /* ============================================================
+     F — ORBIT. Arms rotate around the head once per cycle.
+     Pivot = the head center.
+     ============================================================ */
+  .anim-orbit svg { animation: orbit 3s linear infinite; transform-origin: 38px 50px; transform-box: view-box; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+
+  /* ============================================================
+     G — PULSE RING. A ring expands outward from the head.
+     ============================================================ */
+  .anim-pulse .ring {
+    fill: none; stroke: var(--accent); stroke-width: 3;
+    transform-box: fill-box; transform-origin: center;
+    animation: pulsering 1.8s ease-out infinite;
+  }
+  .anim-pulse .ring.r2 { animation-delay: 0.9s; }
+  @keyframes pulsering {
+    0%   { transform: scale(0.4); opacity: 0.9; }
+    100% { transform: scale(2.6); opacity: 0; }
+  }
+
+  /* ============================================================
+     H — BLINK/WINK. Head squashes slightly + arms snap together once.
+     A playful "acknowledgement" — good for a launch / ready state.
+     ============================================================ */
+  .anim-blink .head { animation: squash 2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+  .anim-blink .arm  { transform-box: fill-box; transform-origin: 50% 100%; animation: snap 2s ease-in-out infinite; }
+  @keyframes squash { 0%,100% { transform: scale(1,1); } 45% { transform: scale(1.12, 0.82); } 55% { transform: scale(1.12, 0.82); } }
+  @keyframes snap   { 0%,100% { transform: rotate(0deg); } 45% { transform: rotate(-26deg); } 55% { transform: rotate(-26deg); } }
+</style>
+</head>
+<body>
+  <h1>pino — mark animation</h1>
+  <div class="sub">Exploring motion for the B4 mark. Each card loops the animation; tap Replay to restart. CSS-driven, so it translates directly to Lottie / Rive / Flutter AnimatedWidget.</div>
+
+  <h2>Looping animations</h2>
+  <div class="section-sub">Continuous motion — idle / ambient states.</div>
+  <div class="grid">
+
+    <!-- A · CLAP -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-clap">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">A · Clap</div>
+      <div class="desc">Arms swing inward and back — the "clapping" metaphor made literal.</div>
+    </div>
+
+    <!-- B · BREATHE -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-breathe">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">B · Breathe</div>
+      <div class="desc">Whole mark gently scales with a green glow. Calm, ambient.</div>
+    </div>
+
+    <!-- C · DRAW IN -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-draw">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">C · Draw in</div>
+      <div class="desc">Head pops, arms draw in with stagger. Good for splash / first paint.</div>
+    </div>
+
+    <!-- D · WAVE -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-wave">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">D · Wave</div>
+      <div class="desc">Arms sway back and forth, slightly staggered — a friendly wave.</div>
+    </div>
+
+    <!-- E · SLIDE IN -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-slide">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">E · Slide in</div>
+      <div class="desc">Arms slide in from the right with stagger. Snappy entrance.</div>
+    </div>
+
+    <!-- F · ORBIT -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-orbit">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">F · Orbit</div>
+      <div class="desc">Whole mark rotates around the head center. Hypnotic, maybe too much.</div>
+    </div>
+
+    <!-- G · PULSE RING -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-pulse">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="ring" cx="38" cy="50" r="26" />
+          <circle class="ring r2" cx="38" cy="50" r="26" />
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">G · Pulse ring</div>
+      <div class="desc">Rings expand outward from the head — "active / listening" state.</div>
+    </div>
+
+    <!-- H · BLINK/SNAP -->
+    <div class="card">
+      <div class="icon"><div class="mark anim-blink">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">H · Acknowledge</div>
+      <div class="desc">Head squashes + arms snap together once per cycle — a playful "got it".</div>
+    </div>
+
+  </div>
+</body>
+</html>
