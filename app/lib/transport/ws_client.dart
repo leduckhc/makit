@@ -64,7 +64,11 @@ class WsClient implements Transport {
     _retry?.cancel();
     _pinger?.cancel();
     await _sub?.cancel();
-    await _ch?.sink.close();
+    // Closing a sink that's already erroring/closing can throw — swallow it.
+    try {
+      await _ch?.sink.close();
+    } catch (_) {}
+    _sub = null;
     _ch = null;
     _setState(WsState.closed);
   }
@@ -111,6 +115,12 @@ class WsClient implements Transport {
       // Surface connect errors so we can see TLS / refused / etc. in logs.
       // ignore: avoid_print
       print('[pino] ws connect to $_url failed: $e');
+      // Drop the stale half-open channel before backing off, so a later
+      // _send() doesn't target a dead sink.
+      try {
+        await _ch?.sink.close();
+      } catch (_) {}
+      _ch = null;
       _scheduleRetry();
       return;
     }
