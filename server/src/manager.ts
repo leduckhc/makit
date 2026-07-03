@@ -13,7 +13,7 @@ import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { PiAdapter } from "./adapters/pi.js";
 import { MirrorAdapter } from "./adapters/mirror.js";
-import { herdrReader } from "./pane/herdr.js";
+import { herdrReader, paneAgentInfo } from "./pane/herdr.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
@@ -228,15 +228,27 @@ export class SessionManager extends EventEmitter {
     projectId?: string;
     title?: string;
   }): Promise<Session> {
-    const project = opts.projectId
-      ? this.projects.get(opts.projectId)
-      : [...this.projects.values()][0];
+    // Auto-discover the pane's agent session + cwd from herdr when not given.
+    const info =
+      !opts.sessionPath || !opts.projectId
+        ? await paneAgentInfo(opts.paneTarget)
+        : {};
+
+    // Project: explicit id → match a project whose path contains the pane cwd
+    // → first project.
+    let project = opts.projectId ? this.projects.get(opts.projectId) : undefined;
+    if (!project && info.cwd) {
+      project = [...this.projects.values()].find((p) =>
+        info.cwd!.startsWith(p.dto.path),
+      );
+    }
+    if (!project) project = [...this.projects.values()][0];
     if (!project) throw new Error("no project for mirror session");
 
     const sessionPath =
-      opts.sessionPath ?? listPiSessions(project.dto.path)[0]?.path;
+      opts.sessionPath ?? info.sessionPath ?? listPiSessions(project.dto.path)[0]?.path;
     if (!sessionPath) {
-      throw new Error(`no session file found for project ${project.dto.id}`);
+      throw new Error(`no session file found for pane ${opts.paneTarget}`);
     }
 
     const adapter = new MirrorAdapter(sessionPath, opts.paneTarget, herdrReader);
