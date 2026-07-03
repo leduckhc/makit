@@ -80,7 +80,7 @@ export function renderEvent(
     }
 
     case "tool.call.end": {
-      const bad = Number(p.exitCode) !== 0;
+      const bad = p.exitCode != null && Number(p.exitCode) !== 0;
       const mark = bad ? `${C.red}✗${C.reset}` : `${C.dim}✓${C.reset}`;
       const sum = p.summary ? ` ${C.dim}${oneLine(str(p.summary))}${C.reset}` : "";
       return { out: `${nl}  ${mark}${sum}\n`, st: {} };

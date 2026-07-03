@@ -58,6 +58,12 @@ test("tool.call.end marks failures differently", () => {
   assert.match(bad.out, /✗/);
 });
 
+test("tool.call.end with a missing exitCode is treated as success", () => {
+  const { out } = renderEvent(ev("tool.call.end", { summary: "no code" }), {});
+  assert.match(out, /✓/);
+  assert.doesNotMatch(out, /✗/);
+});
+
 test("ignored kinds produce no output and preserve state", () => {
   const st: RenderState = { streamingMsgId: "m1", midLine: true };
   const { out, st: next } = renderEvent(ev("tool.call.delta", { chunk: "x" }), st);

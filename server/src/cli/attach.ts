@@ -80,10 +80,15 @@ export async function runAttach(argv: string[]): Promise<void> {
   let projects: ProjectDTO[] = [];
   let currentSid: string | undefined = args.sessionId;
   let subscribed = false;
+  let choosing = false; // guards against re-entrant snapshot-driven selection
+  let quitting = false; // true once the user asked to quit (clean exit)
   let prompting = false; // true while answering a server UI request
+  let promptChain: Promise<void> = Promise.resolve(); // serialize srv.requests
   const rl: Interface = createInterface({ input: process.stdin, output: process.stdout });
 
-  const send = (o: unknown) => ws.send(JSON.stringify(o));
+  const send = (o: unknown) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
+  };
   const ask = (q: string): Promise<string> =>
     new Promise((resolve) => rl.question(q, resolve));
   const C = {
@@ -101,7 +106,7 @@ export async function runAttach(argv: string[]): Promise<void> {
   });
   ws.on("close", () => {
     console.log("\n[pino] disconnected.");
-    process.exit(0);
+    process.exit(quitting ? 0 : 1);
   });
 
   ws.on("message", (buf: Buffer) => {
@@ -117,7 +122,7 @@ export async function runAttach(argv: string[]): Promise<void> {
     }
     if (m.kind === "sessions.snapshot") {
       sessions = (m.sessions as SessionDTO[]) ?? [];
-      if (!subscribed) void chooseAndSubscribe();
+      if (!subscribed && !choosing) void chooseAndSubscribe();
       return;
     }
     if (m.t === "event" && m.kind === "session.event" && m.event) {
@@ -129,18 +134,19 @@ export async function runAttach(argv: string[]): Promise<void> {
       return;
     }
     if (m.t === "srv.request") {
-      void handleSrvRequest(m);
+      // Serialize prompts: readline has one pending question at a time, so a
+      // second srv.request must wait for the first to be answered.
+      promptChain = promptChain.then(() => handleSrvRequest(m));
       return;
     }
-    // spawn ack carries the new session
-    if (m.t === "ack" && m.session && !subscribed) {
-      const sess = m.session as SessionDTO;
-      sessions = [...sessions, sess];
-      doSubscribe(sess.id);
+    // The session.spawn ack carries { sessionId } — subscribe to it.
+    if (m.t === "ack" && m.id === "spawn" && !subscribed && typeof m.sessionId === "string") {
+      doSubscribe(m.sessionId);
     }
   });
 
   async function chooseAndSubscribe(): Promise<void> {
+    choosing = true; // block re-entry from further sessions.snapshot frames
     if (currentSid) return doSubscribe(currentSid);
 
     if (args.spawn) {
@@ -197,6 +203,7 @@ export async function runAttach(argv: string[]): Promise<void> {
       });
     });
     rl.on("SIGINT", () => {
+      quitting = true;
       ws.close();
       process.exit(0);
     });
