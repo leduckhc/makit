@@ -14,6 +14,7 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { WebSocket } from "ws";
+import { Type } from "typebox";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -46,6 +47,7 @@ export default function (pi: ExtensionAPI): void {
   const ws = new WebSocket(host.url, { rejectUnauthorized: false });
   let sessionId = "";
   const outbox: Json[] = []; // events buffered until host.open acks
+  const pendingAsks = new Map<string, (r: Json) => void>(); // askId → resolver
 
   const raw = (o: Json) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
@@ -96,9 +98,84 @@ export default function (pi: ExtensionAPI): void {
     // Phone → pi: inject as a real user prompt into this live session.
     if (m.t === "host.prompt" && typeof m.text === "string") {
       pi.sendUserMessage(m.text, { deliverAs: "steer" });
+      return;
+    }
+    // Answer to an askUserQuestion we routed to the phone.
+    if (m.t === "host.ask.result" && typeof m.id === "string") {
+      pendingAsks.get(m.id)?.(m);
+      pendingAsks.delete(m.id);
     }
   });
   ws.on("error", () => {});
+
+  // ---- ask the phone (route askUserQuestion to the app dialog) -----------
+
+  const questionsParam = Type.Object({
+    questions: Type.Array(
+      Type.Object({
+        header: Type.Optional(Type.String()),
+        question: Type.String(),
+        options: Type.Array(
+          Type.Object({
+            label: Type.String(),
+            description: Type.Optional(Type.String()),
+          }),
+        ),
+        multi: Type.Optional(Type.Boolean()),
+        recommended: Type.Optional(Type.Integer()),
+      }),
+    ),
+  });
+
+  type AskQ = { question: string; options?: { label: string }[] };
+
+  async function askViaPhone(questions: AskQ[]): Promise<string[]> {
+    const askId = `ask-${Date.now()}-${Math.random()}`;
+    const resp = await new Promise<Json>((resolve) => {
+      pendingAsks.set(askId, resolve);
+      raw({ v: 1, t: "cmd", id: askId, kind: "host.ask", sessionId, askId, questions });
+      setTimeout(() => {
+        if (pendingAsks.delete(askId)) resolve({ cancelled: true });
+      }, 5 * 60 * 1000);
+    });
+    return Array.isArray(resp.answers) ? (resp.answers as string[]) : [];
+  }
+
+  // Full ask provider: route to the phone when a pino session is live, else
+  // fall back to pi's own TUI dialog — so this cleanly replaces @mammothb/pi-ask.
+  const askExecute = async (
+    _id: string,
+    params: { questions: AskQ[] },
+    _signal: unknown,
+    _onUpdate: unknown,
+    ctx: { ui: { select(t: string, o: string[]): Promise<string | undefined> } },
+  ) => {
+    const questions = Array.isArray(params.questions) ? params.questions : [];
+    let answers: string[];
+    if (sessionId) {
+      answers = await askViaPhone(questions);
+    } else {
+      answers = [];
+      for (const q of questions) {
+        const opts = (q.options ?? []).map((o) => o.label);
+        answers.push((await ctx.ui.select(q.question, opts)) ?? "");
+      }
+    }
+    const lines = questions.map((q, i) => `Q: ${q.question}\nA: ${answers[i] ?? "(no answer)"}`);
+    return { content: [{ type: "text", text: lines.join("\n\n") }] };
+  };
+
+  // Register both casings so the model reaches it whichever it emits.
+  for (const name of ["AskUserQuestion", "askUserQuestion"]) {
+    pi.registerTool({
+      name,
+      label: "Ask the user",
+      description:
+        "Ask the user one or more multiple-choice questions (on their phone when pino is connected, else in the terminal) and wait for the answers. 1–4 questions, each with 2–4 options.",
+      parameters: questionsParam,
+      execute: askExecute as never,
+    });
+  }
 
   // ---- pi events → pino chat --------------------------------------------
 

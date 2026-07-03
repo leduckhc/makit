@@ -414,6 +414,23 @@ export function startWsServer(opts: ServerOpts) {
       ctx.ack();
     });
 
+    r.register("host.ask", async (ctx) => {
+      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
+      const askId = typeof ctx.env.askId === "string" ? ctx.env.askId : "";
+      const questions = ctx.env.questions;
+      const owner = ctx.client;
+      try {
+        // Route to the phone(s) subscribed to this mirror session; first wins.
+        const resp = await rpc.askDevice(
+          { kind: "askUserQuestion", questions },
+          { sessionId: sid },
+        );
+        owner.send({ t: "host.ask.result", id: askId, ...(resp as Record<string, unknown>) });
+      } catch {
+        owner.send({ t: "host.ask.result", id: askId, cancelled: true });
+      }
+    });
+
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.
     if (process.env.PINO_DEV) registerDebugCommands(r);
 

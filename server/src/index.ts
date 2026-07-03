@@ -32,7 +32,7 @@ import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
 import { randomBytes } from "node:crypto";
-import { writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync } from "node:fs";
+import { writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 function parseArgs(argv: string[]) {
@@ -253,10 +253,37 @@ function ensureMirrorExtensionInstalled(): void {
     };
     relink(extSrc, resolvePath(extDir, "pino-mirror.ts"));
     relink(wsPkg, resolvePath(extDir, "node_modules", "ws"));
+    disableConflictingAskExtension();
     console.log("[pino] mirror extension installed — any `pi` auto-mirrors while pino runs.");
   } catch {
     /* non-fatal */
   }
+
+/**
+ * Remove @mammothb/pi-ask from pi's settings if present. pino-mirror registers
+ * the same `AskUserQuestion` tool (routed to the phone, with a TUI fallback),
+ * and pi treats a duplicate tool name as a FATAL load error — so leaving pi-ask
+ * enabled would stop pi from starting. Backed up once; re-enable any time with
+ * `pi install npm:@mammothb/pi-ask`.
+ */
+function disableConflictingAskExtension(): void {
+  try {
+    const settings = resolvePath(homedir(), ".pi", "agent", "settings.json");
+    if (!existsSync(settings)) return;
+    const parsed = JSON.parse(readFileSync(settings, "utf8"));
+    const pkgs: unknown = parsed.packages;
+    if (!Array.isArray(pkgs)) return;
+    const kept = pkgs.filter((p) => typeof p !== "string" || !p.includes("pi-ask"));
+    if (kept.length === pkgs.length) return; // pi-ask not present
+    const bak = settings + ".bak";
+    if (!existsSync(bak)) writeFileSync(bak, JSON.stringify(parsed, null, 1));
+    parsed.packages = kept;
+    writeFileSync(settings, JSON.stringify(parsed, null, 1));
+    console.log("[pino] disabled @mammothb/pi-ask (pino-mirror provides AskUserQuestion). Re-enable: pi install npm:@mammothb/pi-ask");
+  } catch {
+    /* non-fatal */
+  }
+}
 }
 
 /**
