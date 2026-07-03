@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
@@ -175,31 +176,64 @@ class _PinoMarkPainter extends CustomPainter {
       old.clapProgress != clapProgress || old.color != color;
 }
 
-/// Full-screen splash that plays the Clap animation on a dark frame
-/// background, then calls [onCompleted]. First-version splash — purely
-/// Flutter-driven (no native splash wiring yet).
-class PinoSplash extends StatelessWidget {
+/// Full-screen splash that plays the Clap animation on the dark brand frame,
+/// holds for [duration], fades out, then calls [onCompleted] exactly once.
+///
+/// The OS-level native splash (see flutter_native_splash.yaml) shows the same
+/// dark frame + mark while the engine boots, so the hand-off is seamless.
+class PinoSplash extends StatefulWidget {
   const PinoSplash({
     super.key,
     this.duration = const Duration(milliseconds: 2400),
+    this.fadeDuration = const Duration(milliseconds: 300),
     this.onCompleted,
   });
 
+  /// How long the animation holds before it starts fading out.
   final Duration duration;
+
+  /// Fade-out length once [duration] elapses.
+  final Duration fadeDuration;
+
+  /// Called once, after the fade-out completes.
   final VoidCallback? onCompleted;
 
   @override
-  Widget build(BuildContext context) {
-    // Fire once after the hold so the caller can swap to the real app.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(duration, () {
-        if (onCompleted != null) onCompleted!();
-      });
+  State<PinoSplash> createState() => _PinoSplashState();
+}
+
+class _PinoSplashState extends State<PinoSplash> {
+  Timer? _holdTimer;
+  bool _fadingOut = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _holdTimer = Timer(widget.duration, () {
+      if (mounted) setState(() => _fadingOut = true);
     });
-    return const Scaffold(
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
       backgroundColor: pinoFrame,
       body: Center(
-        child: PinoClapMark(size: 160),
+        child: AnimatedOpacity(
+          opacity: _fadingOut ? 0 : 1,
+          duration: widget.fadeDuration,
+          curve: Curves.easeOut,
+          onEnd: () {
+            if (_fadingOut) widget.onCompleted?.call();
+          },
+          child: PinoClapMark(size: 160, running: !_fadingOut),
+        ),
       ),
     );
   }

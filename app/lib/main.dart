@@ -32,10 +32,14 @@ class _PinoAppState extends ConsumerState<PinoApp> {
   @override
   Widget build(BuildContext context) {
     if (_showSplash) {
-      return PinoSplash(
-        onCompleted: () {
-          if (mounted) setState(() => _showSplash = false);
-        },
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: pinoDarkTheme,
+        home: PinoSplash(
+          onCompleted: () {
+            if (mounted) setState(() => _showSplash = false);
+          },
+        ),
       );
     }
     final router = ref.watch(routerProvider);
