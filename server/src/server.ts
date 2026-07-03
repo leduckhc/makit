@@ -421,11 +421,20 @@ export function startWsServer(opts: ServerOpts) {
       const owner = ctx.client;
       try {
         // Route to the phone(s) subscribed to this mirror session; first wins.
-        const resp = await rpc.askDevice(
+        const resp = (await rpc.askDevice(
           { kind: "askUserQuestion", questions },
           { sessionId: sid },
-        );
-        owner.send({ t: "host.ask.result", id: askId, ...(resp as Record<string, unknown>) });
+        )) as Record<string, unknown>;
+        // Carry only the answer fields — spreading the whole envelope would
+        // clobber t/id (it's a srv.response) and the extension would never match.
+        owner.send({
+          t: "host.ask.result",
+          id: askId,
+          indices: resp.indices,
+          answers: resp.answers,
+          answer: resp.answer,
+          cancelled: resp.cancelled,
+        });
       } catch {
         owner.send({ t: "host.ask.result", id: askId, cancelled: true });
       }
