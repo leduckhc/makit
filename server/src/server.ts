@@ -63,6 +63,26 @@ interface ClientState extends WsClient {
   ws: WebSocket;
 }
 
+/**
+ * Build the `host.ask.result` frame relayed to a pino-mirror extension after
+ * the phone answers. Carries ONLY the answer fields — never spread the whole
+ * srv.response envelope, whose own `t`/`id` would clobber these and leave the
+ * extension's ask promise unresolved (hanging both the pi TUI and the phone).
+ */
+export function hostAskResultFrame(
+  askId: string,
+  resp: Record<string, unknown>,
+): OutgoingFrame {
+  return {
+    t: "host.ask.result",
+    id: askId,
+    indices: resp.indices,
+    answers: resp.answers,
+    answer: resp.answer,
+    cancelled: resp.cancelled,
+  } as OutgoingFrame;
+}
+
 export function startWsServer(opts: ServerOpts) {
   const { host, port, manager, cert, registry, trustLocalhost = false, hostToken } = opts;
 
@@ -425,16 +445,7 @@ export function startWsServer(opts: ServerOpts) {
           { kind: "askUserQuestion", questions },
           { sessionId: sid },
         )) as Record<string, unknown>;
-        // Carry only the answer fields — spreading the whole envelope would
-        // clobber t/id (it's a srv.response) and the extension would never match.
-        owner.send({
-          t: "host.ask.result",
-          id: askId,
-          indices: resp.indices,
-          answers: resp.answers,
-          answer: resp.answer,
-          cancelled: resp.cancelled,
-        });
+        owner.send(hostAskResultFrame(askId, resp));
       } catch {
         owner.send({ t: "host.ask.result", id: askId, cancelled: true });
       }

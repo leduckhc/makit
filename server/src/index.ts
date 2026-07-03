@@ -127,7 +127,7 @@ async function main() {
 
   // World D: a stable secret the pino-mirror pi extension uses to authenticate.
   // Written (0600) to ~/.pino/host.json so an externally-launched pi can find us.
-  const hostToken = randomBytes(32).toString("hex");
+  const hostToken = loadOrCreateHostToken();
   const ws = startWsServer({
     host: opts.host,
     port: opts.port,
@@ -284,6 +284,24 @@ function disableConflictingAskExtension(): void {
     /* non-fatal */
   }
 }
+}
+
+/**
+ * Reuse the existing host token across restarts so already-connected
+ * pino-mirror extensions can re-authenticate on reconnect. Only mints a new
+ * one if none is persisted.
+ */
+function loadOrCreateHostToken(): string {
+  try {
+    const p = resolvePath(homedir(), ".pino", "host.json");
+    if (existsSync(p)) {
+      const o = JSON.parse(readFileSync(p, "utf8"));
+      if (typeof o.token === "string" && o.token) return o.token;
+    }
+  } catch {
+    /* fall through to mint */
+  }
+  return randomBytes(32).toString("hex");
 }
 
 /**

@@ -41,24 +41,31 @@ export default function (pi: ExtensionAPI): void {
   // Skip pino's OWN spawned pi (it already talks to pino directly) — otherwise
   // an auto-loaded copy would recursively mirror pino's sessions back to pino.
   if (process.env.PINO_BRIDGE_URL) return;
-  const host = loadHost();
-  if (!host) return; // pino isn't running — behave as a normal pi.
+  // NOTE: we do NOT bail when pino is down at load — connect() retries and
+  // re-reads host.json each attempt, so we survive pino starting later and
+  // token rotation across pino restarts. The ask tool still registers below
+  // (falling back to pi's TUI when no phone is connected).
 
-  const ws = new WebSocket(host.url, { rejectUnauthorized: false });
+  let ws: WebSocket | null = null;
   let sessionId = "";
-  const outbox: Json[] = []; // events buffered until host.open acks
+  let closing = false; // set on pi shutdown — stop reconnecting
+  let backoff = 1000; // reconnect delay, grows to a cap, resets on connect
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  const outbox: Json[] = []; // events buffered until a host session is open
+  const OUTBOX_MAX = 1000;
   const pendingAsks = new Map<string, (r: Json) => void>(); // askId → resolver
 
   const raw = (o: Json) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
   };
-  // Send an AdapterEvent (or flush it later once we have a sessionId).
+  // Send an AdapterEvent (or buffer it until a host session is open).
   const emit = (kind: string, payload: Json) => {
     const frame: Json = { v: 1, t: "cmd", id: `he-${Date.now()}-${Math.random()}`, kind: "host.event", ev: { ts: Date.now(), kind, payload } };
     if (sessionId) {
       frame.sessionId = sessionId;
       raw(frame);
     } else {
+      if (outbox.length >= OUTBOX_MAX) outbox.shift();
       outbox.push(frame);
     }
   };
@@ -66,47 +73,73 @@ export default function (pi: ExtensionAPI): void {
     if (sessionId) raw({ v: 1, t: "cmd", id: `hs-${Date.now()}`, kind: "host.status", sessionId, status: s });
   };
 
-  ws.on("open", () => {
-    raw({ v: 1, t: "hello", id: "h", host: host.token });
-  });
-  ws.on("message", (buf: Buffer) => {
-    let m: Json;
-    try {
-      m = JSON.parse(buf.toString());
-    } catch {
+  // (Re)connect to pino. On drop, retry with capped backoff so a pino restart
+  // (or transient blip) re-establishes the mirror without restarting pi.
+  function connect(): void {
+    if (closing) return;
+    const host = loadHost();
+    if (!host) {
+      // pino not up yet — retry later.
+      reconnectTimer = setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 15000);
       return;
     }
-    if (m.t === "hello.ack") {
-      raw({
-        v: 1,
-        t: "cmd",
-        id: "open",
-        kind: "host.open",
-        title: pi.getSessionName?.() ?? "pi (mirror)",
-        cwd: process.cwd(),
-      });
-      return;
-    }
-    if (m.id === "open" && m.t === "ack" && typeof m.sessionId === "string") {
-      sessionId = m.sessionId;
-      for (const f of outbox.splice(0)) {
-        f.sessionId = sessionId;
-        raw(f);
+    const sock = new WebSocket(host.url, { rejectUnauthorized: false });
+    ws = sock;
+    sock.on("open", () => {
+      raw({ v: 1, t: "hello", id: "h", host: host.token });
+    });
+    sock.on("message", (buf: Buffer) => {
+      let m: Json;
+      try {
+        m = JSON.parse(buf.toString());
+      } catch {
+        return;
       }
-      return;
-    }
-    // Phone → pi: inject as a real user prompt into this live session.
-    if (m.t === "host.prompt" && typeof m.text === "string") {
-      pi.sendUserMessage(m.text, { deliverAs: "steer" });
-      return;
-    }
-    // Answer to an askUserQuestion we routed to the phone.
-    if (m.t === "host.ask.result" && typeof m.id === "string") {
-      pendingAsks.get(m.id)?.(m);
-      pendingAsks.delete(m.id);
-    }
-  });
-  ws.on("error", () => {});
+      if (m.t === "hello.ack") {
+        backoff = 1000; // healthy connection — reset backoff
+        raw({
+          v: 1,
+          t: "cmd",
+          id: "open",
+          kind: "host.open",
+          title: pi.getSessionName?.() ?? "pi (mirror)",
+          cwd: process.cwd(),
+        });
+        return;
+      }
+      if (m.id === "open" && m.t === "ack" && typeof m.sessionId === "string") {
+        sessionId = m.sessionId;
+        for (const f of outbox.splice(0)) {
+          f.sessionId = sessionId;
+          raw(f);
+        }
+        return;
+      }
+      // Phone → pi: inject as a real user prompt into this live session.
+      if (m.t === "host.prompt" && typeof m.text === "string") {
+        pi.sendUserMessage(m.text, { deliverAs: "steer" });
+        return;
+      }
+      // Answer to an askUserQuestion we routed to the phone.
+      if (m.t === "host.ask.result" && typeof m.id === "string") {
+        pendingAsks.get(m.id)?.(m);
+        pendingAsks.delete(m.id);
+      }
+    });
+    sock.on("error", () => {});
+    sock.on("close", () => {
+      if (ws === sock) ws = null;
+      sessionId = "";
+      // Fail any in-flight asks so the tool doesn't hang forever.
+      for (const resolve of pendingAsks.values()) resolve({ cancelled: true });
+      pendingAsks.clear();
+      if (!closing) {
+        reconnectTimer = setTimeout(connect, backoff);
+        backoff = Math.min(backoff * 2, 15000);
+      }
+    });
+  }
 
   // ---- ask the phone (route askUserQuestion to the app dialog) -----------
 
@@ -232,7 +265,11 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", () => {
+    closing = true;
+    if (reconnectTimer) clearTimeout(reconnectTimer);
     if (sessionId) raw({ v: 1, t: "cmd", id: "close", kind: "host.close", sessionId });
-    ws.close();
+    ws?.close();
   });
+
+  connect(); // kick off the (reconnecting) connection
 }
