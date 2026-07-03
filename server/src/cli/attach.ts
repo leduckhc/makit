@@ -40,7 +40,7 @@ function parseAttachArgs(argv: string[]): AttachArgs {
   return a;
 }
 
-function readBearer(): string {
+export function readBearer(): string {
   const f = join(homedir(), ".pino", "devices.json");
   let arr: unknown;
   try {

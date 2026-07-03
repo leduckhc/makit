@@ -40,6 +40,8 @@ import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
 import { CommandRouter } from "./ws/command_router.js";
+import { PaneBridge } from "./pane/bridge.js";
+import { herdrReader } from "./pane/herdr.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
 
 export interface ServerOpts {
@@ -75,6 +77,13 @@ export function startWsServer(opts: ServerOpts) {
 
   const hub = new SubscriptionHub({ manager });
   const rpc = new ReverseRpc({ clients: () => clients.values() });
+  const paneBridge = new PaneBridge(herdrReader, (target, data) => {
+    for (const c of clients.values()) {
+      if (c.authed && c.panes?.has(target)) {
+        c.send({ t: "event", id: newId("pane"), kind: "pane.frame", target, data });
+      }
+    }
+  });
   const authGate = new AuthGate({ registry, onAuthenticated: sendSnapshots });
   const router = buildCommandRouter();
 
@@ -107,6 +116,7 @@ export function startWsServer(opts: ServerOpts) {
     ws.on("close", () => {
       clients.delete(ws);
       hub.unregister(state);
+      for (const t of state.panes ?? []) paneBridge.detach(t);
     });
 
     if (state.authed) sendSnapshots(state);
@@ -287,6 +297,46 @@ export function startWsServer(opts: ServerOpts) {
       ctx.ack({});
     });
 
+    // Pane bridge (POC): mirror a herdr/tmux pane running a real pi TUI.
+    r.register("pane.attach", (ctx) => {
+      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
+      if (!target) {
+        ctx.err(WireErrorCode.BadRequest, "pane.attach requires a string `target`");
+        return;
+      }
+      (ctx.client.panes ??= new Set<string>()).add(target);
+      paneBridge.attach(target);
+      ctx.ack();
+    });
+
+    r.register("pane.detach", (ctx) => {
+      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
+      if (target && ctx.client.panes?.delete(target)) paneBridge.detach(target);
+      ctx.ack();
+    });
+
+    r.register("pane.input", async (ctx) => {
+      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
+      const text = typeof ctx.env.text === "string" ? ctx.env.text : "";
+      if (!target) {
+        ctx.err(WireErrorCode.BadRequest, "pane.input requires a string `target`");
+        return;
+      }
+      await paneBridge.input(target, text);
+      ctx.ack();
+    });
+
+    r.register("pane.key", async (ctx) => {
+      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
+      const keys = Array.isArray(ctx.env.keys) ? ctx.env.keys.map(String) : [];
+      if (!target) {
+        ctx.err(WireErrorCode.BadRequest, "pane.key requires a string `target`");
+        return;
+      }
+      await paneBridge.keys(target, keys);
+      ctx.ack();
+    });
+
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.
     if (process.env.PINO_DEV) registerDebugCommands(r);
 
@@ -388,6 +438,7 @@ export function startWsServer(opts: ServerOpts) {
       ws,
       authed,
       subscribed: new Set<string>(),
+      panes: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
         ws.send(encodeFrame({ v: PROTOCOL_VERSION, ...frame } as Envelope));
