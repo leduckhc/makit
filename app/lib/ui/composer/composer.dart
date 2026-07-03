@@ -10,7 +10,6 @@ class Composer extends StatefulWidget {
     super.key,
     required this.onSend,
     this.commands = const [],
-    this.steering = false,
     this.glass = false,
   });
   final void Function(String text) onSend;
@@ -19,10 +18,6 @@ class Composer extends StatefulWidget {
   /// When true, drop the opaque background/border — a [GlassSurface] parent
   /// provides the surface, so the composer must be transparent.
   final bool glass;
-
-  /// When true, the agent is mid-turn — the next message will steer it
-  /// instead of starting a new turn.
-  final bool steering;
   @override
   State<Composer> createState() => _ComposerState();
 }
@@ -63,7 +58,6 @@ class _ComposerState extends State<Composer> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (widget.steering && !_showSlash) _SteeringBanner(),
           if (_showSlash)
             SlashPalette(
               filter: _ctrl.text,
@@ -148,32 +142,4 @@ class _ComposerState extends State<Composer> {
 
 class _SendIntent extends Intent {
   const _SendIntent();
-}
-
-class _SteeringBanner extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      color: cs.tertiaryContainer.withValues(alpha: 0.6),
-      child: Row(
-        children: [
-          Icon(Icons.alt_route, size: 14, color: cs.onTertiaryContainer),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              'Agent is working — your message will steer it mid-turn.',
-              style: TextStyle(
-                fontSize: 11.5,
-                color: cs.onTertiaryContainer,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }

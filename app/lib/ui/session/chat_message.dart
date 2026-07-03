@@ -45,7 +45,6 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -58,16 +57,16 @@ class ChatBubble extends StatelessWidget {
             Container(
               margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: cs.primary,
-                borderRadius: const BorderRadius.only(
+              decoration: const BoxDecoration(
+                color: Color(0xFF4F6CFF),
+                borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(14),
                   topRight: Radius.circular(14),
                   bottomLeft: Radius.circular(14),
                   bottomRight: Radius.circular(4),
                 ),
               ),
-              child: SelectableText(text, style: TextStyle(color: cs.onPrimary)),
+              child: SelectableText(text, style: const TextStyle(color: Colors.white)),
             ),
             Padding(
               padding: const EdgeInsets.only(right: 12, bottom: 4),

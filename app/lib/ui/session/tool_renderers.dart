@@ -197,7 +197,7 @@ class _BashRenderer extends ToolRenderer {
   @override
   String get name => 'bash';
   @override
-  IconData get icon => Icons.code;
+  IconData get icon => Icons.attach_money;
   @override
   String? subtitle(ToolCallItem item) {
     final cmd = item.args['command']?.toString();

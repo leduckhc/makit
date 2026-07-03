@@ -16,8 +16,8 @@ class ToolCallCard extends StatelessWidget {
     final renderer = rendererFor(item);
     final risk = item.risk;
     final (riskColor, riskIcon) = switch (risk) {
-      'risky' => (Colors.orange, Icons.warning_amber_rounded),
-      'destructive' => (Colors.red, Icons.dangerous_outlined),
+      'risky' => (Colors.orange, renderer?.icon ?? Icons.warning_amber_rounded),
+      'destructive' => (Colors.red, renderer?.icon ?? Icons.dangerous_outlined),
       _ => (cs.outline, renderer?.icon ?? Icons.bolt_outlined),
     };
 
