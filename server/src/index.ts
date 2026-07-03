@@ -31,6 +31,9 @@ import { loadOrCreateCert, localIPv4s } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
+import { randomBytes } from "node:crypto";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 
 function parseArgs(argv: string[]) {
   const args = {
@@ -122,6 +125,9 @@ async function main() {
     onProjectsChanged: (paths) => saveProjectPaths(file, paths),
   });
 
+  // World D: a stable secret the pino-mirror pi extension uses to authenticate.
+  // Written (0600) to ~/.pino/host.json so an externally-launched pi can find us.
+  const hostToken = randomBytes(32).toString("hex");
   const ws = startWsServer({
     host: opts.host,
     port: opts.port,
@@ -129,7 +135,9 @@ async function main() {
     cert,
     registry,
     trustLocalhost: opts.noAuth,
+    hostToken,
   });
+  writeHostFile(opts.port, cert.fingerprint, hostToken);
 
   // Loopback HTTP bridge so agent connectors (loaded inside each spawned
   // agent process) can talk back to pino.
@@ -217,6 +225,24 @@ async function main() {
   if (opts.noAuth) {
     console.log("[pino] --no-auth: localhost connections bypass auth (dev only)");
     console.log(`[pino] dev: flutter run --dart-define=PINO_WS_URL=wss://127.0.0.1:${opts.port} --dart-define=PINO_FP=${cert.fingerprint}`);
+  }
+}
+
+/**
+ * Write ~/.pino/host.json (0600) so the `pino-mirror` pi extension — loaded
+ * into an externally-launched pi — can discover the server and authenticate.
+ */
+function writeHostFile(port: number, fingerprint: string, token: string): void {
+  try {
+    const dir = resolvePath(homedir(), ".pino");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      resolvePath(dir, "host.json"),
+      JSON.stringify({ url: `wss://127.0.0.1:${port}`, port, fingerprint, token }, null, 2),
+      { mode: 0o600 },
+    );
+  } catch {
+    // Non-fatal: the mirror extension just won't be able to auto-connect.
   }
 }
 

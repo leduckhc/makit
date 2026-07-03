@@ -13,6 +13,7 @@ import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { PiAdapter } from "./adapters/pi.js";
 import { MirrorAdapter } from "./adapters/mirror.js";
+import { IngestAdapter } from "./adapters/ingest.js";
 import { herdrReader, paneAgentInfo } from "./pane/herdr.js";
 import { Session } from "./session.js";
 import type { ProjectDTO } from "./protocol.js";
@@ -215,6 +216,37 @@ export class SessionManager extends EventEmitter {
       if (sid === id) this.attachedByPi.delete(piId);
     }
   }
+  /**
+   * Open a session hosted by an external `pino-mirror` extension (World D):
+   * events are pushed in via the returned IngestAdapter, and the phone's
+   * prompts are relayed back through `onPrompt`. No process is spawned.
+   */
+  async openHostSession(opts: {
+    title?: string;
+    cwd?: string;
+    projectId?: string;
+    onPrompt: (text: string) => void;
+  }): Promise<Session> {
+    let project = opts.projectId ? this.projects.get(opts.projectId) : undefined;
+    if (!project && opts.cwd) {
+      project = [...this.projects.values()].find((p) => opts.cwd!.startsWith(p.dto.path));
+    }
+    if (!project) project = [...this.projects.values()][0];
+    if (!project) throw new Error("no project for host session");
+
+    const adapter = new IngestAdapter(opts.onPrompt);
+    const session = new Session({
+      projectId: project.dto.id,
+      agent: "pi",
+      title: opts.title ?? "pi (mirror)",
+      adapter,
+    });
+    await adapter.start({ cwd: project.dto.path });
+    this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
+    return session;
+  }
+
 
   /**
    * Mirror a real `pi` TUI running in a multiplexer pane (World B): tail its

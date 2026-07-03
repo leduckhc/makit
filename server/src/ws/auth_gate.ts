@@ -31,6 +31,8 @@ export interface AuthGateDeps {
   registry: AuthRegistry;
   /** Called after a successful `hello.ack`, to push initial snapshots. */
   onAuthenticated: (client: WsClient) => void;
+  /** Shared secret that authenticates a `pino-mirror` extension host (host.json). */
+  hostToken?: string;
 }
 
 const UNAUTHORIZED_CODE = 4401;
@@ -42,6 +44,15 @@ export class AuthGate {
     const bearer = typeof env.bearer === "string" ? env.bearer : "";
     const pair = typeof env.pair === "string" ? env.pair : "";
     const label = typeof env.label === "string" ? env.label : "device";
+
+    const host = typeof env.host === "string" ? env.host : "";
+    if (host && this.deps.hostToken && host === this.deps.hostToken) {
+      client.authed = true;
+      client.deviceLabel = "host";
+      client.send({ t: "hello.ack", id: env.id, ok: true });
+      this.deps.onAuthenticated(client);
+      return;
+    }
 
     if (bearer) {
       this.handleBearer(client, env, bearer);

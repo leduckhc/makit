@@ -43,6 +43,8 @@ import { CommandRouter } from "./ws/command_router.js";
 import { PaneBridge } from "./pane/bridge.js";
 import { herdrReader } from "./pane/herdr.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
+import type { IngestAdapter } from "./adapters/ingest.js";
+import type { AdapterEvent } from "./adapters/adapter.js";
 
 export interface ServerOpts {
   host: string;
@@ -52,6 +54,8 @@ export interface ServerOpts {
   registry: DeviceRegistry;
   /** If true, accept loopback connections without auth. */
   trustLocalhost?: boolean;
+  /** Shared secret authenticating a pino-mirror extension host (World D). */
+  hostToken?: string;
 }
 
 /** Concrete client: a {@link WsClient} backed by a live `ws` socket. */
@@ -60,7 +64,7 @@ interface ClientState extends WsClient {
 }
 
 export function startWsServer(opts: ServerOpts) {
-  const { host, port, manager, cert, registry, trustLocalhost = false } = opts;
+  const { host, port, manager, cert, registry, trustLocalhost = false, hostToken } = opts;
 
   const https: HttpsServer = createHttpsServer({ cert: cert.cert, key: cert.key });
   const wss = new WebSocketServer({ server: https });
@@ -72,6 +76,9 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   const clients = new Map<WebSocket, ClientState>();
+  // World D host sessions: pinoSessionId → its IngestAdapter + owning client.
+  const hostAdapters = new Map<string, IngestAdapter>();
+  const hostOwner = new Map<string, WsClient>();
 
   // -------- collaborators -------------------------------------------------
 
@@ -84,7 +91,7 @@ export function startWsServer(opts: ServerOpts) {
       }
     }
   });
-  const authGate = new AuthGate({ registry, onAuthenticated: sendSnapshots });
+  const authGate = new AuthGate({ registry, onAuthenticated: sendSnapshots, hostToken });
   const router = buildCommandRouter();
 
   // -------- session wiring ------------------------------------------------
@@ -117,6 +124,15 @@ export function startWsServer(opts: ServerOpts) {
       clients.delete(ws);
       hub.unregister(state);
       for (const t of state.panes ?? []) paneBridge.detach(t);
+      // Tear down any host sessions owned by this extension client.
+      for (const [sid, owner] of hostOwner) {
+        if (owner === state) {
+          void manager.killSession(sid).catch(() => {});
+          hostAdapters.delete(sid);
+          hostOwner.delete(sid);
+        }
+      }
+      broadcastSnapshots();
     });
 
     if (state.authed) sendSnapshots(state);
@@ -351,6 +367,52 @@ export function startWsServer(opts: ServerOpts) {
       ctx.ack({ sessionId: session.id });
     });
 
+
+    // World D: a pino-mirror extension hosts a real pi session and pushes its
+    // events here; the phone's prompts are relayed back as `host.prompt`.
+    r.register("host.open", async (ctx) => {
+      const title = typeof ctx.env.title === "string" ? ctx.env.title : undefined;
+      const cwd = typeof ctx.env.cwd === "string" ? ctx.env.cwd : undefined;
+      const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : undefined;
+      const owner = ctx.client;
+      let sid = "";
+      const session = await manager.openHostSession({
+        title,
+        cwd,
+        projectId,
+        onPrompt: (text) =>
+          owner.send({ t: "host.prompt", id: newId("hp"), sessionId: sid, text }),
+      });
+      sid = session.id;
+      hostAdapters.set(sid, session.adapter as IngestAdapter);
+      hostOwner.set(sid, owner);
+      broadcastSnapshots();
+      ctx.ack({ sessionId: sid });
+    });
+
+    r.register("host.event", (ctx) => {
+      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
+      const ev = ctx.env.ev as AdapterEvent | undefined;
+      if (sid && ev) hostAdapters.get(sid)?.ingestEvent(ev);
+      // No ack: events are high-frequency (streaming deltas).
+    });
+
+    r.register("host.status", (ctx) => {
+      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
+      const status = ctx.env.status === "running" ? "running" : "idle";
+      if (sid) hostAdapters.get(sid)?.ingestStatus(status);
+    });
+
+    r.register("host.close", async (ctx) => {
+      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
+      if (sid) {
+        await manager.killSession(sid).catch(() => {});
+        hostAdapters.delete(sid);
+        hostOwner.delete(sid);
+        broadcastSnapshots();
+      }
+      ctx.ack();
+    });
 
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.
     if (process.env.PINO_DEV) registerDebugCommands(r);
