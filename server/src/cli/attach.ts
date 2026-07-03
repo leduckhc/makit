@@ -80,9 +80,19 @@ export async function runAttach(argv: string[]): Promise<void> {
   let projects: ProjectDTO[] = [];
   let currentSid: string | undefined = args.sessionId;
   let subscribed = false;
+  let prompting = false; // true while answering a server UI request
   const rl: Interface = createInterface({ input: process.stdin, output: process.stdout });
 
   const send = (o: unknown) => ws.send(JSON.stringify(o));
+  const ask = (q: string): Promise<string> =>
+    new Promise((resolve) => rl.question(q, resolve));
+  const C = {
+    reset: "\x1b[0m",
+    dim: "\x1b[2m",
+    cyan: "\x1b[36m",
+    yellow: "\x1b[33m",
+  };
+  const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
 
   ws.on("open", () => send({ v: 1, t: "hello", id: "h", bearer }));
   ws.on("error", (e: Error) => {
@@ -118,11 +128,15 @@ export async function runAttach(argv: string[]): Promise<void> {
       if (r.out) process.stdout.write(r.out);
       return;
     }
+    if (m.t === "srv.request") {
+      void handleSrvRequest(m);
+      return;
+    }
     // spawn ack carries the new session
     if (m.t === "ack" && m.session && !subscribed) {
-      const s = m.session as SessionDTO;
-      sessions = [...sessions, s];
-      doSubscribe(s.id);
+      const sess = m.session as SessionDTO;
+      sessions = [...sessions, sess];
+      doSubscribe(sess.id);
     }
   });
 
@@ -165,11 +179,12 @@ export async function runAttach(argv: string[]): Promise<void> {
     currentSid = sid;
     subscribed = true;
     send({ v: 1, t: "sub", id: "sub", sessionId: sid });
-    const s = sessions.find((x) => x.id === sid);
+    const sess = sessions.find((x) => x.id === sid);
     console.log(
-      `\n[pino] attached to "${s?.title ?? sid}" — type to chat, Ctrl-C to quit.\n`,
+      `\n[pino] attached to "${sess?.title ?? sid}" — type to chat, Ctrl-C to quit.\n`,
     );
     rl.on("line", (line) => {
+      if (prompting) return; // a UI request owns the input right now
       const text = line.trim();
       if (!text) return;
       send({
@@ -185,5 +200,71 @@ export async function runAttach(argv: string[]): Promise<void> {
       ws.close();
       process.exit(0);
     });
+  }
+
+  /**
+   * Answer a server UI request (askUserQuestion / confirmAction / input) from
+   * the terminal, then send the matching `srv.response`. The first client to
+   * respond wins, so the app can answer instead — whoever's fastest.
+   */
+  async function handleSrvRequest(env: Record<string, unknown>): Promise<void> {
+    const id = s(env.id);
+    const kind = s(env.kind);
+    prompting = true;
+    try {
+      if (kind === "confirmAction") {
+        process.stdout.write(`\n${C.yellow}▲ ${s(env.title)}${C.reset}\n  ${s(env.message)}\n`);
+        if (env.action) process.stdout.write(`  ${C.dim}action: ${s(env.action)}${C.reset}\n`);
+        if (env.preview) process.stdout.write(`  ${C.dim}${s(env.preview)}${C.reset}\n`);
+        const a = (await ask("Approve? [y/N] ")).trim().toLowerCase();
+        send({ v: 1, t: "srv.response", id, kind, approved: a === "y" || a === "yes" });
+        return;
+      }
+      if (kind === "input") {
+        process.stdout.write(`\n${C.cyan}? ${s(env.title)}${C.reset}\n`);
+        const prefill = s(env.prefill);
+        const a = await ask(`${prefill ? `[${prefill}] ` : ""}› `);
+        const value = a.trim() === "" && prefill ? prefill : a;
+        send({ v: 1, t: "srv.response", id, kind, value });
+        return;
+      }
+      if (kind === "askUserQuestion") {
+        const questions = Array.isArray(env.questions) ? env.questions : [];
+        const indices: number[] = [];
+        const answers: string[] = [];
+        for (const q of questions as Record<string, unknown>[]) {
+          if (q.header) process.stdout.write(`\n${C.cyan}? ${s(q.header)}${C.reset}\n`);
+          process.stdout.write(`${s(q.question)}\n`);
+          const opts = (Array.isArray(q.options) ? q.options : []) as Record<string, unknown>[];
+          opts.forEach((o, i) => {
+            const rec = q.recommended === i ? ` ${C.dim}(recommended)${C.reset}` : "";
+            const desc = o.description ? ` — ${C.dim}${s(o.description)}${C.reset}` : "";
+            process.stdout.write(`  ${i + 1}. ${s(o.label)}${rec}${desc}\n`);
+          });
+          const raw = (await ask("Pick #: ")).trim();
+          let pick = Number.parseInt(raw, 10) - 1;
+          if (!(pick >= 0 && pick < opts.length)) {
+            pick = typeof q.recommended === "number" ? q.recommended : 0;
+          }
+          indices.push(pick);
+          answers.push(s(opts[pick]?.label));
+        }
+        const resp: Record<string, unknown> = {
+          v: 1,
+          t: "srv.response",
+          id,
+          kind,
+          indices,
+          answers,
+        };
+        if (answers.length === 1) resp.answer = answers[0];
+        send(resp);
+        return;
+      }
+      // Unknown UI kind → decline so pi doesn't hang.
+      send({ v: 1, t: "srv.response", id, kind, cancelled: true });
+    } finally {
+      prompting = false;
+    }
   }
 }
