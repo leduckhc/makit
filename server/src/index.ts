@@ -73,10 +73,19 @@ function dedupeResolved(paths: string[]): string[] {
 
 async function main() {
   const cmd = process.argv[2];
-  if (cmd && cmd !== "serve" && cmd !== "pair") {
-    console.error(`unknown command: ${cmd}\nusage: pino serve|pair [...]`);
+  if (cmd && cmd !== "serve" && cmd !== "pair" && cmd !== "attach") {
+    console.error(`unknown command: ${cmd}\nusage: pino serve|pair|attach [...]`);
     process.exit(2);
   }
+
+  // `attach` is a client, not a server: connect to a running pino and drive
+  // one session from the terminal. No cert/registry/manager needed here.
+  if (cmd === "attach") {
+    const { runAttach } = await import("./cli/attach.js");
+    await runAttach(process.argv.slice(3));
+    return;
+  }
+
   const opts = parseArgs(process.argv.slice(3));
 
   const cert = await loadOrCreateCert();
