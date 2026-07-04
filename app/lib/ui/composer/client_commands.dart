@@ -175,6 +175,30 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       );
     },
   ),
+  ClientCommand(
+    name: 'model',
+    description: 'Switch the agent model',
+    handler: (context, ref, {required sessionId}) async {
+      final meta = ref.read(sessionMetaProvider(sessionId));
+      final models = meta?.models ?? const [];
+      if (models.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No models available for this session')),
+        );
+        return;
+      }
+      final picked = await _pickModel(context, models, meta?.model);
+      if (picked == null || !context.mounted) return;
+      ref.read(storeControllerProvider.notifier).sendSessionAction(
+        sessionId,
+        'model',
+        args: {'provider': picked.provider, 'id': picked.id},
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Model: ${picked.name}')),
+      );
+    },
+  ),
 ];
 
 /// pi's thinking levels, low → high. `off` disables reasoning.
@@ -200,6 +224,42 @@ Future<String?> _pickThinkingLevel(BuildContext context) {
             ListTile(
               title: Text(level),
               onTap: () => Navigator.pop(sheetContext, level),
+            ),
+        ],
+      ),
+    ),
+  );
+}
+
+
+/// Present the selectable models in a modal sheet, marking [current]. Resolves
+/// with the chosen model or null if dismissed.
+Future<ModelInfo?> _pickModel(
+  BuildContext context,
+  List<ModelInfo> models,
+  ModelInfo? current,
+) {
+  return showModalBottomSheet<ModelInfo>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        children: [
+          const ListTile(
+            dense: true,
+            title: Text('Model', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          for (final m in models)
+            ListTile(
+              title: Text(m.name),
+              subtitle: Text(m.provider),
+              trailing: (current != null &&
+                      current.provider == m.provider &&
+                      current.id == m.id)
+                  ? const Icon(Icons.check)
+                  : null,
+              onTap: () => Navigator.pop(sheetContext, m),
             ),
         ],
       ),

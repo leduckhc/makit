@@ -44,6 +44,7 @@ class StoreState {
     required this.events,
     required this.cursors,
     required this.commands,
+    required this.meta,
   });
 
   factory StoreState.empty() => StoreState(
@@ -52,6 +53,7 @@ class StoreState {
     events: const {},
     cursors: const {},
     commands: const {},
+    meta: const {},
   );
 
   final List<Project> projects;
@@ -62,18 +64,23 @@ class StoreState {
   /// Per-session list of slash commands advertised by the agent.
   final Map<String, List<SlashCmd>> commands;
 
+  /// Per-session model + thinking-level snapshot from `session.meta`.
+  final Map<String, SessionMeta> meta;
+
   StoreState copyWith({
     List<Project>? projects,
     List<Session>? sessions,
     Map<String, List<SessionEvent>>? events,
     Map<String, int>? cursors,
     Map<String, List<SlashCmd>>? commands,
+    Map<String, SessionMeta>? meta,
   }) => StoreState(
     projects: projects ?? this.projects,
     sessions: sessions ?? this.sessions,
     events: events ?? this.events,
     cursors: cursors ?? this.cursors,
     commands: commands ?? this.commands,
+    meta: meta ?? this.meta,
   );
 }
 
@@ -113,6 +120,13 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
     final commands = Map<String, List<SlashCmd>>.from(state.commands);
     commands[ev.sessionId] = list;
     return state.copyWith(commands: commands, cursors: cursors);
+  }
+
+  // session.meta updates the model/thinking indicator + /model picker, not chat.
+  if (ev.kind == EventKind.sessionMeta) {
+    final meta = Map<String, SessionMeta>.from(state.meta);
+    meta[ev.sessionId] = SessionMeta.fromJson(Map<String, dynamic>.from(ev.payload));
+    return state.copyWith(meta: meta, cursors: cursors);
   }
 
   final events = Map<String, List<SessionEvent>>.from(state.events);
@@ -391,4 +405,14 @@ final commandsProvider = Provider.family<List<SlashCmd>, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.commands[sessionId] ?? const [];
+});
+
+/// Current model + thinking level + selectable models for a session (or null
+/// until the host pushes `session.meta`).
+final sessionMetaProvider = Provider.family<SessionMeta?, String>((
+  ref,
+  sessionId,
+) {
+  final s = ref.watch(storeControllerProvider);
+  return s.meta[sessionId];
 });

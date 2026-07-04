@@ -37,6 +37,48 @@ class SlashCmd {
   }
 }
 
+/// A model the agent can run, as pushed via `session.meta`. Also used for the
+/// currently-active model.
+class ModelInfo {
+  const ModelInfo({required this.provider, required this.id, required this.name});
+
+  final String provider;
+  final String id;
+  final String name;
+
+  static ModelInfo? fromJson(Map<String, dynamic> j) {
+    final provider = j['provider'] as String?;
+    final id = j['id'] as String?;
+    if (provider == null || id == null) return null;
+    return ModelInfo(provider: provider, id: id, name: (j['name'] as String?) ?? id);
+  }
+}
+
+/// Per-session model + thinking-level snapshot. Drives the subtle header
+/// indicator and the `/model` picker. Pushed via the `session.meta` event.
+class SessionMeta {
+  const SessionMeta({this.model, required this.thinking, required this.models});
+
+  final ModelInfo? model;
+  final String thinking;
+  final List<ModelInfo> models;
+
+  static SessionMeta fromJson(Map<String, dynamic> j) {
+    final rawModel = j['model'];
+    return SessionMeta(
+      model: rawModel is Map
+          ? ModelInfo.fromJson(Map<String, dynamic>.from(rawModel))
+          : null,
+      thinking: (j['thinking'] as String?) ?? '',
+      models: ((j['models'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((m) => ModelInfo.fromJson(Map<String, dynamic>.from(m)))
+          .whereType<ModelInfo>()
+          .toList(),
+    );
+  }
+}
+
 class Project {
   Project({
     required this.id,
@@ -420,6 +462,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         );
       case EventKind.sessionCommands:
         // Handled by store, not as a chat item.
+        break;
+      case EventKind.sessionMeta:
+        // Model/thinking snapshot — handled by store, not a chat item.
         break;
     }
   }

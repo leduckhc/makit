@@ -41,6 +41,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
+    final meta = ref.watch(sessionMetaProvider(widget.sessionId));
 
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       final firstLoad = _lastSeq == 0;
@@ -173,26 +174,41 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              shadows: [
-                                Shadow(
-                                  color: cs.surface,
-                                  blurRadius: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  shadows: [
+                                    Shadow(color: cs.surface, blurRadius: 6),
+                                    Shadow(color: cs.surface, blurRadius: 12),
+                                  ],
                                 ),
-                                Shadow(
-                                  color: cs.surface,
-                                  blurRadius: 12,
-                                ),
-                              ],
+                          ),
+                          if (meta?.model != null)
+                            Text(
+                              '${meta!.model!.name} · ${meta.thinking}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color: cs.onSurface.withValues(alpha: 0.55),
+                                    shadows: [
+                                      Shadow(color: cs.surface, blurRadius: 6),
+                                    ],
+                                  ),
                             ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),

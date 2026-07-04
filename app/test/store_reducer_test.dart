@@ -71,6 +71,28 @@ void main() {
       expect(state.commands[_sid]!.single.name, 'fix');
     });
 
+    test('session.meta advances cursor, stores meta, adds no chat item', () {
+      var state = _seeded();
+      state = reduce(
+        state,
+        SessionEventFrame(_ev(1, EventKind.sessionMeta, {
+          'model': {'provider': 'anthropic', 'id': 'opus', 'name': 'Opus'},
+          'thinking': 'high',
+          'models': [
+            {'provider': 'anthropic', 'id': 'opus', 'name': 'Opus'},
+            {'provider': 'anthropic', 'id': 'sonnet', 'name': 'Sonnet'},
+          ],
+        })),
+      );
+
+      expect(state.cursors[_sid], 1);
+      expect(state.events[_sid] ?? const [], isEmpty);
+      final meta = state.meta[_sid]!;
+      expect(meta.model!.name, 'Opus');
+      expect(meta.thinking, 'high');
+      expect(meta.models.length, 2);
+    });
+
     test('session.status + message preview bubble up to the session', () {
       var state = _seeded();
       state = reduce(
