@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
@@ -11,10 +12,13 @@ void main() {
   ) async {
     await launchPino(tester);
 
-    // AppBar title
+    // AppBar title.
     expect(find.text('pino'), findsWidgets);
-    // Project name header appears in _ProjectSection (a Row, not a ListTile)
-    // Session from the stub adapter
+    // Session from the stub adapter — proves the WS snapshot hydrated.
     expect(find.text('new session'), findsOneWidget);
+    // Paired + connected: the ConnectionChip hides itself on the happy path,
+    // so the offline / reconnecting affordances must be absent.
+    expect(find.byIcon(Icons.cloud_off_outlined), findsNothing);
+    expect(find.byIcon(Icons.sync_problem_outlined), findsNothing);
   });
 }

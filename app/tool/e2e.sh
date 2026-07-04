@@ -40,11 +40,25 @@ SERVER_PID=""
 
 APP_BUNDLE_ID="dev.pino.pino"
 
+free_port() {
+  # Kill anything holding our test port. Strictly scoped to tcp:$PORT so we
+  # never touch unrelated processes. Guards against a stray server from a
+  # previous/aborted run (EADDRINUSE) that would otherwise fail readiness.
+  local pids
+  pids="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    echo "port $PORT busy (pids: $pids) — killing" >&2
+    kill -9 $pids >/dev/null 2>&1 || true
+    sleep 0.5
+  fi
+}
+
 cleanup() {
   if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
+  free_port
   # Uninstall the test app so its seeded stub pairing (PINO_TEST_* written into
   # the simulator keychain by test_bootstrap) never leaks into a manual
   # `flutter run` session. Without this, the next live app boots trying to
@@ -87,6 +101,9 @@ if [[ -z "$SIM_ID" ]]; then
   xcrun simctl boot "$SIM_ID" >/dev/null 2>&1 || true
   xcrun simctl bootstatus "$SIM_ID" -b >/dev/null
 fi
+
+# Ensure the port is free before starting (idempotent reruns / aborted runs).
+free_port
 
 (
   cd "$SERVER_DIR"

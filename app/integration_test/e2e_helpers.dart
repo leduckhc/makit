@@ -52,7 +52,12 @@ Future<void> pumpUntil(
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
     await tester.pump(const Duration(milliseconds: 100));
-    if (finder.evaluate().isNotEmpty) return;
+    if (finder.evaluate().isNotEmpty) {
+      // Settle one more frame so a mid-build match is fully laid out before
+      // the caller asserts against it (avoids flaky partial-frame matches).
+      await tester.pump(const Duration(milliseconds: 100));
+      return;
+    }
   }
   // Dump every Text widget currently visible so we can diagnose the failure
   // without re-running with a debugger attached.

@@ -10,6 +10,11 @@ const _testFingerprint = String.fromEnvironment('PINO_TEST_FP');
 const _pairedServerKey = 'paired_server';
 const _testServerLabel = 'e2e test server';
 
+/// True when the app was launched under the E2E harness (PINO_TEST_* defines).
+/// Used to skip side-effecting startup (e.g. requesting notification
+/// permission, which pops a blocking system dialog on the simulator).
+bool get isE2ETestMode => _testHost.isNotEmpty;
+
 Future<void> seedTestPairingIfRequested({
   FlutterSecureStorage storage = const FlutterSecureStorage(),
 }) async {

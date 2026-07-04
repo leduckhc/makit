@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,16 +22,22 @@ Future<void> main() async {
   final container = ProviderContainer();
   container.read(storeControllerProvider);
 
-  // Notifications: route taps into the session, activate the status→notif
-  // observer, then init the platform plugin (asks permission on iOS).
+  // Notifications: route taps into the session and activate the status→notif
+  // observer. onTapSession + the controller are cheap (no platform calls yet).
   final notifications = container.read(notificationServiceProvider);
   notifications.onTapSession = (sid) {
     pinoNavigatorKey.currentContext?.go('/session/$sid');
   };
   container.read(notificationControllerProvider);
-  await notifications.init();
 
   runApp(UncontrolledProviderScope(container: container, child: const PinoApp()));
+
+  // Init the plugin AFTER the first frame so startup isn't blocked, and skip
+  // it under the E2E harness — the iOS permission prompt blocks the simulator
+  // and would stop runApp's UI from ever being reached.
+  if (!isE2ETestMode) {
+    unawaited(notifications.init());
+  }
 }
 
 class PinoApp extends ConsumerStatefulWidget {
