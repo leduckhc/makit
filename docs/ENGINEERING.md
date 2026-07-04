@@ -166,6 +166,25 @@ Each item: **RED** (write this failing test first) → **GREEN** (smallest chang
   `agent.thinking`/`tool.call.delta`.
 - **VERIFY**: build + tests.
 
+### B10 — App WS auto-reconnect actually recovers 🔴
+- **Symptom**: when the server drops the socket (e.g. dev `tsx watch` reload,
+  network blip, or Tailscale/backgrounding), the app gets stuck in the
+  "Reconnecting" state and only recovers after a manual force-quit + relaunch.
+  The reconnect-with-backoff loop exists (`ws_client.dart`) but does not
+  reliably re-establish + re-subscribe on the phone in practice.
+- **RED**: `WsClient` test — after an `_open()` failure / socket close, the
+  client schedules a retry, and on a successful reconnect it re-sends `hello`
+  and re-issues `sub` for every previously-subscribed session (snapshots +
+  `session.commands` arrive again). App/store test — a drop→reconnect cycle
+  leaves the store subscribed and receiving events without user action.
+- **GREEN**: fix the reconnect path so backoff retries continue indefinitely
+  (capped), re-auth + re-subscribe on reconnect, and reset backoff on success;
+  ensure app-lifecycle resume (foreground) forces an immediate reconnect
+  attempt rather than waiting out a long backoff.
+- **REFACTOR**: single reconnect state machine; no duplicated retry timers.
+- **VERIFY**: unit tests above; manual — reload the dev server and confirm the
+  phone reconnects on its own within a few seconds, no relaunch needed.
+
 ## 5. Testing strategy (target pyramid)
 
 - **Unit (most):** pure reducer, codec, `DeviceRegistry`, `Session`, `WsClient`
