@@ -39,7 +39,8 @@ export type EventKind =
   | "tool.call.end"
   | "session.status"
   | "session.error"
-  | "session.commands";
+  | "session.commands"
+  | "session.meta";
 
 export interface SessionEvent {
   seq: number;

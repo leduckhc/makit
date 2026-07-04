@@ -69,8 +69,42 @@ export default function (pi: ExtensionAPI): void {
       const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
       if (level && valid.includes(level)) {
         pi.setThinkingLevel(level as never);
+        emitMeta();
       }
+    } else if (action === "model") {
+      const provider = typeof args?.provider === "string" ? args.provider : undefined;
+      const id = typeof args?.id === "string" ? args.id : undefined;
+      const model =
+        provider && id ? lastCtx?.modelRegistry.find(provider, id) : undefined;
+      if (model) void pi.setModel(model).then(() => emitMeta());
     }
+  }
+
+  // Whether the initial meta frame has been pushed for this pi process.
+  let metaSent = false;
+
+  // Push current model + thinking level + selectable models to the phone so it
+  // can show a subtle indicator and populate the /model picker. Model info is
+  // ctx-scoped; thinking level lives on `pi` directly.
+  function emitMeta(): void {
+    const m = lastCtx?.model;
+    const models = (lastCtx?.modelRegistry.getAvailable() ?? []).map((x) => ({
+      provider: x.provider,
+      id: x.id,
+      name: x.name,
+    }));
+    metaSent = true;
+    emit("session.meta", {
+      model: m ? { provider: m.provider, id: m.id, name: m.name } : null,
+      thinking: pi.getThinkingLevel(),
+      models,
+    });
+  }
+
+  // Capture the latest ctx from event handlers; emit meta once we first have it.
+  function noteCtx(ctx: ExtensionContext): void {
+    lastCtx = ctx;
+    if (!metaSent) emitMeta();
   }
 
   const raw = (o: Json) => {
@@ -132,6 +166,9 @@ export default function (pi: ExtensionAPI): void {
           f.sessionId = sessionId;
           raw(f);
         }
+        // A fresh subscriber (or reconnect after a pino restart that dropped the
+        // replay log) needs current meta re-sent.
+        if (lastCtx) emitMeta();
         return;
       }
       // Phone → pi: inject as a real user prompt into this live session.
@@ -239,19 +276,29 @@ export default function (pi: ExtensionAPI): void {
   const msgIds = new Map<number, string>();
 
   pi.on("input", (e, ctx) => {
-    lastCtx = ctx;
+    noteCtx(ctx);
     if (typeof e.text === "string" && e.text) emit("user.message", { text: e.text });
   });
 
   pi.on("turn_start", (_e, ctx) => {
-    lastCtx = ctx;
+    noteCtx(ctx);
     status("running");
   });
   pi.on("turn_end", (_e, ctx) => {
-    lastCtx = ctx;
+    noteCtx(ctx);
     status("idle");
   });
   pi.on("agent_end", () => status("idle"));
+
+  // Keep the phone's model/thinking indicator in sync with TUI-side changes.
+  pi.on("model_select", (_e, ctx) => {
+    lastCtx = ctx;
+    emitMeta();
+  });
+  pi.on("thinking_level_select", (_e, ctx) => {
+    lastCtx = ctx;
+    emitMeta();
+  });
 
   pi.on("message_update", (e) => {
     const ame = e.assistantMessageEvent as any;

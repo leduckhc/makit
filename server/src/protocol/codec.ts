@@ -51,6 +51,7 @@ const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "session.status",
   "session.error",
   "session.commands",
+  "session.meta",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
