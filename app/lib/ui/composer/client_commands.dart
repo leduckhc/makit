@@ -149,4 +149,60 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       }
     },
   ),
+  ClientCommand(
+    name: 'compact',
+    description: 'Compact the conversation to free up context',
+    handler: (context, ref, {required sessionId}) async {
+      ref
+          .read(storeControllerProvider.notifier)
+          .sendSessionAction(sessionId, 'compact');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Compacting conversation…')),
+      );
+    },
+  ),
+  ClientCommand(
+    name: 'thinking',
+    description: 'Set the agent thinking level',
+    handler: (context, ref, {required sessionId}) async {
+      final level = await _pickThinkingLevel(context);
+      if (level == null || !context.mounted) return;
+      ref
+          .read(storeControllerProvider.notifier)
+          .sendSessionAction(sessionId, 'thinking', args: {'level': level});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Thinking level: $level')),
+      );
+    },
+  ),
 ];
+
+/// pi's thinking levels, low → high. `off` disables reasoning.
+const _thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+
+/// Present the thinking-level options in a modal sheet; resolves with the
+/// chosen level or null if dismissed.
+Future<String?> _pickThinkingLevel(BuildContext context) {
+  return showModalBottomSheet<String>(
+    context: context,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const ListTile(
+            dense: true,
+            title: Text(
+              'Thinking level',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+          for (final level in _thinkingLevels)
+            ListTile(
+              title: Text(level),
+              onTap: () => Navigator.pop(sheetContext, level),
+            ),
+        ],
+      ),
+    ),
+  );
+}

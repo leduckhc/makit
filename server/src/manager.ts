@@ -226,6 +226,7 @@ export class SessionManager extends EventEmitter {
     cwd?: string;
     projectId?: string;
     onPrompt: (text: string) => void;
+    onAction?: (action: string, args?: Record<string, unknown>) => void;
   }): Promise<Session> {
     let project = opts.projectId ? this.projects.get(opts.projectId) : undefined;
     if (!project && opts.cwd) {
@@ -234,7 +235,7 @@ export class SessionManager extends EventEmitter {
     if (!project) project = [...this.projects.values()][0];
     if (!project) throw new Error("no project for host session");
 
-    const adapter = new IngestAdapter(opts.onPrompt);
+    const adapter = new IngestAdapter(opts.onPrompt, undefined, opts.onAction);
     // Wire up the real pi side-channel fetcher so the slash palette populates
     // with skills/prompts/extensions from the project's filesystem. ~1.2s
     // fire-and-forget at startup; failures are silenced (palette stays empty).

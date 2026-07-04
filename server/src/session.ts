@@ -137,6 +137,15 @@ export class Session extends EventEmitter {
     // so that turn boundaries are unambiguous.
   }
 
+  /**
+   * Run a built-in control action (e.g. `compact`, `thinking`) on the adapter.
+   * Unlike {@link sendUserMessage} this is not a user turn — it maps to a pi
+   * SDK call in the hosting extension. No-op if the adapter can't map actions.
+   */
+  async sendAction(action: string, args?: Record<string, unknown>) {
+    await this.adapter.sendAction?.(action, args);
+  }
+
   on(event: "event", listener: (e: SessionEvent) => void): this {
     return super.on(event, listener);
   }

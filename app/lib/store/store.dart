@@ -242,6 +242,30 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
+  /// Run a built-in control action (e.g. `compact`, `thinking`) on the session.
+  /// Unlike [sendMessage] this is not a user turn — the server relays it to the
+  /// hosting pi extension's SDK calls; nothing is sent to the LLM as a prompt.
+  void sendSessionAction(
+    String sessionId,
+    String action, {
+    Map<String, dynamic>? args,
+  }) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'a-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'session.action',
+              'sessionId': sessionId,
+              'action': action,
+              'args': ?args,
+            },
+          ),
+        );
+  }
+
   /// Spawn a fresh agent session in the given project. Resolves with the new
   /// session id once the server acks.
   Future<String> spawnSession(String projectId, {String? title}) async {

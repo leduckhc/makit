@@ -42,6 +42,12 @@ export interface AgentAdapter extends EventEmitter {
   readonly agent: string;
   start(opts: SpawnOpts): Promise<void>;
   send(input: UserInput): Promise<void>;
+  /**
+   * Optional: run a built-in control action (e.g. `compact`, `thinking`) that
+   * is NOT a user turn and never reaches the LLM as a prompt. Adapters that
+   * can't map actions omit this.
+   */
+  sendAction?(action: string, args?: Record<string, unknown>): Promise<void>;
   cancel(): Promise<void>;
   kill(signal?: NodeJS.Signals): Promise<void>;
 

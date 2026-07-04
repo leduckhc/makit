@@ -12,7 +12,7 @@
  *
  * Auth: ~/.pino/host.json {url, token} (written 0600 by `pino serve`).
  */
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { WebSocket } from "ws";
 import { Type } from "typebox";
 import { readFileSync } from "node:fs";
@@ -54,6 +54,24 @@ export default function (pi: ExtensionAPI): void {
   const outbox: Json[] = []; // events buffered until a host session is open
   const OUTBOX_MAX = 1000;
   const pendingAsks = new Map<string, (r: Json) => void>(); // askId → resolver
+  // Latest ExtensionContext captured from event handlers, used to invoke
+  // context-scoped SDK calls (e.g. ctx.compact()) when the phone sends a
+  // built-in control action. pi.setThinkingLevel lives on `pi` directly.
+  let lastCtx: ExtensionContext | undefined;
+
+  // Phone → pi: run a built-in control action via the pi SDK. These are NOT
+  // user turns — they never reach the LLM as a prompt.
+  function runAction(action: string, args?: Json): void {
+    if (action === "compact") {
+      lastCtx?.compact();
+    } else if (action === "thinking") {
+      const level = typeof args?.level === "string" ? args.level : undefined;
+      const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
+      if (level && valid.includes(level)) {
+        pi.setThinkingLevel(level as never);
+      }
+    }
+  }
 
   const raw = (o: Json) => {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(o));
@@ -119,6 +137,11 @@ export default function (pi: ExtensionAPI): void {
       // Phone → pi: inject as a real user prompt into this live session.
       if (m.t === "host.prompt" && typeof m.text === "string") {
         pi.sendUserMessage(m.text, { deliverAs: "steer" });
+        return;
+      }
+      // Phone → pi: run a built-in control action (compact, thinking).
+      if (m.t === "host.action" && typeof m.action === "string") {
+        runAction(m.action, m.args as Json | undefined);
         return;
       }
       // Answer to an askUserQuestion we routed to the phone.
@@ -215,12 +238,19 @@ export default function (pi: ExtensionAPI): void {
   // Per-content-index streamed-message ids, mirroring pino's PiAdapter.
   const msgIds = new Map<number, string>();
 
-  pi.on("input", (e) => {
+  pi.on("input", (e, ctx) => {
+    lastCtx = ctx;
     if (typeof e.text === "string" && e.text) emit("user.message", { text: e.text });
   });
 
-  pi.on("turn_start", () => status("running"));
-  pi.on("turn_end", () => status("idle"));
+  pi.on("turn_start", (_e, ctx) => {
+    lastCtx = ctx;
+    status("running");
+  });
+  pi.on("turn_end", (_e, ctx) => {
+    lastCtx = ctx;
+    status("idle");
+  });
   pi.on("agent_end", () => status("idle"));
 
   pi.on("message_update", (e) => {

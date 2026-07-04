@@ -50,6 +50,10 @@ export class IngestAdapter extends EventEmitter implements AgentAdapter {
   constructor(
     private readonly onPrompt: (text: string) => void,
     private commandsFetcher?: CommandsFetcher,
+    private readonly onAction?: (
+      action: string,
+      args?: Record<string, unknown>,
+    ) => void,
   ) {
     super();
   }
@@ -70,6 +74,16 @@ export class IngestAdapter extends EventEmitter implements AgentAdapter {
   /** Phone → pi: relay to the extension, which calls pi.sendUserMessage. */
   async send(input: UserInput): Promise<void> {
     if (this.alive) this.onPrompt(input.text);
+  }
+
+  /**
+   * Phone → pi: relay a built-in control action (e.g. `compact`, `thinking`)
+   * to the extension, which invokes the corresponding pi SDK call. Distinct
+   * from {@link send} because these aren't user turns — they never reach the
+   * LLM as a prompt.
+   */
+  async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (this.alive) this.onAction?.(action, args);
   }
 
   async cancel(): Promise<void> {

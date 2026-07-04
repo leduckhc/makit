@@ -35,6 +35,26 @@ test("after kill(), no more events emit and prompts stop relaying", async () => 
   assert.equal(prompts.length, 0);
 });
 
+test("sendAction() relays action+args to onAction; no-op after kill()", async () => {
+  const actions: Array<{ action: string; args?: Record<string, unknown> }> = [];
+  const a = new IngestAdapter(
+    () => {},
+    undefined,
+    (action, args) => actions.push({ action, args }),
+  );
+  await a.start({ cwd: "/tmp" });
+  await a.sendAction("compact");
+  await a.sendAction("thinking", { level: "high" });
+  assert.deepEqual(actions, [
+    { action: "compact", args: undefined },
+    { action: "thinking", args: { level: "high" } },
+  ]);
+
+  await a.kill();
+  await a.sendAction("compact");
+  assert.equal(actions.length, 2, "no relay after kill()");
+});
+
 /** Awaits the fire-and-forget commands fetch, bounded by a timeout for safety. */
 function waitDone(a: IngestAdapter, ms = 1000): Promise<void> {
   const done = a.fetchCommandsDone;

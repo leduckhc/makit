@@ -223,6 +223,29 @@ export function startWsServer(opts: ServerOpts) {
       await session.sendUserMessage(text);
     });
 
+    // Built-in control actions (e.g. /compact, /thinking) — NOT user turns.
+    // Routed to the adapter's sendAction, which relays to the hosting pi
+    // extension's SDK calls. Only IngestAdapter (World D) maps these today.
+    r.register("session.action", async (ctx) => {
+      const sid = String(ctx.env.sessionId ?? "");
+      const action = ctx.env.action;
+      if (typeof action !== "string" || !action) {
+        ctx.err(WireErrorCode.BadRequest, "session.action requires a string `action`");
+        return;
+      }
+      const session = sid ? manager.getSession(sid) : undefined;
+      if (!session) {
+        ctx.err(WireErrorCode.NoSuchSession, "no such session");
+        return;
+      }
+      const args =
+        ctx.env.args && typeof ctx.env.args === "object" && !Array.isArray(ctx.env.args)
+          ? (ctx.env.args as Record<string, unknown>)
+          : undefined;
+      ctx.ack();
+      await session.sendAction(action, args);
+    });
+
     r.register("cancel", async (ctx) => {
       const sid = String(ctx.env.sessionId ?? "");
       const session = sid ? manager.getSession(sid) : undefined;
@@ -402,6 +425,8 @@ export function startWsServer(opts: ServerOpts) {
         projectId,
         onPrompt: (text) =>
           owner.send({ t: "host.prompt", id: newId("hp"), sessionId: sid, text }),
+        onAction: (action, args) =>
+          owner.send({ t: "host.action", id: newId("ha"), sessionId: sid, action, args }),
       });
       sid = session.id;
       hostAdapters.set(sid, session.adapter as IngestAdapter);
