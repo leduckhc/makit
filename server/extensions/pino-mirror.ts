@@ -290,6 +290,10 @@ export default function (pi: ExtensionAPI): void {
   });
   pi.on("agent_end", () => status("idle"));
 
+  // Emit initial model/thinking meta as soon as the session is ready, so the
+  // phone shows it without waiting for the first turn.
+  pi.on("session_start", (_e, ctx) => noteCtx(ctx));
+
   // Keep the phone's model/thinking indicator in sync with TUI-side changes.
   pi.on("model_select", (_e, ctx) => {
     lastCtx = ctx;
