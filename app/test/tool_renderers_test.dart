@@ -85,6 +85,128 @@ void main() {
     });
   });
 
+  group('read renderer detail view', () {
+    testWidgets('shows path in app bar and file content', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'read',
+        args: const {'path': 'lib/main.dart'},
+        output: 'void main() {}',
+        ended: true,
+      );
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('lib/main.dart'), findsOneWidget);
+      expect(find.text('void main() {}'), findsOneWidget);
+    });
+
+    testWidgets('shows (empty) when output is blank', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'read',
+        args: const {'path': 'empty.txt'},
+        output: '',
+        ended: true,
+      );
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('(empty)'), findsOneWidget);
+    });
+  });
+
+  group('write renderer detail view', () {
+    testWidgets('shows path and written content', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'write',
+        args: const {'path': 'out.txt', 'content': 'hello world'},
+        ended: true,
+      );
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('out.txt'), findsOneWidget);
+      expect(find.text('hello world'), findsOneWidget);
+    });
+  });
+
+  group('bash renderer detail view', () {
+    testWidgets('shows command and output in separate sections', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'bash',
+        args: const {'command': 'echo hi'},
+        output: 'hi',
+        ended: true,
+        exitCode: 0,
+      );
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Command'), findsOneWidget);
+      expect(find.text('echo hi'), findsOneWidget);
+      expect(find.text('Output'), findsOneWidget);
+      expect(find.text('hi'), findsOneWidget);
+    });
+  });
+
+  group('grep renderer detail view', () {
+    testWidgets('shows pattern, glob and results', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'grep',
+        args: const {'pattern': 'TODO', 'glob': '*.dart'},
+        output: 'lib/foo.dart:12: // TODO: fix',
+        ended: true,
+        exitCode: 0,
+      );
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('TODO'), findsOneWidget);
+      expect(find.text('*.dart'), findsOneWidget);
+      expect(find.text('lib/foo.dart:12: // TODO: fix'), findsOneWidget);
+    });
+  });
+
   group('edit renderer detail view', () {
     testWidgets('renders a line-level removed/added diff', (tester) async {
       final item = _tool('edit', {
