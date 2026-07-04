@@ -7,7 +7,8 @@ import '../../store/store.dart';
 import 'tool_renderers.dart';
 
 /// Fullscreen drilldown for a tool call. Shows args, streamed deltas (output),
-/// and a placeholder for a richer diff viewer when the tool name == 'edit'.
+/// and, for the `edit` tool, a line-level diff viewer (removed / added /
+/// context rows computed by [computeLineDiff]).
 class ToolCallDetailScreen extends ConsumerWidget {
   const ToolCallDetailScreen({
     super.key,
