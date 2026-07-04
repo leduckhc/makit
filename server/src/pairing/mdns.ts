@@ -28,6 +28,13 @@ export class MdnsAd {
         v: "1",
       },
     });
+    // mDNS is a best-effort convenience (the app can still connect via the
+    // stored/Tailscale address). A name collision on the network — e.g. a
+    // just-restarted instance whose advertisement hasn't expired — emits an
+    // 'error' event that, if unhandled, crashes the whole server. Swallow it.
+    this.service.on("error", (err: Error) => {
+      console.warn(`[pino] mDNS advertisement failed (non-fatal): ${err.message}`);
+    });
   }
 
   stop() {
