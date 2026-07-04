@@ -196,7 +196,9 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       }
       final picked = await _pickModel(context, models, meta?.model);
       if (picked == null || !context.mounted) return;
-      final current = meta?.model;
+      // Re-read after the picker await: the active model may have changed
+      // (e.g. TUI-side switch) while the sheet was open.
+      final current = ref.read(sessionMetaProvider(sessionId))?.model;
       if (current != null &&
           current.provider == picked.provider &&
           current.id == picked.id) {

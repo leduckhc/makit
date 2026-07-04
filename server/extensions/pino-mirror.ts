@@ -72,7 +72,9 @@ export default function (pi: ExtensionAPI): void {
         emitActionError("compact", "session not ready");
         return;
       }
-      lastCtx.compact();
+      void Promise.resolve(lastCtx.compact()).catch((err: unknown) => {
+        emitActionError("compact", err instanceof Error ? err.message : "compact failed");
+      });
     } else if (action === "thinking") {
       const level = typeof args?.level === "string" ? args.level : undefined;
       const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -89,7 +91,7 @@ export default function (pi: ExtensionAPI): void {
         emitActionError("model", "model not available");
         return;
       }
-      pi.setModel(model).then(() => emitMeta()).catch((err: unknown) => {
+      void pi.setModel(model).then(() => emitMeta()).catch((err: unknown) => {
         emitActionError("model", err instanceof Error ? err.message : "model switch failed");
       });
     }
