@@ -153,11 +153,18 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
     name: 'compact',
     description: 'Compact the conversation to free up context',
     handler: (context, ref, {required sessionId}) async {
+      final meta = ref.read(sessionMetaProvider(sessionId));
+      if (meta == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Not available for this session')),
+        );
+        return;
+      }
       ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(sessionId, 'compact');
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Compacting conversation…')),
+        const SnackBar(content: Text('Compact requested')),
       );
     },
   ),
@@ -189,13 +196,19 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       }
       final picked = await _pickModel(context, models, meta?.model);
       if (picked == null || !context.mounted) return;
+      final current = meta?.model;
+      if (current != null &&
+          current.provider == picked.provider &&
+          current.id == picked.id) {
+        return;
+      }
       ref.read(storeControllerProvider.notifier).sendSessionAction(
         sessionId,
         'model',
         args: {'provider': picked.provider, 'id': picked.id},
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Model: ${picked.name}')),
+        SnackBar(content: Text('Switching to ${picked.name}…')),
       );
     },
   ),

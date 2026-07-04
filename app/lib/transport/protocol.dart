@@ -97,7 +97,8 @@ enum EventKind {
   sessionStatus,
   sessionError,
   sessionCommands,
-  sessionMeta;
+  sessionMeta,
+  sessionActionError;
 
   String get wire => switch (this) {
     EventKind.userMessage => 'user.message',
@@ -111,6 +112,7 @@ enum EventKind {
     EventKind.sessionError => 'session.error',
     EventKind.sessionCommands => 'session.commands',
     EventKind.sessionMeta => 'session.meta',
+    EventKind.sessionActionError => 'session.action_error',
   };
 
   static EventKind? fromWire(String s) {

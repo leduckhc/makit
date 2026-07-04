@@ -466,6 +466,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
       case EventKind.sessionMeta:
         // Model/thinking snapshot — handled by store, not a chat item.
         break;
+      case EventKind.sessionActionError:
+        // Action error — handled by store, surfaces as a snackbar, not a chat item.
+        break;
     }
   }
   return items;

@@ -43,6 +43,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final items = ref.watch(chatItemsProvider(widget.sessionId));
     final meta = ref.watch(sessionMetaProvider(widget.sessionId));
 
+    ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (prev, next) {
+      if (next == null) return;
+      if (prev?.seq == next.seq) return;
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${next.action} failed: ${next.reason}')),
+      );
+    });
+
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       final firstLoad = _lastSeq == 0;
       _lastSeq = items.last.seq;

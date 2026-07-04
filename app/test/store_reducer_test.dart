@@ -93,6 +93,24 @@ void main() {
       expect(meta.models.length, 2);
     });
 
+    test('session.action_error advances cursor, stores error, adds no chat item', () {
+      var state = _seeded();
+      state = reduce(
+        state,
+        SessionEventFrame(_ev(1, EventKind.sessionActionError, {
+          'action': 'compact',
+          'reason': 'session not ready',
+        })),
+      );
+
+      expect(state.cursors[_sid], 1);
+      expect(state.events[_sid] ?? const [], isEmpty);
+      final err = state.actionErrors[_sid]!;
+      expect(err.action, 'compact');
+      expect(err.reason, 'session not ready');
+      expect(err.seq, 1);
+    });
+
     test('session.status + message preview bubble up to the session', () {
       var state = _seeded();
       state = reduce(

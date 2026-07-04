@@ -45,6 +45,7 @@ class StoreState {
     required this.cursors,
     required this.commands,
     required this.meta,
+    required this.actionErrors,
   });
 
   factory StoreState.empty() => StoreState(
@@ -54,6 +55,7 @@ class StoreState {
     cursors: const {},
     commands: const {},
     meta: const {},
+    actionErrors: const {},
   );
 
   final List<Project> projects;
@@ -67,6 +69,10 @@ class StoreState {
   /// Per-session model + thinking-level snapshot from `session.meta`.
   final Map<String, SessionMeta> meta;
 
+  /// Last action error per session, from `session.action_error`. Used to
+  /// surface transient error snackbars without adding chat items.
+  final Map<String, ActionError> actionErrors;
+
   StoreState copyWith({
     List<Project>? projects,
     List<Session>? sessions,
@@ -74,6 +80,7 @@ class StoreState {
     Map<String, int>? cursors,
     Map<String, List<SlashCmd>>? commands,
     Map<String, SessionMeta>? meta,
+    Map<String, ActionError>? actionErrors,
   }) => StoreState(
     projects: projects ?? this.projects,
     sessions: sessions ?? this.sessions,
@@ -81,6 +88,7 @@ class StoreState {
     cursors: cursors ?? this.cursors,
     commands: commands ?? this.commands,
     meta: meta ?? this.meta,
+    actionErrors: actionErrors ?? this.actionErrors,
   );
 }
 
@@ -129,6 +137,19 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
     return state.copyWith(meta: meta, cursors: cursors);
   }
 
+  // session.action_error carries a transient error from the pi extension.
+  // Store the latest per-session so the UI can surface it as a snackbar.
+  if (ev.kind == EventKind.sessionActionError) {
+    final errors = Map<String, ActionError>.from(state.actionErrors);
+    errors[ev.sessionId] = ActionError(
+      seq: ev.seq,
+      sessionId: ev.sessionId,
+      action: ev.payload['action'] as String? ?? 'action',
+      reason: ev.payload['reason'] as String? ?? 'unknown error',
+    );
+    return state.copyWith(actionErrors: errors, cursors: cursors);
+  }
+
   final events = Map<String, List<SessionEvent>>.from(state.events);
   final list = List<SessionEvent>.from(events[ev.sessionId] ?? const []);
   list.add(ev);
@@ -156,6 +177,22 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
   }
 
   return state.copyWith(events: events, cursors: cursors, sessions: sessions);
+}
+
+/// Carries the action name and human-readable reason from a
+/// `session.action_error` event emitted by the pi extension.
+class ActionError {
+  const ActionError({
+    required this.seq,
+    required this.sessionId,
+    required this.action,
+    required this.reason,
+  });
+
+  final int seq;
+  final String sessionId;
+  final String action;
+  final String reason;
 }
 
 class StoreController extends StateNotifier<StoreState> {
@@ -415,4 +452,15 @@ final sessionMetaProvider = Provider.family<SessionMeta?, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.meta[sessionId];
+});
+
+/// Last action error for a session (or null if none has arrived). Changes
+/// whenever `session.action_error` is received so callers can use
+/// [ProviderScope.listen] to trigger a snackbar.
+final sessionActionErrorProvider = Provider.family<ActionError?, String>((
+  ref,
+  sessionId,
+) {
+  final s = ref.watch(storeControllerProvider);
+  return s.actionErrors[sessionId];
 });
