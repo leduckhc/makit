@@ -12,6 +12,10 @@ while [[ $# -gt 0 ]]; do
       MODE="$2"
       shift 2
       ;;
+    --mode=*)
+      MODE="${1#--mode=}"
+      shift
+      ;;
     *)
       echo "unknown arg: $1" >&2
       exit 2
