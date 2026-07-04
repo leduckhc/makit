@@ -4,12 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../app/theme.dart' show kPinoBrandBlue;
 import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 
-/// Brand blue accent used for running/active glass affordances.
-const _kBrandBlue = Color(0xFF4F6CFF);
+/// Brand blue accent used for running/active glass affordances (shared token).
+const _kBrandBlue = kPinoBrandBlue;
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -522,8 +523,8 @@ class _StatusChip extends StatelessWidget {
     final (label, color) = switch (status) {
       SessionStatus.idle => ('idle', Colors.grey),
       SessionStatus.running => ('running', _kBrandBlue),
-      SessionStatus.awaitingInput => ('you', _kBrandBlue),
-      SessionStatus.awaitingApproval => ('approve', _kBrandBlue),
+      SessionStatus.awaitingInput => ('you', Colors.orange),
+      SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
       SessionStatus.error => ('error', Colors.red),
       SessionStatus.exited => ('exited', Colors.grey),
     };

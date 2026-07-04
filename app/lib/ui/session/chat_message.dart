@@ -7,6 +7,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../app/theme.dart' show kPinoBrandBlue;
+
 String _hhmm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
   return '${d.hour.toString().padLeft(2, '0')}:'
@@ -58,7 +60,7 @@ class ChatBubble extends StatelessWidget {
               margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: const BoxDecoration(
-                color: Color(0xFF4F6CFF),
+                color: kPinoBrandBlue,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(14),
                   topRight: Radius.circular(14),

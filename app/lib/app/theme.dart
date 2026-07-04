@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 // Minimal, calm palette. Real design pass later.
-const _seed = Color(0xFF4F6CFF);
+/// Pino brand blue — used as the color-scheme seed and for accent affordances
+/// (running badges, the user's message bubble). Shared so the value lives once.
+const kPinoBrandBlue = Color(0xFF4F6CFF);
+const _seed = kPinoBrandBlue;
 
 final pinoLightTheme = ThemeData(
   useMaterial3: true,
