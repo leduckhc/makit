@@ -60,7 +60,10 @@ class NotificationController with WidgetsBindingObserver {
         ),
     ];
 
-    final pending = diffStatusNotifications(previous: _last, current: snapshots);
+    final pending = diffStatusNotifications(
+      previous: _last,
+      current: snapshots,
+    );
 
     // Update the baseline regardless of foreground, so a later background
     // transition doesn't replay an already-seen change.

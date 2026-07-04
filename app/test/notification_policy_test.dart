@@ -39,7 +39,11 @@ void main() {
 
     test('null → idle is silent (never worked)', () {
       expect(
-        notificationFor(from: null, to: SessionStatus.idle, sessionLabel: label),
+        notificationFor(
+          from: null,
+          to: SessionStatus.idle,
+          sessionLabel: label,
+        ),
         isNull,
       );
     });

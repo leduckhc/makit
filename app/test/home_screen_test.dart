@@ -39,9 +39,7 @@ void main() {
       status: SessionStatus.running,
       policy: ApprovalPolicy.askOnRisky,
     );
-    await tester.pumpWidget(
-      _host(projects: [project], sessions: [session]),
-    );
+    await tester.pumpWidget(_host(projects: [project], sessions: [session]));
     await tester.pump();
 
     expect(find.byType(GlassSurface), findsWidgets);

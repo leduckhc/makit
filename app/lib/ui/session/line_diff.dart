@@ -32,7 +32,8 @@ const int _maxDiffLines = 2000;
 
 /// Split [text] into lines. An empty string is zero lines (not one blank
 /// line) so an empty side reads as a pure add/remove.
-List<String> _splitLines(String text) => text.isEmpty ? const [] : text.split('\n');
+List<String> _splitLines(String text) =>
+    text.isEmpty ? const [] : text.split('\n');
 
 /// Compute a line-level diff between [oldText] and [newText].
 ///

@@ -35,13 +35,13 @@ NotificationContent? notificationFor({
   if (from == to) return null;
   return switch (to) {
     // "Finished" only makes sense if it was actually working.
-    SessionStatus.idle ||
-    SessionStatus.exited => from == SessionStatus.running
-        ? NotificationContent(
-            title: sessionLabel,
-            body: 'Agent finished its turn.',
-          )
-        : null,
+    SessionStatus.idle || SessionStatus.exited =>
+      from == SessionStatus.running
+          ? NotificationContent(
+              title: sessionLabel,
+              body: 'Agent finished its turn.',
+            )
+          : null,
     SessionStatus.awaitingInput => NotificationContent(
       title: sessionLabel,
       body: 'Agent needs your input.',
