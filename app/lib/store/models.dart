@@ -54,6 +54,21 @@ class ModelInfo {
   }
 }
 
+/// Error reported by the pi extension when a built-in control action fails
+/// (e.g. `/compact` before the session is ready, `/model` switch rejected).
+/// Pushed via `session.action_error`; surfaces as a transient snackbar.
+class ActionError {
+  const ActionError({
+    required this.seq,
+    required this.action,
+    required this.reason,
+  });
+
+  final int seq;
+  final String action;
+  final String reason;
+}
+
 /// Per-session model + thinking-level snapshot. Drives the subtle header
 /// indicator and the `/model` picker. Pushed via the `session.meta` event.
 class SessionMeta {

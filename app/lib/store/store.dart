@@ -143,7 +143,6 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
     final errors = Map<String, ActionError>.from(state.actionErrors);
     errors[ev.sessionId] = ActionError(
       seq: ev.seq,
-      sessionId: ev.sessionId,
       action: ev.payload['action'] as String? ?? 'action',
       reason: ev.payload['reason'] as String? ?? 'unknown error',
     );
@@ -177,22 +176,6 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
   }
 
   return state.copyWith(events: events, cursors: cursors, sessions: sessions);
-}
-
-/// Carries the action name and human-readable reason from a
-/// `session.action_error` event emitted by the pi extension.
-class ActionError {
-  const ActionError({
-    required this.seq,
-    required this.sessionId,
-    required this.action,
-    required this.reason,
-  });
-
-  final int seq;
-  final String sessionId;
-  final String action;
-  final String reason;
 }
 
 class StoreController extends StateNotifier<StoreState> {
