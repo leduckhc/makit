@@ -163,9 +163,9 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(sessionId, 'compact');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Compact requested')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Compact requested')));
     },
   ),
   ClientCommand(
@@ -177,9 +177,9 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(sessionId, 'thinking', args: {'level': level});
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Thinking level: $level')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Thinking level: $level')));
     },
   ),
   ClientCommand(
@@ -204,14 +204,16 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
           current.id == picked.id) {
         return;
       }
-      ref.read(storeControllerProvider.notifier).sendSessionAction(
-        sessionId,
-        'model',
-        args: {'provider': picked.provider, 'id': picked.id},
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Switching to ${picked.name}…')),
-      );
+      ref
+          .read(storeControllerProvider.notifier)
+          .sendSessionAction(
+            sessionId,
+            'model',
+            args: {'provider': picked.provider, 'id': picked.id},
+          );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Switching to ${picked.name}…')));
     },
   ),
 ];
@@ -246,7 +248,6 @@ Future<String?> _pickThinkingLevel(BuildContext context) {
   );
 }
 
-
 /// Present the selectable models in a modal sheet, marking [current]. Resolves
 /// with the chosen model or null if dismissed.
 Future<ModelInfo?> _pickModel(
@@ -269,7 +270,8 @@ Future<ModelInfo?> _pickModel(
             ListTile(
               title: Text(m.name),
               subtitle: Text(m.provider),
-              trailing: (current != null &&
+              trailing:
+                  (current != null &&
                       current.provider == m.provider &&
                       current.id == m.id)
                   ? const Icon(Icons.check)

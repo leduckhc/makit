@@ -37,11 +37,21 @@ void main() {
         name: 'askUserQuestion',
         args: const {
           'questions': [
-            {'question': 'Lang?', 'options': [{'label': 'EN'}, {'label': 'ES'}]},
+            {
+              'question': 'Lang?',
+              'options': [
+                {'label': 'EN'},
+                {'label': 'ES'},
+              ],
+            },
           ],
         },
         ended: true,
-        details: const {'kind': 'askUserQuestion', 'indices': [0], 'answers': ['EN']},
+        details: const {
+          'kind': 'askUserQuestion',
+          'indices': [0],
+          'answers': ['EN'],
+        },
       );
       expect(rendererFor(item)!.subtitle(item), 'EN');
     });
@@ -118,10 +128,20 @@ void main() {
   group('foldEvents — tool result plumbing', () {
     test('tool.call.end output + summary flow into the ToolCallItem', () {
       SessionEvent ev(EventKind kind, Map<String, dynamic> payload, int seq) =>
-          SessionEvent(seq: seq, sessionId: 's', ts: 0, kind: kind, payload: payload);
+          SessionEvent(
+            seq: seq,
+            sessionId: 's',
+            ts: 0,
+            kind: kind,
+            payload: payload,
+          );
 
       final items = foldEvents([
-        ev(EventKind.toolCallStart, {'callId': 'c1', 'name': 'read', 'args': {'path': 'x'}}, 1),
+        ev(EventKind.toolCallStart, {
+          'callId': 'c1',
+          'name': 'read',
+          'args': {'path': 'x'},
+        }, 1),
         ev(EventKind.toolCallEnd, {
           'callId': 'c1',
           'exitCode': 0,

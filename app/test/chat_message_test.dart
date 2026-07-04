@@ -5,20 +5,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pino/ui/session/chat_message.dart';
 
 void main() {
-  Widget wrap(Widget child) =>
-      MaterialApp(home: Scaffold(body: SingleChildScrollView(child: child)));
+  Widget wrap(Widget child) => MaterialApp(
+    home: Scaffold(body: SingleChildScrollView(child: child)),
+  );
 
-  testWidgets('user message renders in a right-aligned bubble with a timestamp',
-      (tester) async {
-    await tester.pumpWidget(wrap(const ChatBubble.user(text: 'hello', ts: 0)));
-    expect(find.text('hello'), findsOneWidget);
-    expect(find.byType(MarkdownBody), findsNothing);
-    final align = tester.widget<Align>(find.byType(Align).first);
-    expect(align.alignment, Alignment.centerRight);
-  });
+  testWidgets(
+    'user message renders in a right-aligned bubble with a timestamp',
+    (tester) async {
+      await tester.pumpWidget(
+        wrap(const ChatBubble.user(text: 'hello', ts: 0)),
+      );
+      expect(find.text('hello'), findsOneWidget);
+      expect(find.byType(MarkdownBody), findsNothing);
+      final align = tester.widget<Align>(find.byType(Align).first);
+      expect(align.alignment, Alignment.centerRight);
+    },
+  );
 
-  testWidgets('agent message renders markdown (no bubble) with a timestamp',
-      (tester) async {
+  testWidgets('agent message renders markdown (no bubble) with a timestamp', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       wrap(const AgentMessage(text: '# Title\n\nsome **bold** text', ts: 0)),
     );
@@ -27,8 +33,9 @@ void main() {
     expect(find.textContaining('Title'), findsWidgets);
   });
 
-  testWidgets('fenced code block gets syntax highlighting + a copy button',
-      (tester) async {
+  testWidgets('fenced code block gets syntax highlighting + a copy button', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       wrap(const AgentMessage(text: '```dart\nvoid main() {}\n```', ts: 0)),
     );

@@ -40,7 +40,11 @@ class SlashCmd {
 /// A model the agent can run, as pushed via `session.meta`. Also used for the
 /// currently-active model.
 class ModelInfo {
-  const ModelInfo({required this.provider, required this.id, required this.name});
+  const ModelInfo({
+    required this.provider,
+    required this.id,
+    required this.name,
+  });
 
   final String provider;
   final String id;
@@ -50,7 +54,11 @@ class ModelInfo {
     final provider = j['provider'] as String?;
     final id = j['id'] as String?;
     if (provider == null || id == null) return null;
-    return ModelInfo(provider: provider, id: id, name: (j['name'] as String?) ?? id);
+    return ModelInfo(
+      provider: provider,
+      id: id,
+      name: (j['name'] as String?) ?? id,
+    );
   }
 }
 
@@ -161,11 +169,7 @@ class FolderEntry {
     final name = j['name'];
     final path = j['path'];
     if (name is! String || path is! String) return null;
-    return FolderEntry(
-      name: name,
-      path: path,
-      isRepo: j['isRepo'] == true,
-    );
+    return FolderEntry(name: name, path: path, isRepo: j['isRepo'] == true);
   }
 }
 
@@ -397,8 +401,10 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         final text = e.payload['text'] as String? ?? '';
         final idx = msgId != null ? byMsg[msgId] : null;
         if (idx != null && items[idx] is AgentMessageItem) {
-          items[idx] =
-              (items[idx] as AgentMessageItem).copyWith(text: text, streaming: false);
+          items[idx] = (items[idx] as AgentMessageItem).copyWith(
+            text: text,
+            streaming: false,
+          );
         } else {
           items.add(AgentMessageItem(seq: e.seq, ts: e.ts, text: text));
         }

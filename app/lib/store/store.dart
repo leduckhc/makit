@@ -133,7 +133,9 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
   // session.meta updates the model/thinking indicator + /model picker, not chat.
   if (ev.kind == EventKind.sessionMeta) {
     final meta = Map<String, SessionMeta>.from(state.meta);
-    meta[ev.sessionId] = SessionMeta.fromJson(Map<String, dynamic>.from(ev.payload));
+    meta[ev.sessionId] = SessionMeta.fromJson(
+      Map<String, dynamic>.from(ev.payload),
+    );
     return state.copyWith(meta: meta, cursors: cursors);
   }
 
@@ -305,11 +307,7 @@ class StoreController extends StateNotifier<StoreState> {
   Future<String> spawnSession(String projectId, {String? title}) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {
-        'kind': 'session.spawn',
-        'projectId': projectId,
-        'title': ?title,
-      },
+      {'kind': 'session.spawn', 'projectId': projectId, 'title': ?title},
     );
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
@@ -344,7 +342,11 @@ class StoreController extends StateNotifier<StoreState> {
   Future<String> attachSession(String projectId, String piSessionId) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.attach', 'projectId': projectId, 'piSessionId': piSessionId},
+      {
+        'kind': 'session.attach',
+        'projectId': projectId,
+        'piSessionId': piSessionId,
+      },
     );
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');

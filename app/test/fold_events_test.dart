@@ -91,15 +91,18 @@ void main() {
       expect(msg.streaming, false);
     });
 
-    test('agent.message without a msgId is a standalone (non-streamed) bubble', () {
-      final items = foldEvents([
-        _ev(1, EventKind.agentMessage, {'text': 'plain'}),
-      ]);
-      expect(items.length, 1);
-      final msg = items.single as AgentMessageItem;
-      expect(msg.text, 'plain');
-      expect(msg.streaming, false);
-    });
+    test(
+      'agent.message without a msgId is a standalone (non-streamed) bubble',
+      () {
+        final items = foldEvents([
+          _ev(1, EventKind.agentMessage, {'text': 'plain'}),
+        ]);
+        expect(items.length, 1);
+        final msg = items.single as AgentMessageItem;
+        expect(msg.text, 'plain');
+        expect(msg.streaming, false);
+      },
+    );
 
     test('two separate streamed messages fold to two bubbles', () {
       final items = foldEvents([
@@ -111,7 +114,10 @@ void main() {
       expect(items.length, 2);
       expect((items[0] as AgentMessageItem).text, 'one');
       expect((items[1] as AgentMessageItem).text, 'two');
-      expect(items.every((i) => (i as AgentMessageItem).streaming == false), true);
+      expect(
+        items.every((i) => (i as AgentMessageItem).streaming == false),
+        true,
+      );
     });
   });
 }

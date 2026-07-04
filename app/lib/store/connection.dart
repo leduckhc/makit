@@ -96,8 +96,7 @@ const _kPairedServerKey = 'paired_server';
 
 /// Signature of the mDNS LAN browse used for rediscovery. Mirrors the
 /// top-level [browseLan] so it can be swapped for a fake in tests.
-typedef BrowseLan =
-    Future<List<DiscoveredServer>> Function({Duration timeout});
+typedef BrowseLan = Future<List<DiscoveredServer>> Function({Duration timeout});
 
 class ConnectionController extends StateNotifier<PinoConnState> {
   ConnectionController(

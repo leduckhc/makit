@@ -43,7 +43,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final items = ref.watch(chatItemsProvider(widget.sessionId));
     final meta = ref.watch(sessionMetaProvider(widget.sessionId));
 
-    ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (prev, next) {
+    ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
+      prev,
+      next,
+    ) {
       if (next == null) return;
       if (prev?.seq == next.seq) return;
       if (!context.mounted) return;
@@ -104,10 +107,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               if (i >= items.length) return const _WorkingIndicator();
               final item = items[i];
               return switch (item) {
-                UserMessageItem() =>
-                  ChatBubble.user(text: item.text, ts: item.ts),
-                AgentMessageItem() =>
-                  AgentMessage(text: item.text, ts: item.ts),
+                UserMessageItem() => ChatBubble.user(
+                  text: item.text,
+                  ts: item.ts,
+                ),
+                AgentMessageItem() => AgentMessage(
+                  text: item.text,
+                  ts: item.ts,
+                ),
                 ThinkingItem() => _ThinkingCard(text: item.text),
                 ToolCallItem() => ToolCallCard(
                   item: item,
@@ -191,9 +198,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
+                            style: Theme.of(context).textTheme.titleMedium
                                 ?.copyWith(
                                   fontWeight: FontWeight.w600,
                                   shadows: [
@@ -207,9 +212,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               '${meta!.model!.name} · ${meta.thinking}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
                                     color: cs.onSurface.withValues(alpha: 0.55),
                                     shadows: [
@@ -315,7 +318,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     if (ok != true || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(storeControllerProvider.notifier).killSession(widget.sessionId);
+      await ref
+          .read(storeControllerProvider.notifier)
+          .killSession(widget.sessionId);
       if (mounted) context.go('/');
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
@@ -414,8 +419,7 @@ class _ThinkingCardState extends State<_ThinkingCard> {
                 widget.text.trim(),
                 style: style,
                 maxLines: _expanded ? null : 1,
-                overflow:
-                    _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
+                overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -455,8 +459,7 @@ class _WorkingIndicatorState extends State<_WorkingIndicator>
     'Untangling',
   ];
 
-  late final String _word =
-      _words[Random().nextInt(_words.length)];
+  late final String _word = _words[Random().nextInt(_words.length)];
 
   late final AnimationController _c = AnimationController(
     vsync: this,

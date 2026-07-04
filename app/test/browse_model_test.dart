@@ -21,8 +21,11 @@ void main() {
         isFalse,
       );
       expect(
-        FolderEntry.fromJson({'name': 'a', 'path': '/a', 'isRepo': 'yes'})!
-            .isRepo,
+        FolderEntry.fromJson({
+          'name': 'a',
+          'path': '/a',
+          'isRepo': 'yes',
+        })!.isRepo,
         isFalse,
       );
     });
@@ -54,7 +57,10 @@ void main() {
     });
 
     test('parent is null at the filesystem root', () {
-      final r = BrowseResult.fromJson({'path': '/', 'entries': const <Map<String, dynamic>>[]});
+      final r = BrowseResult.fromJson({
+        'path': '/',
+        'entries': const <Map<String, dynamic>>[],
+      });
       expect(r.path, '/');
       expect(r.parent, isNull);
       expect(r.entries, isEmpty);

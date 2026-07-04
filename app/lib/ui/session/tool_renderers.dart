@@ -273,9 +273,7 @@ class _EditDiffView extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final line in lines) _DiffLineRow(line: line),
-              ],
+              children: [for (final line in lines) _DiffLineRow(line: line)],
             ),
           ),
           if (item.deltas.isNotEmpty || (item.output?.isNotEmpty ?? false)) ...[
@@ -305,18 +303,17 @@ class _DiffLineRow extends StatelessWidget {
     final dark = Theme.of(context).brightness == Brightness.dark;
     // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
     final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
-    final (Color? background, Color textColor, String prefix) =
-        switch (line.kind) {
+    final (
+      Color? background,
+      Color textColor,
+      String prefix,
+    ) = switch (line.kind) {
       DiffKind.removed => (
-          cs.errorContainer.withValues(alpha: 0.35),
-          cs.error,
-          '\u2212',
-        ),
-      DiffKind.added => (
-          Colors.green.withValues(alpha: 0.15),
-          addedText,
-          '+',
-        ),
+        cs.errorContainer.withValues(alpha: 0.35),
+        cs.error,
+        '\u2212',
+      ),
+      DiffKind.added => (Colors.green.withValues(alpha: 0.15), addedText, '+'),
       DiffKind.context => (null, cs.onSurfaceVariant, ' '),
     };
     final style = TextStyle(
@@ -392,7 +389,8 @@ class _AskUserQuestionRenderer extends ToolRenderer {
         itemBuilder: (context, qi) {
           final q = questions[qi];
           final chosen = _chosen(item, qi).toSet();
-          final options = (q['options'] as List?)
+          final options =
+              (q['options'] as List?)
                   ?.whereType<Map<dynamic, dynamic>>()
                   .map(Map<String, dynamic>.from)
                   .toList() ??
@@ -406,9 +404,9 @@ class _AskUserQuestionRenderer extends ToolRenderer {
                   child: Text(
                     q['header'].toString().toUpperCase(),
                     style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: cs.primary,
-                          letterSpacing: 0.5,
-                        ),
+                      color: cs.primary,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               Text(

@@ -29,7 +29,9 @@ void main() {
 
     test('projects.snapshot decodes to typed Project list', () {
       final snapshots = _fixture('snapshots.json');
-      final env = _envFromFixture(Map<String, dynamic>.from(snapshots[0] as Map));
+      final env = _envFromFixture(
+        Map<String, dynamic>.from(snapshots[0] as Map),
+      );
       final decoded = WireCodec.decode(env);
       expect(decoded, isA<ProjectsSnapshot>());
       final projects = (decoded as ProjectsSnapshot).projects;
@@ -41,7 +43,9 @@ void main() {
 
     test('sessions.snapshot decodes to typed Session list', () {
       final snapshots = _fixture('snapshots.json');
-      final env = _envFromFixture(Map<String, dynamic>.from(snapshots[1] as Map));
+      final env = _envFromFixture(
+        Map<String, dynamic>.from(snapshots[1] as Map),
+      );
       final decoded = WireCodec.decode(env);
       expect(decoded, isA<SessionsSnapshot>());
       final sessions = (decoded as SessionsSnapshot).sessions;

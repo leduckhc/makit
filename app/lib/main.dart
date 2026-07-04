@@ -31,7 +31,9 @@ Future<void> main() async {
   };
   container.read(notificationControllerProvider);
 
-  runApp(UncontrolledProviderScope(container: container, child: const PinoApp()));
+  runApp(
+    UncontrolledProviderScope(container: container, child: const PinoApp()),
+  );
 
   // Init the plugin AFTER the first frame so startup isn't blocked, and skip
   // it under the E2E harness — the iOS permission prompt blocks the simulator
@@ -48,8 +50,7 @@ class PinoApp extends ConsumerStatefulWidget {
   ConsumerState<PinoApp> createState() => _PinoAppState();
 }
 
-class _PinoAppState extends ConsumerState<PinoApp>
-    with WidgetsBindingObserver {
+class _PinoAppState extends ConsumerState<PinoApp> with WidgetsBindingObserver {
   bool _showSplash = true;
 
   @override
