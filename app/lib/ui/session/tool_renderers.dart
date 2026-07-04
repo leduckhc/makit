@@ -302,6 +302,9 @@ class _DiffLineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
+    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
     final (Color? background, Color textColor, String prefix) =
         switch (line.kind) {
       DiffKind.removed => (
@@ -311,7 +314,7 @@ class _DiffLineRow extends StatelessWidget {
         ),
       DiffKind.added => (
           Colors.green.withValues(alpha: 0.15),
-          Colors.green.shade800,
+          addedText,
           '+',
         ),
       DiffKind.context => (null, cs.onSurfaceVariant, ' '),
