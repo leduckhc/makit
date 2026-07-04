@@ -302,9 +302,7 @@ class _WriteRenderer extends ToolRenderer {
   Widget detail(BuildContext context, ToolCallItem item) {
     final path = item.args['path']?.toString() ?? '(no path)';
     final content =
-        item.args['content']?.toString() ??
-        item.args['text']?.toString() ??
-        '';
+        item.args['content']?.toString() ?? item.args['text']?.toString() ?? '';
     final result = item.output ?? item.summary ?? '';
     return Scaffold(
       appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
@@ -315,7 +313,8 @@ class _WriteRenderer extends ToolRenderer {
             title: 'Content written',
             child: _MonoText(content.isEmpty ? '(empty)' : content),
           ),
-          if (result.isNotEmpty) _ToolSection(title: 'Result', child: Text(result)),
+          if (result.isNotEmpty)
+            _ToolSection(title: 'Result', child: Text(result)),
         ],
       ),
     );
@@ -353,8 +352,9 @@ class _BashRenderer extends ToolRenderer {
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
     final command = item.args['command']?.toString() ?? '';
-    final output =
-        item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? '');
+    final output = item.deltas.isNotEmpty
+        ? item.deltas.join()
+        : (item.output ?? '');
     final failed = item.ended && (item.exitCode ?? 0) != 0;
     return Scaffold(
       appBar: AppBar(title: const Text('bash')),

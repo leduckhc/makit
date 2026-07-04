@@ -98,7 +98,9 @@ void main() {
       );
       final renderer = rendererFor(item)!;
       await tester.pumpWidget(
-        MaterialApp(home: Builder(builder: (ctx) => renderer.detail(ctx, item))),
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -118,7 +120,9 @@ void main() {
       );
       final renderer = rendererFor(item)!;
       await tester.pumpWidget(
-        MaterialApp(home: Builder(builder: (ctx) => renderer.detail(ctx, item))),
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
       );
       await tester.pumpAndSettle();
       expect(find.text('(empty)'), findsOneWidget);
@@ -137,7 +141,9 @@ void main() {
       );
       final renderer = rendererFor(item)!;
       await tester.pumpWidget(
-        MaterialApp(home: Builder(builder: (ctx) => renderer.detail(ctx, item))),
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -147,7 +153,9 @@ void main() {
   });
 
   group('bash renderer detail view', () {
-    testWidgets('shows command and output in separate sections', (tester) async {
+    testWidgets('shows command and output in separate sections', (
+      tester,
+    ) async {
       final item = ToolCallItem(
         seq: 1,
         ts: 0,
@@ -160,7 +168,9 @@ void main() {
       );
       final renderer = rendererFor(item)!;
       await tester.pumpWidget(
-        MaterialApp(home: Builder(builder: (ctx) => renderer.detail(ctx, item))),
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
       );
       await tester.pumpAndSettle();
 
@@ -185,7 +195,9 @@ void main() {
       );
       final renderer = rendererFor(item)!;
       await tester.pumpWidget(
-        MaterialApp(home: Builder(builder: (ctx) => renderer.detail(ctx, item))),
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
       );
       await tester.pumpAndSettle();
 
