@@ -37,10 +37,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-
 
-      - name: Install Flutter dependencies (offline, lockfile-locked)
+      - name: Install Flutter dependencies (lockfile-locked)
         run: |
           cd app
-          flutter pub get --offline
+          flutter pub get --enforce-lockfile
 
       - name: Run analysis (strict linting)
         run: |
@@ -85,7 +85,7 @@ jobs:
       - name: Install Flutter dependencies
         run: |
           cd app
-          flutter pub get --offline
+          flutter pub get --enforce-lockfile
 
       - name: Run tests
         run: |
@@ -117,7 +117,7 @@ jobs:
       - name: Install Flutter dependencies
         run: |
           cd app
-          flutter pub get --offline
+          flutter pub get --enforce-lockfile
 
       - name: Check for known CVEs in dependencies
         run: |
