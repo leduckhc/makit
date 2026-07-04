@@ -6,6 +6,10 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
+import '../widgets/glass.dart';
+
+/// Brand blue accent used for running/active glass affordances.
+const _kBrandBlue = Color(0xFF4F6CFF);
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -123,22 +127,28 @@ class _EmptyState extends StatelessWidget {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.folder_open, size: 64),
-            const SizedBox(height: 12),
-            const Text(
-              'No projects yet.\nAdd a repo or folder to get started.',
-              textAlign: TextAlign.center,
+        child: GlassSurface(
+          borderRadius: 24,
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.folder_open, size: 64),
+                const SizedBox(height: 12),
+                const Text(
+                  'No projects yet.\nAdd a repo or folder to get started.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                FilledButton.icon(
+                  onPressed: onAdd,
+                  icon: const Icon(Icons.create_new_folder_outlined),
+                  label: const Text('Add project'),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.create_new_folder_outlined),
-              label: const Text('Add project'),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -511,9 +521,9 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (status) {
       SessionStatus.idle => ('idle', Colors.grey),
-      SessionStatus.running => ('running', Colors.blue),
-      SessionStatus.awaitingInput => ('you', Colors.orange),
-      SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
+      SessionStatus.running => ('running', _kBrandBlue),
+      SessionStatus.awaitingInput => ('you', _kBrandBlue),
+      SessionStatus.awaitingApproval => ('approve', _kBrandBlue),
       SessionStatus.error => ('error', Colors.red),
       SessionStatus.exited => ('exited', Colors.grey),
     };
@@ -567,11 +577,10 @@ class _WorkingBadgeState extends State<_WorkingBadge>
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: cs.primary.withValues(alpha: 0.12),
+        color: _kBrandBlue.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -582,8 +591,8 @@ class _WorkingBadgeState extends State<_WorkingBadge>
             child: Container(
               width: 6,
               height: 6,
-              decoration: BoxDecoration(
-                color: cs.primary,
+              decoration: const BoxDecoration(
+                color: _kBrandBlue,
                 shape: BoxShape.circle,
               ),
             ),
@@ -591,8 +600,8 @@ class _WorkingBadgeState extends State<_WorkingBadge>
           const SizedBox(width: 6),
           Text(
             '${widget.count} working',
-            style: TextStyle(
-              color: cs.primary,
+            style: const TextStyle(
+              color: _kBrandBlue,
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
@@ -619,29 +628,29 @@ class _GlobalRunningStrip extends StatelessWidget {
         .toList();
     if (working.isEmpty) return const SizedBox.shrink();
 
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: cs.primaryContainer.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.bolt, size: 16, color: cs.onPrimaryContainer),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              '${working.length} running · ${_byAgent(working)}',
-              style: TextStyle(
-                color: cs.onPrimaryContainer,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: GlassSurface(
+        borderRadius: 14,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              const Icon(Icons.bolt, size: 16, color: _kBrandBlue),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${working.length} running · ${_byAgent(working)}',
+                  style: const TextStyle(
+                    color: _kBrandBlue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
