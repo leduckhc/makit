@@ -76,15 +76,13 @@ void main() {
   });
 
   group('edit renderer detail view', () {
-    testWidgets('renders − Removed / + Added diff blocks', (tester) async {
+    testWidgets('renders a line-level removed/added diff', (tester) async {
       final item = _tool('edit', {
         'path': 'lib/foo.dart',
         'oldText': 'final x = 1;',
         'newText': 'final x = 2;',
       });
       final renderer = rendererFor(item)!;
-      // Build with a real context, not the throwaway expression we tried first.
-      // Build with a real context:
       await tester.pumpWidget(
         MaterialApp(
           home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
@@ -93,10 +91,12 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('lib/foo.dart'), findsOneWidget);
-      expect(find.textContaining('Removed'), findsOneWidget);
-      expect(find.textContaining('Added'), findsOneWidget);
+      // Old and new lines each render on their own diff row.
       expect(find.text('final x = 1;'), findsOneWidget);
       expect(find.text('final x = 2;'), findsOneWidget);
+      // Removed gutter uses U+2212 MINUS; added uses '+'.
+      expect(find.text('\u2212'), findsOneWidget);
+      expect(find.text('+'), findsOneWidget);
     });
 
     testWidgets('accepts old/new aliases as well as oldText/newText', (

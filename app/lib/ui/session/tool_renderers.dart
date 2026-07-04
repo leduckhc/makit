@@ -12,6 +12,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../store/models.dart';
+import 'line_diff.dart';
 
 abstract class ToolRenderer {
   const ToolRenderer();
@@ -251,12 +252,12 @@ class _EditDiffView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final path = item.args['path']?.toString() ?? '(no path)';
     final oldText =
         item.args['oldText']?.toString() ?? item.args['old']?.toString() ?? '';
     final newText =
         item.args['newText']?.toString() ?? item.args['new']?.toString() ?? '';
+    final lines = computeLineDiff(oldText, newText);
 
     return Scaffold(
       appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
@@ -265,50 +266,15 @@ class _EditDiffView extends StatelessWidget {
         children: [
           Container(
             decoration: BoxDecoration(
-              color: cs.errorContainer.withValues(alpha: 0.35),
+              color: Theme.of(context).colorScheme.surfaceContainer,
               borderRadius: BorderRadius.circular(8),
             ),
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            clipBehavior: Clip.antiAlias,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  '− Removed',
-                  style: TextStyle(
-                    color: cs.error,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  oldText,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '+ Added',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                SelectableText(
-                  newText,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                ),
+                for (final line in lines) _DiffLineRow(line: line),
               ],
             ),
           ),
@@ -321,6 +287,48 @@ class _EditDiffView extends StatelessWidget {
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One diff line: a coloured full-width row with a gutter prefix. Removed lines
+/// use the error container, added lines a green wash, context stays muted.
+class _DiffLineRow extends StatelessWidget {
+  const _DiffLineRow({required this.line});
+  final DiffLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final (Color? background, Color textColor, String prefix) =
+        switch (line.kind) {
+      DiffKind.removed => (
+          cs.errorContainer.withValues(alpha: 0.35),
+          cs.error,
+          '\u2212',
+        ),
+      DiffKind.added => (
+          Colors.green.withValues(alpha: 0.15),
+          Colors.green.shade800,
+          '+',
+        ),
+      DiffKind.context => (null, cs.onSurfaceVariant, ' '),
+    };
+    final style = TextStyle(
+      fontFamily: 'monospace',
+      fontSize: 12,
+      color: textColor,
+    );
+    return Container(
+      color: background,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 14, child: Text(prefix, style: style)),
+          Expanded(child: SelectableText(line.text, style: style)),
         ],
       ),
     );
