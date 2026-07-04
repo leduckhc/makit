@@ -9,6 +9,8 @@
 /// transcript; tapping it opens [detail] full-screen.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../store/models.dart';
@@ -124,7 +126,7 @@ class _DefaultDetail extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           SelectableText(
-            item.args.toString(),
+            const JsonEncoder.withIndent('  ').convert(item.args),
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
           ),
           const SizedBox(height: 16),
@@ -158,6 +160,95 @@ class _DefaultDetail extends StatelessWidget {
 // Built-in renderers
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Shared detail-view helpers
+// ---------------------------------------------------------------------------
+
+/// Titled section used in tool detail pages.
+class _ToolSection extends StatelessWidget {
+  const _ToolSection({required this.title, required this.child});
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainer,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: child,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Selectable monospace text — used for file content, command output, etc.
+class _MonoText extends StatelessWidget {
+  const _MonoText(this.text, {this.error = false});
+  final String text;
+  final bool error;
+
+  @override
+  Widget build(BuildContext context) => SelectableText(
+    text,
+    style: TextStyle(
+      fontFamily: 'monospace',
+      fontSize: 12.5,
+      color: error ? Theme.of(context).colorScheme.error : null,
+    ),
+  );
+}
+
+/// Small label + value row, used to summarise tool parameters.
+class _ParamRow extends StatelessWidget {
+  const _ParamRow(this.label, this.value);
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(
+              value,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in renderers
+// ---------------------------------------------------------------------------
+
 class _ReadRenderer extends ToolRenderer {
   const _ReadRenderer();
   @override
@@ -166,6 +257,36 @@ class _ReadRenderer extends ToolRenderer {
   IconData get icon => Icons.menu_book_outlined;
   @override
   String? subtitle(ToolCallItem item) => item.args['path']?.toString();
+
+  @override
+  Widget detail(BuildContext context, ToolCallItem item) {
+    final path = item.args['path']?.toString() ?? '(no path)';
+    final content = item.output ?? item.deltas.join();
+    final offset = item.args['offset'];
+    final limit = item.args['limit'];
+    return Scaffold(
+      appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          if (offset != null || limit != null)
+            _ToolSection(
+              title: 'Range',
+              child: Row(
+                children: [
+                  if (offset != null) _ParamRow('offset', '$offset'),
+                  if (limit != null) _ParamRow('limit', '$limit'),
+                ],
+              ),
+            ),
+          _ToolSection(
+            title: 'Content',
+            child: _MonoText(content.isEmpty ? '(empty)' : content),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _WriteRenderer extends ToolRenderer {
@@ -176,6 +297,29 @@ class _WriteRenderer extends ToolRenderer {
   IconData get icon => Icons.edit_note_outlined;
   @override
   String? subtitle(ToolCallItem item) => item.args['path']?.toString();
+
+  @override
+  Widget detail(BuildContext context, ToolCallItem item) {
+    final path = item.args['path']?.toString() ?? '(no path)';
+    final content =
+        item.args['content']?.toString() ??
+        item.args['text']?.toString() ??
+        '';
+    final result = item.output ?? item.summary ?? '';
+    return Scaffold(
+      appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          _ToolSection(
+            title: 'Content written',
+            child: _MonoText(content.isEmpty ? '(empty)' : content),
+          ),
+          if (result.isNotEmpty) _ToolSection(title: 'Result', child: Text(result)),
+        ],
+      ),
+    );
+  }
 }
 
 class _EditRenderer extends ToolRenderer {
@@ -205,6 +349,34 @@ class _BashRenderer extends ToolRenderer {
     if (cmd == null) return null;
     return cmd.length > 80 ? '${cmd.substring(0, 80)}…' : cmd;
   }
+
+  @override
+  Widget detail(BuildContext context, ToolCallItem item) {
+    final command = item.args['command']?.toString() ?? '';
+    final output =
+        item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? '');
+    final failed = item.ended && (item.exitCode ?? 0) != 0;
+    return Scaffold(
+      appBar: AppBar(title: const Text('bash')),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          if (command.isNotEmpty)
+            _ToolSection(title: 'Command', child: _MonoText(command)),
+          if (output.isNotEmpty)
+            _ToolSection(
+              title: 'Output',
+              child: _MonoText(output, error: failed),
+            )
+          else if (item.ended)
+            _ToolSection(
+              title: 'Result',
+              child: Text(item.summary ?? 'exit ${item.exitCode ?? 0}'),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _GrepRenderer extends ToolRenderer {
@@ -218,6 +390,45 @@ class _GrepRenderer extends ToolRenderer {
     final p = item.args['pattern']?.toString();
     final g = item.args['glob']?.toString();
     return [p, if (g != null) 'glob:$g'].whereType<String>().join(' · ');
+  }
+
+  @override
+  Widget detail(BuildContext context, ToolCallItem item) {
+    final pattern = item.args['pattern']?.toString() ?? '';
+    final glob = item.args['glob']?.toString();
+    final path = item.args['path']?.toString();
+    final output = item.output ?? item.deltas.join();
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          pattern.isEmpty ? 'grep' : 'grep: $pattern',
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(12),
+        children: [
+          _ToolSection(
+            title: 'Search',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (pattern.isNotEmpty) _ParamRow('pattern', pattern),
+                if (glob != null) _ParamRow('glob', glob),
+                if (path != null) _ParamRow('path', path),
+              ],
+            ),
+          ),
+          if (output.isNotEmpty)
+            _ToolSection(title: 'Results', child: _MonoText(output))
+          else if (item.ended)
+            _ToolSection(
+              title: 'Results',
+              child: Text(item.summary ?? 'No matches found'),
+            ),
+        ],
+      ),
+    );
   }
 }
 

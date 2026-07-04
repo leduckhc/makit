@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -72,7 +74,7 @@ class ToolCallDetailScreen extends ConsumerWidget {
   }
 
   static String _pretty(Map<String, dynamic> m) =>
-      m.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+      const JsonEncoder.withIndent('  ').convert(m);
 }
 
 class _Section extends StatelessWidget {
