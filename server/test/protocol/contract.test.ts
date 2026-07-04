@@ -54,6 +54,7 @@ test("events.json covers every EventKind exactly once", () => {
       "agent.message",
       "agent.message.delta",
       "agent.thinking",
+      "session.action_error",
       "session.commands",
       "session.error",
       "session.meta",

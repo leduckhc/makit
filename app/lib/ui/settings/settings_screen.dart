@@ -57,9 +57,9 @@ class SettingsScreen extends ConsumerWidget {
               title: const Text('Fingerprint'),
               subtitle: Text(
                 '${server.fingerprint.substring(0, 24)}…',
-                style: const TextStyle(fontFeatures: [
-                  FontFeature.tabularFigures(),
-                ]),
+                style: const TextStyle(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
               ),
               trailing: const Icon(Icons.copy, size: 18),
               onTap: () async {
@@ -79,7 +79,9 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: const Text('Re-establish the connection'),
               onTap: () async {
                 final messenger = ScaffoldMessenger.of(context);
-                await ref.read(connectionControllerProvider.notifier).reconnect();
+                await ref
+                    .read(connectionControllerProvider.notifier)
+                    .reconnect();
                 messenger.showSnackBar(
                   const SnackBar(content: Text('Reconnecting…')),
                 );

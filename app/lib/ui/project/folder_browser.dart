@@ -12,10 +12,8 @@ Future<String?> showFolderBrowser(BuildContext context) {
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (_) => const FractionallySizedBox(
-      heightFactor: 0.92,
-      child: FolderBrowser(),
-    ),
+    builder: (_) =>
+        const FractionallySizedBox(heightFactor: 0.92, child: FolderBrowser()),
   );
 }
 
@@ -68,9 +66,9 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         _loading = false;
         _error = '$e';
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not browse: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not browse: $e')));
     }
   }
 
@@ -108,7 +106,10 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
     final theme = Theme.of(context);
     final result = _result;
     final currentPath = result?.path ?? '';
-    final baseName = currentPath.split('/').where((s) => s.isNotEmpty).lastOrNull;
+    final baseName = currentPath
+        .split('/')
+        .where((s) => s.isNotEmpty)
+        .lastOrNull;
 
     return Column(
       children: [
@@ -120,10 +121,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         const Divider(height: 1),
         Expanded(child: _body(theme)),
         const Divider(height: 1),
-        _ManualEntry(
-          controller: _pathController,
-          onSubmit: _submitTypedPath,
-        ),
+        _ManualEntry(controller: _pathController, onSubmit: _submitTypedPath),
         SafeArea(
           top: false,
           child: Padding(
@@ -164,7 +162,11 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 40, color: theme.colorScheme.error),
+              Icon(
+                Icons.error_outline,
+                size: 40,
+                color: theme.colorScheme.error,
+              ),
               const SizedBox(height: 12),
               Text(
                 "Couldn't read this folder.",
@@ -206,7 +208,9 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
                     color: theme.colorScheme.primary,
                   ),
                   side: BorderSide(color: theme.colorScheme.primary),
-                  backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.08),
+                  backgroundColor: theme.colorScheme.primary.withValues(
+                    alpha: 0.08,
+                  ),
                 )
               : const Icon(Icons.chevron_right),
           onTap: () => _browse(entry.path),

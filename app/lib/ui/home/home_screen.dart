@@ -377,7 +377,9 @@ class _AttachPastButton extends ConsumerWidget {
 /// Compact "x ago" from an epoch-ms timestamp.
 String _ago(int epochMs) {
   if (epochMs <= 0) return 'unknown';
-  final d = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(epochMs));
+  final d = DateTime.now().difference(
+    DateTime.fromMillisecondsSinceEpoch(epochMs),
+  );
   if (d.inDays > 0) return '${d.inDays}d ago';
   if (d.inHours > 0) return '${d.inHours}h ago';
   if (d.inMinutes > 0) return '${d.inMinutes}m ago';
@@ -445,8 +447,10 @@ class _SessionTile extends ConsumerWidget {
       context: context,
       builder: (dctx) => AlertDialog(
         title: const Text('Quit session?'),
-        content: Text('Stop “${session.title}” and remove it? '
-            'The transcript stays on disk and can be re-attached.'),
+        content: Text(
+          'Stop “${session.title}” and remove it? '
+          'The transcript stays on disk and can be re-attached.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dctx, false),

@@ -24,7 +24,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.0'
+          flutter-version: '3.44.4'
           channel: 'stable'
 
       - name: Cache Flutter dependencies
@@ -37,10 +37,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-
 
-      - name: Install Flutter dependencies (offline, lockfile-locked)
+      - name: Install Flutter dependencies (lockfile-locked)
         run: |
           cd app
-          flutter pub get --offline
+          flutter pub get --enforce-lockfile
 
       - name: Run analysis (strict linting)
         run: |
@@ -55,7 +55,7 @@ jobs:
       - name: Check for vulnerable packages
         run: |
           cd app
-          flutter pub outdated --mode=null-safety || true
+          flutter pub outdated || true
         continue-on-error: true  # Advisory only, doesn't block CI
 
       - name: Verify pubspec.lock integrity
@@ -79,13 +79,13 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.0'
+          flutter-version: '3.44.4'
           channel: 'stable'
 
       - name: Install Flutter dependencies
         run: |
           cd app
-          flutter pub get --offline
+          flutter pub get --enforce-lockfile
 
       - name: Run tests
         run: |
@@ -111,18 +111,18 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.0'
+          flutter-version: '3.44.4'
           channel: 'stable'
 
       - name: Install Flutter dependencies
         run: |
           cd app
-          flutter pub get --offline
+          flutter pub get --enforce-lockfile
 
       - name: Check for known CVEs in dependencies
         run: |
           cd app
-          flutter pub outdated --mode=null-safety 2>&1 | tee /tmp/outdated.txt
+          flutter pub outdated 2>&1 | tee /tmp/outdated.txt
           # Grep for known-critical packages (e.g., if any are severely outdated)
           if grep -i "is not available" /tmp/outdated.txt; then
             echo "WARNING: Some packages may have been yanked or are inaccessible."

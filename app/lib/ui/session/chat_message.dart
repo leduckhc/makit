@@ -30,10 +30,7 @@ class _Timestamp extends StatelessWidget {
         left: alignRight ? 0 : 4,
         right: alignRight ? 4 : 0,
       ),
-      child: Text(
-        _hhmm(ts),
-        style: TextStyle(fontSize: 11, color: cs.outline),
-      ),
+      child: Text(_hhmm(ts), style: TextStyle(fontSize: 11, color: cs.outline)),
     );
   }
 }
@@ -68,7 +65,10 @@ class ChatBubble extends StatelessWidget {
                   bottomRight: Radius.circular(4),
                 ),
               ),
-              child: SelectableText(text, style: const TextStyle(color: Colors.white)),
+              child: SelectableText(
+                text,
+                style: const TextStyle(color: Colors.white),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.only(right: 12, bottom: 4),
@@ -167,11 +167,7 @@ class _CodeBlock extends StatelessWidget {
               textStyle: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             ),
           ),
-          Positioned(
-            top: 2,
-            right: 2,
-            child: _CopyButton(code: code),
-          ),
+          Positioned(top: 2, right: 2, child: _CopyButton(code: code)),
         ],
       ),
     );

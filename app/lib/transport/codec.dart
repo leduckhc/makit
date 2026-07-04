@@ -97,7 +97,9 @@ class WireCodec {
           name: name,
           path: path,
           pinned: j['pinned'] is bool ? j['pinned'] as bool : false,
-          lastActivityAt: j['lastActivityAt'] is num ? (j['lastActivityAt'] as num).toInt() : 0,
+          lastActivityAt: j['lastActivityAt'] is num
+              ? (j['lastActivityAt'] as num).toInt()
+              : 0,
         ),
       );
     }
@@ -123,12 +125,18 @@ class WireCodec {
           projectId: projectId,
           agent: agent,
           title: j['title'] is String ? j['title'] as String : '',
-          status: parseStatus(j['status'] is String ? j['status'] as String : 'idle'),
+          status: parseStatus(
+            j['status'] is String ? j['status'] as String : 'idle',
+          ),
           policy: parsePolicy(
             j['policy'] is String ? j['policy'] as String : 'ask-on-risky',
           ),
-          lastActivityAt: j['lastActivityAt'] is num ? (j['lastActivityAt'] as num).toInt() : 0,
-          lastPreview: j['lastPreview'] is String ? j['lastPreview'] as String : '',
+          lastActivityAt: j['lastActivityAt'] is num
+              ? (j['lastActivityAt'] as num).toInt()
+              : 0,
+          lastPreview: j['lastPreview'] is String
+              ? j['lastPreview'] as String
+              : '',
         ),
       );
     }

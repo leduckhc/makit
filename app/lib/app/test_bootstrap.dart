@@ -25,10 +25,14 @@ Future<void> seedTestPairingIfRequested({
     throw StateError('PINO_TEST_PORT must be a valid TCP port');
   }
   if (_testBearer.isEmpty) {
-    throw StateError('PINO_TEST_BEARER must be non-empty when PINO_TEST_HOST is set');
+    throw StateError(
+      'PINO_TEST_BEARER must be non-empty when PINO_TEST_HOST is set',
+    );
   }
   if (_testFingerprint.isEmpty) {
-    throw StateError('PINO_TEST_FP must be non-empty when PINO_TEST_HOST is set');
+    throw StateError(
+      'PINO_TEST_FP must be non-empty when PINO_TEST_HOST is set',
+    );
   }
 
   await storage.write(

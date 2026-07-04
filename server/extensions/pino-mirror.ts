@@ -59,11 +59,22 @@ export default function (pi: ExtensionAPI): void {
   // built-in control action. pi.setThinkingLevel lives on `pi` directly.
   let lastCtx: ExtensionContext | undefined;
 
+  // Emit an action error back to the phone so it can surface it in the UI.
+  function emitActionError(action: string, reason: string): void {
+    emit("session.action_error", { action, reason });
+  }
+
   // Phone → pi: run a built-in control action via the pi SDK. These are NOT
   // user turns — they never reach the LLM as a prompt.
   function runAction(action: string, args?: Json): void {
     if (action === "compact") {
-      lastCtx?.compact();
+      if (!lastCtx) {
+        emitActionError("compact", "session not ready");
+        return;
+      }
+      void Promise.resolve(lastCtx.compact()).catch((err: unknown) => {
+        emitActionError("compact", err instanceof Error ? err.message : "compact failed");
+      });
     } else if (action === "thinking") {
       const level = typeof args?.level === "string" ? args.level : undefined;
       const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -76,7 +87,13 @@ export default function (pi: ExtensionAPI): void {
       const id = typeof args?.id === "string" ? args.id : undefined;
       const model =
         provider && id ? lastCtx?.modelRegistry.find(provider, id) : undefined;
-      if (model) void pi.setModel(model).then(() => emitMeta());
+      if (!model) {
+        emitActionError("model", "model not available");
+        return;
+      }
+      void pi.setModel(model).then(() => emitMeta()).catch((err: unknown) => {
+        emitActionError("model", err instanceof Error ? err.message : "model switch failed");
+      });
     }
   }
 

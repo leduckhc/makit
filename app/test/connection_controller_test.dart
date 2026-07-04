@@ -68,9 +68,7 @@ class FakeTransport implements Transport {
 /// In-memory [FlutterSecureStorage] so the controller can persist without the
 /// platform channel. Only the surface used by ConnectionController is backed.
 class FakeSecureStorage extends FlutterSecureStorage {
-  FakeSecureStorage([Map<String, String>? seed])
-    : data = {...?seed},
-      super();
+  FakeSecureStorage([Map<String, String>? seed]) : data = {...?seed}, super();
 
   final Map<String, String> data;
 
@@ -238,52 +236,64 @@ void main() {
   });
 
   group('ConnectionController app-lifecycle reconnect (B10)', () {
-    test('onAppResumed forces an immediate transport reconnect when not connected', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final controller = ConnectionController(
-        storage,
-        // Never emits connected → controller stays in connecting/reconnecting.
-        transportFactory: () {
-          final t = FakeTransport();
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(transports, hasLength(1));
-      expect(transports[0].forceReconnectCount, 0);
+    test(
+      'onAppResumed forces an immediate transport reconnect when not connected',
+      () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final controller = ConnectionController(
+          storage,
+          // Never emits connected → controller stays in connecting/reconnecting.
+          transportFactory: () {
+            final t = FakeTransport();
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(transports, hasLength(1));
+        expect(transports[0].forceReconnectCount, 0);
 
-      controller.onAppResumed();
+        controller.onAppResumed();
 
-      expect(transports[0].forceReconnectCount, 1,
-          reason: 'foreground should nudge a stalled connection to retry now');
-      controller.dispose();
-    });
+        expect(
+          transports[0].forceReconnectCount,
+          1,
+          reason: 'foreground should nudge a stalled connection to retry now',
+        );
+        controller.dispose();
+      },
+    );
 
-    test('onAppResumed does NOT force a reconnect while already connected', () async {
-      final storage = _seededStorage();
-      final transports = <FakeTransport>[];
-      final controller = ConnectionController(
-        storage,
-        transportFactory: () {
-          final t = FakeTransport(emitConnected: true); // healthy connection
-          transports.add(t);
-          return t;
-        },
-        browseLan: _fixedBrowse(const []),
-        rediscoverStall: const Duration(seconds: 30),
-      );
-      await Future<void>.delayed(Duration.zero);
-      expect(transports, hasLength(1));
+    test(
+      'onAppResumed does NOT force a reconnect while already connected',
+      () async {
+        final storage = _seededStorage();
+        final transports = <FakeTransport>[];
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport(emitConnected: true); // healthy connection
+            transports.add(t);
+            return t;
+          },
+          browseLan: _fixedBrowse(const []),
+          rediscoverStall: const Duration(seconds: 30),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(transports, hasLength(1));
 
-      controller.onAppResumed();
+        controller.onAppResumed();
 
-      expect(transports[0].forceReconnectCount, 0,
-          reason: 'a healthy socket must not be dropped on every foreground');
-      controller.dispose();
-    });
+        expect(
+          transports[0].forceReconnectCount,
+          0,
+          reason: 'a healthy socket must not be dropped on every foreground',
+        );
+        controller.dispose();
+      },
+    );
   });
 }

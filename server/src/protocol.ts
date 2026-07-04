@@ -40,7 +40,8 @@ export type EventKind =
   | "session.status"
   | "session.error"
   | "session.commands"
-  | "session.meta";
+  | "session.meta"
+  | "session.action_error";
 
 export interface SessionEvent {
   seq: number;
