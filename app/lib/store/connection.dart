@@ -138,6 +138,17 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     send(Envelope(t: MsgType.srvResponse, id: requestId, body: body));
   }
 
+  /// Called when the app returns to the foreground. iOS suspends sockets and
+  /// backoff timers while backgrounded, so a stalled connection can otherwise
+  /// sit in "reconnecting" for a full backoff interval (up to ~30s) after
+  /// resume. Nudge the transport to reconnect immediately — but only when we
+  /// aren't already connected, so a healthy socket isn't needlessly dropped.
+  void onAppResumed() {
+    if (state.wsState != WsState.connected) {
+      _ws?.forceReconnect();
+    }
+  }
+
   Future<void> _boot() async {
     if (_wsUrl.isNotEmpty) {
       // Dev override: connect directly, no pairing.

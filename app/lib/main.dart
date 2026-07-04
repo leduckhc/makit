@@ -9,6 +9,7 @@ import 'app/router.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
 import 'notifications/notification_observer.dart';
+import 'store/connection.dart';
 import 'store/store.dart';
 import 'ui/widgets/pino_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
@@ -47,8 +48,31 @@ class PinoApp extends ConsumerStatefulWidget {
   ConsumerState<PinoApp> createState() => _PinoAppState();
 }
 
-class _PinoAppState extends ConsumerState<PinoApp> {
+class _PinoAppState extends ConsumerState<PinoApp>
+    with WidgetsBindingObserver {
   bool _showSplash = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // On foreground, nudge a stalled WS connection to reconnect immediately
+    // instead of waiting out backoff (iOS suspends sockets/timers in the
+    // background). No-op when already connected.
+    if (state == AppLifecycleState.resumed) {
+      ref.read(connectionControllerProvider.notifier).onAppResumed();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -56,6 +56,13 @@ class FakeTransport implements Transport {
 
   @override
   void sendEnvelope(Envelope env) {}
+
+  int forceReconnectCount = 0;
+  @override
+  void forceReconnect() {
+    forceReconnectCount++;
+    if (emitConnected) _state.add(WsState.connected);
+  }
 }
 
 /// In-memory [FlutterSecureStorage] so the controller can persist without the
@@ -228,5 +235,55 @@ void main() {
         controller.dispose();
       },
     );
+  });
+
+  group('ConnectionController app-lifecycle reconnect (B10)', () {
+    test('onAppResumed forces an immediate transport reconnect when not connected', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        // Never emits connected → controller stays in connecting/reconnecting.
+        transportFactory: () {
+          final t = FakeTransport();
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(transports, hasLength(1));
+      expect(transports[0].forceReconnectCount, 0);
+
+      controller.onAppResumed();
+
+      expect(transports[0].forceReconnectCount, 1,
+          reason: 'foreground should nudge a stalled connection to retry now');
+      controller.dispose();
+    });
+
+    test('onAppResumed does NOT force a reconnect while already connected', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true); // healthy connection
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(transports, hasLength(1));
+
+      controller.onAppResumed();
+
+      expect(transports[0].forceReconnectCount, 0,
+          reason: 'a healthy socket must not be dropped on every foreground');
+      controller.dispose();
+    });
   });
 }

@@ -29,4 +29,10 @@ abstract class Transport {
 
   /// Send an envelope, preserving its caller-supplied id.
   void sendEnvelope(Envelope env);
+
+  /// Force an immediate reconnect: cancel any pending backoff, reset attempt
+  /// counters, tear down a stale socket, and open a fresh connection now.
+  /// No-op if the transport was never connected. Called on app-foreground so
+  /// a stalled connection recovers instantly instead of waiting out backoff.
+  void forceReconnect();
 }

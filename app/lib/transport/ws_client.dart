@@ -99,6 +99,24 @@ class WsClient implements Transport {
     _send(env);
   }
 
+  /// Force an immediate reconnect (e.g. on app-foreground). Cancels pending
+  /// backoff, resets the attempt counter, tears down any stale channel, and
+  /// opens a fresh connection right away. No-op if never connected.
+  @override
+  void forceReconnect() {
+    if (_url == null) return;
+    _retry?.cancel();
+    _pinger?.cancel();
+    _attempt = 0;
+    unawaited(_sub?.cancel());
+    _sub = null;
+    try {
+      unawaited(_ch?.sink.close());
+    } catch (_) {}
+    _ch = null;
+    unawaited(_open());
+  }
+
   // ---- internals -----------------------------------------------------------
 
   void _setState(WsState s) {
