@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:go_router/go_router.dart';
+
 import 'app/router.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
+import 'notifications/notification_observer.dart';
 import 'store/store.dart';
 import 'ui/widgets/pino_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
@@ -16,6 +19,16 @@ Future<void> main() async {
   // WS connects and starts pushing projects/sessions snapshots.
   final container = ProviderContainer();
   container.read(storeControllerProvider);
+
+  // Notifications: route taps into the session, activate the status→notif
+  // observer, then init the platform plugin (asks permission on iOS).
+  final notifications = container.read(notificationServiceProvider);
+  notifications.onTapSession = (sid) {
+    pinoNavigatorKey.currentContext?.go('/session/$sid');
+  };
+  container.read(notificationControllerProvider);
+  await notifications.init();
+
   runApp(UncontrolledProviderScope(container: container, child: const PinoApp()));
 }
 
