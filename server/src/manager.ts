@@ -235,6 +235,10 @@ export class SessionManager extends EventEmitter {
     if (!project) throw new Error("no project for host session");
 
     const adapter = new IngestAdapter(opts.onPrompt);
+    // Wire up the real pi side-channel fetcher so the slash palette populates
+    // with skills/prompts/extensions from the project's filesystem. ~1.2s
+    // fire-and-forget at startup; failures are silenced (palette stays empty).
+    adapter.enableCommands();
     const session = new Session({
       projectId: project.dto.id,
       agent: "pi",
@@ -284,6 +288,10 @@ export class SessionManager extends EventEmitter {
     }
 
     const adapter = new MirrorAdapter(sessionPath, opts.paneTarget, herdrReader);
+    // Wire up the real pi side-channel fetcher so the slash palette populates
+    // with skills/prompts/extensions from the project's filesystem. ~1.2s
+    // fire-and-forget at startup; failures are silenced (palette stays empty).
+    adapter.enableCommands();
     const session = new Session({
       projectId: project.dto.id,
       agent: "pi",

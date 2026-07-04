@@ -7,44 +7,76 @@
  *   write (phone → terminal): inject the phone's text into the TUI pane with
  *                             send-text + Enter (reusing the pane bridge writer).
  *
- * No second pi process is spawned — the TUI stays the single writer of the
- * session file, so there's no double-writer corruption. The phone gets
- * per-message granularity (the file holds final messages, not live token
- * deltas), which is the accepted trade-off for keeping the real TUI.
+ * No second pi process is spawned **for the chat stream** — the TUI stays the
+ * single writer of the session file, so there's no double-writer corruption.
+ * The phone gets per-message granularity (the file holds final messages, not
+ * live token deltas), which is the accepted trade-off for keeping the real TUI.
+ *
+ * **Slash palette:** see `commands.ts`. When `enableCommands` is called before
+ * `start()`, a short-lived `pi --mode rpc --no-session` child is spawned in
+ * the project cwd to call `get_commands` and emit `session.commands` once.
  */
 import { EventEmitter } from "node:events";
 import { statSync, readSync, openSync, closeSync } from "node:fs";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type { AgentAdapter, AdapterEvent, SpawnOpts, UserInput } from "./adapter.js";
 import type { PaneReader } from "../pane/bridge.js";
 import { recordToEvents } from "../pi-sessions.js";
+import {
+  type CommandsFetcher,
+  fetchPiCommands,
+  buildCommandsEvent,
+} from "./commands.js";
 
 /** Just the write half of a pane transport. */
 export type PaneWriter = Pick<PaneReader, "sendText" | "sendKeys">;
 
+/** Re-export so callers/tests can import from one place. */
+export type { CommandsFetcher } from "./commands.js";
+
+/**
+ * Default production fetcher (for callers that want to pass it in directly):
+ * spawns `pi --mode rpc --no-session`, calls `get_commands`. ~1.2s wall time.
+ */
+export const realCommandsFetcher: CommandsFetcher = (cwd) => fetchPiCommands(cwd).promise;
+
 export class MirrorAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "pi";
 
-  private offset = 0; // bytes of the session file already consumed
-  private carry = ""; // partial trailing line between reads
+  private offset = 0;
+  private carry = "";
   private timer?: ReturnType<typeof setInterval>;
+  private commandsChild?: ChildProcessWithoutNullStreams;
+  private cwd?: string;
+  /** Public so tests can await it; mirrors fire-and-forget at `start()`. */
+  fetchCommandsDone?: Promise<void>;
 
   constructor(
     private readonly sessionPath: string,
     private readonly paneTarget: string,
     private readonly writer: PaneWriter,
     private readonly pollMs = 300,
+    private commandsFetcher?: CommandsFetcher,
   ) {
     super();
   }
 
-  async start(_opts: SpawnOpts): Promise<void> {
-    this.emit("status", "idle");
-    this.poll(); // emit existing history immediately
-    this.timer = setInterval(() => this.poll(), this.pollMs);
-    this.timer.unref?.();
+  /** Opt in to the production real-pi fetcher. Call before `start()`. */
+  enableCommands(fetcher: CommandsFetcher = realCommandsFetcher): void {
+    this.commandsFetcher = fetcher;
   }
 
-  /** Phone → terminal: type the message into the TUI and press Enter. */
+  async start(opts: SpawnOpts): Promise<void> {
+    this.cwd = opts.cwd;
+    this.emit("status", "idle");
+    this.poll();
+    this.timer = setInterval(() => this.poll(), this.pollMs);
+    this.timer.unref?.();
+    if (this.commandsFetcher) {
+      this.fetchCommandsDone = this.fetchCommands().catch(() => {/* swallow */});
+    }
+  }
+
   async send(input: UserInput): Promise<void> {
     this.emit("status", "running");
     await this.writer.sendText(this.paneTarget, input.text);
@@ -52,15 +84,17 @@ export class MirrorAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async cancel(): Promise<void> {
-    // Best-effort interrupt of the running turn in the TUI.
     await this.writer.sendKeys(this.paneTarget, ["Escape"]);
     this.emit("status", "idle");
   }
 
   async kill(): Promise<void> {
-    // Stop mirroring only — never kill the user's TUI.
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    if (this.commandsChild && !this.commandsChild.killed) {
+      try { this.commandsChild.kill("SIGKILL"); } catch { /* already dead */ }
+    }
+    this.commandsChild = undefined;
     this.emit("exit", null);
   }
 
@@ -70,10 +104,9 @@ export class MirrorAdapter extends EventEmitter implements AgentAdapter {
     try {
       size = statSync(this.sessionPath).size;
     } catch {
-      return; // file not there yet — try next tick
+      return;
     }
     if (size < this.offset) {
-      // File truncated/rotated — restart from the top.
       this.offset = 0;
       this.carry = "";
     }
@@ -95,20 +128,42 @@ export class MirrorAdapter extends EventEmitter implements AgentAdapter {
     this.offset = size;
 
     const lines = (this.carry + chunk).split("\n");
-    this.carry = lines.pop() ?? ""; // last item is a partial line (or "")
+    this.carry = lines.pop() ?? "";
     for (const line of lines) {
       if (!line.trim()) continue;
       let o: unknown;
-      try {
-        o = JSON.parse(line);
-      } catch {
-        continue; // ignore malformed / half-written lines
-      }
+      try { o = JSON.parse(line); } catch { continue; }
       for (const ev of recordToEvents(o)) {
         this.emit("event", ev satisfies AdapterEvent);
-        // A completed assistant message means the turn is idle again.
         if (ev.kind === "agent.message") this.emit("status", "idle");
       }
     }
+  }
+
+  private async fetchCommands(): Promise<void> {
+    const cwd = this.cwd;
+    const fetcher = this.commandsFetcher;
+    if (!cwd || !fetcher) return;
+
+    // For the real fetcher, track the spawned child so kill() can SIGKILL it.
+    if (fetcher === realCommandsFetcher) {
+      const handle = fetchPiCommands(cwd);
+      this.commandsChild = handle.child;
+      try {
+        const commands = await handle.promise;
+        const ev = buildCommandsEvent(commands);
+        if (ev) this.emit("event", ev);
+      } catch {
+        /* swallow — palette stays empty */
+      } finally {
+        if (this.commandsChild === handle.child) this.commandsChild = undefined;
+      }
+      return;
+    }
+
+    // Test / injected path: just await and emit.
+    const commands = await fetcher(cwd);
+    const ev = buildCommandsEvent(commands);
+    if (ev) this.emit("event", ev);
   }
 }
