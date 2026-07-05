@@ -34,6 +34,7 @@ class NotificationService {
       settings: const InitializationSettings(
         android: androidInit,
         iOS: darwinInit,
+        macOS: darwinInit,
       ),
       onDidReceiveNotificationResponse: (resp) {
         final sid = resp.payload;
@@ -66,6 +67,7 @@ class NotificationService {
         priority: Priority.high,
       ),
       iOS: DarwinNotificationDetails(),
+      macOS: DarwinNotificationDetails(),
     );
     try {
       await _plugin.show(
