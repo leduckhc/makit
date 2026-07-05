@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { createHash, X509Certificate } from "node:crypto";
+import { execSync } from "node:child_process";
 import selfsigned from "selfsigned";
 function pinoHome() {
     return process.env.PINO_HOME || join(homedir(), ".pino");
@@ -18,7 +19,7 @@ function certPath() {
 function keyPath() {
     return join(pinoHome(), "server.key");
 }
-export function loadOrCreateCert() {
+export async function loadOrCreateCert() {
     mkdirSync(pinoHome(), { recursive: true });
     const crtPath = certPath();
     const keyFilePath = keyPath();
@@ -27,18 +28,19 @@ export function loadOrCreateCert() {
         const key = readFileSync(keyFilePath, "utf8");
         return { cert, key, fingerprint: fingerprintOf(cert) };
     }
-    // 10-year self-signed cert with all local LAN IPs as SAN so wss:// works
-    // when the app dials the server by IP from a phone.
+    // 10-year self-signed cert with Tailscale IP (if available), LAN IPs, and localhost as SAN.
     const ips = localIPv4s();
+    const tailscaleIp = tailscaleIP();
+    const allIps = tailscaleIp ? [tailscaleIp, ...ips] : ips;
     const altNames = [
         { type: 2, value: "localhost" }, // DNS
         { type: 7, ip: "127.0.0.1" }, // IP
-        ...ips.map((ip) => ({ type: 7, ip })),
+        ...allIps.map((ip) => ({ type: 7, ip })),
     ];
     const attrs = [{ name: "commonName", value: "pino" }];
-    const pems = selfsigned.generate(attrs, {
+    const pems = await selfsigned.generate(attrs, {
         keySize: 2048,
-        days: 3650,
+        notAfterDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000), // ~10y
         algorithm: "sha256",
         extensions: [
             { name: "basicConstraints", cA: false },
@@ -70,5 +72,18 @@ export function localIPv4s() {
         }
     }
     return out;
+}
+/** Detect Tailscale IP (100.x.x.x) if online. Returns null if offline. */
+export function tailscaleIP() {
+    try {
+        const output = execSync("tailscale status --json", { encoding: "utf8", timeout: 2000 });
+        const status = JSON.parse(output);
+        const ips = status.Self?.TailscaleIPs ?? [];
+        const tailscaleIp = ips.find((ip) => ip.startsWith("100."));
+        return tailscaleIp ?? null;
+    }
+    catch {
+        return null; // offline or tailscale not installed
+    }
 }
 //# sourceMappingURL=cert.js.map

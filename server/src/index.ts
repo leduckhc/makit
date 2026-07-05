@@ -27,7 +27,7 @@ import { startWsServer } from "./server.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
-import { loadOrCreateCert, localIPv4s } from "./pairing/cert.js";
+import { loadOrCreateCert, localIPv4s, tailscaleIP } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
@@ -104,6 +104,8 @@ function parseArgs(argv: string[]) {
   return args;
 }
 function bestLanHost(): string {
+  const tailscale = tailscaleIP();
+  if (tailscale) return tailscale;
   const ips = localIPv4s();
   return ips[0] ?? "127.0.0.1";
 }

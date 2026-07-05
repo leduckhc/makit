@@ -19,6 +19,8 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { log } from "../log.js";
+import { newId } from "../protocol.js";
 export class PiAdapter extends EventEmitter {
     agent = "pi";
     cwd = process.cwd();
@@ -28,16 +30,22 @@ export class PiAdapter extends EventEmitter {
     extensions = [];
     sessionId = "";
     askUser;
+    resumeSessionPath;
     /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
     isStreaming = false;
     /** Accumulates text per content-index, flushed at text_end. */
     textBuffers = new Map();
+    /** Stable streamed-message id per content-index (ties deltas to the final). */
+    msgIds = new Map();
+    /** Accumulates reasoning/thinking text per content-index, flushed at end. */
+    thinkingBuffers = new Map();
     async start(opts) {
         this.cwd = opts.cwd;
         this.extraEnv = opts.env ?? {};
         this.extensions = opts.extensions ?? [];
         this.sessionId = opts.sessionId ?? "";
         this.askUser = opts.askUser;
+        this.resumeSessionPath = opts.resumeSessionPath;
         await this.ensureProcess();
         this.emit("status", "idle");
     }
@@ -73,7 +81,9 @@ export class PiAdapter extends EventEmitter {
     async ensureProcess() {
         if (this.child && !this.child.killed)
             return;
-        const args = ["--mode", "rpc", "--session-id", this.piSessionId];
+        const args = this.resumeSessionPath
+            ? ["--mode", "rpc", "--session", this.resumeSessionPath]
+            : ["--mode", "rpc", "--session-id", this.piSessionId];
         for (const ext of this.extensions) {
             args.push("-e", ext);
         }
@@ -222,7 +232,7 @@ export class PiAdapter extends EventEmitter {
             }
         }
         catch (e) {
-            console.log(`[pino] ui interceptor error (${method}): ${e.message}`);
+            log.warn(`[pino] ui interceptor error (${method}): ${e.message}`);
             reply({ cancelled: true });
         }
     }
@@ -239,7 +249,7 @@ export class PiAdapter extends EventEmitter {
         }
         if (!evt || typeof evt !== "object")
             return;
-        console.log(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
+        log.debug(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
         // UI interceptor: pi extensions calling ctx.ui.select/confirm/input/editor
         // emit an extension_ui_request and block until we reply. Transport it to
         // the phone and write back an extension_ui_response. See docs/UI-TRANSPORT.md.
@@ -287,20 +297,53 @@ export class PiAdapter extends EventEmitter {
                     return;
                 const idx = typeof e.contentIndex === "number" ? e.contentIndex : 0;
                 if (e.type === "text_start") {
+                    this.msgIds.set(idx, newId("am"));
                     this.textBuffers.set(idx, "");
                 }
                 else if (e.type === "text_delta") {
-                    const prev = this.textBuffers.get(idx) ?? "";
-                    this.textBuffers.set(idx, prev + (typeof e.delta === "string" ? e.delta : ""));
+                    const delta = typeof e.delta === "string" ? e.delta : "";
+                    this.textBuffers.set(idx, (this.textBuffers.get(idx) ?? "") + delta);
+                    // Stream the token to the phone so the bubble grows live.
+                    const msgId = this.msgIds.get(idx);
+                    if (msgId && delta.length > 0) {
+                        this.emitEvent({
+                            ts: Date.now(),
+                            kind: "agent.message.delta",
+                            payload: { msgId, chunk: delta },
+                        });
+                    }
                 }
                 else if (e.type === "text_end") {
                     const text = this.textBuffers.get(idx) ??
                         (typeof e.content === "string" ? e.content : "");
+                    const msgId = this.msgIds.get(idx);
                     this.textBuffers.delete(idx);
+                    this.msgIds.delete(idx);
                     if (text.length > 0) {
+                        // Final authoritative message — carries msgId so the app finalizes
+                        // the streamed bubble instead of appending a duplicate.
                         this.emitEvent({
                             ts: Date.now(),
                             kind: "agent.message",
+                            payload: { text, ...(msgId ? { msgId } : {}) },
+                        });
+                    }
+                }
+                else if (e.type === "thinking_start") {
+                    this.thinkingBuffers.set(idx, "");
+                }
+                else if (e.type === "thinking_delta") {
+                    const delta = typeof e.delta === "string" ? e.delta : "";
+                    this.thinkingBuffers.set(idx, (this.thinkingBuffers.get(idx) ?? "") + delta);
+                }
+                else if (e.type === "thinking_end") {
+                    const text = this.thinkingBuffers.get(idx) ??
+                        (typeof e.content === "string" ? e.content : "");
+                    this.thinkingBuffers.delete(idx);
+                    if (text.trim().length > 0) {
+                        this.emitEvent({
+                            ts: Date.now(),
+                            kind: "agent.thinking",
                             payload: { text },
                         });
                     }
@@ -342,6 +385,11 @@ export class PiAdapter extends EventEmitter {
                         // the full result text for the detail view.
                         summary: summarizeText(evt.toolName, output),
                         output,
+                        // Structured tool result (e.g. askUserQuestion's {indices,answers})
+                        // for renderers that want more than the text. Best-effort.
+                        ...(evt.result && typeof evt.result === "object" && evt.result.details
+                            ? { details: evt.result.details }
+                            : {}),
                     },
                 });
                 return;
@@ -351,7 +399,7 @@ export class PiAdapter extends EventEmitter {
         }
     }
     emitEvent(e) {
-        console.log(`[pino] pi.emitEvent kind=${e.kind}`);
+        log.debug(`[pino] pi.emitEvent kind=${e.kind}`);
         this.emit("event", e);
     }
 }

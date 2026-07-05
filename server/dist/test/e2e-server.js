@@ -61,7 +61,7 @@ async function main() {
     const pinoHome = resolve(tmpdir(), `pino-e2e-${args.port}`);
     process.env.PINO_HOME = pinoHome;
     seedDeviceRegistry(pinoHome, args.bearer);
-    const cert = loadOrCreateCert();
+    const cert = await loadOrCreateCert();
     const registry = new DeviceRegistry();
     let wsHandle;
     const askUser = async (body) => {

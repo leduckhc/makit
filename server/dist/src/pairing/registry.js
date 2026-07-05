@@ -11,7 +11,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 function pinoHome() {
     return process.env.PINO_HOME || join(homedir(), ".pino");
 }
@@ -22,6 +22,11 @@ export class DeviceRegistry {
     devices = new Map();
     byBearer = new Map();
     pendingTokens = new Map();
+    // NOTE: brute-forcing a 128-bit pair token is infeasible, so there is no
+    // registry-level attempt lockout — a global counter here would let any LAN
+    // peer's bad guesses block the legitimate phone's *valid* token (a local
+    // DoS). Abuse throttling, if ever needed, belongs at the connection layer
+    // (WS `hello` handler, where the source IP is available).
     constructor() {
         mkdirSync(pinoHome(), { recursive: true });
         const path = devicesPath();
@@ -66,11 +71,26 @@ export class DeviceRegistry {
     }
     /** Look up a paired device by its bearer token. */
     authenticate(bearer) {
-        const d = this.byBearer.get(bearer);
+        const d = this.constantTimeLookup(bearer);
         if (!d)
             return null;
         d.lastSeenAt = Date.now();
         return d;
+    }
+    /**
+     * Constant-time bearer lookup. Scans every known device (no early exit on a
+     * Map hit, which would leak timing) and compares fixed-length SHA-256 digests
+     * so `timingSafeEqual` never sees mismatched lengths.
+     */
+    constantTimeLookup(bearer) {
+        const target = createHash("sha256").update(bearer).digest();
+        let match = null;
+        for (const d of this.byBearer.values()) {
+            const candidate = createHash("sha256").update(d.bearer).digest();
+            if (timingSafeEqual(target, candidate))
+                match = d;
+        }
+        return match;
     }
     list() {
         return [...this.devices.values()];

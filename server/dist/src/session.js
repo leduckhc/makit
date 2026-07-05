@@ -30,6 +30,35 @@ export class Session extends EventEmitter {
         this.adapter = adapter;
         this.bindAdapter(adapter);
     }
+    /**
+     * Seed the event log from a prior transcript BEFORE the adapter goes live.
+     * Populates `this.events[]` (assigning seqs, sessionId, and bubbling up
+     * status/preview) but does NOT emit — history is replayed to clients on
+     * `sub` (see SubscriptionHub), so emitting here would double-fire.
+     */
+    backfill(events) {
+        for (const e of events) {
+            const event = {
+                seq: this.events.length + 1,
+                sessionId: this.id,
+                ts: e.ts,
+                kind: e.kind,
+                payload: e.payload,
+            };
+            this.events.push(event);
+            this.lastActivityAt = event.ts;
+            if (event.kind === "user.message" || event.kind === "agent.message") {
+                const t = event.payload.text;
+                if (typeof t === "string")
+                    this.lastPreview = t.slice(0, 200);
+            }
+            else if (event.kind === "session.status") {
+                const s = event.payload.status;
+                if (s)
+                    this.status = s;
+            }
+        }
+    }
     bindAdapter(adapter) {
         adapter.on("event", (e) => {
             const event = {
@@ -51,9 +80,6 @@ export class Session extends EventEmitter {
                 const s = event.payload.status;
                 if (s)
                     this.status = s;
-            }
-            else if (event.kind === "approval.request") {
-                this.status = "awaiting-approval";
             }
             this.emit("event", event);
         });
@@ -86,6 +112,14 @@ export class Session extends EventEmitter {
         await this.adapter.send({ text });
         // Adapter is responsible for echoing user.message into its event stream
         // so that turn boundaries are unambiguous.
+    }
+    /**
+     * Run a built-in control action (e.g. `compact`, `thinking`) on the adapter.
+     * Unlike {@link sendUserMessage} this is not a user turn — it maps to a pi
+     * SDK call in the hosting extension. No-op if the adapter can't map actions.
+     */
+    async sendAction(action, args) {
+        await this.adapter.sendAction?.(action, args);
     }
     on(event, listener) {
         return super.on(event, listener);
