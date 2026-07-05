@@ -25,4 +25,6 @@ export interface WsClient {
   authed: boolean;
   /** Human label of the paired device, once known. */
   deviceLabel?: string;
+  /** Registry id of the paired device, once authenticated (for `devices.list`). */
+  deviceId?: string;
 }
