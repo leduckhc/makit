@@ -1,6 +1,6 @@
 # SPEC-04 — Multiplexer adapter layer + herdr
 
-**Status:** ready · **Depends on:** none (foundation) · **Blocks:** SPEC-05
+**Status:** implemented · **Depends on:** none (foundation) · **Blocks:** SPEC-05
 
 ## Goal
 
@@ -68,7 +68,13 @@ export interface MultiplexerAdapter {
 }
 
 // server/src/mux/registry.ts
-export function getMultiplexer(name?: string): MultiplexerAdapter | undefined;
+export interface GetMultiplexerOpts {
+  exec?: ExecFn; // injectable for tests
+}
+export function getMultiplexer(
+  name?: string,
+  opts?: GetMultiplexerOpts,
+): MultiplexerAdapter | undefined;
 ```
 
 ## Design
@@ -80,24 +86,32 @@ export function getMultiplexer(name?: string): MultiplexerAdapter | undefined;
 - Keep it pure mechanism: no pino-session knowledge here.
 
 ## Acceptance criteria
-- [ ] `HerdrAdapter.isAvailable()` returns true inside a herdr environment,
+- [x] `HerdrAdapter.isAvailable()` returns true inside a herdr environment,
       false when `herdr` is missing.
-- [ ] `spawnPane({cwd, command:'echo hi; sleep 30', label:'pino: test'})` creates
+- [x] `spawnPane({cwd, command:'echo hi; sleep 30', label:'pino: test'})` creates
       a **new, unfocused** pane running the command; `paneExists` is true;
       `setLabel` shows the label; `closePane` removes it and is safe to call twice.
-- [ ] Anchor/workspace selection documented and deterministic (see open Qs).
-- [ ] `getMultiplexer()` returns herdr by default; `getMultiplexer('tmux')`
+- [x] Anchor/workspace selection documented and deterministic (see Decisions).
+- [x] `getMultiplexer()` returns herdr by default; `getMultiplexer('tmux')`
       returns undefined (not implemented) without crashing.
-- [ ] Unit tests: adapter with a **fake exec** (inject the command runner) —
+- [x] Unit tests: adapter with a **fake exec** (inject the command runner) —
       assert exact herdr argv for split/run/close/rename, JSON parse of pane_id,
       idempotent close, MuxError on failure. `pnpm test` green, `pnpm typecheck`
       clean.
 
-## Open questions (resolve + document)
-- **Anchor pane / workspace**: where do new panes go? Options: split from a
-  configured anchor pane id; create in a dedicated "pino" workspace/tab; or split
-  from the caller's current pane. Recommend a config key `PINO_MUX_ANCHOR`
-  (pane id or workspace) with a sensible default (a dedicated `pino` tab/workspace
-  so sessions don't fragment the user's active layout).
-- Should the runner be injected (for testability) — yes; take an optional
-  `exec` fn in the constructor defaulting to `execFile`.
+## Decisions (formerly open questions)
+- **Anchor pane / workspace:** `PINO_MUX_ANCHOR` env or `config.json` key
+  `mux.anchor` (default `"pino"`). New panes split into that anchor so sessions
+  don't fragment the user's active layout. Callers can override per-host.
+- **Exec injection:** yes — `HerdrAdapter` accepts an optional `exec` fn in its
+  constructor (defaults to `execFile`). Keeps the adapter testable without a real
+  herdr binary.
+- **Config file shape:** `~/.pino/config.json` → `{ "mux": { "name": "herdr", "anchor": "pino" } }`.
+  Env `PINO_MUX` / `PINO_MUX_ANCHOR` override file values. `PINO_MUX=off` disables
+  the registry (returns `undefined` — used by SPEC-05 fallback).
+- **Split failure cleanup:** if `pane run` fails after a successful split, the
+  adapter closes the orphan pane before rethrowing `MuxError`.
+- **`setLabel` optional:** not every future mux may support rename. `HerdrAdapter`
+  implements it; SPEC-05 title updates must use `adapter.setLabel?.(...)` so
+  tmux/cmux stubs without rename don't break. Initial label is still passed via
+  `spawnPane({ label })` (best-effort inside the adapter).
