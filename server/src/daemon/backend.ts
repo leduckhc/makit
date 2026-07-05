@@ -129,7 +129,14 @@ export function createServerBackend(deps: ServerBackendDeps): ControlBackend {
   };
 }
 
-/** Emit the last `lines` of the log file; return the byte offset consumed. */
+/**
+ * Emit the last `lines` of the log file; return the byte offset consumed.
+ *
+ * Reads the whole log into memory. This is acceptable for v1: `pino.log` is
+ * truncated on every `start` (see service.ts) so it stays bounded to a single
+ * run, and there is no consumer streaming gigabyte logs. Revisit with a bounded
+ * tail-read if log rotation lands (SPEC-01 open question).
+ */
 function emitBacklog(path: string, lines: number, emit: (line: string) => void): number {
   if (!existsSync(path)) return 0;
   const text = readFileSync(path, "utf8");

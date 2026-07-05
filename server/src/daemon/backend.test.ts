@@ -9,8 +9,12 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { createServerBackend, type ServerBackendDeps } from "./backend.js";
+import type { LogTailStop } from "./control-server.js";
 
 interface FakeDevice {
   id: string;
@@ -118,4 +122,41 @@ test("server.stop requests a graceful shutdown", async () => {
   const b = createServerBackend(deps({ requestStop: () => { stopped = true; } }));
   assert.deepEqual(await b.serverStop(), { stopping: true });
   assert.equal(stopped, true);
+});
+
+/** Wait until `predicate` is true or the deadline elapses (watcher is async). */
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error("waitFor: timed out");
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+test("logs.tail --follow streams appended lines and the stop fn closes the watcher", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pino-logtail-"));
+  const logPath = join(dir, "pino.log");
+  writeFileSync(logPath, "backlog\n");
+  const b = createServerBackend(deps({ logPath }));
+
+  const lines: string[] = [];
+  const stop = (await b.logsTail({ follow: true }, (line) => lines.push(line))) as LogTailStop;
+  try {
+    assert.equal(typeof stop, "function");
+    assert.deepEqual(lines, ["backlog"]); // backlog emitted synchronously
+    // Give the fs.watch a tick to arm before mutating (FSEvents misses writes
+    // that land before the watcher is fully registered).
+    await new Promise((r) => setTimeout(r, 50));
+    appendFileSync(logPath, "live-1\n");
+    await waitFor(() => lines.includes("live-1"));
+    assert.deepEqual(lines, ["backlog", "live-1"]);
+
+    // Stopping closes the fs.watch handle: subsequent appends must not emit.
+    stop();
+    appendFileSync(logPath, "after-stop\n");
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(lines.includes("after-stop"), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
