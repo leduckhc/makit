@@ -1,0 +1,91 @@
+name: Protocol Contract CI
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/test/fixtures/**'
+      - 'server/test/fixtures/**'
+      - 'app/test/codec_contract_test.dart'
+      - 'server/test/protocol/contract.test.ts'
+      - 'app/lib/transport/**'
+      - 'server/src/protocol/**'
+      - '.github/workflows/protocol-contract-ci.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app/test/fixtures/**'
+      - 'server/test/fixtures/**'
+      - 'app/test/codec_contract_test.dart'
+      - 'server/test/protocol/contract.test.ts'
+      - 'app/lib/transport/**'
+      - 'server/src/protocol/**'
+      - '.github/workflows/protocol-contract-ci.yml'
+
+jobs:
+  fixture-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify shared fixtures are byte-identical
+        run: |
+          diff -rq app/test/fixtures server/test/fixtures
+          echo "Shared fixtures are byte-identical between app and server."
+
+  server-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: fixture-sync
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Install dependencies
+        run: pnpm secure:install
+
+      - name: Run server protocol contract tests
+        run: node --import tsx --test test/protocol/contract.test.ts
+
+  flutter-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: fixture-sync
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: 'stable'
+
+      - name: Install Flutter dependencies
+        run: |
+          cd app
+          flutter pub get --enforce-lockfile
+
+      - name: Run Flutter protocol contract tests
+        run: |
+          cd app
+          flutter test test/codec_contract_test.dart
