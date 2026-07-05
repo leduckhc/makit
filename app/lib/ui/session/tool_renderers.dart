@@ -2,7 +2,11 @@
 ///
 /// Each entry knows how to render a specific tool name (e.g. `read`, `edit`,
 /// `askUserQuestion`). Pick a renderer for an item via [rendererFor]; if no
-/// match, the caller falls back to [GenericToolRenderer].
+/// match, the caller falls back to [genericToolDetail].
+///
+/// Every detail view is wrapped in the shared [ToolDetailScaffold] so headers
+/// stay consistent: the tool's display name (left-aligned) with the file path
+/// or command as a subtitle.
 ///
 /// To add support for a new tool, write a [ToolRenderer] subclass and
 /// register it in [toolRenderers]. The card view is shown inline in the chat
@@ -22,6 +26,10 @@ abstract class ToolRenderer {
   /// Logical name (matches [ToolCallItem.name]).
   String get name;
 
+  /// Human-facing title shown as the card title and detail-view header
+  /// (e.g. `Read`, `Write`). Defaults to a capitalised [name].
+  String get displayName => _titleCase(name);
+
   /// One-line description for the card header.
   String? subtitle(ToolCallItem item) => null;
 
@@ -38,9 +46,9 @@ abstract class ToolRenderer {
     return _DefaultCard(renderer: this, item: item, onTap: onTap);
   }
 
-  /// Full-screen detail view. Default: dump args + deltas.
+  /// Full-screen detail view. Default: readable args + result text.
   Widget detail(BuildContext context, ToolCallItem item) {
-    return _DefaultDetail(renderer: this, item: item);
+    return genericToolDetail(context, item);
   }
 }
 
@@ -75,7 +83,7 @@ class _DefaultCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      renderer.name,
+                      renderer.displayName,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     if (sub != null && sub.isNotEmpty)
@@ -108,51 +116,55 @@ class _DefaultCard extends StatelessWidget {
   }
 }
 
-class _DefaultDetail extends StatelessWidget {
-  const _DefaultDetail({required this.renderer, required this.item});
-  final ToolRenderer renderer;
-  final ToolCallItem item;
+/// Generic detail view for tools without a bespoke renderer. Shows arguments
+/// as readable label/value rows (never a raw JSON blob) and the result text,
+/// wrapped in the same [ToolDetailScaffold] as every other tool.
+Widget genericToolDetail(BuildContext context, ToolCallItem item) {
+  final args = item.args;
+  final text = item.deltas.isNotEmpty
+      ? item.deltas.join()
+      : (item.output ?? '');
+  final failed = item.ended && (item.exitCode ?? 0) != 0;
+  final title = rendererFor(item)?.displayName ?? _titleCase(item.name);
+  final pathLike = args['path']?.toString() ?? args['command']?.toString();
+  return ToolDetailScaffold(
+    title: title,
+    subtitle: pathLike,
+    children: [
+      if (args.isNotEmpty)
+        ToolSection(
+          title: 'Arguments',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final e in args.entries)
+                ParamRow(e.key, _valueString(e.value)),
+            ],
+          ),
+        ),
+      if (text.isNotEmpty)
+        ToolSection(
+          title: failed ? 'Error' : 'Output',
+          child: MonoText(text, error: failed),
+        )
+      else if (item.ended)
+        ToolSection(
+          title: failed ? 'Error' : 'Result',
+          child: Text(item.summary ?? 'exit ${item.exitCode ?? 0}'),
+        ),
+    ],
+  );
+}
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(renderer.name)),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          const Text(
-            'Arguments',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          SelectableText(
-            const JsonEncoder.withIndent('  ').convert(item.args),
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-          ),
-          const SizedBox(height: 16),
-          const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Builder(
-            builder: (context) {
-              // Streaming tools (e.g. bash) accumulate deltas; one-shot tools
-              // (read, grep, …) carry the full text in output.
-              final text = item.deltas.isNotEmpty
-                  ? item.deltas.join()
-                  : (item.output ?? '');
-              final failed = item.ended && (item.exitCode ?? 0) != 0;
-              return SelectableText(
-                text.isEmpty ? '(no output)' : text,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: failed ? Theme.of(context).colorScheme.error : null,
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
+/// Render a single arg value for display. Scalars show as-is; nested
+/// structures fall back to compact JSON so the row stays readable.
+String _valueString(dynamic value) {
+  if (value == null) return '';
+  if (value is String || value is num || value is bool) return value.toString();
+  try {
+    return jsonEncode(value);
+  } catch (_) {
+    return value.toString();
   }
 }
 
@@ -164,9 +176,63 @@ class _DefaultDetail extends StatelessWidget {
 // Shared detail-view helpers
 // ---------------------------------------------------------------------------
 
+/// Capitalise the first letter of [s] for display (e.g. `read` → `Read`).
+String _titleCase(String s) =>
+    s.isEmpty ? s : '${s[0].toUpperCase()}${s.substring(1)}';
+
+/// Human-facing tool title for [item] — the renderer's [ToolRenderer.displayName]
+/// when one is registered, otherwise a capitalised tool name.
+String toolDisplayName(ToolCallItem item) =>
+    rendererFor(item)?.displayName ?? _titleCase(item.name);
+
+/// Unified full-screen shell for every tool detail view. Keeps the header
+/// consistent across tools: the tool's [title] (left-aligned) with an optional
+/// [subtitle] (usually the file path or command) underneath, and a padded
+/// [ListView] body built from [children].
+class ToolDetailScaffold extends StatelessWidget {
+  const ToolDetailScaffold({
+    super.key,
+    required this.title,
+    this.subtitle,
+    required this.children,
+  });
+
+  final String title;
+  final String? subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSub = subtitle != null && subtitle!.isNotEmpty;
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: false,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleMedium),
+            if (hasSub)
+              Text(
+                subtitle!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+      ),
+      body: ListView(padding: const EdgeInsets.all(12), children: children),
+    );
+  }
+}
+
 /// Titled section used in tool detail pages.
-class _ToolSection extends StatelessWidget {
-  const _ToolSection({required this.title, required this.child});
+class ToolSection extends StatelessWidget {
+  const ToolSection({super.key, required this.title, required this.child});
   final String title;
   final Widget child;
 
@@ -195,8 +261,8 @@ class _ToolSection extends StatelessWidget {
 }
 
 /// Selectable monospace text — used for file content, command output, etc.
-class _MonoText extends StatelessWidget {
-  const _MonoText(this.text, {this.error = false});
+class MonoText extends StatelessWidget {
+  const MonoText(this.text, {super.key, this.error = false});
   final String text;
   final bool error;
 
@@ -212,8 +278,8 @@ class _MonoText extends StatelessWidget {
 }
 
 /// Small label + value row, used to summarise tool parameters.
-class _ParamRow extends StatelessWidget {
-  const _ParamRow(this.label, this.value);
+class ParamRow extends StatelessWidget {
+  const ParamRow(this.label, this.value, {super.key});
   final String label;
   final String value;
 
@@ -254,6 +320,8 @@ class _ReadRenderer extends ToolRenderer {
   @override
   String get name => 'read';
   @override
+  String get displayName => 'Read';
+  @override
   IconData get icon => Icons.menu_book_outlined;
   @override
   String? subtitle(ToolCallItem item) => item.args['path']?.toString();
@@ -264,27 +332,25 @@ class _ReadRenderer extends ToolRenderer {
     final content = item.output ?? item.deltas.join();
     final offset = item.args['offset'];
     final limit = item.args['limit'];
-    return Scaffold(
-      appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          if (offset != null || limit != null)
-            _ToolSection(
-              title: 'Range',
-              child: Row(
-                children: [
-                  if (offset != null) _ParamRow('offset', '$offset'),
-                  if (limit != null) _ParamRow('limit', '$limit'),
-                ],
-              ),
+    return ToolDetailScaffold(
+      title: displayName,
+      subtitle: path,
+      children: [
+        if (offset != null || limit != null)
+          ToolSection(
+            title: 'Range',
+            child: Row(
+              children: [
+                if (offset != null) ParamRow('offset', '$offset'),
+                if (limit != null) ParamRow('limit', '$limit'),
+              ],
             ),
-          _ToolSection(
-            title: 'Content',
-            child: _MonoText(content.isEmpty ? '(empty)' : content),
           ),
-        ],
-      ),
+        ToolSection(
+          title: 'Content',
+          child: MonoText(content.isEmpty ? '(empty)' : content),
+        ),
+      ],
     );
   }
 }
@@ -293,6 +359,8 @@ class _WriteRenderer extends ToolRenderer {
   const _WriteRenderer();
   @override
   String get name => 'write';
+  @override
+  String get displayName => 'Write';
   @override
   IconData get icon => Icons.edit_note_outlined;
   @override
@@ -304,19 +372,17 @@ class _WriteRenderer extends ToolRenderer {
     final content =
         item.args['content']?.toString() ?? item.args['text']?.toString() ?? '';
     final result = item.output ?? item.summary ?? '';
-    return Scaffold(
-      appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          _ToolSection(
-            title: 'Content written',
-            child: _MonoText(content.isEmpty ? '(empty)' : content),
-          ),
-          if (result.isNotEmpty)
-            _ToolSection(title: 'Result', child: Text(result)),
-        ],
-      ),
+    return ToolDetailScaffold(
+      title: displayName,
+      subtitle: path,
+      children: [
+        ToolSection(
+          title: 'Content written',
+          child: MonoText(content.isEmpty ? '(empty)' : content),
+        ),
+        if (result.isNotEmpty)
+          ToolSection(title: 'Result', child: Text(result)),
+      ],
     );
   }
 }
@@ -325,6 +391,8 @@ class _EditRenderer extends ToolRenderer {
   const _EditRenderer();
   @override
   String get name => 'edit';
+  @override
+  String get displayName => 'Edit';
   @override
   IconData get icon => Icons.difference_outlined;
   @override
@@ -341,6 +409,8 @@ class _BashRenderer extends ToolRenderer {
   @override
   String get name => 'bash';
   @override
+  String get displayName => 'Bash';
+  @override
   IconData get icon => Icons.attach_money;
   @override
   String? subtitle(ToolCallItem item) {
@@ -356,25 +426,23 @@ class _BashRenderer extends ToolRenderer {
         ? item.deltas.join()
         : (item.output ?? '');
     final failed = item.ended && (item.exitCode ?? 0) != 0;
-    return Scaffold(
-      appBar: AppBar(title: const Text('bash')),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          if (command.isNotEmpty)
-            _ToolSection(title: 'Command', child: _MonoText(command)),
-          if (output.isNotEmpty)
-            _ToolSection(
-              title: 'Output',
-              child: _MonoText(output, error: failed),
-            )
-          else if (item.ended)
-            _ToolSection(
-              title: 'Result',
-              child: Text(item.summary ?? 'exit ${item.exitCode ?? 0}'),
-            ),
-        ],
-      ),
+    return ToolDetailScaffold(
+      title: displayName,
+      subtitle: command.isEmpty ? null : command,
+      children: [
+        if (command.isNotEmpty)
+          ToolSection(title: 'Command', child: MonoText(command)),
+        if (output.isNotEmpty)
+          ToolSection(
+            title: 'Output',
+            child: MonoText(output, error: failed),
+          )
+        else if (item.ended)
+          ToolSection(
+            title: 'Result',
+            child: Text(item.summary ?? 'exit ${item.exitCode ?? 0}'),
+          ),
+      ],
     );
   }
 }
@@ -383,6 +451,8 @@ class _GrepRenderer extends ToolRenderer {
   const _GrepRenderer();
   @override
   String get name => 'grep';
+  @override
+  String get displayName => 'Grep';
   @override
   IconData get icon => Icons.search;
   @override
@@ -398,36 +468,29 @@ class _GrepRenderer extends ToolRenderer {
     final glob = item.args['glob']?.toString();
     final path = item.args['path']?.toString();
     final output = item.output ?? item.deltas.join();
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          pattern.isEmpty ? 'grep' : 'grep: $pattern',
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          _ToolSection(
-            title: 'Search',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (pattern.isNotEmpty) _ParamRow('pattern', pattern),
-                if (glob != null) _ParamRow('glob', glob),
-                if (path != null) _ParamRow('path', path),
-              ],
-            ),
+    return ToolDetailScaffold(
+      title: displayName,
+      subtitle: pattern.isEmpty ? null : pattern,
+      children: [
+        ToolSection(
+          title: 'Search',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (pattern.isNotEmpty) ParamRow('pattern', pattern),
+              if (glob != null) ParamRow('glob', glob),
+              if (path != null) ParamRow('path', path),
+            ],
           ),
-          if (output.isNotEmpty)
-            _ToolSection(title: 'Results', child: _MonoText(output))
-          else if (item.ended)
-            _ToolSection(
-              title: 'Results',
-              child: Text(item.summary ?? 'No matches found'),
-            ),
-        ],
-      ),
+        ),
+        if (output.isNotEmpty)
+          ToolSection(title: 'Results', child: MonoText(output))
+        else if (item.ended)
+          ToolSection(
+            title: 'Results',
+            child: Text(item.summary ?? 'No matches found'),
+          ),
+      ],
     );
   }
 }
@@ -443,11 +506,16 @@ const List<ToolRenderer> toolRenderers = [
   _AskUserQuestionRenderer('AskUserQuestion'),
 ];
 
-/// Pick a renderer for [item] by exact name match. Returns null if no renderer
-/// is registered — caller should fall back to a generic card.
+/// Pick a renderer for [item] by name (case-insensitive so `Read`/`read` and
+/// `Edit`/`edit` from different agents match). Returns null if no renderer is
+/// registered — caller should fall back to [genericToolDetail].
 ToolRenderer? rendererFor(ToolCallItem item) {
   for (final r in toolRenderers) {
     if (r.name == item.name) return r;
+  }
+  final lower = item.name.toLowerCase();
+  for (final r in toolRenderers) {
+    if (r.name.toLowerCase() == lower) return r;
   }
   return null;
 }
@@ -461,43 +529,63 @@ class _EditDiffView extends StatelessWidget {
   const _EditDiffView({required this.item});
   final ToolCallItem item;
 
+  /// Read the "before" text from whichever key the agent used. Different
+  /// agents name these differently (edit/StrReplace tools commonly use
+  /// `old_string`/`new_string`; others `oldText`/`newText` or `old`/`new`).
+  static String _pick(Map<String, dynamic> args, List<String> keys) {
+    for (final k in keys) {
+      final v = args[k];
+      if (v != null) return v.toString();
+    }
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final path = item.args['path']?.toString() ?? '(no path)';
-    final oldText =
-        item.args['oldText']?.toString() ?? item.args['old']?.toString() ?? '';
-    final newText =
-        item.args['newText']?.toString() ?? item.args['new']?.toString() ?? '';
+    final oldText = _pick(item.args, const [
+      'oldText',
+      'old_string',
+      'oldString',
+      'old_str',
+      'old',
+    ]);
+    final newText = _pick(item.args, const [
+      'newText',
+      'new_string',
+      'newString',
+      'new_str',
+      'new',
+    ]);
     final lines = computeLineDiff(oldText, newText);
+    final hasDiff = oldText.isNotEmpty || newText.isNotEmpty;
+    final output = item.deltas.isNotEmpty
+        ? item.deltas.join()
+        : (item.output ?? '');
 
-    return Scaffold(
-      appBar: AppBar(title: Text(path, overflow: TextOverflow.ellipsis)),
-      body: ListView(
-        padding: const EdgeInsets.all(8),
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            clipBehavior: Clip.antiAlias,
+    return ToolDetailScaffold(
+      title: 'Edit',
+      subtitle: path,
+      children: [
+        if (hasDiff)
+          ToolSection(
+            title: 'Changes',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [for (final line in lines) _DiffLineRow(line: line)],
             ),
-          ),
-          if (item.deltas.isNotEmpty || (item.output?.isNotEmpty ?? false)) ...[
-            const SizedBox(height: 16),
-            const Text('Output', style: TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            SelectableText(
-              item.deltas.isNotEmpty ? item.deltas.join() : item.output!,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          )
+        else
+          ToolSection(
+            title: 'Changes',
+            child: Text(
+              'No diff details provided by the agent.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
-          ],
-        ],
-      ),
+          ),
+        if (output.isNotEmpty)
+          ToolSection(title: 'Output', child: MonoText(output)),
+      ],
     );
   }
 }
@@ -558,6 +646,8 @@ class _AskUserQuestionRenderer extends ToolRenderer {
   @override
   String get name => _name;
   @override
+  String get displayName => 'Ask the user';
+  @override
   IconData get icon => Icons.quiz_outlined;
 
   List<Map<String, dynamic>> _questions(ToolCallItem item) {
@@ -592,7 +682,7 @@ class _AskUserQuestionRenderer extends ToolRenderer {
     final cs = Theme.of(context).colorScheme;
     final questions = _questions(item);
     return Scaffold(
-      appBar: AppBar(title: const Text('Ask the user')),
+      appBar: AppBar(centerTitle: false, title: const Text('Ask the user')),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: questions.length,

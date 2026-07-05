@@ -246,7 +246,13 @@ class FakeServer {
       ev(EventKind.toolCallStart, {
         'callId': 'c2',
         'name': 'edit',
-        'args': {'path': 'app/lib/pairing/pairing_screen.dart'},
+        'args': {
+          'path': 'app/lib/pairing/pairing_screen.dart',
+          'oldText':
+              'Widget build(BuildContext context) {\n  return const Text(\'Scan a QR to pair\');\n}',
+          'newText':
+              'Widget build(BuildContext context) {\n  return Column(\n    children: const [\n      Text(\'Scan a QR to pair\'),\n      MdnsServerList(),\n    ],\n  );\n}',
+        },
         'risk': 'risky',
       }),
       ev(EventKind.toolCallDelta, {'callId': 'c2', 'chunk': '+12 −3\n'}),
@@ -302,7 +308,11 @@ class FakeServer {
       ev(EventKind.toolCallStart, {
         'callId': 'c-edit',
         'name': 'edit',
-        'args': {'path': 'Sources/Tabs/TabBar.swift'},
+        'args': {
+          'path': 'Sources/Tabs/TabBar.swift',
+          'oldText': 'let dragThreshold = 4.0',
+          'newText': 'let dragThreshold = 8.0',
+        },
         'risk': 'risky',
       }),
     ];
