@@ -1,6 +1,6 @@
 # Pre-commit hooks for pino monorepo.
 #
-# Install: pip install pre-commit && pre-commit install
+# Install: pre-commit install
 # Run manually: pre-commit run --all-files
 # Update hook revisions: pre-commit autoupdate
 #
