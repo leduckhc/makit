@@ -40,18 +40,18 @@ test("getMultiplexer returns herdr by default", async () => {
   });
 });
 
-test("getMultiplexer('tmux') returns undefined", () => {
+test("getMultiplexer('tmux') returns undefined", async () => {
   const mux = getMultiplexer("tmux");
   assert.equal(mux, undefined);
 });
 
-test("getMultiplexer returns undefined when PINO_MUX=off", () => {
-  withEnv({ PINO_MUX: "off" }, () => {
+test("getMultiplexer returns undefined when PINO_MUX=off", async () => {
+  await withEnv({ PINO_MUX: "off" }, () => {
     assert.equal(getMultiplexer(), undefined);
   });
 });
 
-test("getMultiplexer('herdr') returns herdr adapter", () => {
+test("getMultiplexer('herdr') returns herdr adapter", async () => {
   const mux = getMultiplexer("herdr");
   assert.ok(mux);
   assert.equal(mux!.name, "herdr");

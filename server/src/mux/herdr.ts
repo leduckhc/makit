@@ -106,7 +106,13 @@ export class HerdrAdapter implements MultiplexerAdapter {
       throw new MuxError(MUX, "pane run failed", e);
     }
 
-    if (opts.label) await this.setLabel(handle, opts.label);
+    if (opts.label) {
+      try {
+        await this.setLabel(handle, opts.label);
+      } catch {
+        // Best-effort relabel — pane is already running.
+      }
+    }
     return handle;
   }
 

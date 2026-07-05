@@ -167,6 +167,21 @@ test("spawnPane skips rename when label omitted", async () => {
   );
 });
 
+test("spawnPane returns handle when rename fails", async () => {
+  const exec: ExecFn = async (_cmd, args) => {
+    if (args[1] === "rename") throw new Error("rename failed");
+    if (args[1] === "split") return { stdout: splitJson("w7:pS"), stderr: "" };
+    return { stdout: "", stderr: "" };
+  };
+  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const handle = await adapter.spawnPane({
+    cwd: "/proj",
+    command: "echo hi",
+    label: "pino: test",
+  });
+  assert.equal(handle.paneId, "w7:pS");
+});
+
 test("closePane invokes herdr pane close", async () => {
   const exec = recordingExec();
   const adapter = new HerdrAdapter({ exec, anchor: "pino" });
