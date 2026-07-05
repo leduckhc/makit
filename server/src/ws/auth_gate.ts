@@ -83,6 +83,7 @@ export class AuthGate {
     }
     client.authed = true;
     client.deviceLabel = device.label;
+    client.deviceId = device.id;
     client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id });
     log.info(`[pino] hello: authed as ${device.label} (${device.id}); sent snapshots`);
     this.deps.onAuthenticated(client);
@@ -101,6 +102,7 @@ export class AuthGate {
     }
     client.authed = true;
     client.deviceLabel = device.label;
+    client.deviceId = device.id;
     log.info(`[pino] paired new device: ${device.label} (${device.id})`);
     client.send({
       t: "hello.ack",
