@@ -94,6 +94,19 @@ export default function (pi: ExtensionAPI): void {
         pi.setThinkingLevel(level as never);
         emitMeta();
       }
+    } else if (action === "name") {
+      const name = typeof args?.name === "string" ? args.name.trim() : "";
+      if (!name) {
+        emitActionError("name", "name required");
+        return;
+      }
+      try {
+        pi.setSessionName(name);
+        cachedSessionName = name;
+        syncTitle();
+      } catch {
+        emitActionError("name", "could not set session name");
+      }
     } else if (action === "model") {
       const provider = typeof args?.provider === "string" ? args.provider : undefined;
       const id = typeof args?.id === "string" ? args.id : undefined;

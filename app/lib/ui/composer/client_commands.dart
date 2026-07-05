@@ -20,6 +20,7 @@ typedef ClientCmdHandler =
       BuildContext context,
       WidgetRef ref, {
       required String sessionId,
+      required String arg,
     });
 
 class ClientCommand {
@@ -48,9 +49,10 @@ Future<bool> handleClientCommand(
   if (!raw.startsWith('/')) return false;
   final firstSpace = raw.indexOf(RegExp(r'\s'));
   final name = firstSpace < 0 ? raw.substring(1) : raw.substring(1, firstSpace);
+  final arg = firstSpace < 0 ? '' : raw.substring(firstSpace + 1).trim();
   for (final c in clientCommands) {
     if (c.name == name) {
-      await c.handler(context, ref, sessionId: sessionId);
+      await c.handler(context, ref, sessionId: sessionId, arg: arg);
       return true;
     }
   }
@@ -61,7 +63,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'new',
     description: 'Start a fresh agent session in the same project',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       final session = ref.read(sessionsProvider).byId(sessionId);
       if (session == null) return;
       final messenger = ScaffoldMessenger.of(context);
@@ -81,7 +83,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'cancel',
     description: 'Cancel the current agent turn',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       try {
         await ref.read(connectionControllerProvider.notifier).request(
           MsgType.cmd,
@@ -95,7 +97,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'unpair',
     description: 'Forget the paired desktop server and return to pairing',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       await ref.read(connectionControllerProvider.notifier).unpair();
       if (!context.mounted) return;
       context.go('/pair');
@@ -104,7 +106,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'help',
     description: 'Show available commands',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       final agentCmds = ref.read(commandsProvider(sessionId));
       final lines = [
         for (final c in clientCommands) '/${c.name}  —  ${c.description}',
@@ -138,7 +140,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
     name: 'ask',
     description:
         'Debug: ask the server to ask you a question (round-trip test)',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       try {
         await ref.read(connectionControllerProvider.notifier).request(
           MsgType.cmd,
@@ -152,7 +154,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'compact',
     description: 'Compact the conversation to free up context',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       final meta = ref.read(sessionMetaProvider(sessionId));
       if (meta == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -171,7 +173,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'thinking',
     description: 'Set the agent thinking level',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       final level = await _pickThinkingLevel(context);
       if (level == null || !context.mounted) return;
       ref
@@ -185,7 +187,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'model',
     description: 'Switch the agent model',
-    handler: (context, ref, {required sessionId}) async {
+    handler: (context, ref, {required sessionId, required arg}) async {
       final meta = ref.read(sessionMetaProvider(sessionId));
       final models = meta?.models ?? const [];
       if (models.isEmpty) {
@@ -216,7 +218,52 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
       ).showSnackBar(SnackBar(content: Text('Switching to ${picked.name}…')));
     },
   ),
+  ClientCommand(
+    name: 'name',
+    description: 'Rename this session (shown in the session list)',
+    handler: (context, ref, {required sessionId, required arg}) async {
+      final title = arg.isNotEmpty ? arg : await _promptSessionName(context);
+      if (title == null || title.isEmpty || !context.mounted) return;
+      ref
+          .read(storeControllerProvider.notifier)
+          .sendSessionAction(sessionId, 'name', args: {'name': title});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Renamed to “$title”')));
+    },
+  ),
 ];
+
+/// Prompt for a session name via a simple text dialog. Resolves with the
+/// trimmed name, or null if dismissed/empty.
+Future<String?> _promptSessionName(BuildContext context) async {
+  final controller = TextEditingController();
+  final result = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Rename session'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(hintText: 'Session name'),
+        onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+          child: const Text('Rename'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return result;
+}
 
 /// pi's thinking levels, low → high. `off` disables reasoning.
 const _thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
