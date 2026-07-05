@@ -78,9 +78,13 @@ export default function (pi: ExtensionAPI): void {
         emitActionError("compact", "session not ready");
         return;
       }
-      void Promise.resolve(lastCtx.compact()).catch((err: unknown) => {
-        emitActionError("compact", err instanceof Error ? err.message : "compact failed");
-      });
+      try {
+        void Promise.resolve(lastCtx.compact()).catch((err: unknown) => {
+          emitActionError("compact", err instanceof Error ? err.message : "compact failed");
+        });
+      } catch {
+        emitActionError("compact", "session stale");
+      }
     } else if (action === "thinking") {
       const level = typeof args?.level === "string" ? args.level : undefined;
       const valid = ["off", "minimal", "low", "medium", "high", "xhigh"];
@@ -91,8 +95,12 @@ export default function (pi: ExtensionAPI): void {
     } else if (action === "model") {
       const provider = typeof args?.provider === "string" ? args.provider : undefined;
       const id = typeof args?.id === "string" ? args.id : undefined;
-      const model =
-        provider && id ? lastCtx?.modelRegistry.find(provider, id) : undefined;
+      let model;
+      try {
+        model = provider && id ? lastCtx?.modelRegistry.find(provider, id) : undefined;
+      } catch {
+        /* stale ctx */
+      }
       if (!model) {
         emitActionError("model", "model not available");
         return;
@@ -110,15 +118,22 @@ export default function (pi: ExtensionAPI): void {
   // can show a subtle indicator and populate the /model picker. Model info is
   // ctx-scoped; thinking level lives on `pi` directly.
   function emitMeta(): void {
-    const m = lastCtx?.model;
-    const models = (lastCtx?.modelRegistry.getAvailable() ?? []).map((x) => ({
-      provider: x.provider,
-      id: x.id,
-      name: x.name,
-    }));
+    let m: { provider: string; id: string; name: string } | null = null;
+    let models: { provider: string; id: string; name: string }[] = [];
+    try {
+      const ctxModel = lastCtx?.model;
+      if (ctxModel) m = { provider: ctxModel.provider, id: ctxModel.id, name: ctxModel.name };
+      models = (lastCtx?.modelRegistry.getAvailable() ?? []).map((x) => ({
+        provider: x.provider,
+        id: x.id,
+        name: x.name,
+      }));
+    } catch {
+      /* stale ctx — skip model info, keep what we had */
+    }
     metaSent = true;
     emit("session.meta", {
-      model: m ? { provider: m.provider, id: m.id, name: m.name } : null,
+      model: m,
       thinking: pi.getThinkingLevel(),
       models,
     });
