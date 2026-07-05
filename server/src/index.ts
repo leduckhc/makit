@@ -126,11 +126,11 @@ function dedupeResolved(paths: string[]): string[] {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "attach", "mirror", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", "mirror", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: pino serve|start|stop|restart|status|logs|service|pair|attach|mirror [...]`,
+        `usage: pino serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach|mirror [...]`,
     );
     process.exit(2);
   }
@@ -138,6 +138,28 @@ async function main() {
   if (cmd === "mirror") {
     const { runMirror } = await import("./cli/mirror.js");
     await runMirror(process.argv.slice(3));
+    return;
+  }
+
+  // --- SPEC-02 thin-client subcommands: drive the running daemon via the
+  // control socket. requireDaemon() handles "not running" uniformly. ---
+  if (cmd === "qr" || cmd === "pair") {
+    const { runQr } = await import("./cli/qr.js");
+    // `pino pair` is an alias for `pino qr --refresh` (daemon required).
+    const argv = cmd === "pair" ? ["--refresh", ...process.argv.slice(3)] : process.argv.slice(3);
+    await runQr(argv);
+    return;
+  }
+
+  if (cmd === "devices") {
+    const { runDevices } = await import("./cli/devices.js");
+    await runDevices(process.argv.slice(3));
+    return;
+  }
+
+  if (cmd === "sessions") {
+    const { runSessions } = await import("./cli/sessions.js");
+    await runSessions(process.argv.slice(3));
     return;
   }
 
@@ -211,13 +233,6 @@ async function main() {
   const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
 
-  if (cmd === "pair") {
-    // One-shot mint-and-print mode. Useful if the server is started elsewhere
-    // and you just need a fresh QR. In M1 we share the same registry file so
-    // tokens minted here are honoured by the running server.
-    printPairQr(registry, opts.port, cert.fingerprint);
-    process.exit(0);
-  }
   // Merge persisted projects with any CLI `--project` roots, deduping by
   // resolved path so a restart neither loses nor duplicates entries. Persist
   // the merged set once at startup so a fresh `--project` gets recorded.
