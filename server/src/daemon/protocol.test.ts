@@ -18,6 +18,7 @@ import {
   type ControlRequest,
   type ControlResponse,
 } from "./protocol.js";
+import { MAX_LINE_BUFFER_BYTES, LineBufferOverflowError } from "./protocol.js";
 
 test("encodeMessage produces one newline-terminated JSON line", () => {
   const req: ControlRequest = { id: "1", verb: "status" };
@@ -76,4 +77,18 @@ test("LineBuffer splits complete lines and retains partial remainder", () => {
   assert.deepEqual(buf.push("a\nb\nc"), ["a", "b"]);
   assert.deepEqual(buf.push("\n"), ["c"]);
   assert.deepEqual(buf.push(""), []);
+});
+
+test("LineBuffer rejects an unterminated line that exceeds the cap", () => {
+  const buf = new LineBuffer(16);
+  // A stream of complete small lines never overflows, regardless of total size.
+  assert.deepEqual(buf.push("a\nb\nc\nd\ne\nf\ng\nh\n"), ["a", "b", "c", "d", "e", "f", "g", "h"]);
+  // A single unterminated line past the cap overflows and resets the buffer.
+  assert.throws(() => buf.push("x".repeat(17)), LineBufferOverflowError);
+  // After overflow the buffer is clear, so a fresh well-formed line parses.
+  assert.deepEqual(buf.push("ok\n"), ["ok"]);
+});
+
+test("MAX_LINE_BUFFER_BYTES defaults to 1 MiB", () => {
+  assert.equal(MAX_LINE_BUFFER_BYTES, 1024 * 1024);
 });

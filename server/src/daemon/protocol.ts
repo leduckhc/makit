@@ -173,19 +173,45 @@ export function decodeResponse(line: string): ControlResponse | null {
   return ok;
 }
 
+/** Default cap for a single buffered (unterminated) line: 1 MiB. */
+export const MAX_LINE_BUFFER_BYTES = 1024 * 1024;
+
+/**
+ * Thrown by {@link LineBuffer.push} when a peer streams more than the cap
+ * without a newline. The transport catches this and closes the connection so a
+ * hostile local peer cannot exhaust memory by never terminating a line.
+ */
+export class LineBufferOverflowError extends Error {
+  constructor(maxBytes: number) {
+    super(`control line exceeded ${maxBytes} bytes without a newline`);
+    this.name = "LineBufferOverflowError";
+  }
+}
+
 /**
  * Accumulates raw socket chunks and yields complete newline-delimited lines,
  * buffering any trailing partial line until the rest arrives. Both the control
  * server and client feed socket `data` through this so a message split across
  * TCP reads is reassembled correctly.
+ *
+ * The retained (unterminated) remainder is capped at {@link MAX_LINE_BUFFER_BYTES}
+ * (overridable for tests); exceeding it throws {@link LineBufferOverflowError}
+ * and resets the buffer. Completed lines are unaffected, so a large batch of
+ * well-formed small lines is fine — only an unbounded single line is rejected.
  */
 export class LineBuffer {
   private buf = "";
+
+  constructor(private readonly maxBytes: number = MAX_LINE_BUFFER_BYTES) {}
 
   push(chunk: string): string[] {
     this.buf += chunk;
     const parts = this.buf.split("\n");
     this.buf = parts.pop() ?? "";
+    if (this.buf.length > this.maxBytes) {
+      this.buf = "";
+      throw new LineBufferOverflowError(this.maxBytes);
+    }
     return parts;
   }
 }
