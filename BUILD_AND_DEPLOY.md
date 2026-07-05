@@ -222,7 +222,7 @@ while true; do
     --apple-id "$APPLE_ID" \
     --password "$APP_PASSWORD" \
     --output-format json | jq -r '.status')
-  
+
   if [ "$STATUS" = "Accepted" ]; then
     echo "✅ Notarization approved!"
     xcrun stapler staple build/pino.dmg
@@ -235,7 +235,7 @@ while true; do
       --password "$APP_PASSWORD"
     exit 1
   fi
-  
+
   echo "Status: $STATUS (waiting...)"
   sleep 30
 done
@@ -313,23 +313,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.4'
           channel: 'stable'
-      
+
       - name: Install dependencies
         run: |
           cd app
           flutter pub get --enforce-lockfile
-      
+
       - name: Build iOS IPA
         run: |
           cd app
           flutter build ipa --release
-      
+
       - name: Upload to App Store Connect
         run: |
           cd build/ios/ipa
@@ -345,18 +345,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.4'
           channel: 'stable'
-      
+
       - name: Install dependencies
         run: |
           cd app
           flutter pub get --enforce-lockfile
-      
+
       - name: Build macOS DMG
         run: |
           cd app
@@ -366,7 +366,7 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APP_PASSWORD: ${{ secrets.APP_SPECIFIC_PASSWORD }}
-      
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:

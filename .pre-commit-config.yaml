@@ -1,0 +1,71 @@
+# Pre-commit hooks for pino monorepo.
+#
+# Install: pre-commit install --hook-type pre-push
+# Run manually: pre-commit run --all-files
+# Update hook revisions: pre-commit autoupdate
+#
+# Hooks mirror what CI enforces:
+#   Flutter  — dart format + flutter analyze (flutter-ci.yml)
+#   Server   — TypeScript typecheck (server-ci.yml)
+
+default_install_hook_types: [pre-push]
+
+# Generated build output should never trigger hook failures.
+exclude: ^server/dist/
+
+repos:
+  # ---------------------------------------------------------------------------
+  # General file hygiene
+  # ---------------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+
+  # ---------------------------------------------------------------------------
+  # Flutter / Dart
+  # Requires: dart and flutter on PATH (part of Flutter SDK installation).
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: dart-format
+        name: dart format
+        description: >
+          Fail if staged Dart files are not formatted.
+          Fix: run `dart format <file>` and re-stage.
+        language: system
+        entry: dart format --set-exit-if-changed
+        files: ^app/.*\.dart$
+        types: [file]
+
+      - id: flutter-analyze
+        name: flutter analyze
+        description: >
+          Run Flutter static analysis (fatal-infos, matching CI).
+          Fix: address the reported warnings/errors.
+        language: system
+        entry: bash -c 'cd app && flutter analyze --no-pub --fatal-infos'
+        files: ^app/.*\.dart$
+        pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # Server (Node.js / TypeScript)
+  # Requires: pnpm on PATH and `pnpm install` already run in server/.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: server-typecheck
+        name: TypeScript typecheck
+        description: >
+          Run `tsc --noEmit` for the server package (matching CI).
+          Fix: address the reported type errors.
+        language: system
+        entry: bash -c 'cd server && pnpm typecheck'
+        files: ^server/.*\.(ts|js|json)$
+        pass_filenames: false
