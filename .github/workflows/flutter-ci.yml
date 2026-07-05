@@ -118,12 +118,17 @@ jobs:
           cd app
           flutter pub get --enforce-lockfile
 
-      - name: Check for known CVEs in dependencies
+      - name: Scan dependencies for known advisories (OSV)
         run: |
           cd app
-          flutter pub outdated 2>&1 | tee /tmp/outdated.txt
-          # Grep for known-critical packages (e.g., if any are severely outdated)
-          if grep -i "is not available" /tmp/outdated.txt; then
-            echo "WARNING: Some packages may have been yanked or are inaccessible."
-          fi
-        continue-on-error: true
+          # Pinned binary + SHA256 verify — no third-party action in the
+          # trust boundary. Bump OSV_VERSION/OSV_SHA256 together; get the
+          # hash from the release's osv-scanner_SHA256SUMS.
+          OSV_VERSION="v2.3.8"
+          OSV_SHA256="bc98e15319ed0d515e3f9235287ba53cdc5535d576d24fd573978ecfe9ab92dc"
+          curl -sSfL -o /tmp/osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  /tmp/osv-scanner" | sha256sum -c -
+          chmod +x /tmp/osv-scanner
+          # Exits non-zero if any package in the lockfile has a known advisory.
+          /tmp/osv-scanner scan source --lockfile=pubspec.lock
