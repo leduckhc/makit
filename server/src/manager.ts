@@ -280,7 +280,10 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Test helper: simulate the host.open path for a pending pane spawn.
-   * Creates the session via openHostSession and resolves the pending spawn.
+   * Creates a minimal IngestAdapter session (without the real pi commands
+   * fetcher) and resolves the pending spawn. Production code uses the
+   * server.ts host.open handler which calls openHostSession then
+   * resolvePendingSpawn.
    */
   async simulateHostOpen(
     spawnToken: string,
@@ -288,12 +291,22 @@ export class SessionManager extends EventEmitter {
     cwd: string,
     projectId: string,
   ): Promise<Session> {
-    const session = await this.openHostSession({
-      title,
-      cwd,
-      projectId,
-      onPrompt: () => {},
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+
+    // Build a minimal ingest session without enableCommands() to avoid
+    // spawning a real pi subprocess in tests.
+    const { IngestAdapter } = await import("./adapters/ingest.js");
+    const adapter = new IngestAdapter(() => {});
+    const session = new Session({
+      projectId: project.dto.id,
+      agent: "pi",
+      title: title ?? "pi (mirror)",
+      adapter,
     });
+    await adapter.start({ cwd });
+    this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
     this.resolvePendingSpawn(spawnToken, session);
     return session;
   }
