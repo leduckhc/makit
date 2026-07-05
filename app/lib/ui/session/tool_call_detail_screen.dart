@@ -1,8 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -34,85 +31,11 @@ class ToolCallDetailScreen extends ConsumerWidget {
         body: const Center(child: Text('Tool call not found')),
       );
     }
-    // Delegate to the renderer's detail view if one is registered for this tool.
+    // Delegate to the renderer's detail view if one is registered for this
+    // tool; otherwise fall back to the shared generic (non-JSON) detail so the
+    // header and layout stay consistent across every tool.
     final renderer = rendererFor(tool);
     if (renderer != null) return renderer.detail(context, tool);
-
-    // Generic fallback.
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(tool.name),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => context.go('/session/$sessionId'),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _Section(title: 'Arguments', child: _Mono(_pretty(tool.args))),
-          if (tool.deltas.isNotEmpty)
-            _Section(title: 'Output', child: _Mono(tool.deltas.join()))
-          else if (tool.output?.isNotEmpty ?? false)
-            _Section(title: 'Output', child: _Mono(tool.output!)),
-          // Only show a separate Result when it adds info beyond Output:
-          // on failure (exit code), or when there was no Output to show.
-          // Otherwise `summary` just repeats Output's first line.
-          if (tool.ended &&
-              ((tool.exitCode ?? 0) != 0 ||
-                  (tool.deltas.isEmpty && !(tool.output?.isNotEmpty ?? false))))
-            _Section(
-              title: (tool.exitCode ?? 0) != 0 ? 'Error' : 'Result',
-              child: Text(
-                tool.summary ?? 'exit ${tool.exitCode ?? 0}',
-                style: const TextStyle(fontFamily: 'monospace'),
-              ),
-            ),
-        ],
-      ),
-    );
+    return genericToolDetail(context, tool);
   }
-
-  static String _pretty(Map<String, dynamic> m) =>
-      const JsonEncoder.withIndent('  ').convert(m);
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.child});
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: child,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Mono extends StatelessWidget {
-  const _Mono(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => SelectableText(
-    text,
-    style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
-  );
 }

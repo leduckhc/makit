@@ -56,8 +56,29 @@ void main() {
       expect(rendererFor(item)!.subtitle(item), 'EN');
     });
 
+    test('matches tool names case-insensitively', () {
+      expect(rendererFor(_tool('Read', {})), isNotNull);
+      expect(rendererFor(_tool('Edit', {})), isNotNull);
+      expect(rendererFor(_tool('WRITE', {})), isNotNull);
+      expect(rendererFor(_tool('Bash', {}))!.name, 'bash');
+    });
+
     test('returns null for unknown tools (caller falls back to generic)', () {
       expect(rendererFor(_tool('mystery_tool', {})), isNull);
+    });
+  });
+
+  group('display names', () {
+    test('registered tools expose a capitalised title', () {
+      expect(toolDisplayName(_tool('read', {})), 'Read');
+      expect(toolDisplayName(_tool('write', {})), 'Write');
+      expect(toolDisplayName(_tool('edit', {})), 'Edit');
+      expect(toolDisplayName(_tool('bash', {})), 'Bash');
+      expect(toolDisplayName(_tool('grep', {})), 'Grep');
+    });
+
+    test('unknown tools fall back to a capitalised name', () {
+      expect(toolDisplayName(_tool('lint', {})), 'Lint');
     });
   });
 
@@ -174,8 +195,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // Header shows the tool's display name, left-aligned.
+      expect(find.text('Bash'), findsOneWidget);
       expect(find.text('Command'), findsOneWidget);
-      expect(find.text('echo hi'), findsOneWidget);
+      // The command appears both in the header subtitle and the Command section.
+      expect(find.text('echo hi'), findsWidgets);
       expect(find.text('Output'), findsOneWidget);
       expect(find.text('hi'), findsOneWidget);
     });
@@ -201,7 +225,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('TODO'), findsOneWidget);
+      expect(find.text('Grep'), findsOneWidget);
+      // Pattern shows in the header subtitle and the params section.
+      expect(find.text('TODO'), findsWidgets);
       expect(find.text('*.dart'), findsOneWidget);
       expect(find.text('lib/foo.dart:12: // TODO: fix'), findsOneWidget);
     });
@@ -244,6 +270,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('A'), findsOneWidget);
       expect(find.text('B'), findsOneWidget);
+    });
+
+    testWidgets('accepts old_string/new_string aliases', (tester) async {
+      final item = _tool('edit', {
+        'path': 'p',
+        'old_string': 'foo',
+        'new_string': 'bar',
+      });
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Header uses the tool name, not the path.
+      expect(find.text('Edit'), findsOneWidget);
+      expect(find.text('foo'), findsOneWidget);
+      expect(find.text('bar'), findsOneWidget);
+    });
+  });
+
+  group('generic tool detail (no bespoke renderer)', () {
+    testWidgets('shows args as label/value rows, never a raw JSON blob', (
+      tester,
+    ) async {
+      final item = _tool('lint', {'fix': true, 'path': 'lib/foo.dart'});
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => genericToolDetail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Capitalised tool name as the header title.
+      expect(find.text('Lint'), findsOneWidget);
+      expect(find.text('Arguments'), findsOneWidget);
+      // Values render as readable rows, not `{"fix":true,...}`.
+      expect(find.text('true'), findsOneWidget);
+      expect(find.textContaining('{'), findsNothing);
     });
   });
 

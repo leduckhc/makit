@@ -45,7 +45,7 @@ class ToolCallCard extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        item.name,
+                        toolDisplayName(item),
                         style: Theme.of(context).textTheme.titleSmall,
                       ),
                       const SizedBox(width: 8),
