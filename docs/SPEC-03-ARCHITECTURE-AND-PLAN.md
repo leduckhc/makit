@@ -280,4 +280,3 @@ TASK 7 (integration)              [after tasks 2–5 complete]
 - ✅ Native notification fires on paired event
 - ✅ Mobile build unaffected (`flutter analyze` clean for both)
 - ✅ Commit + ready to ship
-

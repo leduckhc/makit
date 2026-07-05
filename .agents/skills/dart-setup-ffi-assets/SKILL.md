@@ -281,19 +281,19 @@ Future<File> downloadAsset(
 ) async {
   final fileName = targetOS.dylibFileName('native_add_${targetOS.name}_${targetArchitecture.name}');
   final uri = downloadUri(fileName);
-  
+
   final client = HttpClient()..findProxy = HttpClient.findProxyFromEnvironment;
   final request = await client.getUrl(uri);
   final response = await request.close();
-  
+
   if (response.statusCode != 200) {
     throw ArgumentError('Download target $uri failed: Code ${response.statusCode}');
   }
-  
+
   final targetFile = File.fromUri(outputDir.uri.resolve(fileName));
   await targetFile.create(recursive: true);
   await response.pipe(targetFile.openWrite());
-  
+
   return targetFile;
 }
 

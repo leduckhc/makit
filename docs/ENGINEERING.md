@@ -118,7 +118,7 @@ Each item: **RED** (write this failing test first) → **GREEN** (smallest chang
   app-encode → server-decode round-trip. Fails when either side drifts.
 - **GREEN**: extract encode/decode into `server/src/protocol/codec.ts` and
   `app/lib/transport/codec.dart` with a shared fixture set (JSON files checked
-  into both). 
+  into both).
 - **REFACTOR**: `StoreController._onFrame` becomes `reduce(state, decoded)` — a
   pure function; DTO mapping moves into the codec.
 - **VERIFY**: contract test + a new `store_reducer_test.dart`.

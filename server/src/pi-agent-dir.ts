@@ -54,9 +54,9 @@ export function buildFilteredAgentDir(excludePackages: string[]): string | undef
       .filter((p: unknown) => {
         if (typeof p !== "string") return true;
         // Match by package name (npm:@scope/name or npm:plain or relative/path).
-        return !excludePackages.some((ex) => 
-          p === ex || 
-          p === `npm:${ex}` || 
+        return !excludePackages.some((ex) =>
+          p === ex ||
+          p === `npm:${ex}` ||
           p.endsWith(`/${ex}`),
         );
       })
