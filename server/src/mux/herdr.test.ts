@@ -68,10 +68,18 @@ test("parsePaneList returns [] on garbage", () => {
 
 test("isAvailable true when pane list succeeds", async () => {
   const exec = recordingExec({
-    "herdr pane list": paneListJson([]),
+    "herdr pane list": paneListJson(["w1:p1"]),
+  });
+  const adapter = new HerdrAdapter({ exec, anchor: "w1:p1" });
+  assert.equal(await adapter.isAvailable(), true);
+});
+
+test("isAvailable false when configured anchor is missing", async () => {
+  const exec = recordingExec({
+    "herdr pane list": paneListJson(["w1:p1"]),
   });
   const adapter = new HerdrAdapter({ exec, anchor: "pino" });
-  assert.equal(await adapter.isAvailable(), true);
+  assert.equal(await adapter.isAvailable(), false);
 });
 
 test("isAvailable false when herdr missing", async () => {

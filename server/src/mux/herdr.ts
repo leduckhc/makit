@@ -70,8 +70,8 @@ export class HerdrAdapter implements MultiplexerAdapter {
 
   async isAvailable(): Promise<boolean> {
     try {
-      await this.exec(MUX, ["pane", "list"]);
-      return true;
+      const { stdout } = await this.exec(MUX, ["pane", "list"]);
+      return parsePaneList(stdout).includes(this.anchor);
     } catch {
       return false;
     }
