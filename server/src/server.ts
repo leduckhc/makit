@@ -329,7 +329,8 @@ export function startWsServer(opts: ServerOpts) {
     r.register("session.spawn", async (ctx) => {
       const projectId = String(ctx.env.projectId ?? "");
       const title = ctx.env.title ? String(ctx.env.title) : undefined;
-      const newSession = await manager.spawnPiSession(projectId, title);
+      // Prefer pane-based spawn (SPEC-05); falls back to headless when no mux.
+      const newSession = await manager.spawnPiSessionInPane(projectId, title);
       // wireSession is invoked via the manager's "sessionCreated" listener
       // registered above — don't call it explicitly or every event fans out
       // twice.
@@ -474,6 +475,7 @@ export function startWsServer(opts: ServerOpts) {
       const title = typeof ctx.env.title === "string" ? ctx.env.title : undefined;
       const cwd = typeof ctx.env.cwd === "string" ? ctx.env.cwd : undefined;
       const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : undefined;
+      const spawnToken = typeof ctx.env.spawnToken === "string" ? ctx.env.spawnToken : undefined;
       const owner = ctx.client;
       let sid = "";
       const session = await manager.openHostSession({
@@ -486,6 +488,11 @@ export function startWsServer(opts: ServerOpts) {
           owner.send({ t: "host.action", id: newId("ha"), sessionId: sid, action, args }),
       });
       sid = session.id;
+
+      // SPEC-05: if a pane-spawn token is present, correlate with the pending
+      // spawnPiSessionInPane call and attach the PaneHandle to this session.
+      if (spawnToken) manager.resolvePendingSpawn(spawnToken, session);
+
       hostAdapters.set(sid, session.adapter as IngestAdapter);
       hostOwner.set(sid, owner);
       broadcastSnapshots();
@@ -515,6 +522,8 @@ export function startWsServer(opts: ServerOpts) {
       if (session && title && session.title !== title) {
         session.title = title;
         broadcastSessionsSnapshot();
+        // SPEC-05: keep the mux pane label in sync with the session title.
+        manager.updatePaneLabel(sid, title).catch(() => {});
       }
     });
 

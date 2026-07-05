@@ -51,6 +51,8 @@ export default function (pi: ExtensionAPI): void {
   let closing = false; // set on pi shutdown — stop reconnecting
   let backoff = 1000; // reconnect delay, grows to a cap, resets on connect
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  // SPEC-05: token embedded in env by pino when launching pi in a mux pane.
+  let spawnToken: string | undefined;
   const outbox: Json[] = []; // events buffered until a host session is open
   const OUTBOX_MAX = 1000;
   const pendingAsks = new Map<string, (r: Json) => void>(); // askId → resolver
@@ -195,6 +197,7 @@ export default function (pi: ExtensionAPI): void {
     ws = sock;
     sock.on("open", () => {
       raw({ v: 1, t: "hello", id: "h", host: host.token });
+      spawnToken = process.env.PINO_SPAWN_TOKEN;
     });
     sock.on("message", (buf: Buffer) => {
       let m: Json;
@@ -205,14 +208,18 @@ export default function (pi: ExtensionAPI): void {
       }
       if (m.t === "hello.ack") {
         backoff = 1000; // healthy connection — reset backoff
-        raw({
+        const openFrame: Json = {
           v: 1,
           t: "cmd",
           id: "open",
           kind: "host.open",
           title: cachedSessionName,
           cwd: process.cwd(),
-        });
+        };
+        // SPEC-05: include the spawn token so the server can correlate this
+        // host.open with the pending pane spawn (absent for user-launched pi).
+        if (spawnToken) openFrame.spawnToken = spawnToken;
+        raw(openFrame);
         sentTitle = cachedSessionName; // host.open carries the initial title
         return;
       }
