@@ -30,7 +30,16 @@ import {
 } from "./protocol.js";
 
 export interface ControlClient {
-  /** Issue a request and resolve the first response frame that matches its id. */
+  /**
+   * Issue a request and resolve the FIRST response frame that matches its id.
+   *
+   * Note: because it resolves on the first matching frame, this method cannot
+   * consume the multi-frame `logs.tail --follow` stream (which emits many
+   * `{ id, ok, data:{ line } }` frames for one request id). The CLI `pino logs
+   * -f` therefore reads the log file directly rather than through this client.
+   * A streaming client API is deferred to SPEC-02, when a real consumer needs
+   * it (YAGNI — no consumer exists yet).
+   */
   request<T = unknown>(
     verb: ControlVerb,
     args?: Record<string, unknown>,
@@ -76,7 +85,18 @@ export function connectControlClient(socketPath: string): Promise<ControlClient>
     });
 
     sock.on("data", (chunk) => {
-      for (const line of buf.push(chunk.toString())) {
+      let lines: string[];
+      try {
+        lines = buf.push(chunk.toString());
+      } catch (err) {
+        // Overflow (a daemon streaming an unbounded line) is unrecoverable:
+        // fail all in-flight requests and tear the socket down.
+        closed = true;
+        failAll(err as Error);
+        sock.destroy();
+        return;
+      }
+      for (const line of lines) {
         if (line.length === 0) continue;
         const res = decodeResponse(line);
         if (!res) continue;
