@@ -9,8 +9,9 @@ import 'e2e_helpers.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('assistant markdown reply renders headings, code + links',
-      (tester) async {
+  testWidgets('assistant markdown reply renders headings, code + links', (
+    tester,
+  ) async {
     await launchPino(tester);
     await openFirstSession(tester);
 

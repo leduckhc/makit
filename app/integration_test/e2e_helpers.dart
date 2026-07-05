@@ -17,7 +17,8 @@ Future<void> launchPino(WidgetTester tester) async {
     tester,
     find.text('new session'),
     timeout: _connectionTimeout,
-    reason: 'home screen never showed the "new session" tile — '
+    reason:
+        'home screen never showed the "new session" tile — '
         'WS handshake or snapshot likely failed',
   );
 }
