@@ -12,13 +12,19 @@
 # Remove this script once the upstream fix lands in a Flutter stable release.
 set -euo pipefail
 
-# Locate the Flutter SDK from the `flutter` on PATH.
-flutter_bin="$(command -v flutter || true)"
-if [[ -z "$flutter_bin" ]]; then
-  echo "error: flutter not found on PATH" >&2
-  exit 1
+# Locate the Flutter SDK. Xcode build phases export FLUTTER_ROOT but have no
+# `flutter` on PATH; CLI use has `flutter` on PATH but not FLUTTER_ROOT. Try
+# both so this works from the macOS build phase and from a terminal.
+if [[ -n "${FLUTTER_ROOT:-}" ]]; then
+  sdk_root="$FLUTTER_ROOT"
+else
+  flutter_bin="$(command -v flutter || true)"
+  if [[ -z "$flutter_bin" ]]; then
+    echo "error: set FLUTTER_ROOT or put flutter on PATH" >&2
+    exit 1
+  fi
+  sdk_root="$(cd "$(dirname "$(readlink -f "$flutter_bin" 2>/dev/null || echo "$flutter_bin")")/.." && pwd)"
 fi
-sdk_root="$(cd "$(dirname "$(readlink -f "$flutter_bin" 2>/dev/null || echo "$flutter_bin")")/.." && pwd)"
 target="$sdk_root/packages/flutter/lib/src/widgets/_window_macos.dart"
 
 if [[ ! -f "$target" ]]; then
