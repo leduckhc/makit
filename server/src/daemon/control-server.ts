@@ -21,7 +21,7 @@
  * host, a TCP bind), that assumption breaks and real auth must be added.
  */
 
-import { createServer, type Server, type Socket } from "node:net";
+import { createServer, connect, type Server, type Socket } from "node:net";
 import { chmodSync, rmSync } from "node:fs";
 import { log } from "../log.js";
 import {
@@ -38,6 +38,7 @@ import {
   type SessionsListData,
   type ServerStopData,
   type LogsTailArgs,
+  LineBufferOverflowError,
 } from "./protocol.js";
 
 type Awaitable<T> = T | Promise<T>;
@@ -125,6 +126,10 @@ export async function dispatchRequest(
   }
 }
 
+// numArg/strArg intentionally coerce leniently: a mistyped or missing arg from a
+// local peer degrades to the safe default (undefined / "") rather than an error.
+// The verb allow-list in `decodeRequest` is the real guard; per-arg strictness
+// here would add noise without adding security on a same-user socket.
 function numArg(req: ControlRequest, key: string): number | undefined {
   const v = req.args?.[key];
   return typeof v === "number" ? v : undefined;
@@ -138,6 +143,13 @@ function strArg(req: ControlRequest, key: string): string {
 export interface ControlServerOpts {
   socketPath: string;
   backend: ControlBackend;
+  /**
+   * Probe an existing socket file to see if a *live* daemon is answering.
+   * Injected for tests; defaults to a real connect attempt. Returns true only
+   * when the connect succeeds (a live peer); ECONNREFUSED/ENOENT (a stale file
+   * from a crashed daemon) resolves false so we may safely unlink and rebind.
+   */
+  probe?: (socketPath: string) => Promise<boolean>;
 }
 
 export interface ControlServerHandle {
@@ -147,11 +159,40 @@ export interface ControlServerHandle {
 
 /**
  * Listen on the unix control socket (mode 0600) and dispatch requests to the
- * backend. A stale socket file from a crashed daemon is removed first.
+/**
+ * Probe a control socket: resolve true if a live daemon accepts a connection,
+ * false on ECONNREFUSED/ENOENT (a stale file) or any other connect failure.
  */
-export function createControlServer(opts: ControlServerOpts): Promise<ControlServerHandle> {
+function probeSocket(socketPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = connect(socketPath);
+    const settle = (alive: boolean) => {
+      sock.removeAllListeners();
+      sock.destroy();
+      resolve(alive);
+    };
+    sock.once("connect", () => settle(true));
+    sock.once("error", () => settle(false));
+  });
+}
+
+/**
+ * Listen on the unix control socket (mode 0600) and dispatch requests to the
+ * backend. Before binding we probe any existing socket file: if a *live* daemon
+ * answers we refuse to start (so a second server can't hijack the same
+ * PINO_HOME); only a stale file from a crashed daemon is unlinked and rebound.
+ */
+export async function createControlServer(opts: ControlServerOpts): Promise<ControlServerHandle> {
   const { socketPath, backend } = opts;
-  // Remove a leftover socket from a crash so bind() doesn't EADDRINUSE.
+  const probe = opts.probe ?? probeSocket;
+
+  if (await probe(socketPath)) {
+    throw new Error(
+      `a pino daemon is already listening on ${socketPath} (refusing to start a second one)`,
+    );
+  }
+  // No live peer answered: a leftover socket file (if any) is stale, so remove
+  // it before bind() to avoid EADDRINUSE.
   rmSync(socketPath, { force: true });
 
   const server = createServer((sock) => handleConnection(sock, backend));
@@ -183,12 +224,28 @@ export function createControlServer(opts: ControlServerOpts): Promise<ControlSer
 function handleConnection(sock: Socket, backend: ControlBackend): void {
   const buf = new LineBuffer();
   const stops = new Set<LogTailStop>();
+  // Tracks whether the socket has already torn down. A `logs.tail --follow`
+  // stop fn is only known after `dispatchRequest` resolves; if the socket
+  // closed in that window we must invoke the stop immediately (below) rather
+  // than leak the fs.watch handle by adding it to an already-drained set.
+  let closed = false;
   const respond: Respond = (msg) => {
     if (sock.writable) sock.write(encodeMessage(msg));
   };
 
   sock.on("data", (chunk) => {
-    for (const line of buf.push(chunk.toString())) {
+    let lines: string[];
+    try {
+      lines = buf.push(chunk.toString());
+    } catch (e) {
+      if (e instanceof LineBufferOverflowError) {
+        respond({ id: "", ok: false, error: e.message });
+        sock.destroy();
+        return;
+      }
+      throw e;
+    }
+    for (const line of lines) {
       if (line.length === 0) continue;
       const req = decodeRequest(line);
       if (!req) {
@@ -196,12 +253,22 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
         continue;
       }
       void dispatchRequest(req, backend, respond).then((stop) => {
-        if (stop) stops.add(stop);
+        if (!stop) return;
+        if (closed) {
+          try {
+            stop();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        stops.add(stop);
       });
     }
   });
 
   const cleanup = () => {
+    closed = true;
     for (const stop of stops) {
       try {
         stop();

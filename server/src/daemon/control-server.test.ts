@@ -8,7 +8,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { connect } from "node:net";
@@ -182,5 +182,69 @@ test("socket: malformed line yields an error response and keeps the connection",
       sock.on("error", reject);
     });
     assert.equal(res.ok, false);
+  });
+});
+
+test("createControlServer refuses to start when a live daemon answers the probe", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const path = join(dir, "control.sock");
+  try {
+    await assert.rejects(
+      () =>
+        createControlServer({
+          socketPath: path,
+          backend: fakeBackend(),
+          probe: async () => true, // a live daemon is already listening
+        }),
+      /already listening/,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("createControlServer binds when the probe reports a stale socket file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const path = join(dir, "control.sock");
+  // Simulate a leftover file from a crashed daemon.
+  writeFileSync(path, "stale");
+  let probed = "";
+  const handle = await createControlServer({
+    socketPath: path,
+    backend: fakeBackend(),
+    probe: async (p) => {
+      probed = p;
+      return false; // nothing alive → safe to unlink + rebind
+    },
+  });
+  try {
+    assert.equal(probed, path);
+    assert.equal(statSync(path).mode & 0o777, 0o600); // rebound as a fresh 0600 socket
+  } finally {
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("socket: an over-cap unterminated line is rejected and the connection closed", async () => {
+  await withSocket(async (path) => {
+    const result = await new Promise<{ res: ControlResponse | null; closed: boolean }>(
+      (resolve, reject) => {
+        const sock = connect(path);
+        const buf = new LineBuffer(64 * 1024 * 1024); // client buffer must not trip first
+        let res: ControlResponse | null = null;
+        sock.on("connect", () => sock.write("x".repeat(1024 * 1024 + 1))); // no newline, > 1 MiB
+        sock.on("data", (d) => {
+          for (const line of buf.push(d.toString())) {
+            const r = decodeResponse(line);
+            if (r) res = r;
+          }
+        });
+        sock.on("close", () => resolve({ res, closed: true }));
+        sock.on("error", reject);
+      },
+    );
+    assert.equal(result.closed, true);
+    assert.equal(result.res?.ok, false);
   });
 });
