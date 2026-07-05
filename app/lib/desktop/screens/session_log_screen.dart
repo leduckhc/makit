@@ -9,17 +9,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../control/control_contract.dart';
 import 'providers.dart';
 
-/// Tails a single session's log, auto-scrolling to follow new lines.
+/// Tails the daemon log, auto-scrolling to follow new lines.
 ///
 /// Subscribes to `tailLogs(follow: true)` on the injected
 /// [ControlClient]. Shows a "Connecting…" placeholder until the first line
 /// arrives and a "Connection lost" state if the stream errors. Auto-scroll
 /// pauses while the user has scrolled away from the bottom.
 class SessionLogScreen extends ConsumerStatefulWidget {
-  /// Creates a log tail for [sessionId].
+  /// Creates a daemon-log tail view for the route owning [sessionId].
   const SessionLogScreen({super.key, required this.sessionId});
 
-  /// Identifier of the session whose log is tailed.
+  /// Session route identifier shown by the parent route.
   final String sessionId;
 
   @override
@@ -84,7 +84,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text('Log · ${widget.sessionId}'),
+        title: const Text('Daemon Log'),
       ),
       body: _body(context),
     );

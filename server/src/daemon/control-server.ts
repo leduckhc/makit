@@ -228,6 +228,7 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
   const buf = new LineBuffer();
   const stops = new Map<string, LogTailStop>();
   const cancelled = new Set<string>();
+  const pendingStops = new Set<string>();
   // Tracks whether the socket has already torn down. A `logs.tail --follow`
   // stop fn is only known after `dispatchRequest` resolves; if the socket
   // closed in that window we must invoke the stop immediately (below) rather
@@ -259,6 +260,7 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
       if (req.verb === "logs.cancel") {
         const target = typeof req.args?.id === "string" ? req.args.id : "";
         const stop = stops.get(target);
+        const pending = pendingStops.has(target);
         if (stop) {
           try {
             stop();
@@ -266,13 +268,17 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
             /* ignore */
           }
           stops.delete(target);
-        } else if (target) {
+        } else if (pending) {
           cancelled.add(target);
         }
-        respond({ id: req.id, ok: true, data: { cancelled: target !== "" } });
+        respond({ id: req.id, ok: true, data: { cancelled: stop != null || pending } });
         continue;
       }
+      if (req.verb === "logs.tail" && req.args?.follow === true) {
+        pendingStops.add(req.id);
+      }
       void dispatchRequest(req, backend, respond).then((stop) => {
+        pendingStops.delete(req.id);
         if (!stop) return;
         if (cancelled.delete(req.id)) {
           try {
@@ -306,6 +312,7 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
     }
     stops.clear();
     cancelled.clear();
+    pendingStops.clear();
   };
   sock.on("close", cleanup);
   sock.on("error", cleanup);

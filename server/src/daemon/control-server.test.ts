@@ -192,6 +192,39 @@ test("socket: logs.cancel stops one followed log tail", async () => {
   }
 });
 
+test("socket: logs.cancel reports false for a stale log-tail id", async () => {
+  await withSocket(async (path) => {
+    const cancel = await new Promise<ControlResponse>((resolve, reject) => {
+      const sock = connect(path);
+      const buf = new LineBuffer();
+      sock.on("connect", () =>
+        sock.write(
+          encodeMessage({
+            id: "cancel-stale",
+            verb: "logs.cancel",
+            args: { id: "missing-tail" },
+          }),
+        ),
+      );
+      sock.on("data", (d) => {
+        for (const line of buf.push(d.toString())) {
+          const res = decodeResponse(line);
+          if (res?.id === "cancel-stale") {
+            sock.end();
+            resolve(res);
+          }
+        }
+      });
+      sock.on("error", reject);
+    });
+    assert.deepEqual(cancel, {
+      id: "cancel-stale",
+      ok: true,
+      data: { cancelled: false },
+    });
+  });
+});
+
 test("socket: created 0600 and answers a request end-to-end", async () => {
   await withSocket(async (path) => {
     const mode = statSync(path).mode & 0o777;
