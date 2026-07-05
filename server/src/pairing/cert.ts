@@ -104,3 +104,20 @@ export function tailscaleIP(): string | null {
     return null; // offline or tailscale not installed
   }
 }
+
+/**
+ * Best external bind host: Tailscale if online, else the first non-internal
+ * LAN IPv4. This is the default — binding here keeps the server off `0.0.0.0`
+ * so we don't expose port 8787 to every interface the machine joins (public
+ * Wi-Fi, corporate networks, …). A separate loopback listener (see
+ * `startWsServer`) still handles the pino-mirror extension host and the
+ * `flutter run -d macos` dev loop.
+ *
+ * Users can override via `--host 0.0.0.0` if they need every interface.
+ */
+export function preferredHost(): string {
+  const ts = tailscaleIP();
+  if (ts) return ts;
+  const lans = localIPv4s();
+  return lans[0] ?? "127.0.0.1";
+}

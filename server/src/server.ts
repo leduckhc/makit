@@ -14,6 +14,14 @@
  *     new device and returns its bearer in `hello.ack.bearer`.
  *   - Anything else → close with 4401 (unauthorized).
  *
+ * Binding:
+ * The server listens on the `host:port` provided (typically Tailscale or LAN).
+ * When `host` is a specific, non-loopback IP, a second loopback listener is
+ * automatically added at `127.0.0.1:port` so the pino-mirror extension host
+ * and the `flutter run -d macos` dev loop keep working. The two listeners
+ * share the same {@link WebSocketServer} via `noServer` upgrade forwarding,
+ * so all connected clients go through the same auth gate and state.
+ *
  * Localhost connections (loopback remote address) can opt out of auth via
  * `--no-auth` — useful for the `flutter run -d macos` dev loop. By default
  * even localhost is gated so behaviour matches production.
@@ -83,11 +91,48 @@ export function hostAskResultFrame(
   } as OutgoingFrame;
 }
 
+/** True when `host` already covers every interface (wildcard) or is purely
+ * loopback. In these cases we don't need a separate local listener — binding
+ * to 127.0.0.1 on top of 0.0.0.0 would EADDRINUSE, and binding twice to
+ * 127.0.0.1 is redundant.
+ */
+function isLoopbackOrWildcard(host: string): boolean {
+  return (
+    host === "0.0.0.0" ||
+    host === "::" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host === "::ffff:127.0.0.1" ||
+    host === "localhost"
+  );
+}
+
 export function startWsServer(opts: ServerOpts) {
   const { host, port, manager, cert, registry, trustLocalhost = false, hostToken } = opts;
 
+  // The WSS uses noServer mode so we can forward upgrades from TWO HTTPS
+  // listeners into the same connection handler:
+  //   1. The external listener (host:port) — phone over Tailscale or LAN.
+  //   2. A loopback listener (127.0.0.1:port) — only when `host` is a specific
+  //      non-loopback IP. Keeps the pino-mirror extension host and the
+  //      `flutter run -d macos` dev loop reachable.
+  // When host is `0.0.0.0` (all interfaces) or already loopback, the second
+  // listener is redundant and skipped.
+  const wss = new WebSocketServer({ noServer: true });
   const https: HttpsServer = createHttpsServer({ cert: cert.cert, key: cert.key });
-  const wss = new WebSocketServer({ server: https });
+  const needsLocalListener = !isLoopbackOrWildcard(host);
+  const localHttps: HttpsServer | undefined = needsLocalListener
+    ? createHttpsServer({ cert: cert.cert, key: cert.key })
+    : undefined;
+
+  const forwardUpgrade = (s: HttpsServer) => {
+    s.on("upgrade", (req, socket, head) => {
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+    });
+  };
+  forwardUpgrade(https);
+  if (localHttps) forwardUpgrade(localHttps);
+
   https.on("tlsClientError", (err: Error, sock) => {
     log.warn(`[pino] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
   });
@@ -161,6 +206,11 @@ export function startWsServer(opts: ServerOpts) {
   https.listen(port, host, () => {
     log.info(`[pino] wss listening on wss://${host}:${port}`);
   });
+  if (localHttps) {
+    localHttps.listen(port, "127.0.0.1", () => {
+      log.info(`[pino] wss also listening on 127.0.0.1:${port} (loopback)`);
+    });
+  }
 
   const askDevice = rpc.askDevice.bind(rpc);
   // Device ids with a live authenticated WS connection — feeds the control
@@ -170,7 +220,7 @@ export function startWsServer(opts: ServerOpts) {
     for (const c of clients.values()) if (c.authed && c.deviceId) ids.add(c.deviceId);
     return ids;
   };
-  return { wss, https, askDevice, connectedDeviceIds };
+  return { wss, https, localHttps, askDevice, connectedDeviceIds };
 
   // -------- dispatch ------------------------------------------------------
 

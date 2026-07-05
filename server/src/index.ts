@@ -3,8 +3,14 @@
  * pino — desktop server CLI.
  *
  * Usage:
- *   pino serve [--host 0.0.0.0] [--port 8787] [--project P]... [--no-auth]
+ *   pino serve [--host H] [--port 8787] [--project P]... [--no-auth]
  *   pino pair  [--host H] [--port P]                  # prints a QR + URL
+ *
+ * Default host: Tailscale IP if online, else first LAN IPv4. Pass
+ * `--host 0.0.0.0` to bind every interface (not recommended on untrusted
+ * networks — the server is gated by auth, but the port is exposed).
+ * A loopback listener is added automatically when host is a specific IP,
+ * so the pino-mirror extension host and the flutter dev loop keep working.
  *
  * `pino serve` is the long-running server. `pino pair` is meant to be run
  * from a second terminal (or as a hotkey on an already-running server) to
@@ -27,7 +33,7 @@ import { startWsServer } from "./server.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
-import { loadOrCreateCert, localIPv4s, tailscaleIP } from "./pairing/cert.js";
+import { loadOrCreateCert, preferredHost } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
@@ -84,7 +90,7 @@ function makeDaemon() {
 
 function parseArgs(argv: string[]) {
   const args = {
-    host: "0.0.0.0",
+    host: preferredHost(),
     port: 8787,
     projects: [] as string[],
     noAuth: false,
@@ -102,12 +108,6 @@ function parseArgs(argv: string[]) {
   }
   if (args.projects.length === 0) args.projects.push(process.cwd());
   return args;
-}
-function bestLanHost(): string {
-  const tailscale = tailscaleIP();
-  if (tailscale) return tailscale;
-  const ips = localIPv4s();
-  return ips[0] ?? "127.0.0.1";
 }
 
 /** Dedupe paths by their resolved absolute form, preserving first-seen order. */
@@ -315,7 +315,7 @@ async function main() {
     connectedDeviceIds: ws.connectedDeviceIds,
     buildUrl: (token) =>
       buildPairUrl({
-        host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : bestLanHost(),
+        host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : preferredHost(),
         port: opts.port,
         fingerprint: cert.fingerprint,
         token,
@@ -343,6 +343,7 @@ async function main() {
     try { mdns.stop(); } catch { /* best-effort */ }
     try { ws.wss.close(); } catch { /* best-effort */ }
     try { ws.https.close(); } catch { /* best-effort */ }
+    try { ws.localHttps?.close(); } catch { /* best-effort */ }
     // Only clear the PID file if it points at us (a detached `start` wrote it).
     if (readPidFile(pidFilePath()) === process.pid) rmSync(pidFilePath(), { force: true });
     setTimeout(() => process.exit(0), 100).unref();
@@ -480,7 +481,7 @@ function writeHostFile(port: number, fingerprint: string, token: string): void {
 }
 
 function printPairQr(registry: DeviceRegistry, port: number, fingerprint: string, advertise?: string) {
-  const host = advertise && advertise.length > 0 ? advertise : bestLanHost();
+  const host = advertise && advertise.length > 0 ? advertise : preferredHost();
   const token = registry.mintPairToken();
   const url = buildPairUrl({ host, port, fingerprint, token });
   console.log("");
