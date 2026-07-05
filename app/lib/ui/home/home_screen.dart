@@ -300,6 +300,7 @@ class _AttachPastButton extends ConsumerWidget {
     final chosen = await showModalBottomSheet<PiSessionMeta>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: metas.isEmpty
             ? const Padding(
