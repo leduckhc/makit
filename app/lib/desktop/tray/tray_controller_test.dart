@@ -72,6 +72,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _stopped,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.init();
@@ -86,6 +87,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _running,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.update(_running());
@@ -100,6 +102,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _stopped,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.update(_stopped());
@@ -114,6 +117,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _running,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.update(
@@ -136,6 +140,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _running,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.update(
@@ -157,6 +162,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _running,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.update(_running());
@@ -172,6 +178,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _running,
         platform: fake,
+        isMacOS: true,
       );
 
       await controller.update(_running());
@@ -190,6 +197,7 @@ void main() {
       final controller = TrayController(
         stateAccessor: _stopped,
         platform: fake,
+        isMacOS: true,
         onStart: () => started = true,
         onOpenDashboard: () => dashboard = true,
         onOpenQr: () => qr = true,
@@ -214,8 +222,11 @@ void main() {
 
     test('update() notifies listeners', () async {
       var notified = 0;
-      final controller = TrayController(stateAccessor: _running, platform: fake)
-        ..addListener(() => notified++);
+      final controller = TrayController(
+        stateAccessor: _running,
+        platform: fake,
+        isMacOS: true,
+      )..addListener(() => notified++);
 
       await controller.update(_running());
 
@@ -226,11 +237,29 @@ void main() {
       final controller = TrayController(
         stateAccessor: _stopped,
         platform: fake,
+        isMacOS: true,
       );
 
       controller.dispose();
 
       expect(fake.destroyCount, 1);
+    });
+
+    test('is a no-op off macOS', () async {
+      final controller = TrayController(
+        stateAccessor: _stopped,
+        platform: fake,
+        isMacOS: false,
+      );
+
+      await controller.init();
+      await controller.update(_stopped());
+      controller.dispose();
+
+      expect(fake.imagePaths, isEmpty);
+      expect(fake.tooltips, isEmpty);
+      expect(fake.menus, isEmpty);
+      expect(fake.destroyCount, 0);
     });
   });
 }

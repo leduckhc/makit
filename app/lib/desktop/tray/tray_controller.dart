@@ -124,16 +124,23 @@ class TrayController extends ChangeNotifier {
   TrayController({
     required DaemonSummary Function() stateAccessor,
     TrayPlatform? platform,
+    bool? isMacOS,
     this.onStart,
     this.onStop,
     this.onOpenDashboard,
     this.onOpenQr,
     this.onQuit,
   }) : _stateAccessor = stateAccessor,
-       _platform = platform ?? TrayManagerPlatform();
+       _platform = platform ?? TrayManagerPlatform(),
+       _isMacOS = isMacOS ?? Platform.isMacOS;
 
   final DaemonSummary Function() _stateAccessor;
   final TrayPlatform _platform;
+
+  /// Whether tray calls should reach the native platform. Defaults to
+  /// [Platform.isMacOS]; tests override it so they can exercise the real
+  /// menu/tooltip building through the injected [TrayPlatform].
+  final bool _isMacOS;
 
   /// Invoked when the user chooses "Start Server".
   final VoidCallback? onStart;
@@ -152,7 +159,7 @@ class TrayController extends ChangeNotifier {
 
   /// Creates the tray icon and its initial tooltip/menu from the current state.
   Future<void> init() async {
-    if (!Platform.isMacOS) return;
+    if (!_isMacOS) return;
     final state = _stateAccessor();
     await _platform.setImagePath(TrayIcons.defaultIconPath);
     await _platform.setTemplateImage(true);
@@ -163,7 +170,7 @@ class TrayController extends ChangeNotifier {
   /// Refreshes the tooltip and rebuilds the menu for [state], then notifies
   /// listeners.
   Future<void> update(DaemonSummary state) async {
-    if (!Platform.isMacOS) return;
+    if (!_isMacOS) return;
     await _platform.setTooltip(_tooltipFor(state));
     await _platform.setMenu(_buildMenu(state));
     notifyListeners();
@@ -171,7 +178,7 @@ class TrayController extends ChangeNotifier {
 
   @override
   void dispose() {
-    if (Platform.isMacOS) {
+    if (_isMacOS) {
       // Fire-and-forget: the icon removal is a one-way native call.
       unawaited(_platform.destroy());
     }
