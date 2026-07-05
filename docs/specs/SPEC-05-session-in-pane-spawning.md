@@ -1,6 +1,6 @@
 # SPEC-05 — Session-in-pane spawning + lifecycle
 
-**Status:** ready · **Depends on:** SPEC-04 (mux adapter) · **Touches:**
+**Status:** done · **Depends on:** SPEC-04 (mux adapter) · **Touches:**
 `server/src/manager.ts`, `server/src/server.ts`, `server/extensions/pino-mirror.ts`,
 app session DTO/UI
 
@@ -134,18 +134,18 @@ See [herdr quick start](https://herdr.dev/docs/quick-start/) and
 - `session.meta` (or sessions.snapshot): include `pane` so the app can display it.
 
 ## Acceptance criteria
-- [ ] Creating a session from the phone opens a **new unfocused herdr pane**
+- [x] Creating a session from the phone opens a **new unfocused herdr pane**
       running `pi` in the correct project cwd; the phone session becomes live and
       mirrors that pi.
-- [ ] The pane is labeled `pino: <title>` and updates on rename.
-- [ ] The phone session header shows the pane locator (mux + paneId).
-- [ ] Attaching to the pane in the terminal shows the same live `pi` session.
-- [ ] `/quit` (or `session.kill`) on the phone **closes the pane**; quitting `pi`
+- [x] The pane is labeled `pino: <title>` and updates on rename.
+- [x] The phone session header shows the pane locator (mux + paneId).
+- [x] Attaching to the pane in the terminal shows the same live `pi` session.
+- [x] `/quit` (or `session.kill`) on the phone **closes the pane**; quitting `pi`
       in the terminal ends the phone session (and pane already gone) — no orphans.
-- [ ] If `pi` fails to launch within the timeout, `session.spawn` errors cleanly
+- [x] If `pi` fails to launch within the timeout, `session.spawn` errors cleanly
       and the pane is closed.
-- [ ] On a host without a multiplexer, spawn falls back to headless and still works.
-- [ ] Tests: manager spawn path with a **fake MultiplexerAdapter** + fake spawn —
+- [x] On a host without a multiplexer, spawn falls back to headless and still works.
+- [x] Tests: manager spawn path with a **fake MultiplexerAdapter** + fake spawn —
       assert pane opened with the right cwd/command/label, token correlation
       resolves the session, and `closePane` is called on each end path (host.close,
       kill, pi-exit). Extension unit: `host.open` includes `spawnToken` when env
