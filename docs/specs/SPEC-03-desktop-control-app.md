@@ -21,6 +21,22 @@ should be the thing that *runs* the server and *hands out* QR codes. The fix is
 **not** a rewrite — it is to branch the app on `Platform.isMacOS` so the macOS
 build boots the desktop **control** UI instead of the mobile client flow.
 
+## Two roles, one codebase
+
+pino ships **two apps from the same Flutter codebase**, branched on
+`Platform.isMacOS`. They are logically separate (no shared UI, no flow leaks),
+but not separate repos:
+
+- **Mobile app** (iOS/Android) — the **client**. Scans the QR, pairs, connects,
+  and **chats** with existing/new sessions. Unchanged by this spec.
+- **Desktop app** (macOS) — the **control** app. Runs the server, generates /
+  regenerates the QR, revokes (invalidates) paired devices, and shows / refreshes
+  the sessions of connected mobiles. **Chatting from the desktop is explicitly
+  deferred to a future version — not in v1.**
+
+The macOS build gets its own `MaterialApp` root (not the mobile `go_router`),
+so the pairing/chat client flow cannot appear on desktop.
+
 ## Decisions (consensus — source of truth for this spec)
 
 1. **Tech = reuse the Flutter app** (`app/`) as a macOS desktop build. **No native
