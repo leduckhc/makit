@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../store/connection.dart';
+import 'device_name.dart';
 import 'mdns_browser.dart';
 import 'pair_info.dart';
 import 'qr_scanner_screen.dart';
@@ -37,7 +38,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      await ref.read(connectionControllerProvider.notifier).pairWith(info);
+      final label = await deviceName();
+      await ref
+          .read(connectionControllerProvider.notifier)
+          .pairWith(info, label: label);
       if (!mounted) return;
       Navigator.of(context).pop(); // close spinner
       messenger.showSnackBar(const SnackBar(content: Text('Paired!')));

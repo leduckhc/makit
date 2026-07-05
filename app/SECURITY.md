@@ -102,6 +102,7 @@ In-tree native code:
 | Module | Purpose | Notes |
 |---|---|---|
 | `ios/Runner/QrScannerPlugin.swift` | QR scanner via AVFoundation + Vision | No third-party libs. Replaces `mobile_scanner` (which pulls Google MLKit). |
+| `ios/Runner/AppDelegate.swift` + `android/.../MainActivity.kt` (`pino/device_info`) | Reads the device name (`UIDevice.current.name` / Android `device_name`) for the pairing label | Read-only. No secure-storage/pasteboard access, no network. Avoids a `device_info_plus` dependency. |
 
 To add a new plugin with native code:
 
