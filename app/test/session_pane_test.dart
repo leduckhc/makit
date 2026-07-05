@@ -6,7 +6,7 @@ import 'package:pino/transport/codec.dart';
 void main() {
   group('Session pane field', () {
     test('decodeSessions parses pane info when present', () {
-      final sessions = Codec.decodeSessions([
+      final sessions = WireCodec.decodeSessions([
         {
           'id': 's1',
           'projectId': 'p1',
@@ -28,7 +28,7 @@ void main() {
     });
 
     test('decodeSessions works without pane field (backwards compat)', () {
-      final sessions = Codec.decodeSessions([
+      final sessions = WireCodec.decodeSessions([
         {
           'id': 's2',
           'projectId': 'p1',
