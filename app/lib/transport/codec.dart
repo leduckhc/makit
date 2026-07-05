@@ -119,6 +119,10 @@ class WireCodec {
       if (id is! String || projectId is! String || agent is! String) {
         return null;
       }
+      final rawPane = j['pane'];
+      final pane = rawPane is Map
+          ? PaneInfo.fromJson(Map<String, dynamic>.from(rawPane))
+          : null;
       out.add(
         Session(
           id: id,
@@ -137,6 +141,7 @@ class WireCodec {
           lastPreview: j['lastPreview'] is String
               ? j['lastPreview'] as String
               : '',
+          pane: pane,
         ),
       );
     }

@@ -233,6 +233,27 @@ ApprovalPolicy parsePolicy(String s) => switch (s) {
   _ => ApprovalPolicy.askOnRisky,
 };
 
+/// Multiplexer pane locator for a session running in a pane (SPEC-05).
+class PaneInfo {
+  const PaneInfo({required this.mux, required this.paneId});
+  final String mux;
+  final String paneId;
+
+  static PaneInfo? fromJson(Map<String, dynamic> j) {
+    final mux = j['mux'];
+    final paneId = j['paneId'];
+    if (mux is! String || paneId is! String) return null;
+    return PaneInfo(mux: mux, paneId: paneId);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PaneInfo && other.mux == mux && other.paneId == paneId;
+
+  @override
+  int get hashCode => Object.hash(mux, paneId);
+}
+
 class Session {
   Session({
     required this.id,
@@ -243,6 +264,7 @@ class Session {
     required this.policy,
     this.lastActivityAt = 0,
     this.lastPreview = '',
+    this.pane,
   });
 
   final String id;
@@ -253,6 +275,8 @@ class Session {
   final ApprovalPolicy policy;
   final int lastActivityAt;
   final String lastPreview;
+  /// Set when this session runs in a multiplexer pane (SPEC-05).
+  final PaneInfo? pane;
 
   Session copyWith({
     SessionStatus? status,
@@ -260,6 +284,8 @@ class Session {
     String? title,
     int? lastActivityAt,
     String? lastPreview,
+    PaneInfo? pane,
+    bool clearPane = false,
   }) => Session(
     id: id,
     projectId: projectId,
@@ -269,6 +295,7 @@ class Session {
     policy: policy ?? this.policy,
     lastActivityAt: lastActivityAt ?? this.lastActivityAt,
     lastPreview: lastPreview ?? this.lastPreview,
+    pane: clearPane ? null : (pane ?? this.pane),
   );
 }
 

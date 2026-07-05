@@ -207,6 +207,19 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   ],
                                 ),
                           ),
+                          if (session?.pane != null)
+                            Text(
+                              '\u29c9 ${session!.pane!.mux} ${session.pane!.paneId}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: cs.onSurface.withValues(alpha: 0.45),
+                                    shadows: [
+                                      Shadow(color: cs.surface, blurRadius: 6),
+                                    ],
+                                  ),
+                            ),
                           if (meta?.model != null)
                             Text(
                               '${meta!.model!.name} · ${meta.thinking}',

@@ -14,6 +14,7 @@ import type {
   SessionEvent,
   SessionStatus,
 } from "./protocol.js";
+import type { PaneHandle } from "./mux/adapter.js";
 
 export interface SessionInit {
   projectId: string;
@@ -35,6 +36,8 @@ export class Session extends EventEmitter {
 
   readonly events: SessionEvent[] = [];
   adapter: AgentAdapter;
+  /** Set when this session runs in a multiplexer pane (SPEC-05). */
+  pane?: PaneHandle;
 
   constructor(init: SessionInit) {
     super();
@@ -128,6 +131,7 @@ export class Session extends EventEmitter {
       policy: this.policy,
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
+      ...(this.pane ? { pane: { mux: this.pane.mux, paneId: this.pane.paneId } } : {}),
     };
   }
 
