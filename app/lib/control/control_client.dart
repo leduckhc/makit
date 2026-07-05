@@ -40,7 +40,8 @@ abstract class ControlConnection {
 }
 
 /// Opens a control connection given a socket path. Injected for testing.
-typedef ControlConnector = Future<ControlConnection> Function(String socketPath);
+typedef ControlConnector =
+    Future<ControlConnection> Function(String socketPath);
 
 /// A [ControlConnection] backed by a real `dart:io` unix-domain [Socket].
 class _SocketControlConnection implements ControlConnection {
@@ -133,7 +134,9 @@ class PinoControlClient {
     Map<String, dynamic>? args,
   }) {
     if (_closed || _conn == null) {
-      return Future.error(const ControlException('control client not connected'));
+      return Future.error(
+        const ControlException('control client not connected'),
+      );
     }
     final id = _nextId();
     final completer = Completer<ControlResponse<Object?>>();

@@ -79,7 +79,10 @@ class _StatusError extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, color: cs.error, size: 40),
           const SizedBox(height: 12),
-          Text('Could not load status', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Could not load status',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 16),
@@ -105,7 +108,10 @@ class _StatusBody extends StatelessWidget {
             children: [
               _StatusRow(label: 'PID', value: '${status.pid}'),
               _StatusRow(label: 'Uptime', value: formatUptime(status.uptimeMs)),
-              _StatusRow(label: 'Address', value: '${status.host}:${status.port}'),
+              _StatusRow(
+                label: 'Address',
+                value: '${status.host}:${status.port}',
+              ),
               _StatusRow(
                 label: 'Fingerprint',
                 value: status.fingerprint,
@@ -113,8 +119,14 @@ class _StatusBody extends StatelessWidget {
                 selectable: true,
               ),
               _StatusRow(label: 'Advertise host', value: status.advertiseHost),
-              _StatusRow(label: 'Paired devices', value: '${status.pairedDevices}'),
-              _StatusRow(label: 'Running sessions', value: '${status.runningSessions}'),
+              _StatusRow(
+                label: 'Paired devices',
+                value: '${status.pairedDevices}',
+              ),
+              _StatusRow(
+                label: 'Running sessions',
+                value: '${status.runningSessions}',
+              ),
               _StatusRow(label: 'Version', value: status.version),
             ],
           ),

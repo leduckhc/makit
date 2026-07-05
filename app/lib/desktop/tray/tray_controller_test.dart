@@ -214,10 +214,8 @@ void main() {
 
     test('update() notifies listeners', () async {
       var notified = 0;
-      final controller = TrayController(
-        stateAccessor: _running,
-        platform: fake,
-      )..addListener(() => notified++);
+      final controller = TrayController(stateAccessor: _running, platform: fake)
+        ..addListener(() => notified++);
 
       await controller.update(_running());
 

@@ -167,7 +167,11 @@ class FakeControlClient implements ControlClient {
   }
 
   @override
-  Stream<LogLine> tailLogs({int? lines, bool follow = false, String? sessionId}) {
+  Stream<LogLine> tailLogs({
+    int? lines,
+    bool follow = false,
+    String? sessionId,
+  }) {
     // A single cancellable [Timer] chain drives emission so cancelling the
     // subscription (e.g. on widget dispose) leaves no pending timers.
     final controller = StreamController<LogLine>();

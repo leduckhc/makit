@@ -63,7 +63,8 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
   void _onScroll() {
     if (!_scroll.hasClients) return;
     // Re-enable auto-scroll only when the user is pinned to the bottom.
-    _autoScroll = _scroll.position.pixels >= _scroll.position.maxScrollExtent - 8;
+    _autoScroll =
+        _scroll.position.pixels >= _scroll.position.maxScrollExtent - 8;
   }
 
   @override
@@ -112,7 +113,11 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
       itemCount: _lines.length,
       itemBuilder: (context, i) => Text(
         _lines[i],
-        style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.4),
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          height: 1.4,
+        ),
       ),
     );
   }

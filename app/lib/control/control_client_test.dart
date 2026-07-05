@@ -32,6 +32,7 @@ class FakeControlConnection implements ControlConnection {
   void pushRaw(String chunk) {
     _incoming.add(utf8.encode(chunk));
   }
+
   /// Simulate the server closing the socket.
   void closeFromServer() {
     unawaited(_incoming.close());
@@ -72,9 +73,11 @@ void main() {
     await client.connect();
     // A request should now be writable.
     final future = client.request(ControlVerb.status);
-    conn.push('{"id":"c1","ok":true,"data":{"pid":1,"uptimeMs":0,"host":"h",'
-        '"port":1,"fingerprint":"f","advertiseHost":"a","pairedDevices":0,'
-        '"runningSessions":0,"version":"v"}}');
+    conn.push(
+      '{"id":"c1","ok":true,"data":{"pid":1,"uptimeMs":0,"host":"h",'
+      '"port":1,"fingerprint":"f","advertiseHost":"a","pairedDevices":0,'
+      '"runningSessions":0,"version":"v"}}',
+    );
     final res = await future;
     expect(res, isA<ControlOk<Object?>>());
   });
@@ -88,9 +91,11 @@ void main() {
 
     // Respond out of order to prove correlation.
     conn.push('{"id":"c2","ok":true,"data":{"removed":true}}');
-    conn.push('{"id":"c1","ok":true,"data":{"pid":9,"uptimeMs":0,"host":"h",'
-        '"port":1,"fingerprint":"f","advertiseHost":"a","pairedDevices":0,'
-        '"runningSessions":0,"version":"v"}}');
+    conn.push(
+      '{"id":"c1","ok":true,"data":{"pid":9,"uptimeMs":0,"host":"h",'
+      '"port":1,"fingerprint":"f","advertiseHost":"a","pairedDevices":0,'
+      '"runningSessions":0,"version":"v"}}',
+    );
 
     final secondRes = await second as ControlOk<Object?>;
     final firstRes = await first as ControlOk<Object?>;
@@ -138,8 +143,7 @@ void main() {
   test('connect throws when the socket is missing', () async {
     client = PinoControlClient(
       socketPath: '/tmp/missing.sock',
-      connector: (_) async =>
-          throw const SocketException('connection refused'),
+      connector: (_) async => throw const SocketException('connection refused'),
     );
     await expectLater(client.connect(), throwsA(isA<SocketException>()));
   });
@@ -149,9 +153,11 @@ void main() {
       client = makeClient();
       await client.connect();
       final future = client.status();
-      conn.push('{"id":"c1","ok":true,"data":{"pid":7,"uptimeMs":5,"host":"h",'
-          '"port":2,"fingerprint":"f","advertiseHost":"a","pairedDevices":3,'
-          '"runningSessions":1,"version":"1.0"}}');
+      conn.push(
+        '{"id":"c1","ok":true,"data":{"pid":7,"uptimeMs":5,"host":"h",'
+        '"port":2,"fingerprint":"f","advertiseHost":"a","pairedDevices":3,'
+        '"runningSessions":1,"version":"1.0"}}',
+      );
       final status = await future;
       expect(status.pid, 7);
       expect(status.pairedDevices, 3);
@@ -161,8 +167,10 @@ void main() {
       client = makeClient();
       await client.connect();
       final future = client.pairMint();
-      conn.push('{"id":"c1","ok":true,"data":{"url":"pino://x","token":"t",'
-          '"expiresAt":9,"fingerprint":"f"}}');
+      conn.push(
+        '{"id":"c1","ok":true,"data":{"url":"pino://x","token":"t",'
+        '"expiresAt":9,"fingerprint":"f"}}',
+      );
       expect((await future).token, 't');
     });
 
@@ -178,8 +186,10 @@ void main() {
       client = makeClient();
       await client.connect();
       final future = client.pairCurrent();
-      conn.push('{"id":"c1","ok":true,"data":{"url":"pino://x","token":"t",'
-          '"expiresAt":9}}');
+      conn.push(
+        '{"id":"c1","ok":true,"data":{"url":"pino://x","token":"t",'
+        '"expiresAt":9}}',
+      );
       expect((await future)!.token, 't');
     });
 
@@ -187,8 +197,10 @@ void main() {
       client = makeClient();
       await client.connect();
       final future = client.devicesList();
-      conn.push('{"id":"c1","ok":true,"data":{"devices":[{"id":"d1",'
-          '"label":"iPhone","pairedAt":1,"lastSeenAt":2,"connected":true}]}}');
+      conn.push(
+        '{"id":"c1","ok":true,"data":{"devices":[{"id":"d1",'
+        '"label":"iPhone","pairedAt":1,"lastSeenAt":2,"connected":true}]}}',
+      );
       final devices = await future;
       expect(devices.single.id, 'd1');
     });
@@ -206,9 +218,11 @@ void main() {
       client = makeClient();
       await client.connect();
       final future = client.sessionsList();
-      conn.push('{"id":"c1","ok":true,"data":{"sessions":[{"id":"s1",'
-          '"projectId":"p1","agent":"pi","title":"t","status":"running",'
-          '"policy":"yolo","lastActivityAt":0,"lastPreview":""}]}}');
+      conn.push(
+        '{"id":"c1","ok":true,"data":{"sessions":[{"id":"s1",'
+        '"projectId":"p1","agent":"pi","title":"t","status":"running",'
+        '"policy":"yolo","lastActivityAt":0,"lastPreview":""}]}}',
+      );
       final sessions = await future;
       expect(sessions.single.id, 's1');
       expect(sessions.single.status, SessionStatus.running);
@@ -236,7 +250,9 @@ void main() {
       client = makeClient();
       await client.connect();
       final lines = <String>[];
-      final sub = client.tailLogs(lines: 2).listen((chunk) => lines.add(chunk.line));
+      final sub = client
+          .tailLogs(lines: 2)
+          .listen((chunk) => lines.add(chunk.line));
       final id = conn.requestId(0);
       conn.push('{"id":"$id","ok":true,"data":{"line":"a"}}');
       conn.push('{"id":"$id","ok":true,"data":{"line":"b"}}');

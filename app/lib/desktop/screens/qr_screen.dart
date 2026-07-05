@@ -81,10 +81,13 @@ class _QrScreenState extends ConsumerState<QrScreen> {
   void _startTicker(_Pairing pairing) {
     _ticker?.cancel();
     void tick() {
-      final remaining = DateTime.fromMillisecondsSinceEpoch(pairing.expiresAt)
-          .difference(DateTime.now());
+      final remaining = DateTime.fromMillisecondsSinceEpoch(
+        pairing.expiresAt,
+      ).difference(DateTime.now());
       if (mounted) {
-        setState(() => _remaining = remaining.isNegative ? Duration.zero : remaining);
+        setState(
+          () => _remaining = remaining.isNegative ? Duration.zero : remaining,
+        );
       }
     }
 
@@ -154,7 +157,9 @@ class _QrBody extends StatelessWidget {
               SelectableText(
                 pairing.fingerprint!,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                ),
               ),
             ],
             const SizedBox(height: 12),
@@ -184,7 +189,10 @@ class _QrError extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, color: cs.error, size: 40),
           const SizedBox(height: 12),
-          Text('Could not load pairing', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Could not load pairing',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 16),

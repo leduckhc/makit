@@ -182,7 +182,13 @@ void main() {
       final data =
           parseVerbData(ControlVerb.devicesList, {
                 'devices': [
-                  {'id': 'd1', 'label': 'ok', 'pairedAt': 1, 'lastSeenAt': 2, 'connected': true},
+                  {
+                    'id': 'd1',
+                    'label': 'ok',
+                    'pairedAt': 1,
+                    'lastSeenAt': 2,
+                    'connected': true,
+                  },
                   {'id': 42},
                 ],
               })!
@@ -245,7 +251,10 @@ void main() {
                 ],
               })!
               as SessionsListData;
-      expect(data.sessions.single.pane, const PaneInfo(mux: 'tmux', paneId: '%1'));
+      expect(
+        data.sessions.single.pane,
+        const PaneInfo(mux: 'tmux', paneId: '%1'),
+      );
     });
 
     test('server.stop', () {
@@ -262,8 +271,7 @@ void main() {
     });
 
     test('logs.tail done chunk', () {
-      final chunk =
-          parseVerbData(ControlVerb.logsTail, {'done': true})!;
+      final chunk = parseVerbData(ControlVerb.logsTail, {'done': true})!;
       expect(chunk, isA<LogDone>());
     });
 

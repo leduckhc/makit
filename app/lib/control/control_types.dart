@@ -11,12 +11,7 @@
 library;
 
 import 'package:pino/store/models.dart'
-    show
-        ApprovalPolicy,
-        PaneInfo,
-        SessionStatus,
-        parsePolicy,
-        parseStatus;
+    show ApprovalPolicy, PaneInfo, SessionStatus, parsePolicy, parseStatus;
 
 /// The v1 control verbs. Frozen — mirrors `CONTROL_VERBS` in `protocol.ts`.
 enum ControlVerb {

@@ -192,32 +192,17 @@ class TrayController extends ChangeNotifier {
       MenuItem(label: _stateLine(state), disabled: true),
       MenuItem.separator(),
       if (state.state == DaemonState.stopped)
-        MenuItem(
-          label: 'Start Server',
-          onClick: (_) => onStart?.call(),
-        ),
+        MenuItem(label: 'Start Server', onClick: (_) => onStart?.call()),
       if (state.state == DaemonState.running)
-        MenuItem(
-          label: 'Stop Server',
-          onClick: (_) => onStop?.call(),
-        ),
+        MenuItem(label: 'Stop Server', onClick: (_) => onStop?.call()),
       MenuItem.separator(),
-      MenuItem(
-        label: 'Dashboard',
-        onClick: (_) => onOpenDashboard?.call(),
-      ),
-      MenuItem(
-        label: 'Pair QR...',
-        onClick: (_) => onOpenQr?.call(),
-      ),
+      MenuItem(label: 'Dashboard', onClick: (_) => onOpenDashboard?.call()),
+      MenuItem(label: 'Pair QR...', onClick: (_) => onOpenQr?.call()),
       MenuItem.separator(),
       _dynamicDeviceSubmenu(state),
       _dynamicSessionSubmenu(state),
       MenuItem.separator(),
-      MenuItem(
-        label: 'Quit Pino',
-        onClick: (_) => onQuit?.call(),
-      ),
+      MenuItem(label: 'Quit Pino', onClick: (_) => onQuit?.call()),
     ];
     return Menu(items: items);
   }

@@ -35,8 +35,12 @@ List<DeviceInfo> _devices() => [
   DeviceInfo(
     id: 'd1',
     label: 'iPhone 15',
-    pairedAt: DateTime.now().subtract(const Duration(days: 3)).millisecondsSinceEpoch,
-    lastSeenAt: DateTime.now().subtract(const Duration(minutes: 5)).millisecondsSinceEpoch,
+    pairedAt: DateTime.now()
+        .subtract(const Duration(days: 3))
+        .millisecondsSinceEpoch,
+    lastSeenAt: DateTime.now()
+        .subtract(const Duration(minutes: 5))
+        .millisecondsSinceEpoch,
     connected: true,
   ),
 ];
@@ -47,7 +51,9 @@ List<SessionDto> _sessions() => [
     title: 'Refactor auth',
     status: 'running',
     projectId: 'p1',
-    lastActivityAt: DateTime.now().subtract(const Duration(minutes: 2)).millisecondsSinceEpoch,
+    lastActivityAt: DateTime.now()
+        .subtract(const Duration(minutes: 2))
+        .millisecondsSinceEpoch,
   ),
 ];
 
@@ -96,7 +102,9 @@ void main() {
   });
 
   group('QrScreen', () {
-    testWidgets('mints when no current token and shows the QR + url', (tester) async {
+    testWidgets('mints when no current token and shows the QR + url', (
+      tester,
+    ) async {
       final client = FakeControlClient(
         current: null,
         mint: const PairMintData(
@@ -178,7 +186,9 @@ void main() {
       expect(find.text('Retry'), findsOneWidget);
     });
 
-    testWidgets('revoke button invokes the client and refreshes', (tester) async {
+    testWidgets('revoke button invokes the client and refreshes', (
+      tester,
+    ) async {
       final client = FakeControlClient(devices: _devices());
       await tester.pumpWidget(_host(client, const DevicesScreen()));
       await tester.pumpAndSettle();
@@ -243,7 +253,10 @@ void main() {
 
     testWidgets('renders streamed lines', (tester) async {
       final client = FakeControlClient(
-        logLines: const [LogLine(text: 'hello'), LogLine(text: 'world')],
+        logLines: const [
+          LogLine(text: 'hello'),
+          LogLine(text: 'world'),
+        ],
       );
       await tester.pumpWidget(
         _host(client, const SessionLogScreen(sessionId: 's1')),
@@ -263,4 +276,3 @@ void main() {
     });
   });
 }
-

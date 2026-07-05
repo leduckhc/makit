@@ -41,7 +41,11 @@ abstract class ControlClient {
   ///
   /// [lines] bounds the initial backfill; [follow] keeps the stream open for
   /// live lines; [sessionId] scopes the tail to a single session when set.
-  Stream<LogLine> tailLogs({int? lines, bool follow = false, String? sessionId});
+  Stream<LogLine> tailLogs({
+    int? lines,
+    bool follow = false,
+    String? sessionId,
+  });
 }
 
 /// Immutable snapshot of daemon status.

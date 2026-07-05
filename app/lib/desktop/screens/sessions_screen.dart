@@ -130,7 +130,10 @@ class _SessionsError extends StatelessWidget {
         children: [
           Icon(Icons.error_outline, color: cs.error, size: 40),
           const SizedBox(height: 12),
-          Text('Could not load sessions', style: Theme.of(context).textTheme.titleMedium),
+          Text(
+            'Could not load sessions',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           const SizedBox(height: 4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 16),
