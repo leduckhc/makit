@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,9 +14,19 @@ import 'store/connection.dart';
 import 'store/store.dart';
 import 'ui/widgets/pino_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
+import 'desktop/desktop_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // macOS is the server-side *control* app (SPEC-03), a different app from the
+  // mobile client — it must never show the pairing/chat flow. Branch to its own
+  // root before any mobile-only bootstrap runs.
+  if (Platform.isMacOS) {
+    await runDesktopApp();
+    return;
+  }
+
   await seedTestPairingIfRequested();
   // The store listens to a broadcast stream that drops events without
   // listeners. Eagerly create the controller so it's subscribed before the
