@@ -53,6 +53,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
     setState(() => _lines.add(line.line));
     if (_autoScroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         if (_scroll.hasClients) {
           _scroll.jumpTo(_scroll.position.maxScrollExtent);
         }

@@ -62,12 +62,14 @@ class _QrScreenState extends ConsumerState<QrScreen> {
     final pairing = current != null
         ? _Pairing(url: current.url, expiresAt: current.expiresAt)
         : _fromMint(await client.pairMint());
+    if (!mounted) return pairing;
     _startTicker(pairing);
     return pairing;
   }
 
   Future<_Pairing> _mint() async {
     final pairing = _fromMint(await ref.read(controlClientProvider).pairMint());
+    if (!mounted) return pairing;
     _startTicker(pairing);
     return pairing;
   }
