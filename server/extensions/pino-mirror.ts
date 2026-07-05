@@ -133,10 +133,16 @@ export default function (pi: ExtensionAPI): void {
     } catch {
       /* stale ctx — skip model info, keep what we had */
     }
+    let thinking: string | null = null;
+    try {
+      thinking = pi.getThinkingLevel();
+    } catch {
+      /* stale ctx — omit thinking level */
+    }
     metaSent = true;
     emit("session.meta", {
       model: m,
-      thinking: pi.getThinkingLevel(),
+      thinking,
       models,
     });
   }
