@@ -37,7 +37,10 @@ enum ControlVerb {
   serverStop,
 
   /// Stream (or dump) the daemon log tail.
-  logsTail;
+  logsTail,
+
+  /// Cancel a followed log tail by request id.
+  logsCancel;
 
   /// The on-the-wire verb string (e.g. `pair.mint`).
   String get wire => switch (this) {
@@ -49,6 +52,7 @@ enum ControlVerb {
     ControlVerb.sessionsList => 'sessions.list',
     ControlVerb.serverStop => 'server.stop',
     ControlVerb.logsTail => 'logs.tail',
+    ControlVerb.logsCancel => 'logs.cancel',
   };
 
   /// Reverse of [wire]; `null` for an unknown verb string.

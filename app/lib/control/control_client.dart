@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'control_codec.dart';
+import 'control_contract.dart';
 import 'control_types.dart';
 
 /// The default per-request timeout for single-shot verbs.
@@ -80,7 +81,7 @@ class _Pending {
 }
 
 /// A control-plane client for a running pino daemon.
-class PinoControlClient {
+class PinoControlClient implements ControlClient {
   /// Creates a client for the daemon at [socketPath].
   ///
   /// [idGenerator] supplies request ids (injectable for deterministic tests);
@@ -157,12 +158,22 @@ class PinoControlClient {
   /// `{ done: true }` frame (non-follow) or when the socket closes, and errors
   /// with a [ControlException] on an error frame. When [follow] is true the
   /// daemon keeps streaming new lines until the subscription is cancelled.
+  @override
   Stream<LogLine> tailLogs({int? lines, bool follow = false}) {
     late final StreamController<LogLine> controller;
     final id = _nextId();
     controller = StreamController<LogLine>(
       onCancel: () {
         _streams.remove(id);
+        if (follow && !_closed && _conn != null) {
+          _conn!.write(
+            encodeRequest(
+              ControlVerb.logsCancel,
+              id: _nextId(),
+              args: {'id': id},
+            ),
+          );
+        }
       },
     );
     controller.onListen = () {
@@ -200,33 +211,44 @@ class PinoControlClient {
   // ---- convenience verbs ---------------------------------------------------
 
   /// Fetch daemon [StatusData].
+  @override
   Future<StatusData> status() async =>
       _require<StatusData>(await request(ControlVerb.status));
 
   /// Mint a fresh pairing token ([PairMintData]).
-  Future<PairMintData> pairMint() async =>
-      _require<PairMintData>(await request(ControlVerb.pairMint));
+  @override
+  Future<PairMintData> pairMint({int? ttlMs}) async => _require<PairMintData>(
+    await request(
+      ControlVerb.pairMint,
+      args: ttlMs == null ? null : {'ttlMs': ttlMs},
+    ),
+  );
 
   /// The active unexpired pairing token, or `null` if none.
+  @override
   Future<PairCurrentData?> pairCurrent() async =>
       _optional<PairCurrentData>(await request(ControlVerb.pairCurrent));
 
   /// List paired devices.
+  @override
   Future<List<DeviceInfo>> devicesList() async =>
       _require<DevicesListData>(await request(ControlVerb.devicesList)).devices;
 
   /// Revoke a paired device by [id]; returns whether one was removed.
+  @override
   Future<bool> devicesRevoke(String id) async => _require<DevicesRevokeData>(
     await request(ControlVerb.devicesRevoke, args: {'id': id}),
   ).removed;
 
   /// List running sessions.
+  @override
   Future<List<ControlSession>> sessionsList() async =>
       _require<SessionsListData>(
         await request(ControlVerb.sessionsList),
       ).sessions;
 
   /// Ask the daemon to shut down.
+  @override
   Future<void> serverStop() async =>
       _require<ServerStopData>(await request(ControlVerb.serverStop));
 

@@ -18,6 +18,7 @@ import 'package:pino/desktop/screens/qr_screen.dart';
 import 'package:pino/desktop/screens/session_log_screen.dart';
 import 'package:pino/desktop/screens/sessions_screen.dart';
 import 'package:pino/desktop/screens/status_screen.dart';
+import 'package:pino/store/models.dart' show ApprovalPolicy, SessionStatus;
 
 StatusData _status() => const StatusData(
   pid: 4242,
@@ -45,15 +46,18 @@ List<DeviceInfo> _devices() => [
   ),
 ];
 
-List<SessionDto> _sessions() => [
-  SessionDto(
+List<ControlSession> _sessions() => [
+  ControlSession(
     id: 's1',
-    title: 'Refactor auth',
-    status: 'running',
     projectId: 'p1',
+    agent: 'codex',
+    title: 'Refactor auth',
+    status: SessionStatus.running,
+    policy: ApprovalPolicy.askOnRisky,
     lastActivityAt: DateTime.now()
         .subtract(const Duration(minutes: 2))
         .millisecondsSinceEpoch,
+    lastPreview: 'Working',
   ),
 ];
 
@@ -253,10 +257,7 @@ void main() {
 
     testWidgets('renders streamed lines', (tester) async {
       final client = FakeControlClient(
-        logLines: const [
-          LogLine(text: 'hello'),
-          LogLine(text: 'world'),
-        ],
+        logLines: const [LogLine('hello'), LogLine('world')],
       );
       await tester.pumpWidget(
         _host(client, const SessionLogScreen(sessionId: 's1')),

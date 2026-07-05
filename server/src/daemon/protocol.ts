@@ -30,6 +30,7 @@ export const CONTROL_VERBS = [
   "sessions.list",
   "server.stop",
   "logs.tail",
+  "logs.cancel",
 ] as const;
 
 export type ControlVerb = (typeof CONTROL_VERBS)[number];

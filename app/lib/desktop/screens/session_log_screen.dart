@@ -11,7 +11,7 @@ import 'providers.dart';
 
 /// Tails a single session's log, auto-scrolling to follow new lines.
 ///
-/// Subscribes to `tailLogs(sessionId:, follow: true)` on the injected
+/// Subscribes to `tailLogs(follow: true)` on the injected
 /// [ControlClient]. Shows a "Connecting…" placeholder until the first line
 /// arrives and a "Connection lost" state if the stream errors. Auto-scroll
 /// pauses while the user has scrolled away from the bottom.
@@ -39,7 +39,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
     _scroll.addListener(_onScroll);
     _sub = ref
         .read(controlClientProvider)
-        .tailLogs(sessionId: widget.sessionId, follow: true)
+        .tailLogs(follow: true)
         .listen(
           _onLine,
           onError: (Object _) {
@@ -50,7 +50,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
 
   void _onLine(LogLine line) {
     if (!mounted) return;
-    setState(() => _lines.add(line.text));
+    setState(() => _lines.add(line.line));
     if (_autoScroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients) {

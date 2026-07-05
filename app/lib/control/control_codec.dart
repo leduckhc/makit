@@ -55,6 +55,7 @@ Object? parseVerbData(ControlVerb verb, Object? data) => switch (verb) {
   ControlVerb.sessionsList => SessionsListData.fromJson(data),
   ControlVerb.serverStop => ServerStopData.fromJson(data),
   ControlVerb.logsTail => LogChunk.fromJson(data),
+  ControlVerb.logsCancel => null,
 };
 
 /// Parse a single wire line into a [ControlResponse] whose ok `data` is typed

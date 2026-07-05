@@ -270,6 +270,20 @@ void main() {
       expect(req['args'], {'lines': 5, 'follow': true});
     });
 
+    test('cancelling a follow stream sends logs.cancel', () async {
+      client = makeClient();
+      await client.connect();
+      final sub = client.tailLogs(follow: true).listen((_) {});
+      final tailId = conn.requestId(0);
+
+      await sub.cancel();
+
+      expect(conn.written, hasLength(2));
+      final cancel = jsonDecode(conn.written[1]) as Map<String, dynamic>;
+      expect(cancel['verb'], 'logs.cancel');
+      expect(cancel['args'], {'id': tailId});
+    });
+
     test('errors the stream on an error frame', () async {
       client = makeClient();
       await client.connect();

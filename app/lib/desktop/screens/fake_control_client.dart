@@ -17,7 +17,7 @@ class FakeControlClient implements ControlClient {
   FakeControlClient({
     StatusData? status,
     List<DeviceInfo>? devices,
-    List<SessionDto>? sessions,
+    List<ControlSession>? sessions,
     PairMintData? mint,
     PairCurrentData? current,
     List<LogLine>? logLines,
@@ -40,7 +40,7 @@ class FakeControlClient implements ControlClient {
 
   final StatusData? _status;
   List<DeviceInfo>? _devices;
-  final List<SessionDto>? _sessions;
+  final List<ControlSession>? _sessions;
   final PairMintData? _mint;
   final PairCurrentData? _current;
   final List<LogLine>? _logLines;
@@ -148,7 +148,7 @@ class FakeControlClient implements ControlClient {
   }
 
   @override
-  Future<List<SessionDto>> sessionsList() async {
+  Future<List<ControlSession>> sessionsList() async {
     sessionsListCalls++;
     await Future<void>.delayed(latency);
     if (throwOnSessionsList) {
@@ -167,21 +167,13 @@ class FakeControlClient implements ControlClient {
   }
 
   @override
-  Stream<LogLine> tailLogs({
-    int? lines,
-    bool follow = false,
-    String? sessionId,
-  }) {
+  Stream<LogLine> tailLogs({int? lines, bool follow = false}) {
     // A single cancellable [Timer] chain drives emission so cancelling the
     // subscription (e.g. on widget dispose) leaves no pending timers.
     final controller = StreamController<LogLine>();
     final canned =
         _logLines ??
-        const [
-          LogLine(text: 'line 1'),
-          LogLine(text: 'line 2'),
-          LogLine(text: 'line 3'),
-        ];
+        const [LogLine('line 1'), LogLine('line 2'), LogLine('line 3')];
     Timer? timer;
     var index = 0;
 

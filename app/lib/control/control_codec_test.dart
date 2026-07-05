@@ -42,6 +42,7 @@ void main() {
       expect(ControlVerb.sessionsList.wire, 'sessions.list');
       expect(ControlVerb.serverStop.wire, 'server.stop');
       expect(ControlVerb.logsTail.wire, 'logs.tail');
+      expect(ControlVerb.logsCancel.wire, 'logs.cancel');
     });
   });
 

@@ -22,7 +22,7 @@ class SessionsScreen extends ConsumerStatefulWidget {
 }
 
 class _SessionsScreenState extends ConsumerState<SessionsScreen> {
-  late Future<List<SessionDto>> _future;
+  late Future<List<ControlSession>> _future;
 
   @override
   void initState() {
@@ -49,7 +49,7 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<SessionDto>>(
+      body: FutureBuilder<List<ControlSession>>(
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -75,7 +75,7 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
 class _SessionTile extends StatelessWidget {
   const _SessionTile({required this.session});
 
-  final SessionDto session;
+  final ControlSession session;
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +84,7 @@ class _SessionTile extends StatelessWidget {
       subtitle: Text(
         '${session.projectId} · ${formatRelative(session.lastActivityAt)}',
       ),
-      trailing: _StatusChip(status: session.status),
+      trailing: _StatusChip(status: session.status.name),
       // Phase 4 wires real navigation; for now surface the intended route.
       onTap: () => debugPrint('/sessions/${session.id}'),
     );
