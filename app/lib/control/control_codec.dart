@@ -57,18 +57,3 @@ Object? parseVerbData(ControlVerb verb, Object? data) => switch (verb) {
   ControlVerb.logsTail => LogChunk.fromJson(data),
   ControlVerb.logsCancel => null,
 };
-
-/// Parse a single wire line into a [ControlResponse] whose ok `data` is typed
-/// per [verb] via [parseVerbData]. Returns `null` on a malformed envelope.
-ControlResponse<Object?>? decodeTypedResponse(String line, ControlVerb verb) {
-  final Object? parsed;
-  try {
-    parsed = jsonDecode(line);
-  } on FormatException {
-    return null;
-  }
-  return ControlResponse.fromJson<Object?>(
-    parsed,
-    (data) => parseVerbData(verb, data),
-  );
-}

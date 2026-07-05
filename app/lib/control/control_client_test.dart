@@ -140,12 +140,37 @@ void main() {
     await expectLater(future, throwsA(isA<ControlException>()));
   });
 
+  test('an oversized newline-less frame tears down the client', () async {
+    client = makeClient();
+    await client.connect();
+    final future = client.request(ControlVerb.status);
+    // More than 1 MiB with no newline: the client must not buffer unbounded.
+    conn.pushRaw('x' * (1024 * 1024 + 1));
+    await expectLater(future, throwsA(isA<ControlException>()));
+  });
+
   test('connect throws when the socket is missing', () async {
     client = PinoControlClient(
       socketPath: '/tmp/missing.sock',
       connector: (_) async => throw const SocketException('connection refused'),
     );
     await expectLater(client.connect(), throwsA(isA<SocketException>()));
+  });
+
+  test(
+    'connect twice throws instead of leaking the first connection',
+    () async {
+      client = makeClient();
+      await client.connect();
+      await expectLater(client.connect(), throwsA(isA<StateError>()));
+    },
+  );
+
+  test('connect after dispose throws', () async {
+    client = makeClient();
+    await client.connect();
+    await client.dispose();
+    await expectLater(client.connect(), throwsA(isA<StateError>()));
   });
 
   group('convenience methods', () {
@@ -264,7 +289,7 @@ void main() {
     test('sends follow and lines args', () async {
       client = makeClient();
       await client.connect();
-      client.tailLogs(lines: 5, follow: true).listen((_) {});
+      client.tailLogs(lines: 5, follow: true).listen((_) {}, onError: (_) {});
       final req = jsonDecode(conn.written.first) as Map<String, dynamic>;
       expect(req['verb'], 'logs.tail');
       expect(req['args'], {'lines': 5, 'follow': true});
@@ -282,6 +307,38 @@ void main() {
       final cancel = jsonDecode(conn.written[1]) as Map<String, dynamic>;
       expect(cancel['verb'], 'logs.cancel');
       expect(cancel['args'], {'id': tailId});
+    });
+
+    test('a follow stream errors when the socket closes', () async {
+      client = makeClient();
+      await client.connect();
+      final done = Completer<void>();
+      Object? error;
+      client
+          .tailLogs(follow: true)
+          .listen(
+            (_) {},
+            onError: (Object e) {
+              error = e;
+              done.complete();
+            },
+          );
+      conn.closeFromServer();
+      await done.future;
+      expect(error, isA<ControlException>());
+    });
+
+    test('a non-follow stream closes cleanly when the socket closes', () async {
+      client = makeClient();
+      await client.connect();
+      var errored = false;
+      final sub = client.tailLogs().listen(
+        (_) {},
+        onError: (Object _) => errored = true,
+      );
+      conn.closeFromServer();
+      await sub.asFuture<void>();
+      expect(errored, isFalse);
     });
 
     test('errors the stream on an error frame', () async {

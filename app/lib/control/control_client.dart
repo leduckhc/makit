@@ -25,6 +25,10 @@ import 'control_types.dart';
 /// The default per-request timeout for single-shot verbs.
 const _defaultRequestTimeout = Duration(seconds: 30);
 
+/// Cap on the un-terminated inbound buffer. A local peer that never sends a
+/// newline must not be able to grow this without bound.
+const _maxBufferBytes = 1 << 20; // 1 MiB
+
 /// A bidirectional line-oriented connection to the control socket.
 ///
 /// Abstracts `dart:io` [Socket] so the client can be tested with a scripted
@@ -80,6 +84,15 @@ class _Pending {
   final Completer<ControlResponse<Object?>> completer;
 }
 
+class _LogStream {
+  _LogStream(this.controller, {required this.follow});
+  final StreamController<LogLine> controller;
+
+  /// Whether the consumer asked to keep streaming live lines. A [follow]
+  /// stream that ends because the socket dropped is a failure, not a clean EOF.
+  final bool follow;
+}
+
 /// A control-plane client for a running pino daemon.
 class PinoControlClient implements ControlClient {
   /// Creates a client for the daemon at [socketPath].
@@ -109,14 +122,23 @@ class PinoControlClient implements ControlClient {
   String _buffer = '';
 
   final _pending = <String, _Pending>{};
-  final _streams = <String, StreamController<LogLine>>{};
+  final _streams = <String, _LogStream>{};
 
   /// Open the control socket. Throws (e.g. [SocketException]) if the daemon is
   /// not listening.
+  ///
+  /// A client is single-use: calling [connect] more than once, or after
+  /// [dispose], throws a [StateError] rather than silently leaking the previous
+  /// socket and its subscription.
   Future<void> connect() async {
+    if (_closed) {
+      throw StateError('control client has been disposed');
+    }
+    if (_conn != null) {
+      throw StateError('control client is already connected');
+    }
     final conn = await _connector(socketPath);
     _conn = conn;
-    _closed = false;
     _sub = conn.stream.listen(
       _onData,
       onError: (Object _) => _onClosed('control socket error'),
@@ -184,7 +206,7 @@ class PinoControlClient implements ControlClient {
         unawaited(controller.close());
         return;
       }
-      _streams[id] = controller;
+      _streams[id] = _LogStream(controller, follow: follow);
       final args = <String, dynamic>{};
       if (lines != null) args['lines'] = lines;
       if (follow) args['follow'] = true;
@@ -285,6 +307,9 @@ class PinoControlClient implements ControlClient {
       if (line.isEmpty) continue;
       _dispatch(line);
     }
+    if (_buffer.length > _maxBufferBytes) {
+      _onClosed('control socket line exceeded $_maxBufferBytes bytes');
+    }
   }
 
   void _dispatch(String line) {
@@ -305,21 +330,22 @@ class PinoControlClient implements ControlClient {
       return;
     }
 
-    final stream = _streams[id];
-    if (stream != null) {
+    final logStream = _streams[id];
+    if (logStream != null) {
+      final controller = logStream.controller;
       switch (raw) {
         case ControlErr(:final error):
           _streams.remove(id);
-          stream.addError(ControlException(error));
-          unawaited(stream.close());
+          controller.addError(ControlException(error));
+          unawaited(controller.close());
         case ControlOk(:final data):
           final chunk = LogChunk.fromJson(data);
           switch (chunk) {
             case LogLine():
-              stream.add(chunk);
+              controller.add(chunk);
             case LogDone():
               _streams.remove(id);
-              unawaited(stream.close());
+              unawaited(controller.close());
             case null:
               break; // ignore an unrecognized chunk
           }
@@ -335,10 +361,14 @@ class PinoControlClient implements ControlClient {
       if (!entry.completer.isCompleted) entry.completer.completeError(err);
     }
     _pending.clear();
-    for (final controller in _streams.values) {
-      // Close cleanly rather than erroring: a `logs.tail` consumer may not have
-      // attached an error handler, and a socket close is a normal stream end.
-      unawaited(controller.close());
+    for (final logStream in _streams.values) {
+      // A follow stream that ends because the socket dropped is a failure the
+      // consumer must be able to detect; a non-follow tail ending is a normal
+      // EOF, so close it cleanly.
+      if (logStream.follow && !logStream.controller.isClosed) {
+        logStream.controller.addError(err);
+      }
+      unawaited(logStream.controller.close());
     }
     _streams.clear();
   }
