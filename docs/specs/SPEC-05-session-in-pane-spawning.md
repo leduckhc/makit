@@ -61,6 +61,62 @@ to spawn pi with that id in the environment.
 - **Config/toggle:** honor a setting to enable/disable pane-spawning (default on
   when a mux is available); env `PINO_MUX=off` disables.
 
+### Herdr host setup (prerequisite)
+
+Pane spawning calls SPEC-04's `HerdrAdapter.spawnPane`, which runs:
+
+```bash
+herdr pane split <anchor> --direction down --cwd <cwd> --no-focus
+```
+
+**Important (verified in SPEC-04 smoke test, herdr v0.7.1):** herdr's `pane split`
+takes a **pane id** (e.g. `w1:p1`), not a workspace label. The SPEC-04 default
+anchor `"pino"` is a *workspace label* — it does **not** resolve as a split
+target and returns `pane_not_found`.
+
+Before pane spawning works on a herdr host, the user (or first-run bootstrap)
+must:
+
+1. Have a running herdr server (`herdr` or `herdr server`).
+2. Create a dedicated workspace for pino sessions (once per host):
+
+   ```bash
+   herdr workspace create --cwd ~/your-project --label pino --no-focus
+   ```
+
+3. Set the split anchor to that workspace's **root pane id** (from the create
+   JSON, e.g. `w1:p1`), via env or config:
+
+   ```bash
+   export PINO_MUX_ANCHOR=w1:p1
+   ```
+
+   Or in `~/.pino/config.json`:
+
+   ```json
+   { "mux": { "name": "herdr", "anchor": "w1:p1" } }
+   ```
+
+New panes split from that anchor pane, keeping phone-initiated sessions out of
+the user's active layout. Re-check the pane id if workspaces are recreated
+(herdr assigns new ids).
+
+**SPEC-05 implementer note:** if `getMultiplexer()` is available but spawn fails
+with `pane_not_found`, treat it like mux unavailable and fall back to headless
+spawn (log a one-line hint about `PINO_MUX_ANCHOR`). Optional follow-up: auto-
+bootstrap a `pino` workspace and cache its root pane id — out of scope for v1
+(YAGNI); document the manual setup instead.
+
+Manual smoke (after setup):
+
+```bash
+PINO_MUX=herdr PINO_MUX_ANCHOR=w1:p1 tsx server/test/mux-herdr.smoke.ts
+# → SPEC-04 herdr smoke: PASS
+```
+
+See [herdr quick start](https://herdr.dev/docs/quick-start/) and
+[install](https://herdr.dev/docs/install/).
+
 ### Out
 - The mux mechanism itself — SPEC-04.
 - Externally, user-launched `pi` (pure World D) is unchanged — it still
@@ -104,3 +160,6 @@ to spawn pi with that id in the environment.
 - **Which pi binary / args** the pane runs (respect `PINO_PI_BIN`, project cwd,
   and any resume flags). Ensure it does NOT set `PINO_BRIDGE_URL` (that env makes
   `pino-mirror` bail — see extension guard).
+- **Herdr split anchor:** resolved — see **Herdr host setup** above. `PINO_MUX_ANCHOR`
+  / `mux.anchor` must be a pane id (e.g. `w1:p1`), not the workspace label `"pino"`.
+  On `pane_not_found`, fall back to headless spawn and log setup hint.
