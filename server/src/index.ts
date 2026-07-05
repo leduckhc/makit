@@ -32,8 +32,55 @@ import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
 import { randomBytes } from "node:crypto";
-import { writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync, readFileSync } from "node:fs";
+import { writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync, readFileSync, openSync } from "node:fs";
 import { homedir } from "node:os";
+import { spawn as childSpawn } from "node:child_process";
+import { createServerBackend } from "./daemon/backend.js";
+import { createControlServer, type ControlServerHandle } from "./daemon/control-server.js";
+import { createDaemon, readPidFile } from "./daemon/service.js";
+import { connectControlClient } from "./daemon/control-client.js";
+import { controlSocketPath, pidFilePath, logFilePath } from "./daemon/paths.js";
+import { installService, uninstallService } from "./daemon/launchd.js";
+
+/** pino version, read from package.json (best-effort). */
+const PINO_VERSION: string = (() => {
+  try {
+    const pkg = resolvePath(dirname(fileURLToPath(import.meta.url)), "../package.json");
+    return (JSON.parse(readFileSync(pkg, "utf8")).version as string) ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+})();
+
+/** Build a Daemon wired to real OS primitives (spawn/kill/control socket). */
+function makeDaemon() {
+  return createDaemon({
+    entry: fileURLToPath(import.meta.url),
+    execPath: process.execPath,
+    socketPath: controlSocketPath(),
+    pidPath: pidFilePath(),
+    logPath: logFilePath(),
+    out: (line) => console.log(line),
+    spawn: (cmd, args, logFd) => {
+      const child = childSpawn(cmd, args, { detached: true, stdio: ["ignore", logFd, logFd] });
+      return { pid: child.pid, unref: () => child.unref() };
+    },
+    openLogFd: (p) => {
+      mkdirSync(dirname(p), { recursive: true });
+      return openSync(p, "w");
+    },
+    kill: (pid, sig) => process.kill(pid, sig),
+    isAlive: (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    connect: (sp) => connectControlClient(sp),
+  });
+}
 
 function parseArgs(argv: string[]) {
   const args = {
@@ -76,8 +123,13 @@ function dedupeResolved(paths: string[]): string[] {
 
 async function main() {
   const cmd = process.argv[2];
-  if (cmd && cmd !== "serve" && cmd !== "pair" && cmd !== "attach" && cmd !== "mirror") {
-    console.error(`unknown command: ${cmd}\nusage: pino serve|pair|attach|mirror [...]`);
+  const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
+  const KNOWN = new Set(["serve", "pair", "attach", "mirror", ...LIFECYCLE]);
+  if (cmd && !KNOWN.has(cmd)) {
+    console.error(
+      `unknown command: ${cmd}\n` +
+        `usage: pino serve|start|stop|restart|status|logs|service|pair|attach|mirror [...]`,
+    );
     process.exit(2);
   }
 
@@ -97,6 +149,57 @@ async function main() {
     } else {
       const { runAttach } = await import("./cli/attach.js");
       await runAttach(argv);
+    }
+    return;
+  }
+
+  // --- background service lifecycle (SPEC-01) — thin clients of the control
+  // socket / process management. These do not need cert/manager. ---
+  if (LIFECYCLE.has(cmd!) && cmd !== "service") {
+    const daemon = makeDaemon();
+    const a = parseArgs(process.argv.slice(3));
+    const serveOpts = {
+      host: a.host,
+      port: a.port,
+      projects: a.projects,
+      noAuth: a.noAuth,
+      advertise: a.advertise,
+    };
+    let code = 0;
+    if (cmd === "start") code = await daemon.start(serveOpts);
+    else if (cmd === "stop") code = await daemon.stop();
+    else if (cmd === "restart") code = await daemon.restart(serveOpts);
+    else if (cmd === "status") code = await daemon.status();
+    else if (cmd === "logs") {
+      const rest = process.argv.slice(3);
+      const follow = rest.includes("--follow") || rest.includes("-f");
+      const li = rest.indexOf("--lines");
+      const lines = li >= 0 ? Number(rest[li + 1]) : undefined;
+      code = await daemon.logs({ follow, lines });
+    }
+    process.exit(code);
+  }
+
+  if (cmd === "service") {
+    const sub = process.argv[3];
+    const entry = fileURLToPath(import.meta.url);
+    const plistPath = resolvePath(homedir(), "Library", "LaunchAgents", "dev.pino.plist");
+    if (sub === "install") {
+      installService({
+        label: "dev.pino",
+        execPath: process.execPath,
+        entry,
+        logPath: logFilePath(),
+        plistPath,
+      });
+      console.log(`[pino] launchd agent installed: ${plistPath}`);
+      console.log(`[pino] it does NOT auto-start. Load it with: launchctl load ${plistPath}`);
+    } else if (sub === "uninstall") {
+      const removed = uninstallService({ plistPath });
+      console.log(removed ? `[pino] launchd agent removed: ${plistPath}` : `[pino] no launchd agent installed`);
+    } else {
+      console.error("usage: pino service install|uninstall");
+      process.exit(2);
     }
     return;
   }
@@ -192,6 +295,57 @@ async function main() {
 
   const mdns = new MdnsAd();
   mdns.start({ port: opts.port, fingerprint: cert.fingerprint });
+
+  // --- control plane (SPEC-01): let `pino status|stop|qr|devices|…` drive this
+  // running server without a restart. Served by BOTH foreground `serve` and the
+  // detached `pino start` process. ---
+  const backend = createServerBackend({
+    registry,
+    manager,
+    fingerprint: cert.fingerprint,
+    host: opts.host,
+    port: opts.port,
+    advertiseHost: opts.advertise,
+    version: PINO_VERSION,
+    startedAt: Date.now(),
+    now: () => Date.now(),
+    connectedDeviceIds: ws.connectedDeviceIds,
+    buildUrl: (token) =>
+      buildPairUrl({
+        host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : bestLanHost(),
+        port: opts.port,
+        fingerprint: cert.fingerprint,
+        token,
+      }),
+    requestStop: () => process.kill(process.pid, "SIGTERM"),
+    logPath: logFilePath(),
+  });
+  let control: ControlServerHandle | undefined;
+  try {
+    control = await createControlServer({ socketPath: controlSocketPath(), backend });
+    console.log(`[pino] control socket: ${controlSocketPath()}`);
+  } catch (e) {
+    console.error(`[pino] control socket unavailable: ${(e as Error).message}`);
+  }
+
+  // Graceful shutdown: `pino stop` sends SIGTERM (as does the `server.stop`
+  // control verb, via requestStop). Tear down the control socket, WS, and mDNS,
+  // and remove our own PID file. Idempotent.
+  let shuttingDown = false;
+  const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log("[pino] shutting down…");
+    void control?.close().catch(() => {});
+    try { mdns.stop(); } catch { /* best-effort */ }
+    try { ws.wss.close(); } catch { /* best-effort */ }
+    try { ws.https.close(); } catch { /* best-effort */ }
+    // Only clear the PID file if it points at us (a detached `start` wrote it).
+    if (readPidFile(pidFilePath()) === process.pid) rmSync(pidFilePath(), { force: true });
+    setTimeout(() => process.exit(0), 100).unref();
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 
   console.log(`[pino] cert fingerprint: ${cert.fingerprint}`);
   console.log(`[pino] mDNS: advertising _pino._tcp on port ${opts.port}`);

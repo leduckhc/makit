@@ -163,7 +163,14 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   const askDevice = rpc.askDevice.bind(rpc);
-  return { wss, https, askDevice };
+  // Device ids with a live authenticated WS connection — feeds the control
+  // plane's `devices.list` "connected" flag (SPEC-01).
+  const connectedDeviceIds = (): Set<string> => {
+    const ids = new Set<string>();
+    for (const c of clients.values()) if (c.authed && c.deviceId) ids.add(c.deviceId);
+    return ids;
+  };
+  return { wss, https, askDevice, connectedDeviceIds };
 
   // -------- dispatch ------------------------------------------------------
 
