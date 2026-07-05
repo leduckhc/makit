@@ -194,25 +194,31 @@ void main() {
   });
 
   group('DevicesScreen', () {
+    // The screen polls on a periodic timer, so pumpAndSettle would never
+    // settle. Pump explicitly, then unmount (pump a bare widget) to trip
+    // dispose() and cancel the timer.
     testWidgets('renders each device', (tester) async {
       final client = FakeControlClient(devices: _devices());
       await tester.pumpWidget(_host(client, const DevicesScreen()));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 60)); // past fake latency
       expect(find.text('iPhone 15'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets('shows the empty state', (tester) async {
       final client = FakeControlClient(devices: const []);
       await tester.pumpWidget(_host(client, const DevicesScreen()));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 60));
       expect(find.text('No paired devices'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets('renders an error state', (tester) async {
       final client = FakeControlClient(throwOnDevicesList: true);
       await tester.pumpWidget(_host(client, const DevicesScreen()));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 60));
       expect(find.text('Retry'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
     });
 
     testWidgets('revoke button invokes the client and refreshes', (
@@ -220,12 +226,26 @@ void main() {
     ) async {
       final client = FakeControlClient(devices: _devices());
       await tester.pumpWidget(_host(client, const DevicesScreen()));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 60));
 
       await tester.tap(find.text('Revoke'));
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 150)); // revoke + reload
       expect(client.revokedIds, ['d1']);
       expect(find.text('No paired devices'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('polls the daemon so the connected dot stays live', (
+      tester,
+    ) async {
+      final client = FakeControlClient(devices: _devices());
+      await tester.pumpWidget(_host(client, const DevicesScreen()));
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(client.devicesListCalls, 1);
+      // Advance past the poll interval — the screen must re-query on its own.
+      await tester.pump(DevicesScreen.pollInterval);
+      expect(client.devicesListCalls, greaterThan(1));
+      await tester.pumpWidget(const SizedBox());
     });
   });
 

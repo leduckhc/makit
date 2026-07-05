@@ -1,6 +1,8 @@
 /// Paired-devices list for the desktop control app.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,30 +18,54 @@ class DevicesScreen extends ConsumerStatefulWidget {
   /// Creates the devices list.
   const DevicesScreen({super.key});
 
+  /// How often the list re-queries the daemon so the connected dot reflects
+  /// devices coming online / going offline without a manual refresh.
+  static const Duration pollInterval = Duration(seconds: 4);
+
   @override
   ConsumerState<DevicesScreen> createState() => _DevicesScreenState();
 }
 
 class _DevicesScreenState extends ConsumerState<DevicesScreen> {
-  late Future<List<DeviceInfo>> _future;
+  List<DeviceInfo>? _devices;
+  Object? _error;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    _future = ref.read(controlClientProvider).devicesList();
+    _load();
+    _timer = Timer.periodic(DevicesScreen.pollInterval, (_) => _load());
   }
 
-  void _refresh() {
-    setState(() {
-      _future = ref.read(controlClientProvider).devicesList();
-    });
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  /// Fetches the current device list. Keeps the last good list visible on a
+  /// transient poll error (only surfaces the error state before any data
+  /// loads) and never flashes the spinner after the first load.
+  Future<void> _load() async {
+    try {
+      final devices = await ref.read(controlClientProvider).devicesList();
+      if (!mounted) return;
+      setState(() {
+        _devices = devices;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error);
+    }
   }
 
   Future<void> _revoke(String id) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(controlClientProvider).devicesRevoke(id);
-      _refresh();
+      await _load();
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text('Revoke failed: $error')));
     }
@@ -54,31 +80,32 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh),
-            onPressed: _refresh,
+            onPressed: _load,
           ),
         ],
       ),
-      body: FutureBuilder<List<DeviceInfo>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _DevicesError(onRetry: _refresh, error: snapshot.error);
-          }
-          final devices = snapshot.requireData;
-          if (devices.isEmpty) {
-            return const Center(child: Text('No paired devices'));
-          }
-          return ListView.builder(
-            itemCount: devices.length,
-            itemBuilder: (context, i) => _DeviceTile(
-              device: devices[i],
-              onRevoke: () => _revoke(devices[i].id),
-            ),
-          );
-        },
+      body: _buildBody(),
+    );
+  }
+
+  Widget _buildBody() {
+    // First load: nothing fetched yet.
+    if (_devices == null && _error == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    // Errored before any data arrived.
+    if (_devices == null) {
+      return _DevicesError(onRetry: _load, error: _error);
+    }
+    final devices = _devices!;
+    if (devices.isEmpty) {
+      return const Center(child: Text('No paired devices'));
+    }
+    return ListView.builder(
+      itemCount: devices.length,
+      itemBuilder: (context, i) => _DeviceTile(
+        device: devices[i],
+        onRevoke: () => _revoke(devices[i].id),
       ),
     );
   }
