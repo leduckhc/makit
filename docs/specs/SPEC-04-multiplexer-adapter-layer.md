@@ -86,8 +86,9 @@ export function getMultiplexer(
 - Keep it pure mechanism: no pino-session knowledge here.
 
 ## Acceptance criteria
-- [x] `HerdrAdapter.isAvailable()` returns true inside a herdr environment,
-      false when `herdr` is missing.
+- [x] `HerdrAdapter.isAvailable()` returns true when herdr is reachable and the
+      configured anchor pane exists, false when `herdr` is missing or the anchor
+      is not usable.
 - [x] `spawnPane({cwd, command:'echo hi; sleep 30', label:'pino: test'})` creates
       a **new, unfocused** pane running the command; `paneExists` is true;
       `setLabel` shows the label; `closePane` removes it and is safe to call twice.
@@ -100,9 +101,11 @@ export function getMultiplexer(
       clean.
 
 ## Decisions (formerly open questions)
-- **Anchor pane / workspace:** `PINO_MUX_ANCHOR` env or `config.json` key
-  `mux.anchor` (default `"pino"`). New panes split into that anchor so sessions
-  don't fragment the user's active layout. Callers can override per-host.
+- **Anchor pane:** `PINO_MUX_ANCHOR` env or `config.json` key `mux.anchor`
+  (default `"pino"` as a setup label). New panes split from that anchor pane id
+  so sessions don't fragment the user's active layout. `HerdrAdapter.isAvailable()`
+  returns false until the configured anchor appears in `herdr pane list`; callers
+  can then fall back instead of failing on `pane_not_found`.
 - **Exec injection:** yes — `HerdrAdapter` accepts an optional `exec` fn in its
   constructor (defaults to `execFile`). Keeps the adapter testable without a real
   herdr binary.

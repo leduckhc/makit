@@ -11,7 +11,7 @@ import { log } from "../log.js";
 export interface MuxConfig {
   /** Active multiplexer name, e.g. "herdr". Env PINO_MUX wins. */
   mux: string;
-  /** Anchor pane id or workspace for new splits. Env PINO_MUX_ANCHOR wins. */
+  /** Anchor pane id for new splits. Env PINO_MUX_ANCHOR wins. */
   anchor: string;
 }
 
@@ -39,7 +39,7 @@ function readConfigFile(file: string): ConfigFileShape {
   }
 }
 
-/** Default anchor: dedicated "pino" workspace so sessions don't fragment the active layout. */
+/** Default anchor label; herdr is unavailable until this resolves to an actual pane id. */
 export const DEFAULT_MUX_ANCHOR = "pino";
 
 /** Load mux config. Env vars override file values. */
