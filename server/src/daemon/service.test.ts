@@ -101,8 +101,30 @@ function cleanup(h: Harness) {
   rmSync(h.dir, { recursive: true, force: true });
 }
 
+/** A `connect` that resolves to a control client whose `status` reports `pid`. */
+function okStatus(pid: number): DaemonDeps["connect"] {
+  return async () => ({
+    request: (async () => ({
+      id: "1",
+      ok: true,
+      data: {
+        pid,
+        uptimeMs: 5,
+        host: "0.0.0.0",
+        port: 8787,
+        fingerprint: "fp",
+        advertiseHost: "",
+        pairedDevices: 0,
+        runningSessions: 0,
+        version: "0.1.0",
+      },
+    })) as ControlClient["request"],
+    close() {},
+  });
+}
+
 test("start: spawns detached, writes the PID file, returns 0", async () => {
-  const h = harness({ isAlive: () => false });
+  const h = harness({ isAlive: () => false, connect: okStatus(5555), sleep: async () => {} });
   const daemon = createDaemon(h.deps);
   const code = await daemon.start({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
   assert.equal(code, 0);
@@ -185,7 +207,7 @@ test("status: running prints pid/port/fingerprint and returns 0", async () => {
 });
 
 test("stop: running sends SIGTERM and removes the PID file", async () => {
-  const h = harness();
+  const h = harness({ connect: okStatus(9090) });
   writePidFile(h.deps.pidPath, 9090);
   const daemon = createDaemon(h.deps);
   const code = await daemon.stop();
@@ -202,6 +224,49 @@ test("stop: not running reports nothing to do", async () => {
   assert.equal(code, 0);
   assert.equal(h.killed.length, 0);
   assert.ok(h.out.join("\n").toLowerCase().includes("not running"));
+  cleanup(h);
+});
+
+test("stop: stale pid (socket refuses) does not kill; clears the pid file", async () => {
+  const h = harness({ isAlive: () => true }); // default connect throws → unconfirmed
+  writePidFile(h.deps.pidPath, 9090);
+  const daemon = createDaemon(h.deps);
+  const code = await daemon.stop();
+  assert.equal(code, 0);
+  assert.equal(h.killed.length, 0, "must not SIGTERM an unconfirmed pid");
+  assert.equal(existsSync(h.deps.pidPath), false);
+  assert.ok(h.out.join("\n").toLowerCase().includes("stale"));
+  cleanup(h);
+});
+
+test("stop: socket reports a different pid → does not kill", async () => {
+  const h = harness({ connect: okStatus(1) });
+  writePidFile(h.deps.pidPath, 9090);
+  const daemon = createDaemon(h.deps);
+  const code = await daemon.stop();
+  assert.equal(code, 0);
+  assert.equal(h.killed.length, 0);
+  cleanup(h);
+});
+
+test("start: exits 1 and cleans the pid file when the server never answers", async () => {
+  const h = harness({ isAlive: () => false, sleep: async () => {}, startupTimeoutMs: 100 });
+  const daemon = createDaemon(h.deps);
+  const code = await daemon.start({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
+  assert.equal(code, 1);
+  assert.equal(existsSync(h.deps.pidPath), false, "stale pid file removed on failed start");
+  assert.ok(h.out.join("\n").toLowerCase().includes("failed to start"));
+  cleanup(h);
+});
+
+test("restart: stops the running daemon then starts a fresh one", async () => {
+  const h = harness({ connect: okStatus(5555), sleep: async () => {} });
+  writePidFile(h.deps.pidPath, 5555);
+  const daemon = createDaemon(h.deps);
+  const code = await daemon.restart({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
+  assert.equal(code, 0);
+  assert.deepEqual(h.killed, [{ pid: 5555, signal: "SIGTERM" }]);
+  assert.equal(h.spawned.length, 1);
   cleanup(h);
 });
 

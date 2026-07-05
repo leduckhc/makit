@@ -28,9 +28,11 @@ import {
   rmSync,
   existsSync,
   mkdirSync,
+  chmodSync,
   watch,
 } from "node:fs";
 import { dirname } from "node:path";
+import { PINO_HOME_MODE, PINO_FILE_MODE } from "./paths.js";
 import type { ControlClient } from "./control-client.js";
 import type { StatusData } from "./protocol.js";
 
@@ -65,6 +67,10 @@ export interface DaemonDeps {
   kill: (pid: number, signal: NodeJS.Signals) => void;
   isAlive: (pid: number) => boolean;
   connect: (socketPath: string) => Promise<ControlClient>;
+  /** Injectable wait (tests pass a no-op); defaults to real setTimeout. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Max time to wait for a freshly-spawned daemon to answer the socket. */
+  startupTimeoutMs?: number;
 }
 
 export interface Daemon {
@@ -76,6 +82,8 @@ export interface Daemon {
 }
 
 const DEFAULT_LOG_LINES = 200;
+const DEFAULT_STARTUP_TIMEOUT_MS = 3000;
+const STARTUP_POLL_INTERVAL_MS = 50;
 
 /** Build the argv for a detached `serve`, forwarding the user's serve flags. */
 export function buildServeArgv(entry: string, opts: ServeOptions): string[] {
@@ -98,15 +106,34 @@ export function readPidFile(path: string): number | null {
 
 /** Write a PID to the PID file (creating the parent dir if needed). */
 export function writePidFile(path: string, pid: number): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${pid}\n`);
+  mkdirSync(dirname(path), { recursive: true, mode: PINO_HOME_MODE });
+  writeFileSync(path, `${pid}\n`, { mode: PINO_FILE_MODE });
+  try {
+    chmodSync(path, PINO_FILE_MODE);
+  } catch {
+    /* best-effort: perms may fail on exotic filesystems */
+  }
 }
 
 export function createDaemon(deps: DaemonDeps): Daemon {
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const startupTimeoutMs = deps.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
+
   function runningPid(): number | null {
     const pid = readPidFile(deps.pidPath);
     if (pid === null) return null;
     return deps.isAlive(pid) ? pid : null;
+  }
+
+  /** Poll the control socket until the freshly-spawned daemon answers. */
+  async function waitForUp(): Promise<StatusData | null> {
+    const attempts = Math.max(1, Math.ceil(startupTimeoutMs / STARTUP_POLL_INTERVAL_MS));
+    for (let i = 0; i < attempts; i++) {
+      const s = await fetchStatus();
+      if (s) return s;
+      if (i < attempts - 1) await sleep(STARTUP_POLL_INTERVAL_MS);
+    }
+    return null;
   }
 
   async function fetchStatus(): Promise<StatusData | null> {
@@ -150,7 +177,18 @@ export function createDaemon(deps: DaemonDeps): Daemon {
       const child = deps.spawn(deps.execPath, argv, logFd);
       if (child.pid) writePidFile(deps.pidPath, child.pid);
       child.unref();
-      deps.out(`pino: started (pid ${child.pid ?? "?"}), logging to ${deps.logPath}`);
+      // Don't report success until the child actually bound the control socket
+      // — a serve that dies immediately (e.g. port in use) otherwise leaves a
+      // "started" message and a PID file pointing at a dead process.
+      const up = await waitForUp();
+      if (!up) {
+        rmSync(deps.pidPath, { force: true });
+        deps.out(
+          `pino: failed to start — no response within ${startupTimeoutMs}ms (see ${deps.logPath})`,
+        );
+        return 1;
+      }
+      deps.out(`pino: started (pid ${child.pid ?? up.pid}), logging to ${deps.logPath}`);
       return 0;
     },
 
@@ -158,6 +196,15 @@ export function createDaemon(deps: DaemonDeps): Daemon {
       const pid = runningPid();
       if (pid === null) {
         deps.out("pino: not running");
+        rmSync(deps.pidPath, { force: true });
+        return 0;
+      }
+      // PID-reuse guard: only SIGTERM when the control socket confirms a pino
+      // daemon whose pid matches the PID file. After a crash the OS may recycle
+      // the pid onto an unrelated process.
+      const s = await fetchStatus();
+      if (!s || s.pid !== pid) {
+        deps.out("pino: not running (stale pid file)");
         rmSync(deps.pidPath, { force: true });
         return 0;
       }

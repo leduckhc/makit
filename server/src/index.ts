@@ -39,7 +39,7 @@ import { createServerBackend } from "./daemon/backend.js";
 import { createControlServer, type ControlServerHandle } from "./daemon/control-server.js";
 import { createDaemon, readPidFile } from "./daemon/service.js";
 import { connectControlClient } from "./daemon/control-client.js";
-import { controlSocketPath, pidFilePath, logFilePath } from "./daemon/paths.js";
+import { controlSocketPath, pidFilePath, logFilePath, ensurePinoHome } from "./daemon/paths.js";
 import { installService, uninstallService } from "./daemon/launchd.js";
 
 /** pino version, read from package.json (best-effort). */
@@ -66,8 +66,8 @@ function makeDaemon() {
       return { pid: child.pid, unref: () => child.unref() };
     },
     openLogFd: (p) => {
-      mkdirSync(dirname(p), { recursive: true });
-      return openSync(p, "w");
+      ensurePinoHome();
+      return openSync(p, "w", 0o600);
     },
     kill: (pid, sig) => process.kill(pid, sig),
     isAlive: (pid) => {
@@ -299,6 +299,7 @@ async function main() {
   // --- control plane (SPEC-01): let `pino status|stop|qr|devices|…` drive this
   // running server without a restart. Served by BOTH foreground `serve` and the
   // detached `pino start` process. ---
+  ensurePinoHome(); // 0700 state dir before the control socket binds (perms race)
   const backend = createServerBackend({
     registry,
     manager,

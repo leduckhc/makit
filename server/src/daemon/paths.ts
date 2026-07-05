@@ -9,9 +9,33 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { mkdirSync, chmodSync } from "node:fs";
 
 export function pinoHome(): string {
   return process.env.PINO_HOME || join(homedir(), ".pino");
+}
+
+/** File mode for the private state dir: owner rwx only. */
+export const PINO_HOME_MODE = 0o700;
+/** File mode for secret-bearing files (pid, log, socket): owner rw only. */
+export const PINO_FILE_MODE = 0o600;
+
+/**
+ * Ensure `~/.pino` exists and is private (mode 0700). This is the primary
+ * mitigation for the socket/file permission race: even during the brief window
+ * between binding the control socket and chmod-ing it to 0600, a 0700 parent
+ * dir means no other user can traverse into it. `chmodSync` is best-effort so a
+ * pre-existing loose dir gets tightened too.
+ */
+export function ensurePinoHome(): string {
+  const home = pinoHome();
+  mkdirSync(home, { recursive: true, mode: PINO_HOME_MODE });
+  try {
+    chmodSync(home, PINO_HOME_MODE);
+  } catch {
+    /* best-effort: perms may fail on exotic filesystems */
+  }
+  return home;
 }
 
 export function controlSocketPath(): string {
