@@ -58,6 +58,12 @@ export default function (pi: ExtensionAPI): void {
   // context-scoped SDK calls (e.g. ctx.compact()) when the phone sends a
   // built-in control action. pi.setThinkingLevel lives on `pi` directly.
   let lastCtx: ExtensionContext | undefined;
+  // Session title, captured from `pi` while ctx is fresh inside event handlers.
+  // We never call pi.getSessionName() from the async socket callback — after a
+  // reconnect/reload that can run on a torn-down ctx and throw. `sentTitle`
+  // tracks what the server currently shows so we only retitle on change.
+  let cachedSessionName = "pi (mirror)";
+  let sentTitle = "";
 
   // Emit an action error back to the phone so it can surface it in the UI.
   function emitActionError(action: string, reason: string): void {
@@ -118,10 +124,27 @@ export default function (pi: ExtensionAPI): void {
     });
   }
 
-  // Capture the latest ctx from event handlers; emit meta once we first have it.
+  // Capture the latest ctx from event handlers; refresh the cached session
+  // name while ctx is active, emit meta on first capture, and push a retitle
+  // if the name changed since the server last saw it (e.g. host.open sent the
+  // default before any pi event ran, or the user renamed the session).
   function noteCtx(ctx: ExtensionContext): void {
     lastCtx = ctx;
+    try {
+      cachedSessionName = pi.getSessionName?.() ?? "pi (mirror)";
+    } catch {
+      /* stale ctx — keep the previous name */
+    }
     if (!metaSent) emitMeta();
+    syncTitle();
+  }
+
+  // Tell the server the current title if it differs from what it last showed.
+  // No-op until the host session is open (host.open carries the initial title).
+  function syncTitle(): void {
+    if (!sessionId || cachedSessionName === sentTitle) return;
+    sentTitle = cachedSessionName;
+    raw({ v: 1, t: "cmd", id: `ht-${Date.now()}`, kind: "host.retitle", sessionId, title: cachedSessionName });
   }
 
   const raw = (o: Json) => {
@@ -172,9 +195,10 @@ export default function (pi: ExtensionAPI): void {
           t: "cmd",
           id: "open",
           kind: "host.open",
-          title: pi.getSessionName?.() ?? "pi (mirror)",
+          title: cachedSessionName,
           cwd: process.cwd(),
         });
+        sentTitle = cachedSessionName; // host.open carries the initial title
         return;
       }
       if (m.id === "open" && m.t === "ack" && typeof m.sessionId === "string") {
@@ -184,8 +208,10 @@ export default function (pi: ExtensionAPI): void {
           raw(f);
         }
         // A fresh subscriber (or reconnect after a pino restart that dropped the
-        // replay log) needs current meta re-sent.
+        // replay log) needs current meta re-sent; the title may also have moved
+        // on since host.open was built.
         if (lastCtx) emitMeta();
+        syncTitle();
         return;
       }
       // Phone → pi: inject as a real user prompt into this live session.
@@ -310,6 +336,8 @@ export default function (pi: ExtensionAPI): void {
   // Emit initial model/thinking meta as soon as the session is ready, so the
   // phone shows it without waiting for the first turn.
   pi.on("session_start", (_e, ctx) => noteCtx(ctx));
+  // Session renamed in the TUI → refresh the cached name and retitle the phone.
+  pi.on("session_info_changed", (_e, ctx) => noteCtx(ctx));
 
   // Keep the phone's model/thinking indicator in sync with TUI-side changes.
   pi.on("model_select", (_e, ctx) => {

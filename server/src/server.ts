@@ -448,6 +448,19 @@ export function startWsServer(opts: ServerOpts) {
       if (sid) hostAdapters.get(sid)?.ingestStatus(status);
     });
 
+    // Update a host session's title after host.open (e.g. the extension only
+    // learned the real session name once a pi event ran, or the user renamed
+    // it). Re-broadcasts the sessions snapshot so the phone's list updates.
+    r.register("host.retitle", (ctx) => {
+      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
+      const title = typeof ctx.env.title === "string" ? ctx.env.title.trim() : "";
+      const session = sid ? manager.getSession(sid) : undefined;
+      if (session && title && session.title !== title) {
+        session.title = title;
+        broadcastSessionsSnapshot();
+      }
+    });
+
     r.register("host.close", async (ctx) => {
       const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
       if (sid) {
