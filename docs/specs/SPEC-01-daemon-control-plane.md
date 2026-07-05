@@ -1,6 +1,6 @@
 # SPEC-01 — pino daemon & local control plane
 
-**Status:** ready · **Depends on:** none (foundation) · **Blocks:** SPEC-02, SPEC-03
+**Status:** done · **Depends on:** none (foundation) · **Blocks:** SPEC-02, SPEC-03
 
 ## Goal
 
@@ -82,21 +82,21 @@ URL + token, not ASCII art.
 
 ## Acceptance criteria
 
-- [ ] `pino start` returns immediately; server keeps running after the launching
+- [x] `pino start` returns immediately; server keeps running after the launching
       shell exits; `~/.pino/pino.pid` and `pino.log` exist.
-- [ ] `pino status` (calls `status` verb) prints pid/port/fingerprint/paired
+- [x] `pino status` (calls `status` verb) prints pid/port/fingerprint/paired
       count when running; prints "not running" + exit code 3 when not.
-- [ ] `pino stop` triggers graceful shutdown; PID file removed; socket closed.
-- [ ] `pino restart` = stop (if running) + start; survives.
-- [ ] `pair.mint` over the socket yields a URL that pairs a real device
+- [x] `pino stop` triggers graceful shutdown; PID file removed; socket closed.
+- [x] `pino restart` = stop (if running) + start; survives.
+- [x] `pair.mint` over the socket yields a URL that pairs a real device
       end-to-end (verify with an existing paired flow / the WS probe technique).
-- [ ] Control socket is `0600`; connecting from another process works; a second
+- [x] Control socket is `0600`; connecting from another process works; a second
       `start` is a no-op that reports already-running.
-- [ ] `pino serve` (foreground) still works and now **also** serves the control
+- [x] `pino serve` (foreground) still works and now **also** serves the control
       socket (so `pino status`/`qr` work against a foreground instance too).
-- [ ] `pino service install` writes a valid launchd plist; `uninstall` removes
+- [x] `pino service install` writes a valid launchd plist; `uninstall` removes
       it; neither auto-starts on install.
-- [ ] Unit tests: control codec round-trip; verb dispatch with a fake server
+- [x] Unit tests: control codec round-trip; verb dispatch with a fake server
       backend; service start/stop/status against a stub entry. `pnpm test` green,
       `pnpm typecheck` clean.
 
