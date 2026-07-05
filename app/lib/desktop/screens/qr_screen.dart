@@ -147,7 +147,18 @@ class _QrBody extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            QrImageView(data: pairing.url, size: _kQrSize),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: QrImageView(
+                data: pairing.url,
+                size: _kQrSize,
+                backgroundColor: Colors.white,
+              ),
+            ),
             const SizedBox(height: 24),
             SelectableText(
               pairing.url,

@@ -15,6 +15,7 @@ import 'package:pino/desktop/screens/devices_screen.dart';
 import 'package:pino/desktop/screens/fake_control_client.dart';
 import 'package:pino/desktop/screens/providers.dart';
 import 'package:pino/desktop/screens/qr_screen.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:pino/desktop/screens/session_log_screen.dart';
 import 'package:pino/desktop/screens/sessions_screen.dart';
 import 'package:pino/desktop/screens/status_screen.dart';
@@ -165,6 +166,30 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
       expect(client.pairMintCalls, 1);
       expect(find.textContaining('pino://pair?t=fresh'), findsOneWidget);
+    });
+
+    testWidgets('renders the QR on a white background (visible in dark mode)', (
+      tester,
+    ) async {
+      final client = FakeControlClient(
+        current: const PairCurrentData(
+          url: 'pino://pair?t=dark',
+          token: 'dark',
+          expiresAt: 9999999999999,
+        ),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [controlClientProvider.overrideWithValue(client)],
+          child: MaterialApp(theme: ThemeData.dark(), home: const QrScreen()),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+
+      // The QR modules are dark; without an explicit white backing they vanish
+      // on a dark surface (and QR scanners need dark-on-light contrast).
+      final qr = tester.widget<QrImageView>(find.byType(QrImageView));
+      expect(qr.backgroundColor, Colors.white);
     });
   });
 
