@@ -97,22 +97,36 @@ else
   yellow "  ! files need formatting — run: dart format ."
   warn=1
 fi
-# --------------------------------------------------------- 5. outdated check
-# Dart/pub does not ship a built-in advisory scanner equivalent to
-# `npm audit` or `pnpm audit`. We run `pub outdated` to flag stale deps
-# (a key advisory indicator) and rely on pub.dev's per-package advisory
-# tab for the rest. If you want machine-checked advisories, run a
-# third-party tool like `dart pub global activate osv_scanner`.
-step "5. dart pub outdated (advisory proxy)"
-set +e
-outdated_out=$("$DART_BIN" pub outdated --no-color 2>&1)
-set -e
-if echo "$outdated_out" | grep -qE "^[a-z_].*[0-9]\.[0-9]"; then
-  yellow "  ! some packages have newer versions on pub.dev — review:"
-  echo "$outdated_out" | tail -20
-  warn=1
+# ----------------------------------------------------- 8. advisory scan (OSV)
+# Dart/pub has no built-in advisory scanner (no `npm audit` equivalent), and
+# `dart pub outdated --mode=security` was removed. We scan the lockfile against
+# the OSV database with `osv-scanner`. If it isn't installed we fall back to a
+# `pub outdated` staleness proxy and warn.
+#   Install: brew install osv-scanner   (or download a pinned release binary)
+step "8. osv-scanner (known-advisory scan of pubspec.lock)"
+if command -v osv-scanner >/dev/null 2>&1; then
+  set +e
+  osv-scanner scan source --lockfile=pubspec.lock >/tmp/pino-osv.log 2>&1
+  osv_exit=$?
+  set -e
+  if (( osv_exit != 0 )); then
+    red "  ✗ osv-scanner reported advisories — see /tmp/pino-osv.log"
+    tail -30 /tmp/pino-osv.log >&2
+    fail=1
+  else
+    green "  ✓ no known advisories in the lockfile"
+  fi
 else
-  green "  ✓ no outdated direct dependencies"
+  yellow "  ! osv-scanner not installed — falling back to 'pub outdated' staleness proxy"
+  yellow "    install for a real advisory scan: brew install osv-scanner"
+  set +e
+  outdated_out=$("$DART_BIN" pub outdated --no-color 2>&1)
+  set -e
+  if echo "$outdated_out" | grep -qE "^[a-z_].*[0-9]\.[0-9]"; then
+    yellow "  ! some packages have newer versions on pub.dev — review:"
+    echo "$outdated_out" | tail -20
+  fi
+  warn=1
 fi
 
 # --------------------------------------------------------- 6. dependency_overrides

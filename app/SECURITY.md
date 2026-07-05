@@ -122,19 +122,27 @@ To add a new plugin with native code:
 
 ### 7. Outdated and advisory scanning
 
-- `tool/audit.sh` runs `dart pub outdated --mode=security` (which
-  surfaces packages with known advisories on pub.dev), plus the
-  hosted-only / lockfile checks above.
+- `tool/audit.sh` scans `pubspec.lock` against the OSV advisory database
+  with `osv-scanner` (`osv-scanner scan source --lockfile=pubspec.lock`),
+  plus the hosted-only / lockfile checks above. `dart pub outdated` is kept
+  only as a staleness fallback when `osv-scanner` isn't installed locally —
+  it is *not* an advisory scanner. (`dart pub outdated --mode=security` was
+  removed from pub; do not rely on it.)
+- CI enforces this as a blocking gate: the `security-audit` job in
+  `.github/workflows/flutter-ci.yml` downloads a pinned, SHA256-verified
+  `osv-scanner` binary and fails the build on any known advisory.
 - Run before every merge and on a weekly cron in CI.
 
-To bypass for a one-off security patch:
+To triage a reported advisory:
 
 ```bash
-# Verify the patch:
-dart pub outdated --mode=security
-# Apply by pinning the patched version in pubspec.yaml, then:
+# Reproduce locally (install once: brew install osv-scanner):
+osv-scanner scan source --lockfile=pubspec.lock
+# Fix by pinning the patched version in pubspec.yaml, then:
 flutter pub get
 # Commit the updated pubspec.lock alongside the pubspec.yaml change.
+# If the advisory is in an unfixable transitive (e.g. SDK-pinned), record a
+# justified ignore in an osv-scanner.toml rather than disabling the gate.
 ```
 
 ### 8. Transport pinning (cross-reference)
