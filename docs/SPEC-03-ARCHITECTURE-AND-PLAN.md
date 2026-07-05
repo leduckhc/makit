@@ -1,7 +1,11 @@
 # SPEC-03 Architecture & Parallel Implementation Plan
 
-**Status:** design phase  
-**Depends on:** SPEC-01 (daemon control socket)  
+**Status:** active — Phase 1 merged (PR #11); Phase 4 integration remaining.
+See [`specs/SPEC-03-desktop-control-app.md`](./specs/SPEC-03-desktop-control-app.md)
+for the consensus scope. Note: v1 scope is **control-first** (start/stop/restart,
+QR show+regen, devices revoke); session/log screens are a retained bonus. Native
+SwiftUI was considered and **rejected** — we reuse the Flutter app.
+**Depends on:** SPEC-01 (daemon control socket)
 **Blocks:** —
 
 ---
