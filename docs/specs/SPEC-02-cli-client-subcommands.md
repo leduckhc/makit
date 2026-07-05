@@ -1,6 +1,6 @@
 # SPEC-02 — CLI client subcommands
 
-**Status:** ready · **Depends on:** SPEC-01 (control protocol) · **Blocks:** —
+**Status:** done · **Depends on:** SPEC-01 (control protocol) · **Blocks:** SPEC-03
 
 ## Goal
 
