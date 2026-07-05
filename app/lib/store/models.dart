@@ -275,6 +275,7 @@ class Session {
   final ApprovalPolicy policy;
   final int lastActivityAt;
   final String lastPreview;
+
   /// Set when this session runs in a multiplexer pane (SPEC-05).
   final PaneInfo? pane;
 
