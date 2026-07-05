@@ -69,12 +69,12 @@ void main() {
   });
 
   group('display names', () {
-    test('registered tools expose a capitalised title', () {
-      expect(toolDisplayName(_tool('read', {})), 'Read');
-      expect(toolDisplayName(_tool('write', {})), 'Write');
-      expect(toolDisplayName(_tool('edit', {})), 'Edit');
-      expect(toolDisplayName(_tool('bash', {})), 'Bash');
-      expect(toolDisplayName(_tool('grep', {})), 'Grep');
+    test('registered tools expose their lowercase name', () {
+      expect(toolDisplayName(_tool('read', {})), 'read');
+      expect(toolDisplayName(_tool('write', {})), 'write');
+      expect(toolDisplayName(_tool('edit', {})), 'edit');
+      expect(toolDisplayName(_tool('bash', {})), 'bash');
+      expect(toolDisplayName(_tool('grep', {})), 'grep');
     });
 
     test('unknown tools fall back to a capitalised name', () {
@@ -195,8 +195,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Header shows the tool's display name, left-aligned.
-      expect(find.text('Bash'), findsOneWidget);
+      // Header shows the tool's display name (lowercase), left-aligned.
+      expect(find.text('bash'), findsOneWidget);
       expect(find.text('Command'), findsOneWidget);
       // The command appears both in the header subtitle and the Command section.
       expect(find.text('echo hi'), findsWidgets);
@@ -225,7 +225,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Grep'), findsOneWidget);
+      expect(find.text('grep'), findsOneWidget);
       // Pattern shows in the header subtitle and the params section.
       expect(find.text('TODO'), findsWidgets);
       expect(find.text('*.dart'), findsOneWidget);
@@ -286,7 +286,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       // Header uses the tool name, not the path.
-      expect(find.text('Edit'), findsOneWidget);
+      expect(find.text('edit'), findsOneWidget);
       expect(find.text('foo'), findsOneWidget);
       expect(find.text('bar'), findsOneWidget);
     });

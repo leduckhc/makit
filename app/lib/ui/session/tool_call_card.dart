@@ -39,43 +39,29 @@ class ToolCallCard extends StatelessWidget {
             Icon(riskIcon, size: 18, color: riskColor),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        toolDisplayName(item),
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                      const SizedBox(width: 8),
-                      if (running)
-                        const SizedBox(
-                          width: 10,
-                          height: 10,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      else if (failed)
-                        Icon(Icons.error_outline, size: 14, color: cs.error)
-                      else
-                        Icon(
-                          Icons.check_circle_outline,
-                          size: 14,
-                          color: cs.primary,
-                        ),
-                    ],
+                  Expanded(
+                    child: Text(
+                      toolDisplayName(item),
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    item.summary ??
-                        renderer?.subtitle(item) ??
-                        _previewArgs(item.args),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-                  ),
+                  const SizedBox(width: 8),
+                  if (running)
+                    const SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else if (failed)
+                    Icon(Icons.error_outline, size: 14, color: cs.error)
+                  else
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 14,
+                      color: cs.primary,
+                    ),
                 ],
               ),
             ),
@@ -84,11 +70,5 @@ class ToolCallCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  static String _previewArgs(Map<String, dynamic> args) {
-    if (args.containsKey('path')) return args['path'] as String;
-    if (args.containsKey('command')) return args['command'] as String;
-    return args.entries.take(2).map((e) => '${e.key}=${e.value}').join(' ');
   }
 }

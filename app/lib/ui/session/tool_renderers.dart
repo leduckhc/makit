@@ -27,8 +27,8 @@ abstract class ToolRenderer {
   String get name;
 
   /// Human-facing title shown as the card title and detail-view header
-  /// (e.g. `Read`, `Write`). Defaults to a capitalised [name].
-  String get displayName => _titleCase(name);
+  /// (e.g. `read`, `write`). Defaults to [name] as-is (lowercase).
+  String get displayName => name;
 
   /// One-line description for the card header.
   String? subtitle(ToolCallItem item) => null;
@@ -320,8 +320,6 @@ class _ReadRenderer extends ToolRenderer {
   @override
   String get name => 'read';
   @override
-  String get displayName => 'Read';
-  @override
   IconData get icon => Icons.menu_book_outlined;
   @override
   String? subtitle(ToolCallItem item) => item.args['path']?.toString();
@@ -333,7 +331,7 @@ class _ReadRenderer extends ToolRenderer {
     final offset = item.args['offset'];
     final limit = item.args['limit'];
     return ToolDetailScaffold(
-      title: displayName,
+      title: 'read',
       subtitle: path,
       children: [
         if (offset != null || limit != null)
@@ -360,8 +358,6 @@ class _WriteRenderer extends ToolRenderer {
   @override
   String get name => 'write';
   @override
-  String get displayName => 'Write';
-  @override
   IconData get icon => Icons.edit_note_outlined;
   @override
   String? subtitle(ToolCallItem item) => item.args['path']?.toString();
@@ -373,7 +369,7 @@ class _WriteRenderer extends ToolRenderer {
         item.args['content']?.toString() ?? item.args['text']?.toString() ?? '';
     final result = item.output ?? item.summary ?? '';
     return ToolDetailScaffold(
-      title: displayName,
+      title: 'write',
       subtitle: path,
       children: [
         ToolSection(
@@ -381,7 +377,7 @@ class _WriteRenderer extends ToolRenderer {
           child: MonoText(content.isEmpty ? '(empty)' : content),
         ),
         if (result.isNotEmpty)
-          ToolSection(title: 'Result', child: Text(result)),
+          ToolSection(title: 'Result', child: MonoText(result)),
       ],
     );
   }
@@ -391,8 +387,6 @@ class _EditRenderer extends ToolRenderer {
   const _EditRenderer();
   @override
   String get name => 'edit';
-  @override
-  String get displayName => 'Edit';
   @override
   IconData get icon => Icons.difference_outlined;
   @override
@@ -408,8 +402,6 @@ class _BashRenderer extends ToolRenderer {
   const _BashRenderer();
   @override
   String get name => 'bash';
-  @override
-  String get displayName => 'Bash';
   @override
   IconData get icon => Icons.attach_money;
   @override
@@ -427,7 +419,7 @@ class _BashRenderer extends ToolRenderer {
         : (item.output ?? '');
     final failed = item.ended && (item.exitCode ?? 0) != 0;
     return ToolDetailScaffold(
-      title: displayName,
+      title: 'bash',
       subtitle: command.isEmpty ? null : command,
       children: [
         if (command.isNotEmpty)
@@ -440,7 +432,7 @@ class _BashRenderer extends ToolRenderer {
         else if (item.ended)
           ToolSection(
             title: 'Result',
-            child: Text(item.summary ?? 'exit ${item.exitCode ?? 0}'),
+            child: MonoText(item.summary ?? 'exit ${item.exitCode ?? 0}'),
           ),
       ],
     );
@@ -451,8 +443,6 @@ class _GrepRenderer extends ToolRenderer {
   const _GrepRenderer();
   @override
   String get name => 'grep';
-  @override
-  String get displayName => 'Grep';
   @override
   IconData get icon => Icons.search;
   @override
@@ -469,7 +459,7 @@ class _GrepRenderer extends ToolRenderer {
     final path = item.args['path']?.toString();
     final output = item.output ?? item.deltas.join();
     return ToolDetailScaffold(
-      title: displayName,
+      title: 'grep',
       subtitle: pattern.isEmpty ? null : pattern,
       children: [
         ToolSection(
@@ -488,7 +478,7 @@ class _GrepRenderer extends ToolRenderer {
         else if (item.ended)
           ToolSection(
             title: 'Results',
-            child: Text(item.summary ?? 'No matches found'),
+            child: MonoText(item.summary ?? 'No matches found'),
           ),
       ],
     );
@@ -564,7 +554,7 @@ class _EditDiffView extends StatelessWidget {
         : (item.output ?? '');
 
     return ToolDetailScaffold(
-      title: 'Edit',
+      title: 'edit',
       subtitle: path,
       children: [
         if (hasDiff)
@@ -646,7 +636,7 @@ class _AskUserQuestionRenderer extends ToolRenderer {
   @override
   String get name => _name;
   @override
-  String get displayName => 'Ask the user';
+  String get displayName => 'askUserQuestion';
   @override
   IconData get icon => Icons.quiz_outlined;
 
@@ -682,7 +672,7 @@ class _AskUserQuestionRenderer extends ToolRenderer {
     final cs = Theme.of(context).colorScheme;
     final questions = _questions(item);
     return Scaffold(
-      appBar: AppBar(centerTitle: false, title: const Text('Ask the user')),
+      appBar: AppBar(centerTitle: false, title: const Text('askUserQuestion')),
       body: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: questions.length,
