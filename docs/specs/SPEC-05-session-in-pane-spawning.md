@@ -51,7 +51,9 @@ to spawn pi with that id in the environment.
   `host.close`, session kill (`/quit` → `session.kill`), or pi exit, call
   `closePane` (idempotent). Auto-close is the default (consensus #5).
 - **Labeling:** set pane label to `pino: <session title>`; update it when the
-  title changes (ties into the existing retitle path).
+  title changes (ties into the existing retitle path). Use optional chaining:
+  `await mux.setLabel?.(handle, label)` — rename is mux-specific (herdr yes;
+  future tmux/cmux may omit `setLabel`).
 - **Phone visibility:** add pane info to the session DTO/`session.meta` (e.g.
   `{ pane: { mux, paneId } }`) and surface a subtle "⧉ herdr w7:pX" affordance in
   the app session header so the user knows where to attach.
@@ -107,10 +109,11 @@ spawn (log a one-line hint about `PINO_MUX_ANCHOR`). Optional follow-up: auto-
 bootstrap a `pino` workspace and cache its root pane id — out of scope for v1
 (YAGNI); document the manual setup instead.
 
-Manual smoke (after setup):
+Manual smoke (after setup; script at `server/test/mux-herdr.smoke.ts`):
 
 ```bash
-PINO_MUX=herdr PINO_MUX_ANCHOR=w1:p1 tsx server/test/mux-herdr.smoke.ts
+cd server
+PINO_MUX=herdr PINO_MUX_ANCHOR=w1:p1 tsx test/mux-herdr.smoke.ts
 # → SPEC-04 herdr smoke: PASS
 ```
 

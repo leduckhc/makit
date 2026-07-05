@@ -111,3 +111,7 @@ export function getMultiplexer(
   the registry (returns `undefined` — used by SPEC-05 fallback).
 - **Split failure cleanup:** if `pane run` fails after a successful split, the
   adapter closes the orphan pane before rethrowing `MuxError`.
+- **`setLabel` optional:** not every future mux may support rename. `HerdrAdapter`
+  implements it; SPEC-05 title updates must use `adapter.setLabel?.(...)` so
+  tmux/cmux stubs without rename don't break. Initial label is still passed via
+  `spawnPane({ label })` (best-effort inside the adapter).

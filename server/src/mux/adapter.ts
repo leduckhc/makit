@@ -17,6 +17,8 @@ export interface MultiplexerAdapter {
   readonly name: string;
   isAvailable(): Promise<boolean>;
   spawnPane(opts: SpawnPaneOpts): Promise<PaneHandle>;
+  /** Best-effort relabel. Optional — muxes without rename support omit this.
+   *  SPEC-05 callers should use `adapter.setLabel?.(...)` for title updates. */
   setLabel?(handle: PaneHandle, label: string): Promise<void>;
   closePane(handle: PaneHandle): Promise<void>;
   paneExists(handle: PaneHandle): Promise<boolean>;
