@@ -77,8 +77,8 @@ void main() {
       expect(toolDisplayName(_tool('grep', {})), 'grep');
     });
 
-    test('unknown tools fall back to a capitalised name', () {
-      expect(toolDisplayName(_tool('lint', {})), 'Lint');
+    test('unknown tools fall back to their raw name', () {
+      expect(toolDisplayName(_tool('lint', {})), 'lint');
     });
   });
 
@@ -304,12 +304,74 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Capitalised tool name as the header title.
-      expect(find.text('Lint'), findsOneWidget);
+      // Raw tool name as the header title.
+      expect(find.text('lint'), findsOneWidget);
       expect(find.text('Arguments'), findsOneWidget);
       // Values render as readable rows, not `{"fix":true,...}`.
       expect(find.text('true'), findsOneWidget);
       expect(find.textContaining('{'), findsNothing);
+    });
+  });
+
+  group('extractToolResultText', () {
+    test('pulls text out of an MCP content envelope', () {
+      const raw = '{"content":[{"type":"text","text":"hello"}],"details":{}}';
+      expect(extractToolResultText(raw), 'hello');
+    });
+
+    test('concatenates text across back-to-back envelopes', () {
+      const raw =
+          '{"content":[]}{"content":[{"type":"text","text":"one\\ntwo"}],"details":{}}';
+      expect(extractToolResultText(raw), 'one\ntwo');
+    });
+
+    test('ignores non-text content parts', () {
+      const raw =
+          '{"content":[{"type":"image","data":"x"},{"type":"text","text":"ok"}]}';
+      expect(extractToolResultText(raw), 'ok');
+    });
+
+    test('returns plain (non-envelope) output verbatim', () {
+      expect(
+        extractToolResultText('exit 0\nstdout here'),
+        'exit 0\nstdout here',
+      );
+    });
+
+    test('leaves brace-containing non-envelope JSON untouched', () {
+      expect(extractToolResultText('{"error":"boom"}'), '{"error":"boom"}');
+    });
+
+    test('does not trip on braces inside string values', () {
+      const raw = '{"content":[{"type":"text","text":"a { nested } brace"}]}';
+      expect(extractToolResultText(raw), 'a { nested } brace');
+    });
+  });
+
+  group('edit output is colour-coded like a git diff', () {
+    testWidgets('renders the hashline result with a DiffText', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'edit',
+        args: const {'input': '[lib/foo.dart#AB12]'},
+        output:
+            '[lib/foo.dart#AB12]\n 10:unchanged\n-11:final x = 1;\n+11:final x = 2;',
+        ended: true,
+      );
+      final renderer = rendererFor(item)!;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DiffText), findsOneWidget);
+      expect(find.text('[lib/foo.dart#AB12]'), findsOneWidget);
+      expect(find.text('-11:final x = 1;'), findsOneWidget);
+      expect(find.text('+11:final x = 2;'), findsOneWidget);
     });
   });
 
