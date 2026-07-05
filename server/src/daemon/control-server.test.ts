@@ -139,6 +139,92 @@ async function withSocket(fn: (path: string) => Promise<void>) {
   }
 }
 
+test("socket: logs.cancel stops one followed log tail", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const path = join(dir, "control.sock");
+  let stopped = false;
+  const handle = await createControlServer({
+    socketPath: path,
+    backend: fakeBackend({
+      logsTail: (_args, emit) => {
+        emit("line-1");
+        return () => {
+          stopped = true;
+        };
+      },
+    }),
+  });
+  try {
+    const cancel = await new Promise<ControlResponse>((resolve, reject) => {
+      const sock = connect(path);
+      const buf = new LineBuffer();
+      sock.on("connect", () =>
+        sock.write(encodeMessage({ id: "tail-1", verb: "logs.tail", args: { follow: true } })),
+      );
+      sock.on("data", (d) => {
+        for (const line of buf.push(d.toString())) {
+          const res = decodeResponse(line);
+          if (!res) continue;
+          if (res.id === "tail-1") {
+            setImmediate(() =>
+              sock.write(
+                encodeMessage({
+                  id: "cancel-1",
+                  verb: "logs.cancel",
+                  args: { id: "tail-1" },
+                }),
+              ),
+            );
+          }
+          if (res.id === "cancel-1") {
+            sock.end();
+            resolve(res);
+          }
+        }
+      });
+      sock.on("error", reject);
+    });
+    assert.deepEqual(cancel, { id: "cancel-1", ok: true, data: { cancelled: true } });
+    assert.equal(stopped, true);
+  } finally {
+    await handle.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("socket: logs.cancel reports false for a stale log-tail id", async () => {
+  await withSocket(async (path) => {
+    const cancel = await new Promise<ControlResponse>((resolve, reject) => {
+      const sock = connect(path);
+      const buf = new LineBuffer();
+      sock.on("connect", () =>
+        sock.write(
+          encodeMessage({
+            id: "cancel-stale",
+            verb: "logs.cancel",
+            args: { id: "missing-tail" },
+          }),
+        ),
+      );
+      sock.on("data", (d) => {
+        for (const line of buf.push(d.toString())) {
+          const res = decodeResponse(line);
+          if (res?.id === "cancel-stale") {
+            sock.end();
+            resolve(res);
+          }
+        }
+      });
+      sock.on("error", reject);
+    });
+    assert.deepEqual(cancel, {
+      id: "cancel-stale",
+      ok: true,
+      data: { cancelled: false },
+    });
+  });
+});
+
 test("socket: created 0600 and answers a request end-to-end", async () => {
   await withSocket(async (path) => {
     const mode = statSync(path).mode & 0o777;

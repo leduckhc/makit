@@ -120,6 +120,9 @@ export async function dispatchRequest(
         }
         return stop ?? undefined;
       }
+      case "logs.cancel":
+        respond({ id, ok: true, data: { cancelled: false } });
+        return;
     }
   } catch (e) {
     respond({ id, ok: false, error: (e as Error).message });
@@ -223,7 +226,9 @@ export async function createControlServer(opts: ControlServerOpts): Promise<Cont
 
 function handleConnection(sock: Socket, backend: ControlBackend): void {
   const buf = new LineBuffer();
-  const stops = new Set<LogTailStop>();
+  const stops = new Map<string, LogTailStop>();
+  const cancelled = new Set<string>();
+  const pendingStops = new Set<string>();
   // Tracks whether the socket has already torn down. A `logs.tail --follow`
   // stop fn is only known after `dispatchRequest` resolves; if the socket
   // closed in that window we must invoke the stop immediately (below) rather
@@ -252,8 +257,37 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
         respond({ id: "", ok: false, error: "malformed request" });
         continue;
       }
+      if (req.verb === "logs.cancel") {
+        const target = typeof req.args?.id === "string" ? req.args.id : "";
+        const stop = stops.get(target);
+        const pending = pendingStops.has(target);
+        if (stop) {
+          try {
+            stop();
+          } catch {
+            /* ignore */
+          }
+          stops.delete(target);
+        } else if (pending) {
+          cancelled.add(target);
+        }
+        respond({ id: req.id, ok: true, data: { cancelled: stop != null || pending } });
+        continue;
+      }
+      if (req.verb === "logs.tail" && req.args?.follow === true) {
+        pendingStops.add(req.id);
+      }
       void dispatchRequest(req, backend, respond).then((stop) => {
+        pendingStops.delete(req.id);
         if (!stop) return;
+        if (cancelled.delete(req.id)) {
+          try {
+            stop();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
         if (closed) {
           try {
             stop();
@@ -262,14 +296,14 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
           }
           return;
         }
-        stops.add(stop);
+        stops.set(req.id, stop);
       });
     }
   });
 
   const cleanup = () => {
     closed = true;
-    for (const stop of stops) {
+    for (const stop of stops.values()) {
       try {
         stop();
       } catch {
@@ -277,6 +311,8 @@ function handleConnection(sock: Socket, backend: ControlBackend): void {
       }
     }
     stops.clear();
+    cancelled.clear();
+    pendingStops.clear();
   };
   sock.on("close", cleanup);
   sock.on("error", cleanup);
