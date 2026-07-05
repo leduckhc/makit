@@ -1,6 +1,6 @@
 # Pre-commit hooks for pino monorepo.
 #
-# Install: pre-commit install
+# Install: pre-commit install --hook-type pre-push
 # Run manually: pre-commit run --all-files
 # Update hook revisions: pre-commit autoupdate
 #
@@ -8,7 +8,7 @@
 #   Flutter  — dart format + flutter analyze (flutter-ci.yml)
 #   Server   — TypeScript typecheck (server-ci.yml)
 
-default_install_hook_types: [pre-commit]
+default_install_hook_types: [pre-push]
 
 # Generated build output should never trigger hook failures.
 exclude: ^server/dist/
