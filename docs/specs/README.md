@@ -30,7 +30,7 @@ but are otherwise independently implementable. Respect the dependency order.
 |------|-------|-----------|
 | [SPEC-01](./SPEC-01-daemon-control-plane.md) | pino daemon & local control plane | — (foundation) |
 | [SPEC-02](./SPEC-02-cli-client-subcommands.md) | CLI client subcommands | SPEC-01 |
-| [SPEC-03](./SPEC-03-desktop-control-app.md) | macOS desktop control app | SPEC-01 |
+| [SPEC-03](./SPEC-03-desktop-control-app.md) | macOS desktop **control** app (Flutter reuse; Phase 1 merged, Phase 4 integration remaining) | SPEC-01 |
 | [SPEC-04](./SPEC-04-multiplexer-adapter-layer.md) | Multiplexer adapter layer + herdr | — (foundation) |
 | [SPEC-05](./SPEC-05-session-in-pane-spawning.md) | Session-in-pane spawning + lifecycle | SPEC-04 (+ manager/extension) |
 
