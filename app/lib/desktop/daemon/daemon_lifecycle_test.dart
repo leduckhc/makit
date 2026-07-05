@@ -21,15 +21,17 @@ void main() {
       expect(await resolver.resolve(), '/b/pino');
     });
 
-    test('falls back to the login-shell lookup when no candidate exists',
-        () async {
-      final resolver = PinoCliResolver(
-        candidatePaths: ['/a/pino'],
-        exists: (_) => false,
-        shellLookup: () async => '/opt/homebrew/bin/pino',
-      );
-      expect(await resolver.resolve(), '/opt/homebrew/bin/pino');
-    });
+    test(
+      'falls back to the login-shell lookup when no candidate exists',
+      () async {
+        final resolver = PinoCliResolver(
+          candidatePaths: ['/a/pino'],
+          exists: (_) => false,
+          shellLookup: () async => '/opt/homebrew/bin/pino',
+        );
+        expect(await resolver.resolve(), '/opt/homebrew/bin/pino');
+      },
+    );
 
     test('returns null when nothing is found', () async {
       final resolver = PinoCliResolver(
@@ -44,10 +46,10 @@ void main() {
   group('DaemonLifecycle', () {
     late List<List<String>> calls;
     PinoCliResolver resolverReturning(String? path) => PinoCliResolver(
-          candidatePaths: path == null ? const [] : [path],
-          exists: (p) => p == path,
-          shellLookup: () async => null,
-        );
+      candidatePaths: path == null ? const [] : [path],
+      exists: (p) => p == path,
+      shellLookup: () async => null,
+    );
 
     setUp(() => calls = []);
 

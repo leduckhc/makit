@@ -146,7 +146,8 @@ class DaemonLifecycle {
     if (path == null) {
       return const DaemonActionResult(
         DaemonActionOutcome.cliNotFound,
-        message: 'The pino CLI was not found. Install it to control the server.',
+        message:
+            'The pino CLI was not found. Install it to control the server.',
       );
     }
     try {

@@ -22,17 +22,19 @@ class _FakeClient implements ControlClient {
   @override
   Future<StatusData> status() {
     statusCalls++;
-    return _guard(StatusData(
-      pid: id,
-      uptimeMs: 0,
-      host: 'h',
-      port: 1,
-      fingerprint: 'f',
-      advertiseHost: 'h',
-      pairedDevices: 0,
-      runningSessions: 0,
-      version: 'v',
-    ));
+    return _guard(
+      StatusData(
+        pid: id,
+        uptimeMs: 0,
+        host: 'h',
+        port: 1,
+        fingerprint: 'f',
+        advertiseHost: 'h',
+        pairedDevices: 0,
+        runningSessions: 0,
+        version: 'v',
+      ),
+    );
   }
 
   @override
@@ -42,8 +44,9 @@ class _FakeClient implements ControlClient {
   @override
   Future<PairCurrentData?> pairCurrent() => _guard(null);
   @override
-  Future<PairMintData> pairMint({int? ttlMs}) =>
-      _guard(const PairMintData(url: 'u', token: 't', expiresAt: 0, fingerprint: 'f'));
+  Future<PairMintData> pairMint({int? ttlMs}) => _guard(
+    const PairMintData(url: 'u', token: 't', expiresAt: 0, fingerprint: 'f'),
+  );
   @override
   Future<List<ControlSession>> sessionsList() => _guard(const []);
   @override
@@ -136,19 +139,24 @@ void main() {
       expect(connected, [0]);
     });
 
-    test('tailLogs drops the dead client on a stream error, then reconnects',
-        () async {
-      final client = build();
-      // Establish a connection, then kill the underlying socket.
-      await client.status();
-      created.single.alive = false;
-      // The active log stream should error out...
-      await expectLater(client.tailLogs().toList(), throwsA(isA<ControlException>()));
-      expect(disposed, contains(0));
-      // ...and the next call must connect a fresh underlying client.
-      await client.status();
-      expect(created, hasLength(2));
-      expect(connected, [0, 1]);
-    });
+    test(
+      'tailLogs drops the dead client on a stream error, then reconnects',
+      () async {
+        final client = build();
+        // Establish a connection, then kill the underlying socket.
+        await client.status();
+        created.single.alive = false;
+        // The active log stream should error out...
+        await expectLater(
+          client.tailLogs().toList(),
+          throwsA(isA<ControlException>()),
+        );
+        expect(disposed, contains(0));
+        // ...and the next call must connect a fresh underlying client.
+        await client.status();
+        expect(created, hasLength(2));
+        expect(connected, [0, 1]);
+      },
+    );
   });
 }

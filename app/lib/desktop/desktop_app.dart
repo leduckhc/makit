@@ -221,7 +221,10 @@ class _Header extends StatelessWidget {
     final running = summary.state == DaemonState.running;
     final busy = summary.state == DaemonState.starting;
     final (color, label) = switch (summary.state) {
-      DaemonState.running => (Colors.green, 'Server running (pid ${summary.pid})'),
+      DaemonState.running => (
+        Colors.green,
+        'Server running (pid ${summary.pid})',
+      ),
       DaemonState.starting => (Colors.orange, 'Starting…'),
       DaemonState.stopped => (Colors.grey, 'Server stopped'),
     };

@@ -26,17 +26,17 @@ class _FakeControlClient implements ControlClient {
     statusCalls++;
     return up
         ? StatusData(
-          pid: 42,
-          uptimeMs: 0,
-          host: 'h',
-          port: 8787,
-          fingerprint: 'f',
-          advertiseHost: 'h',
-          pairedDevices: pairedDevices,
-          runningSessions: runningSessions,
-          version: 'v',
-        )
-      : _down();
+            pid: 42,
+            uptimeMs: 0,
+            host: 'h',
+            port: 8787,
+            fingerprint: 'f',
+            advertiseHost: 'h',
+            pairedDevices: pairedDevices,
+            runningSessions: runningSessions,
+            version: 'v',
+          )
+        : _down();
   }
 
   @override
@@ -61,12 +61,12 @@ class _FakeControlClient implements ControlClient {
 }
 
 DeviceInfo _device(String label) => DeviceInfo(
-      id: label,
-      label: label,
-      pairedAt: 0,
-      lastSeenAt: 0,
-      connected: true,
-    );
+  id: label,
+  label: label,
+  pairedAt: 0,
+  lastSeenAt: 0,
+  connected: true,
+);
 
 /// A lifecycle whose CLI resolves to a stub that returns [exitCode], or is
 /// missing when [found] is false.
@@ -74,18 +74,17 @@ DaemonLifecycle _lifecycle({
   bool found = true,
   int exitCode = 0,
   List<List<String>>? calls,
-}) =>
-    DaemonLifecycle(
-      resolver: PinoCliResolver(
-        candidatePaths: found ? ['/x/pino'] : const [],
-        exists: (_) => found,
-        shellLookup: () async => null,
-      ),
-      run: (exe, args) async {
-        calls?.add([exe, ...args]);
-        return ProcessResult(0, exitCode, '', 'err');
-      },
-    );
+}) => DaemonLifecycle(
+  resolver: PinoCliResolver(
+    candidatePaths: found ? ['/x/pino'] : const [],
+    exists: (_) => found,
+    shellLookup: () async => null,
+  ),
+  run: (exe, args) async {
+    calls?.add([exe, ...args]);
+    return ProcessResult(0, exitCode, '', 'err');
+  },
+);
 
 void main() {
   group('DesktopController', () {
@@ -97,33 +96,37 @@ void main() {
       expect(c.summary.state, DaemonState.stopped);
     });
 
-    test('refresh reflects a running daemon with devices and sessions',
-        () async {
-      final client = _FakeControlClient()
-        ..pairedDevices = 2
-        ..runningSessions = 1
-        ..devices = [_device('phone-a'), _device('phone-b')];
-      final c = DesktopController(client: client, lifecycle: _lifecycle());
+    test(
+      'refresh reflects a running daemon with devices and sessions',
+      () async {
+        final client = _FakeControlClient()
+          ..pairedDevices = 2
+          ..runningSessions = 1
+          ..devices = [_device('phone-a'), _device('phone-b')];
+        final c = DesktopController(client: client, lifecycle: _lifecycle());
 
-      await c.refresh();
+        await c.refresh();
 
-      expect(c.summary.state, DaemonState.running);
-      expect(c.summary.pid, 42);
-      expect(c.summary.pairedDevices, 2);
-      expect(c.summary.deviceLabels, ['phone-a', 'phone-b']);
-      expect(c.lastError, isNull);
-    });
+        expect(c.summary.state, DaemonState.running);
+        expect(c.summary.pid, 42);
+        expect(c.summary.pairedDevices, 2);
+        expect(c.summary.deviceLabels, ['phone-a', 'phone-b']);
+        expect(c.lastError, isNull);
+      },
+    );
 
-    test('refresh drops to stopped and records the error when the daemon is down',
-        () async {
-      final client = _FakeControlClient()..up = false;
-      final c = DesktopController(client: client, lifecycle: _lifecycle());
+    test(
+      'refresh drops to stopped and records the error when the daemon is down',
+      () async {
+        final client = _FakeControlClient()..up = false;
+        final c = DesktopController(client: client, lifecycle: _lifecycle());
 
-      await c.refresh();
+        await c.refresh();
 
-      expect(c.summary.state, DaemonState.stopped);
-      expect(c.lastError, isNotNull);
-    });
+        expect(c.summary.state, DaemonState.stopped);
+        expect(c.lastError, isNotNull);
+      },
+    );
 
     test('start runs the CLI then refreshes into running', () async {
       final calls = <List<String>>[];
