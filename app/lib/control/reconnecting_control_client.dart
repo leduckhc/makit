@@ -129,6 +129,18 @@ class ReconnectingControlClient implements ControlClient {
   @override
   Stream<LogLine> tailLogs({int? lines, bool follow = false}) async* {
     final client = await _ensure();
-    yield* client.tailLogs(lines: lines, follow: follow);
+    // NOTE: use `await for` (not `yield*`) so errors from the delegated stream
+    // surface here as catchable exceptions; `yield*` forwards them straight to
+    // the subscriber, skipping this try/catch and leaving the dead client set.
+    try {
+      await for (final line in client.tailLogs(lines: lines, follow: follow)) {
+        yield line;
+      }
+    } catch (_) {
+      // Socket likely died mid-stream: drop the dead client so the next call
+      // reconnects, then surface the error to the subscriber.
+      await _drop(client);
+      rethrow;
+    }
   }
 }

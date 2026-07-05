@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pino/control/control_contract.dart';
 import 'package:pino/desktop/daemon/daemon_lifecycle.dart';
@@ -16,12 +17,15 @@ class _FakeControlClient implements ControlClient {
   List<ControlSession> sessions = const [];
   int pairedDevices = 0;
   int runningSessions = 0;
+  int statusCalls = 0;
 
   Never _down() => throw const ControlException('not connected');
 
   @override
-  Future<StatusData> status() async => up
-      ? StatusData(
+  Future<StatusData> status() async {
+    statusCalls++;
+    return up
+        ? StatusData(
           pid: 42,
           uptimeMs: 0,
           host: 'h',
@@ -33,6 +37,7 @@ class _FakeControlClient implements ControlClient {
           version: 'v',
         )
       : _down();
+  }
 
   @override
   Future<List<DeviceInfo>> devicesList() async => up ? devices : _down();
@@ -170,6 +175,24 @@ void main() {
       await c.refresh();
 
       expect(notes, greaterThan(0));
+    });
+
+    test('startPolling refreshes on the interval; dispose stops it', () {
+      fakeAsync((async) {
+        final client = _FakeControlClient();
+        final c = DesktopController(client: client, lifecycle: _lifecycle());
+
+        c.startPolling(interval: const Duration(seconds: 5));
+        async.flushMicrotasks(); // immediate refresh
+        expect(client.statusCalls, 1);
+
+        async.elapse(const Duration(seconds: 12)); // +2 ticks
+        expect(client.statusCalls, 3);
+
+        c.dispose();
+        async.elapse(const Duration(seconds: 30)); // no more ticks
+        expect(client.statusCalls, 3);
+      });
     });
   });
 }

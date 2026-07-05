@@ -135,5 +135,20 @@ void main() {
       expect(lines.map((l) => l.line), ['line']);
       expect(connected, [0]);
     });
+
+    test('tailLogs drops the dead client on a stream error, then reconnects',
+        () async {
+      final client = build();
+      // Establish a connection, then kill the underlying socket.
+      await client.status();
+      created.single.alive = false;
+      // The active log stream should error out...
+      await expectLater(client.tailLogs().toList(), throwsA(isA<ControlException>()));
+      expect(disposed, contains(0));
+      // ...and the next call must connect a fresh underlying client.
+      await client.status();
+      expect(created, hasLength(2));
+      expect(connected, [0, 1]);
+    });
   });
 }

@@ -16,6 +16,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -70,7 +71,12 @@ Future<void> runDesktopApp() async {
       _selectedTab.value = 1;
       _showWindow();
     },
-    onQuit: () => windowManager.destroy(),
+    // Real quit: cancel the poll timer, then terminate the process — which also
+    // removes the tray icon. (windowManager.destroy alone left it running.)
+    onQuit: () {
+      controller.dispose();
+      exit(0);
+    },
   );
   await tray.init();
   // Keep the tray menu/tooltip in sync as the controller refreshes.
@@ -78,11 +84,7 @@ Future<void> runDesktopApp() async {
 
   // Poll the daemon so state stays fresh whether it is started from the app,
   // the CLI, or crashes underneath us.
-  unawaited(controller.refresh());
-  Timer.periodic(
-    const Duration(seconds: 3),
-    (_) => unawaited(controller.refresh()),
-  );
+  controller.startPolling();
 
   const options = WindowOptions(
     size: Size(760, 580),
@@ -111,6 +113,14 @@ Future<void> runDesktopApp() async {
 Future<void> _showWindow() async {
   await windowManager.show();
   await windowManager.focus();
+}
+
+/// Copies the pino install one-liner to the clipboard and confirms via snackbar.
+void _copyInstallCommand(BuildContext context) {
+  unawaited(Clipboard.setData(const ClipboardData(text: pinoInstallCommand)));
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Install command copied to clipboard')),
+  );
 }
 
 class _DesktopApp extends StatelessWidget {
@@ -158,7 +168,8 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard> {
           body: Column(
             children: [
               _Header(controller: controller),
-              if (controller.cliMissing) const _CliMissingBanner(),
+              if (controller.cliMissing)
+                CliMissingBanner(onInstall: () => _copyInstallCommand(context)),
               const Divider(height: 1),
               Expanded(
                 child: Row(
@@ -247,19 +258,42 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _CliMissingBanner extends StatelessWidget {
-  const _CliMissingBanner();
+/// The documented one-line installer for the pino CLI (see issue #13 / README).
+const String pinoInstallCommand =
+    'curl -fsSL https://raw.githubusercontent.com/leduckhc/pino/main/install.sh | bash';
+
+/// Shown when the `pino` CLI cannot be located. Offers an actionable recovery:
+/// copy the install command (per SPEC-03 "must not hard-fail").
+class CliMissingBanner extends StatelessWidget {
+  /// Creates the banner. [onInstall] runs when the action button is tapped.
+  const CliMissingBanner({required this.onInstall, super.key});
+
+  /// Invoked when the user taps the install action.
+  final VoidCallback onInstall;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: double.infinity,
-      color: Theme.of(context).colorScheme.errorContainer,
+      color: scheme.errorContainer,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Text(
-        'The pino CLI was not found. Install it (see the README) to start/stop '
-        'the server from here.',
-        style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              'The pino CLI was not found. Install it to start/stop the server '
+              'from here.',
+              style: TextStyle(color: scheme.onErrorContainer),
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: onInstall,
+            icon: const Icon(Icons.copy_all),
+            label: const Text('Copy install command'),
+          ),
+        ],
       ),
     );
   }

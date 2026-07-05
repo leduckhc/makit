@@ -7,6 +7,8 @@
 /// to the tray and window.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../control/control_contract.dart';
@@ -28,6 +30,7 @@ class DesktopController extends ChangeNotifier {
   DaemonSummary _summary = _stopped;
   String? _lastError;
   bool _cliMissing = false;
+  Timer? _poll;
 
   /// The current daemon summary (drives the dashboard header + tray menu).
   DaemonSummary get summary => _summary;
@@ -96,5 +99,21 @@ class DesktopController extends ChangeNotifier {
     _cliMissing = result.outcome == DaemonActionOutcome.cliNotFound;
     await refresh();
     return result;
+  }
+
+  /// Starts periodic polling: refreshes immediately, then every [interval].
+  /// Cancels any previous poll. Owned here so the app can stop it cleanly on
+  /// quit (no orphaned timer).
+  void startPolling({Duration interval = const Duration(seconds: 3)}) {
+    _poll?.cancel();
+    unawaited(refresh());
+    _poll = Timer.periodic(interval, (_) => unawaited(refresh()));
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    _poll = null;
+    super.dispose();
   }
 }
