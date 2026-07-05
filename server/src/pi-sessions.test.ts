@@ -67,6 +67,55 @@ test("listPiSessions parses headers, filters by cwd, sorts by mtime desc", () =>
   }
 });
 
+test("listPiSessions prefers the session_info name (last wins), else preview", () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "pino-agent-"));
+  try {
+    const cwd = "/work/named";
+    const dir = piSessionsDir(cwd, agentDir);
+    mkdirSync(dir, { recursive: true });
+
+    // Named session: two session_info entries → the LAST one wins for the label,
+    // while `preview` still reflects the first user message.
+    const named = join(dir, "2026-01-01T00-00-00-000Z_named.jsonl");
+    writeFileSync(
+      named,
+      [
+        JSON.stringify({ type: "session", version: 3, id: "named", timestamp: "2026-01-01T00:00:00.000Z", cwd }),
+        JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text: "add rate limiting to my express api" }] } }),
+        JSON.stringify({ type: "session_info", id: "si1", timestamp: "2026-01-01T00:01:00.000Z", name: "Rough First Name" }),
+        JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "sure" }] } }),
+        JSON.stringify({ type: "session_info", id: "si2", timestamp: "2026-01-01T00:02:00.000Z", name: "Add Rate Limiting to Express API" }),
+      ].join("\n") + "\n",
+    );
+
+    // Unnamed session: no session_info → falls back to the first user message.
+    const unnamed = join(dir, "2026-01-01T00-00-00-000Z_unnamed.jsonl");
+    writeFileSync(
+      unnamed,
+      [
+        JSON.stringify({ type: "session", version: 3, id: "unnamed", timestamp: "2026-01-01T00:00:00.000Z", cwd }),
+        JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text: "just the first message" }] } }),
+      ].join("\n") + "\n",
+    );
+
+    utimesSync(named, new Date(2000), new Date(2000));
+    utimesSync(unnamed, new Date(1000), new Date(1000));
+
+    const list = listPiSessions(cwd, agentDir);
+    const byId = Object.fromEntries(list.map((m) => [m.piSessionId, m]));
+
+    // Named: label is the latest session_info name; preview keeps the 1st message.
+    assert.equal(byId.named.name, "Add Rate Limiting to Express API");
+    assert.equal(byId.named.preview, "add rate limiting to my express api");
+
+    // Unnamed: label falls back to the first user message.
+    assert.equal(byId.unnamed.name, "just the first message");
+    assert.equal(byId.unnamed.preview, "just the first message");
+  } finally {
+    rmSync(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("listPiSessions returns [] when the slug dir is absent", () => {
   const agentDir = mkdtempSync(join(tmpdir(), "pino-agent-"));
   try {
