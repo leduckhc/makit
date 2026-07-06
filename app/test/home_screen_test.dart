@@ -45,4 +45,22 @@ void main() {
     expect(find.byType(GlassSurface), findsWidgets);
     expect(find.textContaining('running'), findsWidgets);
   });
+
+  testWidgets('idle sessions render no status pill', (tester) async {
+    final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
+    final session = Session(
+      id: 's1',
+      projectId: 'p1',
+      agent: 'pi',
+      title: 'quiet work',
+      status: SessionStatus.idle,
+      policy: ApprovalPolicy.askOnRisky,
+    );
+    await tester.pumpWidget(_host(projects: [project], sessions: [session]));
+    await tester.pump();
+
+    // The tile is there, but no explicit "idle" pill.
+    expect(find.text('quiet work'), findsOneWidget);
+    expect(find.text('idle'), findsNothing);
+  });
 }

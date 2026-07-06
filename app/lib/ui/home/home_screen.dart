@@ -433,7 +433,9 @@ class _SessionTile extends ConsumerWidget {
             Expanded(
               child: Text(session.title, overflow: TextOverflow.ellipsis),
             ),
-            _StatusChip(status: session.status),
+            // Idle is the resting state — no pill; only surface active/error/exited.
+            if (session.status != SessionStatus.idle)
+              _StatusChip(status: session.status),
           ],
         ),
         subtitle: Text(
@@ -528,13 +530,15 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (status == SessionStatus.idle) return const SizedBox.shrink();
+    
     final (label, color) = switch (status) {
-      SessionStatus.idle => ('idle', Colors.grey),
       SessionStatus.running => ('running', _kBrandBlue),
       SessionStatus.awaitingInput => ('you', Colors.orange),
       SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
       SessionStatus.error => ('error', Colors.red),
       SessionStatus.exited => ('exited', Colors.grey),
+      SessionStatus.idle => throw UnimplementedError(), // Unreachable
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
