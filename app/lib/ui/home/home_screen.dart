@@ -8,6 +8,7 @@ import '../../app/theme.dart' show kPinoBrandBlue;
 import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
+import '../widgets/sheet_header.dart';
 
 /// Brand blue accent used for running/active glass affordances (shared token).
 const _kBrandBlue = kPinoBrandBlue;
@@ -74,17 +75,12 @@ class HomeScreen extends ConsumerWidget {
     } else {
       target = await showModalBottomSheet<Project>(
         context: context,
+        showDragHandle: true,
         builder: (ctx) => SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: Text(
-                  'Spawn new session in…',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
+              const SheetHeader(title: 'Spawn new session in…'),
               for (final p in projects)
                 ListTile(
                   leading: const Icon(Icons.folder_outlined),
@@ -303,19 +299,26 @@ class _AttachPastButton extends ConsumerWidget {
       showDragHandle: true,
       builder: (ctx) => SafeArea(
         child: metas.isEmpty
-            ? const Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('No past sessions.', textAlign: TextAlign.center),
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SheetHeader(
+                    title: 'Resume a past session in ${project.name}',
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(24, 8, 24, 24),
+                    child: Text(
+                      'No past sessions.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
               )
             : ListView(
                 shrinkWrap: true,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Text(
-                      'Resume a past session in ${project.name}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                  SheetHeader(
+                    title: 'Resume a past session in ${project.name}',
                   ),
                   for (final m in metas)
                     ListTile(

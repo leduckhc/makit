@@ -14,6 +14,7 @@ import '../../store/connection.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
+import '../widgets/sheet_header.dart';
 
 typedef ClientCmdHandler =
     Future<void> Function(
@@ -273,17 +274,12 @@ const _thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 Future<String?> _pickThinkingLevel(BuildContext context) {
   return showModalBottomSheet<String>(
     context: context,
+    showDragHandle: true,
     builder: (sheetContext) => SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const ListTile(
-            dense: true,
-            title: Text(
-              'Thinking level',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
+          const SheetHeader(title: 'Thinking level'),
           for (final level in _thinkingLevels)
             ListTile(
               title: Text(level),
@@ -305,14 +301,12 @@ Future<ModelInfo?> _pickModel(
   return showModalBottomSheet<ModelInfo>(
     context: context,
     isScrollControlled: true,
+    showDragHandle: true,
     builder: (sheetContext) => SafeArea(
       child: ListView(
         shrinkWrap: true,
         children: [
-          const ListTile(
-            dense: true,
-            title: Text('Model', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
+          const SheetHeader(title: 'Model'),
           for (final m in models)
             ListTile(
               title: Text(m.name),
