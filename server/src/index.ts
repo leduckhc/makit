@@ -68,7 +68,11 @@ function makeDaemon() {
     logPath: logFilePath(),
     out: (line) => console.log(line),
     spawn: (cmd, args, logFd) => {
-      const child = childSpawn(cmd, args, { detached: true, stdio: ["ignore", logFd, logFd] });
+      // Forward the parent's node flags (e.g. tsx's `--require`/`--import`
+      // loader, injected via execArgv, not NODE_OPTIONS) so the detached
+      // daemon resolves TS-style `.js` imports the same way the CLI does.
+      // Without this, plain node can't resolve imports like `./manager.js`.
+      const child = childSpawn(cmd, [...process.execArgv, ...args], { detached: true, stdio: ["ignore", logFd, logFd] });
       return { pid: child.pid, unref: () => child.unref() };
     },
     openLogFd: (p) => {
