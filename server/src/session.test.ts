@@ -39,3 +39,35 @@ test("backfill seeds the event log without emitting, then live events continue t
   assert.deepEqual(emitted, [3]);
   assert.equal(session.events.length, 3);
 });
+
+test("setTitle updates the title, emits titleChanged, and dedups empty/unchanged", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+
+  const changes: string[] = [];
+  session.on("titleChanged", (t) => changes.push(t));
+
+  // First real title → changes.
+  assert.equal(session.setTitle("Fix the parser"), true);
+  assert.equal(session.title, "Fix the parser");
+
+  // Trims surrounding whitespace.
+  assert.equal(session.setTitle("  Fix the parser  "), false); // same after trim
+  assert.equal(session.setTitle("Rename me"), true);
+
+  // Empty / whitespace-only is ignored.
+  assert.equal(session.setTitle("   "), false);
+  assert.equal(session.setTitle(""), false);
+  assert.equal(session.title, "Rename me");
+
+  assert.deepEqual(changes, ["Fix the parser", "Rename me"]);
+});
+
+test("adapter 'title' events retitle the session", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  const changes: string[] = [];
+  session.on("titleChanged", (t) => changes.push(t));
+
+  session.adapter.emit("title", "auto-named from pi");
+  assert.equal(session.title, "auto-named from pi");
+  assert.deepEqual(changes, ["auto-named from pi"]);
+});

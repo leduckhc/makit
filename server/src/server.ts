@@ -300,6 +300,11 @@ export function startWsServer(opts: ServerOpts) {
           ? (ctx.env.args as Record<string, unknown>)
           : undefined;
       ctx.ack();
+      // Manual rename: reflect the new title in pino immediately, then let the
+      // adapter persist it (pi's set_session_name / the mirror connector).
+      if (action === "name" && typeof args?.name === "string") {
+        session.setTitle(args.name);
+      }
       await session.sendAction(action, args);
     });
 
@@ -519,12 +524,7 @@ export function startWsServer(opts: ServerOpts) {
       const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
       const title = typeof ctx.env.title === "string" ? ctx.env.title.trim() : "";
       const session = sid ? manager.getSession(sid) : undefined;
-      if (session && title && session.title !== title) {
-        session.title = title;
-        broadcastSessionsSnapshot();
-        // SPEC-05: keep the mux pane label in sync with the session title.
-        manager.updatePaneLabel(sid, title).catch(() => {});
-      }
+      session?.setTitle(title);
     });
 
     r.register("host.close", async (ctx) => {
@@ -627,6 +627,11 @@ export function startWsServer(opts: ServerOpts) {
         `[pino] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`,
       );
       broadcastSessionsSnapshot();
+    });
+    session.on("titleChanged", (title) => {
+      broadcastSessionsSnapshot();
+      // SPEC-05: keep the mux pane label in sync with the session title.
+      manager.updatePaneLabel(session.id, title).catch(() => {});
     });
   }
 

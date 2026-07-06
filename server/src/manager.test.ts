@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import { SessionManager } from "./manager.js";
 import { piSessionsDir } from "./pi-sessions.js";
+import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
@@ -174,6 +175,23 @@ test("killSession kills the adapter, drops it from the registry, and errors on u
       assert.equal(manager.listSessions().length, 0);
 
       await assert.rejects(() => manager.killSession("nope"));
+    });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("spawnPiSession without an explicit title uses the shared default", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      const manager = new SessionManager({
+        projects: [cwd],
+        adapterFactory: () => stubAdapter([]),
+      });
+      const projectId = manager.listProjects()[0].id;
+      const session = await manager.spawnPiSession(projectId);
+      assert.equal(session.title, DEFAULT_SESSION_TITLE);
     });
   } finally {
     rmSync(cwd, { recursive: true, force: true });

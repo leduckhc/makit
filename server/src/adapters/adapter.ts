@@ -54,4 +54,6 @@ export interface AgentAdapter extends EventEmitter {
   on(event: "event", listener: (e: AdapterEvent) => void): this;
   on(event: "exit", listener: (code: number | null) => void): this;
   on(event: "status", listener: (status: "idle" | "running") => void): this;
+  /** Agent-driven session rename (e.g. pi's `setTitle`). */
+  on(event: "title", listener: (title: string) => void): this;
 }

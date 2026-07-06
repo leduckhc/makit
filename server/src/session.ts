@@ -14,6 +14,7 @@ import type {
   SessionEvent,
   SessionStatus,
 } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { PaneHandle } from "./mux/adapter.js";
 
 export interface SessionInit {
@@ -43,7 +44,7 @@ export class Session extends EventEmitter {
     super();
     this.projectId = init.projectId;
     this.agent = init.agent;
-    this.title = init.title ?? `${init.agent} session`;
+    this.title = init.title ?? DEFAULT_SESSION_TITLE;
     this.adapter = init.adapter;
     this.policy = init.policy ?? "ask-on-risky";
 
@@ -119,6 +120,8 @@ export class Session extends EventEmitter {
       this.events.push(evt);
       this.emit("event", evt);
     });
+
+    adapter.on("title", (title) => this.setTitle(title));
   }
 
   toDTO(): SessionDTO {
@@ -150,7 +153,23 @@ export class Session extends EventEmitter {
     await this.adapter.sendAction?.(action, args);
   }
 
-  on(event: "event", listener: (e: SessionEvent) => void): this {
+  /**
+   * Rename the session. Trims, ignores empty/unchanged titles, and emits
+   * `titleChanged` so the server can re-broadcast the sessions snapshot and
+   * sync the mux pane label. Returns whether the title actually changed.
+   */
+  setTitle(title: string): boolean {
+    const next = title.trim();
+    if (!next || next === this.title) return false;
+    this.title = next;
+    this.emit("titleChanged", next);
+    return true;
+  }
+
+  on(event: "event", listener: (e: SessionEvent) => void): this;
+  on(event: "titleChanged", listener: (title: string) => void): this;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  on(event: string, listener: (...args: any[]) => void): this {
     return super.on(event, listener);
   }
 }

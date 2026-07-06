@@ -16,7 +16,7 @@ import { MirrorAdapter } from "./adapters/mirror.js";
 import { IngestAdapter } from "./adapters/ingest.js";
 import { herdrReader, paneAgentInfo } from "./pane/herdr.js";
 import { Session } from "./session.js";
-import type { ProjectDTO } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { type MultiplexerAdapter, type PaneHandle, MuxError } from "./mux/adapter.js";
 import { getMultiplexer } from "./mux/registry.js";
@@ -202,7 +202,7 @@ export class SessionManager extends EventEmitter {
     if (!available) return this.spawnPiSession(projectId, title);
 
     const spawnToken = randomUUID();
-    const label = `pino: ${title ?? "pi session"}`;
+    const label = `pino: ${title ?? DEFAULT_SESSION_TITLE}`;
     const piBin = process.env.PINO_PI_BIN ?? "pi";
     const command = `PINO_SPAWN_TOKEN=${spawnToken} ${piBin}`;
 
@@ -301,7 +301,7 @@ export class SessionManager extends EventEmitter {
     const session = new Session({
       projectId: project.dto.id,
       agent: "pi",
-      title: title ?? "pi (mirror)",
+      title: title ?? DEFAULT_SESSION_TITLE,
       adapter,
     });
     await adapter.start({ cwd });
@@ -412,7 +412,7 @@ export class SessionManager extends EventEmitter {
     const session = new Session({
       projectId: project.dto.id,
       agent: "pi",
-      title: opts.title ?? "pi (mirror)",
+      title: opts.title ?? DEFAULT_SESSION_TITLE,
       adapter,
     });
     await adapter.start({ cwd: project.dto.path });
@@ -465,7 +465,7 @@ export class SessionManager extends EventEmitter {
     const session = new Session({
       projectId: project.dto.id,
       agent: "pi",
-      title: opts.title ?? `TUI ${opts.paneTarget}`,
+      title: opts.title ?? DEFAULT_SESSION_TITLE,
       adapter,
     });
     await adapter.start({ cwd: project.dto.path });
@@ -484,7 +484,7 @@ export class SessionManager extends EventEmitter {
     const session = new Session({
       projectId: project.dto.id,
       agent: this.adapterFactory ? "stub" : "pi",
-      title: opts.title ?? (this.adapterFactory ? "stub session" : "pi session"),
+      title: opts.title ?? DEFAULT_SESSION_TITLE,
       adapter,
     });
     const activeAdapter = this.adapterFactory?.({
@@ -521,7 +521,7 @@ export class SessionManager extends EventEmitter {
   async ensureDefaultSessions() {
     for (const p of this.projects.values()) {
       const hasOne = [...this.sessions.values()].some((s) => s.projectId === p.dto.id);
-      if (!hasOne) await this.spawnPiSession(p.dto.id, "new session");
+      if (!hasOne) await this.spawnPiSession(p.dto.id, DEFAULT_SESSION_TITLE);
     }
   }
 

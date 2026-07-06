@@ -7,6 +7,9 @@
 
 export const PROTOCOL_VERSION = 1;
 
+/** Default title for a freshly-spawned, not-yet-named session. */
+export const DEFAULT_SESSION_TITLE = "new session";
+
 export type MsgType =
   | "hello"
   | "hello.ack"

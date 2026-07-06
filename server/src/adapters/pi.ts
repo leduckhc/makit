@@ -82,6 +82,16 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     this.writeCommand(cmd);
   }
 
+  async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    await this.ensureProcess();
+    // `name` → persist the session name in pi so it survives resume/re-attach.
+    // Other actions (compact/thinking/…) are not yet mapped in rpc mode.
+    if (action === "name") {
+      const name = typeof args?.name === "string" ? args.name.trim() : "";
+      if (name) this.writeCommand({ type: "set_session_name", name });
+    }
+  }
+
   async cancel(): Promise<void> {
     if (this.child) this.writeCommand({ type: "abort" });
   }
@@ -182,8 +192,14 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     const reply = (fields: Record<string, unknown>) =>
       this.writeCommand({ type: "extension_ui_response", id, ...fields });
 
-    // Fire-and-forget UI methods — no response expected.
-    if (["notify", "setStatus", "setWidget", "setTitle", "set_editor_text"].includes(method)) {
+    // setTitle → surface as an agent-driven session rename. Other
+    // fire-and-forget UI methods are display-only and need no response.
+    if (method === "setTitle") {
+      const t = typeof evt.title === "string" ? evt.title.trim() : "";
+      if (t) this.emit("title", t);
+      return;
+    }
+    if (["notify", "setStatus", "setWidget", "set_editor_text"].includes(method)) {
       return;
     }
 
