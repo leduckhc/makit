@@ -1,8 +1,8 @@
 # SPEC-03 — macOS desktop control app
 
-**Status:** in progress (Phase 1 merged via PR #11; Phase 4 integration remaining) · **Depends on:** SPEC-01 (control protocol) · **Blocks:** —
+**Status:** done (Phase 1 via PR #11; Phase 4 via PR #16) · **Depends on:** SPEC-01 (control protocol) · **Blocks:** —
 
-**→ Detailed architecture & work plan:** [`../SPEC-03-ARCHITECTURE-AND-PLAN.md`](../SPEC-03-ARCHITECTURE-AND-PLAN.md)
+**→ Detailed architecture & work plan:** [`2026-07-05-SPEC-03-ARCHITECTURE-AND-PLAN.md`](./2026-07-05-SPEC-03-ARCHITECTURE-AND-PLAN.md)
 
 ## Goal
 

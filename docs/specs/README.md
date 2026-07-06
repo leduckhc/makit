@@ -28,11 +28,11 @@ but are otherwise independently implementable. Respect the dependency order.
 
 | Spec | Title | Depends on |
 |------|-------|-----------|
-| [SPEC-01](./SPEC-01-daemon-control-plane.md) | pino daemon & local control plane | — (foundation) |
-| [SPEC-02](./SPEC-02-cli-client-subcommands.md) | CLI client subcommands | SPEC-01 |
-| [SPEC-03](./SPEC-03-desktop-control-app.md) | macOS desktop **control** app (Flutter reuse; Phase 1 merged, Phase 4 integration remaining) | SPEC-01 |
-| [SPEC-04](./SPEC-04-multiplexer-adapter-layer.md) | Multiplexer adapter layer + herdr | — (foundation) |
-| [SPEC-05](./SPEC-05-session-in-pane-spawning.md) | Session-in-pane spawning + lifecycle | SPEC-04 (+ manager/extension) |
+| [SPEC-01](./2026-07-05-SPEC-01-daemon-control-plane.md) | pino daemon & local control plane | — (foundation) |
+| [SPEC-02](./2026-07-05-SPEC-02-cli-client-subcommands.md) | CLI client subcommands | SPEC-01 |
+| [SPEC-03](./2026-07-05-SPEC-03-desktop-control-app.md) | macOS desktop **control** app (Flutter reuse; done — Phase 1 via PR #11, Phase 4 via PR #16) | SPEC-01 |
+| [SPEC-04](./2026-07-05-SPEC-04-multiplexer-adapter-layer.md) | Multiplexer adapter layer + herdr | — (foundation) |
+| [SPEC-05](./2026-07-05-SPEC-05-session-in-pane-spawning.md) | Session-in-pane spawning + lifecycle | SPEC-04 (+ manager/extension) |
 
 ```
 SPEC-01 ─┬─> SPEC-02 (CLI clients)

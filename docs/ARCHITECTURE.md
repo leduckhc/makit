@@ -197,34 +197,43 @@ export interface AgentAdapter {
 }
 ```
 
-Two implementations:
+Four implementations ship today (`server/src/adapters/`); the adapter
+interface is identical so the rest of the server doesn't care which one a
+session uses:
 
-### 5.1 `PtyAdapter` (v1, works with any CLI)
+### 5.1 `PiAdapter` (World A — direct spawn)
 
-- Spawn the CLI under `node-pty` with a known cols/rows.
-- Maintain an **ANSI terminal model** server-side (e.g. `xterm-headless` or
-  `@xterm/headless`) so we can:
-  - Detect prompts ("waiting for input") via cursor + line heuristics.
-  - Identify tool-call rendering blocks per known CLI's output format.
-  - Strip ANSI when emitting `agent.message` events.
-- Inject user input as raw stdin bytes (this is the "mirror phone input into
-  desktop" path — same bytes that the desktop tmux pane would have produced).
-- Caveats: brittle to CLI output changes; tool-call structure is heuristic.
+- Drives `pi --mode rpc` as a long-running JSON-RPC subprocess (one per
+  Session, started lazily on first send, killed on Session shutdown).
+- Gets pi's slash commands, skills, extensions, prompt templates, mid-turn
+  steering, abort, model switching, and compaction — all native, no ANSI
+  guessing.
 
-### 5.2 Native adapters (v2, per agent)
+### 5.2 `MirrorAdapter` (World B — tail a real terminal pane)
 
-- `CodexAdapter`: read codex's JSONL event stream over its IPC socket /
-  stdout-JSON mode. Map directly to `Event`s. No ANSI guessing.
-- `PiAdapter`: use pi's SDK (`@earendil-works/pi-coding-agent`) — pi exposes
-  structured events natively.
-- `ClaudeAdapter`: use Anthropic's `claude-code` SDK.
+- Bridges a **real `pi` TUI** already running in a terminal-multiplexer pane
+  (e.g. herdr) to a pino session, so the phone sees it as normal chat.
+- Read: tails the pi session `.jsonl` the TUI writes. Write: injects the
+  phone's text into the pane via send-text + Enter. No second pi process is
+  spawned for the chat stream, so there's no double-writer corruption.
 
-The adapter interface is identical, so the rest of the server doesn't care
-which one a session uses.
+### 5.3 `IngestAdapter` (World D — pushed in by an extension)
 
-### 5.3 Spike 0: which adapter feels right? *(see §10)*
+- A session whose events are pushed in by the `pino-mirror` pi extension
+  (loaded into the user's real `pi`, TUI or otherwise) rather than produced by
+  a pino-spawned process.
+
+### 5.4 `StubAdapter` (tests)
+
+- Deterministic fake (fixed-delay echo + markdown sample reply) used by the
+  app's E2E suite; no real agent involved.
+
+*(The original PTY-vs-native Spike 0 in §10 predates World A/B/D and is
+historical — pino ships pi-only, so the PTY/Codex/Claude comparison there
+never shipped.)*
 
 ---
+
 
 ## 6. Mobile app (Flutter)
 
