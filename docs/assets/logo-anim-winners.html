@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pino — winners + puzzle</title>
+<style>
+  :root {
+    --bg:      #1a1a1a;
+    --bg2:     #0e0e0e;
+    --accent:  #4ade80;
+    --ink:     #f4f4f5;
+    --muted:   #888;
+    --radius:  22%;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: var(--bg2);
+    color: #ddd;
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 48px 24px;
+  }
+  h1 { font-size: 22px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; margin-bottom: 4px; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--ink); margin: 40px 0 4px; letter-spacing: 0.04em; text-transform: uppercase; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; max-width: 760px; }
+  .section-sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; max-width: 640px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 36px 28px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .label { font-size: 12px; color: var(--ink); font-weight: 600; text-align: center; }
+  .desc  { font-size: 11px; color: var(--muted); text-align: center; max-width: 200px; line-height: 1.5; }
+
+  .icon {
+    width: 160px; height: 160px;
+    background: var(--bg);
+    border-radius: var(--radius);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+
+  .mark { width: 92%; height: 72%; position: relative; }
+  .mark svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .stroke { stroke: var(--accent); fill: none; stroke-linecap: round; }
+  .head   { fill: var(--accent); }
+
+  /* ========= A · CLAP (winner) ========= */
+  .anim-clap .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+    animation: clap 1.6s cubic-bezier(.4,0,.2,1) infinite;
+  }
+  @keyframes clap {
+    0%   { transform: translateX(0) rotate(0deg); }
+    35%  { transform: translateX(12px) rotate(-32deg); }
+    50%  { transform: translateX(12px) rotate(-32deg); }
+    65%  { transform: translateX(0) rotate(0deg); }
+    100% { transform: translateX(0) rotate(0deg); }
+  }
+
+  /* ========= C · DRAW IN (winner, looping) ========= */
+  .anim-draw .head { transform-box: fill-box; transform-origin: center; animation: pop-loop 3s ease-out infinite; }
+  .anim-draw .arm  { stroke-dasharray: 80; }
+  .anim-draw .arm.l { animation: draw-l 3s ease-out infinite; }
+  .anim-draw .arm.r { animation: draw-r 3s ease-out infinite; }
+  @keyframes pop-loop {
+    0%   { opacity: 0; transform: scale(0.4); }
+    8%   { opacity: 1; transform: scale(1.1); }
+    13%  { transform: scale(1); }
+    80%  { opacity: 1; transform: scale(1); }   /* hold */
+    90%  { opacity: 0; transform: scale(0.4); }  /* reset */
+    100% { opacity: 0; transform: scale(0.4); }
+  }
+  @keyframes draw-l {
+    0%, 5%  { stroke-dashoffset: 80; }
+    35%     { stroke-dashoffset: 0; }
+    80%     { stroke-dashoffset: 0; }   /* hold */
+    90%     { stroke-dashoffset: 80; }  /* reset */
+    100%    { stroke-dashoffset: 80; }
+  }
+  @keyframes draw-r {
+    0%, 15% { stroke-dashoffset: 80; }  /* staggered start */
+    45%     { stroke-dashoffset: 0; }
+    80%     { stroke-dashoffset: 0; }
+    90%     { stroke-dashoffset: 80; }
+    100%    { stroke-dashoffset: 80; }
+  }
+
+  /* ========= D · WAVE (winner) ========= */
+  .anim-wave .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+    animation: wave 1.4s ease-in-out infinite;
+  }
+  .anim-wave .arm.l { animation-delay: 0s; }
+  .anim-wave .arm.r { animation-delay: 0.15s; }
+  @keyframes wave {
+    0%,100% { transform: rotate(0deg); }
+    25%     { transform: rotate(-18deg); }
+    75%     { transform: rotate(14deg); }
+  }
+
+  /* ========= E · SLIDE IN (winner, looping) ========= */
+  .anim-slide .head { animation: fade-loop 3s ease-out infinite; }
+  .anim-slide .arm.l { animation: slide-l 3s cubic-bezier(.2,.7,.3,1) infinite; }
+  .anim-slide .arm.r { animation: slide-r 3s cubic-bezier(.2,.7,.3,1) infinite; }
+  @keyframes fade-loop {
+    0%   { opacity: 0; }
+    10%  { opacity: 1; }
+    80%  { opacity: 1; }    /* hold */
+    90%  { opacity: 0; }    /* reset */
+    100% { opacity: 0; }
+  }
+  @keyframes slide-l {
+    0%, 5%  { opacity: 0; transform: translateX(40px); }
+    25%     { opacity: 1; transform: translateX(0); }
+    80%     { opacity: 1; transform: translateX(0); }   /* hold */
+    90%     { opacity: 0; transform: translateX(40px); } /* reset */
+    100%    { opacity: 0; transform: translateX(40px); }
+  }
+  @keyframes slide-r {
+    0%, 15% { opacity: 0; transform: translateX(40px); }  /* staggered start */
+    35%     { opacity: 1; transform: translateX(0); }
+    80%     { opacity: 1; transform: translateX(0); }
+    90%     { opacity: 0; transform: translateX(40px); }
+    100%    { opacity: 0; transform: translateX(40px); }
+  }
+
+  /* ========= P · PUZZLE =========
+     Each piece starts displaced in a different direction + rotated,
+     then they all snap together into the final mark with a springy
+     settle. Head from the left, arm1 from upper-right, arm2 from
+     lower-right. The "click" happens at ~60% of the timeline. */
+  .anim-puzzle .head {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pz-head 2.6s cubic-bezier(.34,1.56,.64,1) infinite;
+  }
+  .anim-puzzle .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+    animation: pz-arm 2.6s cubic-bezier(.34,1.56,.64,1) infinite;
+  }
+  .anim-puzzle .arm.l { animation-name: pz-arm-l; }
+  .anim-puzzle .arm.r { animation-name: pz-arm-r; }
+  @keyframes pz-head {
+    0%   { transform: translate(-40px, 0) rotate(-12deg); opacity: 0; }
+    50%  { transform: translate(-40px, 0) rotate(-12deg); opacity: 0; }
+    70%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }   /* snap + slight overshoot from the spring ease */
+    85%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pz-arm-l {
+    0%   { transform: translate(36px, -28px) rotate(28deg); opacity: 0; }
+    50%  { transform: translate(36px, -28px) rotate(28deg); opacity: 0; }
+    70%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pz-arm-r {
+    0%   { transform: translate(54px, 24px) rotate(40deg); opacity: 0; }
+    50%  { transform: translate(54px, 24px) rotate(40deg); opacity: 0; }
+    70%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+
+  /* ========= P2 · PUZZLE — cascade snap =========
+     Pieces snap in sequence: head first, then arm1, then arm2.
+     Each piece overshoots slightly and settles, like puzzle pieces
+     clicking into place one after another. */
+  .anim-puzzle2 .head {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pz2-head 2.8s cubic-bezier(.34,1.56,.64,1) infinite;
+  }
+  .anim-puzzle2 .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+  }
+  .anim-puzzle2 .arm.l { animation: pz2-arm-l 2.8s cubic-bezier(.34,1.56,.64,1) infinite; }
+  .anim-puzzle2 .arm.r { animation: pz2-arm-r 2.8s cubic-bezier(.34,1.56,.64,1) infinite; }
+  @keyframes pz2-head {
+    0%   { transform: translate(-36px, 0) rotate(-10deg); opacity: 0; }
+    20%  { transform: translate(-36px, 0) rotate(-10deg); opacity: 0; }
+    40%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pz2-arm-l {
+    0%   { transform: translate(32px, -24px) rotate(26deg); opacity: 0; }
+    40%  { transform: translate(32px, -24px) rotate(26deg); opacity: 0; }
+    60%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pz2-arm-r {
+    0%   { transform: translate(50px, 22px) rotate(38deg); opacity: 0; }
+    60%  { transform: translate(50px, 22px) rotate(38deg); opacity: 0; }
+    80%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+
+  /* ========= P3 · PUZZLE — scatter & reassemble =========
+     Pieces hold in place, then scatter outward, pause, and snap back.
+     A "reassembly" loop — the mark breaks apart and re-forms. */
+  .anim-puzzle3 .head {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pz3-head 3.2s cubic-bezier(.34,1.56,.64,1) infinite;
+  }
+  .anim-puzzle3 .arm {
+    transform-box: fill-box;
+    transform-origin: 0% 100%;
+  }
+  .anim-puzzle3 .arm.l { animation: pz3-arm-l 3.2s cubic-bezier(.34,1.56,.64,1) infinite; }
+  .anim-puzzle3 .arm.r { animation: pz3-arm-r 3.2s cubic-bezier(.34,1.56,.64,1) infinite; }
+  @keyframes pz3-head {
+    0%, 35%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    50%, 65% { transform: translate(-40px, 0) rotate(-12deg); opacity: 0.35; }
+    85%      { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100%     { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pz3-arm-l {
+    0%, 35%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    50%, 65% { transform: translate(36px, -28px) rotate(28deg); opacity: 0.35; }
+    85%      { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100%     { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pz3-arm-r {
+    0%, 35%  { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    50%, 65% { transform: translate(54px, 24px) rotate(40deg); opacity: 0.35; }
+    85%      { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+    100%     { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+  <h1>pino — winners + puzzle</h1>
+  <div class="sub">Locked: A · Clap, C · Draw in, D · Wave, E · Slide in. Plus three puzzle variations — pieces displaced, then snapping together.</div>
+
+  <h2>Winners — 4</h2>
+  <div class="section-sub">The chosen animations, unchanged.</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-clap">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">A · Clap</div>
+      <div class="desc">Shoulder pivot + rightward slide as arms swing in.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-draw">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">C · Draw in</div>
+      <div class="desc">Head pops, arms stroke-draw with stagger.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-wave">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">D · Wave</div>
+      <div class="desc">Arms sway from the shoulder, staggered.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-slide">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">E · Slide in</div>
+      <div class="desc">Arms slide in from the right, staggered.</div>
+    </div>
+
+  </div>
+
+  <h2>Puzzle — new direction</h2>
+  <div class="section-sub">The mark's three pieces start displaced + rotated, then snap together with a springy settle.</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-puzzle">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">P · Snap together</div>
+      <div class="desc">All three pieces fly in from different directions and snap at once with a spring overshoot.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-puzzle2">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">P2 · Cascade snap</div>
+      <div class="desc">Pieces click in one after another — head, then arm1, then arm2. Like assembling the puzzle in sequence.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark anim-puzzle3">
+        <svg viewBox="0 0 160 100" preserveAspectRatio="xMidYMid meet">
+          <circle class="head" cx="38" cy="50" r="26" />
+          <line class="stroke arm l" stroke-width="14" x1="72" y1="82" x2="106" y2="18" />
+          <line class="stroke arm r" stroke-width="14" x1="100" y1="82" x2="134" y2="18" />
+        </svg>
+      </div></div>
+      <div class="label">P3 · Scatter &amp; reassemble</div>
+      <div class="desc">Mark holds, then breaks apart, pauses, and snaps back together. A reassembly loop.</div>
+    </div>
+
+  </div>
+</body>
+</html>

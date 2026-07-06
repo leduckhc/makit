@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pino — finalists + text-based ideas</title>
+<style>
+  :root {
+    --bg:      #1a1a1a;
+    --bg2:     #0e0e0e;
+    --accent:  #4ade80;
+    --accent2: #22c55e;
+    --ink:     #f4f4f5;
+    --muted:   #888;
+    --radius:  22%;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: var(--bg2);
+    color: #ddd;
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 48px 24px;
+  }
+  h1 { font-size: 20px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; margin-bottom: 4px; }
+  h2 { font-size: 14px; font-weight: 600; color: var(--ink); margin: 48px 0 6px; letter-spacing: 0.04em; text-transform: uppercase; }
+  h2:first-of-type { margin-top: 28px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; max-width: 720px; }
+  .section-sub { color: var(--muted); font-size: 12px; margin-bottom: 20px; max-width: 600px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 36px 28px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .card { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .label { font-size: 12px; color: var(--ink); font-weight: 600; text-align: center; }
+  .desc  { font-size: 11px; color: var(--muted); text-align: center; max-width: 170px; line-height: 1.5; }
+  .row   { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+
+  .icon {
+    width: 160px; height: 160px;
+    background: var(--bg);
+    border-radius: var(--radius);
+    display: grid;
+    place-items: center;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+  .icon.s64 { width: 64px; height: 64px; box-shadow: none; }
+  .icon.s32 { width: 32px; height: 32px; box-shadow: none; }
+
+  .mark { position: relative; width: 50%; height: 50%; }
+
+  /* =========================================================
+     FINALISTS
+     ========================================================= */
+
+  /* C1 — double chevron up */
+  .f-c1 { width: 60%; height: 60%; }
+  .f-c1 .a { position: absolute; inset: 0; background: var(--accent);
+             clip-path: polygon(0 30%, 50% 0, 100% 30%, 100% 50%, 50% 20%, 0 50%,
+                                0 70%, 50% 40%, 100% 70%, 100% 90%, 50% 60%, 0 90%); }
+
+  /* S1 — stair-step ascending */
+  .f-s1 { width: 60%; height: 60%; }
+  .f-s1 .a, .f-s1 .b, .f-s1 .c { position: absolute; width: 50%; height: 33.33%; background: var(--accent); }
+  .f-s1 .a { left: 0;   bottom: 0; }
+  .f-s1 .b { left: 25%; bottom: 33.33%; }
+  .f-s1 .c { left: 50%; bottom: 66.66%; }
+
+  /* P1 — original pinwheel (3 visible blades) */
+  .f-p1 { width: 60%; height: 60%; }
+  .f-p1 .t { position: absolute; width: 50%; height: 50%; background: var(--accent); }
+  .f-p1 .t1 { left: 0;   top: 0;    clip-path: polygon(0 0, 100% 100%, 0 100%); }
+  .f-p1 .t2 { right: 0;  top: 0;    clip-path: polygon(0 0, 100% 100%, 100% 0); }
+  .f-p1 .t3 { left: 0;   bottom: 0; clip-path: polygon(0 0, 100% 100%, 100% 100%); }
+  .f-p1 .t4 { right: 0;  bottom: 0; clip-path: polygon(0 0, 100% 100%, 0 100%); }
+
+  /* F1 — offset face */
+  .f-f1 { width: 70%; height: 60%; }
+  .f-f1 .bar { position: absolute; left: 0; top: 50%; width: 100%; height: 14%;
+               background: var(--accent); border-radius: 999px; transform: translateY(-50%); }
+  .f-f1 .d { position: absolute; width: 26%; height: 26%; border-radius: 50%; background: var(--accent); }
+  .f-f1 .top { left: 14%; top: 4%; }
+  .f-f1 .bot { right: 14%; bottom: 4%; }
+
+  /* N14 — square brackets [ ] */
+  .f-n14 { width: 70%; height: 60%; }
+  .f-n14 .l { position: absolute; left: 0; top: 10%; width: 22%; height: 80%; background: var(--accent);
+              clip-path: polygon(0 0, 100% 0, 100% 15%, 18% 15%, 18% 85%, 100% 85%, 100% 100%, 0 100%); }
+  .f-n14 .r { position: absolute; right: 0; top: 10%; width: 22%; height: 80%; background: var(--accent);
+              clip-path: polygon(100% 0, 0 0, 0 15%, 82% 15%, 82% 85%, 0 85%, 0 100%, 100% 100%); }
+
+  /* N2-asymmetric — mountain with notch, peak off-center */
+  .f-n2a { width: 70%; height: 60%; }
+  .f-n2a .a { position: absolute; inset: 0; background: var(--accent);
+              clip-path: polygon(0 100%, 32% 0, 100% 100%, 72% 100%, 62% 60%, 52% 100%); }
+
+  /* =========================================================
+     TEXT-BASED IDEAS
+     ========================================================= */
+
+  /* IDEA 1 — <.>//  (SVG: tall chevrons + dot + slashes, even spacing, equal thickness) */
+  .idea-ltdots {
+    width: 92%; height: 65%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .idea-ltdots svg { width: 100%; height: 100%; display: block; }
+  .idea-ltdots .stroke { stroke: var(--accent); stroke-width: 9; fill: none; stroke-linecap: butt; stroke-linejoin: miter; }
+  .idea-ltdots .dot { fill: var(--accent); }
+
+  /* IDEA 3 — O//  (circle head + two clapping arm slashes) */
+  .idea-osl {
+    width: 75%; height: 55%;
+    display: flex; align-items: center; justify-content: center;
+    gap: 10%;
+  }
+  .idea-osl .head {
+    width: 42%; aspect-ratio: 1; border-radius: 50%; background: var(--accent);
+    flex: 0 0 auto;
+  }
+  .idea-osl .arms {
+    display: flex; align-items: center; gap: 18%;
+    width: 38%; height: 85%;
+  }
+  .idea-osl .arm {
+    width: 32%; height: 100%; background: var(--accent);
+    border-radius: 4px;
+  }
+  .idea-osl .arm.a1 { transform: rotate(22deg); }
+  .idea-osl .arm.a2 { transform: rotate(22deg); }
+
+  /* IDEA 2 — :]  (larger colon dots + taller bracket from N14) */
+  .idea-cb { width: 60%; height: 70%; }
+  .idea-cb .dot { position: absolute; left: 0; width: 24%; height: 24%;
+                  border-radius: 50%; background: var(--accent); }
+  .idea-cb .d1 { top: 14%; }
+  .idea-cb .d2 { bottom: 14%; }
+  .idea-cb .br {
+    position: absolute; right: 0; top: 0; width: 55%; height: 100%;
+    background: var(--accent);
+    clip-path: polygon(100% 0, 0 0, 0 10%, 82% 10%, 82% 90%, 0 90%, 0 100%, 100% 100%);
+  }
+</style>
+</head>
+<body>
+  <h1>pino — finalists + text-based ideas</h1>
+  <div class="sub">Six finalists locked in (N2 reworked asymmetric). Plus two new text-based ideas rendered as geometric marks.</div>
+
+  <h2>Finalists — 6</h2>
+  <div class="section-sub">C1 Double chevron, S1 Stair-step, P1 Pinwheel, F1 Offset face, N14 Square brackets, N2 Mountain (asymmetric).</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="icon"><div class="mark f-c1"><div class="a"></div></div></div>
+      <div class="row"><div class="icon s64"><div class="mark f-c1"><div class="a"></div></div></div><div class="icon s32"><div class="mark f-c1"><div class="a"></div></div></div></div>
+      <div class="label">C1 · Double chevron up</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark f-s1"><div class="a"></div><div class="b"></div><div class="c"></div></div></div>
+      <div class="row"><div class="icon s64"><div class="mark f-s1"><div class="a"></div><div class="b"></div><div class="c"></div></div></div><div class="icon s32"><div class="mark f-s1"><div class="a"></div><div class="b"></div><div class="c"></div></div></div></div>
+      <div class="label">S1 · Stair-step ascending</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark f-p1"><div class="t t1"></div><div class="t t2"></div><div class="t t3"></div><div class="t t4"></div></div></div>
+      <div class="row"><div class="icon s64"><div class="mark f-p1"><div class="t t1"></div><div class="t t2"></div><div class="t t3"></div><div class="t t4"></div></div></div><div class="icon s32"><div class="mark f-p1"><div class="t t1"></div><div class="t t2"></div><div class="t t3"></div><div class="t t4"></div></div></div></div>
+      <div class="label">P1 · Pinwheel (original)</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark f-f1"><div class="bar"></div><div class="d top"></div><div class="d bot"></div></div></div>
+      <div class="row"><div class="icon s64"><div class="mark f-f1"><div class="bar"></div><div class="d top"></div><div class="d bot"></div></div></div><div class="icon s32"><div class="mark f-f1"><div class="bar"></div><div class="d top"></div><div class="d bot"></div></div></div></div>
+      <div class="label">F1 · Offset face</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark f-n14"><div class="l"></div><div class="r"></div></div></div>
+      <div class="row"><div class="icon s64"><div class="mark f-n14"><div class="l"></div><div class="r"></div></div></div><div class="icon s32"><div class="mark f-n14"><div class="l"></div><div class="r"></div></div></div></div>
+      <div class="label">N14 · Square brackets</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark f-n2a"><div class="a"></div></div></div>
+      <div class="row"><div class="icon s64"><div class="mark f-n2a"><div class="a"></div></div></div><div class="icon s32"><div class="mark f-n2a"><div class="a"></div></div></div></div>
+      <div class="label">N2 · Mountain (asymmetric)</div>
+      <div class="desc">Peak off-center, notch on the right slope.</div>
+    </div>
+
+  </div>
+
+  <h2>Your text-based ideas — 3</h2>
+  <div class="section-sub">Rendered as geometric marks in the same dark-frame + green-accent system.</div>
+  <div class="grid">
+
+    <div class="card">
+      <div class="icon"><div class="mark idea-ltdots">
+        <svg viewBox="0 0 154 100" preserveAspectRatio="xMidYMid meet">
+          <polyline class="stroke" points="25,5 5,50 25,95" />
+          <circle class="dot" cx="41" cy="50" r="6" />
+          <polyline class="stroke" points="58,5 78,50 58,95" />
+          <line class="stroke" x1="93" y1="5" x2="113" y2="95" />
+          <line class="stroke" x1="128" y1="5" x2="148" y2="95" />
+        </svg>
+      </div></div>
+      <div class="row"><div class="icon s64"><div class="mark idea-ltdots">
+        <svg viewBox="0 0 154 100" preserveAspectRatio="xMidYMid meet">
+          <polyline class="stroke" points="25,5 5,50 25,95" />
+          <circle class="dot" cx="41" cy="50" r="6" />
+          <polyline class="stroke" points="58,5 78,50 58,95" />
+          <line class="stroke" x1="93" y1="5" x2="113" y2="95" />
+          <line class="stroke" x1="128" y1="5" x2="148" y2="95" />
+        </svg>
+      </div></div><div class="icon s32"><div class="mark idea-ltdots">
+        <svg viewBox="0 0 154 100" preserveAspectRatio="xMidYMid meet">
+          <polyline class="stroke" points="25,5 5,50 25,95" />
+          <circle class="dot" cx="41" cy="50" r="6" />
+          <polyline class="stroke" points="58,5 78,50 58,95" />
+          <line class="stroke" x1="93" y1="5" x2="113" y2="95" />
+          <line class="stroke" x1="128" y1="5" x2="148" y2="95" />
+        </svg>
+      </div></div></div>
+      <div class="label">&lt;.&gt;//</div>
+      <div class="desc">Tall chevrons + dot + double slash, even spacing, equal stroke.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark idea-cb">
+        <div class="dot d1"></div>
+        <div class="dot d2"></div>
+        <div class="br"></div>
+      </div></div>
+      <div class="row"><div class="icon s64"><div class="mark idea-cb">
+        <div class="dot d1"></div><div class="dot d2"></div><div class="br"></div>
+      </div></div><div class="icon s32"><div class="mark idea-cb">
+        <div class="dot d1"></div><div class="dot d2"></div><div class="br"></div>
+      </div></div></div>
+      <div class="label">:]</div>
+      <div class="desc">Larger stacked dots + bracket from N14.</div>
+    </div>
+
+    <div class="card">
+      <div class="icon"><div class="mark idea-osl">
+        <div class="head"></div>
+        <div class="arms">
+          <div class="arm a1"></div>
+          <div class="arm a2"></div>
+        </div>
+      </div></div>
+      <div class="row"><div class="icon s64"><div class="mark idea-osl">
+        <div class="head"></div><div class="arms"><div class="arm a1"></div><div class="arm a2"></div></div>
+      </div></div><div class="icon s32"><div class="mark idea-osl">
+        <div class="head"></div><div class="arms"><div class="arm a1"></div><div class="arm a2"></div></div>
+      </div></div></div>
+      <div class="label">O//</div>
+      <div class="desc">Circle head + two angled arms clapping.</div>
+    </div>
+
+  </div>
+</body>
+</html>
