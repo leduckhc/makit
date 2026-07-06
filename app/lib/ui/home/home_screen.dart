@@ -530,15 +530,13 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (status == SessionStatus.idle) return const SizedBox.shrink();
-    
     final (label, color) = switch (status) {
       SessionStatus.running => ('running', _kBrandBlue),
       SessionStatus.awaitingInput => ('you', Colors.orange),
       SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
       SessionStatus.error => ('error', Colors.red),
       SessionStatus.exited => ('exited', Colors.grey),
-      SessionStatus.idle => throw UnimplementedError(), // Unreachable
+      SessionStatus.idle => ('idle', Colors.grey),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
