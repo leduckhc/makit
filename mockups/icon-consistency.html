@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context menu icon consistency</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons&display=block">
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Roboto", system-ui, sans-serif;
+    background: #121212;
+    color: #e6e6e6;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px;
+    padding: 48px;
+    justify-content: center;
+  }
+  .col { width: 300px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 4px; color: #fff; }
+  .note { font-size: 12px; color: #9a9a9a; margin: 0 0 16px; min-height: 32px; }
+  /* Material popup menu */
+  .menu {
+    background: #2a2a2e;
+    border-radius: 12px;
+    padding: 8px 0;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    overflow: hidden;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    font-size: 15px;
+  }
+  .item .material-icons { font-size: 22px; color: #cfcfcf; }
+  .divider { height: 1px; background: rgba(255,255,255,.10); margin: 8px 0; }
+  .pick { color: #7fd1a3; font-weight: 600; }
+</style>
+</head>
+<body>
+
+  <div class="col">
+    <h2>Current</h2>
+    <p class="note">history is heavier than add + delete_outline.</p>
+    <div class="menu">
+      <div class="item"><span class="material-icons">add</span>New session</div>
+      <div class="item"><span class="material-icons">history</span>Resume session</div>
+      <div class="divider"></div>
+      <div class="item"><span class="material-icons">delete_outline</span>Remove from pino</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h2>Option 1 — Lighten history <span class="pick">(my pick)</span></h2>
+    <p class="note">history &rarr; replay. All three thin-stroke.</p>
+    <div class="menu">
+      <div class="item"><span class="material-icons">add</span>New session</div>
+      <div class="item"><span class="material-icons">replay</span>Resume session</div>
+      <div class="divider"></div>
+      <div class="item"><span class="material-icons">delete_outline</span>Remove from pino</div>
+    </div>
+  </div>
+
+  <div class="col">
+    <h2>Option 2 — Beef up plus</h2>
+    <p class="note">add &rarr; add_circle. Now delete_outline is odd.</p>
+    <div class="menu">
+      <div class="item"><span class="material-icons">add_circle</span>New session</div>
+      <div class="item"><span class="material-icons">history</span>Resume session</div>
+      <div class="divider"></div>
+      <div class="item"><span class="material-icons">delete_outline</span>Remove from pino</div>
+    </div>
+  </div>
+
+</body>
+</html>

@@ -4,12 +4,12 @@ import 'package:flutter/services.dart';
 import '../../store/models.dart';
 import 'slash_palette.dart';
 
-/// Composer = input bar with slash-command palette + voice (stub) + send.
+/// Composer = input bar with slash-command palette + send.
 ///
 /// Two visual states:
-/// - **Compact** (unfocused): `[+] [1-line field] [mic] [send?]`.
+/// - **Compact** (unfocused): `[+] [1-line field] [send?]`.
 /// - **Expanded** (focused): full-width 3-line field on top, with
-///   `[+] … [mic] [send?]` in an action row beneath it.
+///   `[+] … [send?]` in an action row beneath it.
 ///
 /// Tapping into the field expands it; losing focus collapses it back to the
 /// 1-line compact form (text is preserved). The send button fades in only
@@ -70,6 +70,8 @@ class _ComposerState extends State<Composer> {
     if (text.isEmpty) return;
     widget.onSend(text);
     _ctrl.clear();
+    // Dismiss the composer + keyboard so focus returns to the chat content.
+    _focus.unfocus();
     setState(() => _showSlash = false);
   }
 
@@ -113,20 +115,19 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  /// Compact: `[+] [field] [mic] [send?]` on a single row.
+  /// Compact: `[+] [field] [send?]` on a single row.
   Widget _buildCompact(ColorScheme cs) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _buildPlus(),
         Expanded(child: _buildField()),
-        _buildMic(),
         _buildSendSlot(),
       ],
     );
   }
 
-  /// Expanded: full-width 3-line field, then `[+] … [mic] [send?]` beneath.
+  /// Expanded: full-width 3-line field, then `[+] … [send?]` beneath.
   Widget _buildExpanded(ColorScheme cs) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -139,9 +140,8 @@ class _ComposerState extends State<Composer> {
             children: [
               _buildPlus(),
               const Spacer(),
-              _buildMic(),
-              // Reserve the send button's footprint so the mic doesn't jump
-              // when the send button fades in/out.
+              // Reserve the send button's footprint so the layout doesn't
+              // jump when the send button fades in/out.
               SizedBox(width: 48, child: _buildSendSlot()),
             ],
           ),
@@ -155,15 +155,6 @@ class _ComposerState extends State<Composer> {
       icon: Icon(Icons.add_circle_outline),
       tooltip: 'Add attachment',
       // Disabled until M6 (@-mention picker); avoids misleading enabled no-op.
-      onPressed: null,
-    );
-  }
-
-  Widget _buildMic() {
-    return const IconButton(
-      icon: Icon(Icons.mic_none),
-      tooltip: 'Voice input',
-      // Disabled until M6 (voice dictation); avoids misleading enabled no-op.
       onPressed: null,
     );
   }
@@ -211,17 +202,9 @@ class _ComposerState extends State<Composer> {
           minLines: _isFocused ? 3 : 1,
           maxLines: _isFocused ? 3 : 1,
           textCapitalization: TextCapitalization.sentences,
-          // In expanded mode (3 lines), newline is just a line break.
-          // In compact mode (1 line), return key submits the message.
-          textInputAction: _isFocused
-              ? TextInputAction.newline
-              : TextInputAction.send,
-          onSubmitted: (text) {
-            // Only submit on TextInputAction.send (compact mode).
-            if (!_isFocused) {
-              _send();
-            }
-          },
+          // Standard "Return" key: inserts a newline (UIReturnKeyType.default).
+          // Sending is done via the send button or ⌘/Ctrl+Enter.
+          textInputAction: TextInputAction.newline,
           onChanged: _onChanged,
           decoration: const InputDecoration(
             hintText: 'Message …',

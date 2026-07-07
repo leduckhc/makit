@@ -73,7 +73,20 @@ void main() {
     expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
   });
 
-  testWidgets('IME return key is newline in expanded mode, submit in compact', (
+  testWidgets('IME return key is the standard newline key', (tester) async {
+    final sent = <String>[];
+    await tester.pumpWidget(wrap(Composer(onSend: sent.add)));
+
+    var field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.textInputAction, TextInputAction.newline);
+
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.textInputAction, TextInputAction.newline);
+  });
+
+  testWidgets('submitting sends the text and dismisses the keyboard', (
     tester,
   ) async {
     final sent = <String>[];
@@ -81,17 +94,16 @@ void main() {
 
     await tester.tap(find.byType(TextField));
     await tester.pumpAndSettle();
-
-    // In expanded mode (3 lines), IME action is newline.
-    var field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.textInputAction, TextInputAction.newline);
-
-    // Collapse back to compact.
-    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.enterText(find.byType(TextField), 'hello');
     await tester.pumpAndSettle();
 
-    // In compact mode (1 line), IME action is send.
-    field = tester.widget<TextField>(find.byType(TextField));
-    expect(field.textInputAction, TextInputAction.send);
+    await tester.tap(find.byIcon(Icons.arrow_upward));
+    await tester.pumpAndSettle();
+
+    expect(sent, ['hello']);
+    // Focus is released → composer collapses back to compact (1 line), which
+    // only happens when the field is no longer focused.
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.minLines, 1);
   });
 }

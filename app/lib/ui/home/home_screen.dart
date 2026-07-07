@@ -31,12 +31,6 @@ class HomeScreen extends ConsumerWidget {
             tooltip: 'Add project',
             onPressed: () => showFolderBrowser(context),
           ),
-          if (projects.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: 'New session',
-              onPressed: () => _spawn(context, ref, projects),
-            ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => context.go('/settings'),
@@ -61,57 +55,6 @@ class HomeScreen extends ConsumerWidget {
               ],
             ),
     );
-  }
-
-  Future<void> _spawn(
-    BuildContext context,
-    WidgetRef ref,
-    List<Project> projects,
-  ) async {
-    // Pick project: single → use it directly; multi → bottom sheet.
-    Project? target;
-    if (projects.length == 1) {
-      target = projects.first;
-    } else {
-      target = await showModalBottomSheet<Project>(
-        context: context,
-        showDragHandle: true,
-        builder: (ctx) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SheetHeader(title: 'Spawn new session in…'),
-              for (final p in projects)
-                ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text(p.name),
-                  subtitle: Text(
-                    p.path,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  onTap: () => Navigator.pop(ctx, p),
-                ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      );
-    }
-    if (target == null || !context.mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final newId = await ref
-          .read(storeControllerProvider.notifier)
-          .spawnSession(target.id);
-      if (!context.mounted) return;
-      context.go('/session/$newId');
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not spawn session: $e')),
-      );
-    }
   }
 }
 
@@ -212,7 +155,7 @@ class _ProjectSection extends ConsumerWidget {
                     PopupMenuItem(
                       value: 'attach',
                       child: ListTile(
-                        leading: Icon(Icons.history),
+                        leading: Icon(Icons.replay),
                         title: Text('Resume session'),
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -336,7 +279,7 @@ class _ProjectSection extends ConsumerWidget {
                   for (final m in metas)
                     ListTile(
                       leading: Icon(
-                        m.attached ? Icons.bolt : Icons.history,
+                        m.attached ? Icons.bolt : Icons.replay,
                         color: m.attached ? Colors.green : null,
                       ),
                       title: Text(
