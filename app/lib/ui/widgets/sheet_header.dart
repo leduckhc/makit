@@ -5,9 +5,13 @@ import 'package:flutter/material.dart';
 /// `showDragHandle: true` so users always have a discoverable way to back out
 /// of a list without making a selection.
 class SheetHeader extends StatelessWidget {
-  const SheetHeader({super.key, required this.title});
+  const SheetHeader({super.key, required this.title, this.actions});
 
   final String title;
+
+  /// Optional widget(s) placed just before the close button — e.g. a search
+  /// toggle for list sheets. Null by default so the header is just title + ✕.
+  final Widget? actions;
 
   @override
   Widget build(BuildContext context) {
@@ -21,6 +25,7 @@ class SheetHeader extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
+          ?actions,
           IconButton(
             icon: const Icon(Icons.close),
             tooltip: 'Close',

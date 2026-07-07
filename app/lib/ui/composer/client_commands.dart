@@ -15,6 +15,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../widgets/sheet_header.dart';
+import '../widgets/searchable_list_sheet.dart';
 
 typedef ClientCmdHandler =
     Future<void> Function(
@@ -317,35 +318,34 @@ Future<String?> _pickThinkingLevel(BuildContext context) {
 }
 
 /// Present the selectable models in a modal sheet, marking [current]. Resolves
-/// with the chosen model or null if dismissed.
+/// with the chosen model or null if dismissed. The sheet is capped at ~85% of
+/// the screen height and offers a search button to filter by name/provider.
 Future<ModelInfo?> _pickModel(
   BuildContext context,
   List<ModelInfo> models,
   ModelInfo? current,
 ) {
-  return showModalBottomSheet<ModelInfo>(
+  bool matches(ModelInfo m, String q) {
+    final ql = q.toLowerCase();
+    return m.name.toLowerCase().contains(ql) ||
+        m.provider.toLowerCase().contains(ql);
+  }
+
+  return showSearchableListSheet<ModelInfo>(
     context: context,
-    isScrollControlled: true,
-    showDragHandle: true,
-    builder: (sheetContext) => SafeArea(
-      child: ListView(
-        shrinkWrap: true,
-        children: [
-          const SheetHeader(title: 'Model'),
-          for (final m in models)
-            ListTile(
-              title: Text(m.name),
-              subtitle: Text(m.provider),
-              trailing:
-                  (current != null &&
-                      current.provider == m.provider &&
-                      current.id == m.id)
-                  ? const Icon(Icons.check)
-                  : null,
-              onTap: () => Navigator.pop(sheetContext, m),
-            ),
-        ],
-      ),
+    title: 'Model',
+    items: models,
+    matches: matches,
+    tileBuilder: (ctx, m) => ListTile(
+      title: Text(m.name),
+      subtitle: Text(m.provider),
+      trailing:
+          (current != null &&
+              current.provider == m.provider &&
+              current.id == m.id)
+          ? const Icon(Icons.check)
+          : null,
+      onTap: () => Navigator.of(ctx).pop(m),
     ),
   );
 }
