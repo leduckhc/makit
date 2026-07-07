@@ -275,7 +275,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   blur: 24,
                   tint: Theme.of(context).brightness == Brightness.dark
                       ? const Color(0x59000000)
-                      : const Color(0x59FFFFFF),
+                      : const Color(0x2E000000),
                   child: Composer(
                     glass: true,
                     commands: ref.watch(commandsProvider(widget.sessionId)),

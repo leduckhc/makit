@@ -41,10 +41,10 @@ class GlassSurface extends ConsumerWidget {
     final settings = LiquidGlassSettings(
       thickness: 26,
       blur: blur ?? 14,
+      // Light mode: dark smoky tint (was white 0x33/0x1F) so the on-device
+      // glass reads darker instead of milky-white.
       glassColor:
-          tint ?? (dark ? const Color(0x40000000) : const Color(0x1FFFFFFF)),
-      // Light mode: reduced white tint opacity (was 0x33) to let blur show
-      // through and avoid "milky" appearance; increased blur for frostiness.
+          tint ?? (dark ? const Color(0x40000000) : const Color(0x1F000000)),
       lightIntensity: dark ? 0.5 : 0.8,
       ambientStrength: dark ? 0.2 : 0.28,
       saturation: 1.1,
