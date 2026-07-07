@@ -40,44 +40,21 @@ class GlassSurface extends ConsumerWidget {
 
     final settings = LiquidGlassSettings(
       thickness: 26,
-      blur: blur ?? 14,
-      // Light mode: 18% white tint (sweet spot between milky 35% and weak 6%).
-      // High saturation (1.8) is the critical lever — it keeps refracted content
-      // vivid instead of washing into grey haze (the real cause of "milky" feel).
+      blur: blur ?? 12,
       glassColor:
-          tint ?? (dark ? const Color(0x40000000) : const Color(0x2EFFFFFF)),
-      lightIntensity: dark ? 0.5 : 0.9,
-      ambientStrength: dark ? 0.2 : 0.3,
-      refractiveIndex: 1.35,
-      saturation: 1.8,
+          tint ?? (dark ? const Color(0x40000000) : const Color(0x33FFFFFF)),
+      lightIntensity: dark ? 0.5 : 1.2,
+      ambientStrength: dark ? 0.2 : 0.4,
+      saturation: 1.1,
     );
 
-    final glass = fake
-        ? FakeGlass(shape: shape, settings: settings, child: child)
-        : LiquidGlass.withOwnLayer(
-            shape: shape,
-            settings: settings,
-            child: child,
-          );
-
-    // Add light 1px border (edge definition) + soft shadow (depth).
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.rectangle,
-        borderRadius: BorderRadius.circular(borderRadius),
-        border: Border.all(
-          color: dark ? Colors.white12 : Colors.white30,
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: dark ? 0.3 : 0.1),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: glass,
+    if (fake) {
+      return FakeGlass(shape: shape, settings: settings, child: child);
+    }
+    return LiquidGlass.withOwnLayer(
+      shape: shape,
+      settings: settings,
+      child: child,
     );
   }
 }
