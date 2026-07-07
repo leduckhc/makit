@@ -25,35 +25,37 @@
     --radius: 26px;
   }
 
-  /* Light mode palette (slate + green) */
+  /* ---- OKLCH tokens: neutrals are oklch(L 0 0) → chroma 0 = zero blue,
+     identical character in both modes. Green = fixed hue 150, L tuned per mode. */
+  /* Light mode (neutral greys + green) */
   .mode-light {
-    --bg: #f8fafc;
-    --bg-grad-a: #eef2f7;
-    --bg-grad-b: #e2e8f0;
-    --surface: #ffffff;
-    --text: #0f172a;               /* slate-900 */
-    --muted: #475569;              /* slate-600 */
-    --hairline: #e2e8f0;
-    --bubble-agent: #ffffff;
-    --bubble-user: #e9ecf1;        /* light neutral gray bubble */
+    --bg: oklch(0.985 0 0);        /* near-white, truly neutral (was cool slate) */
+    --bg-grad-a: oklch(0.985 0 0);
+    --bg-grad-b: oklch(0.985 0 0);
+    --surface: oklch(1 0 0);       /* white */
+    --text: oklch(0.22 0 0);       /* near-black neutral */
+    --muted: oklch(0.50 0 0);
+    --hairline: oklch(0.90 0 0);
+    --bubble-agent: oklch(1 0 0);
+    --bubble-user: oklch(0.94 0 0);/* light neutral gray bubble */
     --glass-tint: 255,255,255;
-    --accent: #16a34a;             /* deeper green for 4.5:1 on light */
-    --accent-fg: #ffffff;
+    --accent: oklch(0.62 0.17 150);/* green, darker for 4.5:1 on white */
+    --accent-fg: oklch(1 0 0);
   }
-  /* Dark mode palette (terminal dark + green) */
+  /* Dark mode (neutral greys + green) */
   .mode-dark {
-    --bg: #1a1a1a;                 /* neutral dark grey (no blue) */
-    --bg-grad-a: #1a1a1a;
-    --bg-grad-b: #1a1a1a;
-    --surface: #262626;            /* one step lighter than bg */
-    --text: #fafafa;
-    --muted: #a3a3a3;              /* pure neutral grey */
-    --hairline: #333333;
-    --bubble-agent: #262626;
-    --bubble-user: #303030;        /* gray bubble, a step above surface */
-    --glass-tint: 24,24,24;        /* neutral dark tint (pure grey) */
-    --accent: #4ade80;             /* logo green — the only hue */
-    --accent-fg: #06210f;
+    --bg: oklch(0.205 0 0);        /* ≈ #1a1a1a, neutral */
+    --bg-grad-a: oklch(0.205 0 0);
+    --bg-grad-b: oklch(0.205 0 0);
+    --surface: oklch(0.26 0 0);    /* one step lighter */
+    --text: oklch(0.97 0 0);
+    --muted: oklch(0.70 0 0);
+    --hairline: oklch(0.32 0 0);
+    --bubble-agent: oklch(0.26 0 0);
+    --bubble-user: oklch(0.30 0 0);/* gray bubble, step above surface */
+    --glass-tint: 24,24,24;        /* neutral dark tint */
+    --accent: oklch(0.80 0.19 150);/* brighter green for dark */
+    --accent-fg: oklch(0.24 0.05 150);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
