@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// regardless of the app theme (which is still seeded blue pending a design
 /// pass — see app/theme.dart).
 const Color pinoAccent = Color(0xFF4ADE80);
-const Color pinoFrame = Color(0xFF1A1A1A);
+const Color pinoFrame = Color(0xFF171717); // design-system dark bg
 
 /// Static pino mark — the `o//` winner (B4: medium head + two thick forward
 /// slashes, arms far apart, round caps).
