@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>pino · Design Lab</title>
+<style>
+  /* ============================================================
+     pino Design Lab — playground for the glass look + design tokens.
+     Everything is driven by CSS variables set from the controls panel,
+     so you can tune light/dark, accent, and the glassmorphism recipe live.
+     ============================================================ */
+  :root {
+    /* --- design tokens (defaults; overridden per-mode below) --- */
+    --accent: #22c55e;              /* green — "run green" */
+    --accent-2: #16a34a;
+
+    /* glass recipe (skill: backdrop blur + saturate + translucent + border + shadow) */
+    --glass-tint: 255,255,255;      /* rgb of the tint (white in light, black-ish in dark) */
+    --glass-alpha: 0.55;            /* opacity of the tint */
+    --glass-blur: 18px;
+    --glass-saturate: 180%;
+    --glass-border: 0.35;           /* border alpha */
+    --glass-shadow: 0.10;           /* shadow alpha */
+    --radius: 26px;
+  }
+
+  /* Light mode palette (slate + green) */
+  .mode-light {
+    --bg: #f8fafc;
+    --bg-grad-a: #eef2f7;
+    --bg-grad-b: #e2e8f0;
+    --surface: #ffffff;
+    --text: #0f172a;               /* slate-900 */
+    --muted: #475569;              /* slate-600 */
+    --hairline: #e2e8f0;
+    --bubble-agent: #ffffff;
+    --glass-tint: 255,255,255;
+    --accent: #16a34a;             /* deeper green for 4.5:1 on light */
+    --accent-fg: #ffffff;
+  }
+  /* Dark mode palette (terminal dark + green) */
+  .mode-dark {
+    --bg: #0f172a;                 /* slate-950-ish */
+    --bg-grad-a: #0b1222;
+    --bg-grad-b: #111a30;
+    --surface: #1e293b;
+    --text: #f8fafc;
+    --muted: #94a3b8;              /* slate-400 */
+    --hairline: #334155;
+    --bubble-agent: #1e293b;
+    --glass-tint: 10,16,30;
+    --accent: #4ade80;             /* logo green */
+    --accent-fg: #06210f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+    background: #0b0f19;
+    color: #e5e7eb;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* ---------------- Controls panel ---------------- */
+  .controls {
+    width: 300px;
+    flex: 0 0 300px;
+    background: #12172380;
+    background: #141a26;
+    border-right: 1px solid #1f2937;
+    padding: 20px 18px 40px;
+    overflow-y: auto;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+  .controls h1 { font-size: 15px; letter-spacing: .04em; text-transform: uppercase; color: #9ca3af; margin-bottom: 2px; }
+  .controls .sub { font-size: 12px; color: #6b7280; margin-bottom: 18px; }
+  .ctl { margin-bottom: 16px; }
+  .ctl > label { display: block; font-size: 12px; color: #cbd5e1; margin-bottom: 6px; font-weight: 600; }
+  .ctl .val { color: var(--accent, #4ade80); font-weight: 500; float: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: #4ade80; }
+  input[type=color] { width: 100%; height: 34px; border: none; background: none; border-radius: 8px; cursor: pointer; }
+  .seg { display: flex; gap: 6px; }
+  .seg button {
+    flex: 1; padding: 8px 6px; font-size: 12px; font-weight: 600;
+    background: #1f2937; color: #cbd5e1; border: 1px solid #374151;
+    border-radius: 9px; cursor: pointer; transition: all .15s;
+  }
+  .seg button.active { background: #4ade80; color: #06210f; border-color: #4ade80; }
+  .row-toggle { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #cbd5e1; font-weight: 600; }
+  .switch { position: relative; width: 40px; height: 24px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider-sw { position: absolute; inset: 0; background: #374151; border-radius: 999px; transition: .2s; cursor: pointer; }
+  .slider-sw:before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+  .switch input:checked + .slider-sw { background: #4ade80; }
+  .switch input:checked + .slider-sw:before { transform: translateX(16px); }
+  .hint { font-size: 11px; color: #6b7280; margin-top: 2px; line-height: 1.4; }
+  .divider { height: 1px; background: #1f2937; margin: 18px 0; }
+  .reset { width: 100%; padding: 9px; background: #1f2937; color: #cbd5e1; border: 1px solid #374151; border-radius: 9px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .copybtn { width: 100%; padding: 9px; background: #4ade80; color: #06210f; border: none; border-radius: 9px; font-size: 12px; font-weight: 700; cursor: pointer; margin-top: 8px; }
+
+  /* ---------------- Stage ---------------- */
+  .stage {
+    flex: 1;
+    padding: 40px;
+    overflow-y: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 44px;
+    align-items: flex-start;
+    justify-content: center;
+    background:
+      radial-gradient(1200px 600px at 30% 0%, #1b2440, #0b0f19 60%);
+  }
+
+  /* Glass helper */
+  .glass {
+    background: rgba(var(--glass-tint), var(--glass-alpha));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    border: 1px solid rgba(var(--glass-tint), calc(var(--glass-border)));
+    box-shadow: 0 8px 32px rgba(0,0,0, var(--glass-shadow));
+  }
+  /* In dark mode the reflective border should be light, not dark */
+  .mode-dark .glass { border-color: rgba(255,255,255, calc(var(--glass-border) * 0.4)); }
+
+  /* ---------------- Phone frame ---------------- */
+  .phone {
+    width: 390px;
+    height: 800px;
+    border-radius: 52px;
+    padding: 12px;
+    background: #05070c;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 0 0 2px #1f2937;
+    flex: 0 0 auto;
+  }
+  .screen {
+    position: relative;
+    width: 100%; height: 100%;
+    border-radius: 42px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+  }
+  /* the wallpaper/content that the glass refracts */
+  .screen:before {
+    content: "";
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(600px 300px at 80% 10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
+      linear-gradient(160deg, var(--bg-grad-a), var(--bg-grad-b));
+    z-index: 0;
+  }
+
+  /* Top glass bar */
+  .topbar {
+    position: absolute; top: 12px; left: 12px; right: 12px; z-index: 5;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    border-radius: 22px;
+  }
+  .circle-btn {
+    width: 40px; height: 40px; border-radius: 14px;
+    display: grid; place-items: center; flex: 0 0 auto;
+    color: var(--text);
+    border-radius: 20px;
+  }
+  .topbar .title { flex: 1; min-width: 0; }
+  .topbar .title b { display: block; font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .title span { font-size: 11.5px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* Transcript */
+  .transcript {
+    position: relative; z-index: 1;
+    flex: 1; overflow-y: auto;
+    padding: 80px 16px 150px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .msg-user {
+    align-self: flex-end; max-width: 78%;
+    background: var(--accent); color: var(--accent-fg);
+    padding: 10px 14px; border-radius: 20px 20px 6px 20px;
+    font-size: 14.5px; line-height: 1.45;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .msg-agent { align-self: flex-start; max-width: 86%; font-size: 14.5px; line-height: 1.5; color: var(--text); }
+  .msg-agent code { background: color-mix(in srgb, var(--text) 10%, transparent); padding: 1px 5px; border-radius: 5px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+  .thinking { align-self: flex-start; display: flex; gap: 6px; align-items: center; color: var(--muted); font-style: italic; font-size: 13px; }
+  .tool-card {
+    align-self: stretch; border-radius: 14px; overflow: hidden;
+    border: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--surface) 70%, transparent);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px;
+  }
+  .tool-card .head { padding: 8px 12px; background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--muted); display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--hairline); }
+  .tool-card .head b { color: var(--text); font-weight: 600; }
+  .tool-card .body { padding: 10px 12px; white-space: pre; overflow-x: auto; color: var(--text); }
+  .tool-card .add { color: #16a34a; } .tool-card .del { color: #dc2626; }
+
+  /* Composer (glass) */
+  .composer {
+    position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 6;
+    border-radius: 28px; padding: 6px 8px;
+  }
+  .composer .row { display: flex; align-items: center; gap: 4px; }
+  .composer .field { flex: 1; color: var(--text); font-size: 15px; padding: 10px 8px; }
+  .composer .field.placeholder { color: var(--muted); }
+  .composer.expanded .field { min-height: 66px; align-items: flex-start; padding-top: 12px; }
+  .composer.expanded .actions { display: flex; }
+  .composer .actions { display: none; padding: 2px 2px 2px; align-items: center; }
+  .composer .actions .spacer { flex: 1; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; color: var(--muted); flex: 0 0 auto; }
+  .icon-btn.disabled { opacity: .5; }
+  .send { width: 40px; height: 40px; border-radius: 20px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; flex: 0 0 auto; }
+  svg { display: block; }
+
+  /* ---------------- Component gallery ---------------- */
+  .gallery { width: 360px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .card {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--hairline); border-radius: 18px; padding: 18px;
+  }
+  .card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 14px; }
+  .swatches { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sw { text-align: center; font-size: 10px; color: var(--muted); }
+  .sw i { display: block; width: 46px; height: 46px; border-radius: 12px; margin-bottom: 5px; border: 1px solid rgba(128,128,128,.25); }
+  .logo-wrap { display: flex; align-items: center; gap: 14px; }
+  .logo { width: 56px; height: 56px; border-radius: 18px; background: var(--accent); display: grid; place-items: center; box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 45%, transparent); }
+  .logo svg { width: 34px; height: 34px; }
+  .list-row { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid var(--hairline); }
+  .list-row:last-child { border-bottom: none; }
+  .list-row .av { width: 38px; height: 38px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 18%, var(--surface)); display: grid; place-items: center; color: var(--accent); font-weight: 700; }
+  .list-row .meta { flex: 1; } .list-row .meta b { font-size: 14px; display: block; } .list-row .meta span { font-size: 12px; color: var(--muted); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 12px; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--muted); }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); border: none; padding: 9px 16px; border-radius: 10px; font-weight: 600; font-size: 13px; }
+  .btn-ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 9px 16px; border-radius: 10px; font-weight: 600; font-size: 13px; }
+  .stage-title { width: 100%; text-align: center; color: #6b7280; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; margin-bottom: -20px; }
+</style>
+</head>
+<body>
+  <!-- ================= CONTROLS ================= -->
+  <aside class="controls" id="controls">
+    <h1>pino · Design Lab</h1>
+    <div class="sub">Tune the glass + tokens live. Nothing here ships until you copy values back.</div>
+
+    <div class="ctl">
+      <label>Mode</label>
+      <div class="seg" id="mode">
+        <button data-mode="light">Light</button>
+        <button data-mode="dark" class="active">Dark</button>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <label>Composer</label>
+      <div class="seg" id="composer-mode">
+        <button data-comp="compact" class="active">1-line</button>
+        <button data-comp="expanded">Expanded</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="ctl">
+      <label>Accent (green) <span class="val" id="accentVal">#4ade80</span></label>
+      <input type="color" id="accent" value="#4ade80" />
+      <div class="hint">Logo green is #4ade80; skill suggests #22c55e / #16a34a.</div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sub" style="margin-bottom:12px">GLASS RECIPE</div>
+
+    <div class="ctl">
+      <label>Tint opacity <span class="val" id="alphaVal">55%</span></label>
+      <input type="range" id="alpha" min="0" max="100" value="55" />
+      <div class="hint">Milky if too high, invisible if too low. Skill: 15–30% for cards; pino composer sat higher for legibility.</div>
+    </div>
+    <div class="ctl">
+      <label>Blur <span class="val" id="blurVal">18px</span></label>
+      <input type="range" id="blur" min="0" max="40" value="18" />
+    </div>
+    <div class="ctl">
+      <label>Saturate <span class="val" id="satVal">180%</span></label>
+      <input type="range" id="sat" min="100" max="220" value="180" />
+      <div class="hint">The real anti-"milky" lever — pops refracted colour.</div>
+    </div>
+    <div class="ctl">
+      <label>Border <span class="val" id="borderVal">35%</span></label>
+      <input type="range" id="border" min="0" max="80" value="35" />
+    </div>
+    <div class="ctl">
+      <label>Shadow <span class="val" id="shadowVal">10%</span></label>
+      <input type="range" id="shadow" min="0" max="40" value="10" />
+    </div>
+
+    <div class="divider"></div>
+    <button class="reset" id="reset">Reset to original</button>
+    <button class="copybtn" id="copy">Copy Flutter values</button>
+    <div class="hint" id="copied" style="text-align:center;margin-top:8px;height:14px"></div>
+  </aside>
+
+  <!-- ================= STAGE ================= -->
+  <main class="stage mode-dark" id="stage">
+    <div class="stage-title">Live preview — chat screen + component gallery</div>
+
+    <!-- Phone -->
+    <div class="phone">
+      <div class="screen">
+        <!-- top glass bar -->
+        <div class="topbar glass">
+          <div class="circle-btn glass" style="border:none">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </div>
+          <div class="title"><b>pino</b><span>claude-opus-4 · high</span></div>
+          <div class="circle-btn glass" style="border:none">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+          </div>
+          <div class="dot" title="connected"></div>
+        </div>
+
+        <!-- transcript -->
+        <div class="transcript">
+          <div class="msg-user">can you refactor the composer to hide the send button when empty?</div>
+          <div class="thinking">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+            Pondering the widget tree…
+          </div>
+          <div class="msg-agent">Sure — I'll gate the send button on <code>_hasText</code> and fade it with an <code>AnimatedSwitcher</code>. Here's the diff:</div>
+          <div class="tool-card">
+            <div class="head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg> <b>edit</b> composer.dart</div>
+            <div class="body"><span class="del">- IconButton.filled(onPressed: _send)</span>
+<span class="add">+ if (_hasText) IconButton.filled(...)</span></div>
+          </div>
+          <div class="msg-agent">Done. The send button now fades in only when there's text. ✓</div>
+        </div>
+
+        <!-- composer glass -->
+        <div class="composer glass" id="composer">
+          <div class="row">
+            <div class="icon-btn disabled">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+            </div>
+            <div class="field placeholder" id="field">Message …</div>
+            <div class="icon-btn" id="mic-inline">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </div>
+            <div class="send" id="send-inline">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </div>
+          </div>
+          <div class="actions">
+            <div class="icon-btn disabled">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+            </div>
+            <div class="spacer"></div>
+            <div class="icon-btn">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </div>
+            <div class="send">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Component gallery -->
+    <div class="gallery mode-dark" id="gallery">
+      <div class="card">
+        <h3>Logo &amp; accent</h3>
+        <div class="logo-wrap">
+          <div class="logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-fg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V6a2 2 0 0 1 2-2h7a5 5 0 0 1 0 10H4"/></svg>
+          </div>
+          <div>
+            <b style="font-size:20px">pino</b>
+            <div style="color:var(--muted);font-size:12px">mobile companion for coding agents</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Palette</h3>
+        <div class="swatches">
+          <div class="sw"><i style="background:var(--accent)"></i>accent</div>
+          <div class="sw"><i style="background:var(--bg)"></i>bg</div>
+          <div class="sw"><i style="background:var(--surface)"></i>surface</div>
+          <div class="sw"><i style="background:var(--text)"></i>text</div>
+          <div class="sw"><i style="background:var(--muted)"></i>muted</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Chat bubbles</h3>
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div class="msg-user" style="align-self:flex-end">User message bubble</div>
+          <div class="msg-agent">Agent reply with <code>inline code</code> and text.</div>
+          <div class="thinking"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg> thinking…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Session list</h3>
+        <div class="list-row"><div class="av">P</div><div class="meta"><b>pino</b><span>opus-4 · running</span></div><div class="dot"></div></div>
+        <div class="list-row"><div class="av">A</div><div class="meta"><b>api-server</b><span>sonnet · idle</span></div></div>
+        <div class="list-row"><div class="av">W</div><div class="meta"><b>web-app</b><span>haiku · idle</span></div></div>
+      </div>
+
+      <div class="card">
+        <h3>Controls</h3>
+        <div class="btns" style="margin-bottom:12px">
+          <button class="btn-primary">Send</button>
+          <button class="btn-ghost">Cancel</button>
+        </div>
+        <div class="btns">
+          <span class="chip"><span class="dot"></span> connected</span>
+          <span class="chip">opus-4 · high</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage');
+  const gallery = $('gallery');
+  const root = document.documentElement;
+
+  const DEFAULTS = { accent:'#4ade80', alpha:55, blur:18, sat:180, border:35, shadow:10, mode:'dark', comp:'compact' };
+  let state = {...DEFAULTS};
+
+  function apply() {
+    // mode
+    [stage, gallery].forEach(el => { el.classList.toggle('mode-dark', state.mode==='dark'); el.classList.toggle('mode-light', state.mode==='light'); });
+    // accent overrides the per-mode default when user picks one
+    root.style.setProperty('--accent', state.accent);
+    stage.style.setProperty('--accent', state.accent);
+    gallery.style.setProperty('--accent', state.accent);
+    // glass vars (set on stage so both phone + gallery glass read them)
+    const set = (k,v) => { stage.style.setProperty(k,v); gallery.style.setProperty(k,v); };
+    set('--glass-alpha', (state.alpha/100).toFixed(2));
+    set('--glass-blur', state.blur+'px');
+    set('--glass-saturate', state.sat+'%');
+    set('--glass-border', (state.border/100).toFixed(2));
+    set('--glass-shadow', (state.shadow/100).toFixed(2));
+    // composer variant
+    $('composer').classList.toggle('expanded', state.comp==='expanded');
+    $('mic-inline').style.display = state.comp==='expanded' ? 'none':'grid';
+    $('send-inline').style.display = state.comp==='expanded' ? 'none':'grid';
+    // readouts
+    $('accentVal').textContent = state.accent;
+    $('alphaVal').textContent = state.alpha+'%';
+    $('blurVal').textContent = state.blur+'px';
+    $('satVal').textContent = state.sat+'%';
+    $('borderVal').textContent = state.border+'%';
+    $('shadowVal').textContent = state.shadow+'%';
+  }
+
+  // mode + composer segmented buttons
+  $('mode').addEventListener('click', e => { const b=e.target.closest('button'); if(!b)return; state.mode=b.dataset.mode; document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('active',x===b)); apply(); });
+  $('composer-mode').addEventListener('click', e => { const b=e.target.closest('button'); if(!b)return; state.comp=b.dataset.comp; document.querySelectorAll('#composer-mode button').forEach(x=>x.classList.toggle('active',x===b)); apply(); });
+
+  // sliders + color
+  const bind = (id,key,transform=(v)=>+v) => $(id).addEventListener('input', e => { state[key]=transform(e.target.value); apply(); });
+  bind('accent','accent',v=>v); bind('alpha','alpha'); bind('blur','blur'); bind('sat','sat'); bind('border','border'); bind('shadow','shadow');
+
+  $('reset').addEventListener('click', () => {
+    state={...DEFAULTS};
+    $('accent').value=DEFAULTS.accent; $('alpha').value=DEFAULTS.alpha; $('blur').value=DEFAULTS.blur; $('sat').value=DEFAULTS.sat; $('border').value=DEFAULTS.border; $('shadow').value=DEFAULTS.shadow;
+    document.querySelectorAll('#mode button').forEach(x=>x.classList.toggle('active',x.dataset.mode===DEFAULTS.mode));
+    document.querySelectorAll('#composer-mode button').forEach(x=>x.classList.toggle('active',x.dataset.comp===DEFAULTS.comp));
+    apply();
+  });
+
+  // Copy Flutter-ready values (alpha→0xAA hex, saturation→multiplier)
+  $('copy').addEventListener('click', () => {
+    const hexA = Math.round(state.alpha/100*255).toString(16).padStart(2,'0').toUpperCase();
+    const tint = state.mode==='dark' ? `0x${hexA}0A101E` : `0x${hexA}FFFFFF`;
+    const out =
+`// pino glass tokens (${state.mode})
+accent:        ${state.accent}
+glassColor:    Color(${tint})   // ${state.alpha}% tint
+blur:          ${state.blur}
+saturation:    ${(state.sat/100).toFixed(2)}
+border alpha:  ${(state.border/100).toFixed(2)}
+shadow alpha:  ${(state.shadow/100).toFixed(2)}`;
+    navigator.clipboard.writeText(out).then(()=>{ $('copied').textContent='Copied ✓'; setTimeout(()=>$('copied').textContent='',1500); });
+  });
+
+  apply();
+</script>
+</body>
+</html>
