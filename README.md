@@ -7,6 +7,7 @@ sessions through a chat UI.
 - 📱 [`app/`](./app/) — Flutter mobile/desktop client
 - 🖥 [`server/`](./server/) — Node/TS WebSocket server + agent adapters
 - 📚 [`docs/UX.md`](./docs/UX.md), [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
+- 🛠 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) — build / debug / deploy runbook (copy-paste commands)
 
 ## Quick start — Mac + iPhone over Wi-Fi
 
