@@ -278,10 +278,7 @@ class _ProjectSection extends ConsumerWidget {
         ),
         trailing: m.attached
             ? Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: Colors.green.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
@@ -428,12 +425,7 @@ class _AgentAvatar extends StatelessWidget {
       );
     }
     return ClipOval(
-      child: SvgPicture.asset(
-        asset,
-        width: 40,
-        height: 40,
-        fit: BoxFit.cover,
-      ),
+      child: SvgPicture.asset(asset, width: 40, height: 40, fit: BoxFit.cover),
     );
   }
 }

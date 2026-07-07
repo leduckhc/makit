@@ -107,7 +107,9 @@ class SettingsScreen extends ConsumerWidget {
             enabled: false,
             leading: _leadingIcon(Icons.notifications_outlined),
             title: const Text('Notifications'),
-            subtitle: const Text('Awaiting input · Approval · Long task · Errors'),
+            subtitle: const Text(
+              'Awaiting input · Approval · Long task · Errors',
+            ),
           ),
           ListTile(
             enabled: false,
@@ -162,7 +164,9 @@ class SettingsScreen extends ConsumerWidget {
 Widget _leadingIcon(IconData icon, {double size = 24.0, Color? color}) =>
     SizedBox(
       width: 24,
-      child: Center(child: Icon(icon, size: size, color: color)),
+      child: Center(
+        child: Icon(icon, size: size, color: color),
+      ),
     );
 
 class _SectionHeader extends StatelessWidget {

@@ -70,9 +70,7 @@ void main() {
     expect(find.byType(CircleAvatar), findsNothing);
   });
 
-  testWidgets('unknown agent falls back to the initial letter', (
-    tester,
-  ) async {
+  testWidgets('unknown agent falls back to the initial letter', (tester) async {
     final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
     final session = Session(
       id: 's1',

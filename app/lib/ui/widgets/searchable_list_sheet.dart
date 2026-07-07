@@ -84,9 +84,9 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
     });
   }
 
-  List<T> get _filtered =>
-      _query.isEmpty ? widget.items : widget.items.where((x) =>
-          widget.matches(x, _query)).toList();
+  List<T> get _filtered => _query.isEmpty
+      ? widget.items
+      : widget.items.where((x) => widget.matches(x, _query)).toList();
 
   @override
   Widget build(BuildContext context) {
