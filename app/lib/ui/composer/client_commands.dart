@@ -223,7 +223,10 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
     name: 'name',
     description: 'Rename this session (shown in the session list)',
     handler: (context, ref, {required sessionId, required arg}) async {
-      final title = arg.isNotEmpty ? arg : await _promptSessionName(context);
+      final current = ref.read(sessionsProvider).byId(sessionId)?.title ?? '';
+      final title = arg.isNotEmpty
+          ? arg
+          : await _promptSessionName(context, initial: current);
       if (title == null || title.isEmpty || !context.mounted) return;
       ref
           .read(storeControllerProvider.notifier)
@@ -237,18 +240,40 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
 
 /// Prompt for a session name via a simple text dialog. Resolves with the
 /// trimmed name, or null if dismissed/empty.
-Future<String?> _promptSessionName(BuildContext context) async {
-  final controller = TextEditingController();
+Future<String?> _promptSessionName(
+  BuildContext context, {
+  String initial = '',
+}) async {
+  final controller = TextEditingController(text: initial);
+  controller.selection = TextSelection(
+    baseOffset: 0,
+    extentOffset: controller.text.length,
+  );
   final result = await showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: const Text('Rename session'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(hintText: 'Session name'),
-        onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+      content: StatefulBuilder(
+        builder: (ctx, setState) => TextField(
+          controller: controller,
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          decoration: InputDecoration(
+            hintText: 'Session name',
+            suffixIcon: controller.text.isEmpty
+                ? null
+                : IconButton(
+                    icon: const Icon(Icons.clear),
+                    tooltip: 'Clear',
+                    onPressed: () {
+                      controller.clear();
+                      setState(() {});
+                    },
+                  ),
+          ),
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
       ),
       actions: [
         TextButton(
