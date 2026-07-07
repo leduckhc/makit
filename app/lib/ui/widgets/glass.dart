@@ -43,8 +43,10 @@ class GlassSurface extends ConsumerWidget {
       blur: blur ?? 12,
       glassColor:
           tint ?? (dark ? const Color(0x40000000) : const Color(0x33FFFFFF)),
-      lightIntensity: dark ? 0.5 : 1.2,
-      ambientStrength: dark ? 0.2 : 0.4,
+      // Light mode dimmed (was 1.2 / 0.4) — the release shader on-device
+      // rendered too bright/white; lower specular + ambient to calm it.
+      lightIntensity: dark ? 0.5 : 0.85,
+      ambientStrength: dark ? 0.2 : 0.3,
       saturation: 1.1,
     );
 

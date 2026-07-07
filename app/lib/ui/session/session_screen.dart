@@ -267,7 +267,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: GlassSurface(
                   borderRadius: 28,
                   // Composer sits over the keyboard/typing — frostier + less
