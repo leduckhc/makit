@@ -3,8 +3,14 @@
  * pino — desktop server CLI.
  *
  * Usage:
- *   pino serve [--host 0.0.0.0] [--port 8787] [--project P]... [--no-auth]
+ *   pino serve [--host H] [--port 8787] [--project P]... [--no-auth]
  *   pino pair  [--host H] [--port P]                  # prints a QR + URL
+ *
+ * Default host: Tailscale IP if online, else first LAN IPv4. Pass
+ * `--host 0.0.0.0` to bind every interface (not recommended on untrusted
+ * networks — the server is gated by auth, but the port is exposed).
+ * A loopback listener is added automatically when host is a specific IP,
+ * so the pino-mirror extension host and the flutter dev loop keep working.
  *
  * `pino serve` is the long-running server. `pino pair` is meant to be run
  * from a second terminal (or as a hotkey on an already-running server) to
@@ -26,7 +32,7 @@ import { startWsServer } from "./server.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
-import { loadOrCreateCert, localIPv4s, tailscaleIP } from "./pairing/cert.js";
+import { loadOrCreateCert, preferredHost } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
@@ -60,7 +66,11 @@ function makeDaemon() {
         logPath: logFilePath(),
         out: (line) => console.log(line),
         spawn: (cmd, args, logFd) => {
-            const child = childSpawn(cmd, args, { detached: true, stdio: ["ignore", logFd, logFd] });
+            // Forward the parent's node flags (e.g. tsx's `--require`/`--import`
+            // loader, injected via execArgv, not NODE_OPTIONS) so the detached
+            // daemon resolves TS-style `.js` imports the same way the CLI does.
+            // Without this, plain node can't resolve imports like `./manager.js`.
+            const child = childSpawn(cmd, [...process.execArgv, ...args], { detached: true, stdio: ["ignore", logFd, logFd] });
             return { pid: child.pid, unref: () => child.unref() };
         },
         openLogFd: (p) => {
@@ -82,7 +92,7 @@ function makeDaemon() {
 }
 function parseArgs(argv) {
     const args = {
-        host: "0.0.0.0",
+        host: preferredHost(),
         port: 8787,
         projects: [],
         noAuth: false,
@@ -108,13 +118,6 @@ function parseArgs(argv) {
         args.projects.push(process.cwd());
     return args;
 }
-function bestLanHost() {
-    const tailscale = tailscaleIP();
-    if (tailscale)
-        return tailscale;
-    const ips = localIPv4s();
-    return ips[0] ?? "127.0.0.1";
-}
 /** Dedupe paths by their resolved absolute form, preserving first-seen order. */
 function dedupeResolved(paths) {
     const seen = new Set();
@@ -131,15 +134,34 @@ function dedupeResolved(paths) {
 async function main() {
     const cmd = process.argv[2];
     const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-    const KNOWN = new Set(["serve", "pair", "attach", "mirror", ...LIFECYCLE]);
+    const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", "mirror", ...LIFECYCLE]);
     if (cmd && !KNOWN.has(cmd)) {
         console.error(`unknown command: ${cmd}\n` +
-            `usage: pino serve|start|stop|restart|status|logs|service|pair|attach|mirror [...]`);
+            `usage: pino serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach|mirror [...]`);
         process.exit(2);
     }
     if (cmd === "mirror") {
         const { runMirror } = await import("./cli/mirror.js");
         await runMirror(process.argv.slice(3));
+        return;
+    }
+    // --- SPEC-02 thin-client subcommands: drive the running daemon via the
+    // control socket. requireDaemon() handles "not running" uniformly. ---
+    if (cmd === "qr" || cmd === "pair") {
+        const { runQr } = await import("./cli/qr.js");
+        // `pino pair` is an alias for `pino qr --refresh` (daemon required).
+        const argv = cmd === "pair" ? ["--refresh", ...process.argv.slice(3)] : process.argv.slice(3);
+        await runQr(argv);
+        return;
+    }
+    if (cmd === "devices") {
+        const { runDevices } = await import("./cli/devices.js");
+        await runDevices(process.argv.slice(3));
+        return;
+    }
+    if (cmd === "sessions") {
+        const { runSessions } = await import("./cli/sessions.js");
+        await runSessions(process.argv.slice(3));
         return;
     }
     // `attach` is a client, not a server: connect to a running pino and drive
@@ -214,13 +236,6 @@ async function main() {
     const opts = parseArgs(process.argv.slice(3));
     const cert = await loadOrCreateCert();
     const registry = new DeviceRegistry();
-    if (cmd === "pair") {
-        // One-shot mint-and-print mode. Useful if the server is started elsewhere
-        // and you just need a fresh QR. In M1 we share the same registry file so
-        // tokens minted here are honoured by the running server.
-        printPairQr(registry, opts.port, cert.fingerprint);
-        process.exit(0);
-    }
     // Merge persisted projects with any CLI `--project` roots, deduping by
     // resolved path so a restart neither loses nor duplicates entries. Persist
     // the merged set once at startup so a fresh `--project` gets recorded.
@@ -306,7 +321,7 @@ async function main() {
         now: () => Date.now(),
         connectedDeviceIds: ws.connectedDeviceIds,
         buildUrl: (token) => buildPairUrl({
-            host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : bestLanHost(),
+            host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : preferredHost(),
             port: opts.port,
             fingerprint: cert.fingerprint,
             token,
@@ -342,6 +357,10 @@ async function main() {
         catch { /* best-effort */ }
         try {
             ws.https.close();
+        }
+        catch { /* best-effort */ }
+        try {
+            ws.localHttps?.close();
         }
         catch { /* best-effort */ }
         // Only clear the PID file if it points at us (a detached `start` wrote it).
@@ -481,7 +500,7 @@ function writeHostFile(port, fingerprint, token) {
     }
 }
 function printPairQr(registry, port, fingerprint, advertise) {
-    const host = advertise && advertise.length > 0 ? advertise : bestLanHost();
+    const host = advertise && advertise.length > 0 ? advertise : preferredHost();
     const token = registry.mintPairToken();
     const url = buildPairUrl({ host, port, fingerprint, token });
     console.log("");

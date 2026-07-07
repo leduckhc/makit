@@ -119,5 +119,45 @@ void main() {
         true,
       );
     });
+
+    test('streamed thinking deltas fold into one card, finalized in place', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'pon'}),
+        _ev(2, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'der'}),
+        _ev(3, EventKind.agentThinking, {'thinkId': 't', 'text': 'ponder'}),
+      ]);
+      expect(items.length, 1);
+      final think = items.single as ThinkingItem;
+      expect(think.text, 'ponder');
+      expect(think.streaming, false);
+    });
+
+    test('non-streamed agent.thinking (no thinkId) is a standalone card', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentThinking, {'text': 'pondering'}),
+      ]);
+      expect(items.length, 1);
+      expect((items.single as ThinkingItem).text, 'pondering');
+    });
+
+    test(
+      'streamed thinking renders above an answer that streams before it ends',
+      () {
+        // Mirrors the GPT-5/Responses ordering: the answer\'s first delta
+        // arrives before thinking is finalized. Because thinking is anchored
+        // at its first delta, its card still precedes the answer bubble.
+        final items = foldEvents([
+          _ev(1, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 're'}),
+          _ev(2, EventKind.agentMessageDelta, {'msgId': 'm', 'chunk': 'ans'}),
+          _ev(3, EventKind.agentThinking, {'thinkId': 't', 'text': 'reason'}),
+          _ev(4, EventKind.agentMessage, {'msgId': 'm', 'text': 'answer'}),
+        ]);
+        expect(items.length, 2);
+        expect(items[0], isA<ThinkingItem>());
+        expect(items[1], isA<AgentMessageItem>());
+        expect((items[0] as ThinkingItem).text, 'reason');
+        expect((items[1] as AgentMessageItem).text, 'answer');
+      },
+    );
   });
 }

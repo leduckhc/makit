@@ -358,6 +358,7 @@ export default function (pi: ExtensionAPI): void {
 
   // Per-content-index streamed-message ids, mirroring pino's PiAdapter.
   const msgIds = new Map<number, string>();
+  const thinkIds = new Map<number, string>();
 
   pi.on("input", (e, ctx) => {
     noteCtx(ctx);
@@ -405,9 +406,21 @@ export default function (pi: ExtensionAPI): void {
       const msgId = msgIds.get(idx);
       msgIds.delete(idx);
       if (text) emit("agent.message", { text, ...(msgId ? { msgId } : {}) });
+    } else if (ame.type === "thinking_start") {
+      thinkIds.set(idx, `th-${Date.now()}-${idx}`);
+    } else if (ame.type === "thinking_delta") {
+      // Stream reasoning tokens so the thinking card is anchored where
+      // reasoning STARTED, not where it ends — otherwise providers that stream
+      // the answer before closing the reasoning block render thinking below
+      // the answer on the phone.
+      const chunk = typeof ame.delta === "string" ? ame.delta : "";
+      const thinkId = thinkIds.get(idx);
+      if (thinkId && chunk) emit("agent.thinking.delta", { thinkId, chunk });
     } else if (ame.type === "thinking_end") {
       const text = typeof ame.content === "string" ? ame.content : "";
-      if (text.trim()) emit("agent.thinking", { text });
+      const thinkId = thinkIds.get(idx);
+      thinkIds.delete(idx);
+      if (text.trim()) emit("agent.thinking", { text, ...(thinkId ? { thinkId } : {}) });
     }
   });
 

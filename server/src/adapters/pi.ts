@@ -50,6 +50,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   /** Accumulates reasoning/thinking text per content-index, flushed at end. */
   private thinkingBuffers = new Map<number, string>();
 
+  /** Stable streamed-thinking id per content-index (ties deltas to the final). */
+  private thinkIds = new Map<number, string>();
+
   async start(opts: SpawnOpts): Promise<void> {
     this.cwd = opts.cwd;
     this.extraEnv = opts.env ?? {};
@@ -370,6 +373,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
             });
           }
         } else if (e.type === "thinking_start") {
+          this.thinkIds.set(idx, newId("th"));
           this.thinkingBuffers.set(idx, "");
         } else if (e.type === "thinking_delta") {
           const delta = typeof e.delta === "string" ? e.delta : "";
@@ -377,16 +381,33 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
             idx,
             (this.thinkingBuffers.get(idx) ?? "") + delta,
           );
+          // Stream the reasoning token so the thinking card is anchored at the
+          // point reasoning STARTED — not when it ends. Some providers (e.g.
+          // OpenAI Responses / gpt-5) stream the answer's text before the
+          // reasoning item closes; without streaming, agent.thinking would be
+          // assigned a later seq than the answer and render below it.
+          const thinkId = this.thinkIds.get(idx);
+          if (thinkId && delta.length > 0) {
+            this.emitEvent({
+              ts: Date.now(),
+              kind: "agent.thinking.delta",
+              payload: { thinkId, chunk: delta },
+            });
+          }
         } else if (e.type === "thinking_end") {
           const text =
             this.thinkingBuffers.get(idx) ??
             (typeof e.content === "string" ? e.content : "");
+          const thinkId = this.thinkIds.get(idx);
           this.thinkingBuffers.delete(idx);
+          this.thinkIds.delete(idx);
           if (text.trim().length > 0) {
+            // Final authoritative thinking — carries thinkId so the app
+            // finalizes the streamed card instead of appending a duplicate.
             this.emitEvent({
               ts: Date.now(),
               kind: "agent.thinking",
-              payload: { text },
+              payload: { text, ...(thinkId ? { thinkId } : {}) },
             });
           }
         }

@@ -6,6 +6,7 @@
  */
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 export class Session extends EventEmitter {
     id = randomUUID();
     projectId;
@@ -17,11 +18,13 @@ export class Session extends EventEmitter {
     lastPreview = "";
     events = [];
     adapter;
+    /** Set when this session runs in a multiplexer pane (SPEC-05). */
+    pane;
     constructor(init) {
         super();
         this.projectId = init.projectId;
         this.agent = init.agent;
-        this.title = init.title ?? `${init.agent} session`;
+        this.title = init.title ?? DEFAULT_SESSION_TITLE;
         this.adapter = init.adapter;
         this.policy = init.policy ?? "ask-on-risky";
         this.bindAdapter(this.adapter);
@@ -95,6 +98,7 @@ export class Session extends EventEmitter {
             this.events.push(evt);
             this.emit("event", evt);
         });
+        adapter.on("title", (title) => this.setTitle(title));
     }
     toDTO() {
         return {
@@ -106,6 +110,7 @@ export class Session extends EventEmitter {
             policy: this.policy,
             lastActivityAt: this.lastActivityAt,
             lastPreview: this.lastPreview,
+            ...(this.pane ? { pane: { mux: this.pane.mux, paneId: this.pane.paneId } } : {}),
         };
     }
     async sendUserMessage(text) {
@@ -121,6 +126,20 @@ export class Session extends EventEmitter {
     async sendAction(action, args) {
         await this.adapter.sendAction?.(action, args);
     }
+    /**
+     * Rename the session. Trims, ignores empty/unchanged titles, and emits
+     * `titleChanged` so the server can re-broadcast the sessions snapshot and
+     * sync the mux pane label. Returns whether the title actually changed.
+     */
+    setTitle(title) {
+        const next = title.trim();
+        if (!next || next === this.title)
+            return false;
+        this.title = next;
+        this.emit("titleChanged", next);
+        return true;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on(event, listener) {
         return super.on(event, listener);
     }

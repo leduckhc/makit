@@ -37,6 +37,7 @@ export type EventKind =
   | "agent.message"
   | "agent.message.delta"
   | "agent.thinking"
+  | "agent.thinking.delta"
   | "tool.call.start"
   | "tool.call.delta"
   | "tool.call.end"

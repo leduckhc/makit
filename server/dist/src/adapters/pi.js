@@ -39,6 +39,8 @@ export class PiAdapter extends EventEmitter {
     msgIds = new Map();
     /** Accumulates reasoning/thinking text per content-index, flushed at end. */
     thinkingBuffers = new Map();
+    /** Stable streamed-thinking id per content-index (ties deltas to the final). */
+    thinkIds = new Map();
     async start(opts) {
         this.cwd = opts.cwd;
         this.extraEnv = opts.env ?? {};
@@ -66,6 +68,16 @@ export class PiAdapter extends EventEmitter {
         if (this.isStreaming)
             cmd.streamingBehavior = "steer";
         this.writeCommand(cmd);
+    }
+    async sendAction(action, args) {
+        await this.ensureProcess();
+        // `name` → persist the session name in pi so it survives resume/re-attach.
+        // Other actions (compact/thinking/…) are not yet mapped in rpc mode.
+        if (action === "name") {
+            const name = typeof args?.name === "string" ? args.name.trim() : "";
+            if (name)
+                this.writeCommand({ type: "set_session_name", name });
+        }
     }
     async cancel() {
         if (this.child)
@@ -160,8 +172,15 @@ export class PiAdapter extends EventEmitter {
         const id = evt.id;
         const method = evt.method;
         const reply = (fields) => this.writeCommand({ type: "extension_ui_response", id, ...fields });
-        // Fire-and-forget UI methods — no response expected.
-        if (["notify", "setStatus", "setWidget", "setTitle", "set_editor_text"].includes(method)) {
+        // setTitle → surface as an agent-driven session rename. Other
+        // fire-and-forget UI methods are display-only and need no response.
+        if (method === "setTitle") {
+            const t = typeof evt.title === "string" ? evt.title.trim() : "";
+            if (t)
+                this.emit("title", t);
+            return;
+        }
+        if (["notify", "setStatus", "setWidget", "set_editor_text"].includes(method)) {
             return;
         }
         // No phone attached → cancel so pi doesn't hang.
@@ -330,21 +349,39 @@ export class PiAdapter extends EventEmitter {
                     }
                 }
                 else if (e.type === "thinking_start") {
+                    this.thinkIds.set(idx, newId("th"));
                     this.thinkingBuffers.set(idx, "");
                 }
                 else if (e.type === "thinking_delta") {
                     const delta = typeof e.delta === "string" ? e.delta : "";
                     this.thinkingBuffers.set(idx, (this.thinkingBuffers.get(idx) ?? "") + delta);
+                    // Stream the reasoning token so the thinking card is anchored at the
+                    // point reasoning STARTED — not when it ends. Some providers (e.g.
+                    // OpenAI Responses / gpt-5) stream the answer's text before the
+                    // reasoning item closes; without streaming, agent.thinking would be
+                    // assigned a later seq than the answer and render below it.
+                    const thinkId = this.thinkIds.get(idx);
+                    if (thinkId && delta.length > 0) {
+                        this.emitEvent({
+                            ts: Date.now(),
+                            kind: "agent.thinking.delta",
+                            payload: { thinkId, chunk: delta },
+                        });
+                    }
                 }
                 else if (e.type === "thinking_end") {
                     const text = this.thinkingBuffers.get(idx) ??
                         (typeof e.content === "string" ? e.content : "");
+                    const thinkId = this.thinkIds.get(idx);
                     this.thinkingBuffers.delete(idx);
+                    this.thinkIds.delete(idx);
                     if (text.trim().length > 0) {
+                        // Final authoritative thinking — carries thinkId so the app
+                        // finalizes the streamed card instead of appending a duplicate.
                         this.emitEvent({
                             ts: Date.now(),
                             kind: "agent.thinking",
-                            payload: { text },
+                            payload: { text, ...(thinkId ? { thinkId } : {}) },
                         });
                     }
                 }

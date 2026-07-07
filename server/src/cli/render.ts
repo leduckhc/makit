@@ -97,6 +97,7 @@ export function renderEvent(
 
     // Not rendered in the terminal MVP.
     case "tool.call.delta":
+    case "agent.thinking.delta":
     case "session.commands":
       return { out: "", st };
   }

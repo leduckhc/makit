@@ -14,6 +14,14 @@
  *     new device and returns its bearer in `hello.ack.bearer`.
  *   - Anything else → close with 4401 (unauthorized).
  *
+ * Binding:
+ * The server listens on the `host:port` provided (typically Tailscale or LAN).
+ * When `host` is a specific, non-loopback IP, a second loopback listener is
+ * automatically added at `127.0.0.1:port` so the pino-mirror extension host
+ * and the `flutter run -d macos` dev loop keep working. The two listeners
+ * share the same {@link WebSocketServer} via `noServer` upgrade forwarding,
+ * so all connected clients go through the same auth gate and state.
+ *
  * Localhost connections (loopback remote address) can opt out of auth via
  * `--no-auth` — useful for the `flutter run -d macos` dev loop. By default
  * even localhost is gated so behaviour matches production.
@@ -52,10 +60,43 @@ export function hostAskResultFrame(askId, resp) {
         cancelled: resp.cancelled,
     };
 }
+/** True when `host` already covers every interface (wildcard) or is purely
+ * loopback. In these cases we don't need a separate local listener — binding
+ * to 127.0.0.1 on top of 0.0.0.0 would EADDRINUSE, and binding twice to
+ * 127.0.0.1 is redundant.
+ */
+function isLoopbackOrWildcard(host) {
+    return (host === "0.0.0.0" ||
+        host === "::" ||
+        host === "127.0.0.1" ||
+        host === "::1" ||
+        host === "::ffff:127.0.0.1" ||
+        host === "localhost");
+}
 export function startWsServer(opts) {
     const { host, port, manager, cert, registry, trustLocalhost = false, hostToken } = opts;
+    // The WSS uses noServer mode so we can forward upgrades from TWO HTTPS
+    // listeners into the same connection handler:
+    //   1. The external listener (host:port) — phone over Tailscale or LAN.
+    //   2. A loopback listener (127.0.0.1:port) — only when `host` is a specific
+    //      non-loopback IP. Keeps the pino-mirror extension host and the
+    //      `flutter run -d macos` dev loop reachable.
+    // When host is `0.0.0.0` (all interfaces) or already loopback, the second
+    // listener is redundant and skipped.
+    const wss = new WebSocketServer({ noServer: true });
     const https = createHttpsServer({ cert: cert.cert, key: cert.key });
-    const wss = new WebSocketServer({ server: https });
+    const needsLocalListener = !isLoopbackOrWildcard(host);
+    const localHttps = needsLocalListener
+        ? createHttpsServer({ cert: cert.cert, key: cert.key })
+        : undefined;
+    const forwardUpgrade = (s) => {
+        s.on("upgrade", (req, socket, head) => {
+            wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+        });
+    };
+    forwardUpgrade(https);
+    if (localHttps)
+        forwardUpgrade(localHttps);
     https.on("tlsClientError", (err, sock) => {
         log.warn(`[pino] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
     });
@@ -121,6 +162,11 @@ export function startWsServer(opts) {
     https.listen(port, host, () => {
         log.info(`[pino] wss listening on wss://${host}:${port}`);
     });
+    if (localHttps) {
+        localHttps.listen(port, "127.0.0.1", () => {
+            log.info(`[pino] wss also listening on 127.0.0.1:${port} (loopback)`);
+        });
+    }
     const askDevice = rpc.askDevice.bind(rpc);
     // Device ids with a live authenticated WS connection — feeds the control
     // plane's `devices.list` "connected" flag (SPEC-01).
@@ -131,7 +177,7 @@ export function startWsServer(opts) {
                 ids.add(c.deviceId);
         return ids;
     };
-    return { wss, https, askDevice, connectedDeviceIds };
+    return { wss, https, localHttps, askDevice, connectedDeviceIds };
     // -------- dispatch ------------------------------------------------------
     function handleEnvelope(state, env) {
         // The only thing an unauthed client may send is `hello`.
@@ -201,6 +247,11 @@ export function startWsServer(opts) {
                 ? ctx.env.args
                 : undefined;
             ctx.ack();
+            // Manual rename: reflect the new title in pino immediately, then let the
+            // adapter persist it (pi's set_session_name / the mirror connector).
+            if (action === "name" && typeof args?.name === "string") {
+                session.setTitle(args.name);
+            }
             await session.sendAction(action, args);
         });
         r.register("cancel", async (ctx) => {
@@ -228,7 +279,8 @@ export function startWsServer(opts) {
         r.register("session.spawn", async (ctx) => {
             const projectId = String(ctx.env.projectId ?? "");
             const title = ctx.env.title ? String(ctx.env.title) : undefined;
-            const newSession = await manager.spawnPiSession(projectId, title);
+            // Prefer pane-based spawn (SPEC-05); falls back to headless when no mux.
+            const newSession = await manager.spawnPiSessionInPane(projectId, title);
             // wireSession is invoked via the manager's "sessionCreated" listener
             // registered above — don't call it explicitly or every event fans out
             // twice.
@@ -363,6 +415,7 @@ export function startWsServer(opts) {
             const title = typeof ctx.env.title === "string" ? ctx.env.title : undefined;
             const cwd = typeof ctx.env.cwd === "string" ? ctx.env.cwd : undefined;
             const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : undefined;
+            const spawnToken = typeof ctx.env.spawnToken === "string" ? ctx.env.spawnToken : undefined;
             const owner = ctx.client;
             let sid = "";
             const session = await manager.openHostSession({
@@ -373,6 +426,10 @@ export function startWsServer(opts) {
                 onAction: (action, args) => owner.send({ t: "host.action", id: newId("ha"), sessionId: sid, action, args }),
             });
             sid = session.id;
+            // SPEC-05: if a pane-spawn token is present, correlate with the pending
+            // spawnPiSessionInPane call and attach the PaneHandle to this session.
+            if (spawnToken)
+                manager.resolvePendingSpawn(spawnToken, session);
             hostAdapters.set(sid, session.adapter);
             hostOwner.set(sid, owner);
             broadcastSnapshots();
@@ -398,10 +455,7 @@ export function startWsServer(opts) {
             const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
             const title = typeof ctx.env.title === "string" ? ctx.env.title.trim() : "";
             const session = sid ? manager.getSession(sid) : undefined;
-            if (session && title && session.title !== title) {
-                session.title = title;
-                broadcastSessionsSnapshot();
-            }
+            session?.setTitle(title);
         });
         r.register("host.close", async (ctx) => {
             const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
@@ -490,6 +544,11 @@ export function startWsServer(opts) {
             const sent = hub.fanout(session.id, event);
             log.debug(`[pino] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`);
             broadcastSessionsSnapshot();
+        });
+        session.on("titleChanged", (title) => {
+            broadcastSessionsSnapshot();
+            // SPEC-05: keep the mux pane label in sync with the session title.
+            manager.updatePaneLabel(session.id, title).catch(() => { });
         });
     }
     function sendSnapshots(client) {

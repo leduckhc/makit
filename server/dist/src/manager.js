@@ -13,7 +13,12 @@ import { MirrorAdapter } from "./adapters/mirror.js";
 import { IngestAdapter } from "./adapters/ingest.js";
 import { herdrReader, paneAgentInfo } from "./pane/herdr.js";
 import { Session } from "./session.js";
+import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import { listPiSessions, parseTranscript } from "./pi-sessions.js";
+import { MuxError } from "./mux/adapter.js";
+import { getMultiplexer } from "./mux/registry.js";
+import { log } from "./log.js";
+const SPAWN_TIMEOUT_MS = 15_000;
 export class SessionManager extends EventEmitter {
     projects = new Map();
     sessions = new Map();
@@ -24,10 +29,15 @@ export class SessionManager extends EventEmitter {
     adapterFactory;
     onProjectsChanged;
     bridge;
+    /** Injected or resolved multiplexer adapter (SPEC-05). */
+    _muxOverride;
+    /** spawnToken → pending pane spawn waiting for host.open correlation. */
+    pendingSpawns = new Map();
     constructor(opts) {
         super();
         this.adapterFactory = opts.adapterFactory;
         this.onProjectsChanged = opts.onProjectsChanged;
+        this._muxOverride = opts.mux;
         for (const path of opts.projects) {
             const id = randomUUID();
             this.projects.set(id, {
@@ -96,6 +106,119 @@ export class SessionManager extends EventEmitter {
             throw new Error(`unknown project: ${projectId}`);
         return this.createSession(project, { title });
     }
+    /**
+     * Spawn a pi session in a multiplexer pane (SPEC-05, World D / pino-mirror
+     * path). Falls back to headless if no mux is available or the pane spawn
+     * fails. A spawnToken is embedded in the pane command's env; the matching
+     * `host.open` frame calls `resolvePendingSpawn` to bind the session.
+     */
+    async spawnPiSessionInPane(projectId, title, opts = {}) {
+        const project = this.projects.get(projectId);
+        if (!project)
+            throw new Error(`unknown project: ${projectId}`);
+        const mux = this._muxOverride !== undefined
+            ? this._muxOverride
+            : getMultiplexer();
+        if (!mux)
+            return this.spawnPiSession(projectId, title);
+        const available = await mux.isAvailable().catch(() => false);
+        if (!available)
+            return this.spawnPiSession(projectId, title);
+        const spawnToken = randomUUID();
+        const label = `pino: ${title ?? DEFAULT_SESSION_TITLE}`;
+        const piBin = process.env.PINO_PI_BIN ?? "pi";
+        const command = `PINO_SPAWN_TOKEN=${spawnToken} ${piBin}`;
+        let paneHandle;
+        try {
+            paneHandle = await mux.spawnPane({ cwd: project.dto.path, command, label });
+        }
+        catch (e) {
+            log.warn(`[pino] mux pane spawn failed — falling back to headless: ${e.message}`);
+            if (e instanceof MuxError) {
+                log.info("[pino] hint: set PINO_MUX_ANCHOR to a valid pane id (e.g. w1:p1), not a workspace label");
+            }
+            return this.spawnPiSession(projectId, title);
+        }
+        const pending = this.registerPendingSpawn(spawnToken, paneHandle, opts.timeoutMs ?? SPAWN_TIMEOUT_MS);
+        try {
+            return await pending;
+        }
+        catch (e) {
+            await mux.closePane(paneHandle).catch(() => { });
+            throw e;
+        }
+    }
+    /**
+     * Register a pending spawn waiting for the matching `host.open`.
+     * Returns a promise that resolves once `resolvePendingSpawn` is called.
+     * @internal called by spawnPiSessionInPane; exposed for tests via simulateHostOpen.
+     */
+    registerPendingSpawn(spawnToken, paneHandle, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pendingSpawns.delete(spawnToken);
+                reject(new Error(`spawn timeout: pi did not connect within ${timeoutMs}ms`));
+            }, timeoutMs);
+            this.pendingSpawns.set(spawnToken, { resolve, reject, paneHandle, timer });
+        });
+    }
+    /**
+     * Called by server.ts's host.open handler when a spawnToken is present.
+     * Attaches the pane handle to the session and resolves the pending promise.
+     * Returns the paneHandle if found, undefined otherwise.
+     */
+    resolvePendingSpawn(spawnToken, session) {
+        const pending = this.pendingSpawns.get(spawnToken);
+        if (!pending)
+            return undefined;
+        clearTimeout(pending.timer);
+        this.pendingSpawns.delete(spawnToken);
+        session.pane = pending.paneHandle;
+        pending.resolve(session);
+        return pending.paneHandle;
+    }
+    /**
+     * Relabel the mux pane for a session when its title changes (SPEC-05).
+     * No-op if the session has no pane handle or the mux doesn't support rename.
+     */
+    async updatePaneLabel(sessionId, title) {
+        const session = this.sessions.get(sessionId);
+        if (!session?.pane)
+            return;
+        const mux = this._muxOverride !== undefined
+            ? this._muxOverride
+            : getMultiplexer(session.pane.mux);
+        if (!mux)
+            return;
+        await mux.setLabel?.(session.pane, `pino: ${title}`).catch(() => { });
+    }
+    /**
+     * Test helper: simulate the host.open path for a pending pane spawn.
+     * Creates a minimal IngestAdapter session (without the real pi commands
+     * fetcher) and resolves the pending spawn. Production code uses the
+     * server.ts host.open handler which calls openHostSession then
+     * resolvePendingSpawn.
+     */
+    async simulateHostOpen(spawnToken, title, cwd, projectId) {
+        const project = this.projects.get(projectId);
+        if (!project)
+            throw new Error(`unknown project: ${projectId}`);
+        // Build a minimal ingest session without enableCommands() to avoid
+        // spawning a real pi subprocess in tests.
+        const { IngestAdapter } = await import("./adapters/ingest.js");
+        const adapter = new IngestAdapter(() => { });
+        const session = new Session({
+            projectId: project.dto.id,
+            agent: "pi",
+            title: title ?? DEFAULT_SESSION_TITLE,
+            adapter,
+        });
+        await adapter.start({ cwd });
+        this.sessions.set(session.id, session);
+        this.emit("sessionCreated", session);
+        this.resolvePendingSpawn(spawnToken, session);
+        return session;
+    }
     /** List a project's prior on-disk pi sessions (newest first). */
     listPiSessions(projectId) {
         const project = this.projects.get(projectId);
@@ -155,6 +278,14 @@ export class SessionManager extends EventEmitter {
         const session = this.sessions.get(id);
         if (!session)
             throw new Error(`no such session: ${id}`);
+        // Close the mux pane if this session was spawned in one (SPEC-05). Idempotent.
+        if (session.pane) {
+            const mux = this._muxOverride !== undefined
+                ? this._muxOverride
+                : getMultiplexer(session.pane.mux);
+            if (mux)
+                await mux.closePane(session.pane).catch(() => { });
+        }
         await session.adapter.kill();
         this.sessions.delete(id);
         // Drop any attach mapping so the underlying pi session can be re-attached.
@@ -185,7 +316,7 @@ export class SessionManager extends EventEmitter {
         const session = new Session({
             projectId: project.dto.id,
             agent: "pi",
-            title: opts.title ?? "pi (mirror)",
+            title: opts.title ?? DEFAULT_SESSION_TITLE,
             adapter,
         });
         await adapter.start({ cwd: project.dto.path });
@@ -226,7 +357,7 @@ export class SessionManager extends EventEmitter {
         const session = new Session({
             projectId: project.dto.id,
             agent: "pi",
-            title: opts.title ?? `TUI ${opts.paneTarget}`,
+            title: opts.title ?? DEFAULT_SESSION_TITLE,
             adapter,
         });
         await adapter.start({ cwd: project.dto.path });
@@ -241,7 +372,7 @@ export class SessionManager extends EventEmitter {
         const session = new Session({
             projectId: project.dto.id,
             agent: this.adapterFactory ? "stub" : "pi",
-            title: opts.title ?? (this.adapterFactory ? "stub session" : "pi session"),
+            title: opts.title ?? DEFAULT_SESSION_TITLE,
             adapter,
         });
         const activeAdapter = this.adapterFactory?.({
@@ -279,7 +410,7 @@ export class SessionManager extends EventEmitter {
         for (const p of this.projects.values()) {
             const hasOne = [...this.sessions.values()].some((s) => s.projectId === p.dto.id);
             if (!hasOne)
-                await this.spawnPiSession(p.dto.id, "new session");
+                await this.spawnPiSession(p.dto.id, DEFAULT_SESSION_TITLE);
         }
     }
     /** All sessions (for fan-out on new connections). */

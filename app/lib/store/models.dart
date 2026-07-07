@@ -340,8 +340,29 @@ class AgentMessageItem extends ChatItem {
 }
 
 class ThinkingItem extends ChatItem {
-  ThinkingItem({required super.seq, required super.ts, required this.text});
+  ThinkingItem({
+    required super.seq,
+    required super.ts,
+    required this.text,
+    this.thinkId,
+    this.streaming = false,
+  });
   final String text;
+
+  /// Streamed thinking id (ties deltas to the final `agent.thinking`). Null for
+  /// non-streamed thinking (e.g. backfilled history or the stub adapter).
+  final String? thinkId;
+
+  /// True while reasoning tokens are still streaming in.
+  final bool streaming;
+
+  ThinkingItem copyWith({String? text, bool? streaming}) => ThinkingItem(
+    seq: seq,
+    ts: ts,
+    text: text ?? this.text,
+    thinkId: thinkId,
+    streaming: streaming ?? this.streaming,
+  );
 }
 
 class ToolCallItem extends ChatItem {
@@ -410,6 +431,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
   final items = <ChatItem>[];
   final byCall = <String, int>{}; // callId -> index in items
   final byMsg = <String, int>{}; // streamed msgId -> index in items
+  final byThink = <String, int>{}; // streamed thinkId -> index in items
 
   for (final e in events) {
     switch (e.kind) {
@@ -457,9 +479,41 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             ),
           );
         }
+      case EventKind.agentThinkingDelta:
+        // Streaming reasoning token. Append to the card for this thinkId,
+        // creating it on the first delta so it is anchored at the point
+        // reasoning STARTED (before the answer), matching the terminal.
+        final thinkId = e.payload['thinkId'] as String? ?? '';
+        final chunk = e.payload['chunk'] as String? ?? '';
+        final idx = byThink[thinkId];
+        if (idx != null && items[idx] is ThinkingItem) {
+          final cur = items[idx] as ThinkingItem;
+          items[idx] = cur.copyWith(text: cur.text + chunk);
+        } else {
+          byThink[thinkId] = items.length;
+          items.add(
+            ThinkingItem(
+              seq: e.seq,
+              ts: e.ts,
+              text: chunk,
+              thinkId: thinkId,
+              streaming: true,
+            ),
+          );
+        }
       case EventKind.agentThinking:
+        // Final (authoritative) thinking. If it finalizes a streamed thinkId,
+        // replace the in-progress card's text; otherwise it's a fresh
+        // (non-streamed) card — a new item.
+        final thinkId = e.payload['thinkId'] as String?;
         final text = e.payload['text'] as String? ?? '';
-        if (text.trim().isNotEmpty) {
+        final idx = thinkId != null ? byThink[thinkId] : null;
+        if (idx != null && items[idx] is ThinkingItem) {
+          items[idx] = (items[idx] as ThinkingItem).copyWith(
+            text: text,
+            streaming: false,
+          );
+        } else if (text.trim().isNotEmpty) {
           items.add(ThinkingItem(seq: e.seq, ts: e.ts, text: text));
         }
       case EventKind.toolCallStart:
