@@ -34,6 +34,7 @@ class Composer extends StatefulWidget {
 class _ComposerState extends State<Composer> {
   final _ctrl = TextEditingController();
   final _focus = FocusNode();
+  final _fieldKey = GlobalKey(); // stable element across compact↔expanded swap
   bool _showSlash = false;
   bool _hasText = false;
   bool _isFocused = false;
@@ -56,16 +57,12 @@ class _ComposerState extends State<Composer> {
   }
 
   void _onChanged(String value) {
-    final hasText = value.trim().isNotEmpty;
     // Show palette while the user is typing the command name itself
     // (everything up to the first whitespace).
     final showSlash = value.startsWith('/') && !value.contains(RegExp(r'\s'));
     // Always rebuild while the palette is (or becomes) open so the filter
     // prop on SlashPalette reflects the latest text.
-    setState(() {
-      _hasText = hasText;
-      _showSlash = showSlash;
-    });
+    setState(() => _showSlash = showSlash);
   }
 
   void _send() {
@@ -143,7 +140,9 @@ class _ComposerState extends State<Composer> {
               _buildPlus(),
               const Spacer(),
               _buildMic(),
-              _buildSendSlot(),
+              // Reserve the send button's footprint so the mic doesn't jump
+              // when the send button fades in/out.
+              SizedBox(width: 48, child: _buildSendSlot()),
             ],
           ),
         ),
@@ -152,20 +151,20 @@ class _ComposerState extends State<Composer> {
   }
 
   Widget _buildPlus() {
-    return IconButton(
-      icon: const Icon(Icons.add_circle_outline),
-      onPressed: () {
-        // TODO(M6): @-mention picker.
-      },
+    return const IconButton(
+      icon: Icon(Icons.add_circle_outline),
+      tooltip: 'Add attachment',
+      // Disabled until M6 (@-mention picker); avoids misleading enabled no-op.
+      onPressed: null,
     );
   }
 
   Widget _buildMic() {
-    return IconButton(
-      icon: const Icon(Icons.mic_none),
-      onPressed: () {
-        // TODO(M6): voice dictation.
-      },
+    return const IconButton(
+      icon: Icon(Icons.mic_none),
+      tooltip: 'Voice input',
+      // Disabled until M6 (voice dictation); avoids misleading enabled no-op.
+      onPressed: null,
     );
   }
 
@@ -181,6 +180,7 @@ class _ComposerState extends State<Composer> {
           ? IconButton.filled(
               key: const ValueKey('send'),
               icon: const Icon(Icons.arrow_upward),
+              tooltip: 'Send',
               onPressed: _send,
             )
           : const SizedBox.shrink(key: ValueKey('empty')),
@@ -190,7 +190,9 @@ class _ComposerState extends State<Composer> {
   Widget _buildField() {
     return Shortcuts(
       shortcuts: const {
+        // ⌘+Enter (macOS) and Ctrl+Enter (Windows/Linux/desktop) both send.
         SingleActivator(LogicalKeyboardKey.enter, meta: true): _SendIntent(),
+        SingleActivator(LogicalKeyboardKey.enter, control: true): _SendIntent(),
       },
       child: Actions(
         actions: <Type, Action<Intent>>{
@@ -202,12 +204,24 @@ class _ComposerState extends State<Composer> {
           ),
         },
         child: TextField(
+          key: _fieldKey, // stable element across compact↔expanded reparenting
           controller: _ctrl,
           focusNode: _focus,
           // Compact = exactly 1 line; expanded = fixed 3 lines (scrolls past).
           minLines: _isFocused ? 3 : 1,
           maxLines: _isFocused ? 3 : 1,
           textCapitalization: TextCapitalization.sentences,
+          // In expanded mode (3 lines), newline is just a line break.
+          // In compact mode (1 line), return key submits the message.
+          textInputAction: _isFocused
+              ? TextInputAction.newline
+              : TextInputAction.send,
+          onSubmitted: (text) {
+            // Only submit on TextInputAction.send (compact mode).
+            if (!_isFocused) {
+              _send();
+            }
+          },
           onChanged: _onChanged,
           decoration: const InputDecoration(
             hintText: 'Message …',

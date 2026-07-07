@@ -91,40 +91,50 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       extendBody: true,
       body: Stack(
         children: [
-          ListView.builder(
-            controller: _scroll,
-            // Leave room so the first/last items clear the floating glass bars
-            // (bottom = safe-area inset + composer height + a breathing gap).
-            padding: EdgeInsets.only(
-              top: topInset + 60,
-              bottom: MediaQuery.of(context).padding.bottom + 160,
-            ),
-            itemCount:
-                items.length +
-                (session?.status == SessionStatus.running ? 1 : 0),
-            itemBuilder: (context, i) {
-              // Trailing "working…" indicator while the agent is running.
-              if (i >= items.length) return const _WorkingIndicator();
-              final item = items[i];
-              return switch (item) {
-                UserMessageItem() => ChatBubble.user(
-                  text: item.text,
-                  ts: item.ts,
-                ),
-                AgentMessageItem() => AgentMessage(
-                  text: item.text,
-                  ts: item.ts,
-                ),
-                ThinkingItem() => _ThinkingCard(text: item.text),
-                ToolCallItem() => ToolCallCard(
-                  item: item,
-                  onTap: () => context.go(
-                    '/session/${widget.sessionId}/tool/${item.callId}',
-                  ),
-                ),
-                ErrorItem() => _ErrorBanner(message: item.message),
-              };
+          GestureDetector(
+            onTap: () {
+              // Dismiss composer focus when user taps on the chat transcript.
+              FocusManager.instance.primaryFocus?.unfocus();
             },
+            // HitTestBehavior.translucent so taps on empty space register,
+            // while child widgets (bubbles, cards) still receive their own taps.
+            behavior: HitTestBehavior.translucent,
+            child: ListView.builder(
+              controller: _scroll,
+              // Leave room so the first/last items clear the floating glass bars
+              // (bottom = safe-area inset + composer height + a breathing gap).
+              // Expanded composer is ~160px; use 200 for comfortable clearance.
+              padding: EdgeInsets.only(
+                top: topInset + 60,
+                bottom: MediaQuery.of(context).padding.bottom + 200,
+              ),
+              itemCount:
+                  items.length +
+                  (session?.status == SessionStatus.running ? 1 : 0),
+              itemBuilder: (context, i) {
+                // Trailing "working…" indicator while the agent is running.
+                if (i >= items.length) return const _WorkingIndicator();
+                final item = items[i];
+                return switch (item) {
+                  UserMessageItem() => ChatBubble.user(
+                    text: item.text,
+                    ts: item.ts,
+                  ),
+                  AgentMessageItem() => AgentMessage(
+                    text: item.text,
+                    ts: item.ts,
+                  ),
+                  ThinkingItem() => _ThinkingCard(text: item.text),
+                  ToolCallItem() => ToolCallCard(
+                    item: item,
+                    onTap: () => context.go(
+                      '/session/${widget.sessionId}/tool/${item.callId}',
+                    ),
+                  ),
+                  ErrorItem() => _ErrorBanner(message: item.message),
+                };
+              },
+            ),
           ),
           // Scrim: fade the transcript under the top edge so the floating
           // controls stay legible (≈30%→20%→transparent).
@@ -257,7 +267,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                 child: GlassSurface(
                   borderRadius: 28,
                   // Composer sits over the keyboard/typing — frostier + less

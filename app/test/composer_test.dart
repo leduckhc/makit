@@ -34,44 +34,64 @@ void main() {
     },
   );
 
-  testWidgets(
-    'field starts compact (1 line) and expands to 3 lines on focus',
-    (tester) async {
-      await tester.pumpWidget(wrap(Composer(onSend: (_) {})));
+  testWidgets('field starts compact (1 line) and expands to 3 lines on focus', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(Composer(onSend: (_) {})));
 
-      final fieldBefore = tester.widget<TextField>(find.byType(TextField));
-      expect(fieldBefore.minLines, 1);
-      expect(fieldBefore.maxLines, 1);
+    final fieldBefore = tester.widget<TextField>(find.byType(TextField));
+    expect(fieldBefore.minLines, 1);
+    expect(fieldBefore.maxLines, 1);
 
-      await tester.tap(find.byType(TextField));
-      await tester.pumpAndSettle();
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
 
-      final fieldAfter = tester.widget<TextField>(find.byType(TextField));
-      expect(fieldAfter.minLines, 3);
-      expect(fieldAfter.maxLines, 3);
-    },
-  );
+    final fieldAfter = tester.widget<TextField>(find.byType(TextField));
+    expect(fieldAfter.minLines, 3);
+    expect(fieldAfter.maxLines, 3);
+  });
 
-  testWidgets(
-    'losing focus collapses back to 1 line while preserving text',
-    (tester) async {
-      await tester.pumpWidget(wrap(Composer(onSend: (_) {})));
+  testWidgets('losing focus collapses back to 1 line while preserving text', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap(Composer(onSend: (_) {})));
 
-      await tester.tap(find.byType(TextField));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'draft');
-      await tester.pumpAndSettle();
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'draft');
+    await tester.pumpAndSettle();
 
-      // Blur the field by focusing nothing.
-      FocusManager.instance.primaryFocus?.unfocus();
-      await tester.pumpAndSettle();
+    // Blur the field by focusing nothing.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
 
-      final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.minLines, 1);
-      expect(field.maxLines, 1);
-      expect(find.text('draft'), findsOneWidget);
-      // Draft is non-empty → send stays visible even in compact form.
-      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
-    },
-  );
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.minLines, 1);
+    expect(field.maxLines, 1);
+    expect(find.text('draft'), findsOneWidget);
+    // Draft is non-empty → send stays visible even in compact form.
+    expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+  });
+
+  testWidgets('IME return key is newline in expanded mode, submit in compact', (
+    tester,
+  ) async {
+    final sent = <String>[];
+    await tester.pumpWidget(wrap(Composer(onSend: sent.add)));
+
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+
+    // In expanded mode (3 lines), IME action is newline.
+    var field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.textInputAction, TextInputAction.newline);
+
+    // Collapse back to compact.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    // In compact mode (1 line), IME action is send.
+    field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.textInputAction, TextInputAction.send);
+  });
 }

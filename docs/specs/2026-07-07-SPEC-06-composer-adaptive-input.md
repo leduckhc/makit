@@ -109,3 +109,52 @@ no clear "resting" vs "active" state. Consensus from a focused UX round:
 
 - `app/lib/ui/composer/composer.dart` — rewritten with compact/expanded states.
 - `app/test/composer_test.dart` — new widget tests for the criteria above.
+
+---
+
+## UX fixes (addressing architect + reviewer feedback)
+
+### B1: Collapse path now reachable
+
+**Problem:** In the initial implementation, there was no way for users to dismiss the
+expanded state on iOS because:
+- The session screen ListView had no tap-to-unfocus handler
+- The spec explicitly rejected a toggle button
+- `maxLines:3` made the IME return key a newline (not "done"), so iOS keyboard had
+  no dismiss key
+
+**Solution:** Added `GestureDetector` with `HitTestBehavior.translucent` wrapping the
+ListView in `session_screen.dart` (line 94). Tapping empty space (or any non-interactive
+area) now dismisses focus, collapsing the composer. The gesture detector is translucent
+so taps on message bubbles/cards still route to their widgets.
+
+### B2: IME return key is context-aware
+
+**Problem:** All three lines of the expanded field had `maxLines:3` with no
+`textInputAction` — so the IME returned a **newline** regardless of focus state.
+On iOS, this meant no hardware dismiss affordance even in compact (1-line) mode.
+
+**Solution:** Set `textInputAction` dynamically:
+- **Expanded (3 lines, `_isFocused = true`):** `TextInputAction.newline` →
+  return key inserts a line break
+- **Compact (1 line, `_isFocused = false`):** `TextInputAction.send` → return key
+  submits the message
+
+Added `onSubmitted` callback: only fire `_send()` when in compact mode (to avoid
+accidental submission while drafting multi-line text). The IME now shows a
+contextual key ("Done" or "Send" on iOS; "Enter" or "Send" on Android).
+
+### B3: Better UI/UX polish
+
+- **Bottom padding increased:** Changed `Composer` bottom padding from `8` to `24` in
+  `session_screen.dart:271` so the expanded 3-line field does not get hidden under
+  the system safe area on iOS with an active keyboard.
+- **Test coverage:** Added a test for IME action (`test/composer_test.dart:78`)
+  to lock in the context-aware behavior and prevent regression.
+
+### Result
+
+The "dismissable" requirement (spec §3) is now truly reachable by real users on all
+platforms. Collapse-on-blur is no longer test-only; it works on production. IME
+signals are platform-appropriate. Draft preservation still works; send remains visible
+when collapsed with text.
