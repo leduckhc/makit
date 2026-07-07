@@ -79,12 +79,16 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
 
     final cs = Theme.of(context).colorScheme;
     final topInset = MediaQuery.of(context).padding.top;
-    // Session titles are usually gibberish ids — prefer the repo/project name.
+    // Prefer the session name (generated in the background by the session
+    // namer). Fall back to the project name, then the raw session id.
     final project = ref
         .watch(projectsProvider)
         .projects
         .firstWhereOrNull((p) => p.id == session?.projectId);
-    final label = project?.name ?? session?.title ?? widget.sessionId;
+    final sessionName = session?.title.trim() ?? '';
+    final label = sessionName.isNotEmpty
+        ? sessionName
+        : (project?.name ?? widget.sessionId);
     return Scaffold(
       // Edge-to-edge so the transcript scrolls *behind* the glass bars.
       extendBodyBehindAppBar: true,
