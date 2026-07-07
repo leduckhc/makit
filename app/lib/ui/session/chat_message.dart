@@ -7,7 +7,6 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../app/theme.dart' show kPinoBrandBlue;
 
 String _hhmm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
@@ -44,6 +43,10 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // User bubble is neutral grey (design system) — never the green accent.
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final bubble = dark ? const Color(0xFF2E2E2E) : const Color(0xFFEBEBEB);
+    final onBubble = dark ? const Color(0xFFF5F5F5) : const Color(0xFF1B1B1B);
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -56,9 +59,9 @@ class ChatBubble extends StatelessWidget {
             Container(
               margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: const BoxDecoration(
-                color: kPinoBrandBlue,
-                borderRadius: BorderRadius.only(
+              decoration: BoxDecoration(
+                color: bubble,
+                borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(14),
                   topRight: Radius.circular(14),
                   bottomLeft: Radius.circular(14),
@@ -67,7 +70,7 @@ class ChatBubble extends StatelessWidget {
               ),
               child: SelectableText(
                 text,
-                style: const TextStyle(color: Colors.white),
+                style: TextStyle(color: onBubble),
               ),
             ),
             Padding(

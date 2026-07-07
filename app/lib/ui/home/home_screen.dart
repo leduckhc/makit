@@ -4,14 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../app/theme.dart' show kPinoBrandBlue;
+import '../../app/theme.dart' show kPinoAccent;
 import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import '../widgets/sheet_header.dart';
 
-/// Brand blue accent used for running/active glass affordances (shared token).
-const _kBrandBlue = kPinoBrandBlue;
+/// Brand green accent used for running/active glass affordances (shared token).
+const _kBrandBlue = kPinoAccent;
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});

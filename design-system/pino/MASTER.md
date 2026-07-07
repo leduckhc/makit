@@ -1,206 +1,74 @@
-# Design System Master File
+# pino — Design System (MASTER)
 
-> **LOGIC:** When building a specific page, first check `design-system/pages/[page-name].md`.
-> If that file exists, its rules **override** this Master file.
-> If not, strictly follow the rules below.
+**Status:** locked 2026-07-07 · Source of truth for colors, glass, and component styling.
+Playground: [`mockups/pino-design-lab.html`](../../mockups/pino-design-lab.html)
 
----
+pino is a mobile companion for coding agents: a **terminal-neutral** aesthetic —
+pure-grey neutrals (zero hue) + a single **green** accent, over a floating
+**Liquid-Glass** top bar and composer.
 
-**Project:** pino
-**Generated:** 2026-07-07 15:08:03
-**Category:** Developer Tool / IDE
+## Color model
 
----
+Neutrals are defined in **OKLCH with chroma = 0** (mathematically hueless) so
+light and dark share identical character — no blue/slate drift. The accent is a
+single hue (150°) with lightness tuned per mode. Hex values are sRGB conversions
+for code that needs them.
 
-## Global Rules
+### Palette
 
-### Color Palette
+| Token | Role | Light — OKLCH · hex | Dark — OKLCH · hex |
+|-------|------|---------------------|--------------------|
+| `accent` | brand / primary (logo, send, active) | `0.62 0.17 150` · `#03A14A`¹ | `0.80 0.19 150` · `#49DE78` |
+| `onAccent` | content on accent | `#FFFFFF` (or dark green) | `#0B2612` |
+| `bg` | app background | `0.985 0 0` · `#FAFAFA` | `0.205 0 0` · `#171717` |
+| `surface` | cards, sheets, raised | `1 0 0` · `#FFFFFF` | `0.26 0 0` · `#242424` |
+| `bubbleUser` | user message bubble (grey, **not** accent) | `0.94 0 0` · `#EBEBEB` | `0.30 0 0` · `#2E2E2E` |
+| `text` | primary text / "black" icons | `0.22 0 0` · `#1B1B1B` | `0.97 0 0` · `#F5F5F5` |
+| `muted` | secondary text, disabled icons | `0.50 0 0` · `#636363` | `0.70 0 0` · `#9E9E9E` |
+| `hairline` | borders, dividers | `0.90 0 0` · `#DEDEDE` | `0.32 0 0` · `#333333` |
 
-| Role | Hex | CSS Variable |
-|------|-----|--------------|
-| Primary | `#1E293B` | `--color-primary` |
-| Secondary | `#334155` | `--color-secondary` |
-| CTA/Accent | `#22C55E` | `--color-cta` |
-| Background | `#0F172A` | `--color-background` |
-| Text | `#F8FAFC` | `--color-text` |
+¹ **Shipped accent = the logo green `#4ADE80`** in both modes (approved look). The
+`#03A14A` light value is the stricter-contrast alternative if accent-as-text/
+border ever needs 4.5:1 on white.
 
-**Color Notes:** Code dark + run green
+### Rules
+- **Neutrals must stay `C=0`.** Never reintroduce slate/blue-tinted greys.
+- **Green is the only hue.** Use it sparingly: logo, send button, status dot,
+  active states, list avatars. Everything else is neutral.
+- **User bubbles are grey** (`bubbleUser`), never the accent — avoids "too much green."
+- Icons: default = `text` ("black"); accent icons = green; disabled = `muted`.
 
-### Typography
+## Liquid Glass (top bar + composer)
 
-- **Heading Font:** Inter
-- **Body Font:** Inter
-- **Mood:** spatial, legible, glass, system, clean, neutral
-- **Google Fonts:** [Inter + Inter](https://fonts.google.com/share?selection.family=Inter:wght@300;400;500;600)
+Unified recipe for all floating glass surfaces (identical top bar & composer):
 
-**CSS Import:**
-```css
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
-```
-
-### Spacing Variables
-
-| Token | Value | Usage |
+| Param | Value | Notes |
 |-------|-------|-------|
-| `--space-xs` | `4px` / `0.25rem` | Tight gaps |
-| `--space-sm` | `8px` / `0.5rem` | Icon gaps, inline spacing |
-| `--space-md` | `16px` / `1rem` | Standard padding |
-| `--space-lg` | `24px` / `1.5rem` | Section padding |
-| `--space-xl` | `32px` / `2rem` | Large gaps |
-| `--space-2xl` | `48px` / `3rem` | Section margins |
-| `--space-3xl` | `64px` / `4rem` | Hero padding |
+| tint (light) | `#FFFFFF` @ **50%** → `0x80FFFFFF` | ~50% keeps text legible; not milky |
+| tint (dark) | `#181818` @ 50% → `0x80181818` | neutral, not blue |
+| blur | **18** | frost strength |
+| saturation | **1.8** | **the anti-"milky" lever** — pops refracted colour |
+| lightIntensity | light `0.9` / dark `0.5` | keep light ≤ ~1.0 or it reads too white on device |
+| ambientStrength | light `0.3` / dark `0.2` | |
+| refractiveIndex | `1.3` | subtle "liquid" bend |
+| border | 1px, white @ `0.35` (light) / `0.14` (dark) | edge highlight |
+| shadow | `0 8 24`, black @ `0.15` | depth |
+| radius | 26 (bars) / 28 (composer) | |
 
-### Shadow Depths
+Implemented in `app/lib/ui/widgets/glass.dart` (`GlassSurface`), backed by the
+`liquid_glass_renderer` shader. `fakeGlassProvider` swaps to a cheap backdrop-blur
+fallback.
 
-| Level | Value | Usage |
-|-------|-------|-------|
-| `--shadow-sm` | `0 1px 2px rgba(0,0,0,0.05)` | Subtle lift |
-| `--shadow-md` | `0 4px 6px rgba(0,0,0,0.1)` | Cards, buttons |
-| `--shadow-lg` | `0 10px 15px rgba(0,0,0,0.1)` | Modals, dropdowns |
-| `--shadow-xl` | `0 20px 25px rgba(0,0,0,0.15)` | Hero images, featured cards |
+## Typography
+System font (SF Pro Text / Inter). Monospace (`ui-monospace`) for tool cards, diffs,
+and code. Body ≥ 15px, line-height ~1.5.
 
----
+## Components (see Design Lab)
+- **Composer** — floating glass; 1-line at rest → 3 lines on focus; send fades in only when non-empty (SPEC-06).
+- **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs.
+- **Top bar** — glass, circular back/quit buttons, title + `model · thinking`, green connection dot.
+- **Logo** — green `pino` mark (`pino_mark.dart`, `#4ADE80`).
 
-## Component Specs
-
-### Buttons
-
-```css
-/* Primary Button */
-.btn-primary {
-  background: #22C55E;
-  color: white;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-/* Secondary Button */
-.btn-secondary {
-  background: transparent;
-  color: #1E293B;
-  border: 2px solid #1E293B;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-```
-
-### Cards
-
-```css
-.card {
-  background: #0F172A;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  transition: all 200ms ease;
-  cursor: pointer;
-}
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
-}
-```
-
-### Inputs
-
-```css
-.input {
-  padding: 12px 16px;
-  border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 200ms ease;
-}
-
-.input:focus {
-  border-color: #1E293B;
-  outline: none;
-  box-shadow: 0 0 0 3px #1E293B20;
-}
-```
-
-### Modals
-
-```css
-.modal-overlay {
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-}
-
-.modal {
-  background: white;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: var(--shadow-xl);
-  max-width: 500px;
-  width: 90%;
-}
-```
-
----
-
-## Style Guidelines
-
-**Style:** Vibrant & Block-based
-
-**Keywords:** Bold, energetic, playful, block layout, geometric shapes, high color contrast, duotone, modern, energetic
-
-**Best For:** Startups, creative agencies, gaming, social media, youth-focused, entertainment, consumer
-
-**Key Effects:** Large sections (48px+ gaps), animated patterns, bold hover (color shift), scroll-snap, large type (32px+), 200-300ms
-
-### Page Pattern
-
-**Pattern Name:** Horizontal Scroll Journey
-
-- **Conversion Strategy:** Immersive product discovery. High engagement. Keep navigation visible.
-28,Bento Grid Showcase,bento,  grid,  features,  modular,  apple-style,  showcase", 1. Hero, 2. Bento Grid (Key Features), 3. Detail Cards, 4. Tech Specs, 5. CTA, Floating Action Button or Bottom of Grid, Card backgrounds: #F5F5F7 or Glass. Icons: Vibrant brand colors. Text: Dark., Hover card scale (1.02), video inside cards, tilt effect, staggered reveal, Scannable value props. High information density without clutter. Mobile stack.
-29,Interactive 3D Configurator,3d,  configurator,  customizer,  interactive,  product", 1. Hero (Configurator), 2. Feature Highlight (synced), 3. Price/Specs, 4. Purchase, Inside Configurator UI + Sticky Bottom Bar, Neutral studio background. Product: Realistic materials. UI: Minimal overlay., Real-time rendering, material swap animation, camera rotate/zoom, light reflection, Increases ownership feeling. 360 view reduces return rates. Direct add-to-cart.
-30,AI-Driven Dynamic Landing,ai,  dynamic,  personalized,  adaptive,  generative", 1. Prompt/Input Hero, 2. Generated Result Preview, 3. How it Works, 4. Value Prop, Input Field (Hero) + 'Try it' Buttons, Adaptive to user input. Dark mode for compute feel. Neon accents., Typing text effects, shimmering generation loaders, morphing layouts, Immediate value demonstration. 'Show, don't tell'. Low friction start.
-- **CTA Placement:** Floating Sticky CTA or End of Horizontal Track
-- **Section Order:** 1. Intro (Vertical), 2. The Journey (Horizontal Track), 3. Detail Reveal, 4. Vertical Footer
-
----
-
-## Anti-Patterns (Do NOT Use)
-
-- ❌ Flat design without depth
-- ❌ Text-heavy pages
-
-### Additional Forbidden Patterns
-
-- ❌ **Emojis as icons** — Use SVG icons (Heroicons, Lucide, Simple Icons)
-- ❌ **Missing cursor:pointer** — All clickable elements must have cursor:pointer
-- ❌ **Layout-shifting hovers** — Avoid scale transforms that shift layout
-- ❌ **Low contrast text** — Maintain 4.5:1 minimum contrast ratio
-- ❌ **Instant state changes** — Always use transitions (150-300ms)
-- ❌ **Invisible focus states** — Focus states must be visible for a11y
-
----
-
-## Pre-Delivery Checklist
-
-Before delivering any UI code, verify:
-
-- [ ] No emojis used as icons (use SVG instead)
-- [ ] All icons from consistent icon set (Heroicons/Lucide)
-- [ ] `cursor-pointer` on all clickable elements
-- [ ] Hover states with smooth transitions (150-300ms)
-- [ ] Light mode: text contrast 4.5:1 minimum
-- [ ] Focus states visible for keyboard navigation
-- [ ] `prefers-reduced-motion` respected
-- [ ] Responsive: 375px, 768px, 1024px, 1440px
-- [ ] No content hidden behind fixed navbars
-- [ ] No horizontal scroll on mobile
+## Contrast (WCAG)
+- Light: `text #1B1B1B` on `bg #FAFAFA` ≈ 15:1 ✓ · `muted #636363` on bg ≈ 5.6:1 ✓
+- Dark: `text #F5F5F5` on `bg #171717` ≈ 15:1 ✓ · `muted #9E9E9E` on bg ≈ 6.6:1 ✓

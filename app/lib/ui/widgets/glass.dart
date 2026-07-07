@@ -40,21 +40,38 @@ class GlassSurface extends ConsumerWidget {
 
     final settings = LiquidGlassSettings(
       thickness: 26,
-      blur: blur ?? 12,
+      blur: blur ?? 18,
+      // Design-system glass (see design-system/pino/MASTER.md):
+      // 50% neutral tint, high saturation (anti-milky), calm light intensity.
       glassColor:
-          tint ?? (dark ? const Color(0x40000000) : const Color(0x33FFFFFF)),
-      lightIntensity: dark ? 0.5 : 1.2,
-      ambientStrength: dark ? 0.2 : 0.4,
-      saturation: 1.1,
+          tint ?? (dark ? const Color(0x80181818) : const Color(0x80FFFFFF)),
+      lightIntensity: dark ? 0.5 : 0.9,
+      ambientStrength: dark ? 0.2 : 0.3,
+      refractiveIndex: 1.3,
+      saturation: 1.8,
     );
 
-    if (fake) {
-      return FakeGlass(shape: shape, settings: settings, child: child);
-    }
-    return LiquidGlass.withOwnLayer(
-      shape: shape,
-      settings: settings,
-      child: child,
+    final glass = fake
+        ? FakeGlass(shape: shape, settings: settings, child: child)
+        : LiquidGlass.withOwnLayer(shape: shape, settings: settings, child: child);
+
+    // Edge highlight (light border) + soft drop shadow for depth.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(
+          color: dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.35),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: glass,
     );
   }
 }

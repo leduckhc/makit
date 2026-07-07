@@ -270,12 +270,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: GlassSurface(
                   borderRadius: 28,
-                  // Composer sits over the keyboard/typing — frostier + less
-                  // transparent than the top bar so text stays legible.
-                  blur: 24,
-                  tint: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0x59000000)
-                      : const Color(0x59FFFFFF),
+                  // Unified design-system glass (see MASTER.md) — same recipe
+                  // as the top bar.
                   child: Composer(
                     glass: true,
                     commands: ref.watch(commandsProvider(widget.sessionId)),
