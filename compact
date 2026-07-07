@@ -1,0 +1,116 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "list",
+      "devices",
+      "--json-output",
+      "compact"
+    ],
+    "commandType" : "devicectl.list.devices",
+    "environment" : {
+      "TERM" : "xterm-256color"
+    },
+    "jsonVersion" : 3,
+    "outcome" : "success",
+    "version" : "518.33"
+  },
+  "result" : {
+    "devices" : [
+      {
+        "capabilities" : [
+          {
+            "featureIdentifier" : "com.apple.coredevice.feature.acquireusageassertion",
+            "name" : "Acquire Usage Assertion"
+          },
+          {
+            "featureIdentifier" : "com.apple.coredevice.feature.connectdevice",
+            "name" : "Connect to Device"
+          },
+          {
+            "featureIdentifier" : "com.apple.coredevice.feature.tags",
+            "name" : "Modify Tags"
+          },
+          {
+            "featureIdentifier" : "com.apple.coredevice.feature.default.user.credentials",
+            "name" : "Modify credentials for default users for a device"
+          },
+          {
+            "featureIdentifier" : "com.apple.coredevice.feature.unpairdevice",
+            "name" : "Unpair Device"
+          }
+        ],
+        "connectionProperties" : {
+          "authenticationType" : "manualPairing",
+          "isMobileDeviceOnly" : false,
+          "lastConnectionDate" : "2026-07-07T12:59:00.000Z",
+          "pairingState" : "paired",
+          "potentialHostnames" : [
+            "KCs-iPhone.coredevice.local",
+            "D3082213-6DB6-5F0E-B665-7BFBD8BB43E5.coredevice.local",
+            "00008150-0006282C3E52401C.coredevice.local"
+          ],
+          "transportType" : "wired",
+          "tunnelState" : "disconnected",
+          "tunnelTransportProtocol" : "tcp"
+        },
+        "deviceProperties" : {
+          "bootState" : "booted",
+          "bootedFromSnapshot" : true,
+          "bootedSnapshotName" : "com.apple.os.update-DD8F28E814ECA7ECCF24628FAE9BCA44301CC7E874390641F04D3CB7AA9616B4",
+          "ddiServicesAvailable" : false,
+          "developerModeStatus" : "enabled",
+          "hasInternalOSBuild" : false,
+          "name" : "KC’s iPhone",
+          "osBuildUpdate" : "23F81",
+          "osVersionNumber" : "26.5.1",
+          "providerSpecificValues" : {
+            "hasAMRestorableDeviceRef" : "true"
+          },
+          "rootFileSystemIsWritable" : false,
+          "screenViewingURL" : "devices://device/open?id=D3082213-6DB6-5F0E-B665-7BFBD8BB43E5",
+          "supportsCheckedAllocations" : true
+        },
+        "hardwareProperties" : {
+          "cpuType" : {
+            "name" : "arm64e",
+            "subType" : 2,
+            "type" : 16777228
+          },
+          "deviceType" : "iPhone",
+          "ecid" : 1733020349513756,
+          "hardwareModel" : "V53AP",
+          "internalStorageCapacity" : 512000000000,
+          "isProductionFused" : true,
+          "marketingName" : "iPhone 17 Pro",
+          "platform" : "iOS",
+          "productType" : "iPhone18,1",
+          "reality" : "physical",
+          "serialNumber" : "FW7VXYF4C4",
+          "supportedCPUTypes" : [
+            {
+              "name" : "arm64e",
+              "subType" : 2,
+              "type" : 16777228
+            },
+            {
+              "name" : "arm64",
+              "subType" : 0,
+              "type" : 16777228
+            }
+          ],
+          "supportedDeviceFamilies" : [
+            1
+          ],
+          "thinningProductType" : "iPhone18,1",
+          "udid" : "00008150-0006282C3E52401C"
+        },
+        "identifier" : "D3082213-6DB6-5F0E-B665-7BFBD8BB43E5",
+        "tags" : [
+
+        ],
+        "visibilityClass" : "default"
+      }
+    ]
+  }
+}
