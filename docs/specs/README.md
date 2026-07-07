@@ -33,6 +33,7 @@ but are otherwise independently implementable. Respect the dependency order.
 | [SPEC-03](./2026-07-05-SPEC-03-desktop-control-app.md) | macOS desktop **control** app (Flutter reuse; done — Phase 1 via PR #11, Phase 4 via PR #16) | SPEC-01 |
 | [SPEC-04](./2026-07-05-SPEC-04-multiplexer-adapter-layer.md) | Multiplexer adapter layer + herdr | — (foundation) |
 | [SPEC-05](./2026-07-05-SPEC-05-session-in-pane-spawning.md) | Session-in-pane spawning + lifecycle | SPEC-04 (+ manager/extension) |
+| [SPEC-06](./2026-07-07-SPEC-06-composer-adaptive-input.md) | Composer: adaptive input bar + send-on-content | — |
 
 ```
 SPEC-01 ─┬─> SPEC-02 (CLI clients)
