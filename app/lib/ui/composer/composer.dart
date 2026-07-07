@@ -18,10 +18,21 @@ class Composer extends StatefulWidget {
   const Composer({
     super.key,
     required this.onSend,
+    this.onCancel,
+    this.running = false,
     this.commands = const [],
     this.glass = false,
   });
   final void Function(String text) onSend;
+
+  /// Called when the user taps the cancel (stop) button while a turn is
+  /// running and the input is empty. Null disables the cancel affordance.
+  final VoidCallback? onCancel;
+
+  /// Whether the agent is mid-turn. Drives the cancel button: when true and
+  /// the field is empty, the trailing slot shows a stop button instead of
+  /// nothing.
+  final bool running;
   final List<SlashCmd> commands;
 
   /// When true, drop the opaque background/border — a [GlassSurface] parent
@@ -159,22 +170,32 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  /// Send button that fades in only when the field is non-empty. Fades rather
-  /// than scales so it stays laid out at full size (and thus hit-testable)
-  /// the moment text appears.
+  /// Trailing slot. Priority: non-empty text → green send arrow; else if a
+  /// turn is running → stop/cancel button; else nothing. Fades between states.
   Widget _buildSendSlot() {
+    final Widget child;
+    if (_hasText) {
+      child = IconButton.filled(
+        key: const ValueKey('send'),
+        icon: const Icon(Icons.arrow_upward),
+        tooltip: 'Send',
+        onPressed: _send,
+      );
+    } else if (widget.running && widget.onCancel != null) {
+      child = IconButton.filled(
+        key: const ValueKey('cancel'),
+        icon: const Icon(Icons.stop),
+        tooltip: 'Cancel turn',
+        onPressed: widget.onCancel,
+      );
+    } else {
+      child = const SizedBox.shrink(key: ValueKey('empty'));
+    }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
-      child: _hasText
-          ? IconButton.filled(
-              key: const ValueKey('send'),
-              icon: const Icon(Icons.arrow_upward),
-              tooltip: 'Send',
-              onPressed: _send,
-            )
-          : const SizedBox.shrink(key: ValueKey('empty')),
+      child: child,
     );
   }
 

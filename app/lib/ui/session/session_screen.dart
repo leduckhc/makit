@@ -251,11 +251,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    _glassCircle(
-                      icon: Icons.power_settings_new,
-                      tooltip: 'Quit session',
-                      onTap: _confirmQuit,
-                    ),
+                    _glassMenu(),
                     const SizedBox(width: 6),
                     const ConnectionChip(circular: true),
                   ],
@@ -280,6 +276,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     glass: true,
                     commands: ref.watch(commandsProvider(widget.sessionId)),
                     onSend: (text) => _handleSend(text),
+                    running: session?.status == SessionStatus.running,
+                    onCancel: _cancelTurn,
                   ),
                 ),
               ),
@@ -317,6 +315,85 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     );
   }
 
+  /// Glass overflow menu for the top bar — session-level actions (rename,
+  /// quit). Mirrors the home screen's project overflow menu.
+  Widget _glassMenu() {
+    return GlassSurface(
+      borderRadius: 23,
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: PopupMenuButton<String>(
+          tooltip: 'Session actions',
+          padding: EdgeInsets.zero,
+          icon: const Icon(Icons.more_vert, size: 20),
+          onSelected: (value) {
+            switch (value) {
+              case 'rename':
+                handleClientCommand(
+                  '/name',
+                  context: context,
+                  ref: ref,
+                  sessionId: widget.sessionId,
+                );
+              case 'model':
+                handleClientCommand(
+                  '/model',
+                  context: context,
+                  ref: ref,
+                  sessionId: widget.sessionId,
+                );
+              case 'thinking':
+                handleClientCommand(
+                  '/thinking',
+                  context: context,
+                  ref: ref,
+                  sessionId: widget.sessionId,
+                );
+              case 'quit':
+                _confirmQuit();
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: 'rename',
+              child: ListTile(
+                leading: Icon(Icons.drive_file_rename_outline),
+                title: Text('Rename session'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuItem(
+              value: 'model',
+              child: ListTile(
+                leading: Icon(Icons.smart_toy_outlined),
+                title: Text('Model'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuItem(
+              value: 'thinking',
+              child: ListTile(
+                leading: Icon(Icons.psychology_outlined),
+                title: Text('Thinking'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+            PopupMenuDivider(),
+            PopupMenuItem(
+              value: 'quit',
+              child: ListTile(
+                leading: Icon(Icons.power_settings_new),
+                title: Text('Quit session'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmQuit() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -348,6 +425,16 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
     }
+  }
+
+  /// Cancel the in-flight agent turn (reuses the /cancel client command).
+  void _cancelTurn() {
+    handleClientCommand(
+      '/cancel',
+      context: context,
+      ref: ref,
+      sessionId: widget.sessionId,
+    );
   }
 
   Future<void> _handleSend(String text) async {

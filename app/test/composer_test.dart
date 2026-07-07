@@ -106,4 +106,47 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.minLines, 1);
   });
+
+  testWidgets(
+    'cancel button shows only while running with empty input, and fires onCancel',
+    (tester) async {
+      var cancelled = 0;
+      await tester.pumpWidget(
+        wrap(
+          Composer(onSend: (_) {}, running: true, onCancel: () => cancelled++),
+        ),
+      );
+
+      // Running + empty → stop button (no send arrow).
+      expect(find.byIcon(Icons.stop), findsOneWidget);
+      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+
+      // Typing flips the trailing slot to the green send arrow.
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'hi');
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+      expect(find.byIcon(Icons.stop), findsNothing);
+
+      // Clearing the text (turn still running) flips back to cancel.
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.stop), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.stop));
+      await tester.pumpAndSettle();
+      expect(cancelled, 1);
+    },
+  );
+
+  testWidgets('no cancel button when idle even with empty input', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(Composer(onSend: (_) {}, running: false, onCancel: () {})),
+    );
+    expect(find.byIcon(Icons.stop), findsNothing);
+    expect(find.byIcon(Icons.arrow_upward), findsNothing);
+  });
 }
