@@ -41,16 +41,16 @@
   }
   /* Dark mode palette (terminal dark + green) */
   .mode-dark {
-    --bg: #0f172a;                 /* slate-950-ish */
-    --bg-grad-a: #0b1222;
-    --bg-grad-b: #111a30;
-    --surface: #1e293b;
-    --text: #f8fafc;
-    --muted: #94a3b8;              /* slate-400 */
-    --hairline: #334155;
-    --bubble-agent: #1e293b;
-    --glass-tint: 10,16,30;
-    --accent: #4ade80;             /* logo green */
+    --bg: #0a0a0b;                 /* near-black, neutral (zinc-950) */
+    --bg-grad-a: #0a0a0b;
+    --bg-grad-b: #0a0a0b;
+    --surface: #18181b;            /* zinc-900 — no blue */
+    --text: #fafafa;
+    --muted: #a1a1aa;              /* zinc-400 */
+    --hairline: #27272a;           /* zinc-800 */
+    --bubble-agent: #18181b;
+    --glass-tint: 12,12,14;        /* neutral dark tint (was blue 10,16,30) */
+    --accent: #4ade80;             /* logo green — the only hue */
     --accent-fg: #06210f;
   }
 
@@ -277,7 +277,7 @@
 
     <div class="ctl">
       <label>Tint opacity <span class="val" id="alphaVal">55%</span></label>
-      <input type="range" id="alpha" min="0" max="100" value="55" />
+      <input type="range" id="alpha" min="0" max="100" value="50" />
       <div class="hint">Milky if too high, invisible if too low. Skill: 15–30% for cards; pino composer sat higher for legibility.</div>
     </div>
     <div class="ctl">
@@ -295,7 +295,7 @@
     </div>
     <div class="ctl">
       <label>Shadow <span class="val" id="shadowVal">10%</span></label>
-      <input type="range" id="shadow" min="0" max="40" value="10" />
+      <input type="range" id="shadow" min="0" max="40" value="15" />
     </div>
 
     <div class="divider"></div>
@@ -454,7 +454,7 @@
   const gallery = $('gallery');
   const root = document.documentElement;
 
-  const DEFAULTS = { accent:'#4ade80', alpha:55, blur:18, sat:180, border:35, shadow:10, mode:'dark', comp:'compact' };
+  const DEFAULTS = { accent:'#4ade80', alpha:50, blur:18, sat:180, border:35, shadow:15, mode:'dark', comp:'compact' };
   let state = {...DEFAULTS};
 
   function apply() {
