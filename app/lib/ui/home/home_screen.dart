@@ -191,9 +191,33 @@ class _ProjectSection extends ConsumerWidget {
                   icon: const Icon(Icons.more_vert, size: 20),
                   tooltip: 'Project actions',
                   onSelected: (value) {
-                    if (value == 'remove') _confirmRemove(context, ref);
+                    switch (value) {
+                      case 'new':
+                        _spawnHere(context, ref);
+                      case 'attach':
+                        _attachPast(context, ref);
+                      case 'remove':
+                        _confirmRemove(context, ref);
+                    }
                   },
                   itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'new',
+                      child: ListTile(
+                        leading: Icon(Icons.add),
+                        title: Text('New session'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'attach',
+                      child: ListTile(
+                        leading: Icon(Icons.history),
+                        title: Text('Resume session'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                    PopupMenuDivider(),
                     PopupMenuItem(
                       value: 'remove',
                       child: ListTile(
@@ -209,7 +233,6 @@ class _ProjectSection extends ConsumerWidget {
           ),
         ),
         ...sessions.map((s) => _SessionTile(session: s)),
-        _AttachPastButton(project: project),
         if (sessions.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -257,29 +280,23 @@ class _ProjectSection extends ConsumerWidget {
       );
     }
   }
-}
 
-/// A subtle affordance to list & resume a project's prior on-disk pi sessions.
-class _AttachPastButton extends ConsumerWidget {
-  const _AttachPastButton({required this.project});
-  final Project project;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 20, 4),
-        child: TextButton.icon(
-          icon: const Icon(Icons.history, size: 18),
-          label: const Text('Attach past session…'),
-          onPressed: () => _attach(context, ref),
-        ),
-      ),
-    );
+  Future<void> _spawnHere(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final newId = await ref
+          .read(storeControllerProvider.notifier)
+          .spawnSession(project.id);
+      if (!context.mounted) return;
+      context.go('/session/$newId');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not spawn session: $e')),
+      );
+    }
   }
 
-  Future<void> _attach(BuildContext context, WidgetRef ref) async {
+  Future<void> _attachPast(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final store = ref.read(storeControllerProvider.notifier);
     List<PiSessionMeta> metas;
@@ -302,9 +319,7 @@ class _AttachPastButton extends ConsumerWidget {
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SheetHeader(
-                    title: 'Resume a past session in ${project.name}',
-                  ),
+                  SheetHeader(title: 'Resume session in ${project.name}'),
                   const Padding(
                     padding: EdgeInsets.fromLTRB(24, 8, 24, 24),
                     child: Text(
@@ -317,9 +332,7 @@ class _AttachPastButton extends ConsumerWidget {
             : ListView(
                 shrinkWrap: true,
                 children: [
-                  SheetHeader(
-                    title: 'Resume a past session in ${project.name}',
-                  ),
+                  SheetHeader(title: 'Resume session in ${project.name}'),
                   for (final m in metas)
                     ListTile(
                       leading: Icon(

@@ -63,4 +63,37 @@ void main() {
     expect(find.text('quiet work'), findsOneWidget);
     expect(find.text('idle'), findsNothing);
   });
+
+  testWidgets('project menu holds New session, Resume session, Remove', (
+    tester,
+  ) async {
+    final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
+    await tester.pumpWidget(_host(projects: [project], sessions: const []));
+    await tester.pump();
+
+    // Actions live behind the overflow menu, not as always-visible chrome.
+    expect(find.text('Resume session'), findsNothing);
+    expect(find.text('Remove from pino'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New session'), findsOneWidget);
+    expect(find.text('Resume session'), findsOneWidget);
+    expect(find.text('Remove from pino'), findsOneWidget);
+  });
+
+  testWidgets('old standalone "Attach past session" button is gone', (
+    tester,
+  ) async {
+    final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
+    await tester.pumpWidget(_host(projects: [project], sessions: const []));
+    await tester.pump();
+
+    // The retired label must not appear anywhere (menu closed or open).
+    expect(find.text('Attach past session…'), findsNothing);
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    expect(find.text('Attach past session…'), findsNothing);
+  });
 }
