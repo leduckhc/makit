@@ -22,11 +22,15 @@ ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final bg = dark ? _bgDark : _bgLight;
   final surface = dark ? _surfaceDark : _surfaceLight;
+  // Accent is per-mode: bright logo green on dark (≈9:1), a darker green on
+  // light so accent-as-text/icon clears WCAG 4.5:1 on #FAFAFA (#15803D = 4.8:1).
+  final accent = dark ? kPinoAccent : const Color(0xFF15803D);
+  final onAccent = dark ? _onAccent : Colors.white;
   final scheme =
       ColorScheme.fromSeed(seedColor: kPinoAccent, brightness: brightness)
           .copyWith(
-            primary: kPinoAccent,
-            onPrimary: _onAccent,
+            primary: accent,
+            onPrimary: onAccent,
             // Neutral surfaces (override the seed's green-tinted greys).
             surface: bg,
             onSurface: dark ? _textDark : _textLight,

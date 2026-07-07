@@ -18,8 +18,9 @@ for code that needs them.
 
 | Token | Role | Light — OKLCH · hex | Dark — OKLCH · hex |
 |-------|------|---------------------|--------------------|
-| `accent` | brand / primary (logo, send, active) | `0.62 0.17 150` · `#03A14A`¹ | `0.80 0.19 150` · `#49DE78` |
-| `onAccent` | content on accent | `#FFFFFF` (or dark green) | `#0B2612` |
+| `primary` | accent-as-foreground (text, icons, `TextButton`, links) | **`#15803D`** (green-700, 4.8:1 on bg) | `#4ADE80` (≈9:1 on bg) |
+| `brand` | logo mark, status dot, filled-button fill accent | `#4ADE80` | `#4ADE80` |
+| `onPrimary` | content on primary fill | `#FFFFFF` (5:1 on `#15803D`) | `#06210F` |
 | `bg` | app background | `0.985 0 0` · `#FAFAFA` | `0.205 0 0` · `#171717` |
 | `surface` | cards, sheets, raised | `1 0 0` · `#FFFFFF` | `0.26 0 0` · `#242424` |
 | `bubbleUser` | user message bubble (grey, **not** accent) | `0.94 0 0` · `#EBEBEB` | `0.30 0 0` · `#2E2E2E` |
@@ -27,9 +28,10 @@ for code that needs them.
 | `muted` | secondary text, disabled icons | `0.50 0 0` · `#636363` | `0.70 0 0` · `#9E9E9E` |
 | `hairline` | borders, dividers | `0.90 0 0` · `#DEDEDE` | `0.32 0 0` · `#333333` |
 
-¹ **Shipped accent = the logo green `#4ADE80`** in both modes (approved look). The
-`#03A14A` light value is the stricter-contrast alternative if accent-as-text/
-border ever needs 4.5:1 on white.
+**Per-mode accent (WCAG):** bright logo green `#4ADE80` fails 4.5:1 as text/icon on
+the light `#FAFAFA` bg (~1.7:1), so light mode uses a **darker green `#15803D`**
+(4.8:1) for `ColorScheme.primary`; dark mode keeps `#4ADE80` (~9:1). The bright
+`#4ADE80` remains the brand mark / status-dot colour in both modes (decorative).
 
 ### Rules
 - **Neutrals must stay `C=0`.** Never reintroduce slate/blue-tinted greys.
