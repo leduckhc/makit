@@ -113,8 +113,7 @@
     gap: 44px;
     align-items: flex-start;
     justify-content: center;
-    background:
-      radial-gradient(1200px 600px at 30% 0%, #1b2440, #0b0f19 60%);
+    background: #0b0f19;
   }
 
   /* Glass helper */
@@ -152,9 +151,7 @@
   .screen:before {
     content: "";
     position: absolute; inset: 0;
-    background:
-      radial-gradient(600px 300px at 80% 10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 70%),
-      linear-gradient(160deg, var(--bg-grad-a), var(--bg-grad-b));
+    background: var(--bg);
     z-index: 0;
   }
 
@@ -327,19 +324,41 @@
         </div>
 
         <!-- transcript -->
-        <div class="transcript">
-          <div class="msg-user">can you refactor the composer to hide the send button when empty?</div>
+          <div class="msg-agent">Morning! Ready when you are. What are we building?</div>
+          <div class="msg-user">let's finish the composer — hide the send button until there's text</div>
+          <div class="msg-agent">Got it. I'll gate it on <code>_hasText</code> and fade it in with an <code>AnimatedSwitcher</code>.</div>
           <div class="thinking">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
-            Pondering the widget tree…
+            Reading composer.dart…
           </div>
-          <div class="msg-agent">Sure — I'll gate the send button on <code>_hasText</code> and fade it with an <code>AnimatedSwitcher</code>. Here's the diff:</div>
+          <div class="tool-card">
+            <div class="head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg> <b>read</b> composer.dart</div>
+            <div class="body">class _ComposerState extends State&lt;Composer&gt; {
+  final _ctrl = TextEditingController();
+  bool _hasText = false;</div>
+          </div>
+          <div class="msg-agent">Here's the change — the send button now depends on whether the field is empty:</div>
           <div class="tool-card">
             <div class="head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/></svg> <b>edit</b> composer.dart</div>
             <div class="body"><span class="del">- IconButton.filled(onPressed: _send)</span>
-<span class="add">+ if (_hasText) IconButton.filled(...)</span></div>
+<span class="add">+ AnimatedSwitcher(</span>
+<span class="add">+   child: _hasText ? IconButton.filled(...) : SizedBox(),</span>
+<span class="add">+ )</span></div>
           </div>
-          <div class="msg-agent">Done. The send button now fades in only when there's text. ✓</div>
+          <div class="msg-user">nice. also expand it to 3 lines when I tap in</div>
+          <div class="msg-agent">Done — it grows to 3 lines on focus and collapses back on blur, keeping the draft. Wrote widget tests for both.</div>
+          <div class="thinking">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+            Running flutter test…
+          </div>
+          <div class="tool-card">
+            <div class="head"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> <b>bash</b> flutter test</div>
+            <div class="body">00:03 +5: All tests passed! <span class="add">✓</span></div>
+          </div>
+          <div class="msg-user">ship it 🚀</div>
+          <div class="msg-agent">Committed <code>feat(composer): adaptive input</code> and pushed to <code>main</code>. Want me to build + install to your phone?</div>
+          <div class="msg-user">yes please</div>
+          <div class="msg-agent">Building release… this scrolls under the glass so you can feel the blur. Keep going ↑</div>
         </div>
 
         <!-- composer glass -->
