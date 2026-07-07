@@ -53,14 +53,20 @@ class GlassSurface extends ConsumerWidget {
 
     final glass = fake
         ? FakeGlass(shape: shape, settings: settings, child: child)
-        : LiquidGlass.withOwnLayer(shape: shape, settings: settings, child: child);
+        : LiquidGlass.withOwnLayer(
+            shape: shape,
+            settings: settings,
+            child: child,
+          );
 
     // Edge highlight (light border) + soft drop shadow for depth.
     return DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(
-          color: dark ? Colors.white.withValues(alpha: 0.14) : Colors.white.withValues(alpha: 0.35),
+          color: dark
+              ? Colors.white.withValues(alpha: 0.14)
+              : Colors.white.withValues(alpha: 0.35),
           width: 1,
         ),
         boxShadow: [

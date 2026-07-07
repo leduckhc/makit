@@ -27,22 +27,24 @@ ThemeData _build(Brightness brightness) {
   final accent = dark ? kPinoAccent : const Color(0xFF15803D);
   final onAccent = dark ? _onAccent : Colors.white;
   final scheme =
-      ColorScheme.fromSeed(seedColor: kPinoAccent, brightness: brightness)
-          .copyWith(
-            primary: accent,
-            onPrimary: onAccent,
-            // Neutral surfaces (override the seed's green-tinted greys).
-            surface: bg,
-            onSurface: dark ? _textDark : _textLight,
-            onSurfaceVariant: dark ? _mutedDark : _mutedLight,
-            outline: dark ? _mutedDark : _mutedLight,
-            outlineVariant: dark ? _hairlineDark : _hairlineLight,
-            surfaceContainerLowest: bg,
-            surfaceContainerLow: surface,
-            surfaceContainer: surface,
-            surfaceContainerHigh: surface,
-            surfaceContainerHighest: surface,
-          );
+      ColorScheme.fromSeed(
+        seedColor: kPinoAccent,
+        brightness: brightness,
+      ).copyWith(
+        primary: accent,
+        onPrimary: onAccent,
+        // Neutral surfaces (override the seed's green-tinted greys).
+        surface: bg,
+        onSurface: dark ? _textDark : _textLight,
+        onSurfaceVariant: dark ? _mutedDark : _mutedLight,
+        outline: dark ? _mutedDark : _mutedLight,
+        outlineVariant: dark ? _hairlineDark : _hairlineLight,
+        surfaceContainerLowest: bg,
+        surfaceContainerLow: surface,
+        surfaceContainer: surface,
+        surfaceContainerHigh: surface,
+        surfaceContainerHighest: surface,
+      );
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,

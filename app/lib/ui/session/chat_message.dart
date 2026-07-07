@@ -7,7 +7,6 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
-
 String _hhmm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
   return '${d.hour.toString().padLeft(2, '0')}:'
@@ -68,10 +67,7 @@ class ChatBubble extends StatelessWidget {
                   bottomRight: Radius.circular(4),
                 ),
               ),
-              child: SelectableText(
-                text,
-                style: TextStyle(color: onBubble),
-              ),
+              child: SelectableText(text, style: TextStyle(color: onBubble)),
             ),
             Padding(
               padding: const EdgeInsets.only(right: 12, bottom: 4),
