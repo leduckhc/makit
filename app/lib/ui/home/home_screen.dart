@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -8,7 +9,7 @@ import '../../app/theme.dart' show kPinoAccent;
 import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
-import '../widgets/sheet_header.dart';
+import '../widgets/searchable_list_sheet.dart';
 
 /// Brand green accent used for running/active glass affordances (shared token).
 const _kBrandBlue = kPinoAccent;
@@ -39,20 +40,13 @@ class HomeScreen extends ConsumerWidget {
       ),
       body: projects.isEmpty
           ? _EmptyState(onAdd: () => showFolderBrowser(context))
-          : Column(
-              children: [
-                _GlobalRunningStrip(sessions: sessions.sessions),
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: projects.length,
-                    itemBuilder: (context, i) => _ProjectSection(
-                      project: projects[i],
-                      sessions: sessions.forProject(projects[i].id),
-                    ),
-                  ),
-                ),
-              ],
+          : ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: projects.length,
+              itemBuilder: (context, i) => _ProjectSection(
+                project: projects[i],
+                sessions: sessions.forProject(projects[i].id),
+              ),
             ),
     );
   }
@@ -253,71 +247,56 @@ class _ProjectSection extends ConsumerWidget {
     }
     if (!context.mounted) return;
 
-    final chosen = await showModalBottomSheet<PiSessionMeta>(
+    final chosen = await showSearchableListSheet<PiSessionMeta>(
       context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: metas.isEmpty
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SheetHeader(title: 'Resume session in ${project.name}'),
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(24, 8, 24, 24),
-                    child: Text(
-                      'No past sessions.',
-                      textAlign: TextAlign.center,
-                    ),
+      title: 'Resume session in ${project.name}',
+      items: metas,
+      emptyState: const Padding(
+        padding: EdgeInsets.fromLTRB(24, 8, 24, 24),
+        child: Text('No past sessions.', textAlign: TextAlign.center),
+      ),
+      matches: (m, q) {
+        final ql = q.toLowerCase();
+        return m.name.toLowerCase().contains(ql) ||
+            m.preview.toLowerCase().contains(ql);
+      },
+      tileBuilder: (ctx, m) => ListTile(
+        leading: Icon(
+          m.attached ? Icons.bolt : Icons.replay,
+          color: m.attached ? Colors.green : null,
+        ),
+        title: Text(
+          m.name.isEmpty ? '(untitled)' : m.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${m.messageCount} msgs · ${_ago(m.lastActivityAt)}'
+          '${m.preview.isEmpty ? '' : ' · ${m.preview}'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: m.attached
+            ? Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'live',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
+                ),
               )
-            : ListView(
-                shrinkWrap: true,
-                children: [
-                  SheetHeader(title: 'Resume session in ${project.name}'),
-                  for (final m in metas)
-                    ListTile(
-                      leading: Icon(
-                        m.attached ? Icons.bolt : Icons.replay,
-                        color: m.attached ? Colors.green : null,
-                      ),
-                      title: Text(
-                        m.name.isEmpty ? '(untitled)' : m.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        '${m.messageCount} msgs · ${_ago(m.lastActivityAt)}'
-                        '${m.preview.isEmpty ? '' : ' · ${m.preview}'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: m.attached
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: const Text(
-                                'live',
-                                style: TextStyle(
-                                  color: Colors.green,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            )
-                          : null,
-                      onTap: () => Navigator.pop(ctx, m),
-                    ),
-                  const SizedBox(height: 8),
-                ],
-              ),
+            : null,
+        onTap: () => Navigator.of(ctx).pop(m),
       ),
     );
     if (chosen == null || !context.mounted) return;
@@ -379,11 +358,7 @@ class _SessionTile extends ConsumerWidget {
       onDismissed: (_) => _quit(context, ref),
       child: ListTile(
         onTap: () => context.go('/session/${session.id}'),
-        leading: _AvatarWithLiveness(
-          label: session.agent.substring(0, 1).toUpperCase(),
-          alive: session.status != SessionStatus.exited,
-          running: session.status == SessionStatus.running,
-        ),
+        leading: _AgentAvatar(agent: session.agent),
         title: Row(
           children: [
             Expanded(
@@ -438,47 +413,37 @@ class _SessionTile extends ConsumerWidget {
   }
 }
 
-/// Agent avatar with a liveness dot: green = alive (process up), grey = exited.
-class _AvatarWithLiveness extends StatelessWidget {
-  const _AvatarWithLiveness({
-    required this.label,
-    required this.alive,
-    required this.running,
-  });
-  final String label;
-  final bool alive;
-  final bool running;
+/// Agent avatar: shows the agent's logo for known agents, else the initial.
+class _AgentAvatar extends StatelessWidget {
+  const _AgentAvatar({required this.agent});
+  final String agent;
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final dot = !alive
-        ? Colors.grey
-        : (running ? Colors.green : Colors.green.shade600);
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        CircleAvatar(
-          backgroundColor: cs.secondaryContainer,
-          child: Text(label),
-        ),
-        Positioned(
-          right: -1,
-          bottom: -1,
-          child: Container(
-            width: 14,
-            height: 14,
-            decoration: BoxDecoration(
-              color: dot,
-              shape: BoxShape.circle,
-              border: Border.all(color: cs.surface, width: 2),
-            ),
-          ),
-        ),
-      ],
+    final asset = _agentLogos[agent.toLowerCase()];
+    if (asset == null) {
+      return CircleAvatar(
+        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+        child: Text(agent.substring(0, 1).toUpperCase()),
+      );
+    }
+    return ClipOval(
+      child: SvgPicture.asset(
+        asset,
+        width: 40,
+        height: 40,
+        fit: BoxFit.cover,
+      ),
     );
   }
 }
+
+/// Maps an agent label to its bundled logo SVG in `assets/agents/`.
+const _agentLogos = <String, String>{
+  'pi': 'assets/agents/pi.svg',
+  'codex': 'assets/agents/codex.svg',
+  'claude': 'assets/agents/claude.svg',
+};
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.status});
@@ -576,58 +541,5 @@ class _WorkingBadgeState extends State<_WorkingBadge>
         ],
       ),
     );
-  }
-}
-
-class _GlobalRunningStrip extends StatelessWidget {
-  const _GlobalRunningStrip({required this.sessions});
-  final List<Session> sessions;
-
-  @override
-  Widget build(BuildContext context) {
-    final working = sessions
-        .where(
-          (s) =>
-              s.status == SessionStatus.running ||
-              s.status == SessionStatus.awaitingInput ||
-              s.status == SessionStatus.awaitingApproval,
-        )
-        .toList();
-    if (working.isEmpty) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: GlassSurface(
-        borderRadius: 14,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: [
-              const Icon(Icons.bolt, size: 16, color: _kBrandBlue),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '${working.length} running · ${_byAgent(working)}',
-                  style: const TextStyle(
-                    color: _kBrandBlue,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _byAgent(List<Session> ws) {
-    final counts = <String, int>{};
-    for (final s in ws) {
-      counts[s.agent] = (counts[s.agent] ?? 0) + 1;
-    }
-    final parts = counts.entries.map((e) => '${e.value} ${e.key}').toList();
-    return parts.join(', ');
   }
 }

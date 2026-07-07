@@ -31,6 +31,7 @@ dependencies:
   flutter_markdown_plus: ^1.0.7  # community-maintained fork of the discontinued flutter_markdown
   flutter_highlight: ^0.7.0  # publisher: pd4d10 — pure-Dart code syntax highlight
   markdown: ^7.2.1           # publisher: dart.dev — md.Element for the code builder
+  flutter_svg: ^2.0.0           # publisher: flutter.dev — renders agent logo SVGs in the home
   liquid_glass_renderer: 0.2.0-dev.4  # publisher: whynotmake.it — iOS-26 glass.
   # Pinned exactly: experimental `-dev` prerelease, expect breaking API churn.
 
@@ -68,4 +69,5 @@ flutter:
 
   assets:
     - assets/
+    - assets/agents/
     - assets/tray/

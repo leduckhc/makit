@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:pino/store/models.dart';
 import 'package:pino/store/store.dart';
@@ -29,7 +30,9 @@ void main() {
     expect(find.text('Add project'), findsOneWidget);
   });
 
-  testWidgets('global running strip renders as glass', (tester) async {
+  testWidgets('running session surfaces a status chip, no global strip', (
+    tester,
+  ) async {
     final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
     final session = Session(
       id: 's1',
@@ -42,8 +45,49 @@ void main() {
     await tester.pumpWidget(_host(projects: [project], sessions: [session]));
     await tester.pump();
 
-    expect(find.byType(GlassSurface), findsWidgets);
-    expect(find.textContaining('running'), findsWidgets);
+    // The retired "N running · <agents>" pill is gone.
+    expect(find.textContaining('running · '), findsNothing);
+    // Per-tile status chip still surfaces the running state.
+    expect(find.text('running'), findsOneWidget);
+  });
+
+  testWidgets('known agent renders its logo, not a letter avatar', (
+    tester,
+  ) async {
+    final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
+    final session = Session(
+      id: 's1',
+      projectId: 'p1',
+      agent: 'pi',
+      title: 'work',
+      status: SessionStatus.idle,
+      policy: ApprovalPolicy.askOnRisky,
+    );
+    await tester.pumpWidget(_host(projects: [project], sessions: [session]));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SvgPicture), findsOneWidget);
+    expect(find.byType(CircleAvatar), findsNothing);
+  });
+
+  testWidgets('unknown agent falls back to the initial letter', (
+    tester,
+  ) async {
+    final project = Project(id: 'p1', name: 'demo', path: '/tmp/demo');
+    final session = Session(
+      id: 's1',
+      projectId: 'p1',
+      agent: 'grok',
+      title: 'work',
+      status: SessionStatus.idle,
+      policy: ApprovalPolicy.askOnRisky,
+    );
+    await tester.pumpWidget(_host(projects: [project], sessions: [session]));
+    await tester.pump();
+
+    expect(find.byType(CircleAvatar), findsOneWidget);
+    expect(find.text('G'), findsOneWidget);
+    expect(find.byType(SvgPicture), findsNothing);
   });
 
   testWidgets('idle sessions render no status pill', (tester) async {
