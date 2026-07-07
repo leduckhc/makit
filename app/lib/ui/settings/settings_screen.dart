@@ -31,7 +31,7 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           const _SectionHeader('Connection'),
           ListTile(
-            leading: Icon(Icons.circle, size: 14, color: statusColor),
+            leading: _leadingIcon(Icons.circle, size: 14, color: statusColor),
             title: const Text('Status'),
             subtitle: Text(
               conn.lastError == null
@@ -40,7 +40,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
-            leading: const Icon(Icons.dns_outlined),
+            leading: _leadingIcon(Icons.dns_outlined),
             title: const Text('Server'),
             subtitle: Text(
               conn.useFake
@@ -53,7 +53,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           if (server != null)
             ListTile(
-              leading: const Icon(Icons.fingerprint),
+              leading: _leadingIcon(Icons.fingerprint),
               title: const Text('Fingerprint'),
               subtitle: Text(
                 '${server.fingerprint.substring(0, 24)}…',
@@ -74,7 +74,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           if (server != null && !conn.useFake)
             ListTile(
-              leading: const Icon(Icons.refresh),
+              leading: _leadingIcon(Icons.refresh),
               title: const Text('Reconnect'),
               subtitle: const Text('Re-establish the connection'),
               onTap: () async {
@@ -91,7 +91,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('Workspace'),
           ListTile(
-            leading: const Icon(Icons.folder_outlined),
+            leading: _leadingIcon(Icons.folder_outlined),
             title: const Text('Projects & sessions'),
             subtitle: Text(
               '${projects.length} project${projects.length == 1 ? '' : 's'} · '
@@ -103,30 +103,30 @@ class SettingsScreen extends ConsumerWidget {
 
           const Divider(),
           const _SectionHeader('Coming soon'),
-          const ListTile(
+          ListTile(
             enabled: false,
-            leading: Icon(Icons.notifications_outlined),
-            title: Text('Notifications'),
-            subtitle: Text('Awaiting input · Approval · Long task · Errors'),
+            leading: _leadingIcon(Icons.notifications_outlined),
+            title: const Text('Notifications'),
+            subtitle: const Text('Awaiting input · Approval · Long task · Errors'),
           ),
-          const ListTile(
+          ListTile(
             enabled: false,
-            leading: Icon(Icons.security_outlined),
-            title: Text('Default approval policy'),
-            subtitle: Text('Ask on risky'),
+            leading: _leadingIcon(Icons.security_outlined),
+            title: const Text('Default approval policy'),
+            subtitle: const Text('Ask on risky'),
           ),
 
           const Divider(),
           const _SectionHeader('About'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('pino'),
-            subtitle: Text('Mobile client · Protocol v$protocolVersion'),
+          ListTile(
+            leading: _leadingIcon(Icons.info_outline),
+            title: const Text('pino'),
+            subtitle: const Text('Mobile client · Protocol v$protocolVersion'),
           ),
 
           const Divider(),
           ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
+            leading: _leadingIcon(Icons.logout, color: Colors.red),
             title: const Text(
               'Unpair this device',
               style: TextStyle(color: Colors.red),
@@ -152,6 +152,18 @@ class SettingsScreen extends ConsumerWidget {
     };
   }
 }
+
+/// Leading icon for a settings [ListTile].
+///
+/// ListTile left-aligns its `leading` widget and sizes the leading column to
+/// the icon's own width, so a small icon (e.g. the 14px Status dot) ends up
+/// shifted left of the 24px icons. Wrapping in a fixed 24px [Center]ed box
+/// keeps every row's icon centered in the same column.
+Widget _leadingIcon(IconData icon, {double size = 24.0, Color? color}) =>
+    SizedBox(
+      width: 24,
+      child: Center(child: Icon(icon, size: size, color: color)),
+    );
 
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.label);
