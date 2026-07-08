@@ -33,6 +33,10 @@ class FakeTransport implements Transport {
   final _frames = StreamController<Envelope>.broadcast();
   final _state = StreamController<WsState>.broadcast();
 
+  /// Push an arbitrary transport state, mirroring the real socket dropping
+  /// and re-establishing (used to exercise reconnect re-registration).
+  void emit(WsState s) => _state.add(s);
+
   @override
   Future<void> connect(
     String url, {
@@ -410,6 +414,42 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(pushRegs(transports.single), hasLength(1));
+
+      controller.dispose();
+    });
+
+    test('re-registers the same token on every reconnect', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+        pushRegistrar: FakePushRegistrar(token: 'tok-1'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      final t = transports.single;
+      expect(pushRegs(t), hasLength(1), reason: 'registers on first connect');
+
+      // The socket drops and the same transport reconnects. Per spec §B the
+      // token must be re-sent on every successful reconnect, even unchanged.
+      t.emit(WsState.reconnecting);
+      t.emit(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        pushRegs(t),
+        hasLength(2),
+        reason: 'each successful reconnect must re-send push.register',
+      );
+      expect(pushRegs(t).last.body['token'], 'tok-1');
 
       controller.dispose();
     });

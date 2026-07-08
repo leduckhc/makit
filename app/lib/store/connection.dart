@@ -498,6 +498,10 @@ class ConnectionController extends StateNotifier<PinoConnState> {
 
   @override
   void dispose() {
+    // Detach the app-lifetime registrar's callback so a late native
+    // `didRegister` can't call registerPushToken on this disposed notifier
+    // (which would throw when it reads `state`).
+    _pushRegistrar.onToken = null;
     _wsSub?.cancel();
     _wsStateSub?.cancel();
     _ws?.close();
