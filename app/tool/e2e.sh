@@ -33,8 +33,16 @@ SERVER_DIR="$ROOT/server"
 APP_DIR="$ROOT/app"
 PORT="9787"
 BEARER="e2e-token"
-FLUTTER_BIN="/Users/le/Work/Vibe/flutter/bin/flutter"
-SIM_NAME="iPhone 17"
+# Overridable for CI / other machines. FLUTTER_BIN falls back to PATH; SIM_NAME
+# picks the simulator model. In real mode the e2e server spawns the pi binary
+# resolved from PINO_PI_BIN (default: `pi` on PATH), inherited via the env.
+FLUTTER_BIN="${PINO_FLUTTER_BIN:-$(command -v flutter || true)}"
+SIM_NAME="${PINO_SIM_NAME:-iPhone 17}"
+if [[ -z "$FLUTTER_BIN" ]]; then
+  echo "flutter not found — set PINO_FLUTTER_BIN or add flutter to PATH" >&2
+  exit 1
+fi
+FLUTTER_BIN_DIR="$(cd "$(dirname "$FLUTTER_BIN")" && pwd)"
 SERVER_LOG="$(mktemp -t pino-e2e-server.XXXXXX.log)"
 SERVER_PID=""
 
@@ -139,7 +147,7 @@ FP="$(node -e 'const fs=require("fs"); const j=JSON.parse(fs.readFileSync(0,"utf
 
 cd "$APP_DIR"
 set +e
-PATH="/Users/le/Work/Vibe/flutter/bin:$PATH" "$FLUTTER_BIN" test integration_test/ \
+PATH="$FLUTTER_BIN_DIR:$PATH" "$FLUTTER_BIN" test integration_test/ \
   -d "$SIM_ID" \
   --dart-define=PINO_TEST_HOST=127.0.0.1 \
   --dart-define=PINO_TEST_PORT="$PORT" \

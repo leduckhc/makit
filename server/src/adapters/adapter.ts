@@ -32,6 +32,11 @@ export interface SpawnOpts {
    * launched with `--session <path>` instead of a fresh `--session-id`.
    */
   resumeSessionPath?: string;
+  /**
+   * Force a specific model (`--model <provider>/<id>`). When unset, pi uses its
+   * own configured default. Used by the real-pi e2e to select the fake model.
+   */
+  model?: string;
 }
 
 export interface UserInput {

@@ -3,13 +3,22 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SessionManager } from "../src/manager.js";
 import { startWsServer } from "../src/server.js";
 import { startBridge } from "../src/bridge.js";
 import { loadOrCreateCert } from "../src/pairing/cert.js";
 import { DeviceRegistry, type PairedDevice } from "../src/pairing/registry.js";
 import { StubAdapter } from "../src/adapters/stub.js";
+import { startFakeModelServer, type FakeModelHandle } from "./fake-model/server.js";
 import type { UIResponse } from "../src/uicall.js";
+
+/** Absolute path to the fake-model provider extension pi loads via `-e`. */
+const FAKE_PROVIDER_EXT = fileURLToPath(
+  new URL("./fake-model/provider-extension.ts", import.meta.url),
+);
+/** Provider/model id registered by FAKE_PROVIDER_EXT. */
+const FAKE_MODEL = "pino-fake/fake-1";
 
 interface E2EArgs {
   port: number;
@@ -88,9 +97,19 @@ async function main(): Promise<void> {
     return env as unknown as UIResponse;
   };
 
+  // In real mode we run the genuine `pi` binary but swap its LLM for a local
+  // deterministic fake-model server. pi reaches it via the pino-fake provider
+  // registered by FAKE_PROVIDER_EXT, which reads PINO_FAKE_MODEL_URL.
+  let fakeModel: FakeModelHandle | undefined;
+  if (args.mode === "real") {
+    fakeModel = await startFakeModelServer();
+    process.env.PINO_FAKE_MODEL_URL = fakeModel.url;
+  }
+
   const manager = new SessionManager({
     projects: [args.project],
     adapterFactory: args.mode === "stub" ? () => new StubAdapter({ askUser }) : undefined,
+    defaultModel: args.mode === "real" ? FAKE_MODEL : undefined,
   });
 
   wsHandle = startWsServer({
@@ -115,7 +134,9 @@ async function main(): Promise<void> {
   manager.setBridge({
     url: bridge.url,
     token: bridge.token,
-    extensionPaths: [], // E2E tests don't load real extensions
+    // Real mode loads the fake-model provider so pi's --model pino-fake/fake-1
+    // resolves. Stub mode never spawns pi, so it needs no extensions.
+    extensionPaths: args.mode === "real" ? [FAKE_PROVIDER_EXT] : [],
   });
 
   await manager.ensureDefaultSessions();
@@ -136,6 +157,7 @@ async function main(): Promise<void> {
   }
 
   process.on("SIGTERM", () => {
+    void fakeModel?.close();
     wsHandle.wss.close();
     wsHandle.https.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1000).unref();

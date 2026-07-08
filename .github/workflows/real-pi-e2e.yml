@@ -1,0 +1,242 @@
+name: Real-pi E2E (fake model)
+
+# Runs the genuine `pi` binary against a local deterministic fake-model server
+# (server/test/fake-model). This isolates the pi integration contract — RPC
+# framing, provider selection, streaming — from the app. Three jobs:
+#
+#   real-pi-pinned       — pinned pi version, headless smoke on Linux, blocking on PRs.
+#                          Failure = our bug.
+#   real-pi-app          — real pi + Flutter e2e on iOS simulator (macos-15).
+#                          Full stack proof. Pinned pi, PRs only (slower/costlier).
+#   real-pi-canary       — pi@latest on a schedule. Failure = a pi upgrade broke the
+#                          integration; opens an issue so we can bump the pin.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'server/**'
+      - 'app/**'
+      - '.github/workflows/real-pi-e2e.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'server/**'
+      - 'app/**'
+      - '.github/workflows/real-pi-e2e.yml'
+  schedule:
+    # Weekly canary against pi@latest — Mondays 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+env:
+  # Bump deliberately when the canary goes red. Keep in sync with the pi
+  # version the team runs locally.
+  PI_PINNED_VERSION: '0.80.3'
+
+jobs:
+  # Blocking gate on PRs/pushes: reproducible headless run against the pinned pi.
+  # Linux, no simulator needed, fast.
+  real-pi-pinned:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('server/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies (lockfile-locked)
+        run: pnpm secure:install
+
+      - name: Install pinned pi
+        run: npm install -g "@earendil-works/pi-coding-agent@${PI_PINNED_VERSION}"
+
+      - name: Record pi version
+        run: pi --version
+
+      - name: Real-pi smoke (fake model)
+        run: pnpm e2e:verify-pi
+
+  # Full-stack on macOS: real pi + real Flutter e2e via `tool/e2e.sh --mode real`
+  # on an iOS simulator. Proves the complete pino↔pi integration on the target.
+  # Pinned pi, PRs only (slower, costlier).
+  real-pi-app:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('server/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache Flutter packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Install server dependencies (lockfile-locked)
+        working-directory: server
+        run: pnpm secure:install
+
+      - name: Install app dependencies (lockfile-locked)
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+
+      - name: Install pinned pi
+        run: npm install -g "@earendil-works/pi-coding-agent@${PI_PINNED_VERSION}"
+
+      - name: Record pi version
+        run: pi --version
+
+      - name: Pick an available iOS simulator
+        run: |
+          # tool/e2e.sh matches PINO_SIM_NAME as a substring; pick the first
+          # available iPhone the runner's Xcode ships (model names vary by
+          # Xcode version, so don't hard-code "iPhone 17").
+          NAME=$(xcrun simctl list devices available \
+            | grep -E '^[[:space:]]+iPhone' \
+            | head -1 | sed -E 's/^[[:space:]]+//; s/ \(.*//')
+          if [[ -z "$NAME" ]]; then
+            echo "no iPhone simulator available on this runner" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "PINO_SIM_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Flutter full-stack e2e (real pi)
+        run: app/tool/e2e.sh --mode real
+
+  # Canary: track pi@latest so an upstream release that breaks the integration
+  # surfaces here (not silently on the next manual bump). Never blocks PRs.
+  real-pi-canary:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      issues: write
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Install dependencies (lockfile-locked)
+        run: pnpm secure:install
+
+      - name: Install pi@latest
+        run: npm install -g "@earendil-works/pi-coding-agent@latest"
+
+      - name: Record pi version
+        id: piver
+        run: |
+          VER="$(pi --version)"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "pinned=${PI_PINNED_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Real-pi smoke (fake model)
+        run: pnpm e2e:verify-pi
+
+      - name: Open issue on canary failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const latest = "${{ steps.piver.outputs.version }}" || "unknown";
+            const pinned = "${{ env.PI_PINNED_VERSION }}";
+            const title = `real-pi canary failed against pi@${latest}`;
+            const body = [
+              `The scheduled real-pi canary failed running \`pnpm e2e:verify-pi\` against **pi@${latest}**.`,
+              ``,
+              `Pinned version in CI: \`${pinned}\`.`,
+              ``,
+              `A pi release likely changed the RPC/model contract. Investigate, fix`,
+              `\`server/test/fake-model/\` or the PiAdapter as needed, then bump`,
+              `\`PI_PINNED_VERSION\` in \`.github/workflows/real-pi-e2e.yml\`.`,
+              ``,
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join("\n");
+            // De-dupe: reuse an open canary issue if one exists.
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "real-pi-canary",
+            });
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["real-pi-canary"],
+              });
+            }
