@@ -9,18 +9,37 @@ sessions through a chat UI.
 - 📚 [`docs/UX.md`](./docs/UX.md), [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
 - 🛠 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) — build / debug / deploy runbook (copy-paste commands)
 
-## Quick start — Mac + iPhone over Wi-Fi
+## Quick start — Mac + iPhone over Tailscale
+
+pino is **private by default**: it binds to your [Tailscale](https://tailscale.com)
+tailnet, not your local Wi-Fi. That way it works from anywhere (home, office,
+cellular) and never exposes a port to untrusted networks like café or airport
+Wi-Fi. Plain-LAN is opt-in (`--lan`) for trusted home networks only.
+
+### 0. Install Tailscale (one time, both devices)
+
+Install Tailscale on your Mac and your phone, sign into the **same tailnet**,
+and bring it up:
+
+```sh
+# macOS
+brew install tailscale   # or the App Store app
+tailscale up
+tailscale ip -4          # confirm you get a 100.x.y.z address
+```
+
+Install the Tailscale app on the phone and sign into the same account.
 
 ### 1. Start the server on your Mac
 
 ```sh
 cd server
-npm install
-npm start -- --project ~/Work/Vibe/pino --project ~/Work/Vibe/cmux
+pnpm install
+pnpm start -- --project ~/Work/Vibe/pino --project ~/Work/Vibe/cmux
 ```
 
-First run generates a self-signed cert in `~/.pino/`, advertises the server
-via mDNS as `_pino._tcp`, and prints a QR with a 5-minute pairing token:
+First run generates a self-signed cert in `~/.pino/` and prints a QR with a
+5-minute pairing token. With Tailscale up it binds the tailnet IP:
 
 ```
 [pino] cert fingerprint: 3b54c69fec19cbad88efaef52a0c5f163aa4d65e55c9796312a1506a22636144
@@ -28,19 +47,34 @@ via mDNS as `_pino._tcp`, and prints a QR with a 5-minute pairing token:
 [pino] projects:
   · pino  (/Users/le/Work/Vibe/pino)
   · cmux  (/Users/le/Work/Vibe/cmux)
+[pino] transport: Tailscale (100.119.58.97) — private ✓
 
 [pino] no paired devices yet — scan this QR with the app:
 
   █▀▀▀▀▀█ ... (QR here)
   █▄▄▄▄▄█
 
-[pino] pino://pair?host=192.168.0.221&port=8787&fp=...&t=...
-[pino] wss listening on wss://0.0.0.0:8787
+[pino] pino://pair?host=100.119.58.97&port=8787&fp=...&t=...
+[pino] wss listening on wss://100.119.58.97:8787
 ```
+
+**If Tailscale isn't running**, pino binds **loopback only** and refuses to
+expose your network — it prints how to install Tailscale or opt into LAN:
+
+```
+[pino] transport: loopback only — not reachable from other devices.
+[pino]   Tailscale not detected. Install it for a private connection:
+[pino]     https://tailscale.com/download  then run 'tailscale up' and restart pino.
+[pino]   Or pass --lan to expose this (untrusted) local network.
+```
+
+To serve over your local Wi-Fi instead (trusted home networks only), pass
+`--lan`. Use `--host 0.0.0.0` to bind every interface.
 
 ### 2. Run the app and pair
 
-On the **same Wi-Fi**, run the app on a device with a camera:
+Make sure the phone is on the **same tailnet** (Tailscale toggled on), then run
+the app on a device with a camera:
 
 ```sh
 cd app
@@ -49,23 +83,27 @@ flutter run -d "iPhone 15"      # or any other iPhone / iPad / Android device
 
 In the app:
 1. Pairing screen opens automatically.
-2. Either tap **"Scan QR"** and point the camera at the terminal,
-3. Or pick the server from the **"On this network"** mDNS list (you'll still
-   need to scan the QR to get the one-time pair token — mDNS just finds the
-   server's address; the token authorizes your device).
-4. App connects over wss://, server mints a long-lived bearer, app stores
-   it in secure storage, you land on Home.
+2. Tap **"Scan QR"** and point the camera at the terminal. The QR carries the
+   server's tailnet address + fingerprint + one-time pair token.
+3. App connects over wss:// (cert pinned by fingerprint — no OS trust store
+   needed), server mints a long-lived bearer, the app stores it in secure
+   storage, and you land on Home.
 
-Subsequent launches reconnect automatically — no QR needed.
+Subsequent launches reconnect automatically — no QR needed. Tailnet IPs are
+stable per-device, so the connection survives Wi-Fi/DHCP changes.
+
+> **On `--lan` only:** the app can also discover the server via the
+> **"On this network"** mDNS list (mDNS is link-local and does not cross the
+> tailnet). You still scan the QR for the pair token — mDNS only finds the
+> address; the token authorizes your device.
 
 ### 3. Subsequent pair tokens
 
-If you want to pair another device later, send `SIGUSR1` to the running
-server: `kill -USR1 $(pgrep -f "node.*pino")`. A fresh QR appears in the
-server log without restarting.
+To pair another device later, send `SIGUSR1` to the running server:
+`kill -USR1 $(pgrep -f "node.*pino")`. A fresh QR appears in the server log
+without restarting.
 
-To revoke a paired device, edit `~/.pino/devices.json` (or wait for the
-Settings UI in M2).
+To revoke a paired device, edit `~/.pino/devices.json` (or use the Settings UI).
 
 ## Mac → Mac (no pairing needed)
 
@@ -73,7 +111,7 @@ For local dev on the same machine, skip pairing entirely:
 
 ```sh
 # Terminal 1:
-cd server && npm start -- --no-auth --project ~/Work/Vibe/pino
+cd server && pnpm start -- --no-auth --project ~/Work/Vibe/pino
 
 # Terminal 2:
 cd app && flutter run -d macos \
