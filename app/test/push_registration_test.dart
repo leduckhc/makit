@@ -56,7 +56,10 @@ void main() {
       String? fired;
       registrar.onToken = (t) => fired = t;
 
-      await invokeNative(channel, const MethodCall('didRegister', 'deadbeef01'));
+      await invokeNative(
+        channel,
+        const MethodCall('didRegister', 'deadbeef01'),
+      );
 
       expect(await registrar.getToken(), 'deadbeef01');
       expect(fired, 'deadbeef01');

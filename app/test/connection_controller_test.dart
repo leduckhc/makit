@@ -331,9 +331,7 @@ void main() {
 
   group('ConnectionController push.register (SPEC-07 MAJOR 1)', () {
     List<Envelope> pushRegs(FakeTransport t) => t.sentEnvelopes
-        .where(
-          (e) => e.t == MsgType.cmd && e.body['kind'] == 'push.register',
-        )
+        .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'push.register')
         .toList();
 
     test('registers on connect when a token is already present', () async {
@@ -378,7 +376,11 @@ void main() {
       );
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
-      expect(pushRegs(transports.single), isEmpty, reason: 'no token at connect');
+      expect(
+        pushRegs(transports.single),
+        isEmpty,
+        reason: 'no token at connect',
+      );
 
       registrar.deliver('tok-late');
       await Future<void>.delayed(Duration.zero);

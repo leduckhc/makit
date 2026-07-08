@@ -54,7 +54,11 @@ List<PendingReplay> planDrain(List<String> rawQueue) {
     final kind = parsed.kind;
     if (rid == null || rid.isEmpty || kind == null) continue;
 
-    final body = responseForAction(kind: kind, actionId: actionId, input: input);
+    final body = responseForAction(
+      kind: kind,
+      actionId: actionId,
+      input: input,
+    );
     if (body == null) continue;
     plan.add(PendingReplay(rid, body));
   }

@@ -102,7 +102,9 @@ Future<void> main() async {
 Future<void> _drainPendingActions(ProviderContainer container) async {
   try {
     final prefs = await SharedPreferences.getInstance();
-    final respond = container.read(connectionControllerProvider.notifier).respondTo;
+    final respond = container
+        .read(connectionControllerProvider.notifier)
+        .respondTo;
     await PendingActionDrainer(prefs, respond).drain();
   } catch (_) {
     // Best-effort: a failed drain must not crash the app.

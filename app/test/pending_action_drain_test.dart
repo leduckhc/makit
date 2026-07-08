@@ -13,22 +13,25 @@ String queued({
   required String actionId,
   String sessionId = 's1',
   String? input,
-}) =>
-    jsonEncode({
-      'payload': encodeRequestPayload(
-        sessionId: sessionId,
-        requestId: requestId,
-        kind: kind,
-      ),
-      'actionId': actionId,
-      'input': input,
-    });
+}) => jsonEncode({
+  'payload': encodeRequestPayload(
+    sessionId: sessionId,
+    requestId: requestId,
+    kind: kind,
+  ),
+  'actionId': actionId,
+  'input': input,
+});
 
 void main() {
   group('planDrain (B1)', () {
     test('maps queued approve/deny/reply taps to responses in FIFO order', () {
       final plan = planDrain([
-        queued(requestId: 'r1', kind: 'confirmAction', actionId: kApproveActionId),
+        queued(
+          requestId: 'r1',
+          kind: 'confirmAction',
+          actionId: kApproveActionId,
+        ),
         queued(
           requestId: 'r2',
           kind: 'askUserQuestion',
@@ -58,7 +61,11 @@ void main() {
         // garbage
         'not json at all',
         // action/kind mismatch (reply on a confirmAction)
-        queued(requestId: 'r4', kind: 'confirmAction', actionId: kReplyActionId),
+        queued(
+          requestId: 'r4',
+          kind: 'confirmAction',
+          actionId: kReplyActionId,
+        ),
         // valid — survives
         queued(requestId: 'r5', kind: 'confirmAction', actionId: kDenyActionId),
       ]);
@@ -75,7 +82,11 @@ void main() {
     test('drainer replays each queued action then clears the key', () async {
       SharedPreferences.setMockInitialValues({
         kPendingActionsKey: [
-          queued(requestId: 'r1', kind: 'confirmAction', actionId: kApproveActionId),
+          queued(
+            requestId: 'r1',
+            kind: 'confirmAction',
+            actionId: kApproveActionId,
+          ),
           queued(
             requestId: 'r2',
             kind: 'askUserQuestion',
@@ -87,7 +98,10 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
 
       final calls = <(String, Map<String, dynamic>)>[];
-      final drainer = PendingActionDrainer(prefs, (rid, body) => calls.add((rid, body)));
+      final drainer = PendingActionDrainer(
+        prefs,
+        (rid, body) => calls.add((rid, body)),
+      );
       await drainer.drain();
 
       expect(calls.length, 2);
@@ -95,7 +109,10 @@ void main() {
       expect(calls[0].$2, {'kind': 'confirmAction', 'approved': true});
       expect(calls[1].$1, 'r2');
       expect(calls[1].$2['answers'], ['ship it']);
-      expect(prefs.getStringList(kPendingActionsKey) ?? const <String>[], isEmpty);
+      expect(
+        prefs.getStringList(kPendingActionsKey) ?? const <String>[],
+        isEmpty,
+      );
 
       // Idempotent: a re-run is a no-op because the queue was cleared. (The
       // real respondTo also guards via `_respondedRequests` — SPEC-08 step 4.)

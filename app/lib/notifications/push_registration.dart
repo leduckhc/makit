@@ -15,11 +15,7 @@ import '../transport/protocol.dart';
 Map<String, dynamic> pushRegisterBody({
   required String token,
   required String platform,
-}) => {
-  'kind': CmdKind.registerPush.wire,
-  'token': token,
-  'platform': platform,
-};
+}) => {'kind': CmdKind.registerPush.wire, 'token': token, 'platform': platform};
 
 /// Native push-token provider seam. A real implementation wraps a platform
 /// channel (iOS `AppDelegate` forwards the APNs token; Android/FCM later).
