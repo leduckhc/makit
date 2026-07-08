@@ -88,3 +88,22 @@ export interface SessionDTO {
 
 let _seq = 0;
 export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${(_seq++).toString(36)}`;
+
+/**
+ * `cmd` kinds. Documented here (mirror of `app/lib/transport/protocol.dart`
+ * `CmdKind`). The router registers handlers by these string keys.
+ *
+ * SPEC-07: `push.register` — the phone registers its content-free wake push
+ * token: `cmd {kind:'push.register', token, platform, env?}`. The server
+ * persists it per-device in `~/.pino/devices.json` so the WakeCoordinator can
+ * wake a force-quit/suspended device. The payload NEVER carries session data.
+ */
+export type CmdKind =
+  | "send.message"
+  | "session.action"
+  | "cancel"
+  | "session.spawn"
+  | "session.list"
+  | "session.attach"
+  | "session.kill"
+  | "push.register";

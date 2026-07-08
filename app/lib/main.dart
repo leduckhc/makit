@@ -5,14 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/router.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
 import 'notifications/notification_observer.dart';
 import 'notifications/notification_request.dart';
+import 'notifications/pending_action_drain.dart';
 import 'store/connection.dart';
 import 'store/store.dart';
+import 'transport/transport.dart';
 import 'ui/widgets/pino_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
 import 'desktop/desktop_app.dart';
@@ -61,6 +64,18 @@ Future<void> main() async {
   };
   container.read(notificationControllerProvider);
 
+  // SPEC-07: on every `wsState → connected` transition, drain the force-quit
+  // pending-action queue (taps captured by the background isolate while the
+  // app was dead) through the same responseForAction + respondTo path. Mirrors
+  // store.dart's re-subscribe-on-reconnect listener. Idempotent via respondTo.
+  container.listen<PinoConnState>(connectionControllerProvider, (prev, next) {
+    final wasConnected = prev?.wsState == WsState.connected;
+    final nowConnected = next.wsState == WsState.connected;
+    if (!wasConnected && nowConnected) {
+      unawaited(_drainPendingActions(container));
+    }
+  }, fireImmediately: false);
+
   runApp(
     UncontrolledProviderScope(container: container, child: const PinoApp()),
   );
@@ -70,6 +85,18 @@ Future<void> main() async {
   // and would stop runApp's UI from ever being reached.
   if (!isE2ETestMode) {
     unawaited(notifications.init());
+  }
+}
+
+/// SPEC-07: drain the persisted force-quit pending-action queue through
+/// `respondTo` (idempotent). Best-effort — a failure never blocks startup.
+Future<void> _drainPendingActions(ProviderContainer container) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final respond = container.read(connectionControllerProvider.notifier).respondTo;
+    await PendingActionDrainer(prefs, respond).drain();
+  } catch (_) {
+    // Best-effort: a failed drain must not crash the app.
   }
 }
 

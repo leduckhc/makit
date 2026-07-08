@@ -172,7 +172,8 @@ enum CmdKind {
   listSessions,
   attachSession,
   killSession,
-  setApprovalPolicy;
+  setApprovalPolicy,
+  registerPush;
 
   String get wire => switch (this) {
     CmdKind.sendMessage => 'send.message',
@@ -182,5 +183,6 @@ enum CmdKind {
     CmdKind.attachSession => 'session.attach',
     CmdKind.killSession => 'session.kill',
     CmdKind.setApprovalPolicy => 'session.policy',
+    CmdKind.registerPush => 'push.register',
   };
 }

@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../pairing/mdns_browser.dart';
 import '../pairing/pair_info.dart';
+import '../notifications/push_registration.dart';
 import '../transport/protocol.dart';
 import '../transport/transport.dart';
 import '../transport/ws_client.dart';
@@ -104,9 +105,11 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     Transport Function()? transportFactory,
     BrowseLan? browseLan,
     Duration? rediscoverStall,
+    PushRegistrar? pushRegistrar,
   }) : _transportFactory = transportFactory ?? (() => WsClient()),
        _browseLan = browseLan ?? _defaultBrowseLan,
        _rediscoverStall = rediscoverStall ?? const Duration(seconds: 2),
+       _pushRegistrar = pushRegistrar ?? const NoopPushRegistrar(),
        super(PinoConnState()) {
     _boot();
   }
@@ -114,6 +117,10 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   final FlutterSecureStorage _storage;
   final Transport Function() _transportFactory;
   final BrowseLan _browseLan;
+
+  /// SPEC-07: native push-token provider. Default Noop → no token → the app
+  /// never sends `push.register` and the server stays on the Slice-1 fallback.
+  final PushRegistrar _pushRegistrar;
 
   /// How long to wait for the fast-path connect before browsing mDNS to
   /// rediscover a moved server. Injectable so unit tests run instantly.
@@ -300,6 +307,9 @@ class ConnectionController extends StateNotifier<PinoConnState> {
         useFake: false,
         clearError: s == WsState.connected,
       );
+      // SPEC-07: (re)register the content-free wake push token on every
+      // successful (re)connect. No-op when no token is available.
+      if (s == WsState.connected) unawaited(_registerPush());
     });
     state = state.copyWith(
       useFake: false,
@@ -428,6 +438,25 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     final server = state.server;
     if (server == null) return;
     await _connectPaired(server);
+  }
+
+  /// SPEC-07: send the `push.register` cmd once a native push token is
+  /// available. Best-effort; a missing token (Noop registrar, permission
+  /// declined) simply skips registration.
+  Future<void> _registerPush() async {
+    try {
+      final token = await _pushRegistrar.getToken();
+      if (token == null || token.isEmpty) return;
+      send(
+        Envelope(
+          t: MsgType.cmd,
+          id: 'push-reg-${DateTime.now().microsecondsSinceEpoch}',
+          body: pushRegisterBody(token: token, platform: _pushRegistrar.platform),
+        ),
+      );
+    } catch (_) {
+      // Best-effort: a failed registration never breaks the connection.
+    }
   }
 
   Future<void> unpair() async {

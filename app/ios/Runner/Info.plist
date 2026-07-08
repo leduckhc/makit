@@ -76,5 +76,11 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<!-- SPEC-07: content-available wake pushes need the remote-notification
+		     background mode so a suspended/killed app can be woken by APNs. -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+		</array>
 	</dict>
 </plist>

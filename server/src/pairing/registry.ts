@@ -34,6 +34,12 @@ export interface PairedDevice {
   bearer: string;
   pairedAt: number;
   lastSeenAt: number;
+  /** Content-free wake push token (SPEC-07). Cleared on 410/BadDeviceToken. */
+  pushToken?: string;
+  /** Push routing platform: "apns" | "fcm". */
+  pushPlatform?: string;
+  /** APNs environment for the token: "sandbox" | "production". */
+  pushEnv?: string;
 }
 
 export class DeviceRegistry {
@@ -115,6 +121,35 @@ export class DeviceRegistry {
 
   list(): PairedDevice[] {
     return [...this.devices.values()];
+  }
+
+  /**
+   * Persist a device's content-free wake push token (SPEC-07). No-op for an
+   * unknown device. Written 0600 by {@link persist}.
+   */
+  setPushToken(
+    deviceId: string,
+    info: { token: string; platform: string; env?: string },
+  ): void {
+    const d = this.devices.get(deviceId);
+    if (!d) return;
+    d.pushToken = info.token;
+    d.pushPlatform = info.platform;
+    d.pushEnv = info.env;
+    this.persist();
+  }
+
+  /**
+   * Drop a device's push token (e.g. APNs reported it dead / unregistered)
+   * while keeping the device paired. No-op for an unknown device.
+   */
+  clearPushToken(deviceId: string): void {
+    const d = this.devices.get(deviceId);
+    if (!d || d.pushToken === undefined) return;
+    delete d.pushToken;
+    delete d.pushPlatform;
+    delete d.pushEnv;
+    this.persist();
   }
 
   revoke(deviceId: string): boolean {
