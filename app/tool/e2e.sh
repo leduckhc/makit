@@ -146,8 +146,15 @@ fi
 FP="$(node -e 'const fs=require("fs"); const j=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(j.fp)' <<<"$READY_JSON")"
 
 cd "$APP_DIR"
+# Each mode targets its own suite: stub/ asserts the StubAdapter's scripted
+# scenarios; real_pi/ asserts what the genuine pi + fake model actually stream.
+if [[ "$MODE" == "real" ]]; then
+  TEST_TARGET="integration_test/real_pi"
+else
+  TEST_TARGET="integration_test/stub"
+fi
 set +e
-PATH="$FLUTTER_BIN_DIR:$PATH" "$FLUTTER_BIN" test integration_test/ \
+PATH="$FLUTTER_BIN_DIR:$PATH" "$FLUTTER_BIN" test "$TEST_TARGET" \
   -d "$SIM_ID" \
   --dart-define=PINO_TEST_HOST=127.0.0.1 \
   --dart-define=PINO_TEST_PORT="$PORT" \

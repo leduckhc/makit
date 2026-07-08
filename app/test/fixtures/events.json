@@ -141,5 +141,15 @@
    "action": "compact",
    "reason": "session not ready"
   }
+ },
+ {
+  "seq": 13,
+  "sessionId": "s1",
+  "ts": 13000,
+  "kind": "agent.thinking.delta",
+  "payload": {
+   "thinkId": "th1",
+   "chunk": "pond"
+  }
  }
 ]
