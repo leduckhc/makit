@@ -3,12 +3,14 @@
  * pino — desktop server CLI.
  *
  * Usage:
- *   pino serve [--host H] [--port 8787] [--project P]... [--no-auth]
+ *   pino serve [--host H] [--lan] [--port 8787] [--project P]... [--no-auth]
  *   pino pair  [--host H] [--port P]                  # prints a QR + URL
  *
- * Default host: Tailscale IP if online, else first LAN IPv4. Pass
- * `--host 0.0.0.0` to bind every interface (not recommended on untrusted
- * networks — the server is gated by auth, but the port is exposed).
+ * Default host (secure by default): Tailscale IP if online, else loopback
+ * only. pino does NOT expose the local network by default — on public Wi-Fi
+ * that would leave the port reachable by untrusted co-tenants. Pass `--lan`
+ * to opt into binding the LAN IPv4 (trusted networks only), or `--host
+ * 0.0.0.0` to bind every interface. The recommended transport is Tailscale.
  * A loopback listener is added automatically when host is a specific IP,
  * so the pino-mirror extension host and the flutter dev loop keep working.
  *
@@ -33,7 +35,7 @@ import { startWsServer } from "./server.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
-import { loadOrCreateCert, preferredHost } from "./pairing/cert.js";
+import { loadOrCreateCert, chooseBindHost, type BindMode } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
@@ -94,21 +96,35 @@ function makeDaemon() {
 
 function parseArgs(argv: string[]) {
   const args = {
-    host: preferredHost(),
+    // "" means "auto": decide the bind host after parsing --host/--lan below,
+    // secure-by-default (Tailscale > opt-in LAN > loopback).
+    host: "",
+    lan: false,
     port: 8787,
     projects: [] as string[],
     noAuth: false,
     printPair: true,
     advertise: process.env.PINO_ADVERTISE_HOST ?? "",
+    bindMode: "loopback" as BindMode | "custom",
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--port") args.port = Number(argv[++i]);
     else if (a === "--host") args.host = String(argv[++i]);
+    else if (a === "--lan") args.lan = true;
     else if (a === "--project" || a === "-C") args.projects.push(resolve(String(argv[++i])));
     else if (a === "--no-auth") args.noAuth = true;
     else if (a === "--no-pair-qr") args.printPair = false;
     else if (a === "--advertise") args.advertise = String(argv[++i]);
+  }
+  if (args.host) {
+    // Explicit --host overrides the secure-by-default decision (escape hatch,
+    // e.g. --host 0.0.0.0 for all interfaces).
+    args.bindMode = "custom";
+  } else {
+    const decision = chooseBindHost({ allowLan: args.lan });
+    args.host = decision.host;
+    args.bindMode = decision.mode;
   }
   if (args.projects.length === 0) args.projects.push(process.cwd());
   return args;
@@ -334,7 +350,7 @@ async function main() {
     connectedDeviceIds: ws.connectedDeviceIds,
     buildUrl: (token) =>
       buildPairUrl({
-        host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : preferredHost(),
+        host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : opts.host,
         port: opts.port,
         fingerprint: cert.fingerprint,
         token,
@@ -375,6 +391,8 @@ async function main() {
   console.log(`[pino] projects:`);
   for (const p of manager.listProjects()) console.log(`  · ${p.name}  (${p.path})`);
 
+  printTransport(opts.bindMode, opts.host);
+
   // Auto-rotate pair tokens while no devices are paired, so a QR is always
   // valid on screen. Stops once the first device pairs.
   let rotateTimer: NodeJS.Timeout | undefined;
@@ -382,7 +400,7 @@ async function main() {
     if (registry.list().length === 0 && opts.printPair) {
       console.log("");
       console.log("[pino] no paired devices yet — scan this QR with the app:");
-      printPairQr(registry, opts.port, cert.fingerprint, opts.advertise);
+      printPairQr(registry, opts.port, cert.fingerprint, opts.advertise, opts.host);
       // Re-mint just before the 5-minute TTL expires.
       rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
     } else {
@@ -394,7 +412,7 @@ async function main() {
   // SIGUSR1 → print a fresh pair QR on demand. Handy without restarting.
   process.on("SIGUSR1", () => {
     clearTimeout(rotateTimer);
-    printPairQr(registry, opts.port, cert.fingerprint, opts.advertise);
+    printPairQr(registry, opts.port, cert.fingerprint, opts.advertise, opts.host);
     if (registry.list().length === 0) {
       rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
     }
@@ -499,8 +517,40 @@ function writeHostFile(port: number, fingerprint: string, token: string): void {
   }
 }
 
-function printPairQr(registry: DeviceRegistry, port: number, fingerprint: string, advertise?: string) {
-  const host = advertise && advertise.length > 0 ? advertise : preferredHost();
+/**
+ * Print the transport posture at startup so the user knows whether pino is
+ * private (Tailscale), exposed (LAN opt-in), or unreachable (loopback), and
+ * how to reach the recommended state.
+ */
+function printTransport(mode: BindMode | "custom", host: string): void {
+  switch (mode) {
+    case "tailscale":
+      console.log(`[pino] transport: Tailscale (${host}) — private ✓`);
+      break;
+    case "lan":
+      console.log(`[pino] transport: LAN (${host}) — ⚠ exposed to this network.`);
+      console.log(`[pino]   Only use --lan on trusted Wi-Fi. Prefer Tailscale on public networks.`);
+      break;
+    case "custom":
+      console.log(`[pino] transport: custom host ${host} (--host override).`);
+      break;
+    case "loopback":
+      console.log(`[pino] transport: loopback only — not reachable from other devices.`);
+      console.log(`[pino]   Tailscale not detected. Install it for a private connection:`);
+      console.log(`[pino]     https://tailscale.com/download  then run 'tailscale up' and restart pino.`);
+      console.log(`[pino]   Or pass --lan to expose this (untrusted) local network.`);
+      break;
+  }
+}
+
+function printPairQr(
+  registry: DeviceRegistry,
+  port: number,
+  fingerprint: string,
+  advertise: string | undefined,
+  fallbackHost: string,
+) {
+  const host = advertise && advertise.length > 0 ? advertise : fallbackHost;
   const token = registry.mintPairToken();
   const url = buildPairUrl({ host, port, fingerprint, token });
   console.log("");

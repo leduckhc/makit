@@ -115,9 +115,40 @@ export function tailscaleIP(): string | null {
  *
  * Users can override via `--host 0.0.0.0` if they need every interface.
  */
-export function preferredHost(): string {
-  const ts = tailscaleIP();
-  if (ts) return ts;
-  const lans = localIPv4s();
-  return lans[0] ?? "127.0.0.1";
+export type BindMode = "tailscale" | "lan" | "loopback";
+
+export interface BindDecision {
+  host: string;
+  mode: BindMode;
+}
+
+/**
+ * Secure-by-default bind host decision.
+ *
+ * - Tailscale up → its `100.x` tailnet IP (private WireGuard overlay). This is
+ *   the recommended transport: works off-LAN and never exposes a socket on an
+ *   untrusted network.
+ * - else if `allowLan` (explicit `--lan`) → the first non-internal LAN IPv4.
+ *   This exposes port 8787 to every device on the local network — unsafe on
+ *   public Wi-Fi — so it's opt-in, never the default.
+ * - else → loopback only (`127.0.0.1`): not reachable from other devices. The
+ *   caller should print guidance recommending Tailscale.
+ *
+ * `tailscaleIp`/`lans` are injectable so the decision is unit-testable without
+ * shelling out to `tailscale` or reading real interfaces.
+ */
+export function chooseBindHost(
+  opts: {
+    allowLan?: boolean;
+    tailscaleIp?: () => string | null;
+    lans?: () => string[];
+  } = {},
+): BindDecision {
+  const ts = (opts.tailscaleIp ?? tailscaleIP)();
+  if (ts) return { host: ts, mode: "tailscale" };
+  if (opts.allowLan) {
+    const lan = (opts.lans ?? localIPv4s)()[0];
+    if (lan) return { host: lan, mode: "lan" };
+  }
+  return { host: "127.0.0.1", mode: "loopback" };
 }
