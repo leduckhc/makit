@@ -36,8 +36,11 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   /// Backgrounded requests for which we fired a notification. Kept so that if
   /// the user resumes the app without acting on the notification, we can still
-  /// present the dialog (the `srvRequests` stream has no replay).
+  /// present the dialog (the `srvRequests` stream has no replay). Soft-capped
+  /// so a long backgrounded session can't grow it without bound (mirrors the
+  /// SPEC-07 status-notification queue); oldest entries are evicted first.
   final Map<String, Envelope> _pendingBackground = {};
+  static const _kMaxPendingBackground = 50;
 
   /// Salted so request-notification ids can't collide with the status
   /// notifications keyed on `sessionId.hashCode`.
@@ -124,6 +127,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
         // Not shown (no permission / dismissed / platform throw): fall through
         // to present the dialog now, so the request stays answerable.
         if (shown) {
+          if (_pendingBackground.length >= _kMaxPendingBackground) {
+            _pendingBackground.remove(_pendingBackground.keys.first);
+          }
           _pendingBackground[env.id] = env;
           return;
         }

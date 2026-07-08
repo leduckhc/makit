@@ -22,7 +22,7 @@ class _RecordingNotificationService extends NotificationService {
   /// Value returned from [show] — set to `false` to simulate a notification
   /// that could not be displayed (no permission / dismissed / platform throw).
   final bool result;
-  final List<({String? category, String? payload})> shown = [];
+  final List<({int id, String? category, String? payload})> shown = [];
 
   @override
   Future<bool> show({
@@ -32,7 +32,7 @@ class _RecordingNotificationService extends NotificationService {
     String? payload,
     String? category,
   }) async {
-    shown.add((category: category, payload: payload));
+    shown.add((id: id, category: category, payload: payload));
     return result;
   }
 }
@@ -360,6 +360,45 @@ void main() {
       await tester.pump();
 
       expect(find.text('Approve'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'notification id is deterministic per requestId and differs across requests',
+    (tester) async {
+      final (transport, notifications, _) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      Envelope confirm(String id) => Envelope(
+        t: MsgType.srvRequest,
+        id: id,
+        body: {
+          'kind': 'confirmAction',
+          'action': 'rm -rf build/',
+          'sessionId': 's1',
+        },
+      );
+
+      // Same env.id dispatched twice → same notification id (OS dedup).
+      transport.emit(confirm('req-same'));
+      await tester.pump();
+      await tester.pump();
+      transport.emit(confirm('req-same'));
+      await tester.pump();
+      await tester.pump();
+
+      // Different env.id → different notification id.
+      transport.emit(confirm('req-other'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(notifications.shown, hasLength(3));
+      final firstId = notifications.shown[0].id;
+      final secondId = notifications.shown[1].id;
+      final otherId = notifications.shown[2].id;
+      expect(secondId, firstId);
+      expect(otherId, isNot(firstId));
     },
   );
 }

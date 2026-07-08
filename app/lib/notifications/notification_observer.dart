@@ -41,7 +41,13 @@ class NotificationController with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _foreground = state == AppLifecycleState.resumed;
+    // `inactive` (a transient system overlay: control center, app switcher,
+    // call banner) still counts as foreground — the user is effectively in-app,
+    // so a status notification would be redundant. This mirrors
+    // `SrvRequestHandler`'s foreground semantics.
+    _foreground =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
   }
 
   void _onSessions(SessionsState sessions) {
