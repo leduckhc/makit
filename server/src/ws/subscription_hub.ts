@@ -51,10 +51,12 @@ export class SubscriptionHub {
       return;
     }
     client.subscribed.add(sid);
+    const fromSeq = typeof env.fromSeq === "number" ? env.fromSeq : 0;
+    const replay = fromSeq > 0 ? session.events.filter((e) => e.seq > fromSeq) : session.events;
     log.info(
-      `[pino] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${session.events.length} events)`,
+      `[pino] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${replay.length}/${session.events.length} events from seq ${fromSeq})`,
     );
-    for (const e of session.events) this.sendEvent(client, e);
+    for (const e of replay) this.sendEvent(client, e);
     client.send({ t: "ack", id: env.id });
   }
 

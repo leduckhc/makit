@@ -1,8 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pino/store/connection.dart';
 import 'package:pino/store/models.dart';
 import 'package:pino/store/store.dart';
 import 'package:pino/transport/codec.dart';
 import 'package:pino/transport/protocol.dart';
+import 'package:pino/transport/transport.dart';
 
 const _sid = 's1';
 
@@ -162,4 +169,176 @@ void main() {
       expect(session.lastActivityAt, 2000);
     });
   });
+
+  group('StoreController — sub carries fromSeq cursor', () {
+    test('sub after seeing events replays only newer ones', () async {
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan: ({Duration timeout = const Duration(seconds: 3)}) async => const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero); // let boot/connect settle
+
+      // Server pushes an event at seq 7 → advances the client cursor.
+      transport.pushEvent(seq: 7, sessionId: _sid);
+      await Future<void>.delayed(Duration.zero);
+
+      transport.sent.clear();
+      store.subscribeSession(_sid);
+
+      final sub = transport.sent.singleWhere((e) => e.t == MsgType.sub);
+      expect(sub.body['sessionId'], _sid);
+      expect(sub.body['fromSeq'], 7);
+    });
+
+    test('fresh sub with no events seen sends fromSeq 0', () async {
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan: ({Duration timeout = const Duration(seconds: 3)}) async => const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      transport.sent.clear();
+      store.subscribeSession(_sid);
+
+      final sub = transport.sent.singleWhere((e) => e.t == MsgType.sub);
+      expect(sub.body['fromSeq'], 0);
+    });
+  });
+}
+
+/// Transport fake that records outgoing envelopes and lets a test inject
+/// inbound event frames. Emits `connected` on connect so the controller's
+/// resubscribe-on-reconnect wiring is live.
+class _CapturingTransport implements Transport {
+  final sent = <Envelope>[];
+  final _frames = StreamController<Envelope>.broadcast();
+  final _state = StreamController<WsState>.broadcast();
+
+  void pushEvent({required int seq, required String sessionId}) {
+    _frames.add(
+      Envelope(
+        t: MsgType.event,
+        id: 'ev-$seq',
+        body: {
+          'kind': 'session.event',
+          'event': {
+            'seq': seq,
+            'sessionId': sessionId,
+            'ts': seq * 1000,
+            'kind': 'agent.message',
+            'payload': {'text': 'm$seq'},
+          },
+        },
+      ),
+    );
+  }
+
+  @override
+  Future<void> connect(
+    String url, {
+    Map<String, dynamic> helloBody = const {},
+    String? pinnedFingerprint,
+  }) async {
+    _state.add(WsState.connected);
+  }
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Stream<Envelope> get frames => _frames.stream;
+
+  @override
+  Stream<WsState> get state => _state.stream;
+
+  @override
+  void sendEnvelope(Envelope env) => sent.add(env);
+
+  @override
+  void forceReconnect() {}
+}
+
+class _FakeStorage extends FlutterSecureStorage {
+  _FakeStorage(this.data) : super();
+  final Map<String, String> data;
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => data[key];
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    if (value == null) {
+      data.remove(key);
+    } else {
+      data[key] = value;
+    }
+  }
+
+  @override
+  Future<void> delete({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => data.remove(key);
 }

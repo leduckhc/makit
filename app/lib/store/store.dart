@@ -231,13 +231,17 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   void _sendSub(String sessionId) {
+    // Include the last-seen seq so the server replays only newer events on
+    // reconnect instead of the whole history. `reduceEvent` still dedups, so
+    // fromSeq=0 (fresh sub) stays correct.
+    final fromSeq = state.cursors[sessionId] ?? 0;
     _ref
         .read(connectionControllerProvider.notifier)
         .send(
           Envelope(
             t: MsgType.sub,
             id: 's-$sessionId',
-            body: {'sessionId': sessionId},
+            body: {'sessionId': sessionId, 'fromSeq': fromSeq},
           ),
         );
   }

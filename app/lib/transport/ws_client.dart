@@ -32,9 +32,8 @@ class WsClient implements Transport {
   final _frameCtrl = StreamController<Envelope>.broadcast();
   final _pending = <String, Completer<Envelope>>{};
 
-  Map<String, int> _resumeCursors = const {};
-  String? _url;
   Map<String, dynamic> _helloBody = const {};
+  String? _url;
   String? _pinnedFingerprint;
 
   @override
@@ -44,8 +43,6 @@ class WsClient implements Transport {
 
   WsState _current = WsState.idle;
   WsState get currentState => _current;
-
-  void setResumeCursors(Map<String, int> cursors) => _resumeCursors = cursors;
 
   @override
   Future<void> connect(
@@ -154,7 +151,7 @@ class WsClient implements Transport {
       Envelope(
         t: MsgType.hello,
         id: Ulid().toString(),
-        body: {..._helloBody, 'resumeFrom': _resumeCursors},
+        body: _helloBody,
       ),
     );
 

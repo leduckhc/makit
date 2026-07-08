@@ -25,8 +25,14 @@ function evt(seq: number, sessionId: string): SessionEvent {
   return { seq, sessionId, ts: seq, kind: "agent.message", payload: { text: `m${seq}` } };
 }
 
-function subEnv(sessionId?: string): Envelope {
-  return { v: 1, t: "sub", id: "s1", ...(sessionId ? { sessionId } : {}) } as Envelope;
+function subEnv(sessionId?: string, fromSeq?: number): Envelope {
+  return {
+    v: 1,
+    t: "sub",
+    id: "s1",
+    ...(sessionId ? { sessionId } : {}),
+    ...(fromSeq !== undefined ? { fromSeq } : {}),
+  } as Envelope;
 }
 
 function fakeManager(sessions: Record<string, SessionEvent[]>) {
@@ -49,6 +55,39 @@ test("sub to a known session replays events and acks", () => {
   const events = client.sent.filter((f) => f.t === "event");
   assert.equal(events.length, 2);
   assert.ok(client.sent.find((f) => f.t === "ack" && f.id === "s1"));
+});
+
+test("sub with fromSeq replays only events after the cursor", () => {
+  const hub = new SubscriptionHub({
+    manager: fakeManager({
+      "sess-1": [evt(1, "sess-1"), evt(2, "sess-1"), evt(3, "sess-1")],
+    }),
+  });
+  const client = fakeClient();
+  hub.register(client);
+
+  hub.handleSub(client, subEnv("sess-1", 2));
+
+  const events = client.sent.filter((f) => f.t === "event") as Array<{
+    event: SessionEvent;
+  }>;
+  assert.deepEqual(
+    events.map((f) => f.event.seq),
+    [3],
+  );
+  assert.ok(client.sent.find((f) => f.t === "ack" && f.id === "s1"));
+});
+
+test("sub with fromSeq=0 replays the full log (back-compat)", () => {
+  const hub = new SubscriptionHub({
+    manager: fakeManager({ "sess-1": [evt(1, "sess-1"), evt(2, "sess-1")] }),
+  });
+  const client = fakeClient();
+  hub.register(client);
+
+  hub.handleSub(client, subEnv("sess-1", 0));
+
+  assert.equal(client.sent.filter((f) => f.t === "event").length, 2);
 });
 
 test("sub without sessionId is a bad_request", () => {
