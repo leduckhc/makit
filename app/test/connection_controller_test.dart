@@ -55,7 +55,11 @@ class FakeTransport implements Transport {
   Stream<WsState> get state => _state.stream;
 
   @override
-  void sendEnvelope(Envelope env) {}
+  void sendEnvelope(Envelope env) {
+    sentEnvelopes.add(env);
+  }
+
+  final List<Envelope> sentEnvelopes = <Envelope>[];
 
   int forceReconnectCount = 0;
   @override
@@ -295,5 +299,44 @@ void main() {
         controller.dispose();
       },
     );
+  });
+
+  group('ConnectionController respondTo idempotency (SPEC-08 step 4)', () {
+    test('a second respondTo for the same requestId is a no-op', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final t = transports.single;
+
+      controller.respondTo('r1', {'approved': true});
+      controller.respondTo('r1', {'approved': false});
+
+      final r1 = t.sentEnvelopes
+          .where((e) => e.t == MsgType.srvResponse && e.id == 'r1')
+          .toList();
+      expect(r1, hasLength(1));
+      expect(r1.single.body['approved'], true);
+
+      // A different requestId still sends.
+      controller.respondTo('r2', {'approved': true});
+      expect(
+        t.sentEnvelopes
+            .where((e) => e.t == MsgType.srvResponse && e.id == 'r2')
+            .length,
+        1,
+      );
+
+      controller.dispose();
+    });
   });
 }

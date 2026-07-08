@@ -133,9 +133,16 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       _inFrames.stream.where((e) => e.t == MsgType.srvRequest);
 
   /// Send the matching `srv.response` for a previously-received [requestId].
+  ///
+  /// Idempotent: both the dialog path (`SrvRequestHandler._respond`) and the
+  /// actionable-notification path funnel here, so a second response for the
+  /// same [requestId] is a no-op — matching the server's first-wins semantics.
   void respondTo(String requestId, Map<String, dynamic> body) {
+    if (!_respondedRequests.add(requestId)) return;
     send(Envelope(t: MsgType.srvResponse, id: requestId, body: body));
   }
+
+  final Set<String> _respondedRequests = <String>{};
 
   /// Called when the app returns to the foreground. iOS suspends sockets and
   /// backoff timers while backgrounded, so a stalled connection can otherwise

@@ -10,6 +10,7 @@ import 'app/router.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
 import 'notifications/notification_observer.dart';
+import 'notifications/notification_request.dart';
 import 'store/connection.dart';
 import 'store/store.dart';
 import 'ui/widgets/pino_mark.dart';
@@ -37,8 +38,28 @@ Future<void> main() async {
   // Notifications: route taps into the session and activate the status→notif
   // observer. onTapSession + the controller are cheap (no platform calls yet).
   final notifications = container.read(notificationServiceProvider);
-  notifications.onTapSession = (sid) {
-    pinoNavigatorKey.currentContext?.go('/session/$sid');
+  notifications.onTapSession = (payload) {
+    final sid = parseNotificationPayload(payload).sessionId;
+    if (sid != null && sid.isNotEmpty) {
+      pinoNavigatorKey.currentContext?.go('/session/$sid');
+    }
+  };
+  // Actionable notifications (Approve/Deny/Reply) on the live isolate: map the
+  // tapped action to a srv.response body and route it through respondTo
+  // (idempotent, so the dialog path can't double-respond).
+  notifications.onAction = (actionId, input, payload) {
+    final p = parseNotificationPayload(payload);
+    final rid = p.requestId;
+    if (rid == null || p.kind == null) return;
+    final body = responseForAction(
+      kind: p.kind!,
+      actionId: actionId,
+      input: input,
+    );
+    if (body == null) return;
+    container
+        .read(connectionControllerProvider.notifier)
+        .respondTo(rid, body);
   };
   container.read(notificationControllerProvider);
 

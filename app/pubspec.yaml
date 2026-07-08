@@ -45,6 +45,9 @@ dependencies:
   # needs input. Pinned exactly (native code). Pulls in timezone + http
   # transitively (used by the plugin's scheduling API, which we don't call).
   flutter_local_notifications: 22.0.1  # publisher: dexterx.dev — MaikuB
+  # SPEC-08 seam: the background notification-response isolate persists a
+  # pending-action queue here (non-secret action metadata, drained by SPEC-07).
+  shared_preferences: 2.5.3          # publisher: flutter.dev — pending-action queue
   # ---------------- SPEC-03 desktop control app (macOS only) ----------
   # Pinned exactly: tray_manager + window_manager have native Swift/Obj-C
   # code. qr_flutter is pure-Dart (safe for caret).

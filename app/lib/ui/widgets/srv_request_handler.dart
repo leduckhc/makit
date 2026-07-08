@@ -14,7 +14,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/router.dart';
+import '../../notifications/notification_observer.dart';
+import '../../notifications/notification_request.dart';
 import '../../store/connection.dart';
+import '../../store/store.dart';
 import '../../transport/protocol.dart';
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
@@ -25,13 +28,21 @@ class SrvRequestHandler extends ConsumerStatefulWidget {
   ConsumerState<SrvRequestHandler> createState() => _SrvRequestHandlerState();
 }
 
-class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
+class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
+    with WidgetsBindingObserver {
   StreamSubscription<Envelope>? _sub;
+  bool _foreground = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _subscribe());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
   }
 
   void _subscribe() {
@@ -43,11 +54,40 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
   }
 
   Future<void> _dispatch(Envelope env) async {
+    final kind = env.body['kind'] as String? ?? 'unknown';
+
+    // Backgrounded: if this request kind has an actionable-notification
+    // affordance, fire the notification and skip the (invisible) dialog. The
+    // user resolves it from the lock screen; the tap routes back through
+    // `respondTo` (see main.dart onAction).
+    if (!_foreground) {
+      final sessionId = env.body['sessionId'] as String? ?? '';
+      final notif = notificationForRequest(
+        kind: kind,
+        body: env.body,
+        label: _labelFor(sessionId),
+      );
+      if (notif != null) {
+        await ref
+            .read(notificationServiceProvider)
+            .show(
+              id: env.id.hashCode,
+              title: notif.title,
+              body: notif.body,
+              category: notif.category,
+              payload: encodeRequestPayload(
+                sessionId: sessionId,
+                requestId: env.id,
+                kind: kind,
+              ),
+            );
+        return;
+      }
+    }
+
     // Use the router's Navigator, not this widget's context — we're above it.
     final navCtx = pinoNavigatorKey.currentContext;
     if (navCtx == null) return;
-
-    final kind = env.body['kind'] as String? ?? 'unknown';
 
     // Normalise: pi's "askUserQuestion" tool can arrive as either
     //   { question, options, multi?, recommended? }                 (single)
@@ -280,8 +320,22 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> {
     ref.read(connectionControllerProvider.notifier).respondTo(id, body);
   }
 
+  /// Human-readable label for a session (project name), mirroring
+  /// `NotificationController.labelFor`. Falls back to the session title.
+  String _labelFor(String sessionId) {
+    if (sessionId.isEmpty) return '';
+    final sessions = ref.read(sessionsProvider).sessions;
+    final match = sessions.where((s) => s.id == sessionId);
+    if (match.isEmpty) return '';
+    final session = match.first;
+    final projects = ref.read(projectsProvider).projects;
+    final proj = projects.where((p) => p.id == session.projectId);
+    return proj.isEmpty ? session.title : proj.first.name;
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     super.dispose();
   }
