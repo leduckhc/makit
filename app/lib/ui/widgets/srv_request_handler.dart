@@ -142,7 +142,6 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   Future<void> _presentDialog(Envelope env) async {
     final kind = env.body['kind'] as String? ?? 'unknown';
 
-
     // Use the router's Navigator, not this widget's context — we're above it.
     final navCtx = pinoNavigatorKey.currentContext;
     if (navCtx == null) return;

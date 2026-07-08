@@ -57,9 +57,7 @@ Future<void> main() async {
       input: input,
     );
     if (body == null) return;
-    container
-        .read(connectionControllerProvider.notifier)
-        .respondTo(rid, body);
+    container.read(connectionControllerProvider.notifier).respondTo(rid, body);
   };
   container.read(notificationControllerProvider);
 

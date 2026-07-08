@@ -187,7 +187,9 @@ void main() {
                 }),
               }),
               transportFactory: () => transport,
-              browseLan: ({Duration timeout = const Duration(seconds: 3)}) async => const [],
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
               rediscoverStall: const Duration(seconds: 30),
             ),
           ),
@@ -226,7 +228,9 @@ void main() {
                 }),
               }),
               transportFactory: () => transport,
-              browseLan: ({Duration timeout = const Duration(seconds: 3)}) async => const [],
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
               rediscoverStall: const Duration(seconds: 30),
             ),
           ),

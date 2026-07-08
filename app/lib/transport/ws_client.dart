@@ -147,13 +147,7 @@ class WsClient implements Transport {
       cancelOnError: true,
     );
 
-    _send(
-      Envelope(
-        t: MsgType.hello,
-        id: Ulid().toString(),
-        body: _helloBody,
-      ),
-    );
+    _send(Envelope(t: MsgType.hello, id: Ulid().toString(), body: _helloBody));
 
     _attempt = 0;
     _setState(WsState.connected);

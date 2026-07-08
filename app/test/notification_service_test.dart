@@ -21,20 +21,22 @@ void main() {
       expect(decoded['actionId'], 'pino_approve');
     });
 
-    test('caps the queue to the most recent kMaxPendingActions entries',
-        () async {
-      for (var i = 0; i < kMaxPendingActions + 20; i++) {
-        await persistPendingActionForTest('p$i', 'pino_approve', null);
-      }
+    test(
+      'caps the queue to the most recent kMaxPendingActions entries',
+      () async {
+        for (var i = 0; i < kMaxPendingActions + 20; i++) {
+          await persistPendingActionForTest('p$i', 'pino_approve', null);
+        }
 
-      final prefs = await SharedPreferences.getInstance();
-      final queue = prefs.getStringList(kPendingActionsKey)!;
-      expect(queue, hasLength(kMaxPendingActions));
-      // Oldest entries dropped; newest retained.
-      final first = jsonDecode(queue.first) as Map<String, dynamic>;
-      final last = jsonDecode(queue.last) as Map<String, dynamic>;
-      expect(first['payload'], 'p20');
-      expect(last['payload'], 'p${kMaxPendingActions + 19}');
-    });
+        final prefs = await SharedPreferences.getInstance();
+        final queue = prefs.getStringList(kPendingActionsKey)!;
+        expect(queue, hasLength(kMaxPendingActions));
+        // Oldest entries dropped; newest retained.
+        final first = jsonDecode(queue.first) as Map<String, dynamic>;
+        final last = jsonDecode(queue.last) as Map<String, dynamic>;
+        expect(first['payload'], 'p20');
+        expect(last['payload'], 'p${kMaxPendingActions + 19}');
+      },
+    );
   });
 }

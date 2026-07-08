@@ -125,8 +125,7 @@ String encodeRequestPayload({
   required String sessionId,
   required String requestId,
   required String kind,
-}) =>
-    jsonEncode({'sid': sessionId, 'rid': requestId, 'kind': kind});
+}) => jsonEncode({'sid': sessionId, 'rid': requestId, 'kind': kind});
 
 /// Decode a notification payload. Handles three cases:
 ///   - JSON object → structured [NotificationPayload]

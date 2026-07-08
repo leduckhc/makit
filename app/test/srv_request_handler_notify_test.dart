@@ -123,11 +123,7 @@ _FakeSecureStorage _seeded() => _FakeSecureStorage({
 
 void main() {
   Future<
-    (
-      _EmittingTransport,
-      _RecordingNotificationService,
-      ConnectionController,
-    )
+    (_EmittingTransport, _RecordingNotificationService, ConnectionController)
   >
   pumpHandler(
     WidgetTester tester, {
@@ -138,8 +134,8 @@ void main() {
     final controller = ConnectionController(
       _seeded(),
       transportFactory: () => transport,
-      browseLan:
-          ({Duration timeout = const Duration(seconds: 3)}) async => const [],
+      browseLan: ({Duration timeout = const Duration(seconds: 3)}) async =>
+          const [],
       rediscoverStall: Duration.zero,
     );
 
@@ -290,40 +286,39 @@ void main() {
     },
   );
 
-  testWidgets(
-    'backgrounded confirmAction is replayed as a dialog on resume',
-    (tester) async {
-      final (transport, notifications, _) = await pumpHandler(tester);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      await tester.pump();
+  testWidgets('backgrounded confirmAction is replayed as a dialog on resume', (
+    tester,
+  ) async {
+    final (transport, notifications, _) = await pumpHandler(tester);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
 
-      transport.emit(
-        Envelope(
-          t: MsgType.srvRequest,
-          id: 'req-replay',
-          body: {
-            'kind': 'confirmAction',
-            'action': 'rm -rf build/',
-            'sessionId': 's1',
-          },
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
+    transport.emit(
+      Envelope(
+        t: MsgType.srvRequest,
+        id: 'req-replay',
+        body: {
+          'kind': 'confirmAction',
+          'action': 'rm -rf build/',
+          'sessionId': 's1',
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
 
-      // Notification shown, dialog withheld while backgrounded.
-      expect(notifications.shown, hasLength(1));
-      expect(find.text('Approve'), findsNothing);
+    // Notification shown, dialog withheld while backgrounded.
+    expect(notifications.shown, hasLength(1));
+    expect(find.text('Approve'), findsNothing);
 
-      // Resume and pump past the drain delay → dialog now presented.
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.pump();
+    // Resume and pump past the drain delay → dialog now presented.
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
-      expect(find.text('Approve'), findsOneWidget);
-    },
-  );
+    expect(find.text('Approve'), findsOneWidget);
+  });
 
   testWidgets(
     'answered-from-notification request is not double-prompted on resume',

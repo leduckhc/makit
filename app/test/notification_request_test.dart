@@ -17,35 +17,39 @@ void main() {
       expect(n.body, contains('rm -rf build/'));
     });
 
-    test('askUserQuestion (single form) → question category + first question',
-        () {
-      final n = notificationForRequest(
-        kind: 'askUserQuestion',
-        body: {'kind': 'askUserQuestion', 'question': 'Deploy to prod?'},
-        label: label,
-      );
-      expect(n, isNotNull);
-      expect(n!.category, kQuestionCategoryId);
-      expect(n.body, contains('Deploy to prod?'));
-    });
+    test(
+      'askUserQuestion (single form) → question category + first question',
+      () {
+        final n = notificationForRequest(
+          kind: 'askUserQuestion',
+          body: {'kind': 'askUserQuestion', 'question': 'Deploy to prod?'},
+          label: label,
+        );
+        expect(n, isNotNull);
+        expect(n!.category, kQuestionCategoryId);
+        expect(n.body, contains('Deploy to prod?'));
+      },
+    );
 
-    test('askUserQuestion (wizard form) → question category + first question',
-        () {
-      final n = notificationForRequest(
-        kind: 'askUserQuestion',
-        body: {
-          'kind': 'askUserQuestion',
-          'questions': [
-            {'question': 'Pick a branch'},
-            {'question': 'ignored second'},
-          ],
-        },
-        label: label,
-      );
-      expect(n, isNotNull);
-      expect(n!.category, kQuestionCategoryId);
-      expect(n.body, contains('Pick a branch'));
-    });
+    test(
+      'askUserQuestion (wizard form) → question category + first question',
+      () {
+        final n = notificationForRequest(
+          kind: 'askUserQuestion',
+          body: {
+            'kind': 'askUserQuestion',
+            'questions': [
+              {'question': 'Pick a branch'},
+              {'question': 'ignored second'},
+            ],
+          },
+          label: label,
+        );
+        expect(n, isNotNull);
+        expect(n!.category, kQuestionCategoryId);
+        expect(n.body, contains('Pick a branch'));
+      },
+    );
 
     test('input kind → null', () {
       final n = notificationForRequest(
@@ -157,10 +161,7 @@ void main() {
 
     test('approve/deny require confirmAction kind → mismatch is null', () {
       expect(
-        responseForAction(
-          kind: 'askUserQuestion',
-          actionId: kApproveActionId,
-        ),
+        responseForAction(kind: 'askUserQuestion', actionId: kApproveActionId),
         isNull,
       );
       expect(

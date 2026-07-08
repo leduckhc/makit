@@ -47,23 +47,23 @@
 test("pi adapter's askUser callback sends srv.request", async () => {
   const sent: OutgoingFrame[] = [];
   const rpc = new ReverseRpc({ send: (f) => sent.push(f) });
-  
+
   const adapter = new PiAdapter();
-  
+
   // Inject askUser callback that feeds to rpc
   await adapter.start({
     cwd: "/tmp",
     sessionId: "sess-1",
     askUser: (req) => rpc.askDevice(req, "sess-1"),
   });
-  
+
   // Fake pi emitting a ui.select
   adapter.emit("event", {
     kind: "agent.message",
     payload: { text: "... choices: [a, b]" },
   });
   // TODO: simulate the actual pi ui.select RPC that triggers askUser
-  
+
   const req = sent.find((f) => f.t === "srv.request");
   assert.ok(req);
   assert.deepEqual(req.body.questions[0].options, ["a", "b"]);
@@ -92,7 +92,7 @@ const resp = await this.askUser?.({
 ```dart
 test("ApprovalDialog renders on srv.request frame", () {
   final tester = WidgetTester();
-  
+
   // Inject a fake StoreController
   final controller = FakeStoreController()
     ..incomingFrames.add(Envelope(
@@ -106,11 +106,11 @@ test("ApprovalDialog renders on srv.request frame", () {
         }],
       },
     ));
-  
+
   await tester.pumpWidget(MaterialApp(
     home: ApprovalDialog(),
   ));
-  
+
   expect(find.text("Approve tool call?"), findsOneWidget);
   expect(find.byType(ElevatedButton), findsWidgets(count: 2));
 });
@@ -131,11 +131,11 @@ test("ApprovalDialog sends srv.response on button tap", () async {
   final outgoing = <Envelope>[];
   final controller = FakeStoreController()
     ..onSend = (env) => outgoing.add(env);
-  
+
   await tester.pumpWidget(/* as above */);
   await tester.tap(find.text("Approve"));
   await tester.pumpAndSettle();
-  
+
   final resp = outgoing.whereType<Envelope>().firstWhere(
     (e) => e.t == MsgType.srvResponse && e.id == "req-1"
   );
@@ -151,7 +151,7 @@ test("ApprovalDialog sends srv.response on button tap", () async {
 
 #### Test: `app/test/e2e/approval_e2e_test.dart` — `session awaiting approval flows end-to-end`
 
-**Red:** 
+**Red:**
 1. Stub server emits `session.status { status: "awaiting-approval" }`
 2. App renders approval UI
 3. User taps "Approve"
@@ -162,7 +162,7 @@ test("e2e: awaiting-approval → approval UI → srv.response → session contin
   // 1. Spin up stub server + app
   final stubServer = StubServer();
   await app.connect(stubServer.url);
-  
+
   // 2. Stub: emit session.status awaiting-approval + srv.request
   stubServer.emitEvent(SessionEvent(
     kind: "session.status",
@@ -173,15 +173,15 @@ test("e2e: awaiting-approval → approval UI → srv.response → session contin
     id: "req-123",
     body: { "questions": [{ "options": ["Yes", "No"] }] },
   ));
-  
+
   // 3. App renders approval UI
   await tester.pumpAndSettle();
   expect(find.text("Approve?"), findsOneWidget);
-  
+
   // 4. User taps
   await tester.tap(find.text("Yes"));
   await tester.pumpAndSettle();
-  
+
   // 5. Verify stub server saw srv.response
   final resp = stubServer.capturedFrames.whereType<Envelope>()
     .firstWhere((e) => e.t == MsgType.srvResponse && e.id == "req-123");
