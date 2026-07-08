@@ -64,32 +64,73 @@ void main() {
       );
       expect(n, isNull);
     });
+
+    test('confirmAction with null action → default approval body', () {
+      final n = notificationForRequest(
+        kind: 'confirmAction',
+        body: {'kind': 'confirmAction'},
+        label: label,
+      );
+      expect(n, isNotNull);
+      expect(n!.body, 'Agent needs your approval.');
+    });
+
+    test('confirmAction with empty action → default approval body', () {
+      final n = notificationForRequest(
+        kind: 'confirmAction',
+        body: {'kind': 'confirmAction', 'action': ''},
+        label: label,
+      );
+      expect(n, isNotNull);
+      expect(n!.body, 'Agent needs your approval.');
+    });
+
+    test('empty label falls back to body title', () {
+      final n = notificationForRequest(
+        kind: 'confirmAction',
+        body: {'kind': 'confirmAction', 'title': 'Session X', 'action': 'go'},
+        label: '',
+      );
+      expect(n, isNotNull);
+      expect(n!.title, 'Session X');
+    });
+
+    test('empty label and no title falls back to generic Agent', () {
+      final n = notificationForRequest(
+        kind: 'confirmAction',
+        body: {'kind': 'confirmAction', 'action': 'go'},
+        label: '',
+      );
+      expect(n, isNotNull);
+      expect(n!.title, 'Agent');
+    });
   });
 
   group('responseForAction (step 2)', () {
-    test('approve → {approved:true}', () {
+    test('approve → {kind, approved:true}', () {
       final r = responseForAction(
         kind: 'confirmAction',
         actionId: kApproveActionId,
       );
-      expect(r, {'approved': true});
+      expect(r, {'kind': 'confirmAction', 'approved': true});
     });
 
-    test('deny → {approved:false}', () {
+    test('deny → {kind, approved:false}', () {
       final r = responseForAction(
         kind: 'confirmAction',
         actionId: kDenyActionId,
       );
-      expect(r, {'approved': false});
+      expect(r, {'kind': 'confirmAction', 'approved': false});
     });
 
-    test('reply + input → answers/answer/indices', () {
+    test('reply + input → kind/answers/answer/indices', () {
       final r = responseForAction(
         kind: 'askUserQuestion',
         actionId: kReplyActionId,
         input: 'ship it',
       );
       expect(r, {
+        'kind': 'askUserQuestion',
         'answers': ['ship it'],
         'answer': 'ship it',
         'indices': [-1],
@@ -102,6 +143,7 @@ void main() {
         actionId: kReplyActionId,
       );
       expect(r, {
+        'kind': 'askUserQuestion',
         'answers': [''],
         'answer': '',
         'indices': [-1],
@@ -111,6 +153,27 @@ void main() {
     test('unknown action → null', () {
       final r = responseForAction(kind: 'confirmAction', actionId: 'nope');
       expect(r, isNull);
+    });
+
+    test('approve/deny require confirmAction kind → mismatch is null', () {
+      expect(
+        responseForAction(
+          kind: 'askUserQuestion',
+          actionId: kApproveActionId,
+        ),
+        isNull,
+      );
+      expect(
+        responseForAction(kind: 'askUserQuestion', actionId: kDenyActionId),
+        isNull,
+      );
+    });
+
+    test('reply requires askUserQuestion kind → mismatch is null', () {
+      expect(
+        responseForAction(kind: 'confirmAction', actionId: kReplyActionId),
+        isNull,
+      );
     });
   });
 
@@ -144,6 +207,13 @@ void main() {
       expect(empty.sessionId, isNull);
       expect(empty.requestId, isNull);
       expect(empty.kind, isNull);
+    });
+
+    test('valid JSON that is not an object → all null', () {
+      final p = parseNotificationPayload('[1,2,3]');
+      expect(p.sessionId, isNull);
+      expect(p.requestId, isNull);
+      expect(p.kind, isNull);
     });
   });
 }

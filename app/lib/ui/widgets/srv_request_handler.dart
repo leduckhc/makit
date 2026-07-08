@@ -31,7 +31,18 @@ class SrvRequestHandler extends ConsumerStatefulWidget {
 class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     with WidgetsBindingObserver {
   StreamSubscription<Envelope>? _sub;
+  StreamSubscription<String>? _respondedSub;
   bool _foreground = true;
+
+  /// Backgrounded requests for which we fired a notification. Kept so that if
+  /// the user resumes the app without acting on the notification, we can still
+  /// present the dialog (the `srvRequests` stream has no replay).
+  final Map<String, Envelope> _pendingBackground = {};
+
+  /// Salted so request-notification ids can't collide with the status
+  /// notifications keyed on `sessionId.hashCode`.
+  int _notificationId(String requestId) =>
+      (requestId.hashCode ^ 0x52455148).toUnsigned(31);
 
   @override
   void initState() {
@@ -42,15 +53,43 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    _foreground = state == AppLifecycleState.resumed;
+    // `inactive` (e.g. transient system overlay) still counts as foreground so
+    // an in-flight request isn't diverted to a notification the user can see
+    // the app behind. A true background→foreground transition drains any
+    // queued fallback dialogs.
+    final wasForeground = _foreground;
+    _foreground =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    if (!wasForeground && _foreground) _drainPendingBackground();
+  }
+
+  /// Present any still-pending backgrounded requests as dialogs on resume.
+  ///
+  /// Approve/Deny/Reply are FOREGROUND notification actions: tapping one
+  /// resumes the app, and the action callback (→ `respondTo` → `responded`)
+  /// can land slightly AFTER `resumed`. We therefore delay the drain briefly
+  /// and re-check `_pendingBackground` before presenting, so a request already
+  /// answered from the notification is not double-prompted.
+  void _drainPendingBackground() {
+    if (_pendingBackground.isEmpty) return;
+    final queued = List<Envelope>.from(_pendingBackground.values);
+    Future.delayed(const Duration(milliseconds: 400), () async {
+      for (final env in queued) {
+        if (!mounted) return;
+        if (!_pendingBackground.containsKey(env.id)) continue;
+        _pendingBackground.remove(env.id);
+        await _presentDialog(env);
+      }
+    });
   }
 
   void _subscribe() {
     _sub?.cancel();
-    _sub = ref
-        .read(connectionControllerProvider.notifier)
-        .srvRequests
-        .listen(_dispatch);
+    final controller = ref.read(connectionControllerProvider.notifier);
+    _sub = controller.srvRequests.listen(_dispatch);
+    _respondedSub?.cancel();
+    _respondedSub = controller.responded.listen(_pendingBackground.remove);
   }
 
   Future<void> _dispatch(Envelope env) async {
@@ -68,10 +107,10 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
         label: _labelFor(sessionId),
       );
       if (notif != null) {
-        await ref
+        final shown = await ref
             .read(notificationServiceProvider)
             .show(
-              id: env.id.hashCode,
+              id: _notificationId(env.id),
               title: notif.title,
               body: notif.body,
               category: notif.category,
@@ -81,9 +120,22 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
                 kind: kind,
               ),
             );
-        return;
+        // Shown: keep it so a resume-without-action still surfaces a dialog.
+        // Not shown (no permission / dismissed / platform throw): fall through
+        // to present the dialog now, so the request stays answerable.
+        if (shown) {
+          _pendingBackground[env.id] = env;
+          return;
+        }
       }
     }
+
+    await _presentDialog(env);
+  }
+
+  Future<void> _presentDialog(Envelope env) async {
+    final kind = env.body['kind'] as String? ?? 'unknown';
+
 
     // Use the router's Navigator, not this widget's context — we're above it.
     final navCtx = pinoNavigatorKey.currentContext;
@@ -337,6 +389,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
+    _respondedSub?.cancel();
     super.dispose();
   }
 

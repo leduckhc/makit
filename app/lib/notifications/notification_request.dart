@@ -76,7 +76,12 @@ String? _firstQuestion(Map<String, dynamic> body) {
 }
 
 /// Map a tapped notification [actionId] to the `srv.response` body, or null
-/// when the action is unknown.
+/// when the action is unknown or does not match the request [kind].
+///
+/// The `kind` field is REQUIRED in the response: server consumers gate on it
+/// (`resp.kind === "confirmAction"` / `"askUserQuestion"`), so omitting it
+/// makes the response fall through to the cancelled branch and get silently
+/// dropped. This mirrors the dialog path, which always sends `kind`.
 ///
 /// contract: `askUserQuestion` consumers read `answers[]` (label text), never
 /// indices — a quick reply therefore maps to a single-element `answers`.
@@ -87,12 +92,16 @@ Map<String, dynamic>? responseForAction({
 }) {
   switch (actionId) {
     case kApproveActionId:
-      return {'approved': true};
+      if (kind != 'confirmAction') return null;
+      return {'kind': kind, 'approved': true};
     case kDenyActionId:
-      return {'approved': false};
+      if (kind != 'confirmAction') return null;
+      return {'kind': kind, 'approved': false};
     case kReplyActionId:
+      if (kind != 'askUserQuestion') return null;
       final text = input ?? '';
       return {
+        'kind': kind,
         'answers': [text],
         'answer': text,
         'indices': [-1],

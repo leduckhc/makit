@@ -17,10 +17,15 @@ import 'package:pino/ui/widgets/srv_request_handler.dart';
 
 /// Records `show` calls without touching the platform channel.
 class _RecordingNotificationService extends NotificationService {
+  _RecordingNotificationService({this.result = true});
+
+  /// Value returned from [show] — set to `false` to simulate a notification
+  /// that could not be displayed (no permission / dismissed / platform throw).
+  final bool result;
   final List<({String? category, String? payload})> shown = [];
 
   @override
-  Future<void> show({
+  Future<bool> show({
     required int id,
     required String title,
     required String body,
@@ -28,6 +33,7 @@ class _RecordingNotificationService extends NotificationService {
     String? category,
   }) async {
     shown.add((category: category, payload: payload));
+    return result;
   }
 }
 
@@ -116,11 +122,19 @@ _FakeSecureStorage _seeded() => _FakeSecureStorage({
 });
 
 void main() {
-  Future<(_EmittingTransport, _RecordingNotificationService)> pumpHandler(
-    WidgetTester tester,
-  ) async {
+  Future<
+    (
+      _EmittingTransport,
+      _RecordingNotificationService,
+      ConnectionController,
+    )
+  >
+  pumpHandler(
+    WidgetTester tester, {
+    _RecordingNotificationService? notifications,
+  }) async {
     final transport = _EmittingTransport();
-    final notifications = _RecordingNotificationService();
+    final service = notifications ?? _RecordingNotificationService();
     final controller = ConnectionController(
       _seeded(),
       transportFactory: () => transport,
@@ -133,7 +147,7 @@ void main() {
       ProviderScope(
         overrides: [
           connectionControllerProvider.overrideWith((ref) => controller),
-          notificationServiceProvider.overrideWithValue(notifications),
+          notificationServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp(
           navigatorKey: pinoNavigatorKey,
@@ -146,13 +160,13 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     // Note: the ProviderScope owns the overridden controller and disposes it
     // on teardown — do NOT addTearDown(controller.dispose) (double dispose).
-    return (transport, notifications);
+    return (transport, service, controller);
   }
 
   testWidgets(
     'backgrounded confirmAction fires a categorized notification, no dialog',
     (tester) async {
-      final (transport, notifications) = await pumpHandler(tester);
+      final (transport, notifications, _) = await pumpHandler(tester);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       await tester.pump();
 
@@ -185,7 +199,7 @@ void main() {
   testWidgets('foreground confirmAction shows a dialog, no notification', (
     tester,
   ) async {
-    final (transport, notifications) = await pumpHandler(tester);
+    final (transport, notifications, _) = await pumpHandler(tester);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
 
@@ -206,4 +220,146 @@ void main() {
     expect(notifications.shown, isEmpty);
     expect(find.text('Approve'), findsOneWidget);
   });
+
+  testWidgets(
+    'backgrounded askUserQuestion fires a question notification, no dialog',
+    (tester) async {
+      final (transport, notifications, _) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-q',
+          body: {
+            'kind': 'askUserQuestion',
+            'question': 'Deploy to prod?',
+            'sessionId': 's1',
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(notifications.shown, hasLength(1));
+      expect(notifications.shown.single.category, kQuestionCategoryId);
+      final payload = parseNotificationPayload(
+        notifications.shown.single.payload,
+      );
+      expect(payload.requestId, 'req-q');
+      expect(payload.kind, 'askUserQuestion');
+      expect(find.byType(AlertDialog), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'backgrounded confirmAction falls back to a dialog when show returns false',
+    (tester) async {
+      final (transport, notifications, _) = await pumpHandler(
+        tester,
+        notifications: _RecordingNotificationService(result: false),
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-fb',
+          body: {
+            'kind': 'confirmAction',
+            'action': 'rm -rf build/',
+            'sessionId': 's1',
+          },
+        ),
+      );
+      // Drain the async dispatch (emit → show → fallthrough → showDialog).
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      // show() was attempted but returned false, so the dialog is presented
+      // instead so the request stays answerable. The route is pushed while
+      // backgrounded; resuming lets its entrance animation settle so it's
+      // visible.
+      expect(notifications.shown, hasLength(1));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('Approve'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'backgrounded confirmAction is replayed as a dialog on resume',
+    (tester) async {
+      final (transport, notifications, _) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-replay',
+          body: {
+            'kind': 'confirmAction',
+            'action': 'rm -rf build/',
+            'sessionId': 's1',
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // Notification shown, dialog withheld while backgrounded.
+      expect(notifications.shown, hasLength(1));
+      expect(find.text('Approve'), findsNothing);
+
+      // Resume and pump past the drain delay → dialog now presented.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+
+      expect(find.text('Approve'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'answered-from-notification request is not double-prompted on resume',
+    (tester) async {
+      final (transport, notifications, controller) = await pumpHandler(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-answered',
+          body: {
+            'kind': 'confirmAction',
+            'action': 'rm -rf build/',
+            'sessionId': 's1',
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(notifications.shown, hasLength(1));
+
+      // The notification action answered the request (emits `responded`).
+      controller.respondTo('req-answered', {
+        'kind': 'confirmAction',
+        'approved': true,
+      });
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+
+      expect(find.text('Approve'), findsNothing);
+    },
+  );
 }

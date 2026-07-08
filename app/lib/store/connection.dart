@@ -119,6 +119,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   /// rediscover a moved server. Injectable so unit tests run instantly.
   final Duration _rediscoverStall;
   final _inFrames = StreamController<Envelope>.broadcast();
+  final _responded = StreamController<String>.broadcast();
 
   FakeServer? _fake;
   Transport? _ws;
@@ -132,6 +133,12 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   Stream<Envelope> get srvRequests =>
       _inFrames.stream.where((e) => e.t == MsgType.srvRequest);
 
+  /// Emits a [requestId] once its `srv.response` has been sent. Lets the UI
+  /// drop any queued fallback/replay for a request that was answered
+  /// elsewhere (e.g. from an actionable notification), avoiding a double
+  /// prompt after the app resumes.
+  Stream<String> get responded => _responded.stream;
+
   /// Send the matching `srv.response` for a previously-received [requestId].
   ///
   /// Idempotent: both the dialog path (`SrvRequestHandler._respond`) and the
@@ -140,6 +147,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
   void respondTo(String requestId, Map<String, dynamic> body) {
     if (!_respondedRequests.add(requestId)) return;
     send(Envelope(t: MsgType.srvResponse, id: requestId, body: body));
+    _responded.add(requestId);
   }
 
   final Set<String> _respondedRequests = <String>{};
@@ -437,6 +445,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     _ws?.close();
     _fake?.stop();
     _inFrames.close();
+    _responded.close();
     super.dispose();
   }
 }

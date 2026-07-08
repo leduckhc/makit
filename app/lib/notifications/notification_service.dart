@@ -10,6 +10,10 @@ import 'notification_request.dart';
 /// SharedPreferences key for the SPEC-07 pending-action replay queue.
 const kPendingActionsKey = 'pino_pending_actions';
 
+/// Upper bound on the SPEC-07 pending-action replay queue. Prevents unbounded
+/// growth in SharedPreferences when actions are never drained.
+const kMaxPendingActions = 50;
+
 /// SPEC-07 seam: fired when the user taps an actionable-notification button
 /// while the app process is NOT alive. This runs in a separate
 /// `@pragma('vm:entry-point')` isolate with no socket/Riverpod, so Slice 1
@@ -36,11 +40,23 @@ Future<void> _persistPendingAction(
     queue.add(
       jsonEncode({'payload': payload, 'actionId': actionId, 'input': input}),
     );
+    // Cap the queue so a never-drained backlog can't grow without bound.
+    if (queue.length > kMaxPendingActions) {
+      queue.removeRange(0, queue.length - kMaxPendingActions);
+    }
     await prefs.setStringList(kPendingActionsKey, queue);
   } catch (_) {
     // Best-effort: a failed enqueue must not crash the background isolate.
   }
 }
+
+/// Test-only seam for the private [_persistPendingAction] enqueue path.
+@visibleForTesting
+Future<void> persistPendingActionForTest(
+  String? payload,
+  String actionId,
+  String? input,
+) => _persistPendingAction(payload, actionId, input);
 
 /// Thin wrapper around flutter_local_notifications. Not unit-tested (pure I/O);
 /// the decision logic lives in notification_policy.dart and
@@ -143,14 +159,18 @@ class NotificationService {
   /// Show a notification now. [payload] carries tap-routing info. When
   /// [category] is set, action buttons are attached (iOS via the registered
   /// category; Android via inline [AndroidNotificationAction]s).
-  Future<void> show({
+  ///
+  /// Returns `true` when the notification was handed to the plugin, `false`
+  /// when it could not be shown (service not ready, permission denied, or a
+  /// platform throw) — the caller uses this to fall back to an in-app dialog.
+  Future<bool> show({
     required int id,
     required String title,
     required String body,
     String? payload,
     String? category,
   }) async {
-    if (!_ready) return;
+    if (!_ready) return false;
     final details = NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
@@ -171,11 +191,13 @@ class NotificationService {
         notificationDetails: details,
         payload: payload,
       );
+      return true;
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
         print('[pino] notification show failed: $e');
       }
+      return false;
     }
   }
 
