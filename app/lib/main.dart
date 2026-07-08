@@ -13,6 +13,7 @@ import 'app/test_bootstrap.dart';
 import 'notifications/notification_observer.dart';
 import 'notifications/notification_request.dart';
 import 'notifications/pending_action_drain.dart';
+import 'notifications/push_registration.dart';
 import 'store/connection.dart';
 import 'store/store.dart';
 import 'transport/transport.dart';
@@ -35,7 +36,15 @@ Future<void> main() async {
   // The store listens to a broadcast stream that drops events without
   // listeners. Eagerly create the controller so it's subscribed before the
   // WS connects and starts pushing projects/sessions snapshots.
-  final container = ProviderContainer();
+  //
+  // SPEC-07: inject a channel-backed push registrar so the APNs token the iOS
+  // `AppDelegate` forwards over `pino/push` reaches the controller, which then
+  // sends `push.register`. Tests keep the default NoopPushRegistrar.
+  final container = ProviderContainer(
+    overrides: [
+      pushRegistrarProvider.overrideWithValue(ChannelPushRegistrar()),
+    ],
+  );
   container.read(storeControllerProvider);
 
   // Notifications: route taps into the session and activate the status→notif

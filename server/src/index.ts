@@ -32,9 +32,8 @@ import { SessionManager } from "./manager.js";
 import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
 import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
-import { loadApnsConfig } from "./push/config.js";
-import { NoopPushSender, type PushSender } from "./push/sender.js";
-import { ApnsPushSender } from "./push/apns.js";
+import { loadApnsConfig, createPushSender } from "./push/config.js";
+import { type PushSender } from "./push/sender.js";
 import { buildWakePayload } from "./push/payload.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
@@ -277,12 +276,8 @@ async function main() {
   // The WakeCoordinator + onUndeliverable wiring lives inside server.ts, which
   // owns `connectedDeviceIds`; index.ts only picks the sender and forwards it.
   const apnsConfig = loadApnsConfig();
-  let sender: PushSender;
-  if (apnsConfig) {
-    sender = new ApnsPushSender(apnsConfig);
-    console.log(`[pino] push: APNs sender active (${apnsConfig.env}, ${apnsConfig.bundleId})`);
-  } else {
-    sender = new NoopPushSender();
+  const sender: PushSender = createPushSender(apnsConfig);
+  if (!sender.enabled) {
     console.log("[pino] push: not configured (~/.pino/push.json absent/invalid) — wakes disabled");
   }
 

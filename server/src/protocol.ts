@@ -100,10 +100,10 @@ export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${
  */
 export type CmdKind =
   | "send.message"
-  | "session.action"
   | "cancel"
   | "session.spawn"
   | "session.list"
   | "session.attach"
   | "session.kill"
+  | "session.policy"
   | "push.register";

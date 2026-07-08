@@ -20,23 +20,33 @@ function collectStrings(value: unknown, out: string[]): void {
   }
 }
 
+/**
+ * Allowlisted key set at every dictionary path. Any object node whose path is
+ * absent here, or which carries a key not in its set, fails the walk — so a
+ * forbidden key at ANY depth (e.g. a future `aps.alert.subtitle`) is caught.
+ */
+const ALLOWED_KEYS: Record<string, Set<string>> = {
+  "": new Set(["aps"]),
+  aps: new Set(["alert", "sound", "badge", "content-available"]),
+  "aps.alert": new Set(["title", "body"]),
+};
+
+/** Recursively assert every object-valued node contains only allowlisted keys. */
+function assertKeysAllowlisted(value: unknown, path: string): void {
+  if (!value || typeof value !== "object") return;
+  const allowed = ALLOWED_KEYS[path];
+  assert.ok(allowed, `unexpected object node at path "${path || "<root>"}"`);
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    assert.ok(allowed!.has(k), `unexpected key "${k}" at path "${path || "<root>"}"`);
+    assertKeysAllowlisted(v, path ? `${path}.${k}` : k);
+  }
+}
+
 test("wake payload key set is allowlisted recursively", () => {
   const p: ApnsPayload = buildWakePayload({ pendingCount: 1 });
-
-  // Top level: only `aps`.
-  assert.deepEqual(Object.keys(p).sort(), ["aps"]);
-
-  // aps: subset of the allowed keys — a new dynamic field fails this.
-  const apsAllowed = new Set(["alert", "sound", "badge", "content-available"]);
-  for (const k of Object.keys(p.aps)) {
-    assert.ok(apsAllowed.has(k), `unexpected aps key: ${k}`);
-  }
-
-  // aps.alert: subset of {title, body}. A future `subtitle` is rejected here.
-  const alertAllowed = new Set(["title", "body"]);
-  for (const k of Object.keys(p.aps.alert)) {
-    assert.ok(alertAllowed.has(k), `unexpected aps.alert key: ${k}`);
-  }
+  // A single recursive traversal: every object node must live at a known path
+  // and expose only allowlisted keys, at any depth.
+  assertKeysAllowlisted(p, "");
 });
 
 test("wake payload contains no session content", () => {

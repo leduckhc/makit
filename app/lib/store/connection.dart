@@ -111,6 +111,9 @@ class ConnectionController extends StateNotifier<PinoConnState> {
        _rediscoverStall = rediscoverStall ?? const Duration(seconds: 2),
        _pushRegistrar = pushRegistrar ?? const NoopPushRegistrar(),
        super(PinoConnState()) {
+    // SPEC-07: the APNs token can arrive AFTER we connect. Subscribe so a late
+    // token still triggers a `push.register` on the live socket.
+    _pushRegistrar.onToken = registerPushToken;
     _boot();
   }
 
@@ -308,8 +311,12 @@ class ConnectionController extends StateNotifier<PinoConnState> {
         clearError: s == WsState.connected,
       );
       // SPEC-07: (re)register the content-free wake push token on every
-      // successful (re)connect. No-op when no token is available.
-      if (s == WsState.connected) unawaited(_registerPush());
+      // successful (re)connect. Reset the per-connection guard first so a
+      // fresh socket always re-registers; no-op when no token is available.
+      if (s == WsState.connected) {
+        _registeredToken = null;
+        unawaited(_registerPush());
+      }
     });
     state = state.copyWith(
       useFake: false,
@@ -440,6 +447,20 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     await _connectPaired(server);
   }
 
+  /// SPEC-07: the push token most recently sent on the CURRENT connection.
+  /// Reset on every (re)connect so a fresh socket re-registers, but guards
+  /// against re-sending the same token within one connection (idempotent).
+  String? _registeredToken;
+
+  /// SPEC-07: called when a native push token becomes available (possibly
+  /// after the socket connected). Sends `push.register` immediately if we're
+  /// connected; otherwise the next successful connect picks it up via
+  /// [_registerPush]. Idempotent per connection.
+  void registerPushToken(String token) {
+    if (token.isEmpty) return;
+    if (state.wsState == WsState.connected) _sendPushRegister(token);
+  }
+
   /// SPEC-07: send the `push.register` cmd once a native push token is
   /// available. Best-effort; a missing token (Noop registrar, permission
   /// declined) simply skips registration.
@@ -447,16 +468,24 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     try {
       final token = await _pushRegistrar.getToken();
       if (token == null || token.isEmpty) return;
-      send(
-        Envelope(
-          t: MsgType.cmd,
-          id: 'push-reg-${DateTime.now().microsecondsSinceEpoch}',
-          body: pushRegisterBody(token: token, platform: _pushRegistrar.platform),
-        ),
-      );
+      _sendPushRegister(token);
     } catch (_) {
       // Best-effort: a failed registration never breaks the connection.
     }
+  }
+
+  /// Emit the `push.register` cmd for [token], unless the same token was
+  /// already registered on this connection.
+  void _sendPushRegister(String token) {
+    if (token == _registeredToken) return;
+    _registeredToken = token;
+    send(
+      Envelope(
+        t: MsgType.cmd,
+        id: 'push-reg-${DateTime.now().microsecondsSinceEpoch}',
+        body: pushRegisterBody(token: token, platform: _pushRegistrar.platform),
+      ),
+    );
   }
 
   Future<void> unpair() async {
@@ -487,9 +516,20 @@ final _secureStorageProvider = Provider<FlutterSecureStorage>(
   (_) => const FlutterSecureStorage(),
 );
 
+/// SPEC-07: the native push-token provider injected into the controller.
+/// Defaults to [NoopPushRegistrar] (safe for tests + platforms without a
+/// native provider). The real mobile app overrides this with a
+/// [ChannelPushRegistrar] in `main.dart`.
+final pushRegistrarProvider = Provider<PushRegistrar>(
+  (_) => const NoopPushRegistrar(),
+);
+
 final connectionControllerProvider =
     StateNotifierProvider<ConnectionController, PinoConnState>((ref) {
-      return ConnectionController(ref.watch(_secureStorageProvider));
+      return ConnectionController(
+        ref.watch(_secureStorageProvider),
+        pushRegistrar: ref.watch(pushRegistrarProvider),
+      );
     });
 
 final connectionProvider = Provider<PinoConnState>(

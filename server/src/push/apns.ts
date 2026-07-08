@@ -47,6 +47,8 @@ const APNS_HOST_PROD = "https://api.push.apple.com";
 const APNS_HOST_SANDBOX = "https://api.sandbox.push.apple.com";
 /** APNs provider tokens are valid for 60 min; refresh well inside that window. */
 const JWT_TTL_MS = 50 * 60 * 1000;
+/** Abort a wake request that stalls this long so the session can't leak. */
+const APNS_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Real APNs sender. NOT unit-tested (network + crypto I/O) — verified by the
@@ -84,13 +86,22 @@ export class ApnsPushSender implements PushSender {
     const host = this.config.env === "production" ? APNS_HOST_PROD : APNS_HOST_SANDBOX;
     return new Promise<PushResult>((resolve) => {
       let settled = false;
+      let session: ReturnType<typeof http2Connect> | null = null;
       const done = (r: PushResult) => {
         if (settled) return;
         settled = true;
+        // Always tear the session down so a stalled/half-open APNs connection
+        // can't leak the underlying socket, regardless of which path we hit.
+        try {
+          session?.close();
+          session?.destroy();
+        } catch {
+          /* best-effort cleanup */
+        }
         resolve(r);
       };
       try {
-        const session = http2Connect(host);
+        session = http2Connect(host);
         session.on("error", (e) => {
           log.warn(`[pino] push: APNs connect error: ${e.message}`);
           done("error");
@@ -103,6 +114,17 @@ export class ApnsPushSender implements PushSender {
           "apns-push-type": "alert",
           "apns-priority": "10",
         });
+        // Abort a request that stalls (e.g. APNs edge unreachable over the
+        // tailnet) so we never hang holding the session open indefinitely.
+        req.setTimeout(APNS_REQUEST_TIMEOUT_MS, () => {
+          log.warn("[pino] push: APNs request timed out");
+          try {
+            req.close();
+          } catch {
+            /* best-effort */
+          }
+          done("error");
+        });
         let status = 0;
         let bodyText = "";
         req.on("response", (headers) => {
@@ -111,7 +133,6 @@ export class ApnsPushSender implements PushSender {
         req.setEncoding("utf8");
         req.on("data", (chunk) => (bodyText += chunk));
         req.on("end", () => {
-          session.close();
           let reason: string | undefined;
           try {
             reason = bodyText ? (JSON.parse(bodyText).reason as string) : undefined;

@@ -1,8 +1,10 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pino/notifications/push_registration.dart';
 import 'package:pino/transport/protocol.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('pushRegisterBody (B3)', () {
     test('builds the register cmd body', () {
       final body = pushRegisterBody(token: 'tok-123', platform: 'apns');
@@ -25,6 +27,53 @@ void main() {
       const registrar = NoopPushRegistrar();
       expect(await registrar.getToken(), isNull);
       expect(registrar.platform, 'apns');
+    });
+  });
+
+  group('ChannelPushRegistrar (MAJOR 1)', () {
+    const codec = StandardMethodCodec();
+
+    Future<void> invokeNative(MethodChannel channel, MethodCall call) {
+      return TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            channel.name,
+            codec.encodeMethodCall(call),
+            (_) {},
+          );
+    }
+
+    test('token is null until the native didRegister call fires', () async {
+      final registrar = ChannelPushRegistrar(
+        channel: const MethodChannel('pino/push/test-null'),
+      );
+      expect(await registrar.getToken(), isNull);
+      expect(registrar.platform, 'apns');
+    });
+
+    test('didRegister stores the token and fires the listener', () async {
+      const channel = MethodChannel('pino/push/test-register');
+      final registrar = ChannelPushRegistrar(channel: channel);
+      String? fired;
+      registrar.onToken = (t) => fired = t;
+
+      await invokeNative(channel, const MethodCall('didRegister', 'deadbeef01'));
+
+      expect(await registrar.getToken(), 'deadbeef01');
+      expect(fired, 'deadbeef01');
+    });
+
+    test('non-string / empty arguments are ignored', () async {
+      const channel = MethodChannel('pino/push/test-ignore');
+      final registrar = ChannelPushRegistrar(channel: channel);
+      var fireCount = 0;
+      registrar.onToken = (_) => fireCount++;
+
+      await invokeNative(channel, const MethodCall('didRegister', 42));
+      await invokeNative(channel, const MethodCall('didRegister', ''));
+      await invokeNative(channel, const MethodCall('didFail', 'boom'));
+
+      expect(await registrar.getToken(), isNull);
+      expect(fireCount, 0);
     });
   });
 }

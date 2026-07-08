@@ -122,6 +122,20 @@ test("push.register stores the token for the authed device", async () => {
   assert.ok(client.sent.some((f) => f.t === "ack"));
 });
 
+test("push.register defaults platform to apns when none is provided", async () => {
+  const registry = fakeRegistry();
+  const router = new CommandRouter();
+  registerPushCommands(router, registry);
+  const client = fakeClient("d1");
+
+  await dispatch(router, client, { token: "x" });
+
+  assert.deepEqual(registry.calls, [
+    { deviceId: "d1", token: "x", platform: "apns", env: undefined },
+  ]);
+  assert.ok(client.sent.some((f) => f.t === "ack"));
+});
+
 test("push.register with no token → err bad_request", async () => {
   const registry = fakeRegistry();
   const router = new CommandRouter();
