@@ -1,5 +1,6 @@
 # Build artifacts
 build/
+coverage/
 .dart_tool/
 .pub-cache/
 .pub/

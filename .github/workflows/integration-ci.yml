@@ -1,0 +1,168 @@
+name: Integration E2E (stub adapter)
+
+# Keyless full-stack integration: real Flutter app ↔ real TLS WS server backed
+# by the StubAdapter (server/src/adapters/stub.ts) on an iOS simulator. No LLM,
+# no API key — the stub replies with scripted scenarios (echo, STREAM, THINK,
+# MARKDOWN, ASK_QUESTION, ASK_MULTI), so this runs on every PR/push as a
+# blocking gate. The real-pi path (needs a live pi + API key) stays in
+# real-pi-e2e.yml, opt-in only.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'server/**'
+      - '.github/workflows/integration-ci.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/**'
+      - 'server/**'
+      - '.github/workflows/integration-ci.yml'
+  workflow_dispatch: {}
+
+jobs:
+  stub-e2e:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('server/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache Flutter packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Install server dependencies (lockfile-locked)
+        working-directory: server
+        run: pnpm secure:install
+
+      - name: Install app dependencies (lockfile-locked)
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+
+      - name: Pick an available iOS simulator
+        run: |
+          # tool/e2e.sh matches MAKIT_SIM_NAME as a substring; pick the first
+          # available iPhone the runner's Xcode ships (model names vary by
+          # Xcode version, so don't hard-code "iPhone 17").
+          NAME=$(xcrun simctl list devices available \
+            | grep -E '^[[:space:]]+iPhone' \
+            | head -1 | sed -E 's/^[[:space:]]+//; s/ \(.*//')
+          if [[ -z "$NAME" ]]; then
+            echo "no iPhone simulator available on this runner" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "MAKIT_SIM_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Flutter full-stack e2e (stub adapter)
+        run: app/tool/e2e.sh --mode=stub
+
+  stub-e2e-coverage:
+    # Coverage collection adds ~15 min (flutter compile + instrumentation).
+    # Run only on-demand (workflow_dispatch) or nightly, not on every PR. The
+    # stub-e2e job above is the fast blocking gate.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('server/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache Flutter packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Install server dependencies (lockfile-locked)
+        working-directory: server
+        run: pnpm secure:install
+
+      - name: Install app dependencies (lockfile-locked)
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+
+      - name: Pick an available iOS simulator
+        run: |
+          NAME=$(xcrun simctl list devices available \
+            | grep -E '^[[:space:]]+iPhone' \
+            | head -1 | sed -E 's/^[[:space:]]+//; s/ \(.*//')
+          if [[ -z "$NAME" ]]; then
+            echo "no iPhone simulator available on this runner" >&2
+            xcrun simctl list devices available >&2
+            exit 1
+          fi
+          echo "MAKIT_SIM_NAME=$NAME" >> "$GITHUB_ENV"
+
+      - name: Flutter e2e + coverage
+        env:
+          MAKIT_E2E_COVERAGE: '1'
+        run: app/tool/e2e.sh --mode=stub
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./app/coverage/lcov.info
+          flags: integration
+        continue-on-error: true
