@@ -153,9 +153,16 @@ if [[ "$MODE" == "real" ]]; then
 else
   TEST_TARGET="integration_test/stub"
 fi
+# Opt-in coverage (CI). Off by default so local/real runs stay fast and don't
+# litter app/coverage/. When set, flutter writes coverage/lcov.info for upload.
+COVERAGE_ARGS=()
+if [[ -n "${MAKIT_E2E_COVERAGE:-}" ]]; then
+  COVERAGE_ARGS+=(--coverage)
+fi
 set +e
 PATH="$FLUTTER_BIN_DIR:$PATH" "$FLUTTER_BIN" test "$TEST_TARGET" \
   -d "$SIM_ID" \
+  ${COVERAGE_ARGS[@]+"${COVERAGE_ARGS[@]}"} \
   --dart-define=MAKIT_TEST_HOST=127.0.0.1 \
   --dart-define=MAKIT_TEST_PORT="$PORT" \
   --dart-define=MAKIT_TEST_BEARER="$BEARER" \
