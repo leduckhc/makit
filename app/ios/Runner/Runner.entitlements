@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 	<dict>
-		<!-- SPEC-07: APNs environment (aps-environment) TEMPORARILY REMOVED so the
-		     free personal team (HZB2Y58BJ2) can code-sign while the paid Apple
-		     Developer Program membership activates. RESTORE after activation:
-		       <key>aps-environment</key><string>development</string>
-		     (Push Notifications needs a paid team.) -->
+		<!-- SPEC-07: APNs environment. Xcode's Push Notifications capability
+		     manages this; `development` for the sandbox, `production` for a
+		     release build. -->
+		<key>aps-environment</key>
+		<string>development</string>
 	</dict>
 </plist>
