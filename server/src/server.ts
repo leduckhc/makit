@@ -51,6 +51,10 @@ import { CommandRouter } from "./ws/command_router.js";
 import { PaneBridge } from "./pane/bridge.js";
 import { herdrReader } from "./pane/herdr.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
+import { WakeCoordinator } from "./push/wake_coordinator.js";
+import { NoopPushSender, type PushSender } from "./push/sender.js";
+import { buildWakePayload } from "./push/payload.js";
+import { registerPushCommands } from "./push/register_cmd.js";
 import type { IngestAdapter } from "./adapters/ingest.js";
 import type { AdapterEvent } from "./adapters/adapter.js";
 
@@ -64,6 +68,14 @@ export interface ServerOpts {
   trustLocalhost?: boolean;
   /** Shared secret authenticating a pino-mirror extension host (World D). */
   hostToken?: string;
+  /**
+   * Content-free wake sender (SPEC-07). Defaults to {@link NoopPushSender}
+   * (wakes are no-ops → Slice-1 fallback). `index.ts` supplies an
+   * `ApnsPushSender` when `~/.pino/push.json` is configured.
+   */
+  sender?: PushSender;
+  /** Content-free payload builder (injected for testability/wiring). */
+  buildWakePayload?: typeof buildWakePayload;
 }
 
 /** Concrete client: a {@link WsClient} backed by a live `ws` socket. */
@@ -108,7 +120,17 @@ function isLoopbackOrWildcard(host: string): boolean {
 }
 
 export function startWsServer(opts: ServerOpts) {
-  const { host, port, manager, cert, registry, trustLocalhost = false, hostToken } = opts;
+  const {
+    host,
+    port,
+    manager,
+    cert,
+    registry,
+    trustLocalhost = false,
+    hostToken,
+    sender = new NoopPushSender(),
+    buildWakePayload: buildWakePayloadFn = buildWakePayload,
+  } = opts;
 
   // The WSS uses noServer mode so we can forward upgrades from TWO HTTPS
   // listeners into the same connection handler:
@@ -145,10 +167,32 @@ export function startWsServer(opts: ServerOpts) {
   const hostAdapters = new Map<string, IngestAdapter>();
   const hostOwner = new Map<string, WsClient>();
 
+  // Device ids with a live authenticated WS connection — feeds the control
+  // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
+  // (SPEC-07: never wake a device that already has a live socket).
+  const connectedDeviceIds = (): Set<string> => {
+    const ids = new Set<string>();
+    for (const c of clients.values()) if (c.authed && c.deviceId) ids.add(c.deviceId);
+    return ids;
+  };
+
   // -------- collaborators -------------------------------------------------
 
   const hub = new SubscriptionHub({ manager });
-  const rpc = new ReverseRpc({ clients: () => clients.values() });
+  // SPEC-07: the WakeCoordinator is built HERE (not in index.ts) because
+  // `connectedDeviceIds` is a server.ts closure. When `askDevice` finds no live
+  // subscribed socket, `onUndeliverable` wakes every paired token-bearing
+  // device with no live socket and returns the keep-pending gate.
+  const wakeCoordinator = new WakeCoordinator({
+    registry,
+    connectedDeviceIds,
+    sender,
+    buildWakePayload: buildWakePayloadFn,
+  });
+  const rpc = new ReverseRpc({
+    clients: () => clients.values(),
+    onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
+  });
   const paneBridge = new PaneBridge(herdrReader, (target, data) => {
     for (const c of clients.values()) {
       if (c.authed && c.panes?.has(target)) {
@@ -156,7 +200,7 @@ export function startWsServer(opts: ServerOpts) {
       }
     }
   });
-  const authGate = new AuthGate({ registry, onAuthenticated: sendSnapshots, hostToken });
+  const authGate = new AuthGate({ registry, onAuthenticated, hostToken });
   const router = buildCommandRouter();
 
   // -------- session wiring ------------------------------------------------
@@ -213,13 +257,6 @@ export function startWsServer(opts: ServerOpts) {
   }
 
   const askDevice = rpc.askDevice.bind(rpc);
-  // Device ids with a live authenticated WS connection — feeds the control
-  // plane's `devices.list` "connected" flag (SPEC-01).
-  const connectedDeviceIds = (): Set<string> => {
-    const ids = new Set<string>();
-    for (const c of clients.values()) if (c.authed && c.deviceId) ids.add(c.deviceId);
-    return ids;
-  };
   return { wss, https, localHttps, askDevice, connectedDeviceIds };
 
   // -------- dispatch ------------------------------------------------------
@@ -238,6 +275,9 @@ export function startWsServer(opts: ServerOpts) {
         return;
       case "sub":
         hub.handleSub(state, env);
+        // SPEC-07 A6: a freshly-(re)subscribed client may be the woken device;
+        // replay any pending srv.request it hasn't seen (de-duped per client).
+        rpc.replayPendingTo(state);
         return;
       case "unsub":
         hub.handleUnsub(state, env);
@@ -555,6 +595,9 @@ export function startWsServer(opts: ServerOpts) {
       }
     });
 
+    // SPEC-07: register the device's content-free wake push token.
+    registerPushCommands(r, registry);
+
     // B9b: dev-only debug commands, registered only when PINO_DEV is set.
     if (process.env.PINO_DEV) registerDebugCommands(r);
 
@@ -638,6 +681,16 @@ export function startWsServer(opts: ServerOpts) {
   function sendSnapshots(client: WsClient) {
     client.send({ t: "event", id: newId("snap"), kind: "projects.snapshot", projects: manager.listProjects() });
     client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: manager.listSessions() });
+  }
+
+  // SPEC-07 A6: replay lives ONLY here (on auth) and in the `sub` handler —
+  // never in `sendSnapshots`, which `broadcastSnapshots` fires on every session
+  // event and would otherwise re-fire replay constantly. A force-quit-then-woken
+  // app has an empty subscription set, so replay-on-`sub` alone is insufficient;
+  // replaying on auth delivers pending items regardless of subscription.
+  function onAuthenticated(client: WsClient) {
+    sendSnapshots(client);
+    rpc.replayPendingTo(client);
   }
 
   function broadcastSnapshots() {

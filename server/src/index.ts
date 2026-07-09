@@ -32,6 +32,9 @@ import { SessionManager } from "./manager.js";
 import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
 import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
+import { loadApnsConfig, createPushSender } from "./push/config.js";
+import { type PushSender } from "./push/sender.js";
+import { buildWakePayload } from "./push/payload.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
@@ -268,6 +271,16 @@ async function main() {
   // World D: a stable secret the pino-mirror pi extension uses to authenticate.
   // Written (0600) to ~/.pino/host.json so an externally-launched pi can find us.
   const hostToken = loadOrCreateHostToken();
+  // SPEC-07: choose the content-free wake sender. Absent/invalid push.json →
+  // NoopPushSender (graceful degradation: wakes are no-ops, Slice-1 fallback).
+  // The WakeCoordinator + onUndeliverable wiring lives inside server.ts, which
+  // owns `connectedDeviceIds`; index.ts only picks the sender and forwards it.
+  const apnsConfig = loadApnsConfig();
+  const sender: PushSender = createPushSender(apnsConfig);
+  if (!sender.enabled) {
+    console.log("[pino] push: not configured (~/.pino/push.json absent/invalid) — wakes disabled");
+  }
+
   const ws = startWsServer({
     host: opts.host,
     port: opts.port,
@@ -276,6 +289,8 @@ async function main() {
     registry,
     trustLocalhost: opts.noAuth,
     hostToken,
+    sender,
+    buildWakePayload,
   });
   writeHostFile(opts.port, cert.fingerprint, hostToken);
   ensureMirrorExtensionInstalled();

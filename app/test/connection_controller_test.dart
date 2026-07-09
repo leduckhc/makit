@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pino/pairing/mdns_browser.dart';
+import 'package:pino/notifications/push_registration.dart';
 import 'package:pino/store/connection.dart';
 import 'package:pino/transport/protocol.dart';
 import 'package:pino/transport/transport.dart';
@@ -31,6 +32,10 @@ class FakeTransport implements Transport {
 
   final _frames = StreamController<Envelope>.broadcast();
   final _state = StreamController<WsState>.broadcast();
+
+  /// Push an arbitrary transport state, mirroring the real socket dropping
+  /// and re-establishing (used to exercise reconnect re-registration).
+  void emit(WsState s) => _state.add(s);
 
   @override
   Future<void> connect(
@@ -137,6 +142,29 @@ PairedServer _storedServer(FakeSecureStorage storage) => PairedServer.fromJson(
 
 BrowseLan _fixedBrowse(List<DiscoveredServer> results) =>
     ({Duration timeout = const Duration(seconds: 3)}) async => results;
+
+/// Controllable [PushRegistrar] fake: lets a test seed a token before connect
+/// and deliver one after connect (mirrors the native `didRegister` arrival).
+class FakePushRegistrar implements PushRegistrar {
+  FakePushRegistrar({this.token, this.platform = 'apns'});
+
+  String? token;
+  @override
+  String platform;
+  void Function(String token)? _onToken;
+
+  @override
+  Future<String?> getToken() async => token;
+
+  @override
+  set onToken(void Function(String token)? listener) => _onToken = listener;
+
+  /// Simulate the native APNs token arriving.
+  void deliver(String t) {
+    token = t;
+    _onToken?.call(t);
+  }
+}
 
 void main() {
   group('ConnectionController mDNS rediscovery', () {
@@ -299,6 +327,134 @@ void main() {
         controller.dispose();
       },
     );
+  });
+
+  group('ConnectionController push.register (SPEC-07 MAJOR 1)', () {
+    List<Envelope> pushRegs(FakeTransport t) => t.sentEnvelopes
+        .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'push.register')
+        .toList();
+
+    test('registers on connect when a token is already present', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+        pushRegistrar: FakePushRegistrar(token: 'tok-1'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      final regs = pushRegs(transports.single);
+      expect(regs, hasLength(1));
+      expect(regs.single.body['token'], 'tok-1');
+      expect(regs.single.body['platform'], 'apns');
+
+      controller.dispose();
+    });
+
+    test('registers when the token arrives AFTER connect', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final registrar = FakePushRegistrar(); // no token yet
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+        pushRegistrar: registrar,
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        pushRegs(transports.single),
+        isEmpty,
+        reason: 'no token at connect',
+      );
+
+      registrar.deliver('tok-late');
+      await Future<void>.delayed(Duration.zero);
+
+      final regs = pushRegs(transports.single);
+      expect(regs, hasLength(1));
+      expect(regs.single.body['token'], 'tok-late');
+
+      controller.dispose();
+    });
+
+    test('the same token is not re-sent within one connection', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final registrar = FakePushRegistrar(token: 'tok-dup');
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+        pushRegistrar: registrar,
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(pushRegs(transports.single), hasLength(1));
+
+      // Native re-delivers the identical token → must not double-register.
+      registrar.deliver('tok-dup');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(pushRegs(transports.single), hasLength(1));
+
+      controller.dispose();
+    });
+
+    test('re-registers the same token on every reconnect', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: const Duration(seconds: 30),
+        pushRegistrar: FakePushRegistrar(token: 'tok-1'),
+      );
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      final t = transports.single;
+      expect(pushRegs(t), hasLength(1), reason: 'registers on first connect');
+
+      // The socket drops and the same transport reconnects. Per spec §B the
+      // token must be re-sent on every successful reconnect, even unchanged.
+      t.emit(WsState.reconnecting);
+      t.emit(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        pushRegs(t),
+        hasLength(2),
+        reason: 'each successful reconnect must re-send push.register',
+      );
+      expect(pushRegs(t).last.body['token'], 'tok-1');
+
+      controller.dispose();
+    });
   });
 
   group('ConnectionController respondTo idempotency (SPEC-08 step 4)', () {
