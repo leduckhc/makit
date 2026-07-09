@@ -46,6 +46,25 @@ SPEC-04 ───> SPEC-05 (spawn pi in pane)
 SPEC-01 and SPEC-04 can start in parallel. SPEC-02/03 need SPEC-01's control
 contract frozen. SPEC-05 needs SPEC-04's adapter interface frozen.
 
+## Next milestones (brainstorm — not yet specced)
+
+Raw ideas captured for the next wave, reframed as outcomes. These are **not
+frozen specs** yet; each needs its own SPEC before implementation. Numbering is
+provisional.
+
+| # | Working title | Outcome (why it matters) | Open questions |
+|---|---------------|--------------------------|----------------|
+| M1 | **First-run onboarding wizard (iOS)** | A brand-new user gets from *installed* → *paired* → *first message* without getting stuck. Frame it as a **stateful readiness wizard** (`reachable? → paired? → notifications granted? → ready`) that shows the one concrete fix for whatever step is failing — not a passive screenshot carousel (carousels get swiped past, go stale, and can't clear the real blockers, which are connection/permission gates). | Wizard vs. carousel split: keep any screenshot carousel as a **marketing/App Store asset** (see M2), and make the *in-app* onboarding functional/live. Which prerequisites can the app actually detect on-device? |
+| M2 | **getmakit.dev marketing site** | A real landing page that explains the value prop, shows the product, and drives installs (Mac app + TestFlight/App Store). This is also the natural home for a screenshot/video carousel and the "sell" narrative. | Static vs. framework? Where do install artifacts + docs live? Does the "README that sells" (M5) get folded in here or stay separate? |
+| M3 | **macOS app distribution & install** | Users install Makit.app **without building from source** — a signed + notarized artifact (DMG or similar), ideally with the `makit` CLI bundled into `Contents/Resources/` so it's zero-install (the resolver's preferred path). Removes today's `~/.local/bin/makit` dev shim. | DMG vs. Sparkle auto-update vs. Homebrew cask? Signing = `Developer ID Application` under `RT8DP44B6N`. How to bundle/version the CLI inside the app? |
+| M4 | **macOS control-app UX/UI polish** | The tray/control app feels like a finished product: clear server state, one-tap start/stop, device management, live sessions, QR, and notification controls — coherent visual design, not a functional-but-rough utility. | Menu-bar-only vs. a real settings window? What's the minimum surface that feels "done"? Depends on M3 for a real install story. |
+| M5 | **README that sells** | The repo's front door converts a curious visitor into a user: crisp value prop, a hero demo (GIF/video), quickstart, and the Tailscale-first story — less "internal notes," more "product pitch." | Standalone rewrite, or does it become a thin pointer to the M2 site? Keep engineering detail in `docs/`. |
+
+**Rough sequencing:** M3 (installable app) unblocks M4 (polish worth shipping) and
+gives M2/M5 something real to link to. M1 can proceed independently once pairing
+UX is stable. M2 and M5 share the same "sell" narrative and should be written
+together.
+
 ## Ground rules for every spec (from AGENTS.md)
 
 - **TDD:** a failing test precedes production logic (red → green → refactor).
