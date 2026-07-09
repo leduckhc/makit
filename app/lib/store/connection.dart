@@ -541,12 +541,16 @@ final connectionProvider = Provider<PinoConnState>(
 );
 
 final connectionListenableProvider = Provider<Listenable>((ref) {
-  final notifier = ValueNotifier<PinoConnState>(
-    ref.read(connectionControllerProvider),
+  // Only notify on `paired` transitions — that's all the router's redirect
+  // depends on. A ValueNotifier<bool> won't fire for wsState/lastError churn
+  // (connecting/reconnecting/errors), so GoRouter doesn't refresh on every
+  // connection tick (which previously remounted screens mid-build).
+  final notifier = ValueNotifier<bool>(
+    ref.read(connectionControllerProvider).paired,
   );
   ref.listen<PinoConnState>(
     connectionControllerProvider,
-    (_, next) => notifier.value = next,
+    (_, next) => notifier.value = next.paired,
   );
   return notifier;
 });

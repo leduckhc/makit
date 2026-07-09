@@ -14,13 +14,17 @@ import '../ui/settings/settings_screen.dart';
 final pinoNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final connection = ref.watch(connectionProvider);
-
+  // Build the GoRouter ONCE. Do NOT `ref.watch(connectionProvider)` here — that
+  // recreates the entire router on every connection-state tick (connecting →
+  // connected, errors, …), which synchronously remounts the active screen and
+  // can collide with a first-time provider mount ("setState() called during
+  // build"). Instead the redirect reads the current state on demand, and
+  // `refreshListenable` re-runs redirects when `paired` actually changes.
   return GoRouter(
     navigatorKey: pinoNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) {
-      final paired = connection.paired;
+      final paired = ref.read(connectionProvider).paired;
       final goingToPair = state.matchedLocation == '/pair';
       if (!paired && !goingToPair) return '/pair';
       if (paired && goingToPair) return '/';
