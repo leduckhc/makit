@@ -19,6 +19,7 @@
     "typecheck": "tsc -p . --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
+    "e2e:verify-pi": "tsx test/fake-model/verify-pi.ts",
     "secure:install": "pnpm install --frozen-lockfile",
     "secure:audit": "pnpm audit --prod"
   },

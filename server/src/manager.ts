@@ -44,6 +44,12 @@ export interface ManagerOpts {
    * getMultiplexer(); tests inject a fake via this option.
    */
   mux?: MultiplexerAdapter | undefined;
+  /**
+   * Force every spawned pi session onto a specific model (`--model`). Used by
+   * the real-pi e2e to select the fake model provider. Unset in production, so
+   * pi uses its own configured default.
+   */
+  defaultModel?: string;
 }
 
 export interface BridgeBinding {
@@ -90,6 +96,7 @@ export class SessionManager extends EventEmitter {
   private readonly attachInFlight = new Map<string, Promise<Session>>();
   private readonly adapterFactory?: AdapterFactory;
   private readonly onProjectsChanged?: (paths: string[]) => void;
+  private readonly defaultModel?: string;
   private bridge?: BridgeBinding;
   /** Injected or resolved multiplexer adapter (SPEC-05). */
   private readonly _muxOverride?: MultiplexerAdapter | undefined;
@@ -101,6 +108,7 @@ export class SessionManager extends EventEmitter {
     this.adapterFactory = opts.adapterFactory;
     this.onProjectsChanged = opts.onProjectsChanged;
     this._muxOverride = opts.mux;
+    this.defaultModel = opts.defaultModel;
     for (const path of opts.projects) {
       const id = randomUUID();
       this.projects.set(id, {
@@ -500,6 +508,7 @@ export class SessionManager extends EventEmitter {
       cwd: project.dto.path,
       sessionId: session.id,
       resumeSessionPath: opts.resumeSessionPath,
+      model: this.defaultModel,
       env: this.bridge
         ? {
             PINO_BRIDGE_URL: this.bridge.url,
