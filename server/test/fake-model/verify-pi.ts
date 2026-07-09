@@ -13,13 +13,13 @@ const EXT = fileURLToPath(new URL("./provider-extension.ts", import.meta.url));
 
 async function main(): Promise<void> {
   const fake = await startFakeModelServer();
-  process.env.PINO_FAKE_MODEL_URL = fake.url;
+  process.env.MAKIT_FAKE_MODEL_URL = fake.url;
   console.log("[verify] fake model at", fake.url);
 
-  const piBin = process.env.PINO_PI_BIN || "pi";
+  const piBin = process.env.MAKIT_PI_BIN || "pi";
   const child = spawn(
     piBin,
-    ["--mode", "rpc", "--no-session", "-e", EXT, "--model", "pino-fake/fake-1"],
+    ["--mode", "rpc", "--no-session", "-e", EXT, "--model", "makit-fake/fake-1"],
     { cwd: process.cwd(), stdio: ["pipe", "pipe", "pipe"], env: process.env },
   );
 
@@ -53,8 +53,8 @@ async function main(): Promise<void> {
       if (ev.type === "turn_end" || ev.type === "agent_end") {
         clearTimeout(deadline);
         console.log("[verify] streamed text:", JSON.stringify(sawText));
-        const ok = sawText.includes("pino e2e ok");
-        console.log(ok ? "[verify] PASS ✓" : "[verify] FAIL ✗ (expected 'pino e2e ok')");
+        const ok = sawText.includes("makit e2e ok");
+        console.log(ok ? "[verify] PASS ✓" : "[verify] FAIL ✗ (expected 'makit e2e ok')");
         child.kill("SIGTERM");
         void fake.close();
         process.exit(ok ? 0 : 1);

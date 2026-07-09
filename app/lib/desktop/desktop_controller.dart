@@ -24,7 +24,7 @@ class DesktopController extends ChangeNotifier {
   /// Talks to the running daemon over the control socket.
   final ControlClient client;
 
-  /// Starts/stops/restarts the daemon process via the `pino` CLI.
+  /// Starts/stops/restarts the daemon process via the `makit` CLI.
   final DaemonLifecycle lifecycle;
 
   DaemonSummary _summary = _stopped;
@@ -38,7 +38,7 @@ class DesktopController extends ChangeNotifier {
   /// The most recent refresh error, or `null` when the daemon is reachable.
   String? get lastError => _lastError;
 
-  /// Whether the last lifecycle action failed because the `pino` CLI is not
+  /// Whether the last lifecycle action failed because the `makit` CLI is not
   /// installed (drives the "install the CLI" affordance).
   bool get cliMissing => _cliMissing;
 
@@ -71,14 +71,14 @@ class DesktopController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Starts the daemon (`pino start`), then refreshes.
+  /// Starts the daemon (`makit start`), then refreshes.
   Future<DaemonActionResult> start() =>
       _act(lifecycle.start, transient: DaemonState.starting);
 
-  /// Stops the daemon (`pino stop`), then refreshes.
+  /// Stops the daemon (`makit stop`), then refreshes.
   Future<DaemonActionResult> stop() => _act(lifecycle.stop);
 
-  /// Restarts the daemon (`pino restart`), then refreshes.
+  /// Restarts the daemon (`makit restart`), then refreshes.
   Future<DaemonActionResult> restart() =>
       _act(lifecycle.restart, transient: DaemonState.starting);
 

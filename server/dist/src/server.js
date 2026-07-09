@@ -17,7 +17,7 @@
  * Binding:
  * The server listens on the `host:port` provided (typically Tailscale or LAN).
  * When `host` is a specific, non-loopback IP, a second loopback listener is
- * automatically added at `127.0.0.1:port` so the pino-mirror extension host
+ * automatically added at `127.0.0.1:port` so the makit-mirror extension host
  * and the `flutter run -d macos` dev loop keep working. The two listeners
  * share the same {@link WebSocketServer} via `noServer` upgrade forwarding,
  * so all connected clients go through the same auth gate and state.
@@ -44,8 +44,12 @@ import { CommandRouter } from "./ws/command_router.js";
 import { PaneBridge } from "./pane/bridge.js";
 import { herdrReader } from "./pane/herdr.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
+import { WakeCoordinator } from "./push/wake_coordinator.js";
+import { NoopPushSender } from "./push/sender.js";
+import { buildWakePayload } from "./push/payload.js";
+import { registerPushCommands } from "./push/register_cmd.js";
 /**
- * Build the `host.ask.result` frame relayed to a pino-mirror extension after
+ * Build the `host.ask.result` frame relayed to a makit-mirror extension after
  * the phone answers. Carries ONLY the answer fields — never spread the whole
  * srv.response envelope, whose own `t`/`id` would clobber these and leave the
  * extension's ask promise unresolved (hanging both the pi TUI and the phone).
@@ -74,12 +78,12 @@ function isLoopbackOrWildcard(host) {
         host === "localhost");
 }
 export function startWsServer(opts) {
-    const { host, port, manager, cert, registry, trustLocalhost = false, hostToken } = opts;
+    const { host, port, manager, cert, registry, trustLocalhost = false, hostToken, sender = new NoopPushSender(), buildWakePayload: buildWakePayloadFn = buildWakePayload, } = opts;
     // The WSS uses noServer mode so we can forward upgrades from TWO HTTPS
     // listeners into the same connection handler:
     //   1. The external listener (host:port) — phone over Tailscale or LAN.
     //   2. A loopback listener (127.0.0.1:port) — only when `host` is a specific
-    //      non-loopback IP. Keeps the pino-mirror extension host and the
+    //      non-loopback IP. Keeps the makit-mirror extension host and the
     //      `flutter run -d macos` dev loop reachable.
     // When host is `0.0.0.0` (all interfaces) or already loopback, the second
     // listener is redundant and skipped.
@@ -98,18 +102,41 @@ export function startWsServer(opts) {
     if (localHttps)
         forwardUpgrade(localHttps);
     https.on("tlsClientError", (err, sock) => {
-        log.warn(`[pino] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
+        log.warn(`[makit] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
     });
     wss.on("error", (err) => {
-        log.error(`[pino] wss error: ${err.message}`);
+        log.error(`[makit] wss error: ${err.message}`);
     });
     const clients = new Map();
-    // World D host sessions: pinoSessionId → its IngestAdapter + owning client.
+    // World D host sessions: makitSessionId → its IngestAdapter + owning client.
     const hostAdapters = new Map();
     const hostOwner = new Map();
+    // Device ids with a live authenticated WS connection — feeds the control
+    // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
+    // (SPEC-07: never wake a device that already has a live socket).
+    const connectedDeviceIds = () => {
+        const ids = new Set();
+        for (const c of clients.values())
+            if (c.authed && c.deviceId)
+                ids.add(c.deviceId);
+        return ids;
+    };
     // -------- collaborators -------------------------------------------------
     const hub = new SubscriptionHub({ manager });
-    const rpc = new ReverseRpc({ clients: () => clients.values() });
+    // SPEC-07: the WakeCoordinator is built HERE (not in index.ts) because
+    // `connectedDeviceIds` is a server.ts closure. When `askDevice` finds no live
+    // subscribed socket, `onUndeliverable` wakes every paired token-bearing
+    // device with no live socket and returns the keep-pending gate.
+    const wakeCoordinator = new WakeCoordinator({
+        registry,
+        connectedDeviceIds,
+        sender,
+        buildWakePayload: buildWakePayloadFn,
+    });
+    const rpc = new ReverseRpc({
+        clients: () => clients.values(),
+        onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
+    });
     const paneBridge = new PaneBridge(herdrReader, (target, data) => {
         for (const c of clients.values()) {
             if (c.authed && c.panes?.has(target)) {
@@ -117,7 +144,7 @@ export function startWsServer(opts) {
             }
         }
     });
-    const authGate = new AuthGate({ registry, onAuthenticated: sendSnapshots, hostToken });
+    const authGate = new AuthGate({ registry, onAuthenticated, hostToken });
     const router = buildCommandRouter();
     // -------- session wiring ------------------------------------------------
     for (const s of manager.allSessions())
@@ -128,7 +155,7 @@ export function startWsServer(opts) {
     // -------- connection lifecycle ------------------------------------------
     wss.on("connection", (ws, req) => {
         const remote = req.socket.remoteAddress ?? "";
-        log.info(`[pino] ws connection from ${remote}`);
+        log.info(`[makit] ws connection from ${remote}`);
         const isLocal = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
         const state = makeClient(ws, trustLocalhost && isLocal);
         clients.set(ws, state);
@@ -160,23 +187,14 @@ export function startWsServer(opts) {
             sendSnapshots(state);
     });
     https.listen(port, host, () => {
-        log.info(`[pino] wss listening on wss://${host}:${port}`);
+        log.info(`[makit] wss listening on wss://${host}:${port}`);
     });
     if (localHttps) {
         localHttps.listen(port, "127.0.0.1", () => {
-            log.info(`[pino] wss also listening on 127.0.0.1:${port} (loopback)`);
+            log.info(`[makit] wss also listening on 127.0.0.1:${port} (loopback)`);
         });
     }
     const askDevice = rpc.askDevice.bind(rpc);
-    // Device ids with a live authenticated WS connection — feeds the control
-    // plane's `devices.list` "connected" flag (SPEC-01).
-    const connectedDeviceIds = () => {
-        const ids = new Set();
-        for (const c of clients.values())
-            if (c.authed && c.deviceId)
-                ids.add(c.deviceId);
-        return ids;
-    };
     return { wss, https, localHttps, askDevice, connectedDeviceIds };
     // -------- dispatch ------------------------------------------------------
     function handleEnvelope(state, env) {
@@ -192,6 +210,9 @@ export function startWsServer(opts) {
                 return;
             case "sub":
                 hub.handleSub(state, env);
+                // SPEC-07 A6: a freshly-(re)subscribed client may be the woken device;
+                // replay any pending srv.request it hasn't seen (de-duped per client).
+                rpc.replayPendingTo(state);
                 return;
             case "unsub":
                 hub.handleUnsub(state, env);
@@ -220,7 +241,7 @@ export function startWsServer(opts) {
                 return;
             }
             const session = sid ? manager.getSession(sid) : undefined;
-            log.info(`[pino] send.message sid=${sid.slice(0, 8)} session=${!!session} text="${text.slice(0, 40)}"`);
+            log.info(`[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} text="${text.slice(0, 40)}"`);
             if (!session) {
                 ctx.err(WireErrorCode.NoSuchSession, "no such session");
                 return;
@@ -247,7 +268,7 @@ export function startWsServer(opts) {
                 ? ctx.env.args
                 : undefined;
             ctx.ack();
-            // Manual rename: reflect the new title in pino immediately, then let the
+            // Manual rename: reflect the new title in makit immediately, then let the
             // adapter persist it (pi's set_session_name / the mirror connector).
             if (action === "name" && typeof args?.name === "string") {
                 session.setTitle(args.name);
@@ -409,7 +430,7 @@ export function startWsServer(opts) {
             broadcastSnapshots();
             ctx.ack({ sessionId: session.id });
         });
-        // World D: a pino-mirror extension hosts a real pi session and pushes its
+        // World D: a makit-mirror extension hosts a real pi session and pushes its
         // events here; the phone's prompts are relayed back as `host.prompt`.
         r.register("host.open", async (ctx) => {
             const title = typeof ctx.env.title === "string" ? ctx.env.title : undefined;
@@ -481,8 +502,10 @@ export function startWsServer(opts) {
                 owner.send({ t: "host.ask.result", id: askId, cancelled: true });
             }
         });
-        // B9b: dev-only debug commands, registered only when PINO_DEV is set.
-        if (process.env.PINO_DEV)
+        // SPEC-07: register the device's content-free wake push token.
+        registerPushCommands(r, registry);
+        // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
+        if (process.env.MAKIT_DEV)
             registerDebugCommands(r);
         return r;
     }
@@ -503,7 +526,7 @@ export function startWsServer(opts) {
                     },
                 ],
             });
-            log.info(`[pino] debug.ask answered: ${JSON.stringify(resp)}`);
+            log.info(`[makit] debug.ask answered: ${JSON.stringify(resp)}`);
         });
         r.register("debug.ask-multi", async (ctx) => {
             const sid = String(ctx.env.sessionId ?? "");
@@ -530,7 +553,7 @@ export function startWsServer(opts) {
                     },
                 ],
             }, { sessionId: sid });
-            log.info(`[pino] debug.ask-multi answered: ${JSON.stringify(resp)}`);
+            log.info(`[makit] debug.ask-multi answered: ${JSON.stringify(resp)}`);
             session.adapter.emit("event", {
                 ts: Date.now(),
                 kind: "agent.message",
@@ -542,7 +565,7 @@ export function startWsServer(opts) {
     function wireSession(session) {
         session.on("event", (event) => {
             const sent = hub.fanout(session.id, event);
-            log.debug(`[pino] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`);
+            log.debug(`[makit] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`);
             broadcastSessionsSnapshot();
         });
         session.on("titleChanged", (title) => {
@@ -554,6 +577,15 @@ export function startWsServer(opts) {
     function sendSnapshots(client) {
         client.send({ t: "event", id: newId("snap"), kind: "projects.snapshot", projects: manager.listProjects() });
         client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: manager.listSessions() });
+    }
+    // SPEC-07 A6: replay lives ONLY here (on auth) and in the `sub` handler —
+    // never in `sendSnapshots`, which `broadcastSnapshots` fires on every session
+    // event and would otherwise re-fire replay constantly. A force-quit-then-woken
+    // app has an empty subscription set, so replay-on-`sub` alone is insufficient;
+    // replaying on auth delivers pending items regardless of subscription.
+    function onAuthenticated(client) {
+        sendSnapshots(client);
+        rpc.replayPendingTo(client);
     }
     function broadcastSnapshots() {
         for (const c of clients.values())

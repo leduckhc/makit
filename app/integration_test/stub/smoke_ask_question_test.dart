@@ -10,7 +10,7 @@ void main() {
   testWidgets('answers an AskUserQuestion round-trip from the stub adapter', (
     tester,
   ) async {
-    await launchPino(tester);
+    await launchMakit(tester);
     await openFirstSession(tester);
 
     await sendComposerText(tester, 'ASK_QUESTION');

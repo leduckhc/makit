@@ -1,6 +1,6 @@
 /**
  * MirrorAdapter — bridges a **real `pi` TUI** running in a terminal-multiplexer
- * pane to a pino session, so the phone sees it as normal chat (World B).
+ * pane to a makit session, so the phone sees it as normal chat (World B).
  *
  *   read  (terminal → phone): tail the pi session `.jsonl` the TUI writes and
  *                             map new records to AdapterEvents via recordToEvents.

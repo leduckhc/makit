@@ -1,18 +1,18 @@
 /**
  * Manual herdr smoke test for SPEC-04 (requires running `herdr server`).
- * Usage: PINO_MUX_ANCHOR=w1:p1 tsx test/mux-herdr.smoke.ts
+ * Usage: MAKIT_MUX_ANCHOR=w1:p1 tsx test/mux-herdr.smoke.ts
  */
 import assert from "node:assert/strict";
 import { getMultiplexer } from "../src/mux/index.js";
 
 async function main(): Promise<void> {
-  const anchor = process.env.PINO_MUX_ANCHOR;
+  const anchor = process.env.MAKIT_MUX_ANCHOR;
   if (!anchor) {
-    console.error("Set PINO_MUX_ANCHOR to an existing pane id (e.g. w1:p1)");
+    console.error("Set MAKIT_MUX_ANCHOR to an existing pane id (e.g. w1:p1)");
     process.exit(2);
   }
 
-  process.env.PINO_MUX = "herdr";
+  process.env.MAKIT_MUX = "herdr";
   const mux = getMultiplexer();
   assert.ok(mux, "getMultiplexer() should return adapter");
   assert.equal(mux!.name, "herdr");
@@ -22,8 +22,8 @@ async function main(): Promise<void> {
 
   const handle = await mux!.spawnPane({
     cwd: process.cwd(),
-    command: "echo pino-smoke-ok; sleep 2",
-    label: "pino: smoke test",
+    command: "echo makit-smoke-ok; sleep 2",
+    label: "makit: smoke test",
   });
   console.log("spawned pane:", handle);
 

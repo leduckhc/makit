@@ -1,4 +1,4 @@
-# pino — UX Specification
+# makit — UX Specification
 
 > Mobile-first coding agent client. A personal server runs on your desktop (or any
 > always-on box) and exposes your agent CLI sessions (codex, pi, claude, etc.) to
@@ -32,8 +32,8 @@
 
 Bootstrap flow:
 
-1. User installs server (`brew install pino` / `pino serve`).
-2. `pino serve` prints a QR + short pairing code in the terminal.
+1. User installs server (`brew install makit` / `makit serve`).
+2. `makit serve` prints a QR + short pairing code in the terminal.
 3. Phone app: "Pair device" → scan QR → handshake → device keypair stored.
 4. Subsequent launches: app auto-finds server via mDNS on LAN, or via overlay
    VPN when remote. No password, no relay account.
@@ -127,7 +127,7 @@ Approval prompts include: tool name, target (file/command), short preview, and
 
 | Trigger              | Example                                              |
 | -------------------- | ---------------------------------------------------- |
-| Agent awaiting input | "codex@pino-repo is waiting on you"                  |
+| Agent awaiting input | "codex@makit-repo is waiting on you"                  |
 | Long task completed  | "Tests passed (42/42) in 2m13s" / "Build failed"     |
 | Approval required    | "Approve: write to `~/.ssh/config`?"                 |
 | Errors / anomalies   | Crash, stuck loop, repeated tool failure             |

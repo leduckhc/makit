@@ -29,7 +29,7 @@ export interface ApnsPayload {
 }
 
 /** Generic, session-free alert title. */
-export const WAKE_ALERT_TITLE = "pino";
+export const WAKE_ALERT_TITLE = "makit";
 /** Generic, session-free alert body — never varies with request content. */
 export const WAKE_ALERT_BODY = "An agent needs you";
 

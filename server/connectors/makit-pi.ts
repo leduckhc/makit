@@ -1,14 +1,14 @@
 /**
- * pino-pi — agent connector for `pi`.
+ * makit-pi — agent connector for `pi`.
  *
- * Loaded into pi via `pi --mode rpc -e <this-file>` by pino's PiAdapter.
- * Translates pi's native tool calls into pino's canonical UICall envelope
+ * Loaded into pi via `pi --mode rpc -e <this-file>` by makit's PiAdapter.
+ * Translates pi's native tool calls into makit's canonical UICall envelope
  * and ships them to the phone via the loopback HTTP bridge.
  *
  * Env contract (set by PiAdapter):
- *   PINO_BRIDGE_URL    — loopback bridge base URL
- *   PINO_BRIDGE_TOKEN  — shared secret for the bridge
- *   PINO_SESSION_ID    — sessionId used to route srv.request to the right
+ *   MAKIT_BRIDGE_URL    — loopback bridge base URL
+ *   MAKIT_BRIDGE_TOKEN  — shared secret for the bridge
+ *   MAKIT_SESSION_ID    — sessionId used to route srv.request to the right
  *                        subscribed clients
  *
  * To write a new connector for another agent (claude / codex / piano):
@@ -16,16 +16,16 @@
  *   2. Replace the registerTool({...}) calls with your agent's equivalent.
  *   3. In execute(), translate the agent-native params into one of the
  *      canonical UICall variants from `../src/uicall.ts`.
- *   4. pino auto-loads every `.ts` file in server/connectors/.
+ *   4. makit auto-loads every `.ts` file in server/connectors/.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { UICall, UIResponse } from "../src/uicall.js";
 
-const BRIDGE_URL = process.env.PINO_BRIDGE_URL;
-const BRIDGE_TOKEN = process.env.PINO_BRIDGE_TOKEN;
-const SESSION_ID = process.env.PINO_SESSION_ID;
+const BRIDGE_URL = process.env.MAKIT_BRIDGE_URL;
+const BRIDGE_TOKEN = process.env.MAKIT_BRIDGE_TOKEN;
+const SESSION_ID = process.env.MAKIT_SESSION_ID;
 
 /** Post a UICall to the loopback bridge, await the user's response. */
 async function uicall(call: UICall): Promise<UIResponse> {
@@ -39,13 +39,13 @@ async function uicall(call: UICall): Promise<UIResponse> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`pino-pi: bridge returned ${res.status}: ${text}`);
+    throw new Error(`makit-pi: bridge returned ${res.status}: ${text}`);
   }
   return (await res.json()) as UIResponse;
 }
 
 export default function (pi: ExtensionAPI) {
-  if (!BRIDGE_URL || !BRIDGE_TOKEN) return; // not running under pino
+  if (!BRIDGE_URL || !BRIDGE_TOKEN) return; // not running under makit
 
   const questionsParam = Type.Object({
     questions: Type.Array(
@@ -101,7 +101,7 @@ export default function (pi: ExtensionAPI) {
     };
   }
 
-  // pino's canonical ask, routed to the phone via the loopback bridge. We
+  // makit's canonical ask, routed to the phone via the loopback bridge. We
   // register both casings so the model reaches it whichever it emits. The
   // TUI-only `@mammothb/pi-ask` (which uses ui.custom and crashes headless) is
   // filtered out at spawn (PI_CODING_AGENT_DIR, see server/src/pi-agent-dir.ts),

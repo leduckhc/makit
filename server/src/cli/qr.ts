@@ -1,5 +1,5 @@
 /**
- * `pino qr [--refresh] [--url-only]`
+ * `makit qr [--refresh] [--url-only]`
  *
  * Fetches the active pair token from the running daemon and renders a QR code
  * in the terminal. With `--refresh` it mints a fresh token first. With
@@ -38,7 +38,7 @@ export async function runQr(argv: string[]): Promise<void> {
     if (args.refresh) {
       const res = await client.request<PairMintData>("pair.mint");
       if (!res.ok) {
-        console.error(`[pino] pair.mint failed: ${res.error}`);
+        console.error(`[makit] pair.mint failed: ${res.error}`);
         process.exit(1);
       }
       url = res.data!.url;
@@ -53,7 +53,7 @@ export async function runQr(argv: string[]): Promise<void> {
       } else {
         const mintRes = await client.request<PairMintData>("pair.mint");
         if (!mintRes.ok) {
-          console.error(`[pino] pair.mint failed: ${mintRes.error}`);
+          console.error(`[makit] pair.mint failed: ${mintRes.error}`);
           process.exit(1);
         }
         url = mintRes.data!.url;
@@ -69,11 +69,11 @@ export async function runQr(argv: string[]): Promise<void> {
 
     console.log("");
     qrcode.generate(url, { small: true });
-    console.log(`[pino] ${url}`);
-    if (fingerprint) console.log(`[pino] fingerprint: ${fingerprint}`);
+    console.log(`[makit] ${url}`);
+    if (fingerprint) console.log(`[makit] fingerprint: ${fingerprint}`);
     if (expiresAt) {
       const secsLeft = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
-      console.log(`[pino] (expires in ~${secsLeft}s)`);
+      console.log(`[makit] (expires in ~${secsLeft}s)`);
     }
     console.log("");
   } finally {

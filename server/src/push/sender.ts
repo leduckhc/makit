@@ -4,7 +4,7 @@
  * `NoopPushSender` (default in dev/test/when unconfigured) reports
  * `enabled === false` so the {@link WakeCoordinator} never dispatches and
  * `askDevice` keeps today's reject-immediately semantics. `ApnsPushSender`
- * (see `apns.ts`) is the real HTTP/2 adapter, gated behind `~/.pino/push.json`
+ * (see `apns.ts`) is the real HTTP/2 adapter, gated behind `~/.makit/push.json`
  * and NOT unit-tested (platform I/O).
  */
 

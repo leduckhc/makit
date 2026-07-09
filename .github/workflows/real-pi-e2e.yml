@@ -80,7 +80,7 @@ jobs:
         run: pnpm e2e:verify-pi
 
   # Full-stack on macOS: real pi + real Flutter e2e via `tool/e2e.sh --mode real`
-  # on an iOS simulator. Proves the complete pino↔pi integration on the target.
+  # on an iOS simulator. Proves the complete makit↔pi integration on the target.
   # Pinned pi, PRs only (slower, costlier).
   real-pi-app:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
@@ -140,7 +140,7 @@ jobs:
 
       - name: Pick an available iOS simulator
         run: |
-          # tool/e2e.sh matches PINO_SIM_NAME as a substring; pick the first
+          # tool/e2e.sh matches MAKIT_SIM_NAME as a substring; pick the first
           # available iPhone the runner's Xcode ships (model names vary by
           # Xcode version, so don't hard-code "iPhone 17").
           NAME=$(xcrun simctl list devices available \
@@ -151,7 +151,7 @@ jobs:
             xcrun simctl list devices available >&2
             exit 1
           fi
-          echo "PINO_SIM_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "MAKIT_SIM_NAME=$NAME" >> "$GITHUB_ENV"
 
       - name: Flutter full-stack e2e (real pi)
         run: app/tool/e2e.sh --mode real

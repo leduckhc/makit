@@ -70,7 +70,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: 'pino://pair?host=…'),
+          decoration: const InputDecoration(hintText: 'makit://pair?host=…'),
           maxLines: 3,
         ),
         actions: [
@@ -91,7 +91,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Not a pino pairing URL.')));
+      ).showSnackBar(const SnackBar(content: Text('Not a makit pairing URL.')));
       return;
     }
     await _pair(info);
@@ -112,7 +112,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           const SizedBox(height: 8),
           Center(
             child: Text(
-              'Run `pino serve` on your Mac.\nScan the QR it prints, or pick the server below.',
+              'Run `makit serve` on your Mac.\nScan the QR it prints, or pick the server below.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -152,7 +152,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                 return const Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
-                    'No servers found. Make sure `pino serve` is running on the same Wi-Fi.',
+                    'No servers found. Make sure `makit serve` is running on the same Wi-Fi.',
                   ),
                 );
               }

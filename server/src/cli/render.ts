@@ -1,5 +1,5 @@
 /**
- * Pure terminal-rendering logic for the `pino attach` client. Kept free of I/O
+ * Pure terminal-rendering logic for the `makit attach` client. Kept free of I/O
  * so it can be unit-tested: given a SessionEvent and the running RenderState,
  * it returns the ANSI string to print and the next state.
  *

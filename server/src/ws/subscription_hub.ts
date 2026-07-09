@@ -54,7 +54,7 @@ export class SubscriptionHub {
     const fromSeq = typeof env.fromSeq === "number" ? env.fromSeq : 0;
     const replay = fromSeq > 0 ? session.events.filter((e) => e.seq > fromSeq) : session.events;
     log.info(
-      `[pino] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${replay.length}/${session.events.length} events from seq ${fromSeq})`,
+      `[makit] sub: client subscribed to session ${sid.slice(0, 8)} (replay ${replay.length}/${session.events.length} events from seq ${fromSeq})`,
     );
     for (const e of replay) this.sendEvent(client, e);
     client.send({ t: "ack", id: env.id });

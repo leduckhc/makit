@@ -1,5 +1,5 @@
 /**
- * Canonical UICall schema — vendor-neutral language between agents and pino app.
+ * Canonical UICall schema — vendor-neutral language between agents and makit app.
  *
  * Agent connectors (server/connectors/*.ts) translate native tool params into
  * one of these variants, POST to the loopback HTTP bridge, and receive the

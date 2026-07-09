@@ -10,10 +10,10 @@ void main() {
   testWidgets('boots with test pairing and shows project/session snapshots', (
     tester,
   ) async {
-    await launchPino(tester);
+    await launchMakit(tester);
 
     // AppBar title.
-    expect(find.text('pino'), findsWidgets);
+    expect(find.text('makit'), findsWidgets);
     // Session from the stub adapter — proves the WS snapshot hydrated.
     expect(find.text('new session'), findsOneWidget);
     // Paired + connected: the ConnectionChip hides itself on the happy path,

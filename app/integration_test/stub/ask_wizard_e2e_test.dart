@@ -10,7 +10,7 @@ void main() {
   testWidgets('drives multi-question multi-select wizard end to end', (
     tester,
   ) async {
-    await launchPino(tester);
+    await launchMakit(tester);
     await openFirstSession(tester);
 
     // Stub adapter recognises "ASK_MULTI" and triggers a 2-question wizard

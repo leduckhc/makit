@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/ui/composer/client_commands.dart';
+import 'package:makit/ui/composer/client_commands.dart';
 
 void main() {
   group('client command registry', () {

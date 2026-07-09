@@ -3,8 +3,8 @@
  * multi-project feature. Kept side-effect-free (beyond fs at a caller-given
  * path) so it is trivially unit-testable.
  *
- * Persistence lives in a small JSON file (`~/.pino/projects.json` by default,
- * overridable via PINO_PROJECTS_FILE) shaped `{ "projects": ["/abs", …] }`.
+ * Persistence lives in a small JSON file (`~/.makit/projects.json` by default,
+ * overridable via MAKIT_PROJECTS_FILE) shaped `{ "projects": ["/abs", …] }`.
  * Load/save never throw on bad input — a corrupt or missing file degrades to
  * an empty list so the server always starts.
  */
@@ -23,7 +23,7 @@ import { log } from "./log.js";
 
 /** Absolute path of the projects persistence file. */
 export function projectsFile(): string {
-  return process.env.PINO_PROJECTS_FILE ?? join(homedir(), ".pino", "projects.json");
+  return process.env.MAKIT_PROJECTS_FILE ?? join(homedir(), ".makit", "projects.json");
 }
 
 /**
@@ -39,7 +39,7 @@ export function loadProjectPaths(file: string): string[] {
     if (!Array.isArray(projects)) return [];
     return projects.filter((p): p is string => typeof p === "string");
   } catch (e) {
-    log.warn(`[pino] failed to read projects file ${file}: ${(e as Error).message}`);
+    log.warn(`[makit] failed to read projects file ${file}: ${(e as Error).message}`);
     return [];
   }
 }
@@ -53,7 +53,7 @@ export function saveProjectPaths(file: string, paths: string[]): void {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify({ projects: paths }, null, 2) + "\n");
   } catch (e) {
-    log.warn(`[pino] failed to write projects file ${file}: ${(e as Error).message}`);
+    log.warn(`[makit] failed to write projects file ${file}: ${(e as Error).message}`);
   }
 }
 

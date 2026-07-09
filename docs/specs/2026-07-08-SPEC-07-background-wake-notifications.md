@@ -21,7 +21,7 @@ actionable notifications only while the app process is alive with a live/recentl
 -suspended WebSocket. iOS aggressively kills suspended apps and their sockets, so
 "away for 20+ minutes" needs an OS-level **wake signal**.
 
-The tension: pino is private-by-default — the phone reaches the desktop only over
+The tension: makit is private-by-default — the phone reaches the desktop only over
 a Tailscale tailnet, **no cloud backend**. But OS push (APNs) *is* a cloud path
 Apple controls, and there is no way to reach a tailnet-only server from Apple's
 edge. Resolution: **push is a content-free wake signal only**. The push body
@@ -34,14 +34,14 @@ bearer-less ping; all real data stays on the tailnet.
 
 ### 1. Push transport / relay model — **server sends to APNs directly (no third-party relay)**
 
-pino's server runs on the user's Mac, which has internet and can hold an APNs
+makit's server runs on the user's Mac, which has internet and can hold an APNs
 auth key. The server signs an ES256 JWT from the user's own `.p8` key and POSTs
 to `api.push.apple.com` (HTTP/2) itself. **No shared hosted relay.** This matches
 the private/no-cloud ethos: the only cloud hop is Apple's mandatory APNs edge,
-and pino operates no intermediary that could see tokens or metadata.
+and makit operates no intermediary that could see tokens or metadata.
 
 - **Rejected: shared hosted relay.** Lower setup friction, but it re-introduces a
-  pino-operated cloud service that sees every device token and wake event — the
+  makit-operated cloud service that sees every device token and wake event — the
   exact thing the product promises not to do. Not worth the operational + trust cost.
 - **Android/FCM: deferred behind the same seam.** FCM requires a Google project +
   service account and the same content-free approach. Implement the `PushSender`
@@ -56,7 +56,7 @@ unit-tested in this repo. So:
 
 - **`PushSender` interface** (`server/src/push/sender.ts`) with `NoopPushSender`
   (default in dev/test/when unconfigured) and `ApnsPushSender` (real, HTTP/2,
-  behind `~/.pino/push.json`). The real adapter is **not** unit-tested.
+  behind `~/.makit/push.json`). The real adapter is **not** unit-tested.
 - On the app, an analogous `PushRegistrar` interface (`NoopPushRegistrar` default;
   a real APNs/FCM token provider behind a platform channel/plugin) isolates native
   token retrieval.
@@ -73,7 +73,7 @@ unit-tested in this repo. So:
 
 **(A) Server → device wake.** The device registers its push token via a new
 `push.register` `cmd`; the server persists it per-device in
-`~/.pino/devices.json`. The single choke point for approvals/questions is
+`~/.makit/devices.json`. The single choke point for approvals/questions is
 `ReverseRpc.askDevice` (both the connector bridge in `index.ts` and `host.ask`
 in `server.ts` funnel through it). When `askDevice` finds **`sent === 0`** (no
 live subscribed socket for the target), it invokes an injected
@@ -102,7 +102,7 @@ returned `true`. Concretely:
 **replays pending `srv.request`s** to the freshly-authed client (see decision 3
 note below). `SrvRequestHandler` sees them on the `srvRequests` stream and — being
 backgrounded — presents the Slice-1 actionable notification. **Additionally**, on
-next launch/reconnect the app **drains the `pino_pending_actions` SharedPreferences
+next launch/reconnect the app **drains the `makit_pending_actions` SharedPreferences
 queue** (force-quit taps captured by Slice 1's `notificationBackgroundHandler`
 isolate) through `responseForAction` → `respondTo`, idempotently and in FIFO order.
 
@@ -114,7 +114,7 @@ isolate) through `responseForAction` → `respondTo`, idempotently and in FIFO o
 > rpc.replayPendingTo(client); }` in `server.ts`) **and** in `hub.handleSub`. It
 > must **not** live in `sendSnapshots` itself, because `broadcastSnapshots` calls
 > `sendSnapshots` on every session event and would re-fire replay constantly.
-> Safe because pino is single-user and every paired device belongs to the user;
+> Safe because makit is single-user and every paired device belongs to the user;
 > the wake means "come get your pending items." Delivery is de-duplicated per
 > client (a pending request is sent to a given client at most once).
 
@@ -137,7 +137,7 @@ any session/request/message probe substring. See TDD step A1.
 
 ### 5. Graceful degradation — **no hard dependency on push**
 
-- If `~/.pino/push.json` is absent/invalid → server uses `NoopPushSender`; wakes
+- If `~/.makit/push.json` is absent/invalid → server uses `NoopPushSender`; wakes
   are no-ops; behavior falls back to Slice-1 (works only while app alive). The
   server logs a one-line hint at startup.
 - If the user declines the iOS push permission or no token is retrieved → the app
@@ -200,13 +200,13 @@ Desktop agent raises approval/question
         srv.response {id: rid} → ReverseRpc.handleResponse → resolves the pending askDevice
 
 Parallel (force-quit taps captured by Slice-1's background isolate):
-  notificationBackgroundHandler → SharedPreferences[pino_pending_actions]
+  notificationBackgroundHandler → SharedPreferences[makit_pending_actions]
       ⋯ (app killed) ⋯
   next launch/reconnect (wsState → connected)
       → PendingActionDrainer.drain()
           → planDrain(queue) → [(rid, body)]  (FIFO)
           → respondTo(rid, body)  [idempotent]
-          → clear pino_pending_actions
+          → clear makit_pending_actions
 ```
 
 ## TDD steps (ordered; each independently verifiable)
@@ -235,7 +235,7 @@ session/request data is ever in scope to leak. `pendingCount` is produced by
   constant generic string regardless of input; `"badge reflects pendingCount"` —
   assert `buildWakePayload({pendingCount: 3}).aps.badge === 3`.
 *Production:* pure builder returning
-`{ aps: { alert: { title: "pino", body: "An agent needs you" }, sound: "default", badge: pendingCount, "content-available": 1 } }`.
+`{ aps: { alert: { title: "makit", body: "An agent needs you" }, sound: "default", badge: pendingCount, "content-available": 1 } }`.
 
 **A2. Wake decision + dispatch gate.**
 *Files:* NEW `server/src/push/wake_coordinator.ts`, `server/src/push/sender.ts`,
@@ -272,7 +272,7 @@ never blocks it.
 `clearPushToken(deviceId)`; `PairedDevice` gains optional `pushToken/pushPlatform/pushEnv`.
 *Failing test first:*
 - `"setPushToken persists across reload"` — set token, construct a new
-  `DeviceRegistry` (reads `PINO_HOME/devices.json`), assert `list()[0].pushToken`.
+  `DeviceRegistry` (reads `MAKIT_HOME/devices.json`), assert `list()[0].pushToken`.
 - `"clearPushToken drops the token and persists across reload"` — set then
   `clearPushToken(id)`; new `DeviceRegistry` → `list()[0].pushToken` is `undefined`
   while the device itself remains paired. (This is the stale-token lifecycle
@@ -280,7 +280,7 @@ never blocks it.
 - `"revoke clears the push token"` — revoke drops the device (and thus its token).
 - `"setPushToken/clearPushToken on unknown device is a no-op"`.
 *Production:* mutate the device, `persist()` (0600 preserved). Use a temp
-`PINO_HOME` in the test.
+`MAKIT_HOME` in the test.
 
 **A4. `push.register` cmd handler.**
 *Files:* EDIT `server/src/server.ts` (register cmd), `server/src/protocol.ts`
@@ -397,7 +397,7 @@ default) with a real APNs/FCM token provider behind a platform channel.
 ### Production wiring (not unit-tested; verified on-device)
 
 **W1. Server config + sender selection + wiring topology.** NEW
-`server/src/push/config.ts` loads `~/.pino/push.json`. `server/src/index.ts` builds
+`server/src/push/config.ts` loads `~/.makit/push.json`. `server/src/index.ts` builds
 the sender only — `NoopPushSender` when config is absent/invalid, else
 `ApnsPushSender` — and passes it into `startWsServer` via `ServerOpts` alongside
 the already-present `registry`, plus `buildWakePayload`. **The `WakeCoordinator`
@@ -467,12 +467,12 @@ and wire `onUndeliverable` here, `onAuthenticated` wrapper for replay), `pairing
 native APNs token retrieval, iOS background-launch, entitlements/Info.plist,
 connection.dart/main.dart wiring.
 
-**On-device checklist (extend `pino-e2e-testing`; requires a real iPhone + APNs key):**
-1. Configure `~/.pino/push.json` (sandbox), pair the device, confirm the server
+**On-device checklist (extend `makit-e2e-testing`; requires a real iPhone + APNs key):**
+1. Configure `~/.makit/push.json` (sandbox), pair the device, confirm the server
    logs "push: APNs sender active" and the device sent `push.register`
-   (`pino devices` shows a token present, value redacted).
+   (`makit devices` shows a token present, value redacted).
 2. **Force-quit** the app, **lock** the phone. Trigger `confirmAction` on the
-   desktop (`server/connectors/pino-piano.ts piano_confirm`). Within a few seconds
+   desktop (`server/connectors/makit-piano.ts piano_confirm`). Within a few seconds
    the phone buzzes with the generic content-free alert.
 3. If the app got background time: it upgrades to the actionable Approve/Deny
    notification; tapping **Approve** on the lock screen resolves the approval on
@@ -487,32 +487,32 @@ connection.dart/main.dart wiring.
    session/message content is present.
 8. **Degradation:** remove `push.json`, repeat step 2 → no wake, Slice-1 behavior
    only; decline push permission → no `push.register`, same fallback.
-9. **Revoke:** `pino devices revoke <id>` → no further wakes to that device.
+9. **Revoke:** `makit devices revoke <id>` → no further wakes to that device.
 
 ## Config / onboarding
 
-The user brings their own APNs key (private, no pino-operated cloud):
+The user brings their own APNs key (private, no makit-operated cloud):
 
 1. **Apple Developer:** create an APNs Auth Key (`.p8`), note its **Key ID** and
-   **Team ID**; register the app **Bundle ID** (e.g. `dev.pino.app`) with the Push
+   **Team ID**; register the app **Bundle ID** (e.g. `dev.makit.app`) with the Push
    Notifications capability.
 2. **Xcode (`app/ios`):** enable **Push Notifications** capability and **Background
    Modes → Remote notifications**; set `aps-environment` in `Runner.entitlements`.
-3. **Server:** drop the key at `~/.pino/apns/AuthKey_<KEYID>.p8` and create
-   `~/.pino/push.json` (mode 0600):
+3. **Server:** drop the key at `~/.makit/apns/AuthKey_<KEYID>.p8` and create
+   `~/.makit/push.json` (mode 0600):
    ```json
    {
      "apns": {
-       "keyPath": "~/.pino/apns/AuthKey_ABC123.p8",
+       "keyPath": "~/.makit/apns/AuthKey_ABC123.p8",
        "keyId": "ABC123",
        "teamId": "TEAM456",
-       "bundleId": "dev.pino.app",
+       "bundleId": "dev.makit.app",
        "env": "sandbox"
      }
    }
    ```
    Absent/invalid → `NoopPushSender` (graceful degradation). Push tokens live
-   per-device in the existing `~/.pino/devices.json` (`pushToken`, `pushPlatform`,
+   per-device in the existing `~/.makit/devices.json` (`pushToken`, `pushPlatform`,
    `pushEnv`), written 0600 by `DeviceRegistry.persist()`.
 
 ## Risks / open decisions (with recommendations)
@@ -537,7 +537,7 @@ The user brings their own APNs key (private, no pino-operated cloud):
    socket; first `srv.response` wins (ReverseRpc semantics). Recommended for a
    single-user product; a "primary device" preference is a follow-up.
 5. **Replay-on-auth ignores subscription scope.** Justified for single-user (all
-   devices are the user's). If pino ever becomes multi-user, scope replay to
+   devices are the user's). If makit ever becomes multi-user, scope replay to
    session ownership. (Documented invariant.)
 6. **Android/FCM.** Deferred behind the `PushSender`/`pushPlatform` seam; no design
    debt — the registry, coordinator, payload, and app drain are platform-agnostic.

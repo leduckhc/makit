@@ -1,12 +1,12 @@
 # iOS & macOS Build and Deployment Guide
 
-This guide covers building and pushing the pino app to **iOS** (physical device + App Store) and **macOS** (DMG + Gatekeeper notarization).
+This guide covers building and pushing the makit app to **iOS** (physical device + App Store) and **macOS** (DMG + Gatekeeper notarization).
 
 **Prerequisites:**
 - Xcode 15+ (for Apple SDKs, code signing)
 - Flutter 3.38.0+ (pinned in pubspec.yaml)
 - Apple Developer Account (Team ID: `RT8DP44B6N`)
-- Bundle IDs: `dev.pino.pino` (iOS/macOS)
+- Bundle IDs: `dev.getmakit.app` (iOS/macOS)
 - Provisioning profiles & signing certificates provisioned in Xcode
 
 ---
@@ -43,7 +43,7 @@ flutter run -d <device-id>
 
 # Or build an IPA for manual installation
 flutter build ipa --release
-# Output: build/ios/ipa/pino.ipa
+# Output: build/ios/ipa/makit.ipa
 ```
 
 **Note:** First run may take 5–10 min (native build + signing).
@@ -80,7 +80,7 @@ flutter build ipa --release \
 ```
 
 **Outputs:**
-- `build/ios/ipa/pino.ipa` — ready for App Store Connect
+- `build/ios/ipa/makit.ipa` — ready for App Store Connect
 - `build/ios/archive/Runner.xcarchive` — dSYM + IPA for crash symbolication
 
 #### Step 3: Upload to App Store Connect
@@ -94,7 +94,7 @@ open build/ios/archive/Runner.xcarchive
 **Option B: Using xcrun** (CLI)
 ```bash
 xcrun altool --upload-app \
-  --file build/ios/ipa/pino.ipa \
+  --file build/ios/ipa/makit.ipa \
   --type ios \
   --username <apple-id> \
   --password <app-specific-password>
@@ -102,7 +102,7 @@ xcrun altool --upload-app \
 
 or with Transporter:
 ```bash
-open -a Transporter build/ios/ipa/pino.ipa
+open -a Transporter build/ios/ipa/makit.ipa
 ```
 
 #### Step 4: App Store Review
@@ -124,10 +124,10 @@ Xcode > Preferences > Accounts > Download Profiles
 
 **"No provisioning profiles found"**:
 1. Visit [developer.apple.com](https://developer.apple.com) → Certificates, IDs & Profiles
-2. Create a provisioning profile for bundle ID `dev.pino.pino`
+2. Create a provisioning profile for bundle ID `dev.getmakit.app`
 3. Download and add to Xcode:
    ```bash
-   open ~/Downloads/dev_pino_pino.mobileprovision
+   open ~/Downloads/dev_makit_makit.mobileprovision
    ```
 
 **"Code sign identity not found"**:
@@ -168,7 +168,7 @@ version: 0.2.0+2
 
 ```bash
 flutter build macos --release
-# Output: build/macos/Build/Products/Release/pino.app
+# Output: build/macos/Build/Products/Release/makit.app
 ```
 
 #### Step 3: Create a Signed and Notarized DMG
@@ -179,34 +179,34 @@ Create a build script `app/tool/build-macos-dmg.sh`:
 #!/bin/bash
 set -e
 
-FLUTTER_APP="build/macos/Build/Products/Release/pino.app"
+FLUTTER_APP="build/macos/Build/Products/Release/makit.app"
 IDENTITY="Developer ID Application: Your Name (RT8DP44B6N)"  # Replace with actual cert
 TEAM_ID="RT8DP44B6N"
 APPLE_ID="your-apple-id@example.com"
 APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password
 
 # Sign the app
-echo "Signing pino.app..."
+echo "Signing makit.app..."
 codesign --deep --force --verify --verbose \
   --sign "$IDENTITY" \
   "$FLUTTER_APP"
 
 # Create DMG
 echo "Creating DMG..."
-hdiutil create -volname "pino" \
+hdiutil create -volname "makit" \
   -srcfolder "$FLUTTER_APP" \
   -ov -format UDZO \
-  build/pino.dmg
+  build/makit.dmg
 
 # Sign DMG
 echo "Signing DMG..."
 codesign --sign "$IDENTITY" \
-  build/pino.dmg
+  build/makit.dmg
 
 # Notarize (required for Gatekeeper on macOS 10.15+)
 echo "Submitting for notarization..."
 REQUEST_ID=$(xcrun notarytool submit \
-  build/pino.dmg \
+  build/makit.dmg \
   --team-id "$TEAM_ID" \
   --apple-id "$APPLE_ID" \
   --password "$APP_PASSWORD" \
@@ -225,7 +225,7 @@ while true; do
 
   if [ "$STATUS" = "Accepted" ]; then
     echo "✅ Notarization approved!"
-    xcrun stapler staple build/pino.dmg
+    xcrun stapler staple build/makit.dmg
     break
   elif [ "$STATUS" = "Rejected" ]; then
     echo "❌ Notarization rejected. Review the log:"
@@ -240,7 +240,7 @@ while true; do
   sleep 30
 done
 
-echo "✅ DMG ready: build/pino.dmg"
+echo "✅ DMG ready: build/makit.dmg"
 ```
 
 Make executable and run:
@@ -253,7 +253,7 @@ app/tool/build-macos-dmg.sh
 
 Upload to your website / GitHub Releases:
 ```bash
-gh release create v0.2.0 build/pino.dmg --title "pino v0.2.0"
+gh release create v0.2.0 build/makit.dmg --title "makit v0.2.0"
 ```
 
 ### 2.3 macOS Code Signing & Notarization Troubleshooting
@@ -261,10 +261,10 @@ gh release create v0.2.0 build/pino.dmg --title "pino v0.2.0"
 **"Code signature invalid"**:
 ```bash
 # Verify signature
-codesign -v build/macos/Build/Products/Release/pino.app
+codesign -v build/macos/Build/Products/Release/makit.app
 
 # Re-sign
-codesign --deep --force --sign <identity> build/macos/Build/Products/Release/pino.app
+codesign --deep --force --sign <identity> build/macos/Build/Products/Release/makit.app
 ```
 
 **List available signing identities**:
@@ -334,7 +334,7 @@ jobs:
         run: |
           cd build/ios/ipa
           xcrun altool --upload-app \
-            --file pino.ipa \
+            --file makit.ipa \
             --type ios \
             --username ${{ secrets.APPLE_ID }} \
             --password ${{ secrets.APP_SPECIFIC_PASSWORD }}
@@ -370,7 +370,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: build/pino.dmg
+          files: build/makit.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -428,12 +428,12 @@ App Store Connect automatically retrieves dSYM from the IPA when you upload.
 
 Users share crash reports:
 ```bash
-~/Library/Logs/DiagnosticMessages/pino_*.crash
+~/Library/Logs/DiagnosticMessages/makit_*.crash
 ```
 
 To symbolicate locally:
 ```bash
-atos -o build/macos/Build/Products/Release/pino.app/Contents/MacOS/pino \
+atos -o build/macos/Build/Products/Release/makit.app/Contents/MacOS/makit \
   -l 0x10d00000 \
   <address-from-crash-log>
 ```
@@ -451,7 +451,7 @@ atos -o build/macos/Build/Products/Release/pino.app/Contents/MacOS/pino \
 | Build release macOS app | `flutter build macos --release` |
 | Create signed DMG | `app/tool/build-macos-dmg.sh` |
 | Upload to App Store | `xcrun altool --upload-app ...` |
-| Check codesign | `codesign -v build/macos/.../pino.app` |
+| Check codesign | `codesign -v build/macos/.../makit.app` |
 | List identities | `security find-identity -v -p codesigning` |
 
 ### Files

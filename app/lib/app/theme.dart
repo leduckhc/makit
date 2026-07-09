@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-/// pino brand accent — logo green. The single hue in an otherwise neutral
-/// (chroma-0) palette. See design-system/pino/MASTER.md.
-const kPinoAccent = Color(0xFF4ADE80);
+/// makit brand accent — logo green. The single hue in an otherwise neutral
+/// (chroma-0) palette. See design-system/makit/MASTER.md.
+const kMakitAccent = Color(0xFF4ADE80);
 const _onAccent = Color(0xFF06210F);
 
 /// Neutral (zero-hue) palette — identical character in light & dark; no blue.
@@ -24,11 +24,11 @@ ThemeData _build(Brightness brightness) {
   final surface = dark ? _surfaceDark : _surfaceLight;
   // Accent is per-mode: bright logo green on dark (≈9:1), a darker green on
   // light so accent-as-text/icon clears WCAG 4.5:1 on #FAFAFA (#15803D = 4.8:1).
-  final accent = dark ? kPinoAccent : const Color(0xFF15803D);
+  final accent = dark ? kMakitAccent : const Color(0xFF15803D);
   final onAccent = dark ? _onAccent : Colors.white;
   final scheme =
       ColorScheme.fromSeed(
-        seedColor: kPinoAccent,
+        seedColor: kMakitAccent,
         brightness: brightness,
       ).copyWith(
         primary: accent,
@@ -53,5 +53,5 @@ ThemeData _build(Brightness brightness) {
   );
 }
 
-final pinoLightTheme = _build(Brightness.light);
-final pinoDarkTheme = _build(Brightness.dark);
+final makitLightTheme = _build(Brightness.light);
+final makitDarkTheme = _build(Brightness.dark);

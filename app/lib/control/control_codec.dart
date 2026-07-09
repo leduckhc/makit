@@ -1,4 +1,4 @@
-/// NDJSON codec for the pino control-plane protocol (SPEC-01 / SPEC-03).
+/// NDJSON codec for the makit control-plane protocol (SPEC-01 / SPEC-03).
 ///
 /// Mirrors the wire format of `server/src/daemon/protocol.ts`:
 ///   - Request:  `{ id, verb, args? }\n`

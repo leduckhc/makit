@@ -1,8 +1,8 @@
 /**
  * Control client (SPEC-01, phase 3).
  *
- * A tiny reusable client for the pino control socket. **Exported for SPEC-02**:
- * the CLI subcommands (`pino qr`, `pino devices`, …) connect once and issue
+ * A tiny reusable client for the makit control socket. **Exported for SPEC-02**:
+ * the CLI subcommands (`makit qr`, `makit devices`, …) connect once and issue
  * requests against a running daemon.
  *
  * Usage:
@@ -35,7 +35,7 @@ export interface ControlClient {
    *
    * Note: because it resolves on the first matching frame, this method cannot
    * consume the multi-frame `logs.tail --follow` stream (which emits many
-   * `{ id, ok, data:{ line } }` frames for one request id). The CLI `pino logs
+   * `{ id, ok, data:{ line } }` frames for one request id). The CLI `makit logs
    * -f` therefore reads the log file directly rather than through this client.
    * A streaming client API is deferred to SPEC-02, when a real consumer needs
    * it (YAGNI — no consumer exists yet).

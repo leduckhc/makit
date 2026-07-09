@@ -192,7 +192,7 @@ class StoreController extends StateNotifier<StoreState> {
     // app stops receiving `session.event` updates after any reconnect
     // (server restart, hot restart, network blip) until the user manually
     // navigates back into the session screen.
-    _ref.listen<PinoConnState>(connectionControllerProvider, (prev, next) {
+    _ref.listen<MakitConnState>(connectionControllerProvider, (prev, next) {
       final wasConnected = prev?.wsState == WsState.connected;
       final nowConnected = next.wsState == WsState.connected;
       if (!wasConnected && nowConnected) {
@@ -341,7 +341,7 @@ class StoreController extends StateNotifier<StoreState> {
         .toList();
   }
 
-  /// Attach (resume) a prior pi session. Resolves with the pino session id
+  /// Attach (resume) a prior pi session. Resolves with the makit session id
   /// once the server has backfilled its transcript and resumed it.
   Future<String> attachSession(String projectId, String piSessionId) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
@@ -380,7 +380,7 @@ class StoreController extends StateNotifier<StoreState> {
     return id;
   }
 
-  /// Remove a project from pino. The server broadcasts a fresh snapshot that
+  /// Remove a project from makit. The server broadcasts a fresh snapshot that
   /// drops the project (and its sessions) from the store.
   Future<void> removeProject(String id) async {
     await _ref.read(connectionControllerProvider.notifier).request(

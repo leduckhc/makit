@@ -5,10 +5,10 @@ import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/control/control_contract.dart';
-import 'package:pino/desktop/daemon/daemon_lifecycle.dart';
-import 'package:pino/desktop/desktop_controller.dart';
-import 'package:pino/desktop/tray/tray_controller.dart';
+import 'package:makit/control/control_contract.dart';
+import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
+import 'package:makit/desktop/desktop_controller.dart';
+import 'package:makit/desktop/tray/tray_controller.dart';
 
 /// A control client whose responses (or failure) the test drives.
 class _FakeControlClient implements ControlClient {
@@ -75,8 +75,8 @@ DaemonLifecycle _lifecycle({
   int exitCode = 0,
   List<List<String>>? calls,
 }) => DaemonLifecycle(
-  resolver: PinoCliResolver(
-    candidatePaths: found ? ['/x/pino'] : const [],
+  resolver: MakitCliResolver(
+    candidatePaths: found ? ['/x/makit'] : const [],
     exists: (_) => found,
     shellLookup: () async => null,
   ),
@@ -139,7 +139,7 @@ void main() {
       final result = await c.start();
 
       expect(result.outcome, DaemonActionOutcome.started);
-      expect(calls.single, ['/x/pino', 'start']);
+      expect(calls.single, ['/x/makit', 'start']);
       expect(c.summary.state, DaemonState.running);
       expect(c.cliMissing, isFalse);
     });
@@ -156,7 +156,7 @@ void main() {
       expect(c.cliMissing, isTrue);
     });
 
-    test('stop runs `pino stop`', () async {
+    test('stop runs `makit stop`', () async {
       final calls = <List<String>>[];
       final c = DesktopController(
         client: _FakeControlClient()..up = false,
@@ -165,7 +165,7 @@ void main() {
 
       await c.stop();
 
-      expect(calls.single, ['/x/pino', 'stop']);
+      expect(calls.single, ['/x/makit', 'stop']);
     });
 
     test('notifies listeners on refresh', () async {

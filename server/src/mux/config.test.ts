@@ -26,8 +26,8 @@ function withEnv(
 }
 
 test("loadMuxConfig defaults when file missing", () => {
-  withEnv({ PINO_MUX: undefined, PINO_MUX_ANCHOR: undefined }, () => {
-    const dir = mkdtempSync(join(tmpdir(), "pino-mux-cfg-"));
+  withEnv({ MAKIT_MUX: undefined, MAKIT_MUX_ANCHOR: undefined }, () => {
+    const dir = mkdtempSync(join(tmpdir(), "makit-mux-cfg-"));
     const file = join(dir, "config.json");
     const cfg = loadMuxConfig(file);
     assert.equal(cfg.mux, "herdr");
@@ -36,8 +36,8 @@ test("loadMuxConfig defaults when file missing", () => {
 });
 
 test("loadMuxConfig reads file values", () => {
-  withEnv({ PINO_MUX: undefined, PINO_MUX_ANCHOR: undefined }, () => {
-    const dir = mkdtempSync(join(tmpdir(), "pino-mux-cfg-"));
+  withEnv({ MAKIT_MUX: undefined, MAKIT_MUX_ANCHOR: undefined }, () => {
+    const dir = mkdtempSync(join(tmpdir(), "makit-mux-cfg-"));
     const file = join(dir, "config.json");
     writeFileSync(
       file,
@@ -50,8 +50,8 @@ test("loadMuxConfig reads file values", () => {
 });
 
 test("loadMuxConfig env overrides file", () => {
-  withEnv({ PINO_MUX: "off", PINO_MUX_ANCHOR: "w9:p0" }, () => {
-    const dir = mkdtempSync(join(tmpdir(), "pino-mux-cfg-"));
+  withEnv({ MAKIT_MUX: "off", MAKIT_MUX_ANCHOR: "w9:p0" }, () => {
+    const dir = mkdtempSync(join(tmpdir(), "makit-mux-cfg-"));
     const file = join(dir, "config.json");
     writeFileSync(
       file,
@@ -64,8 +64,8 @@ test("loadMuxConfig env overrides file", () => {
 });
 
 test("loadMuxConfig never throws on corrupt file", () => {
-  withEnv({ PINO_MUX: undefined, PINO_MUX_ANCHOR: undefined }, () => {
-    const dir = mkdtempSync(join(tmpdir(), "pino-mux-cfg-"));
+  withEnv({ MAKIT_MUX: undefined, MAKIT_MUX_ANCHOR: undefined }, () => {
+    const dir = mkdtempSync(join(tmpdir(), "makit-mux-cfg-"));
     const file = join(dir, "config.json");
     writeFileSync(file, "not json{{{");
     const cfg = loadMuxConfig(file);

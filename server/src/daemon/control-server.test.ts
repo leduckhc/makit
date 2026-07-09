@@ -40,7 +40,7 @@ function fakeBackend(over: Partial<ControlBackend> = {}): ControlBackend {
       version: "0.1.0",
     }),
     pairMint: (args) => ({
-      url: "pino://pair?t=x",
+      url: "makit://pair?t=x",
       token: "x",
       expiresAt: 100 + (args.ttlMs ?? 0),
       fingerprint: "fp",
@@ -128,7 +128,7 @@ test("dispatch: logs.tail with follow streams lines and returns a stop fn (no do
 });
 
 async function withSocket(fn: (path: string) => Promise<void>) {
-  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-ctl-"));
   const path = join(dir, "control.sock");
   const handle = await createControlServer({ socketPath: path, backend: fakeBackend() });
   try {
@@ -140,7 +140,7 @@ async function withSocket(fn: (path: string) => Promise<void>) {
 }
 
 test("socket: logs.cancel stops one followed log tail", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-ctl-"));
   const path = join(dir, "control.sock");
   let stopped = false;
   const handle = await createControlServer({
@@ -272,7 +272,7 @@ test("socket: malformed line yields an error response and keeps the connection",
 });
 
 test("createControlServer refuses to start when a live daemon answers the probe", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-ctl-"));
   const path = join(dir, "control.sock");
   try {
     await assert.rejects(
@@ -290,7 +290,7 @@ test("createControlServer refuses to start when a live daemon answers the probe"
 });
 
 test("createControlServer binds when the probe reports a stale socket file", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-ctl-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-ctl-"));
   const path = join(dir, "control.sock");
   // Simulate a leftover file from a crashed daemon.
   writeFileSync(path, "stale");

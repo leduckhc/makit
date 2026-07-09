@@ -1,14 +1,14 @@
 /**
- * `pino attach` — a terminal client for a pino-managed session.
+ * `makit attach` — a terminal client for a makit-managed session.
  *
- * It connects to the running pino server exactly like the mobile app does
+ * It connects to the running makit server exactly like the mobile app does
  * (WSS + bearer), subscribes to one session, renders its event stream, and
  * sends typed lines as `send.message`. Because the terminal and the app are
- * both plain subscribers of the SAME pino-managed pi process, everything is
+ * both plain subscribers of the SAME makit-managed pi process, everything is
  * live in both directions — type in the terminal, see it on the phone, and
  * vice-versa — with no second pi process fighting over the session file.
  *
- * Auth: reuses a paired device bearer from ~/.pino/devices.json. `pino attach`
+ * Auth: reuses a paired device bearer from ~/.makit/devices.json. `makit attach`
  * runs on the same host as the server, so reading that file is no weaker than
  * the trust the local user already has.
  */
@@ -41,7 +41,7 @@ function parseAttachArgs(argv: string[]): AttachArgs {
 }
 
 export function readBearer(): string {
-  const f = join(homedir(), ".pino", "devices.json");
+  const f = join(homedir(), ".makit", "devices.json");
   let arr: unknown;
   try {
     arr = JSON.parse(readFileSync(f, "utf8"));
@@ -101,11 +101,11 @@ export async function runAttach(argv: string[]): Promise<void> {
 
   ws.on("open", () => send({ v: 1, t: "hello", id: "h", bearer }));
   ws.on("error", (e: Error) => {
-    console.error(`[pino] connection error: ${e.message}`);
+    console.error(`[makit] connection error: ${e.message}`);
     process.exit(1);
   });
   ws.on("close", () => {
-    console.log("\n[pino] disconnected.");
+    console.log("\n[makit] disconnected.");
     process.exit(quitting ? 0 : 1);
   });
 
@@ -152,16 +152,16 @@ export async function runAttach(argv: string[]): Promise<void> {
     if (args.spawn) {
       const pid = args.projectId ?? projects[0]?.id;
       if (!pid) {
-        console.error("[pino] no project to spawn into.");
+        console.error("[makit] no project to spawn into.");
         process.exit(1);
       }
-      console.log("[pino] spawning a new session…");
+      console.log("[makit] spawning a new session…");
       send({ v: 1, t: "cmd", id: "spawn", kind: "session.spawn", projectId: pid });
       return; // subscribe happens on the spawn ack
     }
 
     if (sessions.length === 0) {
-      console.log("[pino] no sessions. Start one with `pino attach --new`, or from the app.");
+      console.log("[makit] no sessions. Start one with `makit attach --new`, or from the app.");
       process.exit(0);
     }
     if (sessions.length === 1) return doSubscribe(sessions[0]!.id);
@@ -174,7 +174,7 @@ export async function runAttach(argv: string[]): Promise<void> {
     rl.question("Pick a session #: ", (ans) => {
       const s = sessions[Number(ans.trim()) - 1];
       if (!s) {
-        console.error("[pino] invalid selection.");
+        console.error("[makit] invalid selection.");
         process.exit(1);
       }
       doSubscribe(s.id);
@@ -187,7 +187,7 @@ export async function runAttach(argv: string[]): Promise<void> {
     send({ v: 1, t: "sub", id: "sub", sessionId: sid });
     const sess = sessions.find((x) => x.id === sid);
     console.log(
-      `\n[pino] attached to "${sess?.title ?? sid}" — type to chat, Ctrl-C to quit.\n`,
+      `\n[makit] attached to "${sess?.title ?? sid}" — type to chat, Ctrl-C to quit.\n`,
     );
     rl.on("line", (line) => {
       if (prompting) return; // a UI request owns the input right now

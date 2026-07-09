@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/notifications/notification_request.dart';
+import 'package:makit/notifications/notification_request.dart';
 
 void main() {
   group('notificationForRequest (step 1)', () {

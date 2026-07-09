@@ -5,7 +5,7 @@
  *   `<agentDir>/sessions/<slug>/<ISO-ts>_<uuid>.jsonl`
  * where <slug> is derived from the session's cwd (see {@link piSessionsDir}).
  *
- * This module lets pino (1) list a project's prior on-disk sessions and
+ * This module lets makit (1) list a project's prior on-disk sessions and
  * (2) replay a transcript into AdapterEvents so the whole history can be
  * backfilled into the chat before resuming the session live.
  *
@@ -33,15 +33,15 @@ export interface PiSessionMeta {
   messageCount: number;
   /** File mtime in epoch ms — used for "x ago" and sorting. */
   lastActivityAt: number;
-  /** True when this pi session is currently attached to a live pino session. */
+  /** True when this pi session is currently attached to a live makit session. */
   attached: boolean;
 }
 
 const PREVIEW_MAX = 200;
 
-/** The real pi agent dir, overridable via PINO_PI_AGENT_DIR for tests. */
+/** The real pi agent dir, overridable via MAKIT_PI_AGENT_DIR for tests. */
 export function realAgentDir(): string {
-  return process.env.PINO_PI_AGENT_DIR || join(homedir(), ".pi", "agent");
+  return process.env.MAKIT_PI_AGENT_DIR || join(homedir(), ".pi", "agent");
 }
 
 /**

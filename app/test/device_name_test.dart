@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/pairing/device_name.dart';
+import 'package:makit/pairing/device_name.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

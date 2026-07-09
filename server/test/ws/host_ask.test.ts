@@ -5,7 +5,7 @@ import { hostAskResultFrame } from "../../src/server.js";
 /**
  * Regression guard for the World D host.ask relay. The bug: building the frame
  * as `{ t:"host.ask.result", id: askId, ...resp }` let the srv.response
- * envelope's own `t`/`id` clobber ours, so the pino-mirror extension (matching
+ * envelope's own `t`/`id` clobber ours, so the makit-mirror extension (matching
  * `t === "host.ask.result"`) never resolved its ask promise — hanging both the
  * pi TUI and the phone.
  */

@@ -1,4 +1,4 @@
-# pino
+# makit
 
 Mobile-first coding agent client. Run a server on your desktop, pair your
 phone or any other device via QR, and drive `pi` / `codex` / `claude-code`
@@ -11,7 +11,7 @@ sessions through a chat UI.
 
 ## Quick start — Mac + iPhone over Tailscale
 
-pino is **private by default**: it binds to your [Tailscale](https://tailscale.com)
+makit is **private by default**: it binds to your [Tailscale](https://tailscale.com)
 tailnet, not your local Wi-Fi. That way it works from anywhere (home, office,
 cellular) and never exposes a port to untrusted networks like café or airport
 Wi-Fi. Plain-LAN is opt-in (`--lan`) for trusted home networks only.
@@ -35,37 +35,37 @@ Install the Tailscale app on the phone and sign into the same account.
 ```sh
 cd server
 pnpm install
-pnpm start -- --project ~/Work/Vibe/pino --project ~/Work/Vibe/cmux
+pnpm start -- --project ~/Work/Vibe/makit --project ~/Work/Vibe/cmux
 ```
 
-First run generates a self-signed cert in `~/.pino/` and prints a QR with a
+First run generates a self-signed cert in `~/.makit/` and prints a QR with a
 5-minute pairing token. With Tailscale up it binds the tailnet IP:
 
 ```
-[pino] cert fingerprint: 3b54c69fec19cbad88efaef52a0c5f163aa4d65e55c9796312a1506a22636144
-[pino] mDNS: advertising _pino._tcp on port 8787
-[pino] projects:
-  · pino  (/Users/le/Work/Vibe/pino)
+[makit] cert fingerprint: 3b54c69fec19cbad88efaef52a0c5f163aa4d65e55c9796312a1506a22636144
+[makit] mDNS: advertising _makit._tcp on port 8787
+[makit] projects:
+  · makit  (/Users/le/Work/Vibe/makit)
   · cmux  (/Users/le/Work/Vibe/cmux)
-[pino] transport: Tailscale (100.119.58.97) — private ✓
+[makit] transport: Tailscale (100.119.58.97) — private ✓
 
-[pino] no paired devices yet — scan this QR with the app:
+[makit] no paired devices yet — scan this QR with the app:
 
   █▀▀▀▀▀█ ... (QR here)
   █▄▄▄▄▄█
 
-[pino] pino://pair?host=100.119.58.97&port=8787&fp=...&t=...
-[pino] wss listening on wss://100.119.58.97:8787
+[makit] makit://pair?host=100.119.58.97&port=8787&fp=...&t=...
+[makit] wss listening on wss://100.119.58.97:8787
 ```
 
-**If Tailscale isn't running**, pino binds **loopback only** and refuses to
+**If Tailscale isn't running**, makit binds **loopback only** and refuses to
 expose your network — it prints how to install Tailscale or opt into LAN:
 
 ```
-[pino] transport: loopback only — not reachable from other devices.
-[pino]   Tailscale not detected. Install it for a private connection:
-[pino]     https://tailscale.com/download  then run 'tailscale up' and restart pino.
-[pino]   Or pass --lan to expose this (untrusted) local network.
+[makit] transport: loopback only — not reachable from other devices.
+[makit]   Tailscale not detected. Install it for a private connection:
+[makit]     https://tailscale.com/download  then run 'tailscale up' and restart makit.
+[makit]   Or pass --lan to expose this (untrusted) local network.
 ```
 
 To serve over your local Wi-Fi instead (trusted home networks only), pass
@@ -100,10 +100,10 @@ stable per-device, so the connection survives Wi-Fi/DHCP changes.
 ### 3. Subsequent pair tokens
 
 To pair another device later, send `SIGUSR1` to the running server:
-`kill -USR1 $(pgrep -f "node.*pino")`. A fresh QR appears in the server log
+`kill -USR1 $(pgrep -f "node.*makit")`. A fresh QR appears in the server log
 without restarting.
 
-To revoke a paired device, edit `~/.pino/devices.json` (or use the Settings UI).
+To revoke a paired device, edit `~/.makit/devices.json` (or use the Settings UI).
 
 ## Mac → Mac (no pairing needed)
 
@@ -111,12 +111,12 @@ For local dev on the same machine, skip pairing entirely:
 
 ```sh
 # Terminal 1:
-cd server && pnpm start -- --no-auth --project ~/Work/Vibe/pino
+cd server && pnpm start -- --no-auth --project ~/Work/Vibe/makit
 
 # Terminal 2:
 cd app && flutter run -d macos \
-  --dart-define=PINO_WS_URL=wss://127.0.0.1:8787 \
-  --dart-define=PINO_FP=$(cat ~/.pino/server.crt | openssl x509 -outform der | shasum -a 256 | cut -d' ' -f1)
+  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:8787 \
+  --dart-define=MAKIT_FP=$(cat ~/.makit/server.crt | openssl x509 -outform der | shasum -a 256 | cut -d' ' -f1)
 ```
 
 Or just `flutter run -d macos` with no defines and use the in-app
@@ -125,13 +125,13 @@ Or just `flutter run -d macos` with no defines and use the in-app
 ## Project layout
 
 ```
-pino/
+makit/
 ├── docs/
 │   ├── UX.md            # product spec
 │   └── ARCHITECTURE.md  # protocol, server internals, adapter design
 ├── server/              # Node/TS WS server
 │   └── src/
-│       ├── index.ts        # `pino serve` / `pino pair` CLI
+│       ├── index.ts        # `makit serve` / `makit pair` CLI
 │       ├── server.ts       # wss + auth + fan-out
 │       ├── session.ts      # one agent process + event log
 │       ├── manager.ts      # projects + sessions registry
@@ -139,7 +139,7 @@ pino/
 │       ├── pairing/
 │       │   ├── cert.ts     # self-signed cert; fingerprint
 │       │   ├── registry.ts # paired devices + pair tokens (JSON-persisted)
-│       │   ├── url.ts      # pino://pair?... builder
+│       │   ├── url.ts      # makit://pair?... builder
 │       │   └── mdns.ts     # bonjour-service advertisement
 │       └── adapters/
 │           ├── adapter.ts  # AgentAdapter interface

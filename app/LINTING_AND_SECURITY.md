@@ -1,6 +1,6 @@
 # Flutter Security & Linting Setup
 
-This directory contains security and code-quality policies for the pino Flutter app.
+This directory contains security and code-quality policies for the makit Flutter app.
 
 ## Files
 

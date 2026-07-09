@@ -1,13 +1,13 @@
 # Agent connectors
 
-pino is **agent-agnostic** by design. Different coding agents — pi, codex,
+makit is **agent-agnostic** by design. Different coding agents — pi, codex,
 claude-code, custom wrappers like piano — have their own tool schemas and
-extension APIs. To bridge any of them into pino's mobile UI, you write a
+extension APIs. To bridge any of them into makit's mobile UI, you write a
 small per-agent **connector**.
 
-A connector translates the agent's native tool calls into pino's canonical
+A connector translates the agent's native tool calls into makit's canonical
 `UICall` schema. The phone app speaks `UICall` and nothing else, so once
-the connector exists, every pino client (current and future) can drive that
+the connector exists, every makit client (current and future) can drive that
 agent without code changes.
 
 ## Architecture
@@ -26,13 +26,13 @@ agent without code changes.
                            │ POST /uicall  (loopback HTTPS, Bearer)
                            ▼
 ┌────────────────────────────────────────────────────────────────┐
-│   pino bridge  ── server/src/bridge.ts                         │
+│   makit bridge  ── server/src/bridge.ts                         │
 │   forwards to askDevice() → srv.request envelope               │
 └──────────────────────────┬─────────────────────────────────────┘
                            │ WSS srv.request {kind, ...}
                            ▼
 ┌────────────────────────────────────────────────────────────────┐
-│   pino app  ── SrvRequestHandler dispatches on `kind`          │
+│   makit app  ── SrvRequestHandler dispatches on `kind`          │
 │   renders the appropriate Material dialog                      │
 └──────────────────────────┬─────────────────────────────────────┘
                            │ WSS srv.response (same id)
@@ -63,8 +63,8 @@ Adding a new variant:
 
 ## Writing a connector
 
-The working example is [`server/connectors/pino-pi.ts`](../server/connectors/pino-pi.ts).
-A drop-in template lives at [`server/connectors/pino-piano.ts`](../server/connectors/pino-piano.ts).
+The working example is [`server/connectors/makit-pi.ts`](../server/connectors/makit-pi.ts).
+A drop-in template lives at [`server/connectors/makit-piano.ts`](../server/connectors/makit-piano.ts).
 
 A connector is a TypeScript file with a `default export` function that
 receives the agent's extension API. The function registers tools that:
@@ -81,9 +81,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { UICall, UIResponse } from "../src/uicall.js";
 
-const BRIDGE_URL = process.env.PINO_BRIDGE_URL!;
-const BRIDGE_TOKEN = process.env.PINO_BRIDGE_TOKEN!;
-const SESSION_ID = process.env.PINO_SESSION_ID;
+const BRIDGE_URL = process.env.MAKIT_BRIDGE_URL!;
+const BRIDGE_TOKEN = process.env.MAKIT_BRIDGE_TOKEN!;
+const SESSION_ID = process.env.MAKIT_SESSION_ID;
 
 async function uicall(call: UICall): Promise<UIResponse> {
   const res = await fetch(`${BRIDGE_URL}/uicall`, {
@@ -119,24 +119,24 @@ export default function (api: ExtensionAPI) {
 
 Connectors are **auto-discovered** at server startup. Anything matching
 `server/connectors/*.ts` is passed to every spawned agent process via
-`pi -e <path>`. No code changes in pino itself.
+`pi -e <path>`. No code changes in makit itself.
 
 You'll see this in the server log:
 
 ```
-[pino] loading 2 connector(s): pino-pi.ts, pino-piano.ts
+[makit] loading 2 connector(s): makit-pi.ts, makit-piano.ts
 ```
 
 ## Environment contract
 
-Each connector runs **inside** the agent's process. pino injects three env
+Each connector runs **inside** the agent's process. makit injects three env
 vars when it spawns the agent:
 
 | Variable             | Purpose                                                                      |
 | -------------------- | ---------------------------------------------------------------------------- |
-| `PINO_BRIDGE_URL`    | Loopback HTTP bridge base URL, e.g. `http://127.0.0.1:54321`                 |
-| `PINO_BRIDGE_TOKEN`  | Bearer for the bridge — random per server start                              |
-| `PINO_SESSION_ID`    | pino's sessionId — routes `srv.request` to the right subscribed phones       |
+| `MAKIT_BRIDGE_URL`    | Loopback HTTP bridge base URL, e.g. `http://127.0.0.1:54321`                 |
+| `MAKIT_BRIDGE_TOKEN`  | Bearer for the bridge — random per server start                              |
+| `MAKIT_SESSION_ID`    | makit's sessionId — routes `srv.request` to the right subscribed phones       |
 
 If a connector loads without these set (e.g. you ran `pi` standalone),
 it should be a silent no-op — see the `if (!BRIDGE_URL)` guard.
@@ -145,7 +145,7 @@ it should be a silent no-op — see the `if (!BRIDGE_URL)` guard.
 
 - **Loopback only.** The bridge listens on `127.0.0.1` and never on the
   LAN interface. Token is required on every request.
-- **Token rotates** on every pino server start.
+- **Token rotates** on every makit server start.
 - **Connector code runs with the agent's full permissions.** Treat it
   like server code you wrote, not like a third-party library. Review
   diffs.

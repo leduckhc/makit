@@ -54,9 +54,9 @@ function deps(over: Partial<ServerBackendDeps> = {}): ServerBackendDeps {
     startedAt: 500,
     now: () => clock,
     connectedDeviceIds: () => new Set(["d1"]),
-    buildUrl: (token: string) => `pino://pair?t=${token}`,
+    buildUrl: (token: string) => `makit://pair?t=${token}`,
     requestStop: () => {},
-    logPath: "/nonexistent/pino.log",
+    logPath: "/nonexistent/makit.log",
     ...over,
   } as ServerBackendDeps;
 }
@@ -80,12 +80,12 @@ test("pair.mint mints a token, builds a URL, and pair.current returns it until e
   const b = createServerBackend(deps({ now: () => clock }));
   const minted = await b.pairMint({ ttlMs: 60_000 });
   assert.equal(minted.token, "TOKEN");
-  assert.equal(minted.url, "pino://pair?t=TOKEN");
+  assert.equal(minted.url, "makit://pair?t=TOKEN");
   assert.equal(minted.fingerprint, "fp");
   assert.equal(minted.expiresAt, 61_000);
 
   const current = await b.pairCurrent();
-  assert.deepEqual(current, { url: "pino://pair?t=TOKEN", token: "TOKEN", expiresAt: 61_000 });
+  assert.deepEqual(current, { url: "makit://pair?t=TOKEN", token: "TOKEN", expiresAt: 61_000 });
 
   clock = 61_001; // past expiry
   assert.equal(await b.pairCurrent(), null);
@@ -134,8 +134,8 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
 }
 
 test("logs.tail --follow streams appended lines and the stop fn closes the watcher", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-logtail-"));
-  const logPath = join(dir, "pino.log");
+  const dir = mkdtempSync(join(tmpdir(), "makit-logtail-"));
+  const logPath = join(dir, "makit.log");
   writeFileSync(logPath, "backlog\n");
   const b = createServerBackend(deps({ logPath }));
 

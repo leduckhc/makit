@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/store/models.dart';
-import 'package:pino/transport/protocol.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/transport/protocol.dart';
 
 SessionEvent _ev(int seq, EventKind k, Map<String, dynamic> p) => SessionEvent(
   seq: seq,

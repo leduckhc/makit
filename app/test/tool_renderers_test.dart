@@ -4,9 +4,9 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/store/models.dart';
-import 'package:pino/transport/protocol.dart';
-import 'package:pino/ui/session/tool_renderers.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/transport/protocol.dart';
+import 'package:makit/ui/session/tool_renderers.dart';
 
 ToolCallItem _tool(String name, Map<String, dynamic> args) => ToolCallItem(
   seq: 1,

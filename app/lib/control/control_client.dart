@@ -1,7 +1,7 @@
-/// Control-plane client for the pino desktop app (SPEC-03).
+/// Control-plane client for the makit desktop app (SPEC-03).
 ///
 /// A thin request/response client over the daemon's unix-domain control socket
-/// (`~/.pino/control.sock`). It speaks the frozen NDJSON protocol from
+/// (`~/.makit/control.sock`). It speaks the frozen NDJSON protocol from
 /// `server/src/daemon/protocol.ts` (ported in `control_types.dart` /
 /// `control_codec.dart`):
 ///
@@ -93,14 +93,14 @@ class _LogStream {
   final bool follow;
 }
 
-/// A control-plane client for a running pino daemon.
-class PinoControlClient implements ControlClient {
+/// A control-plane client for a running makit daemon.
+class MakitControlClient implements ControlClient {
   /// Creates a client for the daemon at [socketPath].
   ///
   /// [idGenerator] supplies request ids (injectable for deterministic tests);
   /// [requestTimeout] caps single-shot verbs; [connector] opens the transport
   /// (defaults to a real unix-domain socket).
-  PinoControlClient({
+  MakitControlClient({
     required this.socketPath,
     String Function()? idGenerator,
     Duration requestTimeout = _defaultRequestTimeout,

@@ -14,11 +14,11 @@ import '../transport/transport.dart';
 import '../transport/ws_client.dart';
 import 'fake_server.dart';
 
-/// Compile-time switch: `--dart-define=PINO_WS_URL=wss://…` + optional
-/// `--dart-define=PINO_FP=<sha256>` for fingerprint pinning. Useful for
-/// localhost development against `pino serve --no-auth`.
-const _wsUrl = String.fromEnvironment('PINO_WS_URL');
-const _wsFp = String.fromEnvironment('PINO_FP');
+/// Compile-time switch: `--dart-define=MAKIT_WS_URL=wss://…` + optional
+/// `--dart-define=MAKIT_FP=<sha256>` for fingerprint pinning. Useful for
+/// localhost development against `makit serve --no-auth`.
+const _wsUrl = String.fromEnvironment('MAKIT_WS_URL');
+const _wsFp = String.fromEnvironment('MAKIT_FP');
 
 /// Persisted info about the desktop server we're paired with.
 class PairedServer {
@@ -37,7 +37,7 @@ class PairedServer {
   final String bearer;
   final String label;
 
-  /// mDNS service name (e.g., 'pino._tcp.local'). If present, we'll resolve
+  /// mDNS service name (e.g., 'makit._tcp.local'). If present, we'll resolve
   /// this at connect time instead of using [host] directly, making the
   /// connection resilient to DHCP IP changes.
   final String? mdnsName;
@@ -63,8 +63,8 @@ class PairedServer {
   );
 }
 
-class PinoConnState {
-  PinoConnState({
+class MakitConnState {
+  MakitConnState({
     this.server,
     this.wsState = WsState.idle,
     this.useFake = false,
@@ -78,14 +78,14 @@ class PinoConnState {
 
   bool get paired => server != null || useFake || _wsUrl.isNotEmpty;
 
-  PinoConnState copyWith({
+  MakitConnState copyWith({
     PairedServer? server,
     WsState? wsState,
     bool? useFake,
     String? lastError,
     bool clearError = false,
     bool clearServer = false,
-  }) => PinoConnState(
+  }) => MakitConnState(
     server: clearServer ? null : (server ?? this.server),
     wsState: wsState ?? this.wsState,
     useFake: useFake ?? this.useFake,
@@ -99,7 +99,7 @@ const _kPairedServerKey = 'paired_server';
 /// top-level [browseLan] so it can be swapped for a fake in tests.
 typedef BrowseLan = Future<List<DiscoveredServer>> Function({Duration timeout});
 
-class ConnectionController extends StateNotifier<PinoConnState> {
+class ConnectionController extends StateNotifier<MakitConnState> {
   ConnectionController(
     this._storage, {
     Transport Function()? transportFactory,
@@ -110,7 +110,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
        _browseLan = browseLan ?? _defaultBrowseLan,
        _rediscoverStall = rediscoverStall ?? const Duration(seconds: 2),
        _pushRegistrar = pushRegistrar ?? const NoopPushRegistrar(),
-       super(PinoConnState()) {
+       super(MakitConnState()) {
     // SPEC-07: the APNs token can arrive AFTER we connect. Subscribe so a late
     // token still triggers a `push.register` on the live socket.
     _pushRegistrar.onToken = registerPushToken;
@@ -237,14 +237,14 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       if (state.wsState == WsState.connected) return;
 
       debugPrint(
-        '[pino] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
+        '[makit] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
       );
       final found = await _browseLan(timeout: const Duration(seconds: 4));
       final matches = found
           .where((d) => d.fingerprint == server.fingerprint)
           .toList();
       if (matches.isEmpty) {
-        debugPrint('[pino] no mDNS match for stored fingerprint.');
+        debugPrint('[makit] no mDNS match for stored fingerprint.');
         state = state.copyWith(
           lastError: 'Server unreachable at ${server.host}:${server.port}',
         );
@@ -254,7 +254,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
       if (match.host == server.host && match.port == server.port) return;
 
       debugPrint(
-        '[pino] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
+        '[makit] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
       );
       final updated = PairedServer(
         host: match.host,
@@ -354,7 +354,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
             bearer: bearer,
             label: label,
             mdnsName:
-                'pino._tcp.local', // Store the service name for future mDNS resolution.
+                'makit._tcp.local', // Store the service name for future mDNS resolution.
           ),
         );
       } else if (env.t == MsgType.err) {
@@ -492,7 +492,7 @@ class ConnectionController extends StateNotifier<PinoConnState> {
     await _storage.delete(key: _kPairedServerKey);
     await _ws?.close();
     _fake?.stop();
-    state = PinoConnState();
+    state = MakitConnState();
     _attachFake();
   }
 
@@ -529,14 +529,14 @@ final pushRegistrarProvider = Provider<PushRegistrar>(
 );
 
 final connectionControllerProvider =
-    StateNotifierProvider<ConnectionController, PinoConnState>((ref) {
+    StateNotifierProvider<ConnectionController, MakitConnState>((ref) {
       return ConnectionController(
         ref.watch(_secureStorageProvider),
         pushRegistrar: ref.watch(pushRegistrarProvider),
       );
     });
 
-final connectionProvider = Provider<PinoConnState>(
+final connectionProvider = Provider<MakitConnState>(
   (ref) => ref.watch(connectionControllerProvider),
 );
 
@@ -548,7 +548,7 @@ final connectionListenableProvider = Provider<Listenable>((ref) {
   final notifier = ValueNotifier<bool>(
     ref.read(connectionControllerProvider).paired,
   );
-  ref.listen<PinoConnState>(
+  ref.listen<MakitConnState>(
     connectionControllerProvider,
     (_, next) => notifier.value = next.paired,
   );

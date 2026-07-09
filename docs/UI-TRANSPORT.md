@@ -1,13 +1,13 @@
-# pino UI Transport Architecture
+# makit UI Transport Architecture
 
 > Status: **implemented** — server `PiAdapter` intercepts
 > `ctx.ui.select/confirm/input/editor`; app renders the `input` dialog.
-> `ui.custom` remains un-transportable, so the pino-native `AskUserQuestion`
-> tool in `pino-pi.ts` stays as the phone ask (supersedes `@mammothb/pi-ask`).
+> `ui.custom` remains un-transportable, so the makit-native `AskUserQuestion`
+> tool in `makit-pi.ts` stays as the phone ask (supersedes `@mammothb/pi-ask`).
 
 ## Principle
 
-**pino does not reimplement agent tools.** pino is a *UI transport*: it detects
+**makit does not reimplement agent tools.** makit is a *UI transport*: it detects
 when the agent (pi) wants to show UI, reframes that request into a canonical
 shape the iOS app can render, and translates the user's answer back into the
 language the agent expects. All tool logic stays in pi / its extensions.
@@ -16,7 +16,7 @@ language the agent expects. All tool logic stays in pi / its extensions.
 
 pi extensions call methods on `ctx.ui`. In rpc mode:
 
-| `ctx.ui` method | rpc behavior | pino can transport? |
+| `ctx.ui` method | rpc behavior | makit can transport? |
 | --- | --- | --- |
 | `select(title, options)`  | emits `extension_ui_request {method:"select"}` on stdout, awaits `extension_ui_response` | ✅ yes |
 | `confirm(title, message)` | emits `extension_ui_request {method:"confirm"}` | ✅ yes |
@@ -26,24 +26,24 @@ pi extensions call methods on `ctx.ui`. In rpc mode:
 | `custom(factory)`         | returns `undefined` immediately — **no event emitted** (needs a live TUI to draw the component) | ❌ **no** |
 
 `@mammothb/pi-ask`'s `AskUserQuestion` uses `custom`, which is why it cannot be
-transported and crashes (`undefined.cancelled`) under headless rpc. pino now
+transported and crashes (`undefined.cancelled`) under headless rpc. makit now
 **filters it out at spawn**: `server/src/pi-agent-dir.ts` points pi at a
-`$TMPDIR/pino-pi-agent` dir that symlinks everything from `~/.pi/agent` except a
-rewritten `settings.json` with pi-ask removed (via `PI_CODING_AGENT_DIR`). pino
+`$TMPDIR/makit-pi-agent` dir that symlinks everything from `~/.pi/agent` except a
+rewritten `settings.json` with pi-ask removed (via `PI_CODING_AGENT_DIR`). makit
 still provides its own phone-native `AskUserQuestion`/`askUserQuestion` in
-`pino-pi.ts`; other extensions (hermes-memory, subagents, piano) load normally.
+`makit-pi.ts`; other extensions (hermes-memory, subagents, piano) load normally.
 
 ### Why `ctx.hasUI` is `true` even headless
 
 pi computes `hasUI()` as `uiContext !== noOpUIContext`
-(`core/extensions/runner.js`). pino's rpc mode installs a **real** uiContext
+(`core/extensions/runner.js`). makit's rpc mode installs a **real** uiContext
 (the `select`/`confirm`/`input`/`editor`/`custom` object in
 `modes/rpc/rpc-mode.js`), so `hasUI` is `true`. That's why pi-ask 2.1.3 passes
 its `if (!ctx.hasUI) throw "requires interactive mode"` guard and proceeds to
 `ui.custom()` — which rpc hard-codes to `return undefined` (a `custom` factory
 is a TUI closure that can't cross the rpc boundary). pi-ask then reads
 `undefined.cancelled` → the crash. Per its docs, pi-ask "requires interactive
-mode"; pino is *UI-capable but not a TUI*, so `custom`-based tools can't run.
+mode"; makit is *UI-capable but not a TUI*, so `custom`-based tools can't run.
 
 ## Flow (interceptor model)
 
@@ -88,11 +88,11 @@ pi resolves the ui promise → extension continues → tool result to model
 
 ## Two layers, clearly separated
 
-1. **Connector-provided tools** (`server/connectors/*.ts`): pino *adds* its own
+1. **Connector-provided tools** (`server/connectors/*.ts`): makit *adds* its own
    tools (e.g. a phone-native `askUserQuestion`) via `registerTool`. Explicit,
-   opt-in, pino owns them.
-2. **UI interceptor** (`PiAdapter`): pino *transparently transports* any
-   extension's standard `ctx.ui.*` calls. pino owns nothing; it only translates.
+   opt-in, makit owns them.
+2. **UI interceptor** (`PiAdapter`): makit *transparently transports* any
+   extension's standard `ctx.ui.*` calls. makit owns nothing; it only translates.
 
 Both feed the same `askDevice` → app path and reuse the canonical UICall types.
 
@@ -121,25 +121,25 @@ Confusingly, a **lowercase** `askUserQuestion` worked while the **capital**
 `AskUserQuestion` failed — same session, same schema.
 
 ### Investigation (what threw us off)
-1. `cancelled` is written by the app on cancel, but **never read** by pino's
+1. `cancelled` is written by the app on cancel, but **never read** by makit's
    server/connector — so the crash was **inside pi**, not our code.
 2. We first assumed our bridge response shape was wrong. It wasn't; a
-   standalone rpc repro (real `pi` + `pino-pi.ts` + a mock bridge returning a
+   standalone rpc repro (real `pi` + `makit-pi.ts` + a mock bridge returning a
    well-formed response) completed cleanly.
 3. Capital `AskUserQuestion` turned out **not to be our tool** at all — it is
    the user's global extension **`@mammothb/pi-ask`** (a Claude-Code-style
-   ask tool). Lowercase `askUserQuestion` was pino's own connector tool.
+   ask tool). Lowercase `askUserQuestion` was makit's own connector tool.
 
 ### Root cause
 - `@mammothb/pi-ask` renders its form with **`ctx.ui.custom(factory)`** — a
   closure that draws a live TUI component.
-- pino drives pi **headless** (`pi --mode rpc`). In rpc, `ui.custom()` is
+- makit drives pi **headless** (`pi --mode rpc`). In rpc, `ui.custom()` is
   hard-coded to `return undefined` (the factory can't cross the rpc boundary).
 - pi-ask guards with `if (!ctx.hasUI) throw`. But `hasUI` is
   `uiContext !== noOpUIContext`, and **rpc installs a real uiContext**, so
   `hasUI === true`. pi-ask passes the guard, calls `custom()`, gets `undefined`,
   then does `undefined.cancelled` → the crash.
-- pino's own `askUserQuestion` connector uses the **HTTP bridge → phone**, which
+- makit's own `askUserQuestion` connector uses the **HTTP bridge → phone**, which
   works fine in rpc. That's why lowercase worked and capital didn't.
 
 Separately, a **real** bug was found and fixed while chasing this: the server
@@ -148,23 +148,23 @@ askUserQuestion through the live server returned undefined. Fixed to `return env
 (commit "fix(bridge): return the flat srv.response envelope, not env.body").
 
 ### Resolution
-- **Short term (shipped):** `pino-pi.ts` registers a pino-native ask under both
+- **Short term (shipped):** `makit-pi.ts` registers a makit-native ask under both
   `AskUserQuestion` and `askUserQuestion`. pi resolves duplicate tool names by
-  "first registration wins" and pino connectors load first, so it cleanly
+  "first registration wins" and makit connectors load first, so it cleanly
   supersedes `@mammothb/pi-ask` (pi logs `Tool "AskUserQuestion" conflicts …`
   and skips it). The phone wizard now answers whichever casing the model emits.
-- **Long term (designed + POC-proven):** the **interceptor** above. pino
+- **Long term (designed + POC-proven):** the **interceptor** above. makit
   transports pi's standard `ctx.ui.select/confirm/input/editor` calls to the
   phone and back, without owning tools. Proven end-to-end in `server/poc/`
   (`poc-ui-ext.ts` + `poc-interceptor.mjs`): select/confirm/input all
   round-trip. `ui.custom` remains un-transportable by design, so `custom`-based
-  extensions (like pi-ask) still need a native pino tool.
+  extensions (like pi-ask) still need a native makit tool.
 
 ### Rules of thumb for the future
 - A tool error prefixed `ToolName -> …` is thrown **inside pi / the extension**,
-  not in pino. Reproduce with a standalone `pi --mode rpc -e <ext>` + a mock
-  bridge before touching pino code.
-- `hasUI` is **true** under pino rpc. Extensions *will* attempt UI. Only
+  not in makit. Reproduce with a standalone `pi --mode rpc -e <ext>` + a mock
+  bridge before touching makit code.
+- `hasUI` is **true** under makit rpc. Extensions *will* attempt UI. Only
   `select/confirm/input/editor` emit `extension_ui_request`; `custom` silently
   returns `undefined`.
 - Keep test harnesses (e.g. `e2e-server.ts`) byte-identical to production wiring

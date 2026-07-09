@@ -1,29 +1,29 @@
 /**
  * macOS launchd LaunchAgent integration (SPEC-01, phase 5).
  *
- * `pino service install` writes a LaunchAgent plist to
- * `~/Library/LaunchAgents/dev.pino.plist`; `pino service uninstall` removes it.
+ * `makit service install` writes a LaunchAgent plist to
+ * `~/Library/LaunchAgents/dev.makit.plist`; `makit service uninstall` removes it.
  *
  * **Opt-in only** (consensus #2): the plist sets `RunAtLoad=false` and
- * `KeepAlive=false`, so installing it does NOT start pino and macOS will not
- * resurrect it. The user still starts/stops on demand via `pino start`/`stop`;
- * the LaunchAgent merely makes pino a `launchctl`-manageable label.
+ * `KeepAlive=false`, so installing it does NOT start makit and macOS will not
+ * resurrect it. The user still starts/stops on demand via `makit start`/`stop`;
+ * the LaunchAgent merely makes makit a `launchctl`-manageable label.
  *
  * ## Manual verification (not unit-tested — needs a real macOS session)
  *
- *   pino service install
- *   test -f ~/Library/LaunchAgents/dev.pino.plist   # written
- *   launchctl load ~/Library/LaunchAgents/dev.pino.plist
- *   pino status                                      # still "not running"
- *   launchctl start dev.pino && pino status          # now running
- *   launchctl stop dev.pino
- *   pino service uninstall                           # file removed
+ *   makit service install
+ *   test -f ~/Library/LaunchAgents/dev.makit.plist   # written
+ *   launchctl load ~/Library/LaunchAgents/dev.makit.plist
+ *   makit status                                      # still "not running"
+ *   launchctl start dev.makit && makit status          # now running
+ *   launchctl stop dev.makit
+ *   makit service uninstall                           # file removed
  */
 
 import { writeFileSync, rmSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-export const LAUNCH_AGENT_LABEL = "dev.pino";
+export const LAUNCH_AGENT_LABEL = "dev.makit";
 
 export interface PlistOpts {
   label: string;

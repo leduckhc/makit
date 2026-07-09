@@ -5,37 +5,37 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/desktop/daemon/daemon_lifecycle.dart';
+import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
 
 ProcessResult _exit(int code, {String out = '', String err = ''}) =>
     ProcessResult(0, code, out, err);
 
 void main() {
-  group('PinoCliResolver', () {
+  group('MakitCliResolver', () {
     test('returns the first existing candidate path', () async {
-      final resolver = PinoCliResolver(
-        candidatePaths: ['/a/pino', '/b/pino', '/c/pino'],
-        exists: (p) => p == '/b/pino',
+      final resolver = MakitCliResolver(
+        candidatePaths: ['/a/makit', '/b/makit', '/c/makit'],
+        exists: (p) => p == '/b/makit',
         shellLookup: () async => fail('shell lookup should not run'),
       );
-      expect(await resolver.resolve(), '/b/pino');
+      expect(await resolver.resolve(), '/b/makit');
     });
 
     test(
       'falls back to the login-shell lookup when no candidate exists',
       () async {
-        final resolver = PinoCliResolver(
-          candidatePaths: ['/a/pino'],
+        final resolver = MakitCliResolver(
+          candidatePaths: ['/a/makit'],
           exists: (_) => false,
-          shellLookup: () async => '/opt/homebrew/bin/pino',
+          shellLookup: () async => '/opt/homebrew/bin/makit',
         );
-        expect(await resolver.resolve(), '/opt/homebrew/bin/pino');
+        expect(await resolver.resolve(), '/opt/homebrew/bin/makit');
       },
     );
 
     test('returns null when nothing is found', () async {
-      final resolver = PinoCliResolver(
-        candidatePaths: ['/a/pino'],
+      final resolver = MakitCliResolver(
+        candidatePaths: ['/a/makit'],
         exists: (_) => false,
         shellLookup: () async => null,
       );
@@ -45,7 +45,7 @@ void main() {
 
   group('DaemonLifecycle', () {
     late List<List<String>> calls;
-    PinoCliResolver resolverReturning(String? path) => PinoCliResolver(
+    MakitCliResolver resolverReturning(String? path) => MakitCliResolver(
       candidatePaths: path == null ? const [] : [path],
       exists: (p) => p == path,
       shellLookup: () async => null,
@@ -54,7 +54,7 @@ void main() {
     setUp(() => calls = []);
 
     DaemonLifecycle build({
-      String? cliPath = '/usr/local/bin/pino',
+      String? cliPath = '/usr/local/bin/makit',
       ProcessResult Function(String exe, List<String> args)? onRun,
     }) {
       return DaemonLifecycle(
@@ -66,23 +66,23 @@ void main() {
       );
     }
 
-    test('start runs `pino start` and reports started', () async {
+    test('start runs `makit start` and reports started', () async {
       final result = await build().start();
       expect(result.outcome, DaemonActionOutcome.started);
       expect(result.ok, isTrue);
-      expect(calls.single, ['/usr/local/bin/pino', 'start']);
+      expect(calls.single, ['/usr/local/bin/makit', 'start']);
     });
 
-    test('stop runs `pino stop`', () async {
+    test('stop runs `makit stop`', () async {
       final result = await build().stop();
       expect(result.outcome, DaemonActionOutcome.stopped);
-      expect(calls.single, ['/usr/local/bin/pino', 'stop']);
+      expect(calls.single, ['/usr/local/bin/makit', 'stop']);
     });
 
-    test('restart runs `pino restart`', () async {
+    test('restart runs `makit restart`', () async {
       final result = await build().restart();
       expect(result.outcome, DaemonActionOutcome.restarted);
-      expect(calls.single, ['/usr/local/bin/pino', 'restart']);
+      expect(calls.single, ['/usr/local/bin/makit', 'restart']);
     });
 
     test('reports cliNotFound when the CLI cannot be located', () async {
@@ -103,8 +103,8 @@ void main() {
 
     test('reports failed when spawning throws', () async {
       final lifecycle = DaemonLifecycle(
-        resolver: resolverReturning('/usr/local/bin/pino'),
-        run: (_, _) async => throw const ProcessException('pino', ['start']),
+        resolver: resolverReturning('/usr/local/bin/makit'),
+        run: (_, _) async => throw const ProcessException('makit', ['start']),
       );
       final result = await lifecycle.start();
       expect(result.outcome, DaemonActionOutcome.failed);

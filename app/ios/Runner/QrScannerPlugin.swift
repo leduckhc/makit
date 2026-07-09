@@ -5,14 +5,14 @@ import Vision
 
 /// Modal QR scanner backed by AVFoundation + Vision.framework.
 ///
-/// Exposed to Flutter via the `pino/qr_scanner` method channel:
+/// Exposed to Flutter via the `makit/qr_scanner` method channel:
 ///   - `scan` → Future<String?>  (null on cancel/error)
 ///
 /// Vision is used so we avoid the MLKit dependency that breaks iOS 26 arm64
 /// simulators. Vision runs natively, no extra binaries to ship.
 @objc class QrScannerPlugin: NSObject, FlutterPlugin {
   static func register(with registrar: FlutterPluginRegistrar) {
-    let channel = FlutterMethodChannel(name: "pino/qr_scanner",
+    let channel = FlutterMethodChannel(name: "makit/qr_scanner",
                                        binaryMessenger: registrar.messenger())
     let instance = QrScannerPlugin()
     registrar.addMethodCallDelegate(instance, channel: channel)
@@ -44,7 +44,7 @@ final class QrScannerViewController: UIViewController {
   private let session = AVCaptureSession()
   private let onResult: (String?) -> Void
   private var preview: AVCaptureVideoPreviewLayer?
-  private let visionQueue = DispatchQueue(label: "pino.qr.vision")
+  private let visionQueue = DispatchQueue(label: "makit.qr.vision")
   private var didReturn = false
 
   init(onResult: @escaping (String?) -> Void) {
@@ -65,7 +65,7 @@ final class QrScannerViewController: UIViewController {
     cancel.translatesAutoresizingMaskIntoConstraints = false
 
     let hint = UILabel()
-    hint.text = "Aim at the pino pair QR"
+    hint.text = "Aim at the makit pair QR"
     hint.textColor = .white
     hint.textAlignment = .center
     hint.font = .systemFont(ofSize: 15)

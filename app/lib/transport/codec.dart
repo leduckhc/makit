@@ -45,7 +45,7 @@ class WireCodec {
     } catch (e) {
       // Belt-and-suspenders: the boundary must never throw into the frame
       // stream, whatever malformed shape arrives.
-      debugPrint('[pino] WireCodec: dropped frame (decode threw: $e)');
+      debugPrint('[makit] WireCodec: dropped frame (decode threw: $e)');
       return null;
     }
   }
@@ -155,6 +155,6 @@ class WireCodec {
   }
 
   static void _warn(String kind) {
-    debugPrint('[pino] WireCodec: dropped malformed "$kind" frame');
+    debugPrint('[makit] WireCodec: dropped malformed "$kind" frame');
   }
 }

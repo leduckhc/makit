@@ -85,7 +85,7 @@ Each item: **RED** (write this failing test first) → **GREEN** (smallest chang
 > (auth_gate/command_router/subscription_hub/reverse_rpc) · ✅ B6 registry
 > security (constant-time compare; DoS-prone lockout dropped) · ✅ B7 transport
 > seam · ✅ B8 leveled loggers · ✅ B9a codegen deps removed, B9b `debug.ask*`
-> gated behind `PINO_DEV`. **Deferred:** B9c (`agent.thinking`/`tool.call.delta`
+> gated behind `MAKIT_DEV`. **Deferred:** B9c (`agent.thinking`/`tool.call.delta`
 > finish-or-drop — low value, cross-cutting). Two-pass review caught a real
 > codec-throws BLOCKER, a pairing DoS, and a reverse-RPC timer leak.
 

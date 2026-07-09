@@ -3,13 +3,13 @@
 
 flutter_native_splash:
   color: "#171717"                       # dark frame background
-  image: assets/pino-splash-mark.png     # green o// mark, transparent bg (480x300)
+  image: assets/makit-splash-mark.png     # green o// mark, transparent bg (480x300)
 
   # Android 12+ themed splash (the runtime can tint these).
   android_12:
     color: "#171717"
-    image: assets/pino-splash-mark.png
+    image: assets/makit-splash-mark.png
     icon_background_color: "#171717"
 
-  # The static native splash is replaced by the Flutter PinoSplash (clap anim)
-  # once the engine is up — see app/lib/ui/widgets/pino_mark.dart.
+  # The static native splash is replaced by the Flutter MakitSplash (clap anim)
+  # once the engine is up — see app/lib/ui/widgets/makit_mark.dart.

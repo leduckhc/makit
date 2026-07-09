@@ -6,7 +6,7 @@ import 'package:tray_manager/tray_manager.dart';
 
 import 'tray_icons.dart';
 
-/// Lifecycle state of the pino daemon as far as the tray needs to know.
+/// Lifecycle state of the makit daemon as far as the tray needs to know.
 ///
 /// This is a deliberately minimal mirror of the richer types Stream A defines
 /// in `control_types.dart`; keeping it local keeps the tray decoupled from the
@@ -154,7 +154,7 @@ class TrayController extends ChangeNotifier {
   /// Invoked when the user chooses "Pair QR...".
   final VoidCallback? onOpenQr;
 
-  /// Invoked when the user chooses "Quit Pino".
+  /// Invoked when the user chooses "Quit Makit".
   final VoidCallback? onQuit;
 
   /// Creates the tray icon and its initial tooltip/menu from the current state.
@@ -185,7 +185,7 @@ class TrayController extends ChangeNotifier {
     super.dispose();
   }
 
-  String _tooltipFor(DaemonSummary state) => 'Pino — ${state.state.name}';
+  String _tooltipFor(DaemonSummary state) => 'Makit — ${state.state.name}';
 
   String _stateLine(DaemonSummary state) => switch (state.state) {
     DaemonState.running => 'Running (pid ${state.pid})',
@@ -195,7 +195,7 @@ class TrayController extends ChangeNotifier {
 
   Menu _buildMenu(DaemonSummary state) {
     final items = <MenuItem>[
-      MenuItem(label: 'Pino', disabled: true),
+      MenuItem(label: 'Makit', disabled: true),
       MenuItem(label: _stateLine(state), disabled: true),
       MenuItem.separator(),
       if (state.state == DaemonState.stopped)
@@ -209,7 +209,7 @@ class TrayController extends ChangeNotifier {
       _dynamicDeviceSubmenu(state),
       _dynamicSessionSubmenu(state),
       MenuItem.separator(),
-      MenuItem(label: 'Quit Pino', onClick: (_) => onQuit?.call()),
+      MenuItem(label: 'Quit Makit', onClick: (_) => onQuit?.call()),
     ];
     return Menu(items: items);
   }

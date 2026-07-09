@@ -10,16 +10,16 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/control/control_contract.dart';
-import 'package:pino/desktop/screens/devices_screen.dart';
-import 'package:pino/desktop/screens/fake_control_client.dart';
-import 'package:pino/desktop/screens/providers.dart';
-import 'package:pino/desktop/screens/qr_screen.dart';
+import 'package:makit/control/control_contract.dart';
+import 'package:makit/desktop/screens/devices_screen.dart';
+import 'package:makit/desktop/screens/fake_control_client.dart';
+import 'package:makit/desktop/screens/providers.dart';
+import 'package:makit/desktop/screens/qr_screen.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:pino/desktop/screens/session_log_screen.dart';
-import 'package:pino/desktop/screens/sessions_screen.dart';
-import 'package:pino/desktop/screens/status_screen.dart';
-import 'package:pino/store/models.dart' show ApprovalPolicy, SessionStatus;
+import 'package:makit/desktop/screens/session_log_screen.dart';
+import 'package:makit/desktop/screens/sessions_screen.dart';
+import 'package:makit/desktop/screens/status_screen.dart';
+import 'package:makit/store/models.dart' show ApprovalPolicy, SessionStatus;
 
 StatusData _status() => const StatusData(
   pid: 4242,
@@ -113,7 +113,7 @@ void main() {
       final client = FakeControlClient(
         current: null,
         mint: const PairMintData(
-          url: 'pino://pair?t=abc',
+          url: 'makit://pair?t=abc',
           token: 'abc',
           expiresAt: 9999999999999,
           fingerprint: 'AA:BB',
@@ -126,13 +126,13 @@ void main() {
 
       expect(client.pairCurrentCalls, 1);
       expect(client.pairMintCalls, 1);
-      expect(find.textContaining('pino://pair?t=abc'), findsOneWidget);
+      expect(find.textContaining('makit://pair?t=abc'), findsOneWidget);
     });
 
     testWidgets('uses the current token when one exists', (tester) async {
       final client = FakeControlClient(
         current: const PairCurrentData(
-          url: 'pino://pair?t=live',
+          url: 'makit://pair?t=live',
           token: 'live',
           expiresAt: 9999999999999,
         ),
@@ -141,18 +141,18 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
 
       expect(client.pairMintCalls, 0);
-      expect(find.textContaining('pino://pair?t=live'), findsOneWidget);
+      expect(find.textContaining('makit://pair?t=live'), findsOneWidget);
     });
 
     testWidgets('refresh button explicitly mints', (tester) async {
       final client = FakeControlClient(
         current: const PairCurrentData(
-          url: 'pino://pair?t=live',
+          url: 'makit://pair?t=live',
           token: 'live',
           expiresAt: 9999999999999,
         ),
         mint: const PairMintData(
-          url: 'pino://pair?t=fresh',
+          url: 'makit://pair?t=fresh',
           token: 'fresh',
           expiresAt: 9999999999999,
           fingerprint: 'AA:BB',
@@ -165,7 +165,7 @@ void main() {
       await tester.pump(); // apply setState → loading
       await tester.pump(const Duration(milliseconds: 60));
       expect(client.pairMintCalls, 1);
-      expect(find.textContaining('pino://pair?t=fresh'), findsOneWidget);
+      expect(find.textContaining('makit://pair?t=fresh'), findsOneWidget);
     });
 
     testWidgets('renders the QR on a white background (visible in dark mode)', (
@@ -173,7 +173,7 @@ void main() {
     ) async {
       final client = FakeControlClient(
         current: const PairCurrentData(
-          url: 'pino://pair?t=dark',
+          url: 'makit://pair?t=dark',
           token: 'dark',
           expiresAt: 9999999999999,
         ),

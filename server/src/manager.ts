@@ -90,7 +90,7 @@ export interface SpawnInPaneOpts {
 export class SessionManager extends EventEmitter {
   private readonly projects = new Map<string, ProjectEntry>();
   private readonly sessions = new Map<string, Session>();
-  /** pi session uuid → live pino session id, so re-attach reuses the process. */
+  /** pi session uuid → live makit session id, so re-attach reuses the process. */
   private readonly attachedByPi = new Map<string, string>();
   /** In-flight attaches, so concurrent attach calls collapse onto one process. */
   private readonly attachInFlight = new Map<string, Promise<Session>>();
@@ -174,7 +174,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /** Set the loopback bridge so subsequently-spawned pi sessions can use
-   *  the pino-pi extension for AskUserQuestion round-trip. */
+   *  the makit-pi extension for AskUserQuestion round-trip. */
   setBridge(bridge: BridgeBinding) {
     this.bridge = bridge;
   }
@@ -187,7 +187,7 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Spawn a pi session in a multiplexer pane (SPEC-05, World D / pino-mirror
+   * Spawn a pi session in a multiplexer pane (SPEC-05, World D / makit-mirror
    * path). Falls back to headless if no mux is available or the pane spawn
    * fails. A spawnToken is embedded in the pane command's env; the matching
    * `host.open` frame calls `resolvePendingSpawn` to bind the session.
@@ -210,20 +210,20 @@ export class SessionManager extends EventEmitter {
     if (!available) return this.spawnPiSession(projectId, title);
 
     const spawnToken = randomUUID();
-    const label = `pino: ${title ?? DEFAULT_SESSION_TITLE}`;
-    const piBin = process.env.PINO_PI_BIN ?? "pi";
-    const command = `PINO_SPAWN_TOKEN=${spawnToken} ${piBin}`;
+    const label = `makit: ${title ?? DEFAULT_SESSION_TITLE}`;
+    const piBin = process.env.MAKIT_PI_BIN ?? "pi";
+    const command = `MAKIT_SPAWN_TOKEN=${spawnToken} ${piBin}`;
 
     let paneHandle: PaneHandle;
     try {
       paneHandle = await mux.spawnPane({ cwd: project.dto.path, command, label });
     } catch (e) {
       log.warn(
-        `[pino] mux pane spawn failed — falling back to headless: ${(e as Error).message}`,
+        `[makit] mux pane spawn failed — falling back to headless: ${(e as Error).message}`,
       );
       if (e instanceof MuxError) {
         log.info(
-          "[pino] hint: set PINO_MUX_ANCHOR to a valid pane id (e.g. w1:p1), not a workspace label",
+          "[makit] hint: set MAKIT_MUX_ANCHOR to a valid pane id (e.g. w1:p1), not a workspace label",
         );
       }
       return this.spawnPiSession(projectId, title);
@@ -283,7 +283,7 @@ export class SessionManager extends EventEmitter {
       ? this._muxOverride
       : getMultiplexer(session.pane.mux);
     if (!mux) return;
-    await mux.setLabel?.(session.pane, `pino: ${title}`).catch(() => {});
+    await mux.setLabel?.(session.pane, `makit: ${title}`).catch(() => {});
   }
 
   /**
@@ -325,7 +325,7 @@ export class SessionManager extends EventEmitter {
     if (!project) throw new Error(`unknown project: ${projectId}`);
     return listPiSessions(project.dto.path).map((m) => ({
       ...m,
-      // A past session is "alive" when attached to a live pino session.
+      // A past session is "alive" when attached to a live makit session.
       attached:
         this.attachedByPi.has(m.piSessionId) &&
         this.sessions.has(this.attachedByPi.get(m.piSessionId)!),
@@ -334,9 +334,9 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Resume a prior on-disk pi session: backfill its full transcript into a new
-   * pino session, then launch pi with `--session <path>` to continue it live.
+   * makit session, then launch pi with `--session <path>` to continue it live.
    * Idempotent — attaching the same pi session twice returns the existing
-   * pino session (never two pi processes on one file).
+   * makit session (never two pi processes on one file).
    */
   async attachPiSession(projectId: string, piSessionId: string): Promise<Session> {
     const project = this.projects.get(projectId);
@@ -394,7 +394,7 @@ export class SessionManager extends EventEmitter {
     }
   }
   /**
-   * Open a session hosted by an external `pino-mirror` extension (World D):
+   * Open a session hosted by an external `makit-mirror` extension (World D):
    * events are pushed in via the returned IngestAdapter, and the phone's
    * prompts are relayed back through `onPrompt`. No process is spawned.
    */
@@ -511,9 +511,9 @@ export class SessionManager extends EventEmitter {
       model: this.defaultModel,
       env: this.bridge
         ? {
-            PINO_BRIDGE_URL: this.bridge.url,
-            PINO_BRIDGE_TOKEN: this.bridge.token,
-            PINO_SESSION_ID: session.id,
+            MAKIT_BRIDGE_URL: this.bridge.url,
+            MAKIT_BRIDGE_TOKEN: this.bridge.token,
+            MAKIT_SESSION_ID: session.id,
             ...(this.bridge.agentDir
               ? { PI_CODING_AGENT_DIR: this.bridge.agentDir }
               : {}),

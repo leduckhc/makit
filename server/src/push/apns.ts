@@ -33,7 +33,7 @@ export function apnsDisposition(status: number, reason?: string): PushResult {
   return "error";
 }
 
-/** Resolved APNs provider config (see `~/.pino/push.json`). */
+/** Resolved APNs provider config (see `~/.makit/push.json`). */
 export interface ApnsConfig {
   keyPath: string;
   keyId: string;
@@ -103,7 +103,7 @@ export class ApnsPushSender implements PushSender {
       try {
         session = http2Connect(host);
         session.on("error", (e) => {
-          log.warn(`[pino] push: APNs connect error: ${e.message}`);
+          log.warn(`[makit] push: APNs connect error: ${e.message}`);
           done("error");
         });
         const req = session.request({
@@ -117,7 +117,7 @@ export class ApnsPushSender implements PushSender {
         // Abort a request that stalls (e.g. APNs edge unreachable over the
         // tailnet) so we never hang holding the session open indefinitely.
         req.setTimeout(APNS_REQUEST_TIMEOUT_MS, () => {
-          log.warn("[pino] push: APNs request timed out");
+          log.warn("[makit] push: APNs request timed out");
           try {
             req.close();
           } catch {
@@ -142,12 +142,12 @@ export class ApnsPushSender implements PushSender {
           done(apnsDisposition(status, reason));
         });
         req.on("error", (e) => {
-          log.warn(`[pino] push: APNs request error: ${e.message}`);
+          log.warn(`[makit] push: APNs request error: ${e.message}`);
           done("error");
         });
         req.end(JSON.stringify(payload));
       } catch (e) {
-        log.warn(`[pino] push: APNs send threw: ${(e as Error).message}`);
+        log.warn(`[makit] push: APNs send threw: ${(e as Error).message}`);
         done("error");
       }
     });

@@ -3,11 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/pairing/mdns_browser.dart';
-import 'package:pino/notifications/push_registration.dart';
-import 'package:pino/store/connection.dart';
-import 'package:pino/transport/protocol.dart';
-import 'package:pino/transport/transport.dart';
+import 'package:makit/pairing/mdns_browser.dart';
+import 'package:makit/notifications/push_registration.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/transport/protocol.dart';
+import 'package:makit/transport/transport.dart';
 
 const _kPairedServerKey = 'paired_server';
 
@@ -132,7 +132,7 @@ FakeSecureStorage _seededStorage({
     'fingerprint': _fingerprint,
     'bearer': 'bearer-token',
     'label': 'desktop',
-    'mdnsName': 'pino._tcp.local',
+    'mdnsName': 'makit._tcp.local',
   }),
 });
 
@@ -184,7 +184,7 @@ void main() {
           },
           browseLan: _fixedBrowse([
             DiscoveredServer(
-              name: 'pino._tcp.local',
+              name: 'makit._tcp.local',
               host: '10.0.0.42',
               port: 9000,
               fingerprint: _fingerprint, // MATCHES stored fingerprint
@@ -194,7 +194,7 @@ void main() {
         );
 
         // Latest state via the public listener API.
-        var latest = PinoConnState();
+        var latest = MakitConnState();
         controller.addListener((s) => latest = s);
 
         // First (stalled) attach to the stored address.
@@ -238,7 +238,7 @@ void main() {
           },
           browseLan: _fixedBrowse([
             DiscoveredServer(
-              name: 'pino._tcp.local',
+              name: 'makit._tcp.local',
               host: '10.0.0.99',
               port: 9000,
               fingerprint: 'deadbeef' * 8, // does NOT match
@@ -247,7 +247,7 @@ void main() {
           rediscoverStall: Duration.zero,
         );
 
-        var latest = PinoConnState();
+        var latest = MakitConnState();
         controller.addListener((s) => latest = s);
 
         await Future<void>.delayed(_pastStallWindow);

@@ -1,11 +1,11 @@
 /**
  * pi extension (loaded via `pi -e`) for the real-pi e2e. Registers a custom
- * OpenAI-compatible provider ("pino-fake") that points pi's model client at
+ * OpenAI-compatible provider ("makit-fake") that points pi's model client at
  * the local fake model server (test/fake-model/server.ts), whose base URL is
- * passed in via PINO_FAKE_MODEL_URL.
+ * passed in via MAKIT_FAKE_MODEL_URL.
  *
  * pi resolves registered providers before `--model` selection, so launching pi
- * with `--model pino-fake/fake-1` selects this stub. The apiKey is a dummy —
+ * with `--model makit-fake/fake-1` selects this stub. The apiKey is a dummy —
  * the fake server ignores auth — but pi requires *some* credential before a
  * model is selectable, so it must be present.
  *
@@ -19,16 +19,16 @@ interface ProviderRegistrar {
 }
 
 export default function fakeModelProvider(pi: ProviderRegistrar): void {
-  const baseUrl = process.env.PINO_FAKE_MODEL_URL;
+  const baseUrl = process.env.MAKIT_FAKE_MODEL_URL;
   if (!baseUrl) {
-    throw new Error("PINO_FAKE_MODEL_URL is not set — fake model server URL required");
+    throw new Error("MAKIT_FAKE_MODEL_URL is not set — fake model server URL required");
   }
 
-  pi.registerProvider("pino-fake", {
-    name: "Pino Fake",
+  pi.registerProvider("makit-fake", {
+    name: "Makit Fake",
     baseUrl,
     api: "openai-completions",
-    apiKey: "pino-e2e-fake-key",
+    apiKey: "makit-e2e-fake-key",
     models: [
       {
         id: "fake-1",

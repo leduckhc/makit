@@ -91,8 +91,8 @@ function makeManager(projects: string[], mux?: FakeMux) {
 
 // ---- tests -----------------------------------------------------------------
 
-test("spawnPiSessionInPane: opens pane with correct cwd, label, and PINO_SPAWN_TOKEN in command", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+test("spawnPiSessionInPane: opens pane with correct cwd, label, and MAKIT_SPAWN_TOKEN in command", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux();
     const { manager } = makeManager([cwd], mux);
@@ -108,16 +108,16 @@ test("spawnPiSessionInPane: opens pane with correct cwd, label, and PINO_SPAWN_T
     assert.equal(mux.spawned.length, 1, "one pane should be spawned");
     const paneOpts = mux.spawned[0];
     assert.equal(paneOpts.cwd, cwd);
-    assert.match(paneOpts.label ?? "", /^pino: test session$/);
-    assert.match(paneOpts.command, /PINO_SPAWN_TOKEN=[0-9a-f-]+/);
+    assert.match(paneOpts.label ?? "", /^makit: test session$/);
+    assert.match(paneOpts.command, /MAKIT_SPAWN_TOKEN=[0-9a-f-]+/);
     assert.ok(!paneOpts.focus, "pane should be unfocused by default");
 
     // Simulate host.open arriving with the token extracted from the command.
-    const tokenMatch = paneOpts.command.match(/PINO_SPAWN_TOKEN=([0-9a-f-]+)/);
-    assert.ok(tokenMatch, "command must contain PINO_SPAWN_TOKEN");
+    const tokenMatch = paneOpts.command.match(/MAKIT_SPAWN_TOKEN=([0-9a-f-]+)/);
+    assert.ok(tokenMatch, "command must contain MAKIT_SPAWN_TOKEN");
     const spawnToken = tokenMatch![1];
 
-    // Simulate pino-mirror sending host.open — resolve the pending spawn.
+    // Simulate makit-mirror sending host.open — resolve the pending spawn.
     const session = await manager.simulateHostOpen(spawnToken, "test session", cwd, projectId);
     assert.ok(session, "session should be created via openHostSession");
 
@@ -133,7 +133,7 @@ test("spawnPiSessionInPane: opens pane with correct cwd, label, and PINO_SPAWN_T
 });
 
 test("spawnPiSessionInPane: pane close called on session.kill", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux();
     const { manager } = makeManager([cwd], mux);
@@ -143,7 +143,7 @@ test("spawnPiSessionInPane: pane close called on session.kill", async () => {
     await new Promise((r) => setImmediate(r));
 
     const paneOpts = mux.spawned[0];
-    const spawnToken = paneOpts.command.match(/PINO_SPAWN_TOKEN=([0-9a-f-]+)/)![1];
+    const spawnToken = paneOpts.command.match(/MAKIT_SPAWN_TOKEN=([0-9a-f-]+)/)![1];
     const session = await manager.simulateHostOpen(spawnToken, "kill-test", cwd, projectId);
     await spawnPromise;
 
@@ -156,7 +156,7 @@ test("spawnPiSessionInPane: pane close called on session.kill", async () => {
 });
 
 test("spawnPiSessionInPane: pane close called on host.close (pi exit)", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux();
     const { manager } = makeManager([cwd], mux);
@@ -166,7 +166,7 @@ test("spawnPiSessionInPane: pane close called on host.close (pi exit)", async ()
     await new Promise((r) => setImmediate(r));
 
     const paneOpts = mux.spawned[0];
-    const spawnToken = paneOpts.command.match(/PINO_SPAWN_TOKEN=([0-9a-f-]+)/)![1];
+    const spawnToken = paneOpts.command.match(/MAKIT_SPAWN_TOKEN=([0-9a-f-]+)/)![1];
     const session = await manager.simulateHostOpen(spawnToken, "close-test", cwd, projectId);
     await spawnPromise;
 
@@ -179,7 +179,7 @@ test("spawnPiSessionInPane: pane close called on host.close (pi exit)", async ()
 });
 
 test("spawnPiSessionInPane: fallback to headless when mux is unavailable", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux({ available: false });
     const { manager, started } = makeManager([cwd], mux);
@@ -195,7 +195,7 @@ test("spawnPiSessionInPane: fallback to headless when mux is unavailable", async
 });
 
 test("spawnPiSessionInPane: fallback to headless when mux is not configured (undefined)", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const { manager, started } = makeManager([cwd], undefined);
     const projectId = manager.listProjects()[0].id;
@@ -209,7 +209,7 @@ test("spawnPiSessionInPane: fallback to headless when mux is not configured (und
 });
 
 test("spawnPiSessionInPane: fallback to headless when pane spawn fails", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux({ spawnError: "pane_not_found" });
     const { manager, started } = makeManager([cwd], mux);
@@ -224,7 +224,7 @@ test("spawnPiSessionInPane: fallback to headless when pane spawn fails", async (
 });
 
 test("spawnPiSessionInPane: timeout closes the pane and rejects", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux();
     const { manager } = makeManager([cwd], mux);
@@ -245,7 +245,7 @@ test("spawnPiSessionInPane: timeout closes the pane and rejects", async () => {
 });
 
 test("updatePaneLabel: relabels the pane when session has a handle", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-pane-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-pane-"));
   try {
     const mux = fakeMux();
     const { manager } = makeManager([cwd], mux);
@@ -255,13 +255,13 @@ test("updatePaneLabel: relabels the pane when session has a handle", async () =>
     await new Promise((r) => setImmediate(r));
 
     const paneOpts = mux.spawned[0];
-    const spawnToken = paneOpts.command.match(/PINO_SPAWN_TOKEN=([0-9a-f-]+)/)![1];
+    const spawnToken = paneOpts.command.match(/MAKIT_SPAWN_TOKEN=([0-9a-f-]+)/)![1];
     const session = await manager.simulateHostOpen(spawnToken, "orig-title", cwd, projectId);
     await spawnPromise;
 
     await manager.updatePaneLabel(session.id, "new-title");
     assert.ok(
-      mux.renamed.some((r) => r.label === "pino: new-title"),
+      mux.renamed.some((r) => r.label === "makit: new-title"),
       "setLabel should be called with updated title",
     );
   } finally {

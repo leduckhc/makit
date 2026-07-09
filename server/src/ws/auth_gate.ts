@@ -31,7 +31,7 @@ export interface AuthGateDeps {
   registry: AuthRegistry;
   /** Called after a successful `hello.ack`, to push initial snapshots. */
   onAuthenticated: (client: WsClient) => void;
-  /** Shared secret that authenticates a `pino-mirror` extension host (host.json). */
+  /** Shared secret that authenticates a `makit-mirror` extension host (host.json). */
   hostToken?: string;
 }
 
@@ -77,7 +77,7 @@ export class AuthGate {
   private handleBearer(client: WsClient, env: Envelope, bearer: string): void {
     const device = this.deps.registry.authenticate(bearer);
     if (!device) {
-      log.warn("[pino] hello: unknown bearer (rejected)");
+      log.warn("[makit] hello: unknown bearer (rejected)");
       this.reject(client, env, "unknown device");
       return;
     }
@@ -85,7 +85,7 @@ export class AuthGate {
     client.deviceLabel = device.label;
     client.deviceId = device.id;
     client.send({ t: "hello.ack", id: env.id, ok: true, deviceId: device.id });
-    log.info(`[pino] hello: authed as ${device.label} (${device.id}); sent snapshots`);
+    log.info(`[makit] hello: authed as ${device.label} (${device.id}); sent snapshots`);
     this.deps.onAuthenticated(client);
   }
 
@@ -103,7 +103,7 @@ export class AuthGate {
     client.authed = true;
     client.deviceLabel = device.label;
     client.deviceId = device.id;
-    log.info(`[pino] paired new device: ${device.label} (${device.id})`);
+    log.info(`[makit] paired new device: ${device.label} (${device.id})`);
     client.send({
       t: "hello.ack",
       id: env.id,

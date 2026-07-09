@@ -1,7 +1,7 @@
 // SPEC-05: Session DTO carries optional pane info; codec parses it.
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/store/models.dart';
-import 'package:pino/transport/codec.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/transport/codec.dart';
 
 void main() {
   group('Session pane field', () {

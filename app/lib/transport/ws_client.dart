@@ -145,7 +145,7 @@ class WsClient implements Transport {
       if (gen != _openGen) return; // a newer open took over; it owns state
       // Surface connect errors so we can see TLS / refused / etc. in logs.
       // ignore: avoid_print
-      print('[pino] ws connect to $_url failed: $e');
+      print('[makit] ws connect to $_url failed: $e');
       _scheduleRetry();
       return;
     }
@@ -206,7 +206,7 @@ class WsClient implements Transport {
       ch.sink.add(jsonEncode(env.toJson()));
     } catch (e) {
       // ignore: avoid_print
-      print('[pino] ws send dropped (channel closing): $e');
+      print('[makit] ws send dropped (channel closing): $e');
     }
   }
 

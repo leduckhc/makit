@@ -1,9 +1,9 @@
-# pino — Design System (MASTER)
+# makit — Design System (MASTER)
 
 **Status:** locked 2026-07-07 · Source of truth for colors, glass, and component styling.
-Playground: [`mockups/pino-design-lab.html`](../../mockups/pino-design-lab.html)
+Playground: [`mockups/makit-design-lab.html`](../../mockups/makit-design-lab.html)
 
-pino is a mobile companion for coding agents: a **terminal-neutral** aesthetic —
+makit is a mobile companion for coding agents: a **terminal-neutral** aesthetic —
 pure-grey neutrals (zero hue) + a single **green** accent, over a floating
 **Liquid-Glass** top bar and composer.
 
@@ -69,7 +69,7 @@ and code. Body ≥ 15px, line-height ~1.5.
 - **Composer** — floating glass; 1-line at rest → 3 lines on focus; send fades in only when non-empty (SPEC-06).
 - **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs.
 - **Top bar** — glass, circular back/quit buttons, title + `model · thinking`, green connection dot.
-- **Logo** — green `pino` mark (`pino_mark.dart`, `#4ADE80`).
+- **Logo** — green `makit` mark (`makit_mark.dart`, `#4ADE80`).
 
 ## Contrast (WCAG)
 - Light: `text #1B1B1B` on `bg #FAFAFA` ≈ 15:1 ✓ · `muted #636363` on bg ≈ 5.6:1 ✓

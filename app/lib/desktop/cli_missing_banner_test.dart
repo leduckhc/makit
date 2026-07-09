@@ -2,7 +2,7 @@
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/desktop/desktop_app.dart';
+import 'package:makit/desktop/desktop_app.dart';
 
 void main() {
   testWidgets(
@@ -15,7 +15,7 @@ void main() {
         ),
       );
 
-      expect(find.textContaining('pino CLI was not found'), findsOneWidget);
+      expect(find.textContaining('makit CLI was not found'), findsOneWidget);
       expect(find.text('Copy install command'), findsOneWidget);
 
       await tester.tap(find.text('Copy install command'));
@@ -23,8 +23,8 @@ void main() {
     },
   );
 
-  test('pinoInstallCommand is the documented curl installer', () {
-    expect(pinoInstallCommand, startsWith('curl'));
-    expect(pinoInstallCommand, contains('install.sh'));
+  test('makitInstallCommand is the documented curl installer', () {
+    expect(makitInstallCommand, startsWith('curl'));
+    expect(makitInstallCommand, contains('install.sh'));
   });
 }

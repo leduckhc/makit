@@ -78,7 +78,7 @@ test("isAvailable false when configured anchor is missing", async () => {
   const exec = recordingExec({
     "herdr pane list": paneListJson(["w1:p1"]),
   });
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   assert.equal(await adapter.isAvailable(), false);
 });
 
@@ -86,29 +86,29 @@ test("isAvailable false when herdr missing", async () => {
   const failing: ExecFn = async () => {
     throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
   };
-  const adapter = new HerdrAdapter({ exec: failing, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec: failing, anchor: "makit" });
   assert.equal(await adapter.isAvailable(), false);
 });
 
 test("spawnPane splits unfocused, runs command, sets label", async () => {
   const exec = recordingExec({
-    "herdr pane split pino --direction down --cwd /proj --no-focus":
+    "herdr pane split makit --direction down --cwd /proj --no-focus":
       splitJson("w7:pS"),
     "herdr pane run w7:pS echo hi": "",
-    "herdr pane rename w7:pS pino: test": "",
+    "herdr pane rename w7:pS makit: test": "",
   });
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   const handle = await adapter.spawnPane({
     cwd: "/proj",
     command: "echo hi",
-    label: "pino: test",
+    label: "makit: test",
   });
 
   assert.equal(handle.mux, "herdr");
   assert.equal(handle.paneId, "w7:pS");
   assert.deepEqual(exec.calls[0], {
     cmd: "herdr",
-    args: ["pane", "split", "pino", "--direction", "down", "--cwd", "/proj", "--no-focus"],
+    args: ["pane", "split", "makit", "--direction", "down", "--cwd", "/proj", "--no-focus"],
   });
   assert.deepEqual(exec.calls[1], {
     cmd: "herdr",
@@ -116,16 +116,16 @@ test("spawnPane splits unfocused, runs command, sets label", async () => {
   });
   assert.deepEqual(exec.calls[2], {
     cmd: "herdr",
-    args: ["pane", "rename", "w7:pS", "pino: test"],
+    args: ["pane", "rename", "w7:pS", "makit: test"],
   });
 });
 
 test("spawnPane omits --no-focus when focus true", async () => {
   const exec = recordingExec({
-    "herdr pane split pino --direction down --cwd /proj": splitJson("w7:pX"),
+    "herdr pane split makit --direction down --cwd /proj": splitJson("w7:pX"),
     "herdr pane run w7:pX cmd": "",
   });
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   await adapter.spawnPane({ cwd: "/proj", command: "cmd", focus: true });
   assert.ok(!exec.calls[0]!.args.includes("--no-focus"));
 });
@@ -134,7 +134,7 @@ test("spawnPane throws MuxError when split fails", async () => {
   const exec: ExecFn = async () => {
     throw new Error("split failed");
   };
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   await assert.rejects(
     () => adapter.spawnPane({ cwd: "/proj", command: "echo hi" }),
     (e: unknown) => e instanceof MuxError && e.mux === "herdr",
@@ -150,7 +150,7 @@ test("spawnPane closes orphan pane when run fails", async () => {
     if (key.includes("pane run")) throw new Error("run failed");
     return { stdout: "", stderr: "" };
   };
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   await assert.rejects(
     () => adapter.spawnPane({ cwd: "/proj", command: "echo hi" }),
     (e: unknown) => e instanceof MuxError && e.mux === "herdr",
@@ -163,11 +163,11 @@ test("spawnPane closes orphan pane when run fails", async () => {
 
 test("spawnPane skips rename when label omitted", async () => {
   const exec = recordingExec({
-    "herdr pane split pino --direction down --cwd /proj --no-focus":
+    "herdr pane split makit --direction down --cwd /proj --no-focus":
       splitJson("w7:pS"),
     "herdr pane run w7:pS echo hi": "",
   });
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   await adapter.spawnPane({ cwd: "/proj", command: "echo hi" });
   assert.equal(
     exec.calls.filter((c) => c.args[1] === "rename").length,
@@ -181,18 +181,18 @@ test("spawnPane returns handle when rename fails", async () => {
     if (args[1] === "split") return { stdout: splitJson("w7:pS"), stderr: "" };
     return { stdout: "", stderr: "" };
   };
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   const handle = await adapter.spawnPane({
     cwd: "/proj",
     command: "echo hi",
-    label: "pino: test",
+    label: "makit: test",
   });
   assert.equal(handle.paneId, "w7:pS");
 });
 
 test("closePane invokes herdr pane close", async () => {
   const exec = recordingExec();
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   await adapter.closePane({ mux: "herdr", paneId: "w7:pS" });
   assert.deepEqual(exec.calls[0], {
     cmd: "herdr",
@@ -207,7 +207,7 @@ test("closePane is idempotent", async () => {
     if (args[1] === "close") throw new Error("already gone");
     return { stdout: "", stderr: "" };
   };
-  const adapter = new HerdrAdapter({ exec: failingClose, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec: failingClose, anchor: "makit" });
   const handle = { mux: "herdr", paneId: "w7:pS" };
   await adapter.closePane(handle);
   await adapter.closePane(handle);
@@ -225,11 +225,11 @@ test("spawn close lifecycle: exists then gone after close", async () => {
     }
     return { stdout: "", stderr: "" };
   };
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   const handle = await adapter.spawnPane({
     cwd: "/proj",
     command: "echo hi; sleep 30",
-    label: "pino: test",
+    label: "makit: test",
   });
   assert.equal(await adapter.paneExists(handle), true);
   await adapter.closePane(handle);
@@ -241,7 +241,7 @@ test("paneExists checks pane list", async () => {
   const exec = recordingExec({
     "herdr pane list": paneListJson(["w7:p1"]),
   });
-  const adapter = new HerdrAdapter({ exec, anchor: "pino" });
+  const adapter = new HerdrAdapter({ exec, anchor: "makit" });
   assert.equal(await adapter.paneExists({ mux: "herdr", paneId: "w7:p1" }), true);
   assert.equal(await adapter.paneExists({ mux: "herdr", paneId: "w7:p9" }), false);
 });

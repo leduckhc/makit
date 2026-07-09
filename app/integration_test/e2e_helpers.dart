@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/main.dart' as app;
+import 'package:makit/main.dart' as app;
 
 const _connectionTimeout = Duration(seconds: 20);
 const _messageTimeout = Duration(seconds: 15);
@@ -8,9 +8,9 @@ const _messageTimeout = Duration(seconds: 15);
 /// Boot the app, wait until the home screen has hydrated from the test server.
 ///
 /// "Hydrated" = the project tile (named after the basename of the --project
-/// path the test server was launched with, i.e. "pino") is visible. By that
+/// path the test server was launched with, i.e. "makit") is visible. By that
 /// point the WS handshake has completed and the snapshot has arrived.
-Future<void> launchPino(WidgetTester tester) async {
+Future<void> launchMakit(WidgetTester tester) async {
   app.main();
   await tester.pump(const Duration(milliseconds: 100));
   await pumpUntil(

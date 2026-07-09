@@ -2,12 +2,18 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SessionManager } from "../src/manager.js";
 import { startWsServer } from "../src/server.js";
 import { startBridge } from "../src/bridge.js";
 import { loadOrCreateCert } from "../src/pairing/cert.js";
 import { DeviceRegistry } from "../src/pairing/registry.js";
 import { StubAdapter } from "../src/adapters/stub.js";
+import { startFakeModelServer } from "./fake-model/server.js";
+/** Absolute path to the fake-model provider extension pi loads via `-e`. */
+const FAKE_PROVIDER_EXT = fileURLToPath(new URL("./fake-model/provider-extension.ts", import.meta.url));
+/** Provider/model id registered by FAKE_PROVIDER_EXT. */
+const FAKE_MODEL = "makit-fake/fake-1";
 function parseArgs(argv) {
     const args = {
         port: 9787,
@@ -58,9 +64,9 @@ function seedDeviceRegistry(home, bearer) {
 }
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    const pinoHome = resolve(tmpdir(), `pino-e2e-${args.port}`);
-    process.env.PINO_HOME = pinoHome;
-    seedDeviceRegistry(pinoHome, args.bearer);
+    const makitHome = resolve(tmpdir(), `makit-e2e-${args.port}`);
+    process.env.MAKIT_HOME = makitHome;
+    seedDeviceRegistry(makitHome, args.bearer);
     const cert = await loadOrCreateCert();
     const registry = new DeviceRegistry();
     let wsHandle;
@@ -73,9 +79,18 @@ async function main() {
         // at the top level, not under a `.body` property.
         return env;
     };
+    // In real mode we run the genuine `pi` binary but swap its LLM for a local
+    // deterministic fake-model server. pi reaches it via the makit-fake provider
+    // registered by FAKE_PROVIDER_EXT, which reads MAKIT_FAKE_MODEL_URL.
+    let fakeModel;
+    if (args.mode === "real") {
+        fakeModel = await startFakeModelServer();
+        process.env.MAKIT_FAKE_MODEL_URL = fakeModel.url;
+    }
     const manager = new SessionManager({
         projects: [args.project],
         adapterFactory: args.mode === "stub" ? () => new StubAdapter({ askUser }) : undefined,
+        defaultModel: args.mode === "real" ? FAKE_MODEL : undefined,
     });
     wsHandle = startWsServer({
         host: "127.0.0.1",
@@ -98,7 +113,9 @@ async function main() {
     manager.setBridge({
         url: bridge.url,
         token: bridge.token,
-        extensionPaths: [], // E2E tests don't load real extensions
+        // Real mode loads the fake-model provider so pi's --model makit-fake/fake-1
+        // resolves. Stub mode never spawns pi, so it needs no extensions.
+        extensionPaths: args.mode === "real" ? [FAKE_PROVIDER_EXT] : [],
     });
     await manager.ensureDefaultSessions();
     const printReady = () => {
@@ -117,6 +134,7 @@ async function main() {
         wsHandle.https.once("listening", printReady);
     }
     process.on("SIGTERM", () => {
+        void fakeModel?.close();
         wsHandle.wss.close();
         wsHandle.https.close(() => process.exit(0));
         setTimeout(() => process.exit(0), 1000).unref();

@@ -1,5 +1,5 @@
 /**
- * `pino status`
+ * `makit status`
  *
  * Pretty-prints the daemon's `status` verb response: pid, host:port,
  * fingerprint, advertise host, paired devices, running sessions, uptime.
@@ -25,13 +25,13 @@ export async function runStatus(argv: string[]): Promise<void> {
   try {
     const res = await client.request<StatusData>("status");
     if (!res.ok) {
-      console.error(`[pino] status failed: ${res.error}`);
+      console.error(`[makit] status failed: ${res.error}`);
       process.exit(1);
     }
     const d = res.data!;
     const advertise = d.advertiseHost ? `  advertise host : ${d.advertiseHost}\n` : "";
     console.log(
-      `pino v${d.version}\n` +
+      `makit v${d.version}\n` +
       `  pid            : ${d.pid}\n` +
       `  listen         : ${d.host}:${d.port}\n` +
       advertise +

@@ -1,8 +1,8 @@
 /// macOS desktop control app entry point (SPEC-03, Phase 4).
 ///
 /// Wires the tested building blocks into a launchable app:
-/// - a [ReconnectingControlClient] over `~/.pino/control.sock`,
-/// - a [DaemonLifecycle] driving `pino start/stop/restart`,
+/// - a [ReconnectingControlClient] over `~/.makit/control.sock`,
+/// - a [DaemonLifecycle] driving `makit start/stop/restart`,
 /// - a [DesktopController] polling daemon state,
 /// - a `tray_manager` menubar item and a `window_manager` window that opens on
 ///   the **Devices (connected devices)** tab — never a pairing screen.
@@ -42,7 +42,7 @@ final _selectedTab = ValueNotifier<int>(0);
 
 String _controlSocketPath() {
   final home = Platform.environment['HOME'] ?? '';
-  return '$home/.pino/control.sock';
+  return '$home/.makit/control.sock';
 }
 
 /// Boots the macOS desktop control app.
@@ -52,11 +52,11 @@ Future<void> runDesktopApp() async {
 
   final socketPath = _controlSocketPath();
   final client = ReconnectingControlClient(
-    create: () => PinoControlClient(socketPath: socketPath),
-    connect: (c) => (c as PinoControlClient).connect(),
-    dispose: (c) => (c as PinoControlClient).dispose(),
+    create: () => MakitControlClient(socketPath: socketPath),
+    connect: (c) => (c as MakitControlClient).connect(),
+    dispose: (c) => (c as MakitControlClient).dispose(),
   );
-  final lifecycle = DaemonLifecycle(resolver: PinoCliResolver());
+  final lifecycle = DaemonLifecycle(resolver: MakitCliResolver());
   final controller = DesktopController(client: client, lifecycle: lifecycle);
 
   final tray = TrayController(
@@ -89,7 +89,7 @@ Future<void> runDesktopApp() async {
   const options = WindowOptions(
     size: Size(760, 580),
     center: true,
-    title: 'Pino',
+    title: 'Makit',
     titleBarStyle: TitleBarStyle.normal,
   );
   unawaited(
@@ -115,9 +115,9 @@ Future<void> _showWindow() async {
   await windowManager.focus();
 }
 
-/// Copies the pino install one-liner to the clipboard and confirms via snackbar.
+/// Copies the makit install one-liner to the clipboard and confirms via snackbar.
 void _copyInstallCommand(BuildContext context) {
-  unawaited(Clipboard.setData(const ClipboardData(text: pinoInstallCommand)));
+  unawaited(Clipboard.setData(const ClipboardData(text: makitInstallCommand)));
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(content: Text('Install command copied to clipboard')),
   );
@@ -129,10 +129,10 @@ class _DesktopApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pino',
+      title: 'Makit',
       debugShowCheckedModeBanner: false,
-      theme: pinoLightTheme,
-      darkTheme: pinoDarkTheme,
+      theme: makitLightTheme,
+      darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
       home: const DesktopDashboard(),
     );
@@ -261,11 +261,11 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// The documented one-line installer for the pino CLI (see issue #13 / README).
-const String pinoInstallCommand =
-    'curl -fsSL https://raw.githubusercontent.com/leduckhc/pino/main/install.sh | bash';
+/// The documented one-line installer for the makit CLI (see issue #13 / README).
+const String makitInstallCommand =
+    'curl -fsSL https://raw.githubusercontent.com/leduckhc/makit/main/install.sh | bash';
 
-/// Shown when the `pino` CLI cannot be located. Offers an actionable recovery:
+/// Shown when the `makit` CLI cannot be located. Offers an actionable recovery:
 /// copy the install command (per SPEC-03 "must not hard-fail").
 class CliMissingBanner extends StatelessWidget {
   /// Creates the banner. [onInstall] runs when the action button is tapped.
@@ -285,7 +285,7 @@ class CliMissingBanner extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              'The pino CLI was not found. Install it to start/stop the server '
+              'The makit CLI was not found. Install it to start/stop the server '
               'from here.',
               style: TextStyle(color: scheme.onErrorContainer),
             ),

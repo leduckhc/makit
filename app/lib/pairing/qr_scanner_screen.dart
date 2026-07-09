@@ -5,7 +5,7 @@ import 'pair_info.dart';
 
 /// Vision-backed QR scanner (iOS).
 ///
-/// We don't render a Flutter UI here — we just call the `pino/qr_scanner`
+/// We don't render a Flutter UI here — we just call the `makit/qr_scanner`
 /// platform channel, which presents a native AVFoundation + Vision view
 /// controller. On detection (or cancel) it dismisses and returns the
 /// payload string (or null).
@@ -21,7 +21,7 @@ class QrScannerScreen extends StatefulWidget {
 }
 
 class _QrScannerScreenState extends State<QrScannerScreen> {
-  static const _channel = MethodChannel('pino/qr_scanner');
+  static const _channel = MethodChannel('makit/qr_scanner');
   bool _started = false;
   String? _error;
 

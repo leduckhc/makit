@@ -6,14 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/app/router.dart';
-import 'package:pino/notifications/notification_observer.dart';
-import 'package:pino/notifications/notification_request.dart';
-import 'package:pino/notifications/notification_service.dart';
-import 'package:pino/store/connection.dart';
-import 'package:pino/transport/protocol.dart';
-import 'package:pino/transport/transport.dart';
-import 'package:pino/ui/widgets/srv_request_handler.dart';
+import 'package:makit/app/router.dart';
+import 'package:makit/notifications/notification_observer.dart';
+import 'package:makit/notifications/notification_request.dart';
+import 'package:makit/notifications/notification_service.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/transport/protocol.dart';
+import 'package:makit/transport/transport.dart';
+import 'package:makit/ui/widgets/srv_request_handler.dart';
 
 /// Records `show` calls without touching the platform channel.
 class _RecordingNotificationService extends NotificationService {
@@ -146,7 +146,7 @@ void main() {
           notificationServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp(
-          navigatorKey: pinoNavigatorKey,
+          navigatorKey: makitNavigatorKey,
           home: const SrvRequestHandler(child: Scaffold(body: SizedBox())),
         ),
       ),

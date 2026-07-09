@@ -5,9 +5,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/control/control_codec.dart';
-import 'package:pino/control/control_types.dart';
-import 'package:pino/store/models.dart';
+import 'package:makit/control/control_codec.dart';
+import 'package:makit/control/control_types.dart';
+import 'package:makit/store/models.dart';
 
 void main() {
   group('encodeRequest', () {
@@ -127,14 +127,14 @@ void main() {
 
     test('pair.mint', () {
       final data = parseVerbData(ControlVerb.pairMint, {
-        'url': 'pino://x',
+        'url': 'makit://x',
         'token': 'tok',
         'expiresAt': 123,
         'fingerprint': 'ab:cd',
       });
       expect(data, isA<PairMintData>());
       final m = data! as PairMintData;
-      expect(m.url, 'pino://x');
+      expect(m.url, 'makit://x');
       expect(m.token, 'tok');
       expect(m.expiresAt, 123);
       expect(m.fingerprint, 'ab:cd');
@@ -142,13 +142,13 @@ void main() {
 
     test('pair.current with a token', () {
       final data = parseVerbData(ControlVerb.pairCurrent, {
-        'url': 'pino://x',
+        'url': 'makit://x',
         'token': 'tok',
         'expiresAt': 123,
       });
       expect(data, isA<PairCurrentData>());
       final c = data! as PairCurrentData;
-      expect(c.url, 'pino://x');
+      expect(c.url, 'makit://x');
       expect(c.token, 'tok');
       expect(c.expiresAt, 123);
     });

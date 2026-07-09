@@ -1,12 +1,12 @@
 /**
- * Tiny leveled logger — gated by the `PINO_LOG` env var.
+ * Tiny leveled logger — gated by the `MAKIT_LOG` env var.
  *
  * Levels (low → high): debug < info < warn < error. Messages below the
- * active level are dropped. Default level is `info`; set `PINO_LOG=debug`
- * for verbose wire tracing or `PINO_LOG=warn` to quieten the dev loop.
+ * active level are dropped. Default level is `info`; set `MAKIT_LOG=debug`
+ * for verbose wire tracing or `MAKIT_LOG=warn` to quieten the dev loop.
  *
  * The level is resolved lazily on every call so tests (and operators) can
- * flip `PINO_LOG` at runtime without re-importing the module.
+ * flip `MAKIT_LOG` at runtime without re-importing the module.
  */
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -21,7 +21,7 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
 const DEFAULT_LEVEL: LogLevel = "info";
 
 function activeLevel(): LogLevel {
-  const raw = (process.env.PINO_LOG ?? "").toLowerCase();
+  const raw = (process.env.MAKIT_LOG ?? "").toLowerCase();
   return raw in LEVEL_ORDER ? (raw as LogLevel) : DEFAULT_LEVEL;
 }
 

@@ -8,7 +8,7 @@
  *     queued as `steer` instead of dropped
  *   - Abort, model switching, compaction, follow-up queueing
  *
- * Lifetime: one pi process per pino Session, started lazily on first send,
+ * Lifetime: one pi process per makit Session, started lazily on first send,
  * killed on Session shutdown.
  *
  * Framing: per pi's rpc.md, we MUST split on `\n` only — Node's `readline`
@@ -125,7 +125,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     // from PATH (e.g. /opt/homebrew/bin/pi) or an explicit override. NOTE: do
     // NOT use node_modules/.bin/pi — that resolves to the unrelated "pi" npm
     // package (a trivial stub that just prints "3" and exits).
-    const piBin = process.env.PINO_PI_BIN || "pi";
+    const piBin = process.env.MAKIT_PI_BIN || "pi";
     const child = spawn(piBin, args, {
       cwd: this.cwd,
       env: { ...process.env, ...this.extraEnv },
@@ -276,7 +276,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
           reply({ cancelled: true });
       }
     } catch (e) {
-      log.warn(`[pino] ui interceptor error (${method}): ${(e as Error).message}`);
+      log.warn(`[makit] ui interceptor error (${method}): ${(e as Error).message}`);
       reply({ cancelled: true });
     }
   }
@@ -471,7 +471,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   }
 
   private emitEvent(e: AdapterEvent) {
-    log.debug(`[pino] pi.emitEvent kind=${e.kind}`);
+    log.debug(`[makit] pi.emitEvent kind=${e.kind}`);
     this.emit("event", e);
   }
 }

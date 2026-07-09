@@ -1,8 +1,8 @@
 /// Daemon lifecycle service for the macOS desktop control app (SPEC-03).
 ///
 /// The control socket can only talk to a *running* daemon, so *starting* a
-/// stopped one means spawning the `pino` CLI (`pino start`). This service wraps
-/// `pino start` / `pino stop` / `pino restart` behind an injectable process
+/// stopped one means spawning the `makit` CLI (`makit start`). This service wraps
+/// `makit start` / `makit stop` / `makit restart` behind an injectable process
 /// runner and CLI resolver so it is unit-testable and never hard-fails when the
 /// CLI is missing (it reports [DaemonActionOutcome.cliNotFound] instead).
 library;
@@ -14,19 +14,19 @@ import 'dart:io';
 typedef ProcessRunner =
     Future<ProcessResult> Function(String executable, List<String> args);
 
-/// Locates the `pino` CLI on disk.
+/// Locates the `makit` CLI on disk.
 ///
 /// Discovery order (first hit wins): each of [candidatePaths] that [exists],
 /// then a login-shell PATH lookup ([shellLookup]). Returns `null` when nothing
 /// is found so callers can surface an "install the CLI" affordance.
-class PinoCliResolver {
+class MakitCliResolver {
   /// Creates a resolver.
   ///
   /// [candidatePaths] defaults to the app-bundle-relative and common install
   /// locations; [exists] defaults to a real filesystem check; [shellLookup]
-  /// defaults to `zsh -lic 'command -v pino'` so the resolved PATH matches the
+  /// defaults to `zsh -lic 'command -v makit'` so the resolved PATH matches the
   /// user's terminal.
-  PinoCliResolver({
+  MakitCliResolver({
     List<String>? candidatePaths,
     bool Function(String path)? exists,
     Future<String?> Function()? shellLookup,
@@ -39,7 +39,7 @@ class PinoCliResolver {
   final bool Function(String path) _exists;
   final Future<String?> Function() _shellLookup;
 
-  /// Returns the absolute path to `pino`, or `null` if it cannot be found.
+  /// Returns the absolute path to `makit`, or `null` if it cannot be found.
   Future<String?> resolve() async {
     for (final path in candidatePaths) {
       if (_exists(path)) return path;
@@ -53,11 +53,11 @@ class PinoCliResolver {
     final paths = <String>[];
     // A copy bundled inside the .app (preferred zero-install end state).
     final exeDir = File(Platform.resolvedExecutable).parent.path;
-    paths.add('$exeDir/../Resources/pino/pino');
+    paths.add('$exeDir/../Resources/makit/makit');
     final home = Platform.environment['HOME'];
-    if (home != null && home.isNotEmpty) paths.add('$home/.local/bin/pino');
-    paths.add('/opt/homebrew/bin/pino');
-    paths.add('/usr/local/bin/pino');
+    if (home != null && home.isNotEmpty) paths.add('$home/.local/bin/makit');
+    paths.add('/opt/homebrew/bin/makit');
+    paths.add('/usr/local/bin/makit');
     return paths;
   }
 
@@ -66,7 +66,7 @@ class PinoCliResolver {
   static Future<String?> _loginShellLookup() async {
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';
     try {
-      final res = await Process.run(shell, ['-lic', 'command -v pino']);
+      final res = await Process.run(shell, ['-lic', 'command -v makit']);
       if (res.exitCode != 0) return null;
       final out = (res.stdout as String).trim();
       return out.isEmpty ? null : out.split('\n').first.trim();
@@ -78,16 +78,16 @@ class PinoCliResolver {
 
 /// Outcome of a lifecycle action.
 enum DaemonActionOutcome {
-  /// `pino start` succeeded.
+  /// `makit start` succeeded.
   started,
 
-  /// `pino stop` succeeded.
+  /// `makit stop` succeeded.
   stopped,
 
-  /// `pino restart` succeeded.
+  /// `makit restart` succeeded.
   restarted,
 
-  /// The `pino` CLI could not be located — prompt the user to install it.
+  /// The `makit` CLI could not be located — prompt the user to install it.
   cliNotFound,
 
   /// The CLI ran but exited non-zero, or spawning threw.
@@ -112,7 +112,7 @@ class DaemonActionResult {
       outcome != DaemonActionOutcome.failed;
 }
 
-/// Starts, stops, and restarts the pino daemon via the `pino` CLI.
+/// Starts, stops, and restarts the makit daemon via the `makit` CLI.
 class DaemonLifecycle {
   /// Creates a lifecycle driver.
   ///
@@ -120,21 +120,21 @@ class DaemonLifecycle {
   DaemonLifecycle({required this.resolver, ProcessRunner? run})
     : run = run ?? Process.run;
 
-  /// Locates the `pino` executable.
-  final PinoCliResolver resolver;
+  /// Locates the `makit` executable.
+  final MakitCliResolver resolver;
 
   /// Spawns the CLI.
   final ProcessRunner run;
 
-  /// Runs `pino start`.
+  /// Runs `makit start`.
   Future<DaemonActionResult> start() =>
       _invoke('start', DaemonActionOutcome.started);
 
-  /// Runs `pino stop`.
+  /// Runs `makit stop`.
   Future<DaemonActionResult> stop() =>
       _invoke('stop', DaemonActionOutcome.stopped);
 
-  /// Runs `pino restart`.
+  /// Runs `makit restart`.
   Future<DaemonActionResult> restart() =>
       _invoke('restart', DaemonActionOutcome.restarted);
 
@@ -147,7 +147,7 @@ class DaemonLifecycle {
       return const DaemonActionResult(
         DaemonActionOutcome.cliNotFound,
         message:
-            'The pino CLI was not found. Install it to control the server.',
+            'The makit CLI was not found. Install it to control the server.',
       );
     }
     try {
@@ -156,12 +156,12 @@ class DaemonLifecycle {
       final stderr = (res.stderr is String) ? res.stderr as String : '';
       return DaemonActionResult(
         DaemonActionOutcome.failed,
-        message: 'pino $verb exited ${res.exitCode}: ${stderr.trim()}',
+        message: 'makit $verb exited ${res.exitCode}: ${stderr.trim()}',
       );
     } on ProcessException catch (e) {
       return DaemonActionResult(
         DaemonActionOutcome.failed,
-        message: 'Failed to run pino $verb: ${e.message}',
+        message: 'Failed to run makit $verb: ${e.message}',
       );
     }
   }

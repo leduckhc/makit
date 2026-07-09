@@ -6,7 +6,7 @@
  *    The phone presents one in its first `hello`; on success we mint a
  *    bearer token and persist the device.
  *  - **Bearer tokens**: long-lived, per-device. Stored in
- *    `~/.pino/devices.json`. Phone sends one on every subsequent connect.
+ *    `~/.makit/devices.json`. Phone sends one on every subsequent connect.
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -14,12 +14,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 
-function pinoHome(): string {
-  return process.env.PINO_HOME || join(homedir(), ".pino");
+function makitHome(): string {
+  return process.env.MAKIT_HOME || join(homedir(), ".makit");
 }
 
 function devicesPath(): string {
-  return join(pinoHome(), "devices.json");
+  return join(makitHome(), "devices.json");
 }
 
 interface PairToken {
@@ -54,7 +54,7 @@ export class DeviceRegistry {
   // (WS `hello` handler, where the source IP is available).
 
   constructor() {
-    mkdirSync(pinoHome(), { recursive: true });
+    mkdirSync(makitHome(), { recursive: true });
     const path = devicesPath();
     if (existsSync(path)) {
       try {

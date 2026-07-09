@@ -73,7 +73,7 @@ class ProvidedPushRegistrar implements PushRegistrar {
 }
 
 /// Method-channel-backed registrar (SPEC-07 W4 Dart half). Listens on the
-/// `pino/push` channel that iOS `AppDelegate` invokes with the hex APNs token.
+/// `makit/push` channel that iOS `AppDelegate` invokes with the hex APNs token.
 ///
 /// The token can arrive AFTER the socket connects, so this stores the latest
 /// token AND fires [onToken] so the [ConnectionController] can send
@@ -86,7 +86,7 @@ class ChannelPushRegistrar implements PushRegistrar {
   }
 
   /// The native channel name (mirrors `AppDelegate.swift`).
-  static const String pushChannelName = 'pino/push';
+  static const String pushChannelName = 'makit/push';
 
   /// The native method name for a delivered APNs token (mirrors AppDelegate).
   static const String didRegisterMethod = 'didRegister';

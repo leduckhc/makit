@@ -1,4 +1,4 @@
-# pino — Architecture
+# makit — Architecture
 
 > Companion to [UX.md](./UX.md). This doc covers protocol, server internals,
 > agent adapter shape, mobile app structure, and the experiment plan for the
@@ -8,13 +8,13 @@
 
 | Layer            | Choice                                                       |
 | ---------------- | ------------------------------------------------------------ |
-| Desktop server   | **Node / TypeScript** (single `pino` binary via `pkg`/`bun`) |
+| Desktop server   | **Node / TypeScript** (single `makit` binary via `pkg`/`bun`) |
 | Mobile app       | **Flutter** (iOS first, Android free)                        |
 | Wire protocol    | **WebSocket + JSON** (one socket per device ↔ server)        |
 | Pairing          | QR + Noise-IK handshake, libsodium keypair per device        |
 | Discovery        | mDNS on LAN; overlay VPN (Tailscale/headscale) for remote    |
 | Agent adapter    | **Hybrid**: PTY scrape v1, native SDK/JSONL per-agent v2     |
-| Persistence      | SQLite (server-side, single file in `~/.pino/`)              |
+| Persistence      | SQLite (server-side, single file in `~/.makit/`)              |
 | Push             | APNs / FCM via optional hosted relay (opt-in)                |
 
 ---
@@ -23,7 +23,7 @@
 
 ```
 ┌────────────┐    WSS+JSON      ┌──────────────────────────────┐
-│  Phone     │ ───────────────▶ │  pino server (Node/TS)       │
+│  Phone     │ ───────────────▶ │  makit server (Node/TS)       │
 │  (Flutter) │ ◀─────────────── │                              │
 └────────────┘                  │  ┌────────────────────────┐  │
                                 │  │ Session Manager        │  │
@@ -160,11 +160,11 @@ src/
 │   ├── qr.ts               // render QR with pairing token
 │   └── handshake.ts        // Noise-IK
 ├── transport/
-│   ├── mdns.ts             // advertise `_pino._tcp.local`
+│   ├── mdns.ts             // advertise `_makit._tcp.local`
 │   └── relay.ts            // optional hosted relay for push + NAT fallback
 ├── storage/
 │   └── db.ts               // SQLite (better-sqlite3); migrations
-└── cli.ts                  // `pino serve`, `pino pair`, `pino sessions`, ...
+└── cli.ts                  // `makit serve`, `makit pair`, `makit sessions`, ...
 ```
 
 Key invariants:
@@ -212,16 +212,16 @@ session uses:
 ### 5.2 `MirrorAdapter` (World B — tail a real terminal pane)
 
 - Bridges a **real `pi` TUI** already running in a terminal-multiplexer pane
-  (e.g. herdr) to a pino session, so the phone sees it as normal chat.
+  (e.g. herdr) to a makit session, so the phone sees it as normal chat.
 - Read: tails the pi session `.jsonl` the TUI writes. Write: injects the
   phone's text into the pane via send-text + Enter. No second pi process is
   spawned for the chat stream, so there's no double-writer corruption.
 
 ### 5.3 `IngestAdapter` (World D — pushed in by an extension)
 
-- A session whose events are pushed in by the `pino-mirror` pi extension
+- A session whose events are pushed in by the `makit-mirror` pi extension
   (loaded into the user's real `pi`, TUI or otherwise) rather than produced by
-  a pino-spawned process.
+  a makit-spawned process.
 
 ### 5.4 `StubAdapter` (tests)
 
@@ -229,7 +229,7 @@ session uses:
   app's E2E suite; no real agent involved.
 
 *(The original PTY-vs-native Spike 0 in §10 predates World A/B/D and is
-historical — pino ships pi-only, so the PTY/Codex/Claude comparison there
+historical — makit ships pi-only, so the PTY/Codex/Claude comparison there
 never shipped.)*
 
 ---
@@ -271,14 +271,14 @@ Same render path for live and replayed events.
 
 ## 7. Pairing flow (concrete)
 
-1. User runs `pino serve` on desktop.
+1. User runs `makit serve` on desktop.
    - Server generates a long-term server keypair on first run (stored in
-     `~/.pino/server.key`).
-   - Advertises `_pino._tcp.local` via mDNS with TXT record `fp=<server-fp>`.
+     `~/.makit/server.key`).
+   - Advertises `_makit._tcp.local` via mDNS with TXT record `fp=<server-fp>`.
 2. User taps "Pair device" in app → opens camera.
-3. `pino pair` (or the server's status TUI) prints a QR encoding:
+3. `makit pair` (or the server's status TUI) prints a QR encoding:
    ```
-   pino://pair?host=<lan-ip-or-overlay-hostname>&port=<p>&fp=<server-fp>&t=<short-lived-token>
+   makit://pair?host=<lan-ip-or-overlay-hostname>&port=<p>&fp=<server-fp>&t=<short-lived-token>
    ```
 4. Phone parses QR, opens WSS to host:port, pins `fp`, sends
    `hello { pair: { token, devicePub } }`.
@@ -312,7 +312,7 @@ the overlay hostname instead of LAN IP.
 ## 9. Notifications & relay
 
 - Server can run **standalone** (LAN/VPN only, no push) — fully functional.
-- Optional **hosted relay** (`relay.pino.dev` or self-hosted) does two things:
+- Optional **hosted relay** (`relay.makit.dev` or self-hosted) does two things:
   1. Forwards APNs/FCM pushes (device registers token; server sends push
      intents to relay; relay holds Apple/Google creds).
   2. Acts as a NAT-traversal fallback for users who don't want Tailscale.
@@ -357,8 +357,8 @@ recommendation. Then we lock the v1 adapter set.
 
 ## 11. Build & distribution
 
-- Server: `bun build` → single binary, `brew tap pino/tap && brew install pino`.
-  Also `npx pino serve` for quick try.
+- Server: `bun build` → single binary, `brew tap makit/tap && brew install makit`.
+  Also `npx makit serve` for quick try.
 - Mobile: TestFlight (iOS) + internal track (Android) during v0.
 - Versioning: protocol `v` is independent of app/server semver; server must
   support `v` and `v-1` for graceful upgrades.

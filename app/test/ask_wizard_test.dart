@@ -9,8 +9,8 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/transport/protocol.dart';
-import 'package:pino/ui/widgets/srv_request_handler.dart';
+import 'package:makit/transport/protocol.dart';
+import 'package:makit/ui/widgets/srv_request_handler.dart';
 
 void main() {
   group('AskWizard wire schema', () {

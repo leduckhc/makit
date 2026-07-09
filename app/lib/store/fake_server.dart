@@ -51,14 +51,14 @@ class FakeServer {
   // ---- domain --------------------------------------------------------------
 
   void _seed() {
-    const p1 = 'proj-pino';
+    const p1 = 'proj-makit';
     const p2 = 'proj-cmux';
 
     _sessions['s-codex-1'] = _FakeSession(
       id: 's-codex-1',
       projectId: p1,
-      projectName: 'pino',
-      projectPath: '/Users/le/Work/Vibe/pino',
+      projectName: 'makit',
+      projectPath: '/Users/le/Work/Vibe/makit',
       agent: 'codex',
       title: 'wire up pairing screen',
       preview: 'Patched lib/pairing/pairing_screen.dart, ran tests.',
@@ -67,8 +67,8 @@ class FakeServer {
     _sessions['s-pi-1'] = _FakeSession(
       id: 's-pi-1',
       projectId: p1,
-      projectName: 'pino',
-      projectPath: '/Users/le/Work/Vibe/pino',
+      projectName: 'makit',
+      projectPath: '/Users/le/Work/Vibe/makit',
       agent: 'pi',
       title: 'review architecture doc',
       preview: 'Reviewed docs/ARCHITECTURE.md, suggested 3 changes.',

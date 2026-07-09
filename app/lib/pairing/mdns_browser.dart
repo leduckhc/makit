@@ -18,7 +18,7 @@ class DiscoveredServer {
   final String fingerprint;
 }
 
-/// Browse `_pino._tcp.local` for ~3 seconds and return what we find.
+/// Browse `_makit._tcp.local` for ~3 seconds and return what we find.
 ///
 /// We don't subscribe long-term in M1 — the pairing screen calls this once
 /// when entered and again on pull-to-refresh.
@@ -53,7 +53,7 @@ Future<List<DiscoveredServer>> browseLan({
   final deadline = DateTime.now().add(timeout);
 
   try {
-    const type = '_pino._tcp.local';
+    const type = '_makit._tcp.local';
     await for (final ptr in client.lookup<PtrResourceRecord>(
       ResourceRecordQuery.serverPointer(type),
     )) {

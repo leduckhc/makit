@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pino/notifications/notification_request.dart';
-import 'package:pino/notifications/notification_service.dart';
-import 'package:pino/notifications/pending_action_drain.dart';
+import 'package:makit/notifications/notification_request.dart';
+import 'package:makit/notifications/notification_service.dart';
+import 'package:makit/notifications/pending_action_drain.dart';
 
 /// Build a raw queue entry exactly as `notificationBackgroundHandler` writes.
 String queued({

@@ -122,7 +122,7 @@ class SettingsScreen extends ConsumerWidget {
           const _SectionHeader('About'),
           ListTile(
             leading: _leadingIcon(Icons.info_outline),
-            title: const Text('pino'),
+            title: const Text('makit'),
             subtitle: const Text('Mobile client · Protocol v$protocolVersion'),
           ),
 
@@ -143,7 +143,7 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  (String, Color) _status(PinoConnState conn) {
+  (String, Color) _status(MakitConnState conn) {
     if (conn.useFake) return ('Dev fake server', Colors.orange);
     return switch (conn.wsState) {
       WsState.connected => ('Connected', Colors.green),

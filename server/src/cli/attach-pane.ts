@@ -1,6 +1,6 @@
 /**
- * `pino attach --pane <target>` — mirror a herdr/tmux pane running a real pi
- * TUI, over the pino server. This is the POC of the multiplexer-bridge path:
+ * `makit attach --pane <target>` — mirror a herdr/tmux pane running a real pi
+ * TUI, over the makit server. This is the POC of the multiplexer-bridge path:
  * the server polls the pane and streams frames; we render them and forward
  * keystrokes back via `pane.input` / `pane.key`.
  *
@@ -30,7 +30,7 @@ function parsePaneArgs(argv: string[]): PaneArgs {
 export async function runPaneAttach(argv: string[]): Promise<void> {
   const args = parsePaneArgs(argv);
   if (!args.target) {
-    console.error("[pino] usage: pino attach --pane <herdr-pane-id>");
+    console.error("[makit] usage: makit attach --pane <herdr-pane-id>");
     process.exit(2);
   }
   const bearer = readBearer();
@@ -44,12 +44,12 @@ export async function runPaneAttach(argv: string[]): Promise<void> {
 
   ws.on("open", () => send({ v: 1, t: "hello", id: "h", bearer }));
   ws.on("error", (e: Error) => {
-    console.error(`[pino] connection error: ${e.message}`);
+    console.error(`[makit] connection error: ${e.message}`);
     process.exit(1);
   });
   ws.on("close", () => {
     process.stdout.write("\x1b[?25h"); // restore cursor
-    console.log("\n[pino] pane detached.");
+    console.log("\n[makit] pane detached.");
     process.exit(quitting ? 0 : 1);
   });
 
@@ -62,7 +62,7 @@ export async function runPaneAttach(argv: string[]): Promise<void> {
     }
     if (m.t === "hello.ack") {
       send({ v: 1, t: "cmd", id: "pa", kind: "pane.attach", target: args.target });
-      console.log(`[pino] mirroring pane ${args.target} — type + Enter to send, Ctrl-C to quit.\n`);
+      console.log(`[makit] mirroring pane ${args.target} — type + Enter to send, Ctrl-C to quit.\n`);
       return;
     }
     if (m.t === "event" && m.kind === "pane.frame" && m.target === args.target) {

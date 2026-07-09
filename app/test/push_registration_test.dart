@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/notifications/push_registration.dart';
-import 'package:pino/transport/protocol.dart';
+import 'package:makit/notifications/push_registration.dart';
+import 'package:makit/transport/protocol.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -44,14 +44,14 @@ void main() {
 
     test('token is null until the native didRegister call fires', () async {
       final registrar = ChannelPushRegistrar(
-        channel: const MethodChannel('pino/push/test-null'),
+        channel: const MethodChannel('makit/push/test-null'),
       );
       expect(await registrar.getToken(), isNull);
       expect(registrar.platform, 'apns');
     });
 
     test('didRegister stores the token and fires the listener', () async {
-      const channel = MethodChannel('pino/push/test-register');
+      const channel = MethodChannel('makit/push/test-register');
       final registrar = ChannelPushRegistrar(channel: channel);
       String? fired;
       registrar.onToken = (t) => fired = t;
@@ -66,7 +66,7 @@ void main() {
     });
 
     test('non-string / empty arguments are ignored', () async {
-      const channel = MethodChannel('pino/push/test-ignore');
+      const channel = MethodChannel('makit/push/test-ignore');
       final registrar = ChannelPushRegistrar(channel: channel);
       var fireCount = 0;
       registrar.onToken = (_) => fireCount++;

@@ -1,14 +1,14 @@
 /**
- * pino-piano — connector skeleton for the "piano" agent (Milan's pi-wrapper).
+ * makit-piano — connector skeleton for the "piano" agent (Milan's pi-wrapper).
  *
- * Drop-in TEMPLATE for adding a new agent to pino. The working example
- * lives at `pino-pi.ts`.
+ * Drop-in TEMPLATE for adding a new agent to makit. The working example
+ * lives at `makit-pi.ts`.
  *
  * What this file does:
  *   1. Translates piano's native tool/extension calls into the canonical
  *      UICall envelope (see ../src/uicall.ts).
- *   2. POSTs to the loopback bridge at PINO_BRIDGE_URL with
- *      PINO_BRIDGE_TOKEN. The bridge fans the request to subscribed phones
+ *   2. POSTs to the loopback bridge at MAKIT_BRIDGE_URL with
+ *      MAKIT_BRIDGE_TOKEN. The bridge fans the request to subscribed phones
  *      via srv.request and resolves with the user's answer.
  *   3. Returns the user's answer back to piano in whatever shape it
  *      expects (here: a text content block).
@@ -23,9 +23,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import type { UICall, UIResponse } from "../src/uicall.js";
 
-const BRIDGE_URL = process.env.PINO_BRIDGE_URL;
-const BRIDGE_TOKEN = process.env.PINO_BRIDGE_TOKEN;
-const SESSION_ID = process.env.PINO_SESSION_ID;
+const BRIDGE_URL = process.env.MAKIT_BRIDGE_URL;
+const BRIDGE_TOKEN = process.env.MAKIT_BRIDGE_TOKEN;
+const SESSION_ID = process.env.MAKIT_SESSION_ID;
 
 async function uicall(call: UICall): Promise<UIResponse> {
   const res = await fetch(`${BRIDGE_URL}/uicall`, {
@@ -38,13 +38,13 @@ async function uicall(call: UICall): Promise<UIResponse> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`pino-piano: bridge returned ${res.status}: ${text}`);
+    throw new Error(`makit-piano: bridge returned ${res.status}: ${text}`);
   }
   return (await res.json()) as UIResponse;
 }
 
 export default function (api: ExtensionAPI) {
-  if (!BRIDGE_URL || !BRIDGE_TOKEN) return; // not running under pino
+  if (!BRIDGE_URL || !BRIDGE_TOKEN) return; // not running under makit
 
   // -------------------------------------------------------------------------
   // Example 1: a piano-specific tool that needs a destructive confirmation.

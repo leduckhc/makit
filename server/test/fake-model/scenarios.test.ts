@@ -15,7 +15,7 @@ test("default prompt → deterministic text scenario, no tool call", () => {
   assert.ok(s.textDeltas.length > 0);
   assert.equal(s.toolCall, undefined);
   assert.equal(s.finishReason, "stop");
-  assert.equal(s.textDeltas.join(""), "pino e2e ok");
+  assert.equal(s.textDeltas.join(""), "makit e2e ok");
 });
 
 test("[[tool]] marker → tool-call scenario", () => {
@@ -41,7 +41,7 @@ test("toSseLines emits role, content, finish and [DONE] terminator", () => {
   const text = chunks
     .map((c) => c.choices[0].delta.content ?? "")
     .join("");
-  assert.equal(text, "pino e2e ok");
+  assert.equal(text, "makit e2e ok");
   // A chunk carries the terminal finish_reason.
   assert.ok(chunks.some((c) => c.choices[0].finish_reason === "stop"));
   // SSE stream is [DONE]-terminated.

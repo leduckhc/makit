@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>pino · Design Lab</title>
+<title>makit · Design Lab</title>
 <style>
   /* ============================================================
-     pino Design Lab — playground for the glass look + design tokens.
+     makit Design Lab — playground for the glass look + design tokens.
      Everything is driven by CSS variables set from the controls panel,
      so you can tune light/dark, accent, and the glassmorphism recipe live.
      ============================================================ */
@@ -249,7 +249,7 @@
 <body>
   <!-- ================= CONTROLS ================= -->
   <aside class="controls" id="controls">
-    <h1>pino · Design Lab</h1>
+    <h1>makit · Design Lab</h1>
     <div class="sub">Tune the glass + tokens live. Nothing here ships until you copy values back.</div>
 
     <div class="ctl">
@@ -282,7 +282,7 @@
     <div class="ctl">
       <label>Tint opacity <span class="val" id="alphaVal">55%</span></label>
       <input type="range" id="alpha" min="0" max="100" value="50" />
-      <div class="hint">Milky if too high, invisible if too low. Skill: 15–30% for cards; pino composer sat higher for legibility.</div>
+      <div class="hint">Milky if too high, invisible if too low. Skill: 15–30% for cards; makit composer sat higher for legibility.</div>
     </div>
     <div class="ctl">
       <label>Blur <span class="val" id="blurVal">18px</span></label>
@@ -320,7 +320,7 @@
           <div class="circle-btn glass" style="border:none">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           </div>
-          <div class="title"><b>pino</b><span>claude-opus-4 · high</span></div>
+          <div class="title"><b>makit</b><span>claude-opus-4 · high</span></div>
           <div class="circle-btn glass" style="border:none">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
           </div>
@@ -405,7 +405,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent-fg)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V6a2 2 0 0 1 2-2h7a5 5 0 0 1 0 10H4"/></svg>
           </div>
           <div>
-            <b style="font-size:20px">pino</b>
+            <b style="font-size:20px">makit</b>
             <div style="color:var(--muted);font-size:12px">mobile companion for coding agents</div>
           </div>
         </div>
@@ -433,7 +433,7 @@
 
       <div class="card">
         <h3>Session list</h3>
-        <div class="list-row"><div class="av">P</div><div class="meta"><b>pino</b><span>opus-4 · running</span></div><div class="dot"></div></div>
+        <div class="list-row"><div class="av">P</div><div class="meta"><b>makit</b><span>opus-4 · running</span></div><div class="dot"></div></div>
         <div class="list-row"><div class="av">A</div><div class="meta"><b>api-server</b><span>sonnet · idle</span></div></div>
         <div class="list-row"><div class="av">W</div><div class="meta"><b>web-app</b><span>haiku · idle</span></div></div>
       </div>
@@ -509,7 +509,7 @@
     const hexA = Math.round(state.alpha/100*255).toString(16).padStart(2,'0').toUpperCase();
     const tint = state.mode==='dark' ? `0x${hexA}0A101E` : `0x${hexA}FFFFFF`;
     const out =
-`// pino glass tokens (${state.mode})
+`// makit glass tokens (${state.mode})
 accent:        ${state.accent}
 glassColor:    Color(${tint})   // ${state.alpha}% tint
 blur:          ${state.blur}

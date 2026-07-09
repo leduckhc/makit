@@ -6,17 +6,17 @@
  *    The phone presents one in its first `hello`; on success we mint a
  *    bearer token and persist the device.
  *  - **Bearer tokens**: long-lived, per-device. Stored in
- *    `~/.pino/devices.json`. Phone sends one on every subsequent connect.
+ *    `~/.makit/devices.json`. Phone sends one on every subsequent connect.
  */
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypto";
-function pinoHome() {
-    return process.env.PINO_HOME || join(homedir(), ".pino");
+function makitHome() {
+    return process.env.MAKIT_HOME || join(homedir(), ".makit");
 }
 function devicesPath() {
-    return join(pinoHome(), "devices.json");
+    return join(makitHome(), "devices.json");
 }
 export class DeviceRegistry {
     devices = new Map();
@@ -28,7 +28,7 @@ export class DeviceRegistry {
     // DoS). Abuse throttling, if ever needed, belongs at the connection layer
     // (WS `hello` handler, where the source IP is available).
     constructor() {
-        mkdirSync(pinoHome(), { recursive: true });
+        mkdirSync(makitHome(), { recursive: true });
         const path = devicesPath();
         if (existsSync(path)) {
             try {
@@ -94,6 +94,32 @@ export class DeviceRegistry {
     }
     list() {
         return [...this.devices.values()];
+    }
+    /**
+     * Persist a device's content-free wake push token (SPEC-07). No-op for an
+     * unknown device. Written 0600 by {@link persist}.
+     */
+    setPushToken(deviceId, info) {
+        const d = this.devices.get(deviceId);
+        if (!d)
+            return;
+        d.pushToken = info.token;
+        d.pushPlatform = info.platform;
+        d.pushEnv = info.env;
+        this.persist();
+    }
+    /**
+     * Drop a device's push token (e.g. APNs reported it dead / unregistered)
+     * while keeping the device paired. No-op for an unknown device.
+     */
+    clearPushToken(deviceId) {
+        const d = this.devices.get(deviceId);
+        if (!d || d.pushToken === undefined)
+            return;
+        delete d.pushToken;
+        delete d.pushPlatform;
+        delete d.pushEnv;
+        this.persist();
     }
     revoke(deviceId) {
         const d = this.devices.get(deviceId);

@@ -41,7 +41,7 @@ class GlassSurface extends ConsumerWidget {
     final settings = LiquidGlassSettings(
       thickness: 26,
       blur: blur ?? 18,
-      // Design-system glass (see design-system/pino/MASTER.md):
+      // Design-system glass (see design-system/makit/MASTER.md):
       // 50% neutral tint, high saturation (anti-milky), calm light intensity.
       glassColor:
           tint ?? (dark ? const Color(0x80181818) : const Color(0x80FFFFFF)),

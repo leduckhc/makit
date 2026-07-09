@@ -31,9 +31,9 @@ function withEnv(
 }
 
 test("getMultiplexer returns herdr by default", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-mux-reg-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-mux-reg-"));
   const file = join(dir, "config.json");
-  await withEnv({ PINO_MUX: undefined, PINO_CONFIG_FILE: file }, () => {
+  await withEnv({ MAKIT_MUX: undefined, MAKIT_CONFIG_FILE: file }, () => {
     const mux = getMultiplexer();
     assert.ok(mux);
     assert.equal(mux!.name, "herdr");
@@ -45,8 +45,8 @@ test("getMultiplexer('tmux') returns undefined", async () => {
   assert.equal(mux, undefined);
 });
 
-test("getMultiplexer returns undefined when PINO_MUX=off", async () => {
-  await withEnv({ PINO_MUX: "off" }, () => {
+test("getMultiplexer returns undefined when MAKIT_MUX=off", async () => {
+  await withEnv({ MAKIT_MUX: "off" }, () => {
     assert.equal(getMultiplexer(), undefined);
   });
 });
@@ -58,7 +58,7 @@ test("getMultiplexer('herdr') returns herdr adapter", async () => {
 });
 
 test("getMultiplexer passes config anchor into HerdrAdapter", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-mux-reg-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-mux-reg-"));
   const file = join(dir, "config.json");
   writeFileSync(
     file,
@@ -66,9 +66,9 @@ test("getMultiplexer passes config anchor into HerdrAdapter", async () => {
   );
   await withEnv(
     {
-      PINO_MUX: undefined,
-      PINO_MUX_ANCHOR: undefined,
-      PINO_CONFIG_FILE: file,
+      MAKIT_MUX: undefined,
+      MAKIT_MUX_ANCHOR: undefined,
+      MAKIT_CONFIG_FILE: file,
     },
     async () => {
       const calls: Array<{ cmd: string; args: string[] }> = [];

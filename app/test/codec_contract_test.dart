@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/store/models.dart';
-import 'package:pino/transport/codec.dart';
-import 'package:pino/transport/protocol.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/transport/codec.dart';
+import 'package:makit/transport/protocol.dart';
 
 /// Load a fixture file shared byte-identically with the server
 /// (`server/test/fixtures/*.json`).
@@ -37,7 +37,7 @@ void main() {
       final projects = (decoded as ProjectsSnapshot).projects;
       expect(projects.length, 1);
       expect(projects.single.id, 'p1');
-      expect(projects.single.name, 'pino');
+      expect(projects.single.name, 'makit');
       expect(projects.single.pinned, true);
     });
 

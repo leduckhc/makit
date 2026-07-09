@@ -4,12 +4,12 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/store/connection.dart';
-import 'package:pino/store/models.dart';
-import 'package:pino/store/store.dart';
-import 'package:pino/transport/codec.dart';
-import 'package:pino/transport/protocol.dart';
-import 'package:pino/transport/transport.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/store/store.dart';
+import 'package:makit/transport/codec.dart';
+import 'package:makit/transport/protocol.dart';
+import 'package:makit/transport/transport.dart';
 
 const _sid = 's1';
 

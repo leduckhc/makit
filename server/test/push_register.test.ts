@@ -11,14 +11,14 @@ import type { WsClient, OutgoingFrame } from "../src/ws/client.js";
 import type { Envelope } from "../src/protocol.js";
 
 async function withHome(fn: (home: string) => void | Promise<void>) {
-  const prev = process.env.PINO_HOME;
-  const home = mkdtempSync(join(tmpdir(), "pino-push-test-"));
-  process.env.PINO_HOME = home;
+  const prev = process.env.MAKIT_HOME;
+  const home = mkdtempSync(join(tmpdir(), "makit-push-test-"));
+  process.env.MAKIT_HOME = home;
   try {
     await fn(home);
   } finally {
-    if (prev === undefined) delete process.env.PINO_HOME;
-    else process.env.PINO_HOME = prev;
+    if (prev === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prev;
     rmSync(home, { recursive: true, force: true });
   }
 }

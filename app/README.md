@@ -1,4 +1,4 @@
-# pino — mobile app (Flutter)
+# makit — mobile app (Flutter)
 
 Mobile-first coding agent client. See [`../docs/UX.md`](../docs/UX.md) and
 [`../docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md) for the product and
@@ -33,8 +33,8 @@ platform shells with:
 ```sh
 cd app
 flutter create . \
-  --org dev.pino \
-  --project-name pino \
+  --org dev.makit \
+  --project-name makit \
   --platforms=ios,android,macos
 flutter pub get
 ```

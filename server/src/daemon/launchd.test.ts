@@ -20,24 +20,24 @@ import {
 
 test("plist embeds label, node+entry program args, and never auto-starts", () => {
   const xml = buildLaunchAgentPlist({
-    label: "dev.pino",
+    label: "dev.makit",
     execPath: "/usr/bin/node",
-    entry: "/opt/pino/index.js",
-    logPath: "/home/u/.pino/pino.log",
+    entry: "/opt/makit/index.js",
+    logPath: "/home/u/.makit/makit.log",
   });
-  assert.match(xml, /<key>Label<\/key>\s*<string>dev\.pino<\/string>/);
+  assert.match(xml, /<key>Label<\/key>\s*<string>dev\.makit<\/string>/);
   assert.match(xml, /<string>\/usr\/bin\/node<\/string>/);
-  assert.match(xml, /<string>\/opt\/pino\/index\.js<\/string>/);
+  assert.match(xml, /<string>\/opt\/makit\/index\.js<\/string>/);
   assert.match(xml, /<string>serve<\/string>/);
   // Opt-in only: must NOT run at load and must NOT be kept alive.
   assert.match(xml, /<key>RunAtLoad<\/key>\s*<false\/>/);
   assert.match(xml, /<key>KeepAlive<\/key>\s*<false\/>/);
-  assert.match(xml, /<key>StandardOutPath<\/key>\s*<string>\/home\/u\/\.pino\/pino\.log<\/string>/);
+  assert.match(xml, /<key>StandardOutPath<\/key>\s*<string>\/home\/u\/\.makit\/makit\.log<\/string>/);
 });
 
 test("plist escapes XML-special characters in paths", () => {
   const xml = buildLaunchAgentPlist({
-    label: "dev.pino",
+    label: "dev.makit",
     execPath: "/usr/bin/node",
     entry: "/opt/a & b/index.js",
     logPath: "/l.log",
@@ -47,17 +47,17 @@ test("plist escapes XML-special characters in paths", () => {
 });
 
 test("install writes the plist; uninstall removes it", () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-plist-"));
-  const plistPath = join(dir, "dev.pino.plist");
+  const dir = mkdtempSync(join(tmpdir(), "makit-plist-"));
+  const plistPath = join(dir, "dev.makit.plist");
   installService({
     plistPath,
-    label: "dev.pino",
+    label: "dev.makit",
     execPath: "/usr/bin/node",
-    entry: "/opt/pino/index.js",
+    entry: "/opt/makit/index.js",
     logPath: "/l.log",
   });
   assert.equal(existsSync(plistPath), true);
-  assert.match(readFileSync(plistPath, "utf8"), /dev\.pino/);
+  assert.match(readFileSync(plistPath, "utf8"), /dev\.makit/);
 
   const removed = uninstallService({ plistPath });
   assert.equal(removed, true);

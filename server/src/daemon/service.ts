@@ -1,7 +1,7 @@
 /**
  * Daemon service (SPEC-01, phase 4).
  *
- * User-controlled background lifecycle for the pino server:
+ * User-controlled background lifecycle for the makit server:
  *   - `start`   — spawn `serve` detached, redirect output to the log, record PID.
  *                 Idempotent: if already running, print status and exit 0.
  *   - `stop`    — SIGTERM the recorded PID (the server's handler shuts down
@@ -12,14 +12,14 @@
  *
  * ## Log file policy
  *
- * `~/.pino/pino.log` is **truncated on every `start`** (opened with `"w"`). Log
+ * `~/.makit/makit.log` is **truncated on every `start`** (opened with `"w"`). Log
  * rotation is intentionally out of scope for v1 (SPEC-01 open question): a fresh
  * run starts with a clean log, and operators who want history can copy it aside
  * before starting. Revisit if log volume becomes a problem.
  *
  * All OS-touching collaborators (spawn, kill, control-client connect, log fd)
  * are injected via {@link DaemonDeps} so the orchestration is unit-testable
- * without launching a real process or writing to the real `~/.pino`.
+ * without launching a real process or writing to the real `~/.makit`.
  */
 
 import {
@@ -32,7 +32,7 @@ import {
   watch,
 } from "node:fs";
 import { dirname } from "node:path";
-import { PINO_HOME_MODE, PINO_FILE_MODE } from "./paths.js";
+import { MAKIT_HOME_MODE, MAKIT_FILE_MODE } from "./paths.js";
 import type { ControlClient } from "./control-client.js";
 import type { StatusData } from "./protocol.js";
 
@@ -42,7 +42,7 @@ export interface SpawnedChild {
   unref(): void;
 }
 
-/** Serve flags forwarded from `pino start` to the detached `serve` process. */
+/** Serve flags forwarded from `makit start` to the detached `serve` process. */
 export interface ServeOptions {
   host: string;
   port: number;
@@ -106,10 +106,10 @@ export function readPidFile(path: string): number | null {
 
 /** Write a PID to the PID file (creating the parent dir if needed). */
 export function writePidFile(path: string, pid: number): void {
-  mkdirSync(dirname(path), { recursive: true, mode: PINO_HOME_MODE });
-  writeFileSync(path, `${pid}\n`, { mode: PINO_FILE_MODE });
+  mkdirSync(dirname(path), { recursive: true, mode: MAKIT_HOME_MODE });
+  writeFileSync(path, `${pid}\n`, { mode: MAKIT_FILE_MODE });
   try {
-    chmodSync(path, PINO_FILE_MODE);
+    chmodSync(path, MAKIT_FILE_MODE);
   } catch {
     /* best-effort: perms may fail on exotic filesystems */
   }
@@ -154,7 +154,7 @@ export function createDaemon(deps: DaemonDeps): Daemon {
   }
 
   function printStatus(s: StatusData): void {
-    deps.out(`pino: running`);
+    deps.out(`makit: running`);
     deps.out(`  pid          ${s.pid}`);
     deps.out(`  listening    ${s.host}:${s.port}`);
     deps.out(`  fingerprint  ${s.fingerprint}`);
@@ -167,7 +167,7 @@ export function createDaemon(deps: DaemonDeps): Daemon {
   return {
     async start(opts) {
       if (runningPid() !== null) {
-        deps.out("pino: already running");
+        deps.out("makit: already running");
         const s = await fetchStatus();
         if (s) printStatus(s);
         return 0;
@@ -184,33 +184,33 @@ export function createDaemon(deps: DaemonDeps): Daemon {
       if (!up) {
         rmSync(deps.pidPath, { force: true });
         deps.out(
-          `pino: failed to start — no response within ${startupTimeoutMs}ms (see ${deps.logPath})`,
+          `makit: failed to start — no response within ${startupTimeoutMs}ms (see ${deps.logPath})`,
         );
         return 1;
       }
-      deps.out(`pino: started (pid ${child.pid ?? up.pid}), logging to ${deps.logPath}`);
+      deps.out(`makit: started (pid ${child.pid ?? up.pid}), logging to ${deps.logPath}`);
       return 0;
     },
 
     async stop() {
       const pid = runningPid();
       if (pid === null) {
-        deps.out("pino: not running");
+        deps.out("makit: not running");
         rmSync(deps.pidPath, { force: true });
         return 0;
       }
-      // PID-reuse guard: only SIGTERM when the control socket confirms a pino
+      // PID-reuse guard: only SIGTERM when the control socket confirms a makit
       // daemon whose pid matches the PID file. After a crash the OS may recycle
       // the pid onto an unrelated process.
       const s = await fetchStatus();
       if (!s || s.pid !== pid) {
-        deps.out("pino: not running (stale pid file)");
+        deps.out("makit: not running (stale pid file)");
         rmSync(deps.pidPath, { force: true });
         return 0;
       }
       deps.kill(pid, "SIGTERM");
       rmSync(deps.pidPath, { force: true });
-      deps.out(`pino: stopped (pid ${pid})`);
+      deps.out(`makit: stopped (pid ${pid})`);
       return 0;
     },
 
@@ -222,7 +222,7 @@ export function createDaemon(deps: DaemonDeps): Daemon {
     async status() {
       const s = await fetchStatus();
       if (!s) {
-        deps.out("pino: not running");
+        deps.out("makit: not running");
         return 3;
       }
       printStatus(s);
@@ -250,7 +250,7 @@ export function createDaemon(deps: DaemonDeps): Daemon {
 /**
  * Tail-follow a log file: on every change, read the bytes appended since the
  * last offset and emit each complete line. Runs until the process is
- * interrupted (Ctrl-C) — intended for the interactive `pino logs -f`.
+ * interrupted (Ctrl-C) — intended for the interactive `makit logs -f`.
  */
 function followLog(path: string, from: number, out: (line: string) => void): Promise<void> {
   return new Promise(() => {

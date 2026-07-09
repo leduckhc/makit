@@ -1,8 +1,8 @@
-/// Typed data model for the pino control-plane protocol (SPEC-01 / SPEC-03).
+/// Typed data model for the makit control-plane protocol (SPEC-01 / SPEC-03).
 ///
 /// A Dart port of the frozen NDJSON contract in
 /// `server/src/daemon/protocol.ts`. The desktop app speaks this protocol over
-/// the local unix-domain control socket (`~/.pino/control.sock`) to drive a
+/// the local unix-domain control socket (`~/.makit/control.sock`) to drive a
 /// *running* daemon without restarting it.
 ///
 /// Every payload factory is defensive: malformed JSON yields `null` rather than
@@ -10,7 +10,7 @@
 /// in `control_codec.dart`; this file holds the value types.
 library;
 
-import 'package:pino/store/models.dart'
+import 'package:makit/store/models.dart'
     show ApprovalPolicy, PaneInfo, SessionStatus, parsePolicy, parseStatus;
 
 /// The v1 control verbs. Frozen — mirrors `CONTROL_VERBS` in `protocol.ts`.
@@ -18,7 +18,7 @@ enum ControlVerb {
   /// Daemon health + summary counters.
   status,
 
-  /// Mint a fresh pairing token + `pino://` URL.
+  /// Mint a fresh pairing token + `makit://` URL.
   pairMint,
 
   /// The active unexpired pairing token, if any.
@@ -168,7 +168,7 @@ class StatusData {
   };
 }
 
-/// `pair.mint` result: a fresh pairing token + the `pino://` URL that carries it.
+/// `pair.mint` result: a fresh pairing token + the `makit://` URL that carries it.
 class PairMintData {
   /// Creates a mint result.
   const PairMintData({
@@ -178,7 +178,7 @@ class PairMintData {
     required this.fingerprint,
   });
 
-  /// The `pino://` pairing URL (encodes host, token, and fingerprint).
+  /// The `makit://` pairing URL (encodes host, token, and fingerprint).
   final String url;
 
   /// The raw pairing token.
@@ -229,7 +229,7 @@ class PairCurrentData {
     required this.expiresAt,
   });
 
-  /// The `pino://` pairing URL.
+  /// The `makit://` pairing URL.
   final String url;
 
   /// The raw pairing token.

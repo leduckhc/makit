@@ -6,11 +6,11 @@
 
 ## Goal
 
-A macOS desktop app that lets a user **run and control the pino server** from a
+A macOS desktop app that lets a user **run and control the makit server** from a
 menubar item plus a window. It is the *server operator's* UI: start/stop/restart
 the server, show and regenerate the pairing **QR code** for phones to scan, and
-list/revoke paired devices. It talks to the running pino daemon over the SPEC-01
-unix control socket (`~/.pino/control.sock`, same machine).
+list/revoke paired devices. It talks to the running makit daemon over the SPEC-01
+unix control socket (`~/.makit/control.sock`, same machine).
 
 ## Why
 
@@ -23,7 +23,7 @@ build boots the desktop **control** UI instead of the mobile client flow.
 
 ## Two roles, one codebase
 
-pino ships **two apps from the same Flutter codebase**, branched on
+makit ships **two apps from the same Flutter codebase**, branched on
 `Platform.isMacOS`. They are logically separate (no shared UI, no flow leaks),
 but not separate repos:
 
@@ -48,8 +48,8 @@ so the pairing/chat client flow cannot appear on desktop.
    **session-log** screens already exist from Phase 1 and are retained as a bonus
    (not the focus, not required to be perfect for v1).
 3. **Form = menubar item + window** via `tray_manager` + `window_manager`.
-4. **Server lifecycle = drive the daemon.** The app runs `pino start` /
-   `pino stop` / `pino restart` and uses the control socket for everything else.
+4. **Server lifecycle = drive the daemon.** The app runs `makit start` /
+   `makit stop` / `makit restart` and uses the control socket for everything else.
    One server implementation (SPEC-01); the app does **not** embed a server.
 5. **"Invalidate mobile sessions" = revoke a paired device** (`devices.revoke`).
    A revoked device can no longer connect until it re-pairs.
@@ -60,7 +60,7 @@ Built and tested (173 tests green; mobile build unaffected):
 
 | Layer | Path | State |
 |---|---|---|
-| Control-socket client | `app/lib/control/` | ✅ `PinoControlClient` speaks NDJSON over `~/.pino/control.sock`; verbs `status`, `pair.mint`, `pair.current`, `devices.list`, `devices.revoke`, `sessions.list`, `server.stop`, streaming `logs.tail` |
+| Control-socket client | `app/lib/control/` | ✅ `MakitControlClient` speaks NDJSON over `~/.makit/control.sock`; verbs `status`, `pair.mint`, `pair.current`, `devices.list`, `devices.revoke`, `sessions.list`, `server.stop`, streaming `logs.tail` |
 | Menubar tray | `app/lib/desktop/tray/` | ✅ `TrayController` with full menu (Start/Stop, Dashboard, Pair QR, Devices(N), Sessions(N), Quit), `Platform.isMacOS`-guarded |
 | Desktop screens | `app/lib/desktop/screens/` | ✅ status, QR (+countdown), devices (+revoke), sessions, session-log (streaming) |
 | Deps | `app/pubspec.yaml` | ✅ `tray_manager`, `window_manager`, `qr_flutter` pinned |
@@ -71,30 +71,30 @@ Nothing is wired into a launchable app yet:
   so the macOS build still boots the mobile client (pairing) UI — this is the
   root cause of the "app asks me to scan a QR" complaint.
 - **Provider not injected.** `controlClientProvider` throws
-  `UnimplementedError('Set by parent')`; the real `PinoControlClient` is never
+  `UnimplementedError('Set by parent')`; the real `MakitControlClient` is never
   wired into the screens.
 - **Menubar never shown.** `TrayController.init()` is not called by anything.
 - **Cannot start a stopped daemon.** The client has `serverStop()` but there is
-  no `Process.start('pino', ['start'])` spawn path (only stop is wired).
+  no `Process.start('makit', ['start'])` spawn path (only stop is wired).
 
-## Locating & installing the pino CLI
+## Locating & installing the makit CLI
 
-The app drives the `pino` CLI, so it must find it reliably and help install it.
+The app drives the `makit` CLI, so it must find it reliably and help install it.
 
 - **Discovery order** (first hit wins):
   1. A copy **bundled inside the `.app`** (preferred end state; see below).
   2. `$PATH` (resolved via a login shell so it matches the user's terminal).
-  3. Known locations: `~/.local/bin/pino`, `/opt/homebrew/bin/pino`,
-     `/usr/local/bin/pino`.
-- **Bundled CLI (preferred end state):** ship the built pino CLI (and the Node
+  3. Known locations: `~/.local/bin/makit`, `/opt/homebrew/bin/makit`,
+     `/usr/local/bin/makit`.
+- **Bundled CLI (preferred end state):** ship the built makit CLI (and the Node
   runtime it needs) inside the app bundle so the app works with **zero install
-  step**; offer a VS Code–style "Install `pino` in PATH" button. Tracked
+  step**; offer a VS Code–style "Install `makit` in PATH" button. Tracked
   separately; not required for the Phase-4 milestone.
 - **curl | bash installer (v1):** documented script (see issue #13) that fetches
-  the repo, runs `pnpm install && pnpm build`, and symlinks `pino` into
-  `~/.local/bin`. If the app can't find `pino`, it surfaces a one-click
+  the repo, runs `pnpm install && pnpm build`, and symlinks `makit` into
+  `~/.local/bin`. If the app can't find `makit`, it surfaces a one-click
   affordance that runs this script.
-- The app must **not hard-fail** when `pino` is absent — it shows an actionable
+- The app must **not hard-fail** when `makit` is absent — it shows an actionable
   "install the CLI" state instead.
 
 ## Scope
@@ -102,11 +102,11 @@ The app drives the `pino` CLI, so it must find it reliably and help install it.
 ### In
 - **Menubar item**: reflects server state (running/stopped, # paired devices,
   # sessions). Menu: Start/Stop/Restart, open window/dashboard, Pair QR, Quit.
-- **Start / Stop / Restart server**: spawn `pino start` when stopped; `pino stop`
+- **Start / Stop / Restart server**: spawn `makit start` when stopped; `makit stop`
   (or `server.stop` verb) to stop; restart = stop-if-running + start. Menubar and
   window reflect the new state.
 - **QR panel**: render `pair.current`; **Regenerate** mints a fresh token via
-  `pair.mint` and re-renders; show the `pino://` URL (copyable) + fingerprint;
+  `pair.mint` and re-renders; show the `makit://` URL (copyable) + fingerprint;
   countdown if the token has a TTL.
 - **Devices panel**: list paired devices (label, paired/last-seen, connected
   dot); **Revoke** per device via `devices.revoke`.
@@ -119,12 +119,12 @@ The app drives the `pino` CLI, so it must find it reliably and help install it.
 - Notifications — nice-to-have, not required for the Phase-4 milestone.
 
 ## Design notes / contracts consumed
-- **Control plane** over the SPEC-01 unix socket at `~/.pino/control.sock`
+- **Control plane** over the SPEC-01 unix socket at `~/.makit/control.sock`
   (NDJSON, `{ id, verb, args? }` → `{ id, ok, data|error }`). Client:
   `app/lib/control/`. Verbs frozen in `server/src/daemon/protocol.ts`.
-- **Server lifecycle** via the CLI: `pino start` / `pino stop` / `pino restart`
+- **Server lifecycle** via the CLI: `makit start` / `makit stop` / `makit restart`
   (SPEC-01). The app spawns these with `Process.start` after CLI discovery.
-- **QR rendering**: the daemon returns the `pino://` URL + token; the app renders
+- **QR rendering**: the daemon returns the `makit://` URL + token; the app renders
   the QR with `qr_flutter`.
 - Keep the mobile app unaffected: desktop widgets gate behind `Platform.isMacOS`;
   share store/transport.
@@ -136,13 +136,13 @@ The app drives the `pino` CLI, so it must find it reliably and help install it.
 - [ ] Menubar item shows running/stopped state + paired-device count; clicking
       opens the window/dashboard.
 - [ ] Start / Stop / Restart from the app actually starts/stops the daemon
-      (verify with `pino status`), including **starting a stopped** daemon via
-      `pino start`.
+      (verify with `makit status`), including **starting a stopped** daemon via
+      `makit start`.
 - [ ] QR panel shows a scannable code from `pair.current`; **Regenerate**
       (`pair.mint`) renders a new QR that pairs a real device end-to-end.
 - [ ] Devices panel lists real paired devices; **Revoke** works — the device can
       no longer connect until it re-pairs.
-- [ ] If `pino` is not installed, the app shows an actionable install affordance
+- [ ] If `makit` is not installed, the app shows an actionable install affordance
       rather than failing.
 - [ ] Mobile build unaffected (`flutter analyze --fatal-infos` clean for both
       targets; mobile tests still pass).

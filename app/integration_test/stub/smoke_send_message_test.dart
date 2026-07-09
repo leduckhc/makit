@@ -7,7 +7,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('sends hello and receives stub echo', (tester) async {
-    await launchPino(tester);
+    await launchMakit(tester);
     await openFirstSession(tester);
 
     await sendComposerText(tester, 'hello');

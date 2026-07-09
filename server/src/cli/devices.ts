@@ -1,6 +1,6 @@
 /**
- * `pino devices`              — list paired devices
- * `pino devices revoke <id>` — revoke a device by id
+ * `makit devices`              — list paired devices
+ * `makit devices revoke <id>` — revoke a device by id
  *
  * Both are thin clients of the daemon's control socket (SPEC-02).
  */
@@ -15,20 +15,20 @@ export async function runDevices(argv: string[]): Promise<void> {
   if (sub === "revoke") {
     const id = argv[1];
     if (!id) {
-      console.error("usage: pino devices revoke <id>");
+      console.error("usage: makit devices revoke <id>");
       process.exit(2);
     }
     const client = await requireDaemon(controlSocketPath());
     try {
       const res = await client.request<DevicesRevokeData>("devices.revoke", { id });
       if (!res.ok) {
-        console.error(`[pino] devices.revoke failed: ${res.error}`);
+        console.error(`[makit] devices.revoke failed: ${res.error}`);
         process.exit(1);
       }
       if (res.data!.removed) {
-        console.log(`[pino] device ${id} revoked`);
+        console.log(`[makit] device ${id} revoked`);
       } else {
-        console.error(`[pino] device ${id} not found`);
+        console.error(`[makit] device ${id} not found`);
         process.exit(1);
       }
     } finally {
@@ -41,7 +41,7 @@ export async function runDevices(argv: string[]): Promise<void> {
   try {
     const res = await client.request<DevicesListData>("devices.list");
     if (!res.ok) {
-      console.error(`[pino] devices.list failed: ${res.error}`);
+      console.error(`[makit] devices.list failed: ${res.error}`);
       process.exit(1);
     }
     const { devices } = res.data!;

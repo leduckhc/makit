@@ -1,6 +1,6 @@
 /**
  * herdr multiplexer adapter — shells out to the herdr CLI (SPEC-04).
- * Exec is injected for testability; no pino-session knowledge here.
+ * Exec is injected for testability; no makit-session knowledge here.
  */
 
 import { execFile } from "node:child_process";

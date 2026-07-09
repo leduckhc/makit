@@ -1,5 +1,5 @@
 /**
- * SPEC-05: pino-mirror sends spawnToken in host.open when PINO_SPAWN_TOKEN is
+ * SPEC-05: makit-mirror sends spawnToken in host.open when MAKIT_SPAWN_TOKEN is
  * set in the environment; omits it otherwise.
  *
  * We test the pure extraction logic rather than the full WebSocket lifecycle.
@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { buildHostOpenFields } from "./pino-mirror-helpers.js";
+import { buildHostOpenFields } from "./makit-mirror-helpers.js";
 
 test("buildHostOpenFields: includes spawnToken when env is set", () => {
   const fields = buildHostOpenFields({

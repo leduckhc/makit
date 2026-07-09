@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/notifications/notification_policy.dart';
-import 'package:pino/store/models.dart';
+import 'package:makit/notifications/notification_policy.dart';
+import 'package:makit/store/models.dart';
 
 void main() {
   group('notificationFor', () {

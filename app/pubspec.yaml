@@ -1,4 +1,4 @@
-name: pino
+name: makit
 description: Mobile-first coding agent client — chat UI for codex/pi/claude sessions on your desktop.
 publish_to: "none"
 version: 0.1.0

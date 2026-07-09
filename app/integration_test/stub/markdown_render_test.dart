@@ -12,7 +12,7 @@ void main() {
   testWidgets('assistant markdown reply renders headings, code + links', (
     tester,
   ) async {
-    await launchPino(tester);
+    await launchMakit(tester);
     await openFirstSession(tester);
 
     // The stub adapter replies with a markdown sample (heading, bold, link,

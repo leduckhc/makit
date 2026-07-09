@@ -1,5 +1,5 @@
 /**
- * Loopback HTTP bridge for agent connectors (pino-pi, pino-codex, etc.).
+ * Loopback HTTP bridge for agent connectors (makit-pi, makit-codex, etc.).
  *
  * Listens on 127.0.0.1:<random> and exposes a single endpoint:
  *
@@ -10,7 +10,7 @@
  * and returns the UIResponse as JSON.
  *
  * The url + a short-lived token are injected into each spawned agent connector
- * via environment variables (PINO_BRIDGE_URL, PINO_BRIDGE_TOKEN). The
+ * via environment variables (MAKIT_BRIDGE_URL, MAKIT_BRIDGE_TOKEN). The
  * connector picks them up at load time and POSTs here when it needs a UI.
  */
 import { createServer } from "node:http";
@@ -49,7 +49,7 @@ export async function startBridge(opts) {
     if (!addr || typeof addr === "string")
         throw new Error("bridge: bad address");
     const url = `http://127.0.0.1:${addr.port}`;
-    console.log(`[pino] uicall bridge listening on ${url}`);
+    console.log(`[makit] uicall bridge listening on ${url}`);
     return {
         url,
         token,

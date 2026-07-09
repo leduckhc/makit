@@ -1,5 +1,5 @@
 /**
- * Multiplexer config — read from ~/.pino/config.json with env overrides.
+ * Multiplexer config — read from ~/.makit/config.json with env overrides.
  * Never throws on bad input; missing/corrupt file degrades to defaults.
  */
 
@@ -9,18 +9,18 @@ import { join } from "node:path";
 import { log } from "../log.js";
 
 export interface MuxConfig {
-  /** Active multiplexer name, e.g. "herdr". Env PINO_MUX wins. */
+  /** Active multiplexer name, e.g. "herdr". Env MAKIT_MUX wins. */
   mux: string;
-  /** Anchor pane id for new splits. Env PINO_MUX_ANCHOR wins. */
+  /** Anchor pane id for new splits. Env MAKIT_MUX_ANCHOR wins. */
   anchor: string;
 }
 
-function pinoHome(): string {
-  return process.env.PINO_HOME || join(homedir(), ".pino");
+function makitHome(): string {
+  return process.env.MAKIT_HOME || join(homedir(), ".makit");
 }
 
 export function configFile(): string {
-  return process.env.PINO_CONFIG_FILE ?? join(pinoHome(), "config.json");
+  return process.env.MAKIT_CONFIG_FILE ?? join(makitHome(), "config.json");
 }
 
 interface ConfigFileShape {
@@ -34,23 +34,23 @@ function readConfigFile(file: string): ConfigFileShape {
     if (typeof parsed !== "object" || parsed === null) return {};
     return parsed as ConfigFileShape;
   } catch (e) {
-    log.warn(`[pino] failed to read mux config ${file}: ${(e as Error).message}`);
+    log.warn(`[makit] failed to read mux config ${file}: ${(e as Error).message}`);
     return {};
   }
 }
 
 /** Default anchor label; herdr is unavailable until this resolves to an actual pane id. */
-export const DEFAULT_MUX_ANCHOR = "pino";
+export const DEFAULT_MUX_ANCHOR = "makit";
 
 /** Load mux config. Env vars override file values. */
 export function loadMuxConfig(file = configFile()): MuxConfig {
   const fromFile = readConfigFile(file);
   const mux =
-    process.env.PINO_MUX?.trim() ||
+    process.env.MAKIT_MUX?.trim() ||
     fromFile.mux?.name?.trim() ||
     "herdr";
   const anchor =
-    process.env.PINO_MUX_ANCHOR?.trim() ||
+    process.env.MAKIT_MUX_ANCHOR?.trim() ||
     fromFile.mux?.anchor?.trim() ||
     DEFAULT_MUX_ANCHOR;
   return { mux, anchor };

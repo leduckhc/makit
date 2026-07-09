@@ -6,13 +6,13 @@ library;
 import 'dart:convert';
 
 /// Category identifiers registered with the OS notification categories.
-const kConfirmCategoryId = 'pino_confirm';
-const kQuestionCategoryId = 'pino_question';
+const kConfirmCategoryId = 'makit_confirm';
+const kQuestionCategoryId = 'makit_question';
 
 /// Action identifiers for the actionable notification buttons.
-const kApproveActionId = 'pino_approve';
-const kDenyActionId = 'pino_deny';
-const kReplyActionId = 'pino_reply';
+const kApproveActionId = 'makit_approve';
+const kDenyActionId = 'makit_deny';
+const kReplyActionId = 'makit_reply';
 
 /// The content + category of a notification derived from a `srv.request`.
 class RequestNotification {

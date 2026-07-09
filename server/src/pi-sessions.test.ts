@@ -8,8 +8,8 @@ import { piSessionsDir, listPiSessions, parseTranscript } from "./pi-sessions.js
 
 test("piSessionsDir applies pi's slug algorithm", () => {
   assert.equal(
-    piSessionsDir("/Users/le/Work/Vibe/pino", "/agent"),
-    join("/agent", "sessions", "--Users-le-Work-Vibe-pino--"),
+    piSessionsDir("/Users/le/Work/Vibe/makit", "/agent"),
+    join("/agent", "sessions", "--Users-le-Work-Vibe-makit--"),
   );
   assert.equal(
     piSessionsDir("/private/tmp/subagent-demo", "/agent"),
@@ -18,7 +18,7 @@ test("piSessionsDir applies pi's slug algorithm", () => {
 });
 
 test("listPiSessions parses headers, filters by cwd, sorts by mtime desc", () => {
-  const agentDir = mkdtempSync(join(tmpdir(), "pino-agent-"));
+  const agentDir = mkdtempSync(join(tmpdir(), "makit-agent-"));
   try {
     const cwd = "/work/proj";
     const dir = piSessionsDir(cwd, agentDir);
@@ -68,7 +68,7 @@ test("listPiSessions parses headers, filters by cwd, sorts by mtime desc", () =>
 });
 
 test("listPiSessions prefers the session_info name (last wins), else preview", () => {
-  const agentDir = mkdtempSync(join(tmpdir(), "pino-agent-"));
+  const agentDir = mkdtempSync(join(tmpdir(), "makit-agent-"));
   try {
     const cwd = "/work/named";
     const dir = piSessionsDir(cwd, agentDir);
@@ -117,7 +117,7 @@ test("listPiSessions prefers the session_info name (last wins), else preview", (
 });
 
 test("listPiSessions returns [] when the slug dir is absent", () => {
-  const agentDir = mkdtempSync(join(tmpdir(), "pino-agent-"));
+  const agentDir = mkdtempSync(join(tmpdir(), "makit-agent-"));
   try {
     assert.deepEqual(listPiSessions("/nope", agentDir), []);
   } finally {
@@ -126,7 +126,7 @@ test("listPiSessions returns [] when the slug dir is absent", () => {
 });
 
 test("parseTranscript maps user/assistant/tool records to AdapterEvents", () => {
-  const agentDir = mkdtempSync(join(tmpdir(), "pino-agent-"));
+  const agentDir = mkdtempSync(join(tmpdir(), "makit-agent-"));
   try {
     const file = join(agentDir, "t.jsonl");
     writeFileSync(

@@ -4,8 +4,8 @@
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/pino-icon-1024.png          # mark on dark frame (1024x1024)
+  image_path: assets/makit-icon-1024.png          # mark on dark frame (1024x1024)
   min_android_version: 21                         # adaptive icons require API 21+
   adaptive_icon_background: "#171717"             # dark frame color
-  adaptive_icon_foreground: assets/pino-adaptive-fg.png  # mark only, centered in safe zone
+  adaptive_icon_foreground: assets/makit-adaptive-fg.png  # mark only, centered in safe zone
   remove_alpha_ios: true                          # iOS icons must be opaque

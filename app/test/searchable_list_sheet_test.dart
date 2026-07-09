@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/ui/widgets/searchable_list_sheet.dart';
+import 'package:makit/ui/widgets/searchable_list_sheet.dart';
 
 const _items = ['Apple', 'Banana', 'Cherry', 'Avocado'];
 

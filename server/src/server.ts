@@ -17,7 +17,7 @@
  * Binding:
  * The server listens on the `host:port` provided (typically Tailscale or LAN).
  * When `host` is a specific, non-loopback IP, a second loopback listener is
- * automatically added at `127.0.0.1:port` so the pino-mirror extension host
+ * automatically added at `127.0.0.1:port` so the makit-mirror extension host
  * and the `flutter run -d macos` dev loop keep working. The two listeners
  * share the same {@link WebSocketServer} via `noServer` upgrade forwarding,
  * so all connected clients go through the same auth gate and state.
@@ -66,12 +66,12 @@ export interface ServerOpts {
   registry: DeviceRegistry;
   /** If true, accept loopback connections without auth. */
   trustLocalhost?: boolean;
-  /** Shared secret authenticating a pino-mirror extension host (World D). */
+  /** Shared secret authenticating a makit-mirror extension host (World D). */
   hostToken?: string;
   /**
    * Content-free wake sender (SPEC-07). Defaults to {@link NoopPushSender}
    * (wakes are no-ops → Slice-1 fallback). `index.ts` supplies an
-   * `ApnsPushSender` when `~/.pino/push.json` is configured.
+   * `ApnsPushSender` when `~/.makit/push.json` is configured.
    */
   sender?: PushSender;
   /** Content-free payload builder (injected for testability/wiring). */
@@ -84,7 +84,7 @@ interface ClientState extends WsClient {
 }
 
 /**
- * Build the `host.ask.result` frame relayed to a pino-mirror extension after
+ * Build the `host.ask.result` frame relayed to a makit-mirror extension after
  * the phone answers. Carries ONLY the answer fields — never spread the whole
  * srv.response envelope, whose own `t`/`id` would clobber these and leave the
  * extension's ask promise unresolved (hanging both the pi TUI and the phone).
@@ -136,7 +136,7 @@ export function startWsServer(opts: ServerOpts) {
   // listeners into the same connection handler:
   //   1. The external listener (host:port) — phone over Tailscale or LAN.
   //   2. A loopback listener (127.0.0.1:port) — only when `host` is a specific
-  //      non-loopback IP. Keeps the pino-mirror extension host and the
+  //      non-loopback IP. Keeps the makit-mirror extension host and the
   //      `flutter run -d macos` dev loop reachable.
   // When host is `0.0.0.0` (all interfaces) or already loopback, the second
   // listener is redundant and skipped.
@@ -156,14 +156,14 @@ export function startWsServer(opts: ServerOpts) {
   if (localHttps) forwardUpgrade(localHttps);
 
   https.on("tlsClientError", (err: Error, sock) => {
-    log.warn(`[pino] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
+    log.warn(`[makit] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
   });
   wss.on("error", (err: Error) => {
-    log.error(`[pino] wss error: ${err.message}`);
+    log.error(`[makit] wss error: ${err.message}`);
   });
 
   const clients = new Map<WebSocket, ClientState>();
-  // World D host sessions: pinoSessionId → its IngestAdapter + owning client.
+  // World D host sessions: makitSessionId → its IngestAdapter + owning client.
   const hostAdapters = new Map<string, IngestAdapter>();
   const hostOwner = new Map<string, WsClient>();
 
@@ -214,7 +214,7 @@ export function startWsServer(opts: ServerOpts) {
 
   wss.on("connection", (ws, req) => {
     const remote = req.socket.remoteAddress ?? "";
-    log.info(`[pino] ws connection from ${remote}`);
+    log.info(`[makit] ws connection from ${remote}`);
     const isLocal = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
     const state = makeClient(ws, trustLocalhost && isLocal);
     clients.set(ws, state);
@@ -248,11 +248,11 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   https.listen(port, host, () => {
-    log.info(`[pino] wss listening on wss://${host}:${port}`);
+    log.info(`[makit] wss listening on wss://${host}:${port}`);
   });
   if (localHttps) {
     localHttps.listen(port, "127.0.0.1", () => {
-      log.info(`[pino] wss also listening on 127.0.0.1:${port} (loopback)`);
+      log.info(`[makit] wss also listening on 127.0.0.1:${port} (loopback)`);
     });
   }
 
@@ -310,7 +310,7 @@ export function startWsServer(opts: ServerOpts) {
       }
       const session = sid ? manager.getSession(sid) : undefined;
       log.info(
-        `[pino] send.message sid=${sid.slice(0, 8)} session=${!!session} text="${text.slice(0, 40)}"`,
+        `[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} text="${text.slice(0, 40)}"`,
       );
       if (!session) {
         ctx.err(WireErrorCode.NoSuchSession, "no such session");
@@ -340,7 +340,7 @@ export function startWsServer(opts: ServerOpts) {
           ? (ctx.env.args as Record<string, unknown>)
           : undefined;
       ctx.ack();
-      // Manual rename: reflect the new title in pino immediately, then let the
+      // Manual rename: reflect the new title in makit immediately, then let the
       // adapter persist it (pi's set_session_name / the mirror connector).
       if (action === "name" && typeof args?.name === "string") {
         session.setTitle(args.name);
@@ -514,7 +514,7 @@ export function startWsServer(opts: ServerOpts) {
     });
 
 
-    // World D: a pino-mirror extension hosts a real pi session and pushes its
+    // World D: a makit-mirror extension hosts a real pi session and pushes its
     // events here; the phone's prompts are relayed back as `host.prompt`.
     r.register("host.open", async (ctx) => {
       const title = typeof ctx.env.title === "string" ? ctx.env.title : undefined;
@@ -598,8 +598,8 @@ export function startWsServer(opts: ServerOpts) {
     // SPEC-07: register the device's content-free wake push token.
     registerPushCommands(r, registry);
 
-    // B9b: dev-only debug commands, registered only when PINO_DEV is set.
-    if (process.env.PINO_DEV) registerDebugCommands(r);
+    // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
+    if (process.env.MAKIT_DEV) registerDebugCommands(r);
 
     return r;
   }
@@ -621,7 +621,7 @@ export function startWsServer(opts: ServerOpts) {
           },
         ],
       });
-      log.info(`[pino] debug.ask answered: ${JSON.stringify(resp)}`);
+      log.info(`[makit] debug.ask answered: ${JSON.stringify(resp)}`);
     });
 
     r.register("debug.ask-multi", async (ctx) => {
@@ -652,7 +652,7 @@ export function startWsServer(opts: ServerOpts) {
         },
         { sessionId: sid },
       );
-      log.info(`[pino] debug.ask-multi answered: ${JSON.stringify(resp)}`);
+      log.info(`[makit] debug.ask-multi answered: ${JSON.stringify(resp)}`);
       session.adapter.emit("event", {
         ts: Date.now(),
         kind: "agent.message",
@@ -667,7 +667,7 @@ export function startWsServer(opts: ServerOpts) {
     session.on("event", (event) => {
       const sent = hub.fanout(session.id, event);
       log.debug(
-        `[pino] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`,
+        `[makit] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`,
       );
       broadcastSessionsSnapshot();
     });

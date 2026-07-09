@@ -1,5 +1,5 @@
 /**
- * Pure helpers for pino-mirror that can be unit-tested without a real pi process.
+ * Pure helpers for makit-mirror that can be unit-tested without a real pi process.
  */
 
 export interface HostOpenFields {

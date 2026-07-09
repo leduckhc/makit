@@ -35,18 +35,18 @@ PORT="9787"
 BEARER="e2e-token"
 # Overridable for CI / other machines. FLUTTER_BIN falls back to PATH; SIM_NAME
 # picks the simulator model. In real mode the e2e server spawns the pi binary
-# resolved from PINO_PI_BIN (default: `pi` on PATH), inherited via the env.
-FLUTTER_BIN="${PINO_FLUTTER_BIN:-$(command -v flutter || true)}"
-SIM_NAME="${PINO_SIM_NAME:-iPhone 17}"
+# resolved from MAKIT_PI_BIN (default: `pi` on PATH), inherited via the env.
+FLUTTER_BIN="${MAKIT_FLUTTER_BIN:-$(command -v flutter || true)}"
+SIM_NAME="${MAKIT_SIM_NAME:-iPhone 17}"
 if [[ -z "$FLUTTER_BIN" ]]; then
-  echo "flutter not found — set PINO_FLUTTER_BIN or add flutter to PATH" >&2
+  echo "flutter not found — set MAKIT_FLUTTER_BIN or add flutter to PATH" >&2
   exit 1
 fi
 FLUTTER_BIN_DIR="$(cd "$(dirname "$FLUTTER_BIN")" && pwd)"
-SERVER_LOG="$(mktemp -t pino-e2e-server.XXXXXX.log)"
+SERVER_LOG="$(mktemp -t makit-e2e-server.XXXXXX.log)"
 SERVER_PID=""
 
-APP_BUNDLE_ID="dev.pino.pino"
+APP_BUNDLE_ID="dev.getmakit.app"
 
 free_port() {
   # Kill anything holding our test port. Strictly scoped to tcp:$PORT so we
@@ -67,7 +67,7 @@ cleanup() {
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   free_port
-  # Uninstall the test app so its seeded stub pairing (PINO_TEST_* written into
+  # Uninstall the test app so its seeded stub pairing (MAKIT_TEST_* written into
   # the simulator keychain by test_bootstrap) never leaks into a manual
   # `flutter run` session. Without this, the next live app boots trying to
   # reach the dead stub server instead of the user's real paired server.
@@ -156,10 +156,10 @@ fi
 set +e
 PATH="$FLUTTER_BIN_DIR:$PATH" "$FLUTTER_BIN" test "$TEST_TARGET" \
   -d "$SIM_ID" \
-  --dart-define=PINO_TEST_HOST=127.0.0.1 \
-  --dart-define=PINO_TEST_PORT="$PORT" \
-  --dart-define=PINO_TEST_BEARER="$BEARER" \
-  --dart-define=PINO_TEST_FP="$FP"
+  --dart-define=MAKIT_TEST_HOST=127.0.0.1 \
+  --dart-define=MAKIT_TEST_PORT="$PORT" \
+  --dart-define=MAKIT_TEST_BEARER="$BEARER" \
+  --dart-define=MAKIT_TEST_FP="$FP"
 flutter_exit=$?
 set -e
 

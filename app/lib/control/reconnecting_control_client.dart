@@ -1,7 +1,7 @@
 /// A [ControlClient] decorator that transparently (re)connects its underlying
 /// client.
 ///
-/// The concrete [PinoControlClient] is single-use: it must be `connect()`-ed
+/// The concrete [MakitControlClient] is single-use: it must be `connect()`-ed
 /// before use and becomes unusable once its socket closes (e.g. when the daemon
 /// is stopped or restarted from the control app itself). Since a *control* app
 /// exists precisely to start/stop the daemon, the socket comes and goes — so we
@@ -21,10 +21,10 @@ import 'control_contract.dart';
 /// Creates a fresh underlying [ControlClient] (unconnected).
 typedef ControlClientFactory = ControlClient Function();
 
-/// Connects a freshly-created client (e.g. `PinoControlClient.connect`).
+/// Connects a freshly-created client (e.g. `MakitControlClient.connect`).
 typedef ControlClientConnect = Future<void> Function(ControlClient client);
 
-/// Disposes a client (e.g. `PinoControlClient.dispose`).
+/// Disposes a client (e.g. `MakitControlClient.dispose`).
 typedef ControlClientDispose = Future<void> Function(ControlClient client);
 
 /// See the library doc.

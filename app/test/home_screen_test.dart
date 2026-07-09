@@ -3,10 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:pino/store/models.dart';
-import 'package:pino/store/store.dart';
-import 'package:pino/ui/home/home_screen.dart';
-import 'package:pino/ui/widgets/glass.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/store/store.dart';
+import 'package:makit/ui/home/home_screen.dart';
+import 'package:makit/ui/widgets/glass.dart';
 
 Widget _host({
   required List<Project> projects,
@@ -115,14 +115,14 @@ void main() {
 
     // Actions live behind the overflow menu, not as always-visible chrome.
     expect(find.text('Resume session'), findsNothing);
-    expect(find.text('Remove from pino'), findsNothing);
+    expect(find.text('Remove from makit'), findsNothing);
 
     await tester.tap(find.byIcon(Icons.more_vert));
     await tester.pumpAndSettle();
 
     expect(find.text('New session'), findsOneWidget);
     expect(find.text('Resume session'), findsOneWidget);
-    expect(find.text('Remove from pino'), findsOneWidget);
+    expect(find.text('Remove from makit'), findsOneWidget);
   });
 
   testWidgets('old standalone "Attach past session" button is gone', (

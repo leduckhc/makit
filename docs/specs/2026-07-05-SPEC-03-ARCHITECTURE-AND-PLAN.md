@@ -134,7 +134,7 @@ app/
 ## Acceptance Criteria (Grouped by Task)
 
 ### Task 1: Control-Plane Socket Client
-- [ ] `control_client.dart` connects to unix socket at `~/.pino/control.sock`
+- [ ] `control_client.dart` connects to unix socket at `~/.makit/control.sock`
 - [ ] Parses daemon responses (JSON or protobuf TBD)
 - [ ] Riverpod providers expose `currentDaemonStatus()`, `pairedDevices()`, `currentPairToken()`
 - [ ] Tests: mock socket responses, assert typed models, error handling (ECONNREFUSED)
@@ -231,8 +231,8 @@ TASK 7 (integration)              [after tasks 2–5 complete]
 - Phone pinned the server cert in `pairing/cert.dart`.
 - **Recommendation:** Reuse fingerprint from `status` verb (already trusted by phone).
 
-### 4. Spawn `pino start` or Embed Server?
-- **Option A:** Desktop app calls `Process.run('pino', ['start'])` (daemon management via CLI)
+### 4. Spawn `makit start` or Embed Server?
+- **Option A:** Desktop app calls `Process.run('makit', ['start'])` (daemon management via CLI)
 - **Option B:** Embed server in-process (Flutter can't easily host Node)
 - **Recommendation:** **Option A** — one server implementation (SPEC-01), cleaner separation.
 

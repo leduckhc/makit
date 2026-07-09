@@ -7,9 +7,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/control/control_client.dart';
-import 'package:pino/control/control_types.dart';
-import 'package:pino/store/models.dart';
+import 'package:makit/control/control_client.dart';
+import 'package:makit/control/control_types.dart';
+import 'package:makit/store/models.dart';
 
 /// A scripted in-memory [ControlConnection] for tests. Captures every line the
 /// client writes and lets the test push server frames back on demand.
@@ -50,14 +50,14 @@ class FakeControlConnection implements ControlConnection {
 
 void main() {
   late FakeControlConnection conn;
-  late PinoControlClient client;
+  late MakitControlClient client;
   var idCounter = 0;
 
-  PinoControlClient makeClient({Duration? timeout}) {
+  MakitControlClient makeClient({Duration? timeout}) {
     idCounter = 0;
     conn = FakeControlConnection();
-    return PinoControlClient(
-      socketPath: '/tmp/pino.sock',
+    return MakitControlClient(
+      socketPath: '/tmp/makit.sock',
       requestTimeout: timeout ?? const Duration(seconds: 30),
       idGenerator: () => 'c${++idCounter}',
       connector: (_) async => conn,
@@ -150,7 +150,7 @@ void main() {
   });
 
   test('connect throws when the socket is missing', () async {
-    client = PinoControlClient(
+    client = MakitControlClient(
       socketPath: '/tmp/missing.sock',
       connector: (_) async => throw const SocketException('connection refused'),
     );
@@ -193,7 +193,7 @@ void main() {
       await client.connect();
       final future = client.pairMint();
       conn.push(
-        '{"id":"c1","ok":true,"data":{"url":"pino://x","token":"t",'
+        '{"id":"c1","ok":true,"data":{"url":"makit://x","token":"t",'
         '"expiresAt":9,"fingerprint":"f"}}',
       );
       expect((await future).token, 't');
@@ -212,7 +212,7 @@ void main() {
       await client.connect();
       final future = client.pairCurrent();
       conn.push(
-        '{"id":"c1","ok":true,"data":{"url":"pino://x","token":"t",'
+        '{"id":"c1","ok":true,"data":{"url":"makit://x","token":"t",'
         '"expiresAt":9}}',
       );
       expect((await future)!.token, 't');

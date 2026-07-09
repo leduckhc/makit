@@ -2,7 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/ui/session/line_diff.dart';
+import 'package:makit/ui/session/line_diff.dart';
 
 /// Convenience: collapse a diff into a compact string like `=a -b +c` so the
 /// expectations below read like the rendered gutter.

@@ -1,10 +1,10 @@
 /**
- * pino control-plane protocol (SPEC-01).
+ * makit control-plane protocol (SPEC-01).
  *
  * A tiny newline-delimited JSON (NDJSON) request/response protocol spoken over
- * the local unix-domain control socket (`~/.pino/control.sock`). It lets other
+ * the local unix-domain control socket (`~/.makit/control.sock`). It lets other
  * local processes — the CLI (SPEC-02) and the desktop app (SPEC-03) — drive a
- * *running* pino without restarting it.
+ * *running* makit without restarting it.
  *
  * **This contract is frozen**: SPEC-02/03 depend on the verb names, argument
  * shapes, and response envelopes below. Add verbs; do not repurpose existing
@@ -71,7 +71,7 @@ export interface StatusData {
   version: string;
 }
 
-/** `pair.mint` result: a fresh pair token + the pino:// URL that carries it. */
+/** `pair.mint` result: a fresh pair token + the makit:// URL that carries it. */
 export interface PairMintData {
   url: string;
   token: string;

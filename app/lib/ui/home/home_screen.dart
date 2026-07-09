@@ -5,14 +5,14 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../app/theme.dart' show kPinoAccent;
+import '../../app/theme.dart' show kMakitAccent;
 import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import '../widgets/searchable_list_sheet.dart';
 
 /// Brand green accent used for running/active glass affordances (shared token).
-const _kBrandBlue = kPinoAccent;
+const _kBrandBlue = kMakitAccent;
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -24,7 +24,7 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('pino'),
+        title: const Text('makit'),
         actions: [
           const ConnectionChip(),
           IconButton(
@@ -159,7 +159,7 @@ class _ProjectSection extends ConsumerWidget {
                       value: 'remove',
                       child: ListTile(
                         leading: Icon(Icons.delete_outline),
-                        title: Text('Remove from pino'),
+                        title: Text('Remove from makit'),
                         contentPadding: EdgeInsets.zero,
                       ),
                     ),
@@ -191,7 +191,7 @@ class _ProjectSection extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: Text('Remove ${project.name}?'),
         content: const Text(
-          'This removes the project from pino. Files on disk are not touched.',
+          'This removes the project from makit. Files on disk are not touched.',
         ),
         actions: [
           TextButton(

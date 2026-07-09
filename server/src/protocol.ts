@@ -95,7 +95,7 @@ export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${
  *
  * SPEC-07: `push.register` — the phone registers its content-free wake push
  * token: `cmd {kind:'push.register', token, platform, env?}`. The server
- * persists it per-device in `~/.pino/devices.json` so the WakeCoordinator can
+ * persists it per-device in `~/.makit/devices.json` so the WakeCoordinator can
  * wake a force-quit/suspended device. The payload NEVER carries session data.
  */
 export type CmdKind =

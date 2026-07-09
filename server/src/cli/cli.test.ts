@@ -61,15 +61,15 @@ test("requireDaemon exits 3 on ECONNREFUSED", async () => {
     // We can't easily mock the ESM import, so we call requireDaemon with a
     // path that won't exist so the real client throws ENOENT.
     try {
-      await requireDaemon("/nonexistent-pino-test.sock");
+      await requireDaemon("/nonexistent-makit-test.sock");
     } catch {
       // process.exit throws in our mock
     }
 
     assert.equal(exits[0], 3, "must exit with code 3");
     assert.ok(
-      errors.some((e) => e.includes("pino is not running")),
-      `expected 'pino is not running' in stderr, got: ${errors.join(", ")}`,
+      errors.some((e) => e.includes("makit is not running")),
+      `expected 'makit is not running' in stderr, got: ${errors.join(", ")}`,
     );
   } finally {
     process.exit = origExit;

@@ -1,14 +1,14 @@
 /**
- * POC extension: proves pino can intercept pi's ctx.ui.* calls over rpc.
+ * POC extension: proves makit can intercept pi's ctx.ui.* calls over rpc.
  *
  * Registers `poc_ask`, which exercises the three interceptable UI methods:
  *   ctx.ui.select  → single choice
  *   ctx.ui.confirm → yes/no
  *   ctx.ui.input   → free text
  *
- * In pino's rpc mode each call emits an `extension_ui_request` on stdout and
+ * In makit's rpc mode each call emits an `extension_ui_request` on stdout and
  * blocks until the host writes an `extension_ui_response`. The POC harness
- * (poc-interceptor.mjs) plays the role of pino/PiAdapter + phone.
+ * (poc-interceptor.mjs) plays the role of makit/PiAdapter + phone.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 

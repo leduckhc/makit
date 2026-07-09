@@ -1,7 +1,7 @@
 /**
- * `pino mirror --pane <id> [--session <path>] [--project <id>]`
+ * `makit mirror --pane <id> [--session <path>] [--project <id>]`
  *
- * Tells the running pino server to mirror a real `pi` TUI in a multiplexer pane
+ * Tells the running makit server to mirror a real `pi` TUI in a multiplexer pane
  * (World B): the server tails that session's file → the phone sees a live chat,
  * and the phone's composer is injected into the pane via send-keys. This just
  * triggers the server-side mirror session (which persists) and prints its id;
@@ -34,7 +34,7 @@ function parseArgs(argv: string[]): MirrorArgs {
 export async function runMirror(argv: string[]): Promise<void> {
   const args = parseArgs(argv);
   if (!args.pane) {
-    console.error("[pino] usage: pino mirror --pane <pane-id> [--session <path>] [--project <id>]");
+    console.error("[makit] usage: makit mirror --pane <pane-id> [--session <path>] [--project <id>]");
     process.exit(2);
   }
   const bearer = readBearer();
@@ -45,7 +45,7 @@ export async function runMirror(argv: string[]): Promise<void> {
 
   ws.on("open", () => send({ v: 1, t: "hello", id: "h", bearer }));
   ws.on("error", (e: Error) => {
-    console.error(`[pino] connection error: ${e.message}`);
+    console.error(`[makit] connection error: ${e.message}`);
     process.exit(1);
   });
   ws.on("message", (buf: Buffer) => {
@@ -68,13 +68,13 @@ export async function runMirror(argv: string[]): Promise<void> {
       return;
     }
     if (m.id === "mirror" && m.t === "ack") {
-      console.log(`[pino] mirroring pane ${args.pane} → session ${m.sessionId}.`);
-      console.log("[pino] open the app to chat with it. Keep using your pi TUI as normal.");
+      console.log(`[makit] mirroring pane ${args.pane} → session ${m.sessionId}.`);
+      console.log("[makit] open the app to chat with it. Keep using your pi TUI as normal.");
       ws.close();
       process.exit(0);
     }
     if (m.id === "mirror" && m.t === "err") {
-      console.error(`[pino] mirror failed: ${m.message}`);
+      console.error(`[makit] mirror failed: ${m.message}`);
       ws.close();
       process.exit(1);
     }

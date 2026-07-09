@@ -1,8 +1,8 @@
 /**
- * PaneBridge — mirrors a terminal-multiplexer pane over the pino WS server.
+ * PaneBridge — mirrors a terminal-multiplexer pane over the makit WS server.
  *
  * herdr (and tmux) already solve multi-client attach + input injection into a
- * live process, so instead of pino spawning pi, it can bridge a pane that is
+ * live process, so instead of makit spawning pi, it can bridge a pane that is
  * *already* running `pi` (or anything): poll the pane's rendered screen and
  * fan it to subscribers, and inject text/keys back. This is the "attach to the
  * real pi TUI via the multiplexer" path — no pi daemon required.

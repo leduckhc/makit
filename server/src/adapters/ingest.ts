@@ -1,6 +1,6 @@
 /**
  * IngestAdapter — a session whose events are PUSHED IN by an external
- * `pino-mirror` pi extension (World D), rather than produced by a pino-spawned
+ * `makit-mirror` pi extension (World D), rather than produced by a makit-spawned
  * process. The extension, loaded into the user's real `pi` (TUI or otherwise),
  * forwards pi's own agent events here and receives the phone's prompts back.
  *

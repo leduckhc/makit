@@ -71,7 +71,7 @@ export function parsePaneInfo(stdout: string): PaneAgentInfo {
   };
 }
 
-/** Query herdr for a pane's agent/session info (for `pino mirror` auto-discovery). */
+/** Query herdr for a pane's agent/session info (for `makit mirror` auto-discovery). */
 export async function paneAgentInfo(target: string): Promise<PaneAgentInfo> {
   try {
     const { stdout } = await pexec("herdr", ["pane", "get", target]);

@@ -15,7 +15,7 @@ test("createPushSender(null) returns a disabled Noop sender", () => {
 });
 
 test("createPushSender with a corrupt key degrades to a disabled sender (no throw)", () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-apns-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-apns-"));
   const keyPath = join(dir, "AuthKey_BAD.p8");
   // Not a valid EC private key — createPrivateKey() throws on this.
   writeFileSync(keyPath, "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----\n");
@@ -23,7 +23,7 @@ test("createPushSender with a corrupt key degrades to a disabled sender (no thro
     keyPath,
     keyId: "ABC123",
     teamId: "TEAM456",
-    bundleId: "dev.pino.app",
+    bundleId: "dev.makit.app",
     env: "sandbox",
   };
   try {

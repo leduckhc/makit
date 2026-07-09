@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/ui/composer/composer.dart';
+import 'package:makit/ui/composer/composer.dart';
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(

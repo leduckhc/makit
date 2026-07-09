@@ -19,7 +19,7 @@ import UserNotifications
       UNUserNotificationCenter.current().delegate = self as? UNUserNotificationCenterDelegate
     }
     // SPEC-07: register for content-free wake pushes. The token is forwarded to
-    // Dart (`pino/push` channel → PushRegistrar) which sends `push.register`.
+    // Dart (`makit/push` channel → PushRegistrar) which sends `push.register`.
     application.registerForRemoteNotifications()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -45,11 +45,11 @@ import UserNotifications
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "QrScannerPlugin") {
       QrScannerPlugin.register(with: registrar)
     }
-    // `pino/device_info` → the user-set device name (e.g. "KC's iPhone") for
+    // `makit/device_info` → the user-set device name (e.g. "KC's iPhone") for
     // the pairing label. Read-only, no third-party plugin (see SECURITY.md §5).
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PinoDeviceInfo") {
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "MakitDeviceInfo") {
       let channel = FlutterMethodChannel(
-        name: "pino/device_info",
+        name: "makit/device_info",
         binaryMessenger: registrar.messenger()
       )
       channel.setMethodCallHandler { call, result in
@@ -61,12 +61,12 @@ import UserNotifications
       }
       deviceInfoChannel = channel
     }
-    // SPEC-07: `pino/push` → forwards the native APNs token to the Dart
+    // SPEC-07: `makit/push` → forwards the native APNs token to the Dart
     // PushRegistrar. The Dart default is NoopPushRegistrar; a channel-backed
     // registrar (on-device seam) consumes `didRegister` to send push.register.
-    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "PinoPush") {
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "MakitPush") {
       pushChannel = FlutterMethodChannel(
-        name: "pino/push",
+        name: "makit/push",
         binaryMessenger: registrar.messenger()
       )
     }

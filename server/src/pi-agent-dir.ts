@@ -1,7 +1,7 @@
 /**
  * Build a filtered copy of pi's agent config dir that excludes specific
  * packages (e.g. `@mammothb/pi-ask`, which is TUI-only and crashes under
- * pino's headless rpc — see docs/UI-TRANSPORT.md).
+ * makit's headless rpc — see docs/UI-TRANSPORT.md).
  *
  * Rather than reimplement pi's package resolver (globs, skills, prompts,
  * themes) via `-ne` + explicit `-e`, we let pi do all its own discovery from a
@@ -34,7 +34,7 @@ export function buildFilteredAgentDir(excludePackages: string[]): string | undef
   const settingsPath = join(src, "settings.json");
   if (!existsSync(settingsPath)) return undefined;
 
-  const dest = join(tmpdir(), "pino-pi-agent");
+  const dest = join(tmpdir(), "makit-pi-agent");
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
 

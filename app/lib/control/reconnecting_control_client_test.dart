@@ -3,11 +3,11 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/control/control_contract.dart';
-import 'package:pino/control/reconnecting_control_client.dart';
+import 'package:makit/control/control_contract.dart';
+import 'package:makit/control/reconnecting_control_client.dart';
 
 /// A fake underlying client. Fails all verbs once [alive] is false, mimicking a
-/// disposed [PinoControlClient] after its socket closed.
+/// disposed [MakitControlClient] after its socket closed.
 class _FakeClient implements ControlClient {
   _FakeClient(this.id);
   final int id;

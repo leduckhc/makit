@@ -9,7 +9,7 @@
 ┌────────────────────────────────────────────────────────────────┐
 │  Agent (pi)        — tool calls, prompts, model responses      │
 ├────────────────────────────────────────────────────────────────┤
-│  Server (pino)     — registry, fan-out, agent adapter, auth    │
+│  Server (makit)     — registry, fan-out, agent adapter, auth    │
 ├────────────────────────────────────────────────────────────────┤
 │  App (Flutter)     — chat, slash palette, tool renderers,      │
 │                      "client commands", UI request handlers    │
@@ -33,11 +33,11 @@ The slash palette merges all three. The composer routes by source:
 
 Some agent capabilities require user input from a **specific** device:
 `ask_user_question`, `pick_file`, `confirm_destructive`, `show_diff`. The agent
-can't reach the phone directly — pino brokers it via a new envelope:
+can't reach the phone directly — makit brokers it via a new envelope:
 
 ```
-agent → pi → pino server → app  (srv.request)
-app → user → app → pino server → pi → agent (srv.response)
+agent → pi → makit server → app  (srv.request)
+app → user → app → makit server → pi → agent (srv.response)
 ```
 
 Protocol:
@@ -94,5 +94,5 @@ Built-in renderers (M3):
 
 - ✅ M2 — client command registry (/new, /unpair, /help). Slash palette merges all sources.
 - 🟡 M3 — tool renderer registry. Custom cards for bash/edit/read. Static `ask_user_question` renderer (display-only).
-- 🟡 M3+ — pino-pi extension that registers `ask_user_question` and friends as agent tools, forwarding to the app via `srv.request`. This is the round-trip.
+- 🟡 M3+ — makit-pi extension that registers `ask_user_question` and friends as agent tools, forwarding to the app via `srv.request`. This is the round-trip.
 - 🟡 M4 — capability negotiation in `hello`. Until then we assume a fixed v1 set.

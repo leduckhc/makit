@@ -6,9 +6,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 
 /// Method channel backed by native handlers (iOS `UIDevice.current.name`,
-/// Android device name). Mirrors the `pino/qr_scanner` custom-channel pattern
+/// Android device name). Mirrors the `makit/qr_scanner` custom-channel pattern
 /// so we don't pull in a third-party device-info plugin (see SECURITY.md §5).
-const MethodChannel deviceInfoChannel = MethodChannel('pino/device_info');
+const MethodChannel deviceInfoChannel = MethodChannel('makit/device_info');
 
 /// The device's human name (e.g. "KC's iPhone") to send as the pairing label
 /// so it shows up by name in the desktop Devices list.

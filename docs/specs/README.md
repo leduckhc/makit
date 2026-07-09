@@ -1,6 +1,6 @@
-# pino — Specs (Daemon, CLI, Desktop App, Multiplexer Sessions)
+# makit — Specs (Daemon, CLI, Desktop App, Multiplexer Sessions)
 
-These specs capture a brainstorming consensus (2026-07) to evolve pino from a
+These specs capture a brainstorming consensus (2026-07) to evolve makit from a
 clunky foreground CLI into a **background service** with two first-class control
 surfaces (a power-user CLI and a macOS desktop app), and to make phone-initiated
 sessions spawn as **attachable background panes** in the user's terminal
@@ -13,7 +13,7 @@ but are otherwise independently implementable. Respect the dependency order.
 
 1. **CLI = power users + headless/UI-less servers.** The desktop app is the
    primary surface for most day-to-day use; the CLI must remain fully capable.
-2. **pino runs as a background service, but the user starts/stops it on demand.**
+2. **makit runs as a background service, but the user starts/stops it on demand.**
    Not a forced always-on daemon — explicit `start`/`stop`. A login-item/launchd
    install is opt-in only.
 3. **Desktop UI surface = everything discussed:** show/refresh QR, re-pair,
@@ -28,7 +28,7 @@ but are otherwise independently implementable. Respect the dependency order.
 
 | Spec | Title | Depends on |
 |------|-------|-----------|
-| [SPEC-01](./2026-07-05-SPEC-01-daemon-control-plane.md) | pino daemon & local control plane | — (foundation) |
+| [SPEC-01](./2026-07-05-SPEC-01-daemon-control-plane.md) | makit daemon & local control plane | — (foundation) |
 | [SPEC-02](./2026-07-05-SPEC-02-cli-client-subcommands.md) | CLI client subcommands | SPEC-01 |
 | [SPEC-03](./2026-07-05-SPEC-03-desktop-control-app.md) | macOS desktop **control** app (Flutter reuse; done — Phase 1 via PR #11, Phase 4 via PR #16) | SPEC-01 |
 | [SPEC-04](./2026-07-05-SPEC-04-multiplexer-adapter-layer.md) | Multiplexer adapter layer + herdr | — (foundation) |
@@ -66,7 +66,7 @@ contract frozen. SPEC-05 needs SPEC-04's adapter interface frozen.
 - Session manager: `server/src/manager.ts` (`spawnPiSession`, `createSession`,
   `openHostSession`).
 - Pairing/cert/mDNS: `server/src/pairing/{cert,registry,url,mdns}.ts`; state in
-  `~/.pino/{server.crt,server.key,devices.json,host.json,projects.json}`.
-- World-D mirror extension: `server/extensions/pino-mirror.ts` (auto-symlinked
+  `~/.makit/{server.crt,server.key,devices.json,host.json,projects.json}`.
+- World-D mirror extension: `server/extensions/makit-mirror.ts` (auto-symlinked
   into every `pi`; `host.open` self-registers a session).
 - App: `app/lib/{transport,store,ui}`; shares the WS protocol with the server.

@@ -39,7 +39,7 @@ server ReverseRpc.askDevice({kind:'confirmAction', action, sessionId})
 Grounded contracts:
 - `srv.request` `Envelope.id` **is** the `requestId` for `respondTo`. `Envelope.decode`
   flattens body, so `env.body['kind'|'action'|'sessionId']` are directly available.
-- Response shapes (verified in `server/connectors/pino-pi.ts`, `server/src/adapters/pi.ts`):
+- Response shapes (verified in `server/connectors/makit-pi.ts`, `server/src/adapters/pi.ts`):
   `confirmAction` → `{kind, approved}`; `askUserQuestion` consumers read
   `resp.answers[i]` (label text), never indices → a quick reply maps to `answers:[text]`.
 
@@ -56,7 +56,7 @@ queue+replay now is YAGNI.
 
 **SPEC-07 seam:** register `onDidReceiveBackgroundNotificationResponse` as a
 top-level stub that only persists `{requestId, actionId, input}` to
-`SharedPreferences` (key `pino_pending_actions`) and returns. Slice 1 does not
+`SharedPreferences` (key `makit_pending_actions`) and returns. Slice 1 does not
 replay; SPEC-07 drains this on next launch/reconnect through the same
 `responseForAction` + `respondTo` path. Mark with `// SPEC-07:`.
 
@@ -72,12 +72,12 @@ requestId is a no-op (matches the server's first-wins semantics).
    → `RequestNotification(title, body, category)`. Tests: confirmAction →
    confirm category + action in body; askUserQuestion (wizard + single form) →
    question category + first question; input kind / unknown → null. Consts:
-   `kConfirmCategoryId='pino_confirm'`, `kQuestionCategoryId='pino_question'`.
+   `kConfirmCategoryId='makit_confirm'`, `kQuestionCategoryId='makit_question'`.
 2. **Pure actionId→response body** — same file. `responseForAction({kind,
    actionId, input})`. Tests: approve→`{approved:true}`, deny→`{approved:false}`,
    reply+input→`{answers:[input], answer:input, indices:[-1]}`, reply+null→
-   `answers:['']`, unknown→null. Consts: `kApproveActionId='pino_approve'`,
-   `kDenyActionId='pino_deny'`, `kReplyActionId='pino_reply'`.
+   `answers:['']`, unknown→null. Consts: `kApproveActionId='makit_approve'`,
+   `kDenyActionId='makit_deny'`, `kReplyActionId='makit_reply'`.
 3. **Pure payload codec** — same file. `encodeRequestPayload({sessionId,
    requestId, kind})` / `parseNotificationPayload(raw)` → `NotificationPayload`.
    Tests: round-trip; **legacy bare sessionId** parses as sessionId-only (keeps
@@ -111,11 +111,11 @@ requestId is a no-op (matches the server's first-wins semantics).
   injected fake `NotificationService`.
 - **Not unit-tested (platform I/O):** step 5 registration, `onAction` branching,
   background isolate stub, step 7 wiring.
-- **On-device (extend `pino-e2e-testing`):** (1) backgrounded confirmAction →
+- **On-device (extend `makit-e2e-testing`):** (1) backgrounded confirmAction →
   Approve on lock screen unblocks agent; (2) askUserQuestion → Reply text →
   `answers[0]`; (3) tap action AND open dialog → exactly one response; (4)
   foreground → dialog only; (5) Android action buttons + inline reply.
-  `server/connectors/pino-piano.ts piano_confirm` is a ready trigger.
+  `server/connectors/makit-piano.ts piano_confirm` is a ready trigger.
 
 ## Risks / open decisions (architect recommendations)
 

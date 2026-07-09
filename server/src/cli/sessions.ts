@@ -1,5 +1,5 @@
 /**
- * `pino sessions`
+ * `makit sessions`
  *
  * Lists running sessions via the daemon's control socket (SPEC-02).
  * Shows: id, title, status, project, last activity.
@@ -24,7 +24,7 @@ export async function runSessions(argv: string[]): Promise<void> {
   try {
     const res = await client.request<SessionsListData>("sessions.list");
     if (!res.ok) {
-      console.error(`[pino] sessions.list failed: ${res.error}`);
+      console.error(`[makit] sessions.list failed: ${res.error}`);
       process.exit(1);
     }
     const { sessions } = res.data!;

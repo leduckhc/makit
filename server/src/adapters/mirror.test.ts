@@ -7,7 +7,7 @@ import { MirrorAdapter, type PaneWriter, type CommandsFetcher } from "./mirror.j
 import type { AdapterEvent } from "./adapter.js";
 
 function tmpFile(): string {
-  return join(mkdtempSync(join(tmpdir(), "pino-mirror-")), "session.jsonl");
+  return join(mkdtempSync(join(tmpdir(), "makit-mirror-")), "session.jsonl");
 }
 
 function userRec(text: string): string {
@@ -170,5 +170,5 @@ test("existing tests still work — no fetcher path runs real pi (integration sm
   // The production fetchCommands() path uses `realCommandsFetcher` which
   // spawns `pi --mode rpc --no-session` — ~1.2s real wall time — and emits
   // session.commands on success. Integration-validated by starting
-  // `pino serve` and inspecting a subscribed client's session.commands.
+  // `makit serve` and inspecting a subscribed client's session.commands.
 });

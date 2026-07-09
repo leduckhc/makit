@@ -1,16 +1,16 @@
 /**
- * pino-mirror — a pi extension that mirrors THIS pi session to pino (World D).
+ * makit-mirror — a pi extension that mirrors THIS pi session to makit (World D).
  *
  * Load it into your real pi (TUI or otherwise):
- *     pi -e /path/to/server/extensions/pino-mirror.ts
+ *     pi -e /path/to/server/extensions/makit-mirror.ts
  *
- * It connects to the running pino server (endpoint + token from ~/.pino/host.json),
+ * It connects to the running makit server (endpoint + token from ~/.makit/host.json),
  * opens a "host" session, forwards pi's own agent events (streaming deltas, tool
  * calls, thinking, status) to the phone as structured chat, and injects the
  * phone's messages back via pi.sendUserMessage. No file tailing, no send-keys —
- * this is pino's transparent UI transport applied to a user-launched pi.
+ * this is makit's transparent UI transport applied to a user-launched pi.
  *
- * Auth: ~/.pino/host.json {url, token} (written 0600 by `pino serve`).
+ * Auth: ~/.makit/host.json {url, token} (written 0600 by `makit serve`).
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { WebSocket } from "ws";
@@ -23,12 +23,12 @@ type Json = Record<string, unknown>;
 
 function loadHost(): { url: string; token: string } | undefined {
   try {
-    const o = JSON.parse(readFileSync(join(homedir(), ".pino", "host.json"), "utf8"));
+    const o = JSON.parse(readFileSync(join(homedir(), ".makit", "host.json"), "utf8"));
     if (typeof o?.url === "string" && typeof o?.token === "string") {
       return { url: o.url, token: o.token };
     }
   } catch {
-    /* pino not running / no host file */
+    /* makit not running / no host file */
   }
   return undefined;
 }
@@ -38,12 +38,12 @@ function classifyRisk(name: string): "safe" | "risky" | "destructive" {
 }
 
 export default function (pi: ExtensionAPI): void {
-  // Skip pino's OWN spawned pi (it already talks to pino directly) — otherwise
-  // an auto-loaded copy would recursively mirror pino's sessions back to pino.
-  if (process.env.PINO_BRIDGE_URL) return;
-  // NOTE: we do NOT bail when pino is down at load — connect() retries and
-  // re-reads host.json each attempt, so we survive pino starting later and
-  // token rotation across pino restarts. The ask tool still registers below
+  // Skip makit's OWN spawned pi (it already talks to makit directly) — otherwise
+  // an auto-loaded copy would recursively mirror makit's sessions back to makit.
+  if (process.env.MAKIT_BRIDGE_URL) return;
+  // NOTE: we do NOT bail when makit is down at load — connect() retries and
+  // re-reads host.json each attempt, so we survive makit starting later and
+  // token rotation across makit restarts. The ask tool still registers below
   // (falling back to pi's TUI when no phone is connected).
 
   let ws: WebSocket | null = null;
@@ -51,7 +51,7 @@ export default function (pi: ExtensionAPI): void {
   let closing = false; // set on pi shutdown — stop reconnecting
   let backoff = 1000; // reconnect delay, grows to a cap, resets on connect
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-  // SPEC-05: token embedded in env by pino when launching pi in a mux pane.
+  // SPEC-05: token embedded in env by makit when launching pi in a mux pane.
   let spawnToken: string | undefined;
   const outbox: Json[] = []; // events buffered until a host session is open
   const OUTBOX_MAX = 1000;
@@ -201,13 +201,13 @@ export default function (pi: ExtensionAPI): void {
     if (sessionId) raw({ v: 1, t: "cmd", id: `hs-${Date.now()}`, kind: "host.status", sessionId, status: s });
   };
 
-  // (Re)connect to pino. On drop, retry with capped backoff so a pino restart
+  // (Re)connect to makit. On drop, retry with capped backoff so a makit restart
   // (or transient blip) re-establishes the mirror without restarting pi.
   function connect(): void {
     if (closing) return;
     const host = loadHost();
     if (!host) {
-      // pino not up yet — retry later.
+      // makit not up yet — retry later.
       reconnectTimer = setTimeout(connect, backoff);
       backoff = Math.min(backoff * 2, 15000);
       return;
@@ -216,7 +216,7 @@ export default function (pi: ExtensionAPI): void {
     ws = sock;
     sock.on("open", () => {
       raw({ v: 1, t: "hello", id: "h", host: host.token });
-      spawnToken = process.env.PINO_SPAWN_TOKEN;
+      spawnToken = process.env.MAKIT_SPAWN_TOKEN;
     });
     sock.on("message", (buf: Buffer) => {
       let m: Json;
@@ -248,7 +248,7 @@ export default function (pi: ExtensionAPI): void {
           f.sessionId = sessionId;
           raw(f);
         }
-        // A fresh subscriber (or reconnect after a pino restart that dropped the
+        // A fresh subscriber (or reconnect after a makit restart that dropped the
         // replay log) needs current meta re-sent; the title may also have moved
         // on since host.open was built.
         if (lastCtx) emitMeta();
@@ -318,7 +318,7 @@ export default function (pi: ExtensionAPI): void {
     return Array.isArray(resp.answers) ? (resp.answers as string[]) : [];
   }
 
-  // Full ask provider: route to the phone when a pino session is live, else
+  // Full ask provider: route to the phone when a makit session is live, else
   // fall back to pi's own TUI dialog — so this cleanly replaces @mammothb/pi-ask.
   const askExecute = async (
     _id: string,
@@ -348,15 +348,15 @@ export default function (pi: ExtensionAPI): void {
       name,
       label: "Ask the user",
       description:
-        "Ask the user one or more multiple-choice questions (on their phone when pino is connected, else in the terminal) and wait for the answers. 1–4 questions, each with 2–4 options.",
+        "Ask the user one or more multiple-choice questions (on their phone when makit is connected, else in the terminal) and wait for the answers. 1–4 questions, each with 2–4 options.",
       parameters: questionsParam,
       execute: askExecute as never,
     });
   }
 
-  // ---- pi events → pino chat --------------------------------------------
+  // ---- pi events → makit chat --------------------------------------------
 
-  // Per-content-index streamed-message ids, mirroring pino's PiAdapter.
+  // Per-content-index streamed-message ids, mirroring makit's PiAdapter.
   const msgIds = new Map<number, string>();
   const thinkIds = new Map<number, string>();
 

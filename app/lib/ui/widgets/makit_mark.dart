@@ -2,18 +2,18 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-/// Brand colors for the pino mark. Kept local so the mark renders the same
+/// Brand colors for the makit mark. Kept local so the mark renders the same
 /// regardless of the app theme (which is still seeded blue pending a design
 /// pass — see app/theme.dart).
-const Color pinoAccent = Color(0xFF4ADE80);
-const Color pinoFrame = Color(0xFF171717); // design-system dark bg
+const Color makitAccent = Color(0xFF4ADE80);
+const Color makitFrame = Color(0xFF171717); // design-system dark bg
 
-/// Static pino mark — the `o//` winner (B4: medium head + two thick forward
+/// Static makit mark — the `o//` winner (B4: medium head + two thick forward
 /// slashes, arms far apart, round caps).
 ///
 /// Renders in a 160x100 logical space, fit (contain) into the given size.
-class PinoMark extends StatelessWidget {
-  const PinoMark({super.key, this.size = 80, this.color = pinoAccent});
+class MakitMark extends StatelessWidget {
+  const MakitMark({super.key, this.size = 80, this.color = makitAccent});
 
   final double size;
   final Color color;
@@ -23,12 +23,12 @@ class PinoMark extends StatelessWidget {
     return SizedBox(
       width: size,
       height: size * (100 / 160),
-      child: CustomPaint(painter: _PinoMarkPainter(color: color)),
+      child: CustomPaint(painter: _MakitMarkPainter(color: color)),
     );
   }
 }
 
-/// Animated pino mark that plays the Clap loop: arms pivot from the shoulder
+/// Animated makit mark that plays the Clap loop: arms pivot from the shoulder
 /// (the end nearest the head), swinging inward while the shoulder slides
 /// right (away from the head), then back. Matches CSS `A · Clap`:
 ///   0–35%  swing in  (rotate -32°, translateX +12)
@@ -36,11 +36,11 @@ class PinoMark extends StatelessWidget {
 ///   50–65% swing out
 ///   65–100% rest
 /// Duration 1.6s, ease-in-out per segment.
-class PinoClapMark extends StatefulWidget {
-  const PinoClapMark({
+class MakitClapMark extends StatefulWidget {
+  const MakitClapMark({
     super.key,
     this.size = 160,
-    this.color = pinoAccent,
+    this.color = makitAccent,
     this.running = true,
   });
 
@@ -49,10 +49,10 @@ class PinoClapMark extends StatefulWidget {
   final bool running;
 
   @override
-  State<PinoClapMark> createState() => _PinoClapMarkState();
+  State<MakitClapMark> createState() => _MakitClapMarkState();
 }
 
-class _PinoClapMarkState extends State<PinoClapMark>
+class _MakitClapMarkState extends State<MakitClapMark>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -67,7 +67,7 @@ class _PinoClapMarkState extends State<PinoClapMark>
   }
 
   @override
-  void didUpdateWidget(covariant PinoClapMark old) {
+  void didUpdateWidget(covariant MakitClapMark old) {
     super.didUpdateWidget(old);
     if (widget.running && !_ctrl.isAnimating) {
       _ctrl.repeat();
@@ -90,7 +90,7 @@ class _PinoClapMarkState extends State<PinoClapMark>
       child: AnimatedBuilder(
         animation: _ctrl,
         builder: (_, _) => CustomPaint(
-          painter: _PinoMarkPainter(
+          painter: _MakitMarkPainter(
             clapProgress: widget.running ? _ctrl.value : -1,
             color: widget.color,
           ),
@@ -102,11 +102,11 @@ class _PinoClapMarkState extends State<PinoClapMark>
 
 /// Paints the mark in a 160x100 logical space. When [clapProgress] is in
 /// 0..1, the arms are transformed by the clap cycle; -1 = static.
-class _PinoMarkPainter extends CustomPainter {
+class _MakitMarkPainter extends CustomPainter {
   final double clapProgress;
   final Color color;
 
-  _PinoMarkPainter({this.clapProgress = -1, required this.color});
+  _MakitMarkPainter({this.clapProgress = -1, required this.color});
 
   // Clap peaks (match the CSS keyframe).
   static const double _maxRotDeg = -32.0;
@@ -172,7 +172,7 @@ class _PinoMarkPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PinoMarkPainter old) =>
+  bool shouldRepaint(covariant _MakitMarkPainter old) =>
       old.clapProgress != clapProgress || old.color != color;
 }
 
@@ -181,8 +181,8 @@ class _PinoMarkPainter extends CustomPainter {
 ///
 /// The OS-level native splash (see flutter_native_splash.yaml) shows the same
 /// dark frame + mark while the engine boots, so the hand-off is seamless.
-class PinoSplash extends StatefulWidget {
-  const PinoSplash({
+class MakitSplash extends StatefulWidget {
+  const MakitSplash({
     super.key,
     this.duration = const Duration(milliseconds: 2400),
     this.fadeDuration = const Duration(milliseconds: 300),
@@ -199,10 +199,10 @@ class PinoSplash extends StatefulWidget {
   final VoidCallback? onCompleted;
 
   @override
-  State<PinoSplash> createState() => _PinoSplashState();
+  State<MakitSplash> createState() => _MakitSplashState();
 }
 
-class _PinoSplashState extends State<PinoSplash> {
+class _MakitSplashState extends State<MakitSplash> {
   Timer? _holdTimer;
   bool _fadingOut = false;
 
@@ -223,7 +223,7 @@ class _PinoSplashState extends State<PinoSplash> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: pinoFrame,
+      backgroundColor: makitFrame,
       body: Center(
         child: AnimatedOpacity(
           opacity: _fadingOut ? 0 : 1,
@@ -232,7 +232,7 @@ class _PinoSplashState extends State<PinoSplash> {
           onEnd: () {
             if (_fadingOut) widget.onCompleted?.call();
           },
-          child: PinoClapMark(size: 160, running: !_fadingOut),
+          child: MakitClapMark(size: 160, running: !_fadingOut),
         ),
       ),
     );

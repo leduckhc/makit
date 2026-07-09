@@ -17,7 +17,7 @@ import 'notifications/push_registration.dart';
 import 'store/connection.dart';
 import 'store/store.dart';
 import 'transport/transport.dart';
-import 'ui/widgets/pino_mark.dart';
+import 'ui/widgets/makit_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
 import 'desktop/desktop_app.dart';
 
@@ -38,7 +38,7 @@ Future<void> main() async {
   // WS connects and starts pushing projects/sessions snapshots.
   //
   // SPEC-07: inject a channel-backed push registrar so the APNs token the iOS
-  // `AppDelegate` forwards over `pino/push` reaches the controller, which then
+  // `AppDelegate` forwards over `makit/push` reaches the controller, which then
   // sends `push.register`. Tests keep the default NoopPushRegistrar.
   final container = ProviderContainer(
     overrides: [
@@ -53,7 +53,7 @@ Future<void> main() async {
   notifications.onTapSession = (payload) {
     final sid = parseNotificationPayload(payload).sessionId;
     if (sid != null && sid.isNotEmpty) {
-      pinoNavigatorKey.currentContext?.go('/session/$sid');
+      makitNavigatorKey.currentContext?.go('/session/$sid');
     }
   };
   // Actionable notifications (Approve/Deny/Reply) on the live isolate: map the
@@ -77,7 +77,7 @@ Future<void> main() async {
   // pending-action queue (taps captured by the background isolate while the
   // app was dead) through the same responseForAction + respondTo path. Mirrors
   // store.dart's re-subscribe-on-reconnect listener. Idempotent via respondTo.
-  container.listen<PinoConnState>(connectionControllerProvider, (prev, next) {
+  container.listen<MakitConnState>(connectionControllerProvider, (prev, next) {
     final wasConnected = prev?.wsState == WsState.connected;
     final nowConnected = next.wsState == WsState.connected;
     if (!wasConnected && nowConnected) {
@@ -86,7 +86,7 @@ Future<void> main() async {
   }, fireImmediately: false);
 
   runApp(
-    UncontrolledProviderScope(container: container, child: const PinoApp()),
+    UncontrolledProviderScope(container: container, child: const MakitApp()),
   );
 
   // Init the plugin AFTER the first frame so startup isn't blocked, and skip
@@ -111,14 +111,15 @@ Future<void> _drainPendingActions(ProviderContainer container) async {
   }
 }
 
-class PinoApp extends ConsumerStatefulWidget {
-  const PinoApp({super.key});
+class MakitApp extends ConsumerStatefulWidget {
+  const MakitApp({super.key});
 
   @override
-  ConsumerState<PinoApp> createState() => _PinoAppState();
+  ConsumerState<MakitApp> createState() => _MakitAppState();
 }
 
-class _PinoAppState extends ConsumerState<PinoApp> with WidgetsBindingObserver {
+class _MakitAppState extends ConsumerState<MakitApp>
+    with WidgetsBindingObserver {
   bool _showSplash = true;
 
   @override
@@ -148,8 +149,8 @@ class _PinoAppState extends ConsumerState<PinoApp> with WidgetsBindingObserver {
     if (_showSplash) {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: pinoDarkTheme,
-        home: PinoSplash(
+        theme: makitDarkTheme,
+        home: MakitSplash(
           onCompleted: () {
             if (mounted) setState(() => _showSplash = false);
           },
@@ -158,9 +159,9 @@ class _PinoAppState extends ConsumerState<PinoApp> with WidgetsBindingObserver {
     }
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
-      title: 'pino',
-      theme: pinoLightTheme,
-      darkTheme: pinoDarkTheme,
+      title: 'makit',
+      theme: makitLightTheme,
+      darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
       routerConfig: router,
       builder: (context, child) =>

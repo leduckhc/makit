@@ -18,7 +18,7 @@ const FAKE_PROVIDER_EXT = fileURLToPath(
   new URL("./fake-model/provider-extension.ts", import.meta.url),
 );
 /** Provider/model id registered by FAKE_PROVIDER_EXT. */
-const FAKE_MODEL = "pino-fake/fake-1";
+const FAKE_MODEL = "makit-fake/fake-1";
 
 interface E2EArgs {
   port: number;
@@ -79,9 +79,9 @@ function seedDeviceRegistry(home: string, bearer: string): void {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const pinoHome = resolve(tmpdir(), `pino-e2e-${args.port}`);
-  process.env.PINO_HOME = pinoHome;
-  seedDeviceRegistry(pinoHome, args.bearer);
+  const makitHome = resolve(tmpdir(), `makit-e2e-${args.port}`);
+  process.env.MAKIT_HOME = makitHome;
+  seedDeviceRegistry(makitHome, args.bearer);
 
   const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
@@ -98,12 +98,12 @@ async function main(): Promise<void> {
   };
 
   // In real mode we run the genuine `pi` binary but swap its LLM for a local
-  // deterministic fake-model server. pi reaches it via the pino-fake provider
-  // registered by FAKE_PROVIDER_EXT, which reads PINO_FAKE_MODEL_URL.
+  // deterministic fake-model server. pi reaches it via the makit-fake provider
+  // registered by FAKE_PROVIDER_EXT, which reads MAKIT_FAKE_MODEL_URL.
   let fakeModel: FakeModelHandle | undefined;
   if (args.mode === "real") {
     fakeModel = await startFakeModelServer();
-    process.env.PINO_FAKE_MODEL_URL = fakeModel.url;
+    process.env.MAKIT_FAKE_MODEL_URL = fakeModel.url;
   }
 
   const manager = new SessionManager({
@@ -134,7 +134,7 @@ async function main(): Promise<void> {
   manager.setBridge({
     url: bridge.url,
     token: bridge.token,
-    // Real mode loads the fake-model provider so pi's --model pino-fake/fake-1
+    // Real mode loads the fake-model provider so pi's --model makit-fake/fake-1
     // resolves. Stub mode never spawns pi, so it needs no extensions.
     extensionPaths: args.mode === "real" ? [FAKE_PROVIDER_EXT] : [],
   });

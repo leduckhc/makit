@@ -12,9 +12,9 @@ If you change anything in this document, update `analysis_options.yaml`,
 
 Mobile/desktop coding-agent client. Compromise impact:
 
-- Read access to the user's paired pino server bearer (stored in
+- Read access to the user's paired makit server bearer (stored in
   Keychain / Android Keystore via `flutter_secure_storage`).
-- Ability to drive any agent CLI exposed by that pino server.
+- Ability to drive any agent CLI exposed by that makit server.
 - Microphone / camera access (camera used by the Vision-based QR scanner;
   no mic access in v1).
 
@@ -93,7 +93,7 @@ here with a one-line justification:
 | Plugin | Native | Justification |
 |---|---|---|
 | `flutter_secure_storage` | iOS Keychain / Android Keystore | Bearer token storage — required. |
-| `multicast_dns` | Pure Dart | LAN discovery of `_pino._tcp`. |
+| `multicast_dns` | Pure Dart | LAN discovery of `_makit._tcp`. |
 | `crypto` | Pure Dart | SHA256 fingerprint of pinned server cert. |
 | `web_socket_channel` | Pure Dart over `dart:io` | Transport. |
 
@@ -102,7 +102,7 @@ In-tree native code:
 | Module | Purpose | Notes |
 |---|---|---|
 | `ios/Runner/QrScannerPlugin.swift` | QR scanner via AVFoundation + Vision | No third-party libs. Replaces `mobile_scanner` (which pulls Google MLKit). |
-| `ios/Runner/AppDelegate.swift` + `android/.../MainActivity.kt` (`pino/device_info`) | Reads the device name (`UIDevice.current.name` / Android `device_name`) for the pairing label | Read-only. No secure-storage/pasteboard access, no network. Avoids a `device_info_plus` dependency. |
+| `ios/Runner/AppDelegate.swift` + `android/.../MainActivity.kt` (`makit/device_info`) | Reads the device name (`UIDevice.current.name` / Android `device_name`) for the pairing label | Read-only. No secure-storage/pasteboard access, no network. Avoids a `device_info_plus` dependency. |
 
 To add a new plugin with native code:
 

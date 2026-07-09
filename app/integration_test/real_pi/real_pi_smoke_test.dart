@@ -4,7 +4,7 @@
 //
 // Unlike the stub suite (integration_test/stub/), this asserts what real pi +
 // the fake model actually produce: the fake model streams a fixed reply
-// ("pino e2e ok") for any prompt. This exercises the real
+// ("makit e2e ok") for any prompt. This exercises the real
 // pi → PiAdapter → WS → app path end to end.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -17,7 +17,7 @@ void main() {
   testWidgets('real pi streams the fake model reply end to end', (
     tester,
   ) async {
-    await launchPino(tester);
+    await launchMakit(tester);
     await openFirstSession(tester);
 
     await sendComposerText(tester, 'hello');
@@ -28,7 +28,7 @@ void main() {
     // The fake model streams a deterministic reply back through real pi.
     await pumpUntil(
       tester,
-      find.textContaining('pino e2e ok'),
+      find.textContaining('makit e2e ok'),
       reason: 'real pi never streamed the fake model reply',
     );
   });

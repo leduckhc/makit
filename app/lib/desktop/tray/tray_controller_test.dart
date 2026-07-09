@@ -3,8 +3,8 @@
 // flutter_test dev-dependency from a lib/ path.
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/desktop/tray/tray_controller.dart';
-import 'package:pino/desktop/tray/tray_icons.dart';
+import 'package:makit/desktop/tray/tray_controller.dart';
+import 'package:makit/desktop/tray/tray_icons.dart';
 import 'package:tray_manager/tray_manager.dart';
 
 /// Records every call the [TrayController] makes so tests can assert on
@@ -92,7 +92,7 @@ void main() {
 
       await controller.update(_running());
 
-      expect(fake.tooltips.last, 'Pino — running');
+      expect(fake.tooltips.last, 'Makit — running');
       expect(_labels(fake.lastMenu), contains('Stop Server'));
       expect(_labels(fake.lastMenu), isNot(contains('Start Server')));
       expect(_labels(fake.lastMenu), contains('Running (pid 1234)'));
@@ -107,7 +107,7 @@ void main() {
 
       await controller.update(_stopped());
 
-      expect(fake.tooltips.last, 'Pino — stopped');
+      expect(fake.tooltips.last, 'Makit — stopped');
       expect(_labels(fake.lastMenu), contains('Start Server'));
       expect(_labels(fake.lastMenu), isNot(contains('Stop Server')));
       expect(_labels(fake.lastMenu), contains('Stopped'));
@@ -186,7 +186,7 @@ void main() {
       final labels = _labels(fake.lastMenu);
       expect(labels, contains('Dashboard'));
       expect(labels, contains('Pair QR...'));
-      expect(labels, contains('Quit Pino'));
+      expect(labels, contains('Quit Makit'));
     });
 
     test('menu callbacks fire when a menu item is clicked', () async {
@@ -212,7 +212,7 @@ void main() {
       itemFor('Start Server').onClick!(itemFor('Start Server'));
       itemFor('Dashboard').onClick!(itemFor('Dashboard'));
       itemFor('Pair QR...').onClick!(itemFor('Pair QR...'));
-      itemFor('Quit Pino').onClick!(itemFor('Quit Pino'));
+      itemFor('Quit Makit').onClick!(itemFor('Quit Makit'));
 
       expect(started, isTrue);
       expect(dashboard, isTrue);

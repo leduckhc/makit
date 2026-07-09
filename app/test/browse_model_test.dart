@@ -1,17 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/store/models.dart';
+import 'package:makit/store/models.dart';
 
 void main() {
   group('FolderEntry.fromJson', () {
     test('maps a valid entry', () {
       final e = FolderEntry.fromJson({
-        'name': 'pino',
-        'path': '/Users/le/Work/pino',
+        'name': 'makit',
+        'path': '/Users/le/Work/makit',
         'isRepo': true,
       });
       expect(e, isNotNull);
-      expect(e!.name, 'pino');
-      expect(e.path, '/Users/le/Work/pino');
+      expect(e!.name, 'makit');
+      expect(e.path, '/Users/le/Work/makit');
       expect(e.isRepo, isTrue);
     });
 
@@ -45,7 +45,7 @@ void main() {
         'path': '/Users/le/Work',
         'parent': '/Users/le',
         'entries': [
-          {'name': 'pino', 'path': '/Users/le/Work/pino', 'isRepo': true},
+          {'name': 'makit', 'path': '/Users/le/Work/makit', 'isRepo': true},
           {'name': 'notes', 'path': '/Users/le/Work/notes', 'isRepo': false},
         ],
       });

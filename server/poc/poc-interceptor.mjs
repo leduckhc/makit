@@ -2,7 +2,7 @@
  * POC harness: proves the interceptor architecture at the pi rpc boundary.
  *
  * Spawns `pi --mode rpc -e poc-ui-ext.ts`, prompts the model to call poc_ask,
- * and plays pino/PiAdapter: whenever pi emits an `extension_ui_request`, we
+ * and plays makit/PiAdapter: whenever pi emits an `extension_ui_request`, we
  * translate + auto-answer (simulating the phone) with an `extension_ui_response`.
  *
  * Success = the tool returns "color=Green sure=true name=Ada" (our canned

@@ -8,7 +8,7 @@
  *     queued as `steer` instead of dropped
  *   - Abort, model switching, compaction, follow-up queueing
  *
- * Lifetime: one pi process per pino Session, started lazily on first send,
+ * Lifetime: one pi process per makit Session, started lazily on first send,
  * killed on Session shutdown.
  *
  * Framing: per pi's rpc.md, we MUST split on `\n` only — Node's `readline`
@@ -31,6 +31,7 @@ export class PiAdapter extends EventEmitter {
     sessionId = "";
     askUser;
     resumeSessionPath;
+    model;
     /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
     isStreaming = false;
     /** Accumulates text per content-index, flushed at text_end. */
@@ -48,6 +49,7 @@ export class PiAdapter extends EventEmitter {
         this.sessionId = opts.sessionId ?? "";
         this.askUser = opts.askUser;
         this.resumeSessionPath = opts.resumeSessionPath;
+        this.model = opts.model;
         await this.ensureProcess();
         this.emit("status", "idle");
     }
@@ -96,6 +98,9 @@ export class PiAdapter extends EventEmitter {
         const args = this.resumeSessionPath
             ? ["--mode", "rpc", "--session", this.resumeSessionPath]
             : ["--mode", "rpc", "--session-id", this.piSessionId];
+        if (this.model) {
+            args.push("--model", this.model);
+        }
         for (const ext of this.extensions) {
             args.push("-e", ext);
         }
@@ -103,7 +108,7 @@ export class PiAdapter extends EventEmitter {
         // from PATH (e.g. /opt/homebrew/bin/pi) or an explicit override. NOTE: do
         // NOT use node_modules/.bin/pi — that resolves to the unrelated "pi" npm
         // package (a trivial stub that just prints "3" and exits).
-        const piBin = process.env.PINO_PI_BIN || "pi";
+        const piBin = process.env.MAKIT_PI_BIN || "pi";
         const child = spawn(piBin, args, {
             cwd: this.cwd,
             env: { ...process.env, ...this.extraEnv },
@@ -251,7 +256,7 @@ export class PiAdapter extends EventEmitter {
             }
         }
         catch (e) {
-            log.warn(`[pino] ui interceptor error (${method}): ${e.message}`);
+            log.warn(`[makit] ui interceptor error (${method}): ${e.message}`);
             reply({ cancelled: true });
         }
     }
@@ -436,7 +441,7 @@ export class PiAdapter extends EventEmitter {
         }
     }
     emitEvent(e) {
-        log.debug(`[pino] pi.emitEvent kind=${e.kind}`);
+        log.debug(`[makit] pi.emitEvent kind=${e.kind}`);
         this.emit("event", e);
     }
 }

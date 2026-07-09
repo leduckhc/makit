@@ -25,7 +25,7 @@ export interface Scenario {
 }
 
 /** The canonical happy-path reply. Tests assert this exact string renders. */
-const DEFAULT_REPLY_DELTAS = ["pino ", "e2e ", "ok"];
+const DEFAULT_REPLY_DELTAS = ["makit ", "e2e ", "ok"];
 
 /**
  * Map a user prompt to a scenario. Tests embed an explicit marker so the

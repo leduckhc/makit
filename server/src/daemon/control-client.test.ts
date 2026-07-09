@@ -42,7 +42,7 @@ async function withServer(
   backend: ControlBackend,
   fn: (path: string) => Promise<void>,
 ) {
-  const dir = mkdtempSync(join(tmpdir(), "pino-cli-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-cli-"));
   const path = join(dir, "control.sock");
   const handle = await createControlServer({ socketPath: path, backend });
   try {
@@ -95,7 +95,7 @@ test("client surfaces backend errors as ok:false responses", async () => {
 });
 
 test("connect rejects when no daemon is listening", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-cli-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-cli-"));
   const path = join(dir, "absent.sock");
   await assert.rejects(() => connectControlClient(path));
   rmSync(dir, { recursive: true, force: true });

@@ -11,7 +11,7 @@ import '../ui/settings/settings_screen.dart';
 
 /// Exposed so widgets sitting in `MaterialApp.builder` (above the Navigator)
 /// can still push dialogs via the router's Navigator.
-final pinoNavigatorKey = GlobalKey<NavigatorState>();
+final makitNavigatorKey = GlobalKey<NavigatorState>();
 
 final routerProvider = Provider<GoRouter>((ref) {
   // Build the GoRouter ONCE. Do NOT `ref.watch(connectionProvider)` here — that
@@ -21,7 +21,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   // build"). Instead the redirect reads the current state on demand, and
   // `refreshListenable` re-runs redirects when `paired` actually changes.
   return GoRouter(
-    navigatorKey: pinoNavigatorKey,
+    navigatorKey: makitNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) {
       final paired = ref.read(connectionProvider).paired;

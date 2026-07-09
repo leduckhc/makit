@@ -13,7 +13,7 @@ notarization specifics see [`../BUILD_AND_DEPLOY.md`](../BUILD_AND_DEPLOY.md).
 | Flutter | `3.44.4` (stable), binary at `/Users/le/Work/Vibe/flutter/bin/flutter` |
 | Server package manager | **pnpm** (`npm install` is blocked by a preinstall guard) |
 | Node | 20+ (server runs via `tsx`) |
-| Apple team | `RT8DP44B6N` · bundle id `dev.pino.pino` |
+| Apple team | `RT8DP44B6N` · bundle id `dev.getmakit.app` |
 | KC's iPhone (wireless) | device id `00008150-0006282C3E52401C` |
 | Booted simulator | `iPhone 17` — `803DF95F-0D22-4ACD-9A9F-82A9F50F5CC8` |
 
@@ -47,7 +47,7 @@ pnpm install                 # NOT npm — preinstall guard rejects it
 
 ```sh
 cd server
-pnpm dev -- --no-auth --project ~/Work/Vibe/pino
+pnpm dev -- --no-auth --project ~/Work/Vibe/makit
 ```
 
 `pnpm dev` is `tsx watch src/index.ts serve` — it restarts on file changes.
@@ -58,23 +58,23 @@ Repeat `--project <path>` for each repo you want to expose.
 
 ```sh
 cd server
-pnpm start -- --project ~/Work/Vibe/pino --project ~/Work/Vibe/cmux
+pnpm start -- --project ~/Work/Vibe/makit --project ~/Work/Vibe/cmux
 ```
 
-First run creates a self-signed cert in `~/.pino/`, advertises `_pino._tcp`
-via mDNS, and prints a QR + `pino://pair?...` URL with a 5-minute token.
+First run creates a self-signed cert in `~/.makit/`, advertises `_makit._tcp`
+via mDNS, and prints a QR + `makit://pair?...` URL with a 5-minute token.
 Add `--host 0.0.0.0` only if you must bind every interface.
 
 Print a fresh pairing QR without restarting:
 
 ```sh
-kill -USR1 "$(pgrep -f 'tsx.*index.ts serve' || pgrep -f 'node.*pino')"
+kill -USR1 "$(pgrep -f 'tsx.*index.ts serve' || pgrep -f 'node.*makit')"
 ```
 
 ### CLI subcommands
 
 `pnpm start`/`pnpm dev` always run `serve`. For the other subcommands invoke
-the entrypoint directly (dev), or build once and use the `pino` binary:
+the entrypoint directly (dev), or build once and use the `makit` binary:
 
 ```sh
 cd server
@@ -148,12 +148,12 @@ flutter run --release -d 00008150-0006282C3E52401C   # or debug: drop --release
 
 ```sh
 # Terminal 1
-cd server && pnpm start -- --no-auth --project ~/Work/Vibe/pino
+cd server && pnpm start -- --no-auth --project ~/Work/Vibe/makit
 
 # Terminal 2
 cd app && flutter run -d macos \
-  --dart-define=PINO_WS_URL=wss://127.0.0.1:8787 \
-  --dart-define=PINO_FP=$(openssl x509 -in ~/.pino/server.crt -outform der | shasum -a 256 | cut -d' ' -f1)
+  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:8787 \
+  --dart-define=MAKIT_FP=$(openssl x509 -in ~/.makit/server.crt -outform der | shasum -a 256 | cut -d' ' -f1)
 ```
 
 ### Analyze / test
@@ -168,7 +168,7 @@ flutter test test/home_screen_test.dart      # a single file
 ### End-to-end suite (simulator + stub server)
 
 ```sh
-cd /Users/le/Work/Vibe/pino
+cd /Users/le/Work/Vibe/makit
 ./app/tool/e2e.sh --mode=stub                # ~50s; boots sim, stub server on :9787
 ./app/tool/e2e.sh --mode=real                # slow; real pi, needs an LLM key
 ```
@@ -182,7 +182,7 @@ pkill -f e2e-server.ts; lsof -ti :9787 | xargs -r kill -9
 ### Full pre-merge audit (lint + tests + E2E + format + dep scan)
 
 ```sh
-cd /Users/le/Work/Vibe/pino
+cd /Users/le/Work/Vibe/makit
 ./app/tool/audit.sh
 ```
 
@@ -203,7 +203,7 @@ flutter build ios --release
 ```sh
 cd app
 flutter build ipa --release
-# → build/ios/ipa/pino.ipa
+# → build/ios/ipa/makit.ipa
 ```
 
 ### macOS release app
@@ -211,7 +211,7 @@ flutter build ipa --release
 ```sh
 cd app
 flutter build macos --release
-# → build/macos/Build/Products/Release/pino.app
+# → build/macos/Build/Products/Release/makit.app
 ```
 
 DMG signing + notarization: see [`../BUILD_AND_DEPLOY.md`](../BUILD_AND_DEPLOY.md) §2.
@@ -241,7 +241,7 @@ Verify what's installed on the device:
 ```sh
 xcrun devicectl device info apps \
   --device 00008150-0006282C3E52401C \
-  --bundle-id dev.pino.pino | grep -i pino
+  --bundle-id dev.getmakit.app | grep -i makit
 ```
 
 Same cert as before ⇒ no re-trust prompt. Then start a server
@@ -272,7 +272,7 @@ Common gotchas:
 - **Snapshots dropped on launch**: `main.dart` eagerly reads
   `storeControllerProvider` so the WS listener attaches before connect; don't
   remove that.
-- **E2E leaves the app uninstalled**: `e2e.sh` uninstalls `dev.pino.pino` on
+- **E2E leaves the app uninstalled**: `e2e.sh` uninstalls `dev.getmakit.app` on
   exit, which kills a `flutter run` dev app on the same simulator — quit the
   dev app before running E2E, relaunch after.
 - **Mac LAN IP drifts** — never hardcode it; pairing carries host + bearer +

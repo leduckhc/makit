@@ -4,7 +4,7 @@
  * The service manages the background lifecycle (start/stop/restart/status/logs)
  * plus the PID file. We test the pure pieces (argv builder, PID file read/write,
  * status formatting) directly, and the orchestration with injected spawn/kill/
- * control-client stubs so no real process is launched and no real ~/.pino is
+ * control-client stubs so no real process is launched and no real ~/.makit is
  * touched.
  */
 
@@ -50,8 +50,8 @@ test("buildServeArgv forwards serve flags after the entry path", () => {
 });
 
 test("PID file round-trips; missing/corrupt reads as null", () => {
-  const dir = mkdtempSync(join(tmpdir(), "pino-svc-"));
-  const pid = join(dir, "pino.pid");
+  const dir = mkdtempSync(join(tmpdir(), "makit-svc-"));
+  const pid = join(dir, "makit.pid");
   assert.equal(readPidFile(pid), null);
   writePidFile(pid, 4321);
   assert.equal(readPidFile(pid), 4321);
@@ -69,7 +69,7 @@ interface Harness {
 }
 
 function harness(over: Partial<DaemonDeps> = {}): Harness {
-  const dir = mkdtempSync(join(tmpdir(), "pino-svc-"));
+  const dir = mkdtempSync(join(tmpdir(), "makit-svc-"));
   const out: string[] = [];
   const spawned: Array<{ cmd: string; args: string[] }> = [];
   const killed: Array<{ pid: number; signal: string }> = [];
@@ -77,8 +77,8 @@ function harness(over: Partial<DaemonDeps> = {}): Harness {
     entry: "/x/index.js",
     execPath: "/usr/bin/node",
     socketPath: join(dir, "control.sock"),
-    pidPath: join(dir, "pino.pid"),
-    logPath: join(dir, "pino.log"),
+    pidPath: join(dir, "makit.pid"),
+    logPath: join(dir, "makit.log"),
     out: (line) => out.push(line),
     spawn: (cmd, args): SpawnedChild => {
       spawned.push({ cmd, args });

@@ -1,25 +1,27 @@
 #!/usr/bin/env node
 /**
- * pino — desktop server CLI.
+ * makit — desktop server CLI.
  *
  * Usage:
- *   pino serve [--host H] [--port 8787] [--project P]... [--no-auth]
- *   pino pair  [--host H] [--port P]                  # prints a QR + URL
+ *   makit serve [--host H] [--lan] [--port 8787] [--project P]... [--no-auth]
+ *   makit pair  [--host H] [--port P]                  # prints a QR + URL
  *
- * Default host: Tailscale IP if online, else first LAN IPv4. Pass
- * `--host 0.0.0.0` to bind every interface (not recommended on untrusted
- * networks — the server is gated by auth, but the port is exposed).
+ * Default host (secure by default): Tailscale IP if online, else loopback
+ * only. makit does NOT expose the local network by default — on public Wi-Fi
+ * that would leave the port reachable by untrusted co-tenants. Pass `--lan`
+ * to opt into binding the LAN IPv4 (trusted networks only), or `--host
+ * 0.0.0.0` to bind every interface. The recommended transport is Tailscale.
  * A loopback listener is added automatically when host is a specific IP,
- * so the pino-mirror extension host and the flutter dev loop keep working.
+ * so the makit-mirror extension host and the flutter dev loop keep working.
  *
- * `pino serve` is the long-running server. `pino pair` is meant to be run
+ * `makit serve` is the long-running server. `makit pair` is meant to be run
  * from a second terminal (or as a hotkey on an already-running server) to
- * mint a fresh pairing token. For M1 we co-locate both — `pino pair`
+ * mint a fresh pairing token. For M1 we co-locate both — `makit pair`
  * connects to the running server over a unix socket would be cleaner; for
- * now `pino serve` accepts a SIGUSR1 to print a new QR, and `pino pair`
+ * now `makit serve` accepts a SIGUSR1 to print a new QR, and `makit pair`
  * works only if the user runs it as a one-shot _instead of_ `serve`.
  *
- * Simplest current UX: at startup, `pino serve` automatically prints one
+ * Simplest current UX: at startup, `makit serve` automatically prints one
  * QR with a fresh pair token. The user scans it; subsequent connects use
  * the persistent bearer.
  */
@@ -29,10 +31,12 @@ import { SessionManager } from "./manager.js";
 import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
 import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
+import { loadApnsConfig, createPushSender } from "./push/config.js";
+import { buildWakePayload } from "./push/payload.js";
 import { startBridge } from "./bridge.js";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve as resolvePath } from "node:path";
-import { loadOrCreateCert, preferredHost } from "./pairing/cert.js";
+import { loadOrCreateCert, chooseBindHost } from "./pairing/cert.js";
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
@@ -44,10 +48,10 @@ import { createServerBackend } from "./daemon/backend.js";
 import { createControlServer } from "./daemon/control-server.js";
 import { createDaemon, readPidFile } from "./daemon/service.js";
 import { connectControlClient } from "./daemon/control-client.js";
-import { controlSocketPath, pidFilePath, logFilePath, ensurePinoHome } from "./daemon/paths.js";
+import { controlSocketPath, pidFilePath, logFilePath, ensureMakitHome } from "./daemon/paths.js";
 import { installService, uninstallService } from "./daemon/launchd.js";
-/** pino version, read from package.json (best-effort). */
-const PINO_VERSION = (() => {
+/** makit version, read from package.json (best-effort). */
+const MAKIT_VERSION = (() => {
     try {
         const pkg = resolvePath(dirname(fileURLToPath(import.meta.url)), "../package.json");
         return JSON.parse(readFileSync(pkg, "utf8")).version ?? "0.0.0";
@@ -74,7 +78,7 @@ function makeDaemon() {
             return { pid: child.pid, unref: () => child.unref() };
         },
         openLogFd: (p) => {
-            ensurePinoHome();
+            ensureMakitHome();
             return openSync(p, "w", 0o600);
         },
         kill: (pid, sig) => process.kill(pid, sig),
@@ -92,12 +96,16 @@ function makeDaemon() {
 }
 function parseArgs(argv) {
     const args = {
-        host: preferredHost(),
+        // "" means "auto": decide the bind host after parsing --host/--lan below,
+        // secure-by-default (Tailscale > opt-in LAN > loopback).
+        host: "",
+        lan: false,
         port: 8787,
         projects: [],
         noAuth: false,
         printPair: true,
-        advertise: process.env.PINO_ADVERTISE_HOST ?? "",
+        advertise: process.env.MAKIT_ADVERTISE_HOST ?? "",
+        bindMode: "loopback",
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
@@ -105,6 +113,8 @@ function parseArgs(argv) {
             args.port = Number(argv[++i]);
         else if (a === "--host")
             args.host = String(argv[++i]);
+        else if (a === "--lan")
+            args.lan = true;
         else if (a === "--project" || a === "-C")
             args.projects.push(resolve(String(argv[++i])));
         else if (a === "--no-auth")
@@ -113,6 +123,16 @@ function parseArgs(argv) {
             args.printPair = false;
         else if (a === "--advertise")
             args.advertise = String(argv[++i]);
+    }
+    if (args.host) {
+        // Explicit --host overrides the secure-by-default decision (escape hatch,
+        // e.g. --host 0.0.0.0 for all interfaces).
+        args.bindMode = "custom";
+    }
+    else {
+        const decision = chooseBindHost({ allowLan: args.lan });
+        args.host = decision.host;
+        args.bindMode = decision.mode;
     }
     if (args.projects.length === 0)
         args.projects.push(process.cwd());
@@ -137,7 +157,7 @@ async function main() {
     const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", "mirror", ...LIFECYCLE]);
     if (cmd && !KNOWN.has(cmd)) {
         console.error(`unknown command: ${cmd}\n` +
-            `usage: pino serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach|mirror [...]`);
+            `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach|mirror [...]`);
         process.exit(2);
     }
     if (cmd === "mirror") {
@@ -149,7 +169,7 @@ async function main() {
     // control socket. requireDaemon() handles "not running" uniformly. ---
     if (cmd === "qr" || cmd === "pair") {
         const { runQr } = await import("./cli/qr.js");
-        // `pino pair` is an alias for `pino qr --refresh` (daemon required).
+        // `makit pair` is an alias for `makit qr --refresh` (daemon required).
         const argv = cmd === "pair" ? ["--refresh", ...process.argv.slice(3)] : process.argv.slice(3);
         await runQr(argv);
         return;
@@ -164,7 +184,7 @@ async function main() {
         await runSessions(process.argv.slice(3));
         return;
     }
-    // `attach` is a client, not a server: connect to a running pino and drive
+    // `attach` is a client, not a server: connect to a running makit and drive
     // one session from the terminal. No cert/registry/manager needed here.
     if (cmd === "attach") {
         const argv = process.argv.slice(3);
@@ -211,24 +231,24 @@ async function main() {
     if (cmd === "service") {
         const sub = process.argv[3];
         const entry = fileURLToPath(import.meta.url);
-        const plistPath = resolvePath(homedir(), "Library", "LaunchAgents", "dev.pino.plist");
+        const plistPath = resolvePath(homedir(), "Library", "LaunchAgents", "dev.makit.plist");
         if (sub === "install") {
             installService({
-                label: "dev.pino",
+                label: "dev.makit",
                 execPath: process.execPath,
                 entry,
                 logPath: logFilePath(),
                 plistPath,
             });
-            console.log(`[pino] launchd agent installed: ${plistPath}`);
-            console.log(`[pino] it does NOT auto-start. Load it with: launchctl load ${plistPath}`);
+            console.log(`[makit] launchd agent installed: ${plistPath}`);
+            console.log(`[makit] it does NOT auto-start. Load it with: launchctl load ${plistPath}`);
         }
         else if (sub === "uninstall") {
             const removed = uninstallService({ plistPath });
-            console.log(removed ? `[pino] launchd agent removed: ${plistPath}` : `[pino] no launchd agent installed`);
+            console.log(removed ? `[makit] launchd agent removed: ${plistPath}` : `[makit] no launchd agent installed`);
         }
         else {
-            console.error("usage: pino service install|uninstall");
+            console.error("usage: makit service install|uninstall");
             process.exit(2);
         }
         return;
@@ -247,9 +267,18 @@ async function main() {
         projects: merged,
         onProjectsChanged: (paths) => saveProjectPaths(file, paths),
     });
-    // World D: a stable secret the pino-mirror pi extension uses to authenticate.
-    // Written (0600) to ~/.pino/host.json so an externally-launched pi can find us.
+    // World D: a stable secret the makit-mirror pi extension uses to authenticate.
+    // Written (0600) to ~/.makit/host.json so an externally-launched pi can find us.
     const hostToken = loadOrCreateHostToken();
+    // SPEC-07: choose the content-free wake sender. Absent/invalid push.json →
+    // NoopPushSender (graceful degradation: wakes are no-ops, Slice-1 fallback).
+    // The WakeCoordinator + onUndeliverable wiring lives inside server.ts, which
+    // owns `connectedDeviceIds`; index.ts only picks the sender and forwards it.
+    const apnsConfig = loadApnsConfig();
+    const sender = createPushSender(apnsConfig);
+    if (!sender.enabled) {
+        console.log("[makit] push: not configured (~/.makit/push.json absent/invalid) — wakes disabled");
+    }
     const ws = startWsServer({
         host: opts.host,
         port: opts.port,
@@ -258,11 +287,13 @@ async function main() {
         registry,
         trustLocalhost: opts.noAuth,
         hostToken,
+        sender,
+        buildWakePayload,
     });
     writeHostFile(opts.port, cert.fingerprint, hostToken);
     ensureMirrorExtensionInstalled();
     // Loopback HTTP bridge so agent connectors (loaded inside each spawned
-    // agent process) can talk back to pino.
+    // agent process) can talk back to makit.
     // The ws server's askDevice resolves with the srv.response envelope, which
     // is FLAT — the canonical UIResponse fields (kind, indices, answers, …) live
     // at the top level alongside v/t/id, not under a `.body`. Return it as-is.
@@ -275,7 +306,7 @@ async function main() {
     });
     // Auto-discover every `.ts` connector in `server/connectors/`. Each one
     // gets loaded into the spawned `pi --mode rpc` process via `-e`. To add
-    // a new agent, drop a file there — no code changes needed in pino.
+    // a new agent, drop a file there — no code changes needed in makit.
     const connectorsDir = resolvePath(dirname(fileURLToPath(import.meta.url)), "../connectors");
     const { readdirSync, existsSync } = await import("node:fs");
     const extensionPaths = existsSync(connectorsDir)
@@ -284,10 +315,10 @@ async function main() {
             .map((f) => resolvePath(connectorsDir, f))
         : [];
     if (extensionPaths.length === 0) {
-        console.log("[pino] no agent connectors found in", connectorsDir);
+        console.log("[makit] no agent connectors found in", connectorsDir);
     }
     else {
-        console.log(`[pino] loading ${extensionPaths.length} connector(s):`, extensionPaths.map((p) => p.split("/").pop()).join(", "));
+        console.log(`[makit] loading ${extensionPaths.length} connector(s):`, extensionPaths.map((p) => p.split("/").pop()).join(", "));
     }
     manager.setBridge({
         url: bridge.url,
@@ -305,10 +336,10 @@ async function main() {
     await manager.ensureDefaultSessions();
     const mdns = new MdnsAd();
     mdns.start({ port: opts.port, fingerprint: cert.fingerprint });
-    // --- control plane (SPEC-01): let `pino status|stop|qr|devices|…` drive this
+    // --- control plane (SPEC-01): let `makit status|stop|qr|devices|…` drive this
     // running server without a restart. Served by BOTH foreground `serve` and the
-    // detached `pino start` process. ---
-    ensurePinoHome(); // 0700 state dir before the control socket binds (perms race)
+    // detached `makit start` process. ---
+    ensureMakitHome(); // 0700 state dir before the control socket binds (perms race)
     const backend = createServerBackend({
         registry,
         manager,
@@ -316,12 +347,12 @@ async function main() {
         host: opts.host,
         port: opts.port,
         advertiseHost: opts.advertise,
-        version: PINO_VERSION,
+        version: MAKIT_VERSION,
         startedAt: Date.now(),
         now: () => Date.now(),
         connectedDeviceIds: ws.connectedDeviceIds,
         buildUrl: (token) => buildPairUrl({
-            host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : preferredHost(),
+            host: opts.advertise && opts.advertise.length > 0 ? opts.advertise : opts.host,
             port: opts.port,
             fingerprint: cert.fingerprint,
             token,
@@ -332,12 +363,12 @@ async function main() {
     let control;
     try {
         control = await createControlServer({ socketPath: controlSocketPath(), backend });
-        console.log(`[pino] control socket: ${controlSocketPath()}`);
+        console.log(`[makit] control socket: ${controlSocketPath()}`);
     }
     catch (e) {
-        console.error(`[pino] control socket unavailable: ${e.message}`);
+        console.error(`[makit] control socket unavailable: ${e.message}`);
     }
-    // Graceful shutdown: `pino stop` sends SIGTERM (as does the `server.stop`
+    // Graceful shutdown: `makit stop` sends SIGTERM (as does the `server.stop`
     // control verb, via requestStop). Tear down the control socket, WS, and mDNS,
     // and remove our own PID file. Idempotent.
     let shuttingDown = false;
@@ -345,7 +376,7 @@ async function main() {
         if (shuttingDown)
             return;
         shuttingDown = true;
-        console.log("[pino] shutting down…");
+        console.log("[makit] shutting down…");
         void control?.close().catch(() => { });
         try {
             mdns.stop();
@@ -370,49 +401,50 @@ async function main() {
     };
     process.on("SIGTERM", shutdown);
     process.on("SIGINT", shutdown);
-    console.log(`[pino] cert fingerprint: ${cert.fingerprint}`);
-    console.log(`[pino] mDNS: advertising _pino._tcp on port ${opts.port}`);
-    console.log(`[pino] projects:`);
+    console.log(`[makit] cert fingerprint: ${cert.fingerprint}`);
+    console.log(`[makit] mDNS: advertising _makit._tcp on port ${opts.port}`);
+    console.log(`[makit] projects:`);
     for (const p of manager.listProjects())
         console.log(`  · ${p.name}  (${p.path})`);
+    printTransport(opts.bindMode, opts.host);
     // Auto-rotate pair tokens while no devices are paired, so a QR is always
     // valid on screen. Stops once the first device pairs.
     let rotateTimer;
     const maybeRotate = () => {
         if (registry.list().length === 0 && opts.printPair) {
             console.log("");
-            console.log("[pino] no paired devices yet — scan this QR with the app:");
-            printPairQr(registry, opts.port, cert.fingerprint, opts.advertise);
+            console.log("[makit] no paired devices yet — scan this QR with the app:");
+            printPairQr(registry, opts.port, cert.fingerprint, opts.advertise, opts.host);
             // Re-mint just before the 5-minute TTL expires.
             rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
         }
         else {
-            console.log(`[pino] ${registry.list().length} paired device(s). Send SIGUSR1 to mint a new pair token.`);
+            console.log(`[makit] ${registry.list().length} paired device(s). Send SIGUSR1 to mint a new pair token.`);
         }
     };
     maybeRotate();
     // SIGUSR1 → print a fresh pair QR on demand. Handy without restarting.
     process.on("SIGUSR1", () => {
         clearTimeout(rotateTimer);
-        printPairQr(registry, opts.port, cert.fingerprint, opts.advertise);
+        printPairQr(registry, opts.port, cert.fingerprint, opts.advertise, opts.host);
         if (registry.list().length === 0) {
             rotateTimer = setTimeout(maybeRotate, 4 * 60 * 1000);
         }
     });
     if (opts.noAuth) {
-        console.log("[pino] --no-auth: localhost connections bypass auth (dev only)");
-        console.log(`[pino] dev: flutter run --dart-define=PINO_WS_URL=wss://127.0.0.1:${opts.port} --dart-define=PINO_FP=${cert.fingerprint}`);
+        console.log("[makit] --no-auth: localhost connections bypass auth (dev only)");
+        console.log(`[makit] dev: flutter run --dart-define=MAKIT_WS_URL=wss://127.0.0.1:${opts.port} --dart-define=MAKIT_FP=${cert.fingerprint}`);
     }
 }
 /**
- * Make `pino-mirror` auto-load into every `pi` by symlinking it (and its lone
+ * Make `makit-mirror` auto-load into every `pi` by symlinking it (and its lone
  * runtime dep, `ws`) into pi's global extensions dir. Idempotent + best-effort,
- * so `pino serve` is all it takes for any `pi` to mirror while pino runs.
+ * so `makit serve` is all it takes for any `pi` to mirror while makit runs.
  */
 function ensureMirrorExtensionInstalled() {
     try {
         const here = dirname(fileURLToPath(import.meta.url)); // server/src
-        const extSrc = resolvePath(here, "../extensions/pino-mirror.ts");
+        const extSrc = resolvePath(here, "../extensions/makit-mirror.ts");
         const wsPkg = resolvePath(here, "../node_modules/ws");
         if (!existsSync(extSrc) || !existsSync(wsPkg))
             return;
@@ -427,16 +459,16 @@ function ensureMirrorExtensionInstalled() {
                 /* best-effort */
             }
         };
-        relink(extSrc, resolvePath(extDir, "pino-mirror.ts"));
+        relink(extSrc, resolvePath(extDir, "makit-mirror.ts"));
         relink(wsPkg, resolvePath(extDir, "node_modules", "ws"));
         disableConflictingAskExtension();
-        console.log("[pino] mirror extension installed — any `pi` auto-mirrors while pino runs.");
+        console.log("[makit] mirror extension installed — any `pi` auto-mirrors while makit runs.");
     }
     catch {
         /* non-fatal */
     }
     /**
-     * Remove @mammothb/pi-ask from pi's settings if present. pino-mirror registers
+     * Remove @mammothb/pi-ask from pi's settings if present. makit-mirror registers
      * the same `AskUserQuestion` tool (routed to the phone, with a TUI fallback),
      * and pi treats a duplicate tool name as a FATAL load error — so leaving pi-ask
      * enabled would stop pi from starting. Backed up once; re-enable any time with
@@ -459,7 +491,7 @@ function ensureMirrorExtensionInstalled() {
                 writeFileSync(bak, JSON.stringify(parsed, null, 1));
             parsed.packages = kept;
             writeFileSync(settings, JSON.stringify(parsed, null, 1));
-            console.log("[pino] disabled @mammothb/pi-ask (pino-mirror provides AskUserQuestion). Re-enable: pi install npm:@mammothb/pi-ask");
+            console.log("[makit] disabled @mammothb/pi-ask (makit-mirror provides AskUserQuestion). Re-enable: pi install npm:@mammothb/pi-ask");
         }
         catch {
             /* non-fatal */
@@ -468,12 +500,12 @@ function ensureMirrorExtensionInstalled() {
 }
 /**
  * Reuse the existing host token across restarts so already-connected
- * pino-mirror extensions can re-authenticate on reconnect. Only mints a new
+ * makit-mirror extensions can re-authenticate on reconnect. Only mints a new
  * one if none is persisted.
  */
 function loadOrCreateHostToken() {
     try {
-        const p = resolvePath(homedir(), ".pino", "host.json");
+        const p = resolvePath(homedir(), ".makit", "host.json");
         if (existsSync(p)) {
             const o = JSON.parse(readFileSync(p, "utf8"));
             if (typeof o.token === "string" && o.token)
@@ -486,12 +518,12 @@ function loadOrCreateHostToken() {
     return randomBytes(32).toString("hex");
 }
 /**
- * Write ~/.pino/host.json (0600) so the `pino-mirror` pi extension — loaded
+ * Write ~/.makit/host.json (0600) so the `makit-mirror` pi extension — loaded
  * into an externally-launched pi — can discover the server and authenticate.
  */
 function writeHostFile(port, fingerprint, token) {
     try {
-        const dir = resolvePath(homedir(), ".pino");
+        const dir = resolvePath(homedir(), ".makit");
         mkdirSync(dir, { recursive: true });
         writeFileSync(resolvePath(dir, "host.json"), JSON.stringify({ url: `wss://127.0.0.1:${port}`, port, fingerprint, token }, null, 2), { mode: 0o600 });
     }
@@ -499,14 +531,39 @@ function writeHostFile(port, fingerprint, token) {
         // Non-fatal: the mirror extension just won't be able to auto-connect.
     }
 }
-function printPairQr(registry, port, fingerprint, advertise) {
-    const host = advertise && advertise.length > 0 ? advertise : preferredHost();
+/**
+ * Print the transport posture at startup so the user knows whether makit is
+ * private (Tailscale), exposed (LAN opt-in), or unreachable (loopback), and
+ * how to reach the recommended state.
+ */
+function printTransport(mode, host) {
+    switch (mode) {
+        case "tailscale":
+            console.log(`[makit] transport: Tailscale (${host}) — private ✓`);
+            break;
+        case "lan":
+            console.log(`[makit] transport: LAN (${host}) — ⚠ exposed to this network.`);
+            console.log(`[makit]   Only use --lan on trusted Wi-Fi. Prefer Tailscale on public networks.`);
+            break;
+        case "custom":
+            console.log(`[makit] transport: custom host ${host} (--host override).`);
+            break;
+        case "loopback":
+            console.log(`[makit] transport: loopback only — not reachable from other devices.`);
+            console.log(`[makit]   Tailscale not detected. Install it for a private connection:`);
+            console.log(`[makit]     https://tailscale.com/download  then run 'tailscale up' and restart makit.`);
+            console.log(`[makit]   Or pass --lan to expose this (untrusted) local network.`);
+            break;
+    }
+}
+function printPairQr(registry, port, fingerprint, advertise, fallbackHost) {
+    const host = advertise && advertise.length > 0 ? advertise : fallbackHost;
     const token = registry.mintPairToken();
     const url = buildPairUrl({ host, port, fingerprint, token });
     console.log("");
     qrcode.generate(url, { small: true });
-    console.log(`[pino] ${url}`);
-    console.log(`[pino] (expires in 5 minutes)`);
+    console.log(`[makit] ${url}`);
+    console.log(`[makit] (expires in 5 minutes)`);
     console.log("");
 }
 main().catch((e) => {

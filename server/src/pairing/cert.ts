@@ -1,7 +1,7 @@
 /**
- * Self-signed cert + key for the pino server.
+ * Self-signed cert + key for the makit server.
  *
- * Stored in `~/.pino/server.{crt,key}` and regenerated only if missing.
+ * Stored in `~/.makit/server.{crt,key}` and regenerated only if missing.
  * Fingerprint (sha256 of DER) is what the QR carries and the app pins.
  */
 
@@ -12,16 +12,16 @@ import { createHash, X509Certificate } from "node:crypto";
 import { execSync } from "node:child_process";
 import selfsigned from "selfsigned";
 
-function pinoHome(): string {
-  return process.env.PINO_HOME || join(homedir(), ".pino");
+function makitHome(): string {
+  return process.env.MAKIT_HOME || join(homedir(), ".makit");
 }
 
 function certPath(): string {
-  return join(pinoHome(), "server.crt");
+  return join(makitHome(), "server.crt");
 }
 
 function keyPath(): string {
-  return join(pinoHome(), "server.key");
+  return join(makitHome(), "server.key");
 }
 
 export interface ServerCert {
@@ -32,7 +32,7 @@ export interface ServerCert {
 }
 
 export async function loadOrCreateCert(): Promise<ServerCert> {
-  mkdirSync(pinoHome(), { recursive: true });
+  mkdirSync(makitHome(), { recursive: true });
   const crtPath = certPath();
   const keyFilePath = keyPath();
 
@@ -52,7 +52,7 @@ export async function loadOrCreateCert(): Promise<ServerCert> {
     ...allIps.map((ip) => ({ type: 7 as const, ip })),
   ];
 
-  const attrs = [{ name: "commonName", value: "pino" }];
+  const attrs = [{ name: "commonName", value: "makit" }];
   const pems = await selfsigned.generate(attrs, {
     keySize: 2048,
     notAfterDate: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000), // ~10y
@@ -110,7 +110,7 @@ export function tailscaleIP(): string | null {
  * LAN IPv4. This is the default — binding here keeps the server off `0.0.0.0`
  * so we don't expose port 8787 to every interface the machine joins (public
  * Wi-Fi, corporate networks, …). A separate loopback listener (see
- * `startWsServer`) still handles the pino-mirror extension host and the
+ * `startWsServer`) still handles the makit-mirror extension host and the
  * `flutter run -d macos` dev loop.
  *
  * Users can override via `--host 0.0.0.0` if they need every interface.

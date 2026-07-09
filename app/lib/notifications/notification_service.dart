@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'notification_request.dart';
 
 /// SharedPreferences key for the SPEC-07 pending-action replay queue.
-const kPendingActionsKey = 'pino_pending_actions';
+const kPendingActionsKey = 'makit_pending_actions';
 
 /// Upper bound on the SPEC-07 pending-action replay queue. Prevents unbounded
 /// growth in SharedPreferences when actions are never drained.
@@ -195,7 +195,7 @@ class NotificationService {
     } catch (e) {
       if (kDebugMode) {
         // ignore: avoid_print
-        print('[pino] notification show failed: $e');
+        print('[makit] notification show failed: $e');
       }
       return false;
     }

@@ -12,12 +12,12 @@
  *
  * ## Threat model (v1)
  *
- * The socket lives at `~/.pino/control.sock` with mode **0600** and there is NO
+ * The socket lives at `~/.makit/control.sock` with mode **0600** and there is NO
  * application-level auth. The security boundary is the filesystem: only the
  * owning user (and root) can open a 0600 socket, so any process able to connect
- * already runs as the user and could equally read `~/.pino/devices.json` or
+ * already runs as the user and could equally read `~/.makit/devices.json` or
  * ptrace the daemon. Adding a token here would protect nothing it doesn't
- * already control. If pino ever exposes this beyond the local user (a shared
+ * already control. If makit ever exposes this beyond the local user (a shared
  * host, a TCP bind), that assumption breaks and real auth must be added.
  */
 
@@ -183,7 +183,7 @@ function probeSocket(socketPath: string): Promise<boolean> {
  * Listen on the unix control socket (mode 0600) and dispatch requests to the
  * backend. Before binding we probe any existing socket file: if a *live* daemon
  * answers we refuse to start (so a second server can't hijack the same
- * PINO_HOME); only a stale file from a crashed daemon is unlinked and rebound.
+ * MAKIT_HOME); only a stale file from a crashed daemon is unlinked and rebound.
  */
 export async function createControlServer(opts: ControlServerOpts): Promise<ControlServerHandle> {
   const { socketPath, backend } = opts;
@@ -191,7 +191,7 @@ export async function createControlServer(opts: ControlServerOpts): Promise<Cont
 
   if (await probe(socketPath)) {
     throw new Error(
-      `a pino daemon is already listening on ${socketPath} (refusing to start a second one)`,
+      `a makit daemon is already listening on ${socketPath} (refusing to start a second one)`,
     );
   }
   // No live peer answered: a leftover socket file (if any) is stale, so remove
@@ -199,7 +199,7 @@ export async function createControlServer(opts: ControlServerOpts): Promise<Cont
   rmSync(socketPath, { force: true });
 
   const server = createServer((sock) => handleConnection(sock, backend));
-  server.on("error", (err: Error) => log.error(`[pino] control socket error: ${err.message}`));
+  server.on("error", (err: Error) => log.error(`[makit] control socket error: ${err.message}`));
 
   return new Promise((resolve, reject) => {
     server.once("error", reject);

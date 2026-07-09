@@ -51,11 +51,11 @@ fi
 # Codebase is currently zero-issues — keep it that way.
 step "3. flutter analyze (strict — fail on any issue)"
 set +e
-"$FLUTTER_BIN" analyze --fatal-infos > /tmp/pino-analyze.log 2>&1
+"$FLUTTER_BIN" analyze --fatal-infos > /tmp/makit-analyze.log 2>&1
 analyze_exit=$?
 set -e
 if (( analyze_exit != 0 )); then
-  red "  ✗ analyze found issues — see /tmp/pino-analyze.log"
+  red "  ✗ analyze found issues — see /tmp/makit-analyze.log"
   fail=1
 else
   green "  ✓ analyze clean"
@@ -64,27 +64,27 @@ fi
 # ----------------------------------------------------------- 4. unit/widget tests
 step "4. flutter test"
 set +e
-"$FLUTTER_BIN" test > /tmp/pino-test.log 2>&1
+"$FLUTTER_BIN" test > /tmp/makit-test.log 2>&1
 test_exit=$?
 set -e
 if (( test_exit != 0 )); then
-  red "  ✗ tests failed — see /tmp/pino-test.log"
-  tail -20 /tmp/pino-test.log >&2
+  red "  ✗ tests failed — see /tmp/makit-test.log"
+  tail -20 /tmp/makit-test.log >&2
   fail=1
 else
-  passed=$(grep -oE "All tests passed|\+[0-9]+: All tests passed!" /tmp/pino-test.log | head -1)
-  count=$(grep -oE "\+[0-9]+:" /tmp/pino-test.log | tail -1 | tr -d '+:' || echo 0)
+  passed=$(grep -oE "All tests passed|\+[0-9]+: All tests passed!" /tmp/makit-test.log | head -1)
+  count=$(grep -oE "\+[0-9]+:" /tmp/makit-test.log | tail -1 | tr -d '+:' || echo 0)
   green "  ✓ ${count:-?} tests passed"
 fi
 
 # --------------------------------------------------------- 5. E2E smoke tests
 step "5. flutter integration_test (E2E smoke suite)"
 set +e
-if tool/e2e.sh --mode=stub >/tmp/pino-e2e.log 2>&1; then
+if tool/e2e.sh --mode=stub >/tmp/makit-e2e.log 2>&1; then
   green "  ✓ E2E smoke tests passed (stub mode)"
 else
-  red "  ✗ E2E smoke tests failed — see /tmp/pino-e2e.log"
-  tail -30 /tmp/pino-e2e.log >&2
+  red "  ✗ E2E smoke tests failed — see /tmp/makit-e2e.log"
+  tail -30 /tmp/makit-e2e.log >&2
   fail=1
 fi
 set -e
@@ -106,12 +106,12 @@ fi
 step "8. osv-scanner (known-advisory scan of pubspec.lock)"
 if command -v osv-scanner >/dev/null 2>&1; then
   set +e
-  osv-scanner scan source --lockfile=pubspec.lock >/tmp/pino-osv.log 2>&1
+  osv-scanner scan source --lockfile=pubspec.lock >/tmp/makit-osv.log 2>&1
   osv_exit=$?
   set -e
   if (( osv_exit != 0 )); then
-    red "  ✗ osv-scanner reported advisories — see /tmp/pino-osv.log"
-    tail -30 /tmp/pino-osv.log >&2
+    red "  ✗ osv-scanner reported advisories — see /tmp/makit-osv.log"
+    tail -30 /tmp/makit-osv.log >&2
     fail=1
   else
     green "  ✓ no known advisories in the lockfile"

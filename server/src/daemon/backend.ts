@@ -54,7 +54,7 @@ export interface ServerBackendDeps {
   now: () => number;
   /** Ids of devices with a live authenticated WS connection right now. */
   connectedDeviceIds: () => Set<string>;
-  /** Build the pino:// pair URL for a freshly-minted token. */
+  /** Build the makit:// pair URL for a freshly-minted token. */
   buildUrl: (token: string) => string;
   /** Trigger a graceful shutdown of the whole server process. */
   requestStop: () => void;
@@ -132,7 +132,7 @@ export function createServerBackend(deps: ServerBackendDeps): ControlBackend {
 /**
  * Emit the last `lines` of the log file; return the byte offset consumed.
  *
- * Reads the whole log into memory. This is acceptable for v1: `pino.log` is
+ * Reads the whole log into memory. This is acceptable for v1: `makit.log` is
  * truncated on every `start` (see service.ts) so it stays bounded to a single
  * run, and there is no consumer streaming gigabyte logs. Revisit with a bounded
  * tail-read if log rotation lands (SPEC-01 open question).

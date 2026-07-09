@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pino/ui/widgets/sheet_header.dart';
+import 'package:makit/ui/widgets/sheet_header.dart';
 
 void main() {
   testWidgets('renders the title and a close button', (tester) async {

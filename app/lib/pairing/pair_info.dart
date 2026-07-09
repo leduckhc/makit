@@ -1,4 +1,4 @@
-/// Parsed pino://pair?... URL.
+/// Parsed makit://pair?... URL.
 class PairInfo {
   const PairInfo({
     required this.host,
@@ -17,7 +17,7 @@ class PairInfo {
   static PairInfo? tryParse(String raw) {
     final uri = Uri.tryParse(raw);
     if (uri == null) return null;
-    if (uri.scheme != 'pino' || uri.host != 'pair') return null;
+    if (uri.scheme != 'makit' || uri.host != 'pair') return null;
     final host = uri.queryParameters['host'];
     final port = int.tryParse(uri.queryParameters['port'] ?? '');
     final fp = uri.queryParameters['fp'];

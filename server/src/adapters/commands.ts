@@ -1,7 +1,7 @@
 /**
  * Shared slash-palette command fetcher for adapters that don't spawn their own
  * pi process natively. MirrorAdapter (file-tailing) and IngestAdapter (push
- * from pino-mirror extension) both need this — their underlying pi has no RPC
+ * from makit-mirror extension) both need this — their underlying pi has no RPC
  * stdin we can query directly, so we spawn a short-lived side-child
  * (`pi --mode rpc --no-session`) at startup to call `get_commands` once.
  *
@@ -29,11 +29,11 @@ export interface CommandsFetchHandle {
 /**
  * Default production fetcher: spawns `pi --mode rpc --no-session` and calls
  * `get_commands`. Returns both the promise and the child so adapters can
- * SIGKILL it from their `kill()` method. ~1.2s wall time. Uses `PINO_PI_BIN`
+ * SIGKILL it from their `kill()` method. ~1.2s wall time. Uses `MAKIT_PI_BIN`
  * to override `pi`.
  */
 export function fetchPiCommands(cwd: string): CommandsFetchHandle {
-  const piBin = process.env.PINO_PI_BIN || "pi";
+  const piBin = process.env.MAKIT_PI_BIN || "pi";
   const child = spawn(piBin, ["--mode", "rpc", "--no-session"], { cwd });
   const promise = new Promise<unknown[]>((resolve, reject) => {
     let stdout = "";

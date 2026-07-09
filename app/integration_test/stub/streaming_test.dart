@@ -9,7 +9,7 @@ void main() {
   testWidgets(
     'agent reply streams in via deltas and finalizes into one bubble',
     (tester) async {
-      await launchPino(tester);
+      await launchMakit(tester);
       await openFirstSession(tester);
 
       // The stub adapter replies to "STREAM" with running-status +

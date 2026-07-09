@@ -24,9 +24,9 @@ function stubAdapter(started: SpawnOpts[]): AgentAdapter {
 }
 
 function withAgentDir(cwd: string, run: (agentDir: string) => Promise<void>) {
-  const agentDir = mkdtempSync(join(tmpdir(), "pino-mgr-"));
-  const prev = process.env.PINO_PI_AGENT_DIR;
-  process.env.PINO_PI_AGENT_DIR = agentDir;
+  const agentDir = mkdtempSync(join(tmpdir(), "makit-mgr-"));
+  const prev = process.env.MAKIT_PI_AGENT_DIR;
+  process.env.MAKIT_PI_AGENT_DIR = agentDir;
   return (async () => {
     try {
       const dir = piSessionsDir(cwd, agentDir);
@@ -40,15 +40,15 @@ function withAgentDir(cwd: string, run: (agentDir: string) => Promise<void>) {
       );
       await run(agentDir);
     } finally {
-      if (prev === undefined) delete process.env.PINO_PI_AGENT_DIR;
-      else process.env.PINO_PI_AGENT_DIR = prev;
+      if (prev === undefined) delete process.env.MAKIT_PI_AGENT_DIR;
+      else process.env.MAKIT_PI_AGENT_DIR = prev;
       rmSync(agentDir, { recursive: true, force: true });
     }
   })();
 }
 
 test("attachPiSession backfills history, resumes via path, and dedups", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     await withAgentDir(cwd, async () => {
       const started: SpawnOpts[] = [];
@@ -71,7 +71,7 @@ test("attachPiSession backfills history, resumes via path, and dedups", async ()
       assert.equal(started.length, 1);
       assert.ok(started[0].resumeSessionPath?.endsWith("sess1.jsonl"));
 
-      // Attaching the same pi session again returns the SAME pino session.
+      // Attaching the same pi session again returns the SAME makit session.
       const again = await manager.attachPiSession(projectId, "sess1");
       assert.equal(again.id, session.id);
       assert.equal(started.length, 1);
@@ -82,8 +82,8 @@ test("attachPiSession backfills history, resumes via path, and dedups", async ()
 });
 
 test("addProject dedupes by resolved path and fires onProjectsChanged", () => {
-  const a = mkdtempSync(join(tmpdir(), "pino-proj-"));
-  const b = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const a = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  const b = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const changes: string[][] = [];
     const manager = new SessionManager({
@@ -106,8 +106,8 @@ test("addProject dedupes by resolved path and fires onProjectsChanged", () => {
 });
 
 test("removeProject removes the entry and fires onProjectsChanged", () => {
-  const a = mkdtempSync(join(tmpdir(), "pino-proj-"));
-  const b = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const a = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  const b = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const changes: string[][] = [];
     const manager = new SessionManager({
@@ -128,7 +128,7 @@ test("removeProject removes the entry and fires onProjectsChanged", () => {
 });
 
 test("removeProject throws on an unknown id", () => {
-  const a = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const a = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const manager = new SessionManager({ projects: [a] });
     assert.throws(() => manager.removeProject("nope"));
@@ -138,7 +138,7 @@ test("removeProject throws on an unknown id", () => {
 });
 
 test("attachPiSession rejects an unknown pi session id", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     await withAgentDir(cwd, async () => {
       const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
@@ -151,7 +151,7 @@ test("attachPiSession rejects an unknown pi session id", async () => {
 });
 
 test("killSession kills the adapter, drops it from the registry, and errors on unknown id", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     await withAgentDir(cwd, async () => {
       let killed = 0;
@@ -182,7 +182,7 @@ test("killSession kills the adapter, drops it from the registry, and errors on u
 });
 
 test("spawnPiSession without an explicit title uses the shared default", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "pino-proj-"));
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     await withAgentDir(cwd, async () => {
       const manager = new SessionManager({

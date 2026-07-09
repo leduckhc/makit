@@ -4,7 +4,7 @@
 
 ## Goal
 
-Introduce a small, **pluggable multiplexer abstraction** so pino can spawn and
+Introduce a small, **pluggable multiplexer abstraction** so makit can spawn and
 manage `pi` processes inside a terminal multiplexer the user can attach to.
 Ship a working **herdr** implementation now; keep the seam clean so **tmux** and
 **cmux** can be added later without touching callers.
@@ -27,13 +27,13 @@ terminal. herdr is the current daily driver; tmux/cmux are "someday."
     <label>`.
 - Config: which multiplexer is active (default `herdr`), and how to pick the
   anchor pane / target workspace (see open questions). Read from
-  `~/.pino/config.json` or env (`PINO_MUX=herdr`).
+  `~/.makit/config.json` or env (`MAKIT_MUX=herdr`).
 - **Background/unfocused** creation is the default (`--no-focus`).
 - Capability reporting: adapter advertises whether it's available on this host
   (e.g. `herdr` binary present + inside/adjacent to a herdr instance).
 
 ### Out
-- Deciding *when* to spawn a session in a pane, correlation with a pino session,
+- Deciding *when* to spawn a session in a pane, correlation with a makit session,
   and auto-close-on-end — that's **SPEC-05** (this spec only provides mechanism).
 - tmux/cmux implementations — interface must accommodate them; do not build.
 
@@ -49,7 +49,7 @@ export interface PaneHandle {
 export interface SpawnPaneOpts {
   cwd: string;
   command: string;           // full shell command to run (e.g. the pi launch)
-  label?: string;            // pane title, e.g. "pino: <session name>"
+  label?: string;            // pane title, e.g. "makit: <session name>"
   focus?: boolean;           // default false (background)
 }
 
@@ -83,13 +83,13 @@ export function getMultiplexer(
 - `HerdrAdapter` shells out via `execFile("herdr", [...])`, parses JSON from
   `herdr pane split` (`result.pane.pane_id`). Robust to non-JSON/errors — throw a
   typed `MuxError` the caller can handle.
-- Keep it pure mechanism: no pino-session knowledge here.
+- Keep it pure mechanism: no makit-session knowledge here.
 
 ## Acceptance criteria
 - [x] `HerdrAdapter.isAvailable()` returns true when herdr is reachable and the
       configured anchor pane exists, false when `herdr` is missing or the anchor
       is not usable.
-- [x] `spawnPane({cwd, command:'echo hi; sleep 30', label:'pino: test'})` creates
+- [x] `spawnPane({cwd, command:'echo hi; sleep 30', label:'makit: test'})` creates
       a **new, unfocused** pane running the command; `paneExists` is true;
       `setLabel` shows the label; `closePane` removes it and is safe to call twice.
 - [x] Anchor/workspace selection documented and deterministic (see Decisions).
@@ -101,16 +101,16 @@ export function getMultiplexer(
       clean.
 
 ## Decisions (formerly open questions)
-- **Anchor pane:** `PINO_MUX_ANCHOR` env or `config.json` key `mux.anchor`
-  (default `"pino"` as a setup label). New panes split from that anchor pane id
+- **Anchor pane:** `MAKIT_MUX_ANCHOR` env or `config.json` key `mux.anchor`
+  (default `"makit"` as a setup label). New panes split from that anchor pane id
   so sessions don't fragment the user's active layout. `HerdrAdapter.isAvailable()`
   returns false until the configured anchor appears in `herdr pane list`; callers
   can then fall back instead of failing on `pane_not_found`.
 - **Exec injection:** yes — `HerdrAdapter` accepts an optional `exec` fn in its
   constructor (defaults to `execFile`). Keeps the adapter testable without a real
   herdr binary.
-- **Config file shape:** `~/.pino/config.json` → `{ "mux": { "name": "herdr", "anchor": "pino" } }`.
-  Env `PINO_MUX` / `PINO_MUX_ANCHOR` override file values. `PINO_MUX=off` disables
+- **Config file shape:** `~/.makit/config.json` → `{ "mux": { "name": "herdr", "anchor": "makit" } }`.
+  Env `MAKIT_MUX` / `MAKIT_MUX_ANCHOR` override file values. `MAKIT_MUX=off` disables
   the registry (returns `undefined` — used by SPEC-05 fallback).
 - **Split failure cleanup:** if `pane run` fails after a successful split, the
   adapter closes the orphan pane before rethrowing `MuxError`.

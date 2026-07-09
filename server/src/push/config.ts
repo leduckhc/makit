@@ -1,7 +1,7 @@
 /**
  * Push provider config loader (SPEC-07 W1).
  *
- * Reads `~/.pino/push.json`. When absent/invalid, `loadApnsConfig` returns
+ * Reads `~/.makit/push.json`. When absent/invalid, `loadApnsConfig` returns
  * `null` and the caller falls back to {@link NoopPushSender} (graceful
  * degradation — Slice-1 behaviour, no wakes). This module does no network I/O.
  */
@@ -14,12 +14,12 @@ import { log } from "../log.js";
 import { ApnsConfig, ApnsPushSender } from "./apns.js";
 import { NoopPushSender, type PushSender } from "./sender.js";
 
-function pinoHome(): string {
-  return process.env.PINO_HOME || join(homedir(), ".pino");
+function makitHome(): string {
+  return process.env.MAKIT_HOME || join(homedir(), ".makit");
 }
 
 function pushConfigPath(): string {
-  return join(pinoHome(), "push.json");
+  return join(makitHome(), "push.json");
 }
 
 /** Expand a leading `~/` to the user's home directory. */
@@ -65,11 +65,11 @@ export function createPushSender(config: ApnsConfig | null): PushSender {
   if (!config) return new NoopPushSender();
   try {
     const sender = new ApnsPushSender(config);
-    log.info(`[pino] push: APNs sender active (${config.env}, ${config.bundleId})`);
+    log.info(`[makit] push: APNs sender active (${config.env}, ${config.bundleId})`);
     return sender;
   } catch (e) {
     log.warn(
-      `[pino] push: APNs key invalid (${(e as Error).message}) — wakes disabled, Slice-1 fallback`,
+      `[makit] push: APNs key invalid (${(e as Error).message}) — wakes disabled, Slice-1 fallback`,
     );
     return new NoopPushSender();
   }
