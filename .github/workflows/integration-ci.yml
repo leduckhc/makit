@@ -64,6 +64,32 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-flutter-
 
+      # No Podfile.lock is tracked (Flutter generates it at build time), so key
+      # on pubspec.lock — it pins the plugin versions that drive pod resolution.
+      # ~/Library/Caches/CocoaPods holds the spec metadata (the slow part of a
+      # cold `pod install`); app/ios/Pods holds the installed pods.
+      - name: Cache CocoaPods
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+            app/ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      # Native Xcode build products. Debug simulator builds aren't code-signed,
+      # so DerivedData reuse across runs is safe; restore-keys lets a stale-key
+      # run still warm-start from the last build instead of compiling cold.
+      - name: Cache Xcode DerivedData
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deriveddata-
+
       - name: Install server dependencies (lockfile-locked)
         working-directory: server
         run: pnpm secure:install
@@ -134,6 +160,25 @@ jobs:
           key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
           restore-keys: |
             ${{ runner.os }}-flutter-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/.cocoapods
+            app/ios/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Cache Xcode DerivedData
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deriveddata-
 
       - name: Install server dependencies (lockfile-locked)
         working-directory: server

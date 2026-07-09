@@ -82,6 +82,16 @@ jobs:
           flutter-version: '3.44.4'
           channel: 'stable'
 
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ runner.tool_cache }}/flutter/
+            ~/.pub-cache/
+          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
       - name: Install Flutter dependencies
         run: |
           cd app
@@ -112,6 +122,16 @@ jobs:
         with:
           flutter-version: '3.44.4'
           channel: 'stable'
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ${{ runner.tool_cache }}/flutter/
+            ~/.pub-cache/
+          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
 
       - name: Install Flutter dependencies
         run: |

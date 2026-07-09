@@ -146,12 +146,15 @@ fi
 FP="$(node -e 'const fs=require("fs"); const j=JSON.parse(fs.readFileSync(0,"utf8")); process.stdout.write(j.fp)' <<<"$READY_JSON")"
 
 cd "$APP_DIR"
-# Each mode targets its own suite: stub/ asserts the StubAdapter's scripted
+# Each mode targets its own suite: stub asserts the StubAdapter's scripted
 # scenarios; real_pi/ asserts what the genuine pi + fake model actually stream.
+# Stub uses a single aggregate entrypoint (all_stub_test.dart) so the iOS app
+# builds+launches ONCE instead of per-file — the dominant CI cost. The per-file
+# sources under stub/ stay runnable individually for focused local iteration.
 if [[ "$MODE" == "real" ]]; then
   TEST_TARGET="integration_test/real_pi"
 else
-  TEST_TARGET="integration_test/stub"
+  TEST_TARGET="integration_test/all_stub_test.dart"
 fi
 # Opt-in coverage (CI). Off by default so local/real runs stay fast and don't
 # litter app/coverage/. When set, flutter writes coverage/lcov.info for upload.
