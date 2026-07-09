@@ -27,6 +27,7 @@ class WsClient implements Transport {
   Timer? _retry;
   Timer? _pinger;
   int _attempt = 0;
+  int _openGen = 0;
 
   final _stateCtrl = StreamController<WsState>.broadcast();
   final _frameCtrl = StreamController<Envelope>.broadcast();
@@ -122,25 +123,43 @@ class WsClient implements Transport {
   }
 
   Future<void> _open() async {
-    _setState(_attempt == 0 ? WsState.connecting : WsState.reconnecting);
+    // Serialize re-entrant opens. connect(), forceReconnect(), and the retry
+    // timer can all call _open() while a previous one is still suspended at
+    // `await ch.ready`. Each call supersedes the in-flight one; a superseded
+    // open must NOT listen on its channel, or the single-subscription stream
+    // gets listened twice -> "Bad state: Stream has already been listened to".
+    final gen = ++_openGen;
+    await _sub?.cancel();
+    _sub = null;
     try {
-      _ch = await _openChannel(_url!);
-      await _ch!.ready;
+      await _ch?.sink.close();
+    } catch (_) {}
+    _ch = null;
+
+    _setState(_attempt == 0 ? WsState.connecting : WsState.reconnecting);
+    final WebSocketChannel ch;
+    try {
+      ch = await _openChannel(_url!);
+      await ch.ready;
     } catch (e) {
+      if (gen != _openGen) return; // a newer open took over; it owns state
       // Surface connect errors so we can see TLS / refused / etc. in logs.
       // ignore: avoid_print
       print('[pino] ws connect to $_url failed: $e');
-      // Drop the stale half-open channel before backing off, so a later
-      // _send() doesn't target a dead sink.
-      try {
-        await _ch?.sink.close();
-      } catch (_) {}
-      _ch = null;
       _scheduleRetry();
       return;
     }
 
-    _sub = _ch!.stream.listen(
+    if (gen != _openGen) {
+      // Superseded while connecting -- discard this channel, don't listen.
+      try {
+        await ch.sink.close();
+      } catch (_) {}
+      return;
+    }
+
+    _ch = ch;
+    _sub = ch.stream.listen(
       _onMessage,
       onDone: _onDone,
       onError: (_) => _onDone(),
