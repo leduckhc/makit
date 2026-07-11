@@ -6,9 +6,16 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'notification_request.dart';
+import '../pairing/readiness.dart';
 
 /// SharedPreferences key for the SPEC-07 pending-action replay queue.
 const kPendingActionsKey = 'makit_pending_actions';
+
+/// SharedPreferences flag: have we ever shown the OS notification prompt?
+/// The platform permission query can't distinguish "not yet asked" from
+/// "denied", so we track it ourselves to drive the onboarding notifications
+/// gate (SPEC-09).
+const kNotifAskedKey = 'makit_notif_asked';
 
 /// Upper bound on the SPEC-07 pending-action replay queue. Prevents unbounded
 /// growth in SharedPreferences when actions are never drained.
@@ -117,15 +124,18 @@ class NotificationService {
     ),
   ];
 
-  /// Initialise the plugin and request permission. Safe to call once at boot.
+  /// Initialise the plugin. Safe to call once at boot.
+  ///
+  /// SPEC-09: does NOT request permission up front. The onboarding wizard owns
+  /// the prompt (via [requestPermission]) so it's asked with context, and
+  /// [permissionStatus] can report `notDetermined` before then.
   Future<void> init() async {
     if (_ready) return;
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    // Ask for permission up front on iOS during init.
     final darwinInit = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
       notificationCategories: _darwinCategories,
     );
     await _plugin.initialize(
@@ -137,13 +147,80 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onResponse,
       onDidReceiveBackgroundNotificationResponse: notificationBackgroundHandler,
     );
-    // Android 13+ runtime permission (no-op on older / other platforms).
-    await _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.requestNotificationsPermission();
     _ready = true;
+  }
+
+  /// Query (do not request) the current OS notification-permission status.
+  ///
+  /// The platform APIs only report enabled/disabled, so `notDetermined` vs
+  /// `denied` is disambiguated with the [kNotifAskedKey] flag we set in
+  /// [requestPermission]. Best-effort: any failure → [NotificationPermission.unsupported].
+  Future<NotificationPermission> permissionStatus() async {
+    try {
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
+      final macos = _plugin
+          .resolvePlatformSpecificImplementation<
+            MacOSFlutterLocalNotificationsPlugin
+          >();
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+
+      bool? enabled;
+      if (ios != null) {
+        enabled = (await ios.checkPermissions())?.isEnabled;
+      } else if (macos != null) {
+        enabled = (await macos.checkPermissions())?.isEnabled;
+      } else if (android != null) {
+        enabled = await android.areNotificationsEnabled();
+      } else {
+        return NotificationPermission.unsupported;
+      }
+
+      if (enabled == true) return NotificationPermission.granted;
+      final prefs = await SharedPreferences.getInstance();
+      final asked = prefs.getBool(kNotifAskedKey) ?? false;
+      return asked
+          ? NotificationPermission.denied
+          : NotificationPermission.notDetermined;
+    } catch (_) {
+      return NotificationPermission.unsupported;
+    }
+  }
+
+  /// Show the OS permission prompt (records that we asked), then report the
+  /// resulting status. Called from the onboarding notifications step.
+  Future<NotificationPermission> requestPermission() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(kNotifAskedKey, true);
+      final ios = _plugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
+      final macos = _plugin
+          .resolvePlatformSpecificImplementation<
+            MacOSFlutterLocalNotificationsPlugin
+          >();
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      if (ios != null) {
+        await ios.requestPermissions(alert: true, badge: true, sound: true);
+      } else if (macos != null) {
+        await macos.requestPermissions(alert: true, badge: true, sound: true);
+      } else if (android != null) {
+        await android.requestNotificationsPermission();
+      }
+    } catch (_) {
+      // Best-effort: fall through to a fresh status query below.
+    }
+    return permissionStatus();
   }
 
   void _onResponse(NotificationResponse resp) {

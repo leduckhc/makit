@@ -2,8 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
-import '../pairing/pairing_screen.dart';
-import '../store/connection.dart';
+import '../pairing/onboarding_controller.dart';
+import '../pairing/onboarding_screen.dart';
+import '../pairing/readiness.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/session/session_screen.dart';
 import '../ui/session/tool_call_detail_screen.dart';
@@ -24,15 +25,17 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: makitNavigatorKey,
     initialLocation: '/',
     redirect: (context, state) {
-      final paired = ref.read(connectionProvider).paired;
+      // Onboarding is complete only at the `ready` step (paired + notification
+      // gate resolved). Until then, keep the user on `/pair` (the wizard).
+      final ready = ref.read(onboardingStepProvider) == OnboardingStep.ready;
       final goingToPair = state.matchedLocation == '/pair';
-      if (!paired && !goingToPair) return '/pair';
-      if (paired && goingToPair) return '/';
+      if (!ready && !goingToPair) return '/pair';
+      if (ready && goingToPair) return '/';
       return null;
     },
-    refreshListenable: ref.watch(connectionListenableProvider),
+    refreshListenable: ref.watch(onboardingListenableProvider),
     routes: [
-      GoRoute(path: '/pair', builder: (_, _) => const PairingScreen()),
+      GoRoute(path: '/pair', builder: (_, _) => const OnboardingScreen()),
       GoRoute(
         path: '/',
         builder: (_, _) => const HomeScreen(),

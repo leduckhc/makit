@@ -1,6 +1,6 @@
 # SPEC-09 — First-run onboarding wizard + macOS tray polish
 
-**Status:** planned · ready for implementation · **Depends on:** none
+**Status:** Slice 1 implemented · Slice 2 (tray/Settings) planned · **Depends on:** none
 **Roadmap:** M1 (onboarding wizard) + M4 (macOS control-app UX polish) from
 [`docs/specs/README.md`](./README.md)
 
