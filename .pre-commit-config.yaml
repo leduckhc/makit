@@ -69,3 +69,20 @@ repos:
         entry: bash -c 'cd server && pnpm typecheck'
         files: ^server/.*\.(ts|js|json)$
         pass_filenames: false
+
+  # ---------------------------------------------------------------------------
+  # Licensing
+  # Requires: python3 and pnpm on PATH; app deps resolved in the pub cache.
+  # ---------------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: third-party-licenses
+        name: THIRD_PARTY_LICENSES up to date
+        description: >
+          Fail if THIRD_PARTY_LICENSES.md is stale relative to the dependency
+          manifests. Fix: run `python3 scripts/gen_third_party_licenses.py`
+          and re-stage.
+        language: system
+        entry: python3 scripts/gen_third_party_licenses.py --check
+        files: ^(server/package\.json|server/pnpm-lock\.yaml|app/pubspec\.(yaml|lock))$
+        pass_filenames: false

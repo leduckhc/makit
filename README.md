@@ -171,3 +171,14 @@ makit/
 - Settings UI to view & revoke paired devices
 
 See [`docs/ARCHITECTURE.md §12`](./docs/ARCHITECTURE.md) for the full roadmap.
+
+## License
+
+Makit is **dual-licensed**:
+
+- **Open source:** [GPL-3.0-or-later](./LICENSE) — free for everyone.
+- **Commercial:** for organizations that cannot comply with the GPL, a
+  commercial license is available. Contact **license@getmakit.dev**.
+
+Contributions are welcome under our [Contributor License Agreement](./CLA.md);
+see [`CONTRIBUTING.md`](./CONTRIBUTING.md).
