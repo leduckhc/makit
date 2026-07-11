@@ -74,22 +74,27 @@ GoRouter-built-once invariant (`router.dart:16` comment) intact.
 - **Slice 2 (M4 tray polish):** the macOS menu-bar app
   (`app/lib/desktop/tray/`, `app/lib/desktop/screens/`) already has
   status/devices/qr/sessions/session_log screens. Polish = coherent visual
-  pass + one-tap server start/stop affordance. **Design-led; needs mockups
-  before code** (see open questions). Do NOT start Slice 2 until Slice 1 lands
-  and mockups are approved.
+  pass, keep the tray as the quick-access surface (status, QR, one-tap server
+  start/stop), and move device management + notification + server config into
+  a **real Settings window** (see Resolved decision 3). **Design-led; needs
+  mockups before code.** Do NOT start Slice 2 until Slice 1 lands and mockups
+  are approved.
 
-## Open questions (must resolve before coding the flagged parts)
+## Resolved decisions
 
-1. **Reachability probe cost.** How aggressively do we probe when unpaired
-   (no server URL yet)? Proposal: only mDNS browse on `--lan`; otherwise the
-   "reachable" gate is informational (show the start-server instructions) and
-   auto-advances once a pair URL is scanned. Confirm.
-2. **Notifications gate = required or skippable?** Proposal: skippable with a
-   "you can enable later in Settings" link, since the core loop works without
-   it. Confirm.
-3. **Slice 2 scope (M4).** Menu-bar-only vs. a real settings window? Minimum
-   surface that feels "done"? Needs a design pass — this spec does not
-   prescribe the visual design.
+1. **Reachability probe cost — RESOLVED.** When unpaired (no server URL yet),
+   only mDNS browse on `--lan`; otherwise the "reachable" gate is
+   *informational* (show the start-server instructions) and auto-advances once
+   a pair URL is scanned. No aggressive background probing.
+2. **Notifications gate — RESOLVED: skippable.** The core loop works without
+   notifications, so the gate is skippable with a "you can enable later in
+   Settings" link. Still surfaces the OS prompt / Settings deep-link when the
+   user opts in.
+3. **Slice 2 scope (M4) — RESOLVED: a real settings window.** Not menu-bar-only.
+   The tray/menu-bar remains the quick-access surface (status, QR, one-tap
+   start/stop), but device management, notification controls, and server
+   configuration live in a proper **Settings window**. This is design-led and
+   still needs mockups before code.
 
 ## Test plan (TDD)
 
