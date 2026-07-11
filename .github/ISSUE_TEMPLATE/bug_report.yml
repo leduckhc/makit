@@ -1,0 +1,63 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Please **do not** report
+        security vulnerabilities here — see our [Security Policy](../security/policy).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+      placeholder: When I scan the QR code, the app shows "connection refused" but…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start server with `pnpm start -- --project ...`
+        2. Open the app and tap "Scan QR"
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - App (Flutter client)
+        - Server (Node/TS)
+        - Pairing / transport
+        - Agent adapter (pi / codex / claude-code)
+        - macOS menu-bar / tray
+        - Other / not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "v0.1.0 or commit sha"
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS + version for the device running the app AND the desktop running the server; Tailscale or --lan; Flutter/Node versions if relevant.
+      placeholder: |
+        App: iPhone 15, iOS 18.2
+        Server: macOS 15.2, Node 22.13, Tailscale
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server log output and/or app console. Redact tokens and IPs.
+      render: shell

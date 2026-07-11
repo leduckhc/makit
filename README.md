@@ -1,13 +1,44 @@
-# makit
+<div align="center">
 
-Mobile-first coding agent client. Run a server on your desktop, pair your
-phone or any other device via QR, and drive `pi` / `codex` / `claude-code`
-sessions through a chat UI.
+<img src="assets/makit-icon.png" alt="Makit" width="120" />
 
-- 📱 [`app/`](./app/) — Flutter mobile/desktop client
-- 🖥 [`server/`](./server/) — Node/TS WebSocket server + agent adapters
-- 📚 [`docs/UX.md`](./docs/UX.md), [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)
-- 🛠 [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) — build / debug / deploy runbook (copy-paste commands)
+# Makit
+
+### Drive your coding agent from your phone.
+
+Run a server on your desktop, scan a QR with your phone, and steer
+`pi` / `codex` / `claude-code` sessions from a chat UI — from the couch,
+the train, or anywhere on your [Tailscale](https://tailscale.com) tailnet.
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](./LICENSE)
+[![Server CI](https://github.com/leduckhc/makit/actions/workflows/server-ci.yml/badge.svg)](https://github.com/leduckhc/makit/actions/workflows/server-ci.yml)
+[![Flutter CI](https://github.com/leduckhc/makit/actions/workflows/flutter-ci.yml/badge.svg)](https://github.com/leduckhc/makit/actions/workflows/flutter-ci.yml)
+
+<!-- Demo: record the flow, save it at docs/media/demo.gif (see docs/media/README.md),
+     then uncomment the line below. -->
+<!-- <img src="docs/media/demo.gif" alt="Makit demo: scan a QR and drive an agent from your phone" width="720" /> -->
+
+_▶️ Demo video coming soon — see [`docs/media/`](./docs/media/) to add it._
+
+</div>
+
+---
+
+## Why Makit
+
+- 🤖 **One client for every agent.** Talk to `pi`, `codex`, and
+  `claude-code` through the same chat UI — no per-tool app.
+- 📱 **Untethered.** Kick off work at your desk, review diffs and approve
+  tool calls from your phone while you're away.
+- 🔒 **Private by default.** Binds to your Tailscale tailnet, not open Wi-Fi.
+  The transport is cert-pinned — no ports exposed to café networks, no OS
+  trust store needed.
+- 🔔 **Never miss a prompt.** Get notified when an agent is waiting on you
+  (approval, a question, or a finished turn).
+
+📱 [`app/`](./app/) (Flutter client) · 🖥 [`server/`](./server/) (Node/TS server)
+· 📚 [UX](./docs/UX.md) · [Architecture](./docs/ARCHITECTURE.md) ·
+[Development runbook](./docs/DEVELOPMENT.md)
 
 ## Quick start — Mac + iPhone over Tailscale
 

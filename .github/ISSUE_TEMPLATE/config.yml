@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security vulnerability
+    url: https://github.com/leduckhc/makit/security/advisories/new
+    about: Report security issues privately — please do not open a public issue.
+  - name: 💬 Questions & discussion
+    url: https://github.com/leduckhc/makit/discussions
+    about: Ask questions, share setups, and discuss ideas.
+  - name: 🏷 Commercial license
+    url: mailto:license@getmakit.dev
+    about: For organizations that cannot comply with the GPL.
