@@ -13,6 +13,11 @@ const _messageTimeout = Duration(seconds: 15);
 Future<void> launchMakit(WidgetTester tester) async {
   app.main();
   await tester.pump(const Duration(milliseconds: 100));
+  // The test creds are seeded as paired, so onboarding skips the pair step —
+  // but on a fresh simulator notification permission is notDetermined, so the
+  // wizard now stops at the skippable notifications gate before Home. Dismiss
+  // it ("Not now") so the suite reaches the session list as before.
+  await _skipNotificationsStep(tester);
   await pumpUntil(
     tester,
     find.text('new session'),
@@ -21,6 +26,23 @@ Future<void> launchMakit(WidgetTester tester) async {
         'home screen never showed the "new session" tile — '
         'WS handshake or snapshot likely failed',
   );
+}
+
+/// Dismiss the notifications onboarding gate if it's showing. No-op once the
+/// app has already advanced past it, so it's safe to call unconditionally.
+Future<void> _skipNotificationsStep(WidgetTester tester) async {
+  final skip = find.widgetWithText(TextButton, 'Not now');
+  final deadline = DateTime.now().add(_connectionTimeout);
+  while (DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 100));
+    if (skip.evaluate().isNotEmpty) {
+      await tester.tap(skip);
+      await tester.pump(const Duration(milliseconds: 100));
+      return;
+    }
+    // Already past the gate (session list rendering) — nothing to skip.
+    if (find.text('new session').evaluate().isNotEmpty) return;
+  }
 }
 
 /// Open the first session in the list (the stub server pre-creates one
