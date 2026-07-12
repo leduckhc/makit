@@ -53,7 +53,6 @@ test("native pi fallback keeps agent=pi when no mux", async () => {
     const agents: string[] = [];
     const manager = new SessionManager({
       projects: [cwd],
-      mux: undefined, // no multiplexer -> spawnPiSessionInPane falls back to headless
       adapterFactory: (ctx) => {
         agents.push(ctx.agent);
         return stubAdapter([]);
@@ -73,7 +72,6 @@ test("spawnSession threads the chosen agent id into the adapter factory", async 
     const agents: string[] = [];
     const manager = new SessionManager({
       projects: [cwd],
-      mux: undefined, // no multiplexer -> headless path for every agent
       adapterFactory: (ctx) => {
         agents.push(ctx.agent);
         return stubAdapter([]);
@@ -251,4 +249,117 @@ test("spawnPiSession without an explicit title uses the shared default", async (
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("rehydrates persisted sessions on boot as read-only history", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  // Seed a session + one event as if a prior server run had persisted them.
+  store.saveSession({
+    id: "sess-persist",
+    projectId: "proj-x",
+    agent: "pi",
+    title: "resumed work",
+    status: "idle",
+    policy: "ask-on-risky",
+    createdAt: 1,
+    lastActivityAt: 2,
+    lastPreview: "old task",
+  });
+  store.append("sess-persist", { ts: 2, kind: "user.message", payload: { text: "old task" } });
+
+  const mgr = new SessionManager({ projects: [], store });
+  const dto = mgr.getSession("sess-persist")?.toDTO();
+  assert.ok(dto, "session rehydrated");
+  assert.equal(dto!.title, "resumed work");
+  assert.equal(dto!.status, "exited");
+  assert.equal(mgr.getSession("sess-persist")!.events.length, 1);
+
+  // Sending to a cold session surfaces a re-attach error rather than crashing.
+  const errs: string[] = [];
+  mgr.getSession("sess-persist")!.on("event", (e) => {
+    if (e.kind === "session.error") errs.push(String((e.payload as any).message));
+  });
+  await mgr.getSession("sess-persist")!.sendUserMessage("hi again");
+  assert.match(errs[0] ?? "", /re-attach/);
+  store.close();
+});
+
+test("reattachSession resumes a cold pi session and continues the durable seq space", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    await withAgentDir(cwd, async () => {
+      // --- first run: attach a prior pi transcript so a resume path persists.
+      const mgr1 = new SessionManager({
+        projects: [cwd],
+        store,
+        adapterFactory: () => stubAdapter([]),
+      });
+      const projectId = mgr1.listProjects()[0].id;
+      const s = await mgr1.attachPiSession(projectId, "sess1");
+      const sessionId = s.id;
+      // A live turn after attach.
+      s.adapter.emit("event", { ts: 10, kind: "user.message", payload: { text: "live turn" } });
+      const maxSeq1 = store.read(sessionId).at(-1)!.seq;
+      assert.ok(maxSeq1 >= 2);
+
+      // --- restart: a fresh manager over the same store rehydrates it cold.
+      const started: SpawnOpts[] = [];
+      const mgr2 = new SessionManager({
+        projects: [cwd],
+        store,
+        adapterFactory: () => stubAdapter(started),
+      });
+      const cold = mgr2.getSession(sessionId)!;
+      assert.equal(cold.status, "exited");
+      assert.equal(cold.events.length, maxSeq1); // full history intact
+
+      // Re-attach: rebuild a live adapter and continue.
+      const live = await mgr2.reattachSession(sessionId);
+      assert.equal(live.id, sessionId);
+      assert.equal(started.length, 1); // adapter really started
+      assert.equal(started[0].resumeSessionPath !== undefined, true); // resumed via transcript
+
+      // A new event must get the NEXT seq (no reset / collision).
+      live.adapter.emit("event", { ts: 20, kind: "user.message", payload: { text: "after reattach" } });
+      const seqs = store.read(sessionId).map((e) => e.seq);
+      assert.deepEqual(seqs, [...Array(maxSeq1 + 1)].map((_, i) => i + 1));
+      assert.equal(live.events.length, maxSeq1 + 1);
+    });
+  } finally {
+    store.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("reattachSession refuses a cold session with no resume path; it stays history-only", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  store.saveSession({
+    id: "sess-noresume",
+    projectId: "proj-x",
+    agent: "pi",
+    title: "no resume path",
+    status: "idle",
+    policy: "ask-on-risky",
+    createdAt: 1,
+    lastActivityAt: 2,
+    lastPreview: "old",
+  });
+  store.append("sess-noresume", { ts: 2, kind: "user.message", payload: { text: "old" } });
+
+  const mgr = new SessionManager({ projects: [], store });
+  await assert.rejects(() => mgr.reattachSession("sess-noresume"), /history only|resume/);
+  await assert.rejects(() => mgr.reattachSession("does-not-exist"), /no such session/);
+
+  // Still cold: sending surfaces the re-attach error rather than crashing.
+  const errs: string[] = [];
+  mgr.getSession("sess-noresume")!.on("event", (e) => {
+    if (e.kind === "session.error") errs.push(String((e.payload as any).message));
+  });
+  await mgr.getSession("sess-noresume")!.sendUserMessage("hi");
+  assert.match(errs[0] ?? "", /re-attach/);
+  store.close();
 });

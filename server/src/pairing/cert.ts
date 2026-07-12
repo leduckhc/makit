@@ -110,7 +110,7 @@ export function tailscaleIP(): string | null {
  * LAN IPv4. This is the default — binding here keeps the server off `0.0.0.0`
  * so we don't expose port 8787 to every interface the machine joins (public
  * Wi-Fi, corporate networks, …). A separate loopback listener (see
- * `startWsServer`) still handles the makit-mirror extension host and the
+ * `startWsServer`) still handles the loopback HTTP bridge and the
  * `flutter run -d macos` dev loop.
  *
  * Users can override via `--host 0.0.0.0` if they need every interface.

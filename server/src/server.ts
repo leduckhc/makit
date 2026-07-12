@@ -17,7 +17,7 @@
  * Binding:
  * The server listens on the `host:port` provided (typically Tailscale or LAN).
  * When `host` is a specific, non-loopback IP, a second loopback listener is
- * automatically added at `127.0.0.1:port` so the makit-mirror extension host
+ * automatically added at `127.0.0.1:port` so the loopback HTTP bridge
  * and the `flutter run -d macos` dev loop keep working. The two listeners
  * share the same {@link WebSocketServer} via `noServer` upgrade forwarding,
  * so all connected clients go through the same auth gate and state.
@@ -48,15 +48,11 @@ import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
 import { CommandRouter } from "./ws/command_router.js";
-import { PaneBridge } from "./pane/bridge.js";
-import { herdrReader } from "./pane/herdr.js";
 import { ReverseRpc } from "./ws/reverse_rpc.js";
 import { WakeCoordinator } from "./push/wake_coordinator.js";
 import { NoopPushSender, type PushSender } from "./push/sender.js";
 import { buildWakePayload } from "./push/payload.js";
 import { registerPushCommands } from "./push/register_cmd.js";
-import type { IngestAdapter } from "./adapters/ingest.js";
-import type { AdapterEvent } from "./adapters/adapter.js";
 
 export interface ServerOpts {
   host: string;
@@ -66,8 +62,6 @@ export interface ServerOpts {
   registry: DeviceRegistry;
   /** If true, accept loopback connections without auth. */
   trustLocalhost?: boolean;
-  /** Shared secret authenticating a makit-mirror extension host (World D). */
-  hostToken?: string;
   /**
    * Content-free wake sender (SPEC-07). Defaults to {@link NoopPushSender}
    * (wakes are no-ops → Slice-1 fallback). `index.ts` supplies an
@@ -81,26 +75,6 @@ export interface ServerOpts {
 /** Concrete client: a {@link WsClient} backed by a live `ws` socket. */
 interface ClientState extends WsClient {
   ws: WebSocket;
-}
-
-/**
- * Build the `host.ask.result` frame relayed to a makit-mirror extension after
- * the phone answers. Carries ONLY the answer fields — never spread the whole
- * srv.response envelope, whose own `t`/`id` would clobber these and leave the
- * extension's ask promise unresolved (hanging both the pi TUI and the phone).
- */
-export function hostAskResultFrame(
-  askId: string,
-  resp: Record<string, unknown>,
-): OutgoingFrame {
-  return {
-    t: "host.ask.result",
-    id: askId,
-    indices: resp.indices,
-    answers: resp.answers,
-    answer: resp.answer,
-    cancelled: resp.cancelled,
-  } as OutgoingFrame;
 }
 
 /** True when `host` already covers every interface (wildcard) or is purely
@@ -127,7 +101,6 @@ export function startWsServer(opts: ServerOpts) {
     cert,
     registry,
     trustLocalhost = false,
-    hostToken,
     sender = new NoopPushSender(),
     buildWakePayload: buildWakePayloadFn = buildWakePayload,
   } = opts;
@@ -136,7 +109,7 @@ export function startWsServer(opts: ServerOpts) {
   // listeners into the same connection handler:
   //   1. The external listener (host:port) — phone over Tailscale or LAN.
   //   2. A loopback listener (127.0.0.1:port) — only when `host` is a specific
-  //      non-loopback IP. Keeps the makit-mirror extension host and the
+  //      non-loopback IP. Keeps the loopback HTTP bridge and the
   //      `flutter run -d macos` dev loop reachable.
   // When host is `0.0.0.0` (all interfaces) or already loopback, the second
   // listener is redundant and skipped.
@@ -163,9 +136,6 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   const clients = new Map<WebSocket, ClientState>();
-  // World D host sessions: makitSessionId → its IngestAdapter + owning client.
-  const hostAdapters = new Map<string, IngestAdapter>();
-  const hostOwner = new Map<string, WsClient>();
 
   // Device ids with a live authenticated WS connection — feeds the control
   // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
@@ -193,14 +163,7 @@ export function startWsServer(opts: ServerOpts) {
     clients: () => clients.values(),
     onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
   });
-  const paneBridge = new PaneBridge(herdrReader, (target, data) => {
-    for (const c of clients.values()) {
-      if (c.authed && c.panes?.has(target)) {
-        c.send({ t: "event", id: newId("pane"), kind: "pane.frame", target, data });
-      }
-    }
-  });
-  const authGate = new AuthGate({ registry, onAuthenticated, hostToken });
+  const authGate = new AuthGate({ registry, onAuthenticated });
   const router = buildCommandRouter();
 
   // -------- session wiring ------------------------------------------------
@@ -232,15 +195,6 @@ export function startWsServer(opts: ServerOpts) {
     ws.on("close", () => {
       clients.delete(ws);
       hub.unregister(state);
-      for (const t of state.panes ?? []) paneBridge.detach(t);
-      // Tear down any host sessions owned by this extension client.
-      for (const [sid, owner] of hostOwner) {
-        if (owner === state) {
-          void manager.killSession(sid).catch(() => {});
-          hostAdapters.delete(sid);
-          hostOwner.delete(sid);
-        }
-      }
       broadcastSnapshots();
     });
 
@@ -321,8 +275,9 @@ export function startWsServer(opts: ServerOpts) {
     });
 
     // Built-in control actions (e.g. /compact, /thinking) — NOT user turns.
-    // Routed to the adapter's sendAction, which relays to the hosting pi
-    // extension's SDK calls. Only IngestAdapter (World D) maps these today.
+    // Routed to the adapter's sendAction, which maps them to the agent's SDK
+    // calls (e.g. pi's set_session_name). Adapters that can't map an action
+    // ignore it.
     r.register("session.action", async (ctx) => {
       const sid = String(ctx.env.sessionId ?? "");
       const action = ctx.env.action;
@@ -341,7 +296,7 @@ export function startWsServer(opts: ServerOpts) {
           : undefined;
       ctx.ack();
       // Manual rename: reflect the new title in makit immediately, then let the
-      // adapter persist it (pi's set_session_name / the mirror connector).
+      // adapter persist it (pi's set_session_name).
       if (action === "name" && typeof args?.name === "string") {
         session.setTitle(args.name);
       }
@@ -408,6 +363,20 @@ export function startWsServer(opts: ServerOpts) {
     });
 
     r.register("session.attach", async (ctx) => {
+      // Re-attach a rehydrated (cold) makit session to its live agent after a
+      // server restart. Back-compat: legacy clients send projectId+piSessionId
+      // to attach a prior on-disk pi transcript instead.
+      const sessionId = String(ctx.env.sessionId ?? "");
+      if (sessionId) {
+        try {
+          const session = await manager.reattachSession(sessionId);
+          broadcastSnapshots();
+          ctx.ack({ sessionId: session.id });
+        } catch (e) {
+          ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+        }
+        return;
+      }
       const projectId = String(ctx.env.projectId ?? "");
       const piSessionId = String(ctx.env.piSessionId ?? "");
       if (!projectId || !piSessionId) {
@@ -463,142 +432,6 @@ export function startWsServer(opts: ServerOpts) {
       }
       broadcastSnapshots();
       ctx.ack({});
-    });
-
-    // Pane bridge (POC): mirror a herdr/tmux pane running a real pi TUI.
-    r.register("pane.attach", (ctx) => {
-      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
-      if (!target) {
-        ctx.err(WireErrorCode.BadRequest, "pane.attach requires a string `target`");
-        return;
-      }
-      (ctx.client.panes ??= new Set<string>()).add(target);
-      paneBridge.attach(target);
-      ctx.ack();
-    });
-
-    r.register("pane.detach", (ctx) => {
-      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
-      if (target && ctx.client.panes?.delete(target)) paneBridge.detach(target);
-      ctx.ack();
-    });
-
-    r.register("pane.input", async (ctx) => {
-      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
-      const text = typeof ctx.env.text === "string" ? ctx.env.text : "";
-      if (!target) {
-        ctx.err(WireErrorCode.BadRequest, "pane.input requires a string `target`");
-        return;
-      }
-      await paneBridge.input(target, text);
-      ctx.ack();
-    });
-
-    r.register("pane.key", async (ctx) => {
-      const target = typeof ctx.env.target === "string" ? ctx.env.target : "";
-      const keys = Array.isArray(ctx.env.keys) ? ctx.env.keys.map(String) : [];
-      if (!target) {
-        ctx.err(WireErrorCode.BadRequest, "pane.key requires a string `target`");
-        return;
-      }
-      await paneBridge.keys(target, keys);
-      ctx.ack();
-    });
-    r.register("session.mirror", async (ctx) => {
-      const pane = typeof ctx.env.pane === "string" ? ctx.env.pane : "";
-      if (!pane) {
-        ctx.err(WireErrorCode.BadRequest, "session.mirror requires a string `pane`");
-        return;
-      }
-      const sessionPath =
-        typeof ctx.env.sessionPath === "string" ? ctx.env.sessionPath : undefined;
-      const projectId =
-        typeof ctx.env.projectId === "string" ? ctx.env.projectId : undefined;
-      const session = await manager.mirrorTuiSession({ paneTarget: pane, sessionPath, projectId });
-      broadcastSnapshots();
-      ctx.ack({ sessionId: session.id });
-    });
-
-
-    // World D: a makit-mirror extension hosts a real pi session and pushes its
-    // events here; the phone's prompts are relayed back as `host.prompt`.
-    r.register("host.open", async (ctx) => {
-      const title = typeof ctx.env.title === "string" ? ctx.env.title : undefined;
-      const cwd = typeof ctx.env.cwd === "string" ? ctx.env.cwd : undefined;
-      const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : undefined;
-      const spawnToken = typeof ctx.env.spawnToken === "string" ? ctx.env.spawnToken : undefined;
-      const owner = ctx.client;
-      let sid = "";
-      const session = await manager.openHostSession({
-        title,
-        cwd,
-        projectId,
-        onPrompt: (text) =>
-          owner.send({ t: "host.prompt", id: newId("hp"), sessionId: sid, text }),
-        onAction: (action, args) =>
-          owner.send({ t: "host.action", id: newId("ha"), sessionId: sid, action, args }),
-      });
-      sid = session.id;
-
-      // SPEC-05: if a pane-spawn token is present, correlate with the pending
-      // spawnPiSessionInPane call and attach the PaneHandle to this session.
-      if (spawnToken) manager.resolvePendingSpawn(spawnToken, session);
-
-      hostAdapters.set(sid, session.adapter as IngestAdapter);
-      hostOwner.set(sid, owner);
-      broadcastSnapshots();
-      ctx.ack({ sessionId: sid });
-    });
-
-    r.register("host.event", (ctx) => {
-      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
-      const ev = ctx.env.ev as AdapterEvent | undefined;
-      if (sid && ev) hostAdapters.get(sid)?.ingestEvent(ev);
-      // No ack: events are high-frequency (streaming deltas).
-    });
-
-    r.register("host.status", (ctx) => {
-      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
-      const status = ctx.env.status === "running" ? "running" : "idle";
-      if (sid) hostAdapters.get(sid)?.ingestStatus(status);
-    });
-
-    // Update a host session's title after host.open (e.g. the extension only
-    // learned the real session name once a pi event ran, or the user renamed
-    // it). Re-broadcasts the sessions snapshot so the phone's list updates.
-    r.register("host.retitle", (ctx) => {
-      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
-      const title = typeof ctx.env.title === "string" ? ctx.env.title.trim() : "";
-      const session = sid ? manager.getSession(sid) : undefined;
-      session?.setTitle(title);
-    });
-
-    r.register("host.close", async (ctx) => {
-      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
-      if (sid) {
-        await manager.killSession(sid).catch(() => {});
-        hostAdapters.delete(sid);
-        hostOwner.delete(sid);
-        broadcastSnapshots();
-      }
-      ctx.ack();
-    });
-
-    r.register("host.ask", async (ctx) => {
-      const sid = typeof ctx.env.sessionId === "string" ? ctx.env.sessionId : "";
-      const askId = typeof ctx.env.askId === "string" ? ctx.env.askId : "";
-      const questions = ctx.env.questions;
-      const owner = ctx.client;
-      try {
-        // Route to the phone(s) subscribed to this mirror session; first wins.
-        const resp = (await rpc.askDevice(
-          { kind: "askUserQuestion", questions },
-          { sessionId: sid },
-        )) as Record<string, unknown>;
-        owner.send(hostAskResultFrame(askId, resp));
-      } catch {
-        owner.send({ t: "host.ask.result", id: askId, cancelled: true });
-      }
     });
 
     // SPEC-07: register the device's content-free wake push token.
@@ -677,10 +510,8 @@ export function startWsServer(opts: ServerOpts) {
       );
       broadcastSessionsSnapshot();
     });
-    session.on("titleChanged", (title) => {
+    session.on("titleChanged", () => {
       broadcastSessionsSnapshot();
-      // SPEC-05: keep the mux pane label in sync with the session title.
-      manager.updatePaneLabel(session.id, title).catch(() => {});
     });
   }
 
@@ -720,7 +551,6 @@ export function startWsServer(opts: ServerOpts) {
       ws,
       authed,
       subscribed: new Set<string>(),
-      panes: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
         ws.send(encodeFrame({ v: PROTOCOL_VERSION, ...frame } as Envelope));

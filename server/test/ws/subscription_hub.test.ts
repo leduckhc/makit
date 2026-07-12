@@ -129,26 +129,27 @@ test("unsub removes the subscription and acks", () => {
   assert.ok(client.sent.find((f) => f.t === "ack" && f.id === "u1"));
 });
 
-test("fanout reaches only authed + subscribed clients", () => {
+test("fanout auto-mirrors to every authed client regardless of subscription", () => {
   const hub = new SubscriptionHub({
     manager: fakeManager({ "sess-1": [] }),
   });
   const subscribed = fakeClient(true);
-  const unsubscribed = fakeClient(true);
-  const unauthedButSubscribed = fakeClient(false);
+  const notSubscribed = fakeClient(true);
+  const unauthed = fakeClient(false);
   hub.register(subscribed);
-  hub.register(unsubscribed);
-  hub.register(unauthedButSubscribed);
+  hub.register(notSubscribed);
+  hub.register(unauthed);
 
   hub.handleSub(subscribed, subEnv("sess-1"));
-  unauthedButSubscribed.subscribed.add("sess-1"); // authed=false → excluded
+  unauthed.subscribed.add("sess-1"); // authed=false → still excluded
 
   const count = hub.fanout("sess-1", evt(3, "sess-1"));
 
-  assert.equal(count, 1);
+  // Auto-mirror: both authed clients receive it, even the one that never subbed.
+  assert.equal(count, 2);
   assert.ok(subscribed.sent.find((f) => f.t === "event" && f.kind === "session.event"));
-  assert.equal(unsubscribed.sent.filter((f) => f.t === "event").length, 0);
-  assert.equal(unauthedButSubscribed.sent.filter((f) => f.t === "event").length, 0);
+  assert.ok(notSubscribed.sent.find((f) => f.t === "event" && f.kind === "session.event"));
+  assert.equal(unauthed.sent.filter((f) => f.t === "event").length, 0);
 });
 
 test("unregister stops fan-out to a client", () => {

@@ -197,8 +197,8 @@ export function parseTranscript(path: string): AdapterEvent[] {
 
 /**
  * Map ONE pi session record to AdapterEvents (same shapes PiAdapter emits
- * live). Shared by {@link parseTranscript} (bulk backfill) and the live tail
- * follower behind the TUI-mirror adapter. Never throws; unknown records → [].
+ * live). Shared by {@link parseTranscript} (bulk backfill) for resuming a
+ * prior transcript. Never throws; unknown records → [].
  */
 export function recordToEvents(o: unknown): AdapterEvent[] {
   const rec = o as any;

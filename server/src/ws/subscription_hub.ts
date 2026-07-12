@@ -3,8 +3,9 @@
  *
  * Responsibilities:
  *   - `sub`/`unsub` handling (with replay of the session's event log on sub).
- *   - fanning a `SessionEvent` out to exactly the authed clients subscribed to
- *     that session.
+ *   - fanning a `SessionEvent` out to every authed client (auto-mirror: all
+ *     connected devices see every session's events, so state stays in sync
+ *     without each device having to `sub` first).
  *
  * The hub tracks the live set of clients via `register`/`unregister` so it is
  * the single authority on who receives a fan-out — no shared client map leaks
@@ -66,11 +67,16 @@ export class SubscriptionHub {
     client.send({ t: "ack", id: env.id });
   }
 
-  /** Fan a session event out to authed subscribers. Returns the send count. */
-  fanout(sessionId: string, event: SessionEvent): number {
+  /**
+   * Fan a session event out to every authed client (auto-mirror). Subscription
+   * is NOT required to receive live events — the `subscribed` set only governs
+   * history replay on `sub` and prompt routing (see {@link ReverseRpc}).
+   * Returns the send count.
+   */
+  fanout(_sessionId: string, event: SessionEvent): number {
     let sent = 0;
     for (const c of this.clients) {
-      if (c.authed && c.subscribed.has(sessionId)) {
+      if (c.authed) {
         this.sendEvent(c, event);
         sent++;
       }

@@ -12,7 +12,7 @@
  * to opt into binding the LAN IPv4 (trusted networks only), or `--host
  * 0.0.0.0` to bind every interface. The recommended transport is Tailscale.
  * A loopback listener is added automatically when host is a specific IP,
- * so the makit-mirror extension host and the flutter dev loop keep working.
+ * so the loopback HTTP bridge and the flutter dev loop keep working.
  *
  * `makit serve` is the long-running server. `makit pair` is meant to be run
  * from a second terminal (or as a hotkey on an already-running server) to
@@ -29,6 +29,7 @@
 import { resolve } from "node:path";
 import qrcode from "qrcode-terminal";
 import { SessionManager } from "./manager.js";
+import { SqliteEventStore } from "./storage/sqlite_event_store.js";
 import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
 import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
@@ -42,8 +43,7 @@ import { loadOrCreateCert, chooseBindHost, type BindMode } from "./pairing/cert.
 import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
-import { randomBytes } from "node:crypto";
-import { writeFileSync, mkdirSync, symlinkSync, existsSync, rmSync, readFileSync, openSync } from "node:fs";
+import { mkdirSync, rmSync, readFileSync, openSync } from "node:fs";
 import { homedir } from "node:os";
 import { spawn as childSpawn } from "node:child_process";
 import { createServerBackend } from "./daemon/backend.js";
@@ -106,6 +106,7 @@ function parseArgs(argv: string[]) {
     port: 8787,
     projects: [] as string[],
     noAuth: false,
+    persist: true,
     printPair: true,
     advertise: process.env.MAKIT_ADVERTISE_HOST ?? "",
     bindMode: "loopback" as BindMode | "custom",
@@ -117,6 +118,7 @@ function parseArgs(argv: string[]) {
     else if (a === "--lan") args.lan = true;
     else if (a === "--project" || a === "-C") args.projects.push(resolve(String(argv[++i])));
     else if (a === "--no-auth") args.noAuth = true;
+    else if (a === "--no-persist") args.persist = false;
     else if (a === "--no-pair-qr") args.printPair = false;
     else if (a === "--advertise") args.advertise = String(argv[++i]);
   }
@@ -149,19 +151,13 @@ function dedupeResolved(paths: string[]): string[] {
 async function main() {
   const cmd = process.argv[2];
   const LIFECYCLE = new Set(["start", "stop", "restart", "status", "logs", "service"]);
-  const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", "mirror", ...LIFECYCLE]);
+  const KNOWN = new Set(["serve", "pair", "qr", "devices", "sessions", "attach", ...LIFECYCLE]);
   if (cmd && !KNOWN.has(cmd)) {
     console.error(
       `unknown command: ${cmd}\n` +
-        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach|mirror [...]`,
+        `usage: makit serve|start|stop|restart|status|logs|service|pair|qr|devices|sessions|attach [...]`,
     );
     process.exit(2);
-  }
-
-  if (cmd === "mirror") {
-    const { runMirror } = await import("./cli/mirror.js");
-    await runMirror(process.argv.slice(3));
-    return;
   }
 
   // --- SPEC-02 thin-client subcommands: drive the running daemon via the
@@ -189,14 +185,8 @@ async function main() {
   // `attach` is a client, not a server: connect to a running makit and drive
   // one session from the terminal. No cert/registry/manager needed here.
   if (cmd === "attach") {
-    const argv = process.argv.slice(3);
-    if (argv.includes("--pane")) {
-      const { runPaneAttach } = await import("./cli/attach-pane.js");
-      await runPaneAttach(argv);
-    } else {
-      const { runAttach } = await import("./cli/attach.js");
-      await runAttach(argv);
-    }
+    const { runAttach } = await import("./cli/attach.js");
+    await runAttach(process.argv.slice(3));
     return;
   }
 
@@ -263,14 +253,27 @@ async function main() {
   const persisted = loadProjectPaths(file);
   const merged = dedupeResolved([...persisted, ...opts.projects]);
   saveProjectPaths(file, merged);
+
+  // Durable event log: persists sessions + their append-only event stream to a
+  // single SQLite file (~/.makit/makit.db) so history survives a restart and
+  // any client (mobile or desktop) can resume by `seq`. `--no-persist` opts out
+  // (in-memory only, M0 behaviour).
+  const store = opts.persist
+    ? (() => {
+        const dbPath = process.env.MAKIT_DB_FILE ?? resolvePath(homedir(), ".makit", "makit.db");
+        mkdirSync(dirname(dbPath), { recursive: true });
+        console.log(`[makit] event log: ${dbPath}`);
+        return new SqliteEventStore(dbPath);
+      })()
+    : undefined;
+  if (!store) console.log("[makit] --no-persist: sessions are in-memory only (lost on restart)");
+
   const manager = new SessionManager({
     projects: merged,
     onProjectsChanged: (paths) => saveProjectPaths(file, paths),
+    store,
   });
 
-  // World D: a stable secret the makit-mirror pi extension uses to authenticate.
-  // Written (0600) to ~/.makit/host.json so an externally-launched pi can find us.
-  const hostToken = loadOrCreateHostToken();
   // SPEC-07: choose the content-free wake sender. Absent/invalid push.json →
   // NoopPushSender (graceful degradation: wakes are no-ops, Slice-1 fallback).
   // The WakeCoordinator + onUndeliverable wiring lives inside server.ts, which
@@ -288,12 +291,9 @@ async function main() {
     cert,
     registry,
     trustLocalhost: opts.noAuth,
-    hostToken,
     sender,
     buildWakePayload,
   });
-  writeHostFile(opts.port, cert.fingerprint, hostToken);
-  ensureMirrorExtensionInstalled();
 
   // Loopback HTTP bridge so agent connectors (loaded inside each spawned
   // agent process) can talk back to makit.
@@ -436,99 +436,6 @@ async function main() {
   if (opts.noAuth) {
     console.log("[makit] --no-auth: localhost connections bypass auth (dev only)");
     console.log(`[makit] dev: flutter run --dart-define=MAKIT_WS_URL=wss://127.0.0.1:${opts.port} --dart-define=MAKIT_FP=${cert.fingerprint}`);
-  }
-}
-
-/**
- * Make `makit-mirror` auto-load into every `pi` by symlinking it (and its lone
- * runtime dep, `ws`) into pi's global extensions dir. Idempotent + best-effort,
- * so `makit serve` is all it takes for any `pi` to mirror while makit runs.
- */
-function ensureMirrorExtensionInstalled(): void {
-  try {
-    const here = dirname(fileURLToPath(import.meta.url)); // server/src
-    const extSrc = resolvePath(here, "../extensions/makit-mirror.ts");
-    const wsPkg = resolvePath(here, "../node_modules/ws");
-    if (!existsSync(extSrc) || !existsSync(wsPkg)) return;
-
-    const extDir = resolvePath(homedir(), ".pi", "agent", "extensions");
-    mkdirSync(resolvePath(extDir, "node_modules"), { recursive: true });
-    const relink = (target: string, linkPath: string) => {
-      try {
-        rmSync(linkPath, { force: true });
-        symlinkSync(target, linkPath);
-      } catch {
-        /* best-effort */
-      }
-    };
-    relink(extSrc, resolvePath(extDir, "makit-mirror.ts"));
-    relink(wsPkg, resolvePath(extDir, "node_modules", "ws"));
-    disableConflictingAskExtension();
-    console.log("[makit] mirror extension installed — any `pi` auto-mirrors while makit runs.");
-  } catch {
-    /* non-fatal */
-  }
-
-/**
- * Remove @mammothb/pi-ask from pi's settings if present. makit-mirror registers
- * the same `AskUserQuestion` tool (routed to the phone, with a TUI fallback),
- * and pi treats a duplicate tool name as a FATAL load error — so leaving pi-ask
- * enabled would stop pi from starting. Backed up once; re-enable any time with
- * `pi install npm:@mammothb/pi-ask`.
- */
-function disableConflictingAskExtension(): void {
-  try {
-    const settings = resolvePath(homedir(), ".pi", "agent", "settings.json");
-    if (!existsSync(settings)) return;
-    const parsed = JSON.parse(readFileSync(settings, "utf8"));
-    const pkgs: unknown = parsed.packages;
-    if (!Array.isArray(pkgs)) return;
-    const kept = pkgs.filter((p) => typeof p !== "string" || !p.includes("pi-ask"));
-    if (kept.length === pkgs.length) return; // pi-ask not present
-    const bak = settings + ".bak";
-    if (!existsSync(bak)) writeFileSync(bak, JSON.stringify(parsed, null, 1));
-    parsed.packages = kept;
-    writeFileSync(settings, JSON.stringify(parsed, null, 1));
-    console.log("[makit] disabled @mammothb/pi-ask (makit-mirror provides AskUserQuestion). Re-enable: pi install npm:@mammothb/pi-ask");
-  } catch {
-    /* non-fatal */
-  }
-}
-}
-
-/**
- * Reuse the existing host token across restarts so already-connected
- * makit-mirror extensions can re-authenticate on reconnect. Only mints a new
- * one if none is persisted.
- */
-function loadOrCreateHostToken(): string {
-  try {
-    const p = resolvePath(homedir(), ".makit", "host.json");
-    if (existsSync(p)) {
-      const o = JSON.parse(readFileSync(p, "utf8"));
-      if (typeof o.token === "string" && o.token) return o.token;
-    }
-  } catch {
-    /* fall through to mint */
-  }
-  return randomBytes(32).toString("hex");
-}
-
-/**
- * Write ~/.makit/host.json (0600) so the `makit-mirror` pi extension — loaded
- * into an externally-launched pi — can discover the server and authenticate.
- */
-function writeHostFile(port: number, fingerprint: string, token: string): void {
-  try {
-    const dir = resolvePath(homedir(), ".makit");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      resolvePath(dir, "host.json"),
-      JSON.stringify({ url: `wss://127.0.0.1:${port}`, port, fingerprint, token }, null, 2),
-      { mode: 0o600 },
-    );
-  } catch {
-    // Non-fatal: the mirror extension just won't be able to auto-connect.
   }
 }
 

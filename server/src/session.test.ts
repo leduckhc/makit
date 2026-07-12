@@ -71,3 +71,25 @@ test("adapter 'title' events retitle the session", () => {
   assert.equal(session.title, "auto-named from pi");
   assert.deepEqual(changes, ["auto-named from pi"]);
 });
+
+test("with a store, events persist durably and seq survives a session restart", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+
+  const s1 = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter(), store });
+  s1.adapter.emit("event", { ts: 1, kind: "user.message", payload: { text: "hi" } });
+  s1.adapter.emit("event", { ts: 2, kind: "agent.message", payload: { text: "hello" } });
+
+  // Store holds both events under the session's id.
+  assert.deepEqual(store.read(s1.id).map((e) => e.payload.text), ["hi", "hello"]);
+  // Session metadata is persisted (title/status/preview).
+  assert.equal(store.loadSessions()[0].lastPreview, "hello");
+
+  // "Restart": rebuild the session from the store, hydrate cache, continue seqs.
+  const s2 = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter(), store, id: s1.id });
+  s2.hydrate(store.read(s1.id));
+  assert.equal(s2.events.length, 2);
+  s2.adapter.emit("event", { ts: 3, kind: "user.message", payload: { text: "again" } });
+  assert.deepEqual(store.read(s1.id).map((e) => e.seq), [1, 2, 3]);
+  store.close();
+});
