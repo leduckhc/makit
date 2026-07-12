@@ -4,6 +4,34 @@ library;
 
 import '../transport/protocol.dart';
 
+/// An agent the host can spawn, surfaced by `agents.list` for the picker.
+class AgentDescriptor {
+  const AgentDescriptor({
+    required this.id,
+    required this.label,
+    required this.transport,
+    required this.available,
+  });
+
+  final String id;
+  final String label;
+
+  /// `native` | `acp`.
+  final String transport;
+  final bool available;
+
+  static AgentDescriptor? fromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String?;
+    if (id == null) return null;
+    return AgentDescriptor(
+      id: id,
+      label: (j['label'] as String?) ?? id,
+      transport: (j['transport'] as String?) ?? 'native',
+      available: (j['available'] as bool?) ?? true,
+    );
+  }
+}
+
 /// One command exposed by the agent — extension, prompt template, or skill.
 class SlashCmd {
   const SlashCmd({
