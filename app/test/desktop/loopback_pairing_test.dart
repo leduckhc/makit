@@ -73,4 +73,24 @@ void main() {
     expect(seen!.token, 'tok-xyz');
     expect(seenLabel, 'Mac');
   });
+
+  test('ensurePaired targets the configured host', () async {
+    final control = FakeControlClient(
+      status: _status(port: 8787),
+      mint: _mint(),
+      latency: Duration.zero,
+    );
+    PairInfo? seen;
+    final pairing = LoopbackPairing(
+      control: control,
+      isPaired: () => false,
+      host: 'localhost',
+      pairWith: (info, {String label = 'Mac'}) async => seen = info,
+    );
+
+    await pairing.ensurePaired();
+
+    expect(seen!.host, 'localhost');
+    expect(seen!.port, 8787);
+  });
 }

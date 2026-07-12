@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app/theme.dart';
 import '../control/control_client.dart';
@@ -35,6 +36,8 @@ import 'screens/providers.dart';
 import 'screens/qr_screen.dart';
 import 'screens/sessions_screen.dart';
 import 'screens/status_screen.dart';
+import 'settings/server_config.dart';
+import 'settings/server_settings_screen.dart';
 import 'tray/tray_controller.dart';
 
 /// Exposes the [DesktopController] to the dashboard widgets.
@@ -66,7 +69,17 @@ Future<void> runDesktopApp() async {
     dispose: (c) => (c as MakitControlClient).dispose(),
   );
   final lifecycle = DaemonLifecycle(resolver: MakitCliResolver());
-  final controller = DesktopController(client: client, lifecycle: lifecycle);
+  final prefs = await SharedPreferences.getInstance();
+  final configController =
+      ServerConfigController(prefs, ServerConfigController.load(prefs));
+  final controller = DesktopController(
+    client: client,
+    lifecycle: lifecycle,
+    serveDefaults: () => (
+      host: configController.current.host,
+      port: configController.current.port,
+    ),
+  );
 
   final tray = TrayController(
     stateAccessor: () => controller.summary,
@@ -113,6 +126,7 @@ Future<void> runDesktopApp() async {
       overrides: [
         controlClientProvider.overrideWithValue(client),
         desktopControllerProvider.overrideWithValue(controller),
+        serverConfigProvider.overrideWith((ref) => configController),
       ],
       child: const _DesktopApp(),
     ),
@@ -160,6 +174,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
     final conn = ref.read(connectionControllerProvider.notifier);
     final pairing = LoopbackPairing(
       control: ref.read(controlClientProvider),
+      host: ref.read(serverConfigProvider).host,
       isPaired: () => ref.read(connectionProvider).paired,
       pairWith: (info, {String label = 'Mac'}) async {
         await conn.pairWith(info, label: label);
@@ -241,6 +256,7 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard> {
     QrScreen(),
     SessionsScreen(),
     StatusScreen(),
+    ServerSettingsScreen(),
   ];
 
   @override
@@ -280,6 +296,10 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard> {
                         const NavigationRailDestination(
                           icon: Icon(Icons.info_outline),
                           label: Text('Status'),
+                        ),
+                        const NavigationRailDestination(
+                          icon: Icon(Icons.settings_outlined),
+                          label: Text('Server'),
                         ),
                       ],
                     ),

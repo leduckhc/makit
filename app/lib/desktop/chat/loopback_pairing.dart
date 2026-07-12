@@ -31,15 +31,18 @@ class LoopbackPairing {
     required ControlClient control,
     required PairWith pairWith,
     required bool Function() isPaired,
+    String host = '127.0.0.1',
     String label = 'Mac',
   })  : _control = control,
         _pairWith = pairWith,
         _isPaired = isPaired,
+        _host = host,
         _label = label;
 
   final ControlClient _control;
   final PairWith _pairWith;
   final bool Function() _isPaired;
+  final String _host;
   final String _label;
 
   /// Self-pairs over loopback unless already paired.
@@ -51,7 +54,7 @@ class LoopbackPairing {
     final status = await _control.status();
     final mint = await _control.pairMint();
     final info = PairInfo(
-      host: '127.0.0.1',
+      host: _host,
       port: status.port,
       fingerprint: status.fingerprint,
       token: mint.token,
