@@ -27,8 +27,10 @@ jobs:
           path-to-signatures: "signatures/version1/cla.json"
           path-to-document: "https://github.com/leduckhc/makit/blob/main/CLA.md"
           branch: "main"
-          # Bots don't need to sign.
-          allowlist: dependabot[bot],github-actions[bot],*bot
+          # Bots don't need to sign. The solo repo owner is exempt too — the
+          # project owner needn't sign their own CLA, and it avoids the action
+          # trying to commit a signature file to the protected `main` branch.
+          allowlist: leduckhc,dependabot[bot],github-actions[bot],*bot
 
           # Text shown to contributors.
           custom-notsigned-prcomment: "Thank you for your contribution! Before we can merge it, please read our [Contributor License Agreement](https://github.com/leduckhc/makit/blob/main/CLA.md) and sign it by posting the comment below."
