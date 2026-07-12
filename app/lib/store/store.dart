@@ -308,10 +308,19 @@ class StoreController extends StateNotifier<StoreState> {
 
   /// Spawn a fresh agent session in the given project. Resolves with the new
   /// session id once the server acks.
-  Future<String> spawnSession(String projectId, {String? title, String? agent}) async {
+  Future<String> spawnSession(
+    String projectId, {
+    String? title,
+    String? agent,
+  }) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
-      {'kind': 'session.spawn', 'projectId': projectId, 'title': ?title, 'agent': ?agent},
+      {
+        'kind': 'session.spawn',
+        'projectId': projectId,
+        'title': ?title,
+        'agent': ?agent,
+      },
     );
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
@@ -322,10 +331,9 @@ class StoreController extends StateNotifier<StoreState> {
   /// Returns an empty list on any failure so the caller falls back to default.
   Future<List<AgentDescriptor>> fetchAgents() async {
     try {
-      final ack = await _ref.read(connectionControllerProvider.notifier).request(
-        MsgType.cmd,
-        {'kind': 'agents.list'},
-      );
+      final ack = await _ref
+          .read(connectionControllerProvider.notifier)
+          .request(MsgType.cmd, {'kind': 'agents.list'});
       final raw = ack['agents'];
       if (raw is! List) return const [];
       final out = <AgentDescriptor>[];
