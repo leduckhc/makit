@@ -517,7 +517,15 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 const BrowseLan _defaultBrowseLan = browseLan;
 
 final _secureStorageProvider = Provider<FlutterSecureStorage>(
-  (_) => const FlutterSecureStorage(),
+  // macOS: use the legacy (file-based) keychain instead of the data-protection
+  // keychain. The data-protection keychain requires a `keychain-access-groups`
+  // entitlement, which needs a signing team; the desktop app ships ad-hoc
+  // ("Sign to Run Locally", CODE_SIGN_IDENTITY = "-"), so writes would fail with
+  // errSecMissingEntitlement (-34018). `mOptions` is read only on macOS — iOS
+  // uses `iOptions` — so this does not affect the mobile app.
+  (_) => const FlutterSecureStorage(
+    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
+  ),
 );
 
 /// SPEC-07: the native push-token provider injected into the controller.
