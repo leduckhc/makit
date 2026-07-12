@@ -47,6 +47,27 @@ function withAgentDir(cwd: string, run: (agentDir: string) => Promise<void>) {
   })();
 }
 
+test("native pi fallback keeps agent=pi (does not downgrade to default acp) when no mux", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    const agents: string[] = [];
+    const manager = new SessionManager({
+      projects: [cwd],
+      mux: undefined, // no multiplexer -> spawnPiSessionInPane falls back to headless
+      agentType: "acp", // default agent is pi-acp
+      adapterFactory: (ctx) => {
+        agents.push(ctx.agent);
+        return stubAdapter([]);
+      },
+    });
+    const projectId = manager.listProjects()[0].id;
+    await manager.spawnSession(projectId, "t", "pi"); // explicit native pi
+    assert.deepEqual(agents, ["pi"], "explicit native pi must not become pi-acp on fallback");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("spawnSession threads the chosen agent id into the adapter factory", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {

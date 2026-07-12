@@ -169,6 +169,55 @@ test("denies a command approval when no phone is attached (fail safe)", async ()
   assert.equal(fake.sent.find((m) => m.id === 7).result.decision, "decline");
 });
 
+test("handles item/permissions/requestApproval: grants requested perms on approve, nothing on deny", async () => {
+  const fake = fakeAppServer();
+  let approve = true;
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({
+    cwd: process.cwd(),
+    sessionId: "m1",
+    askUser: async () => ({ kind: "confirmAction", approved: approve }),
+  });
+  await adapter.send({ text: "go" });
+
+  fake.feed({
+    method: "item/permissions/requestApproval",
+    id: 11,
+    params: { threadId: "th1", turnId: "t1", itemId: "p1", cwd: "/tmp", reason: "needs network", permissions: { network: { any: true }, fileSystem: null } },
+  });
+  await waitFor(() => fake.sent.some((m) => m.id === 11 && m.result));
+  const granted = fake.sent.find((m) => m.id === 11).result;
+  assert.deepEqual(granted.permissions, { network: { any: true } }); // fileSystem:null -> omitted over JSON
+  assert.equal(granted.scope, "turn");
+
+  approve = false;
+  fake.feed({
+    method: "item/permissions/requestApproval",
+    id: 12,
+    params: { threadId: "th1", turnId: "t1", itemId: "p2", cwd: "/tmp", reason: null, permissions: { network: { any: true }, fileSystem: null } },
+  });
+  await waitFor(() => fake.sent.some((m) => m.id === 12 && m.result));
+  assert.deepEqual(fake.sent.find((m) => m.id === 12).result.permissions, {});
+});
+
+test("handles mcpServer/elicitation/request url mode via confirmAction", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({
+    cwd: process.cwd(),
+    sessionId: "m1",
+    askUser: async () => ({ kind: "confirmAction", approved: true }),
+  });
+  await adapter.send({ text: "go" });
+  fake.feed({
+    method: "mcpServer/elicitation/request",
+    id: 21,
+    params: { threadId: "th1", turnId: "t1", serverName: "mcp", mode: "url", message: "Log in", url: "https://x", elicitationId: "e1" },
+  });
+  await waitFor(() => fake.sent.some((m) => m.id === 21 && m.result));
+  assert.equal(fake.sent.find((m) => m.id === 21).result.action, "accept");
+});
+
 test("emits exit + exited status on kill", async () => {
   const fake = fakeAppServer();
   const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });

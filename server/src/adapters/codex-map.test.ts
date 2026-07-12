@@ -71,6 +71,12 @@ test("fileChange completion is a risky tool call summarizing paths", () => {
   assert.match((events.find((e) => e.kind === "tool.call.end")!.payload as any).output, /a\.txt/);
 });
 
+test("reasoning with a string summary (not array) does not throw and still emits thinking", () => {
+  const { events, mapper } = collect();
+  mapper.handle("item/completed", { item: { type: "reasoning", id: "r9", summary: "just a string" } });
+  assert.equal((events.find((e) => e.kind === "agent.thinking")!.payload as any).text, "just a string");
+});
+
 test("thread/name/updated surfaces a title; error surfaces session.error", () => {
   const { events, titles, mapper } = collect();
   mapper.handle("thread/name/updated", { threadId: "th", threadName: "My thread" });

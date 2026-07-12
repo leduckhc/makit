@@ -208,46 +208,6 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
       switch (method) {
         case "item/tool/requestUserInput":
           return this.reply(id, await this.handleUserInput(params));
-        case "item/permissions/requestApproval": {
-          const ok = await this.confirm(
-            { message: `Grant ${params.permissionType} permission?`, preview: params.permissionType },
-            "grant-permission",
-          );
-          return this.reply(id, { decision: ok ? "accept" : "decline" });
-        }
-        case "mcpServer/elicitation/request": {
-          // MCP elicitation: similar to ACP unstable_createElicitation; minimal support
-          // (URL + single-field form). Multi-field forms are declined.
-          const mode = params.mode;
-          if (mode?.kind === "url" && !this.askUser) return this.reply(id, { action: "decline", content: null });
-          if (mode?.kind === "url") {
-            const ok = await this.confirm(
-              { message: mode.description || "Open URL?", preview: mode.url || "" },
-              "navigate",
-            );
-            return this.reply(id, { action: ok ? "accept" : "decline", content: null });
-          }
-          if (mode?.kind === "form" && mode.schema?.properties && this.askUser) {
-            const props = Object.entries(mode.schema.properties);
-            if (props.length === 1) {
-              const [fieldName, fieldSpec] = props[0] as [string, any];
-              try {
-                const resp = await this.askUser({
-                  kind: "input",
-                  sessionId: this.makitSessionId,
-                  title: fieldName,
-                  placeholder: fieldSpec.description || fieldName,
-                  prefill: fieldSpec.default ?? "",
-                });
-                if (resp.kind === "input" && !resp.cancelled && typeof resp.value === "string") {
-                  return this.reply(id, { action: "accept", content: { [fieldName]: resp.value } });
-                }
-              } catch {}
-            }
-          }
-          // Multi-field or unknown mode: decline
-          return this.reply(id, { action: "decline", content: null });
-        }
         case "item/commandExecution/requestApproval": {
           const ok = await this.confirm(describeCommand(params), "execute");
           return this.reply(id, { decision: ok ? "accept" : "decline" });
@@ -319,6 +279,40 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
         });
       }
       return { answers };
+    } finally {
+      this.leaveInteractive();
+    }
+  }
+
+  /**
+   * Minimal MCP elicitation (mirrors the ACP path): url mode -> confirmAction,
+   * single-field form -> input, complex/multi-field -> decline.
+   */
+  private async handleElicitation(params: any): Promise<{ action: string; content: unknown; _meta: null }> {
+    if (!this.askUser) return { action: "decline", content: null, _meta: null };
+    const message = typeof params?.message === "string" ? params.message : "The agent needs input.";
+    this.enterInteractive("awaiting-input");
+    try {
+      if (params?.mode === "url") {
+        const ok = await this.confirm({ message, preview: typeof params?.url === "string" ? params.url : undefined }, "open-url");
+        return { action: ok ? "accept" : "decline", content: null, _meta: null };
+      }
+      const props = (params?.requestedSchema?.properties ?? {}) as Record<string, any>;
+      const names = Object.keys(props);
+      if (names.length !== 1) return { action: "decline", content: null, _meta: null };
+      const name = names[0];
+      const field = props[name] ?? {};
+      const resp = await this.askUser({
+        kind: "input",
+        sessionId: this.makitSessionId,
+        title: message,
+        placeholder: typeof field.description === "string" ? field.description : field.title,
+        multiline: false,
+      });
+      if (resp.kind === "input" && !(resp as any).cancelled && typeof resp.value === "string") {
+        return { action: "accept", content: { [name]: resp.value }, _meta: null };
+      }
+      return { action: "decline", content: null, _meta: null };
     } finally {
       this.leaveInteractive();
     }
