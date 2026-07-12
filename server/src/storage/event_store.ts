@@ -1,0 +1,54 @@
+/**
+ * EventStore — durable, append-only session event log + session registry.
+ *
+ * This is the persistence seam that lets makit survive a server restart: the
+ * append-only event stream and the session metadata are written to SQLite so a
+ * reconnecting client (mobile or desktop) can resume by `seq` and see the full
+ * history even after the process — and every in-memory session — is gone.
+ *
+ * Invariant (see docs/ARCHITECTURE.md §4): an event is written to the log
+ * BEFORE it is fanned out to clients. `append` is synchronous so callers get
+ * the assigned `seq` back inline and can fan out immediately after.
+ */
+
+import type { SessionEvent, SessionStatus, ApprovalPolicy } from "../protocol.js";
+
+/** Persisted session metadata (runtime-only `pane` is intentionally excluded). */
+export interface SessionMeta {
+  id: string;
+  projectId: string;
+  agent: string;
+  title: string;
+  status: SessionStatus;
+  policy: ApprovalPolicy;
+  createdAt: number;
+  lastActivityAt: number;
+  lastPreview: string;
+  /**
+   * On-disk transcript path used to relaunch a pi session with `--session`.
+   * Persisted so a cold (rehydrated) session can be re-attached to a live agent
+   * after a server restart. Null/absent for agents that can't resume this way.
+   */
+  resumeSessionPath?: string;
+}
+
+/** A new event to append: seq + sessionId are assigned/owned by the store. */
+export type NewEvent = Omit<SessionEvent, "seq" | "sessionId">;
+
+export interface EventStore {
+  /**
+   * Append an event to a session's log, assigning the next monotonic `seq`.
+   * Returns the fully-formed, persisted event (with seq + sessionId).
+   */
+  append(sessionId: string, e: NewEvent): SessionEvent;
+  /** Events with `seq > fromSeq`, ascending. `fromSeq = 0` returns all. */
+  read(sessionId: string, fromSeq?: number): SessionEvent[];
+  /** Insert-or-update session metadata. */
+  saveSession(meta: SessionMeta): void;
+  /** All persisted session metadata, most-recently-active first. */
+  loadSessions(): SessionMeta[];
+  /** Remove a session and its events. */
+  deleteSession(id: string): void;
+  /** Release underlying resources. */
+  close(): void;
+}

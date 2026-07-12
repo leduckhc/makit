@@ -19,8 +19,6 @@ export interface WsClient {
   close(code: number, reason: string): void;
   /** Session ids this client is subscribed to. */
   readonly subscribed: Set<string>;
-  /** Multiplexer pane targets this client is mirroring (POC pane bridge). */
-  panes?: Set<string>;
   /** True once the client has completed the `hello` handshake. */
   authed: boolean;
   /** Human label of the paired device, once known. */

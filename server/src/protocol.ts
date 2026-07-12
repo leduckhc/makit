@@ -82,8 +82,6 @@ export interface SessionDTO {
   policy: ApprovalPolicy;
   lastActivityAt: number;
   lastPreview: string;
-  /** Set when this session is running in a multiplexer pane (SPEC-05). */
-  pane?: { mux: string; paneId: string };
 }
 
 let _seq = 0;

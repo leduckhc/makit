@@ -1,0 +1,39 @@
+/**
+ * DetachedAdapter — a no-process adapter for sessions rehydrated from the
+ * durable event log after a server restart. The original agent process is
+ * gone, so the session is read-only history: it replays fine to any client
+ * (mobile or desktop), but attempting to send input emits a `session.error`
+ * telling the client the session must be re-attached to continue.
+ */
+
+import { EventEmitter } from "node:events";
+import type { AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+
+export class DetachedAdapter extends EventEmitter implements AgentAdapter {
+  readonly agent: string;
+
+  constructor(agent = "pi") {
+    super();
+    this.agent = agent;
+  }
+
+  async start(_opts: SpawnOpts): Promise<void> {
+    // Cold session: nothing to spawn. Status is restored by the manager.
+  }
+
+  async send(_input: UserInput): Promise<void> {
+    this.emit("event", {
+      ts: Date.now(),
+      kind: "session.error",
+      payload: {
+        message: "session is not live after a server restart — re-attach to continue",
+      },
+    });
+  }
+
+  async cancel(): Promise<void> {}
+
+  async kill(): Promise<void> {
+    this.emit("exit", null);
+  }
+}

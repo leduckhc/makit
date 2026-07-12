@@ -15,14 +15,11 @@ import { PiAdapter } from "./adapters/pi.js";
 import { AcpAdapter, codexAcpSpec } from "./adapters/acp.js";
 import { CodexAppServerAdapter } from "./adapters/codex.js";
 import { listAgents, type AgentDescriptor } from "./adapters/catalog.js";
-import { MirrorAdapter } from "./adapters/mirror.js";
-import { IngestAdapter } from "./adapters/ingest.js";
-import { herdrReader, paneAgentInfo } from "./pane/herdr.js";
 import { Session } from "./session.js";
 import { DEFAULT_SESSION_TITLE, type ProjectDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
-import { type MultiplexerAdapter, type PaneHandle, MuxError } from "./mux/adapter.js";
-import { getMultiplexer } from "./mux/registry.js";
+import { DetachedAdapter } from "./adapters/detached.js";
+import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
 
 export interface AdapterFactoryContext {
@@ -45,16 +42,17 @@ export interface ManagerOpts {
    */
   onProjectsChanged?: (paths: string[]) => void;
   /**
-   * Override the multiplexer adapter (SPEC-05). Production code uses
-   * getMultiplexer(); tests inject a fake via this option.
-   */
-  mux?: MultiplexerAdapter | undefined;
-  /**
    * Force every spawned pi session onto a specific model (`--model`). Used by
    * the real-pi e2e to select the fake model provider. Unset in production, so
    * pi uses its own configured default.
    */
   defaultModel?: string;
+  /**
+   * Durable event log. When present, spawned sessions persist their events +
+   * metadata, and any sessions already in the store are rehydrated on boot as
+   * read-only history so clients can resume after a server restart.
+   */
+  store?: EventStore;
 }
 
 export interface BridgeBinding {
@@ -78,20 +76,6 @@ interface ProjectEntry {
   dto: ProjectDTO;
 }
 
-interface PendingSpawn {
-  resolve: (session: Session) => void;
-  reject: (err: Error) => void;
-  paneHandle: PaneHandle;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-const SPAWN_TIMEOUT_MS = 15_000;
-
-export interface SpawnInPaneOpts {
-  /** Override the spawn timeout (ms). Defaults to 15 s. Used by tests. */
-  timeoutMs?: number;
-}
-
 export class SessionManager extends EventEmitter {
   private readonly projects = new Map<string, ProjectEntry>();
   private readonly sessions = new Map<string, Session>();
@@ -103,19 +87,16 @@ export class SessionManager extends EventEmitter {
   private readonly onProjectsChanged?: (paths: string[]) => void;
   private readonly defaultModel?: string;
   private readonly defaultAgentId: string;
+  private readonly store?: EventStore;
   private bridge?: BridgeBinding;
-  /** Injected or resolved multiplexer adapter (SPEC-05). */
-  private readonly _muxOverride?: MultiplexerAdapter | undefined;
-  /** spawnToken → pending pane spawn waiting for host.open correlation. */
-  private readonly pendingSpawns = new Map<string, PendingSpawn>();
 
   constructor(opts: ManagerOpts) {
     super();
     this.adapterFactory = opts.adapterFactory;
     this.onProjectsChanged = opts.onProjectsChanged;
-    this._muxOverride = opts.mux;
     this.defaultModel = opts.defaultModel;
     this.defaultAgentId = "pi";
+    this.store = opts.store;
     for (const path of opts.projects) {
       const id = randomUUID();
       this.projects.set(id, {
@@ -127,6 +108,38 @@ export class SessionManager extends EventEmitter {
           lastActivityAt: Date.now(),
         },
       });
+    }
+    this.rehydrate();
+  }
+
+  /**
+   * Rebuild persisted sessions from the store as cold, read-only history so a
+   * reconnecting client sees prior transcripts after a server restart. Cold
+   * sessions use {@link DetachedAdapter} (no process); sending input to one
+   * emits a `session.error` until it is re-attached. No-op without a store.
+   */
+  private rehydrate(): void {
+    if (!this.store) return;
+    for (const meta of this.store.loadSessions()) {
+      const session = new Session({
+        id: meta.id,
+        projectId: meta.projectId,
+        agent: meta.agent,
+        title: meta.title,
+        policy: meta.policy,
+        adapter: new DetachedAdapter(meta.agent),
+        store: this.store,
+        createdAt: meta.createdAt,
+        status: "exited",
+        lastActivityAt: meta.lastActivityAt,
+        lastPreview: meta.lastPreview,
+        resumeSessionPath: meta.resumeSessionPath,
+      });
+      session.hydrate(this.store.read(meta.id));
+      this.sessions.set(session.id, session);
+    }
+    if (this.sessions.size > 0) {
+      log.info(`[makit] rehydrated ${this.sessions.size} session(s) from the event log`);
     }
   }
 
@@ -205,145 +218,7 @@ export class SessionManager extends EventEmitter {
    */
   async spawnSession(projectId: string, title?: string, agent?: string): Promise<Session> {
     const agentId = agent ?? this.defaultAgentId;
-    // Only native pi mirrors a real TUI in a multiplexer pane (World B/D);
-    // every other agent (codex, codex-native) runs headless.
-    if (agentId === "pi") {
-      return this.spawnPiSessionInPane(projectId, title);
-    }
     return this.spawnPiSession(projectId, title, agentId);
-  }
-
-  /**
-   * Spawn a pi session in a multiplexer pane (SPEC-05, World D / makit-mirror
-   * path). Falls back to headless if no mux is available or the pane spawn
-   * fails. A spawnToken is embedded in the pane command's env; the matching
-   * `host.open` frame calls `resolvePendingSpawn` to bind the session.
-   */
-  async spawnPiSessionInPane(
-    projectId: string,
-    title?: string,
-    opts: SpawnInPaneOpts = {},
-  ): Promise<Session> {
-    const project = this.projects.get(projectId);
-    if (!project) throw new Error(`unknown project: ${projectId}`);
-
-    const mux = this._muxOverride !== undefined
-      ? this._muxOverride
-      : getMultiplexer();
-
-    if (!mux) return this.spawnPiSession(projectId, title, "pi");
-
-    const available = await mux.isAvailable().catch(() => false);
-    if (!available) return this.spawnPiSession(projectId, title, "pi");
-
-    const spawnToken = randomUUID();
-    const label = `makit: ${title ?? DEFAULT_SESSION_TITLE}`;
-    const piBin = process.env.MAKIT_PI_BIN ?? "pi";
-    const command = `MAKIT_SPAWN_TOKEN=${spawnToken} ${piBin}`;
-
-    let paneHandle: PaneHandle;
-    try {
-      paneHandle = await mux.spawnPane({ cwd: project.dto.path, command, label });
-    } catch (e) {
-      log.warn(
-        `[makit] mux pane spawn failed — falling back to headless: ${(e as Error).message}`,
-      );
-      if (e instanceof MuxError) {
-        log.info(
-          "[makit] hint: set MAKIT_MUX_ANCHOR to a valid pane id (e.g. w1:p1), not a workspace label",
-        );
-      }
-      return this.spawnPiSession(projectId, title, "pi");
-    }
-
-    const pending = this.registerPendingSpawn(spawnToken, paneHandle, opts.timeoutMs ?? SPAWN_TIMEOUT_MS);
-    try {
-      return await pending;
-    } catch (e) {
-      await mux.closePane(paneHandle).catch(() => {});
-      throw e;
-    }
-  }
-
-  /**
-   * Register a pending spawn waiting for the matching `host.open`.
-   * Returns a promise that resolves once `resolvePendingSpawn` is called.
-   * @internal called by spawnPiSessionInPane; exposed for tests via simulateHostOpen.
-   */
-  private registerPendingSpawn(
-    spawnToken: string,
-    paneHandle: PaneHandle,
-    timeoutMs: number,
-  ): Promise<Session> {
-    return new Promise<Session>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingSpawns.delete(spawnToken);
-        reject(new Error(`spawn timeout: pi did not connect within ${timeoutMs}ms`));
-      }, timeoutMs);
-      this.pendingSpawns.set(spawnToken, { resolve, reject, paneHandle, timer });
-    });
-  }
-
-  /**
-   * Called by server.ts's host.open handler when a spawnToken is present.
-   * Attaches the pane handle to the session and resolves the pending promise.
-   * Returns the paneHandle if found, undefined otherwise.
-   */
-  resolvePendingSpawn(spawnToken: string, session: Session): PaneHandle | undefined {
-    const pending = this.pendingSpawns.get(spawnToken);
-    if (!pending) return undefined;
-    clearTimeout(pending.timer);
-    this.pendingSpawns.delete(spawnToken);
-    session.pane = pending.paneHandle;
-    pending.resolve(session);
-    return pending.paneHandle;
-  }
-
-  /**
-   * Relabel the mux pane for a session when its title changes (SPEC-05).
-   * No-op if the session has no pane handle or the mux doesn't support rename.
-   */
-  async updatePaneLabel(sessionId: string, title: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session?.pane) return;
-    const mux = this._muxOverride !== undefined
-      ? this._muxOverride
-      : getMultiplexer(session.pane.mux);
-    if (!mux) return;
-    await mux.setLabel?.(session.pane, `makit: ${title}`).catch(() => {});
-  }
-
-  /**
-   * Test helper: simulate the host.open path for a pending pane spawn.
-   * Creates a minimal IngestAdapter session (without the real pi commands
-   * fetcher) and resolves the pending spawn. Production code uses the
-   * server.ts host.open handler which calls openHostSession then
-   * resolvePendingSpawn.
-   */
-  async simulateHostOpen(
-    spawnToken: string,
-    title: string | undefined,
-    cwd: string,
-    projectId: string,
-  ): Promise<Session> {
-    const project = this.projects.get(projectId);
-    if (!project) throw new Error(`unknown project: ${projectId}`);
-
-    // Build a minimal ingest session without enableCommands() to avoid
-    // spawning a real pi subprocess in tests.
-    const { IngestAdapter } = await import("./adapters/ingest.js");
-    const adapter = new IngestAdapter(() => {});
-    const session = new Session({
-      projectId: project.dto.id,
-      agent: "pi",
-      title: title ?? DEFAULT_SESSION_TITLE,
-      adapter,
-    });
-    await adapter.start({ cwd });
-    this.sessions.set(session.id, session);
-    this.emit("sessionCreated", session);
-    this.resolvePendingSpawn(spawnToken, session);
-    return session;
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */
@@ -405,108 +280,12 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
 
-    // Close the mux pane if this session was spawned in one (SPEC-05). Idempotent.
-    if (session.pane) {
-      const mux = this._muxOverride !== undefined
-        ? this._muxOverride
-        : getMultiplexer(session.pane.mux);
-      if (mux) await mux.closePane(session.pane).catch(() => {});
-    }
-
     await session.adapter.kill();
     this.sessions.delete(id);
     // Drop any attach mapping so the underlying pi session can be re-attached.
     for (const [piId, sid] of this.attachedByPi) {
       if (sid === id) this.attachedByPi.delete(piId);
     }
-  }
-  /**
-   * Open a session hosted by an external `makit-mirror` extension (World D):
-   * events are pushed in via the returned IngestAdapter, and the phone's
-   * prompts are relayed back through `onPrompt`. No process is spawned.
-   */
-  async openHostSession(opts: {
-    title?: string;
-    cwd?: string;
-    projectId?: string;
-    onPrompt: (text: string) => void;
-    onAction?: (action: string, args?: Record<string, unknown>) => void;
-  }): Promise<Session> {
-    let project = opts.projectId ? this.projects.get(opts.projectId) : undefined;
-    if (!project && opts.cwd) {
-      project = [...this.projects.values()].find((p) => opts.cwd!.startsWith(p.dto.path));
-    }
-    if (!project) project = [...this.projects.values()][0];
-    if (!project) throw new Error("no project for host session");
-
-    const adapter = new IngestAdapter(opts.onPrompt, undefined, opts.onAction);
-    // Wire up the real pi side-channel fetcher so the slash palette populates
-    // with skills/prompts/extensions from the project's filesystem. ~1.2s
-    // fire-and-forget at startup; failures are silenced (palette stays empty).
-    adapter.enableCommands();
-    const session = new Session({
-      projectId: project.dto.id,
-      agent: "pi",
-      title: opts.title ?? DEFAULT_SESSION_TITLE,
-      adapter,
-    });
-    await adapter.start({ cwd: project.dto.path });
-    this.sessions.set(session.id, session);
-    this.emit("sessionCreated", session);
-    return session;
-  }
-
-
-  /**
-   * Mirror a real `pi` TUI running in a multiplexer pane (World B): tail its
-   * session file for output and inject the phone's input via send-keys. No pi
-   * process is spawned — the TUI stays the sole writer of the session file.
-   * If `sessionPath` is omitted, the most-recent session for the project is used.
-   */
-  async mirrorTuiSession(opts: {
-    paneTarget: string;
-    sessionPath?: string;
-    projectId?: string;
-    title?: string;
-  }): Promise<Session> {
-    // Auto-discover the pane's agent session + cwd from herdr when not given.
-    const info =
-      !opts.sessionPath || !opts.projectId
-        ? await paneAgentInfo(opts.paneTarget)
-        : {};
-
-    // Project: explicit id → match a project whose path contains the pane cwd
-    // → first project.
-    let project = opts.projectId ? this.projects.get(opts.projectId) : undefined;
-    if (!project && info.cwd) {
-      project = [...this.projects.values()].find((p) =>
-        info.cwd!.startsWith(p.dto.path),
-      );
-    }
-    if (!project) project = [...this.projects.values()][0];
-    if (!project) throw new Error("no project for mirror session");
-
-    const sessionPath =
-      opts.sessionPath ?? info.sessionPath ?? listPiSessions(project.dto.path)[0]?.path;
-    if (!sessionPath) {
-      throw new Error(`no session file found for pane ${opts.paneTarget}`);
-    }
-
-    const adapter = new MirrorAdapter(sessionPath, opts.paneTarget, herdrReader);
-    // Wire up the real pi side-channel fetcher so the slash palette populates
-    // with skills/prompts/extensions from the project's filesystem. ~1.2s
-    // fire-and-forget at startup; failures are silenced (palette stays empty).
-    adapter.enableCommands();
-    const session = new Session({
-      projectId: project.dto.id,
-      agent: "pi",
-      title: opts.title ?? DEFAULT_SESSION_TITLE,
-      adapter,
-    });
-    await adapter.start({ cwd: project.dto.path });
-    this.sessions.set(session.id, session);
-    this.emit("sessionCreated", session);
-    return session;
   }
 
   /** Construct the adapter for an agent id. */
@@ -539,6 +318,8 @@ export class SessionManager extends EventEmitter {
       agent: this.adapterFactory ? "stub" : built.agent,
       title: opts.title ?? DEFAULT_SESSION_TITLE,
       adapter,
+      store: this.store,
+      resumeSessionPath: opts.resumeSessionPath,
     });
     const activeAdapter = this.adapterFactory?.({
       projectPath: project.dto.path,
@@ -550,16 +331,31 @@ export class SessionManager extends EventEmitter {
     // Seed history BEFORE the adapter goes live so it precedes new events.
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
-    await activeAdapter.start({
-      cwd: project.dto.path,
-      sessionId: session.id,
-      resumeSessionPath: opts.resumeSessionPath,
+    await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
+    return session;
+  }
+
+  /**
+   * Build the {@link SpawnOpts} for launching an agent adapter — the bridge
+   * env/extensions/askUser wiring shared by fresh spawns and re-attaches.
+   */
+  private startOpts(
+    projectPath: string,
+    sessionId: string,
+    resumeSessionPath?: string,
+  ): import("./adapters/adapter.js").SpawnOpts {
+    return {
+      cwd: projectPath,
+      sessionId,
+      resumeSessionPath,
       model: this.defaultModel,
       env: this.bridge
         ? {
             MAKIT_BRIDGE_URL: this.bridge.url,
             MAKIT_BRIDGE_TOKEN: this.bridge.token,
-            MAKIT_SESSION_ID: session.id,
+            MAKIT_SESSION_ID: sessionId,
             ...(this.bridge.agentDir
               ? { PI_CODING_AGENT_DIR: this.bridge.agentDir }
               : {}),
@@ -567,9 +363,42 @@ export class SessionManager extends EventEmitter {
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],
       askUser: this.bridge?.askUser,
-    });
-    this.sessions.set(session.id, session);
-    this.emit("sessionCreated", session);
+    };
+  }
+
+  /**
+   * Re-attach a cold (rehydrated) session to a live agent after a server
+   * restart. Rebuilds the real adapter (pi resumes from its persisted on-disk
+   * transcript via {@link startOpts}), swaps it in with {@link Session.replaceAdapter},
+   * and starts it. The durable `seq` space is preserved: new events continue
+   * after the persisted max (the store assigns the next seq on append), so
+   * mobile↔desktop handoff survives a restart end-to-end.
+   *
+   * Only pi-backed sessions can resume today; other agents stay history-only
+   * and keep emitting the cold-session `session.error` on send.
+   */
+  async reattachSession(sessionId: string): Promise<Session> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no such session: ${sessionId}`);
+
+    const resumeSessionPath = session.resumeSessionPath;
+    if (!resumeSessionPath) {
+      throw new Error(`session ${sessionId} cannot be re-attached — history only`);
+    }
+    // Real (non-stubbed) hosts can only resume native pi from a transcript.
+    if (!this.adapterFactory && session.agent !== "pi") {
+      throw new Error(`cannot re-attach agent "${session.agent}" — history only`);
+    }
+
+    // cwd: the session's project if still known, else the first project.
+    const project = this.projects.get(session.projectId) ?? [...this.projects.values()][0];
+    const cwd = project?.dto.path ?? process.cwd();
+
+    const adapter = this.adapterFactory
+      ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: "pi" })
+      : this.buildAdapter("pi").adapter;
+    session.replaceAdapter(adapter);
+    await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath));
     return session;
   }
   /** Ensure each project has at least one default session. Convenience for M0. */

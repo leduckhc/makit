@@ -15,7 +15,7 @@ import type {
   SessionStatus,
 } from "./protocol.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
-import type { PaneHandle } from "./mux/adapter.js";
+import type { EventStore, NewEvent, SessionMeta } from "./storage/event_store.js";
 
 export interface SessionInit {
   projectId: string;
@@ -23,33 +23,111 @@ export interface SessionInit {
   title?: string;
   adapter: AgentAdapter;
   policy?: ApprovalPolicy;
+  /**
+   * Optional durable event log. When present, every event is written to the
+   * store (which assigns `seq`) BEFORE it is emitted, and session metadata is
+   * upserted on change — so the session survives a server restart. When
+   * absent, the session keeps its events in memory only (M0 behaviour).
+   */
+  store?: EventStore;
+  /** Reuse a persisted id on rehydration; otherwise a fresh uuid is minted. */
+  id?: string;
+  createdAt?: number;
+  /** Restore persisted derived state on rehydration. */
+  status?: SessionStatus;
+  lastActivityAt?: number;
+  lastPreview?: string;
+  /** On-disk transcript path so a cold session can be re-attached (pi resume). */
+  resumeSessionPath?: string;
 }
 
 export class Session extends EventEmitter {
-  readonly id = randomUUID();
+  readonly id: string;
   readonly projectId: string;
   readonly agent: string;
+  readonly createdAt: number;
   title: string;
   status: SessionStatus = "idle";
   policy: ApprovalPolicy;
   lastActivityAt = Date.now();
   lastPreview = "";
+  /** On-disk transcript path used to relaunch a pi session (resume linkage). */
+  readonly resumeSessionPath?: string;
 
   readonly events: SessionEvent[] = [];
   adapter: AgentAdapter;
-  /** Set when this session runs in a multiplexer pane (SPEC-05). */
-  pane?: PaneHandle;
+  private readonly store?: EventStore;
 
   constructor(init: SessionInit) {
     super();
+    this.id = init.id ?? randomUUID();
     this.projectId = init.projectId;
     this.agent = init.agent;
+    this.createdAt = init.createdAt ?? Date.now();
     this.title = init.title ?? DEFAULT_SESSION_TITLE;
     this.adapter = init.adapter;
     this.policy = init.policy ?? "ask-on-risky";
+    this.store = init.store;
+    if (init.status) this.status = init.status;
+    if (typeof init.lastActivityAt === "number") this.lastActivityAt = init.lastActivityAt;
+    if (typeof init.lastPreview === "string") this.lastPreview = init.lastPreview;
+    this.resumeSessionPath = init.resumeSessionPath;
 
+    this.persistMeta();
     this.bindAdapter(this.adapter);
 
+  }
+
+  /**
+   * Load persisted events into the in-memory cache WITHOUT re-writing them to
+   * the store (they are already durable). Used when rehydrating a session
+   * after a server restart so `session.events` reflects prior history.
+   */
+  hydrate(events: SessionEvent[]): void {
+    for (const e of events) this.events.push(e);
+    const last = events.at(-1);
+    if (last) this.lastActivityAt = Math.max(this.lastActivityAt, last.ts);
+  }
+
+  /**
+   * Append an event durably (via the store, which assigns `seq`) or in memory
+   * (fallback). Updates the in-memory cache + derived fields, but does NOT
+   * emit — callers decide whether to fan out. Returns the formed event.
+   */
+  private record(e: NewEvent): SessionEvent {
+    const event: SessionEvent = this.store
+      ? this.store.append(this.id, e)
+      : { seq: this.events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
+    this.events.push(event);
+    this.lastActivityAt = event.ts;
+    if (event.kind === "user.message" || event.kind === "agent.message") {
+      const t = (event.payload as { text?: string }).text;
+      if (typeof t === "string") this.lastPreview = t.slice(0, 200);
+    } else if (event.kind === "session.status") {
+      const s = (event.payload as { status?: SessionStatus }).status;
+      if (s) this.status = s;
+    }
+    this.persistMeta();
+    return event;
+  }
+
+  private toMeta(): SessionMeta {
+    return {
+      id: this.id,
+      projectId: this.projectId,
+      agent: this.agent,
+      title: this.title,
+      status: this.status,
+      policy: this.policy,
+      createdAt: this.createdAt,
+      lastActivityAt: this.lastActivityAt,
+      lastPreview: this.lastPreview,
+      resumeSessionPath: this.resumeSessionPath,
+    };
+  }
+
+  private persistMeta(): void {
+    this.store?.saveSession(this.toMeta());
   }
 
   replaceAdapter(adapter: AgentAdapter): void {
@@ -64,61 +142,18 @@ export class Session extends EventEmitter {
    * `sub` (see SubscriptionHub), so emitting here would double-fire.
    */
   backfill(events: AdapterEvent[]): void {
-    for (const e of events) {
-      const event: SessionEvent = {
-        seq: this.events.length + 1,
-        sessionId: this.id,
-        ts: e.ts,
-        kind: e.kind,
-        payload: e.payload,
-      };
-      this.events.push(event);
-      this.lastActivityAt = event.ts;
-      if (event.kind === "user.message" || event.kind === "agent.message") {
-        const t = (event.payload as { text?: string }).text;
-        if (typeof t === "string") this.lastPreview = t.slice(0, 200);
-      } else if (event.kind === "session.status") {
-        const s = (event.payload as { status?: SessionStatus }).status;
-        if (s) this.status = s;
-      }
-    }
+    for (const e of events) this.record(e);
   }
 
   private bindAdapter(adapter: AgentAdapter): void {
     adapter.on("event", (e) => {
-      const event: SessionEvent = {
-        seq: this.events.length + 1,
-        sessionId: this.id,
-        ts: e.ts,
-        kind: e.kind,
-        payload: e.payload,
-      };
-      this.events.push(event);
-      this.lastActivityAt = event.ts;
-
-      // Bubble up status + preview for the home list.
-      if (event.kind === "user.message" || event.kind === "agent.message") {
-        const t = (event.payload as { text?: string }).text;
-        if (typeof t === "string") this.lastPreview = t.slice(0, 200);
-      } else if (event.kind === "session.status") {
-        const s = (event.payload as { status?: SessionStatus }).status;
-        if (s) this.status = s;
-      }
-
-      this.emit("event", event);
+      this.emit("event", this.record(e));
     });
 
     adapter.on("status", (s) => {
-      this.status = s === "running" ? "running" : "idle";
-      const evt: SessionEvent = {
-        seq: this.events.length + 1,
-        sessionId: this.id,
-        ts: Date.now(),
-        kind: "session.status",
-        payload: { status: this.status },
-      };
-      this.events.push(evt);
-      this.emit("event", evt);
+      const status = s === "running" ? "running" : "idle";
+      this.status = status;
+      this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
     });
 
     adapter.on("title", (title) => this.setTitle(title));
@@ -134,7 +169,6 @@ export class Session extends EventEmitter {
       policy: this.policy,
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
-      ...(this.pane ? { pane: { mux: this.pane.mux, paneId: this.pane.paneId } } : {}),
     };
   }
 
@@ -162,6 +196,7 @@ export class Session extends EventEmitter {
     const next = title.trim();
     if (!next || next === this.title) return false;
     this.title = next;
+    this.persistMeta();
     this.emit("titleChanged", next);
     return true;
   }
