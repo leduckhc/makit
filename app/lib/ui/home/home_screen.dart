@@ -220,10 +220,22 @@ class _ProjectSection extends ConsumerWidget {
 
   Future<void> _spawnHere(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
     try {
-      final newId = await ref
-          .read(storeControllerProvider.notifier)
-          .spawnSession(project.id);
+      // Offer an agent picker when the host exposes more than one usable agent.
+      final agents = await store.fetchAgents();
+      final selectable = agents.where((a) => a.available).toList();
+      String? chosen;
+      if (selectable.length > 1) {
+        if (!context.mounted) return;
+        chosen = await showModalBottomSheet<String>(
+          context: context,
+          showDragHandle: true,
+          builder: (ctx) => _AgentPickerSheet(agents: selectable),
+        );
+        if (chosen == null) return; // user dismissed the sheet
+      }
+      final newId = await store.spawnSession(project.id, agent: chosen);
       if (!context.mounted) return;
       context.go('/session/$newId');
     } catch (e) {
@@ -530,6 +542,41 @@ class _WorkingBadgeState extends State<_WorkingBadge>
               fontWeight: FontWeight.w600,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom sheet that lets the user pick which agent to spawn. Pops the chosen
+/// agent id, or null if dismissed.
+class _AgentPickerSheet extends StatelessWidget {
+  const _AgentPickerSheet({required this.agents});
+
+  final List<AgentDescriptor> agents;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+            child: Text(
+              'Choose an agent',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          for (final a in agents)
+            ListTile(
+              leading: const Icon(Icons.smart_toy_outlined),
+              title: Text(a.label),
+              subtitle: Text(a.transport.toUpperCase()),
+              onTap: () => Navigator.pop(context, a.id),
+            ),
+          const SizedBox(height: 8),
         ],
       ),
     );

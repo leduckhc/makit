@@ -106,4 +106,5 @@ export type CmdKind =
   | "session.attach"
   | "session.kill"
   | "session.policy"
+  | "agents.list"
   | "push.register";

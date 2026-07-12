@@ -9,6 +9,9 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { PiAdapter } from "./adapters/pi.js";
+import { AcpAdapter, codexAcpSpec } from "./adapters/acp.js";
+import { CodexAppServerAdapter } from "./adapters/codex.js";
+import { listAgents } from "./adapters/catalog.js";
 import { MirrorAdapter } from "./adapters/mirror.js";
 import { IngestAdapter } from "./adapters/ingest.js";
 import { herdrReader, paneAgentInfo } from "./pane/herdr.js";
@@ -29,6 +32,7 @@ export class SessionManager extends EventEmitter {
     adapterFactory;
     onProjectsChanged;
     defaultModel;
+    defaultAgentId;
     bridge;
     /** Injected or resolved multiplexer adapter (SPEC-05). */
     _muxOverride;
@@ -40,6 +44,7 @@ export class SessionManager extends EventEmitter {
         this.onProjectsChanged = opts.onProjectsChanged;
         this._muxOverride = opts.mux;
         this.defaultModel = opts.defaultModel;
+        this.defaultAgentId = "pi";
         for (const path of opts.projects) {
             const id = randomUUID();
             this.projects.set(id, {
@@ -102,11 +107,29 @@ export class SessionManager extends EventEmitter {
         this.bridge = bridge;
     }
     /** Spawn a fresh pi session inside `projectId`. */
-    async spawnPiSession(projectId, title) {
+    async spawnPiSession(projectId, title, agent) {
         const project = this.projects.get(projectId);
         if (!project)
             throw new Error(`unknown project: ${projectId}`);
-        return this.createSession(project, { title });
+        return this.createSession(project, { title, agent });
+    }
+    /** Agents this host can offer for selection in the app. */
+    listAgents() {
+        return listAgents();
+    }
+    /**
+     * Spawn a session for a chosen agent. Native pi keeps the multiplexer-pane
+     * path (World B/D mirror); ACP-backed agents always run
+     * headless since there's no real TUI to mirror.
+     */
+    async spawnSession(projectId, title, agent) {
+        const agentId = agent ?? this.defaultAgentId;
+        // Only native pi mirrors a real TUI in a multiplexer pane (World B/D);
+        // every other agent (codex, codex-native) runs headless.
+        if (agentId === "pi") {
+            return this.spawnPiSessionInPane(projectId, title);
+        }
+        return this.spawnPiSession(projectId, title, agentId);
     }
     /**
      * Spawn a pi session in a multiplexer pane (SPEC-05, World D / makit-mirror
@@ -122,10 +145,10 @@ export class SessionManager extends EventEmitter {
             ? this._muxOverride
             : getMultiplexer();
         if (!mux)
-            return this.spawnPiSession(projectId, title);
+            return this.spawnPiSession(projectId, title, "pi");
         const available = await mux.isAvailable().catch(() => false);
         if (!available)
-            return this.spawnPiSession(projectId, title);
+            return this.spawnPiSession(projectId, title, "pi");
         const spawnToken = randomUUID();
         const label = `makit: ${title ?? DEFAULT_SESSION_TITLE}`;
         const piBin = process.env.MAKIT_PI_BIN ?? "pi";
@@ -139,7 +162,7 @@ export class SessionManager extends EventEmitter {
             if (e instanceof MuxError) {
                 log.info("[makit] hint: set MAKIT_MUX_ANCHOR to a valid pane id (e.g. w1:p1), not a workspace label");
             }
-            return this.spawnPiSession(projectId, title);
+            return this.spawnPiSession(projectId, title, "pi");
         }
         const pending = this.registerPendingSpawn(spawnToken, paneHandle, opts.timeoutMs ?? SPAWN_TIMEOUT_MS);
         try {
@@ -367,19 +390,37 @@ export class SessionManager extends EventEmitter {
         this.emit("sessionCreated", session);
         return session;
     }
+    /** Construct the adapter for an agent id. */
+    buildAdapter(agentId) {
+        switch (agentId) {
+            case "codex":
+                return { agent: "codex", adapter: new AcpAdapter({ spec: codexAcpSpec() }) };
+            case "codex-native":
+                return { agent: "codex-native", adapter: new CodexAppServerAdapter() };
+            case "pi":
+            default:
+                return { agent: "pi", adapter: new PiAdapter() };
+        }
+    }
     /** Shared session construction for spawn + attach. */
     async createSession(project, opts) {
+        // Resolve the concrete agent for this session (falls back to the host default).
+        const agentId = opts.agent ?? this.defaultAgentId;
         // Create the session first so we have an id to thread into the bridge.
-        const adapter = new PiAdapter();
+        // askUser is threaded through `start()` below (same as PiAdapter), not the
+        // constructor — keeps the adapter construction uniform across agent types.
+        const built = this.buildAdapter(agentId);
+        const adapter = built.adapter;
         const session = new Session({
             projectId: project.dto.id,
-            agent: this.adapterFactory ? "stub" : "pi",
+            agent: this.adapterFactory ? "stub" : built.agent,
             title: opts.title ?? DEFAULT_SESSION_TITLE,
             adapter,
         });
         const activeAdapter = this.adapterFactory?.({
             projectPath: project.dto.path,
             sessionId: session.id,
+            agent: agentId,
         }) ?? adapter;
         if (activeAdapter !== adapter)
             session.replaceAdapter(activeAdapter);

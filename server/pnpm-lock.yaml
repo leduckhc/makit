@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@agentclientprotocol/sdk':
+        specifier: ^0.26.0
+        version: 0.26.0(zod@3.25.76)
       bonjour-service:
         specifier: ^1.4.2
         version: 1.4.2
@@ -38,6 +41,11 @@ importers:
         version: 6.0.3
 
 packages:
+
+  '@agentclientprotocol/sdk@0.26.0':
+    resolution: {integrity: sha512-ialrcI+RzKOYe+fw+TfpyTdRmEoqIkXLlwbTi6XgaXXfdhNcdod7TmE1VsTnG3yTlox8TMTSMQgWbLLbz3r86Q==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@esbuild/aix-ppc64@0.28.1':
     resolution: {integrity: sha512-Svl7tq8k/08+p6CXPpRjQ1fKX+1odH/BQbb48fV6fj3CWHhsoIOoY87w1oHXm0qEpkIK3ZfVgp0hed3XBXzXMQ==}
@@ -340,7 +348,14 @@ packages:
       utf-8-validate:
         optional: true
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
+
+  '@agentclientprotocol/sdk@0.26.0(zod@3.25.76)':
+    dependencies:
+      zod: 3.25.76
 
   '@esbuild/aix-ppc64@0.28.1':
     optional: true
@@ -629,3 +644,5 @@ snapshots:
   undici-types@8.3.0: {}
 
   ws@8.21.0: {}
+
+  zod@3.25.76: {}

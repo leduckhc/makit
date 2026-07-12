@@ -24,10 +24,11 @@ This file is generated from the project's dependency manifests:
 
 ## Server (Node / npm — production dependencies)
 
-30 production packages across the resolved dependency tree:
+32 production packages across the resolved dependency tree:
 
 | Package | Version | License |
 |---------|---------|---------|
+| `@agentclientprotocol/sdk` | 0.26.0 | Apache-2.0 |
 | `@leichtgewicht/ip-codec` | 2.0.5 | MIT |
 | `@noble/hashes` | 1.4.0 | MIT |
 | `@peculiar/asn1-cms` | 2.8.0 | MIT |
@@ -58,6 +59,7 @@ This file is generated from the project's dependency manifests:
 | `tslib` | 1.14.1, 2.8.1 | 0BSD |
 | `tsyringe` | 4.10.0 | MIT |
 | `ws` | 8.21.0 | MIT |
+| `zod` | 3.25.76 | MIT |
 
 ---
 

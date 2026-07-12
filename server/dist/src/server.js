@@ -300,13 +300,18 @@ export function startWsServer(opts) {
         r.register("session.spawn", async (ctx) => {
             const projectId = String(ctx.env.projectId ?? "");
             const title = ctx.env.title ? String(ctx.env.title) : undefined;
-            // Prefer pane-based spawn (SPEC-05); falls back to headless when no mux.
-            const newSession = await manager.spawnPiSessionInPane(projectId, title);
+            const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+            // Native pi prefers the multiplexer-pane path (SPEC-05); ACP agents run
+            // headless. `spawnSession` routes based on the agent's transport.
+            const newSession = await manager.spawnSession(projectId, title, agent);
             // wireSession is invoked via the manager's "sessionCreated" listener
             // registered above — don't call it explicitly or every event fans out
             // twice.
             broadcastSnapshots();
             ctx.ack({ sessionId: newSession.id });
+        });
+        r.register("agents.list", async (ctx) => {
+            ctx.ack({ agents: manager.listAgents() });
         });
         r.register("session.list", async (ctx) => {
             const projectId = String(ctx.env.projectId ?? "");
