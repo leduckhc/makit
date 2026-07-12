@@ -7,7 +7,8 @@ name: Real-pi E2E (fake model)
 #   real-pi-pinned       — pinned pi version, headless smoke on Linux, blocking on PRs.
 #                          Failure = our bug.
 #   real-pi-app          — real pi + Flutter e2e on iOS simulator (macos-15).
-#                          Full stack proof. Pinned pi, PRs only (slower/costlier).
+#                          Full stack proof. Pinned pi, MANUAL (workflow_dispatch)
+#                          only — macOS runners are expensive, so not a per-PR gate.
 #   real-pi-canary       — pi@latest on a schedule. Failure = a pi upgrade broke the
 #                          integration; opens an issue so we can bump the pin.
 
@@ -81,9 +82,9 @@ jobs:
 
   # Full-stack on macOS: real pi + real Flutter e2e via `tool/e2e.sh --mode real`
   # on an iOS simulator. Proves the complete makit↔pi integration on the target.
-  # Pinned pi, PRs only (slower, costlier).
+  # macOS runners are expensive — MANUAL (workflow_dispatch) only, not a per-PR gate.
   real-pi-app:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 40
     steps:

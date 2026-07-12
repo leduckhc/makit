@@ -3,23 +3,12 @@ name: Integration E2E (stub adapter)
 # Keyless full-stack integration: real Flutter app ↔ real TLS WS server backed
 # by the StubAdapter (server/src/adapters/stub.ts) on an iOS simulator. No LLM,
 # no API key — the stub replies with scripted scenarios (echo, STREAM, THINK,
-# MARKDOWN, ASK_QUESTION, ASK_MULTI), so this runs on every PR/push as a
-# blocking gate. The real-pi path (needs a live pi + API key) stays in
-# real-pi-e2e.yml, opt-in only.
+# MARKDOWN, ASK_QUESTION, ASK_MULTI). macOS runners are expensive, so this is
+# MANUAL (workflow_dispatch) only — not a per-PR gate. The cheap Linux gates
+# (server-ci unit tests + typecheck, protocol-contract, real-pi-pinned headless
+# smoke) cover regressions on every PR. The real-pi path stays in real-pi-e2e.yml.
 
 on:
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'app/**'
-      - 'server/**'
-      - '.github/workflows/integration-ci.yml'
-  push:
-    branches: [ main ]
-    paths:
-      - 'app/**'
-      - 'server/**'
-      - '.github/workflows/integration-ci.yml'
   workflow_dispatch: {}
 
 jobs:
