@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../store/connection.dart';
 import '../../ui/widgets/connection_chip.dart';
+import 'connection_endpoint.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
 
@@ -159,18 +161,34 @@ class _SessionTile extends StatelessWidget {
   }
 }
 
-class _Footer extends StatelessWidget {
+class _Footer extends ConsumerWidget {
   const _Footer({this.onOpenSettings});
   final VoidCallback? onOpenSettings;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final server = ref.watch(connectionProvider).server;
+    final endpoint = formatEndpoint(server?.host, server?.port);
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
         children: [
           const ConnectionChip(),
-          const Spacer(),
+          const SizedBox(width: 8),
+          if (endpoint != null)
+            Expanded(
+              child: Text(
+                endpoint,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            )
+          else
+            const Spacer(),
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',

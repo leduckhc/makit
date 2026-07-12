@@ -172,14 +172,21 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
     await boot.run();
   }
 
-  /// Start the daemon if it isn't running, then poll (via the controller's
-  /// existing status loop) until it reports running, up to a short timeout.
+  /// Start the daemon only if one isn't already reachable, then wait until it
+  /// reports running.
+  ///
+  /// We refresh first (an authoritative control-socket probe) because a daemon
+  /// may already be listening — including one started by another makit worktree
+  /// sharing this `~/.makit` home + port. Calling `makit start` in that case
+  /// collides with `EADDRINUSE`; refreshing first lets us just use it.
   Future<bool> _ensureDaemonRunning(DesktopController controller) async {
+    await controller.refresh();
     if (controller.summary.state == DaemonState.running) return true;
     await controller.start();
     for (var i = 0; i < 24; i++) {
       if (controller.summary.state == DaemonState.running) return true;
       await Future<void>.delayed(const Duration(milliseconds: 500));
+      await controller.refresh();
     }
     return controller.summary.state == DaemonState.running;
   }
