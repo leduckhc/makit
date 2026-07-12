@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { CodexAppServerAdapter, type CodexTransport } from "./codex.js";
+import { CodexAppServerAdapter, defaultConnect, type CodexTransport } from "./codex.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -231,3 +231,30 @@ test("emits exit + exited status on kill", async () => {
   await exitP;
   assert.ok(events.some((e) => e.kind === "session.status" && (e.payload as any).status === "exited"));
 });
+
+test("defaultConnect routes a spawn failure to onExit instead of crashing the daemon", async () => {
+  // A missing binary makes spawn emit 'error' (not exit). With no listener that
+  // is an uncaught exception; the transport must route it to onExit(null).
+  const transport = defaultConnect("makit-nonexistent-binary-xyz", [])(process.cwd(), {});
+  const exit = new Promise<number | null>((resolve) => transport.onExit(resolve));
+  const code = await withTimeout(exit, 2000, "onExit never fired on spawn failure");
+  assert.equal(code, null);
+});
+
+test("start() rejects cleanly when the codex binary is missing (no crash)", async () => {
+  const adapter = new CodexAppServerAdapter({ command: "makit-nonexistent-binary-xyz" });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await assert.rejects(adapter.start({ cwd: process.cwd(), sessionId: "s1" }));
+  assert.ok(
+    events.some((e) => e.kind === "session.status" && (e.payload as any).status === "exited"),
+    "expected an exited status event after the failed spawn",
+  );
+});
+
+function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms).unref()),
+  ]);
+}

@@ -39,6 +39,14 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   private resumeSessionPath?: string;
   private model?: string;
 
+  /** Injectable spawn (tests provide a fake); defaults to node's child_process. */
+  private readonly _spawn: typeof spawn;
+
+  constructor(opts: { spawn?: typeof spawn } = {}) {
+    super();
+    this._spawn = opts.spawn ?? spawn;
+  }
+
   /** True while pi is mid-turn — i.e. between turn_start and the matching agent_end. */
   private isStreaming = false;
 
@@ -126,12 +134,49 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     // NOT use node_modules/.bin/pi — that resolves to the unrelated "pi" npm
     // package (a trivial stub that just prints "3" and exits).
     const piBin = process.env.MAKIT_PI_BIN || "pi";
-    const child = spawn(piBin, args, {
+    const child = this._spawn(piBin, args, {
       cwd: this.cwd,
       env: { ...process.env, ...this.extraEnv },
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.child = child;
+
+    // A spawn failure (ENOENT/EACCES, or a fork limit under load) is delivered
+    // as an 'error' event on the ChildProcess — NOT as an exit. Node re-throws
+    // an unlistened 'error' as an uncaught exception, which would crash the
+    // whole daemon and take every other session down with it. Handle it like a
+    // failed run: surface it and drop the child so the next send() re-spawns.
+    child.on("error", (err: Error) => {
+      const wasAlive = !!this.child;
+      this.isStreaming = false;
+      this.child = undefined;
+      if (!wasAlive) return; // exit already handled the teardown
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `pi process error: ${err.message}` },
+      });
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.status",
+        payload: { status: "exited" },
+      });
+      this.emit("exit", null);
+    });
+
+    // Writing to pi's stdin after it dies surfaces as an async 'error' (EPIPE)
+    // on the stream; a read fault on stdout/stderr likewise. None of these must
+    // become an unlistened 'error' — the child 'error'/'exit' handlers own the
+    // real state transition, so here we only log and swallow.
+    child.stdin!.on("error", (err: Error) =>
+      log.warn(`[makit] pi stdin error: ${err.message}`),
+    );
+    child.stdout!.on("error", (err: Error) =>
+      log.warn(`[makit] pi stdout error: ${err.message}`),
+    );
+    child.stderr!.on("error", (err: Error) =>
+      log.warn(`[makit] pi stderr error: ${err.message}`),
+    );
 
     // pi.stdout — JSON-line stream of events and command responses.
     bindLfLines(child.stdout!, (line) => this.handleLine(line));
@@ -181,7 +226,14 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   private writeCommand(cmd: Record<string, unknown>): void {
     const stdin = this.child?.stdin;
     if (!stdin || stdin.destroyed) return;
-    stdin.write(JSON.stringify(cmd) + "\n");
+    try {
+      stdin.write(JSON.stringify(cmd) + "\n");
+    } catch (err) {
+      // A synchronous write throw (stream torn down between the guard and the
+      // write) must not crash the daemon; the async stdin 'error' listener
+      // handles the EPIPE path.
+      log.warn(`[makit] pi stdin write failed: ${(err as Error).message}`);
+    }
   }
 
   /**

@@ -1,0 +1,80 @@
+name: Desktop Control E2E (stub adapter)
+
+# Full-stack control-plane e2e for the macOS desktop control app (SPEC-03):
+# the real desktop app ↔ a real daemon control socket backed by the StubAdapter
+# (server/test/e2e-control-server.ts). No LLM, no `pi`, no WS — the control
+# socket (status/devices/sessions/pair/logs) is the whole surface under test.
+# Counterpart to integration-ci.yml, which exercises the mobile WS stack on an
+# iOS simulator. macOS runners are expensive, so this is MANUAL
+# (workflow_dispatch) only — the cheap Linux gates (server-ci, protocol-contract)
+# cover the control protocol contract on every PR.
+#
+# LOCAL-FIRST: prefer running this locally before pushing —
+#   app/tool/e2e-desktop.sh
+# (see CONTRIBUTING.md → "End-to-end tests"). This CI job is a convenience
+# escape hatch you trigger by hand from the Actions tab, not an automatic gate.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  desktop-e2e:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.4'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Prepare pnpm
+        run: corepack prepare pnpm@11.8.0 --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('server/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - name: Cache Flutter packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      # Native Xcode build products for the macOS desktop build.
+      - name: Cache Xcode DerivedData
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-macos-${{ hashFiles('app/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-deriveddata-macos-
+
+      - name: Install server dependencies (lockfile-locked)
+        working-directory: server
+        run: pnpm secure:install
+
+      - name: Install app dependencies (lockfile-locked)
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+
+      - name: Desktop control-plane e2e (stub adapter)
+        run: app/tool/e2e-desktop.sh

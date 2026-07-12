@@ -1,7 +1,93 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import type { ChildProcess } from "node:child_process";
 
 import { PiAdapter } from "./pi.js";
+import type { AdapterEvent } from "./adapter.js";
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A fake ChildProcess: an EventEmitter with pipe-shaped stdio streams. Enough
+ * for PiAdapter.ensureProcess to bind its listeners. [onSpawn] runs once the
+ * adapter has attached its handlers, so a test can emit 'error'/'exit' into a
+ * fully-wired child.
+ */
+function fakeSpawn(
+  onSpawn?: (child: any) => void,
+): { spawn: (typeof import("node:child_process"))["spawn"]; children: any[] } {
+  const children: any[] = [];
+  const spawn = (() => {
+    const child: any = new EventEmitter();
+    child.killed = false;
+    child.stdin = Object.assign(new EventEmitter(), {
+      destroyed: false,
+      write: () => true,
+    });
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => {};
+    children.push(child);
+    // Fire after the caller has attached its 'error'/'exit'/stream listeners.
+    setImmediate(() => onSpawn?.(child));
+    return child as unknown as ChildProcess;
+  }) as unknown as (typeof import("node:child_process"))["spawn"];
+  return { spawn, children };
+}
+
+test("a spawn failure surfaces session.error+exited instead of crashing the daemon", async () => {
+  const { spawn } = fakeSpawn((child) =>
+    child.emit("error", Object.assign(new Error("spawn pi ENOENT"), { code: "ENOENT" })),
+  );
+  const adapter = new PiAdapter({ spawn });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  // Must not throw / must not emit an unhandled 'error' that aborts the process.
+  await adapter.start({ cwd: "/tmp", sessionId: "s1" });
+  await delay(50);
+
+  const kinds = events.map((e) => e.kind);
+  assert.ok(kinds.includes("session.error"), `expected session.error, got ${kinds.join(",")}`);
+  assert.ok(
+    events.some(
+      (e) => e.kind === "session.status" && (e.payload as any).status === "exited",
+    ),
+    "expected an exited status event",
+  );
+  // The dead child is dropped so the next send() can re-spawn.
+  assert.equal((adapter as any).child, undefined);
+});
+
+test("an EPIPE on pi's stdin does not crash the daemon", async () => {
+  const { spawn, children } = fakeSpawn();
+  const adapter = new PiAdapter({ spawn });
+  await adapter.start({ cwd: "/tmp", sessionId: "s2" });
+  const child = children[0]!;
+
+  // A write to a broken pipe surfaces as an async 'error' on stdin. With no
+  // listener this would be an unhandled 'error' → process crash.
+  assert.doesNotThrow(() =>
+    child.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" })),
+  );
+  assert.doesNotThrow(() => child.stdout.emit("error", new Error("read EIO")));
+  assert.doesNotThrow(() => child.stderr.emit("error", new Error("read EIO")));
+});
+
+test("writeCommand swallows a synchronous stdin.write throw", async () => {
+  const adapter = new PiAdapter();
+  (adapter as any).child = {
+    killed: false,
+    stdin: {
+      destroyed: false,
+      write: () => {
+        throw Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+      },
+    },
+  };
+  await assert.doesNotReject(adapter.sendAction("name", { name: "x" }));
+});
 
 /** Attach a fake child process that captures everything written to stdin. */
 function withFakeStdin(adapter: PiAdapter): string[] {
