@@ -22,6 +22,7 @@
     "test": "node --import tsx --test \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
     "e2e:verify-pi": "tsx test/fake-model/verify-pi.ts",
+    "e2e:verify-codex": "tsx test/verify-codex.ts",
     "secure:install": "pnpm install --frozen-lockfile",
     "secure:audit": "pnpm audit --prod"
   },
