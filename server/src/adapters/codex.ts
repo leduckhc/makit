@@ -269,6 +269,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
             ? q.options
             : [{ label: "Yes" }, { label: "No" }]
           ).map((o: any) => ({ label: String(o?.label ?? o), description: o?.description })),
+          multi: q?.multiSelect === true,
         })),
       });
       const answers: Record<string, { answers: string[] }> = {};

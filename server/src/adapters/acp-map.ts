@@ -140,7 +140,7 @@ export class AcpEventMapper {
 
   /** Emit a `tool.call.delta` for any new output text on this update. */
   private applyToolContent(id: string, update: SessionUpdate): void {
-    // pi-acp streams bash output as an already-computed delta in `_meta`.
+    // Some ACP adapters stream bash output as an already-computed delta in `_meta`.
     const metaDelta = terminalOutput(update);
     if (metaDelta) {
       this.emit("tool.call.delta", { callId: id, chunk: metaDelta });
@@ -230,7 +230,7 @@ function terminalMeta(update: SessionUpdate): Record<string, any> | undefined {
   return meta && typeof meta === "object" ? (meta as Record<string, any>) : undefined;
 }
 
-/** pi-acp convention: `_meta.terminal_output.data` is an incremental delta. */
+/** ACP adapter convention: `_meta.terminal_output.data` is an incremental delta. */
 function terminalOutput(update: SessionUpdate): string | undefined {
   const data = terminalMeta(update)?.terminal_output?.data;
   return typeof data === "string" && data.length > 0 ? data : undefined;

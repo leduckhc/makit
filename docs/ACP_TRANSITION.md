@@ -4,9 +4,9 @@
 
 Makit now supports the **Agent Client Protocol (ACP) v1** alongside the existing native pi adapter. The implementation adds a generic `AcpAdapter` that:
 
-1. **Spawns ACP agent subprocesses** (default: `pi-acp`, but any ACP v1 agent)
+1. **Spawns ACP agent subprocesses** (such as `codex-acp`)
 2. **Translates ACP events → makit SessionEvents** (via `AcpEventMapper`)
-3. **Handles tool permissions and file I/O** via bidirectional ACP RPC (`session/request_permission`, `fs/read_text_file`, `fs/write_text_file`; terminal delegation is not advertised — pi-acp runs commands locally)
+3. **Handles tool permissions and workspace-scoped file I/O** via bidirectional ACP RPC (`session/request_permission`, `fs/read_text_file`, `fs/write_text_file`)
 4. **Seamlessly integrates with makit's UI bridge** (phone approval flow, WebSocket, etc.)
 
 This enables makit to:
@@ -28,8 +28,7 @@ server/src/adapters/
 
 ### Dependencies Added
 
-- `pi-acp@0.0.31` — Official ACP adapter for pi (production-grade: ~4.2k LoC + ~2.9k LoC tests)
-- `@agentclientprotocol/sdk@0.26.0` — ACP client SDK (already bundled in pi-acp)
+- `@agentclientprotocol/sdk@0.26.0` — ACP client SDK
 
 ## Event Mapping
 
@@ -52,9 +51,9 @@ There is no `tool_call_result` / `error` update in ACP v1 — tool completion is
 `tool_call_update` with `status: completed|failed`, and turn/prompt failures are
 surfaced by the adapter as `session.error` when `session/prompt` rejects.
 
-### Bash/Terminal Output (pi-acp convention)
+### Bash/Terminal Output
 
-pi-acp uses `_meta.terminal_output.data` (stdout) and `_meta.terminal_exit` (exit code) to encode bash command results. The mapper automatically extracts these and classifies the risk (success / failure / abort).
+ACP adapters may use `_meta.terminal_output.data` (stdout) and `_meta.terminal_exit` (exit code) to encode bash command results. The mapper automatically extracts these and classifies the risk (success / failure / abort).
 
 ## Permission/UICall Flow
 
@@ -106,31 +105,17 @@ Elicitation reuses the same `awaiting-approval` status gating as permissions.
 
 Agents are chosen **per session** from the app. The server exposes a catalog
 (`server/src/adapters/catalog.ts`) via the `agents.list` command:
-`pi` (native) and `pi-acp` are always listed (with `available` reflecting binary
-presence); `codex` (via `codex-acp`) is listed only when a codex-acp binary is
+`pi` (native) is always listed (with `available` reflecting binary presence).
+`codex` (via `codex-acp`) is listed only when a codex-acp binary is
 detected (`MAKIT_CODEX_ACP_BIN` or on PATH). `session.spawn` accepts an optional
 `agent` id; native pi keeps the multiplexer-pane path, ACP agents run headless.
 The app fetches the catalog on `+` and shows a bottom-sheet picker (skipped when
-only one agent is available). `MAKIT_AGENT` remains the default when no `agent`
-is specified.
+only one agent is available).
 
 ### Default agent
 
-**As of this update, ACP is the default agent path.** Makit now spawns `pi-acp` by default.
-To use the native PiAdapter (legacy, will be removed), set `MAKIT_AGENT=pi`:
-
-```bash
-MAKIT_AGENT=pi makit serve
-```
-
-Or in code:
-
-```typescript
-const manager = new SessionManager({
-  projects: [projectPath],
-  agentType: process.env.MAKIT_AGENT === "pi" ? "pi" : "acp",
-});
-```
+Makit spawns native `pi` by default. ACP-backed agents are selected explicitly
+from the agent picker when their adapter binary is available.
 
 ### Custom ACP Agent
 
@@ -174,30 +159,27 @@ pnpm test -- src/adapters/acp-map.test.ts src/adapters/acp.test.ts
 ## Integration Status
 
 ✅ **Adapter added & tested**
-✅ **Installed pi-acp@0.0.31 (production-grade)**
 ✅ **Wired into SessionManager**
-✅ **ACP is now the default** (PiAdapter available via `MAKIT_AGENT=pi`)
+✅ **Native pi remains the default**
 
 ⏳ **Next steps:**
-- Remove native PiAdapter (when ready)
 - Add UI to switch agent types at runtime
 - Test with real agents (Claude, Codex via ACP adapters)
 - Document ACP agent onboarding for end-users
 
 ## Backward Compatibility
 
-- **PiAdapter available as fallback**: Set `MAKIT_AGENT=pi` to use the native adapter (will be removed in a future release)
+- **PiAdapter is the default native adapter**
 - **No breaking changes** to the SessionManager or Session APIs
 - **Adapter interface unchanged** (both implement `AgentAdapter`)
 
 ## Architecture Decision
 
-Instead of **replacing** PiAdapter with AcpAdapter, we **added** it as an alternative, with ACP as the new default. This allows:
+Instead of **replacing** PiAdapter with AcpAdapter, we added ACP as an optional
+adapter path. This allows:
 
-1. **Seamless transition**: New code paths default to ACP
-2. **Fallback for critical issues**: `MAKIT_AGENT=pi` recovers to native adapter
-3. **Future removal path**: PiAdapter can be deleted once ACP maturity is proven
-4. **Multi-agent support**: Easier to onboard Claude, Codex, etc. via their ACP adapters
+1. **Stable default**: native pi remains the default path
+2. **Multi-agent support**: easier onboarding for Codex and other ACP agents
 
 ---
 

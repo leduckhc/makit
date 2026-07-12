@@ -7,7 +7,6 @@
 
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
-import { createRequire } from "node:module";
 
 export type AgentTransport = "native" | "acp";
 
@@ -36,18 +35,6 @@ function piNativeAvailable(): boolean {
   return onPath(process.env.MAKIT_PI_BIN || "pi");
 }
 
-function piAcpAvailable(): boolean {
-  const override = process.env.MAKIT_PI_ACP_BIN;
-  if (override) return existsSync(override) || onPath(override);
-  // Bundled as a server dependency.
-  try {
-    createRequire(import.meta.url).resolve("pi-acp/package.json");
-    return true;
-  } catch {
-    return onPath("pi-acp");
-  }
-}
-
 /** Resolve the codex-acp binary if one is available (env override or PATH). */
 export function codexAcpBin(): string | undefined {
   const override = process.env.MAKIT_CODEX_ACP_BIN;
@@ -57,14 +44,12 @@ export function codexAcpBin(): string | undefined {
 }
 
 /**
- * List the agents this makit host can offer. `pi` and `pi-acp` are always
- * listed (with `available` reflecting whether their binaries are found); `codex`
- * is listed only when a codex-acp binary is detected.
+ * List the agents this makit host can offer. Native pi is always listed; Codex
+ * variants are listed only when their respective binary is detected.
  */
 export function listAgents(): AgentDescriptor[] {
   const agents: AgentDescriptor[] = [
     { id: "pi", label: "Pi (native)", transport: "native", available: piNativeAvailable() },
-    { id: "pi-acp", label: "Pi (ACP)", transport: "acp", available: piAcpAvailable() },
   ];
   if (codexAcpBin()) {
     agents.push({ id: "codex", label: "Codex (ACP)", transport: "acp", available: true });
@@ -78,5 +63,5 @@ export function listAgents(): AgentDescriptor[] {
 
 /** Transport for a given agent id (defaults to native for the built-in pi). */
 export function transportFor(agentId: string): AgentTransport {
-  return agentId === "pi-acp" || agentId === "codex" ? "acp" : "native";
+  return agentId === "codex" ? "acp" : "native";
 }

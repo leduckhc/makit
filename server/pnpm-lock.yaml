@@ -14,9 +14,6 @@ importers:
       bonjour-service:
         specifier: ^1.4.2
         version: 1.4.2
-      pi-acp:
-        specifier: ^0.0.31
-        version: 0.0.31
       qrcode-terminal:
         specifier: ^0.12.0
         version: 0.12.0
@@ -289,11 +286,6 @@ packages:
 
   multicast-dns@7.2.5:
     resolution: {integrity: sha512-2eznPJP8z2BFLX50tf0LuODrpINqP1RVIm/CObbTcBRITQgmC/TjcREF1NeTBzIcR5XO/ukWo+YHOjBbFwIupg==}
-    hasBin: true
-
-  pi-acp@0.0.31:
-    resolution: {integrity: sha512-LZm1EUV/ax27V+m3pjvK2QvhCfHNTFZsKLNwplVlFuyaSKOFTVdh3IRwfbtM5xqaDe0wmToosI6g3DgScx5aGA==}
-    engines: {node: '>=20'}
     hasBin: true
 
   pkijs@3.4.0:
@@ -606,11 +598,6 @@ snapshots:
     dependencies:
       dns-packet: 5.6.1
       thunky: 1.1.0
-
-  pi-acp@0.0.31:
-    dependencies:
-      '@agentclientprotocol/sdk': 0.26.0(zod@3.25.76)
-      zod: 3.25.76
 
   pkijs@3.4.0:
     dependencies:

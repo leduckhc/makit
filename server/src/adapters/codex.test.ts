@@ -112,6 +112,7 @@ test("maps native requestUserInput to askUserQuestion and returns answers by que
           id: "lang",
           header: "Language",
           question: "Which language?",
+          multiSelect: true,
           isOther: false,
           isSecret: false,
           options: [{ label: "TypeScript", description: "TS" }, { label: "Go", description: "Go" }],
@@ -123,6 +124,7 @@ test("maps native requestUserInput to askUserQuestion and returns answers by que
   await waitFor(() => asked.length > 0);
   assert.equal(asked[0].kind, "askUserQuestion");
   assert.equal((asked[0] as any).questions[0].question, "Which language?");
+  assert.equal((asked[0] as any).questions[0].multi, true);
 
   // The adapter replies to request id 99 with answers keyed by question id.
   await waitFor(() => fake.sent.some((m) => m.id === 99 && m.result));

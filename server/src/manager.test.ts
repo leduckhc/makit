@@ -47,14 +47,13 @@ function withAgentDir(cwd: string, run: (agentDir: string) => Promise<void>) {
   })();
 }
 
-test("native pi fallback keeps agent=pi (does not downgrade to default acp) when no mux", async () => {
+test("native pi fallback keeps agent=pi when no mux", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const agents: string[] = [];
     const manager = new SessionManager({
       projects: [cwd],
       mux: undefined, // no multiplexer -> spawnPiSessionInPane falls back to headless
-      agentType: "acp", // default agent is pi-acp
       adapterFactory: (ctx) => {
         agents.push(ctx.agent);
         return stubAdapter([]);
@@ -62,7 +61,7 @@ test("native pi fallback keeps agent=pi (does not downgrade to default acp) when
     });
     const projectId = manager.listProjects()[0].id;
     await manager.spawnSession(projectId, "t", "pi"); // explicit native pi
-    assert.deepEqual(agents, ["pi"], "explicit native pi must not become pi-acp on fallback");
+    assert.deepEqual(agents, ["pi"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
@@ -82,23 +81,22 @@ test("spawnSession threads the chosen agent id into the adapter factory", async 
     });
     const projectId = manager.listProjects()[0].id;
 
-    await manager.spawnSession(projectId, "t", "pi-acp");
     await manager.spawnSession(projectId, "t", "codex");
-    await manager.spawnSession(projectId, "t"); // default (acp -> pi-acp)
+    await manager.spawnSession(projectId, "t"); // default native pi
 
-    assert.deepEqual(agents, ["pi-acp", "codex", "pi-acp"]);
+    assert.deepEqual(agents, ["codex", "pi"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
 });
 
-test("listAgents exposes pi and pi-acp", () => {
+test("listAgents exposes pi without pi-acp", () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const manager = new SessionManager({ projects: [cwd] });
     const ids = manager.listAgents().map((a) => a.id);
     assert.ok(ids.includes("pi"));
-    assert.ok(ids.includes("pi-acp"));
+    assert.ok(!ids.includes("pi-acp"));
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

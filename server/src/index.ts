@@ -266,9 +266,6 @@ async function main() {
   const manager = new SessionManager({
     projects: merged,
     onProjectsChanged: (paths) => saveProjectPaths(file, paths),
-    // ACP is now the default path (spawns pi-acp). Set MAKIT_AGENT=pi to use
-    // the native adapter (legacy, will be removed).
-    agentType: process.env.MAKIT_AGENT === "pi" ? "pi" : "acp",
   });
 
   // World D: a stable secret the makit-mirror pi extension uses to authenticate.

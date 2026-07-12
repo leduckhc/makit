@@ -24,7 +24,7 @@ This file is generated from the project's dependency manifests:
 
 ## Server (Node / npm — production dependencies)
 
-33 production packages across the resolved dependency tree:
+32 production packages across the resolved dependency tree:
 
 | Package | Version | License |
 |---------|---------|---------|
@@ -49,7 +49,6 @@ This file is generated from the project's dependency manifests:
 | `dns-packet` | 5.6.1 | MIT |
 | `fast-deep-equal` | 3.1.3 | MIT |
 | `multicast-dns` | 7.2.5 | MIT |
-| `pi-acp` | 0.0.31 | MIT |
 | `pkijs` | 3.4.0 | BSD-3-Clause |
 | `pvtsutils` | 1.3.6 | MIT |
 | `pvutils` | 1.1.5 | MIT |

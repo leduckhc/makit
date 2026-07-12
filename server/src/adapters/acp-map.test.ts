@@ -109,7 +109,7 @@ test("classifies risk by tool kind", () => {
   assert.deepEqual(risks, { r: "safe", e: "risky", x: "risky", d: "destructive" });
 });
 
-test("reads bash output and exit code from pi-acp terminal _meta", () => {
+test("reads bash output and exit code from terminal _meta", () => {
   const { events, mapper } = collect();
   mapper.handle({
     sessionUpdate: "tool_call",

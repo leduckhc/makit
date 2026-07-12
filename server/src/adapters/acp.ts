@@ -1,7 +1,7 @@
 /**
  * AcpAdapter — drives any Agent Client Protocol (v1) agent as a subprocess and
  * bridges it to makit's `AgentAdapter` seam. makit acts as the ACP *client*;
- * the agent (e.g. `pi-acp`, `codex-acp`, `claude-agent-acp`) is the server.
+ * the agent (e.g. `codex-acp`, `claude-agent-acp`) is the server.
  *
  * Lifecycle: spawn agent → `initialize` → `session/new` → one `session/prompt`
  * per user turn. Streaming `session/update` notifications are normalized by
@@ -16,8 +16,8 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   ClientSideConnection,
   ndJsonStream,
@@ -72,6 +72,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   private conn?: AcpAgent;
   private acpSessionId?: string;
   private makitSessionId = "";
+  private workspaceRoot = "";
   private askUser?: AskUser;
   private mapper: AcpEventMapper;
 
@@ -95,6 +96,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   async start(opts: SpawnOpts): Promise<void> {
     this.makitSessionId = opts.sessionId ?? "";
     this.askUser = opts.askUser;
+    this.workspaceRoot = await realpath(opts.cwd);
 
     const env = { ...(this.spec.env ?? {}), ...(opts.env ?? {}) };
     this.transport = this.connectFn(opts.cwd, env);
@@ -111,9 +113,8 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     });
 
     if (opts.resumeSessionPath) {
-      // ACP resume is keyed by an ACP sessionId (pi-acp maps it to a transcript
-      // file internally), not by makit's on-disk path. Cross-world resume is a
-      // separate concern; start fresh for now.
+      // ACP resume is keyed by an ACP sessionId, not by makit's on-disk path.
+      // Cross-world resume is a separate concern; start fresh for now.
       log.warn("[makit] AcpAdapter: resumeSessionPath ignored (ACP resume not wired yet)");
     }
 
@@ -184,12 +185,14 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
         return this.handlePermission(params);
       },
       readTextFile: async (params: ReadTextFileRequest) => {
-        const content = await readFile(params.path, "utf8");
+        const path = await this.workspacePath(params.path, false);
+        const content = await readFile(path, "utf8");
         return { content: sliceByLines(content, params.line ?? null, params.limit ?? null) };
       },
       writeTextFile: async (params: WriteTextFileRequest) => {
-        await mkdir(dirname(params.path), { recursive: true });
-        await writeFile(params.path, params.content, "utf8");
+        const path = await this.workspacePath(params.path, true);
+        await mkdir(dirname(path), { recursive: true });
+        await writeFile(path, params.content, "utf8");
         return {};
       },
       // ACP v1 unstable extension. Minimal support: URL mode + single-field
@@ -321,6 +324,38 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
   private emitEvent(e: AdapterEvent): void {
     this.emit("event", e);
+  }
+
+  private async workspacePath(requestedPath: string, forWrite: boolean): Promise<string> {
+    const candidate = resolve(this.workspaceRoot, requestedPath);
+    this.assertWithinWorkspace(candidate);
+
+    if (!forWrite) {
+      const resolved = await realpath(candidate);
+      this.assertWithinWorkspace(resolved);
+      return resolved;
+    }
+
+    let existing = candidate;
+    while (true) {
+      try {
+        const resolved = await realpath(existing);
+        this.assertWithinWorkspace(resolved);
+        return candidate;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        const parent = dirname(existing);
+        if (parent === existing) throw error;
+        existing = parent;
+      }
+    }
+  }
+
+  private assertWithinWorkspace(path: string): void {
+    const rel = relative(this.workspaceRoot, path);
+    if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\\\" : "/"}`) || isAbsolute(rel)) {
+      throw new Error("ACP filesystem path is outside the session workspace");
+    }
   }
 }
 
@@ -462,15 +497,6 @@ function coerceFieldValue(value: string, type: unknown): string | number | boole
 }
 
 // ---------- production spec helper -----------------------------------------
-/** Resolve the bundled `pi-acp` binary (override via MAKIT_PI_ACP_BIN). */
-export function piAcpSpec(): AcpSpawnSpec {
-  return {
-    agent: "pi",
-    command: process.env.MAKIT_PI_ACP_BIN || "pi-acp",
-    args: [],
-  };
-}
-
 /** Resolve the `codex-acp` binary (override via MAKIT_CODEX_ACP_BIN). */
 export function codexAcpSpec(): AcpSpawnSpec {
   return {

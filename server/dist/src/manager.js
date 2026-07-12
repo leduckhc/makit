@@ -9,7 +9,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { PiAdapter } from "./adapters/pi.js";
-import { AcpAdapter, piAcpSpec, codexAcpSpec } from "./adapters/acp.js";
+import { AcpAdapter, codexAcpSpec } from "./adapters/acp.js";
 import { CodexAppServerAdapter } from "./adapters/codex.js";
 import { listAgents } from "./adapters/catalog.js";
 import { MirrorAdapter } from "./adapters/mirror.js";
@@ -32,7 +32,6 @@ export class SessionManager extends EventEmitter {
     adapterFactory;
     onProjectsChanged;
     defaultModel;
-    agentType;
     defaultAgentId;
     bridge;
     /** Injected or resolved multiplexer adapter (SPEC-05). */
@@ -45,10 +44,7 @@ export class SessionManager extends EventEmitter {
         this.onProjectsChanged = opts.onProjectsChanged;
         this._muxOverride = opts.mux;
         this.defaultModel = opts.defaultModel;
-        this.agentType = opts.agentType ?? "acp";
-        // Map the coarse agentType to a concrete default agent id used when a spawn
-        // request doesn't specify one.
-        this.defaultAgentId = this.agentType === "acp" ? "pi-acp" : "pi";
+        this.defaultAgentId = "pi";
         for (const path of opts.projects) {
             const id = randomUUID();
             this.projects.set(id, {
@@ -123,13 +119,13 @@ export class SessionManager extends EventEmitter {
     }
     /**
      * Spawn a session for a chosen agent. Native pi keeps the multiplexer-pane
-     * path (World B/D mirror); ACP-backed agents (pi-acp, codex) always run
+     * path (World B/D mirror); ACP-backed agents always run
      * headless since there's no real TUI to mirror.
      */
     async spawnSession(projectId, title, agent) {
         const agentId = agent ?? this.defaultAgentId;
         // Only native pi mirrors a real TUI in a multiplexer pane (World B/D);
-        // every other agent (pi-acp, codex, codex-native) runs headless.
+        // every other agent (codex, codex-native) runs headless.
         if (agentId === "pi") {
             return this.spawnPiSessionInPane(projectId, title);
         }
@@ -397,8 +393,6 @@ export class SessionManager extends EventEmitter {
     /** Construct the adapter for an agent id. */
     buildAdapter(agentId) {
         switch (agentId) {
-            case "pi-acp":
-                return { agent: "pi-acp", adapter: new AcpAdapter({ spec: piAcpSpec() }) };
             case "codex":
                 return { agent: "codex", adapter: new AcpAdapter({ spec: codexAcpSpec() }) };
             case "codex-native":

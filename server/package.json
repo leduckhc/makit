@@ -28,7 +28,6 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.26.0",
     "bonjour-service": "^1.4.2",
-    "pi-acp": "^0.0.31",
     "qrcode-terminal": "^0.12.0",
     "selfsigned": "^5.5.0",
     "ws": "^8.18.0"

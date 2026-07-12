@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   AgentSideConnection,
   ndJsonStream,
@@ -229,6 +232,50 @@ test("denies permission when no phone is attached (fail safe)", async () => {
     await new Promise((r) => setTimeout(r, 5));
   }
   assert.equal(picked, "nope");
+});
+
+test("limits ACP filesystem requests to the session workspace", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-acp-workspace-"));
+  const outside = join(tmpdir(), `makit-acp-outside-${Date.now()}.txt`);
+  writeFileSync(join(cwd, "inside.txt"), "allowed");
+  writeFileSync(outside, "private");
+  symlinkSync(outside, join(cwd, "escape"));
+  try {
+    let doneResolve!: () => void;
+    let doneReject!: (error: unknown) => void;
+    const done = new Promise<void>((resolve, reject) => {
+      doneResolve = resolve;
+      doneReject = reject;
+    });
+    const { transport } = pair((conn) =>
+      new ScriptedAgent(conn, async () => {
+        try {
+          const inside = await conn.readTextFile({ sessionId: "acp-sess-1", path: join(cwd, "inside.txt") });
+          assert.equal(inside.content, "allowed");
+          await assert.rejects(
+            conn.readTextFile({ sessionId: "acp-sess-1", path: outside }),
+          );
+          await assert.rejects(
+            conn.writeTextFile({ sessionId: "acp-sess-1", path: outside, content: "overwritten" }),
+          );
+          await assert.rejects(
+            conn.readTextFile({ sessionId: "acp-sess-1", path: join(cwd, "escape") }),
+          );
+          doneResolve();
+        } catch (error) {
+          doneReject(error);
+          throw error;
+        }
+      }),
+    );
+    const adapter = new AcpAdapter({ spec: { agent: "codex", command: "x" }, connect: () => transport });
+    await adapter.start({ cwd, sessionId: "makit-1" });
+    await adapter.send({ text: "read files" });
+    await done;
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(outside, { force: true });
+  }
 });
 
 test("elicitation url mode → confirmAction with the URL, accept on approve", async () => {

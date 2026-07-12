@@ -20,20 +20,13 @@ function withEnv(patch: Record<string, string | undefined>, fn: () => void) {
   }
 }
 
-test("always lists pi (native) and pi-acp", () => {
+test("lists native pi but not removed pi-acp", () => {
   withEnv({ MAKIT_CODEX_ACP_BIN: undefined }, () => {
     const agents = listAgents();
     const ids = agents.map((a) => a.id);
     assert.ok(ids.includes("pi"));
-    assert.ok(ids.includes("pi-acp"));
+    assert.ok(!ids.includes("pi-acp"));
     assert.equal(agents.find((a) => a.id === "pi")!.transport, "native");
-    assert.equal(agents.find((a) => a.id === "pi-acp")!.transport, "acp");
-  });
-});
-
-test("pi-acp is available (bundled dependency)", () => {
-  withEnv({ MAKIT_PI_ACP_BIN: undefined }, () => {
-    assert.equal(listAgents().find((a) => a.id === "pi-acp")!.available, true);
   });
 });
 
@@ -59,7 +52,6 @@ test("codex is listed only when a codex-acp binary is present", () => {
 
 test("transportFor maps ids to native/acp", () => {
   assert.equal(transportFor("pi"), "native");
-  assert.equal(transportFor("pi-acp"), "acp");
   assert.equal(transportFor("codex"), "acp");
   assert.equal(transportFor("anything-else"), "native");
 });
