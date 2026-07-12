@@ -8,6 +8,11 @@ name: Desktop Control E2E (stub adapter)
 # iOS simulator. macOS runners are expensive, so this is MANUAL
 # (workflow_dispatch) only — the cheap Linux gates (server-ci, protocol-contract)
 # cover the control protocol contract on every PR.
+#
+# LOCAL-FIRST: prefer running this locally before pushing —
+#   app/tool/e2e-desktop.sh
+# (see CONTRIBUTING.md → "End-to-end tests"). This CI job is a convenience
+# escape hatch you trigger by hand from the Actions tab, not an automatic gate.
 
 on:
   workflow_dispatch: {}

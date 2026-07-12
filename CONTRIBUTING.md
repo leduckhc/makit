@@ -34,6 +34,33 @@ covers all future contributions.
 4. Open a pull request describing **what** changed and **why**.
 5. Sign the CLA when the bot prompts you.
 
+### End-to-end tests (run locally)
+
+The full-stack e2e suites drive the real Flutter app against a real TLS/socket
+server. They need a macOS host (an iOS simulator or the macOS desktop build),
+so CI would run them on **expensive** macOS runners. To keep CI cheap they are
+**local-first**: not per-PR gates, only manually triggerable via
+`workflow_dispatch`. The cheap Linux gates (`server-ci`, `protocol-contract`,
+`real-pi-pinned`) cover regressions on every PR. Run the macOS suites locally
+before pushing changes that touch the app ↔ server boundary:
+
+- **Mobile stub e2e** (real app ↔ TLS WS server, StubAdapter, iOS simulator):
+  ```sh
+  cd server && pnpm secure:install   # once
+  cd app && flutter pub get          # once
+  app/tool/e2e.sh --mode=stub        # pick a sim with MAKIT_SIM_NAME="iPhone 17 Pro"
+  ```
+- **Desktop control-plane e2e** (real macOS control app ↔ daemon control
+  socket, StubAdapter):
+  ```sh
+  app/tool/e2e-desktop.sh
+  ```
+- **Real-pi e2e** (genuine `pi` binary + local fake model) — optional, requires
+  `pi` on `PATH`: `app/tool/e2e.sh --mode=real`.
+
+The matching CI workflows (`integration-ci`, `integration-desktop-ci`, and the
+macOS job in `real-pi-e2e`) can also be run on demand from the Actions tab.
+
 ## Engineering standards
 
 These are enforced (see [`AGENTS.md`](./AGENTS.md)):
