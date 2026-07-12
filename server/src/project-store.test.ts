@@ -10,13 +10,15 @@ import {
   browseDirectory,
 } from "./project-store.js";
 
-test("saveProjectPaths / loadProjectPaths round-trips", () => {
+test("saveProjectPaths / loadProjectPaths keeps existing directories", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
   try {
     const file = join(dir, "nested", "projects.json");
-    const paths = ["/abs/one", "/abs/two"];
+    const existing = join(dir, "project");
+    mkdirSync(existing);
+    const paths = [existing, join(dir, "deleted-project")];
     saveProjectPaths(file, paths);
-    assert.deepEqual(loadProjectPaths(file), paths);
+    assert.deepEqual(loadProjectPaths(file), [existing]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
