@@ -198,7 +198,10 @@ export function startWsServer(opts: ServerOpts) {
       broadcastSnapshots();
     });
 
-    if (state.authed) sendSnapshots(state);
+    if (state.authed) {
+      sendSnapshots(state);
+      void broadcastReposSnapshot();
+    }
   });
 
   https.listen(port, host, () => {
@@ -271,6 +274,25 @@ export function startWsServer(opts: ServerOpts) {
         return;
       }
       ctx.ack();
+      // A pending (draft) session materializes its worktree + agent on the
+      // first real request, which names the branch. Refresh the repo snapshot
+      // afterwards so the new worktree appears on the home screen.
+      if (session.pending) {
+        try {
+          await manager.startPendingSession(session.id, text);
+          broadcastSnapshots();
+          void broadcastReposSnapshot();
+        } catch (e) {
+          session.emit("event", {
+            seq: 0,
+            sessionId: session.id,
+            ts: Date.now(),
+            kind: "session.error",
+            payload: { message: `could not create worktree: ${(e as Error).message}` },
+          });
+          return;
+        }
+      }
       await session.sendUserMessage(text);
     });
 
@@ -323,21 +345,27 @@ export function startWsServer(opts: ServerOpts) {
         return;
       }
       broadcastSnapshots();
+      void broadcastReposSnapshot();
       ctx.ack();
     });
 
     r.register("session.spawn", async (ctx) => {
       const projectId = String(ctx.env.projectId ?? "");
-      const title = ctx.env.title ? String(ctx.env.title) : undefined;
       const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
-      // Native pi prefers the multiplexer-pane path (SPEC-05); ACP agents run
-      // headless. `spawnSession` routes based on the agent's transport.
-      const newSession = await manager.spawnSession(projectId, title, agent);
+      // New sessions are DRAFTS: the worktree + agent are deferred until the
+      // first substantive message names the branch (see send.message).
+      const newSession = await manager.spawnPendingSession(projectId, agent);
       // wireSession is invoked via the manager's "sessionCreated" listener
       // registered above — don't call it explicitly or every event fans out
       // twice.
       broadcastSnapshots();
+      void broadcastReposSnapshot();
       ctx.ack({ sessionId: newSession.id });
+    });
+
+    r.register("repo.refresh", async (ctx) => {
+      ctx.ack();
+      await broadcastReposSnapshot();
     });
 
     r.register("agents.list", async (ctx) => {
@@ -415,6 +443,7 @@ export function startWsServer(opts: ServerOpts) {
       }
       const project = manager.addProject(full);
       broadcastSnapshots();
+      void broadcastReposSnapshot();
       ctx.ack({ projectId: project.id });
     });
 
@@ -431,6 +460,7 @@ export function startWsServer(opts: ServerOpts) {
         return;
       }
       broadcastSnapshots();
+      void broadcastReposSnapshot();
       ctx.ack({});
     });
 
@@ -520,6 +550,23 @@ export function startWsServer(opts: ServerOpts) {
     client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: manager.listSessions() });
   }
 
+  /**
+   * Compute + broadcast the repo-centric snapshot (branches, worktrees, diff
+   * stats, PRs). Async because it shells out to git/gh; fired on connect,
+   * spawn, session start, kill, and explicit `repo.refresh` — never per event.
+   */
+  async function broadcastReposSnapshot() {
+    let repos;
+    try {
+      repos = await manager.listRepos();
+    } catch (e) {
+      log.warn(`[makit] listRepos failed: ${(e as Error).message}`);
+      return;
+    }
+    const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
+    for (const c of clients.values()) if (c.authed) c.send(frame);
+  }
+
   // SPEC-07 A6: replay lives ONLY here (on auth) and in the `sub` handler —
   // never in `sendSnapshots`, which `broadcastSnapshots` fires on every session
   // event and would otherwise re-fire replay constantly. A force-quit-then-woken
@@ -527,6 +574,7 @@ export function startWsServer(opts: ServerOpts) {
   // replaying on auth delivers pending items regardless of subscription.
   function onAuthenticated(client: WsClient) {
     sendSnapshots(client);
+    void broadcastReposSnapshot();
     rpc.replayPendingTo(client);
   }
 

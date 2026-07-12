@@ -13,13 +13,18 @@ import '../widgets/searchable_list_sheet.dart';
 
 /// Brand green accent used for running/active glass affordances (shared token).
 const _kBrandBlue = kMakitAccent;
+const _kAdd = Color(0xFF3FB950); // git additions (green)
+const _kDel = Color(0xFFF85149); // git deletions (red)
 
+/// Home screen — organised around **repos**. Each repo card surfaces its
+/// branches (worktrees), diff size, open PRs, and the sessions running in each
+/// worktree. A new session is a draft until its first message names a branch.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final projects = ref.watch(projectsProvider).projects;
+    final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
 
     return Scaffold(
@@ -29,7 +34,7 @@ class HomeScreen extends ConsumerWidget {
           const ConnectionChip(),
           IconButton(
             icon: const Icon(Icons.create_new_folder_outlined),
-            tooltip: 'Add project',
+            tooltip: 'Add repo',
             onPressed: () => showFolderBrowser(context),
           ),
           IconButton(
@@ -38,16 +43,20 @@ class HomeScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: projects.isEmpty
-          ? _EmptyState(onAdd: () => showFolderBrowser(context))
-          : ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: projects.length,
-              itemBuilder: (context, i) => _ProjectSection(
-                project: projects[i],
-                sessions: sessions.forProject(projects[i].id),
+      body: RefreshIndicator(
+        onRefresh: () =>
+            ref.read(storeControllerProvider.notifier).refreshRepos(),
+        child: repos.isEmpty
+            ? _EmptyState(onAdd: () => showFolderBrowser(context))
+            : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+                itemCount: repos.length,
+                itemBuilder: (context, i) => _RepoCard(
+                  repo: repos[i],
+                  sessions: sessions.forProject(repos[i].id),
+                ),
               ),
-            ),
+      ),
     );
   }
 }
@@ -58,129 +67,284 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: GlassSurface(
-          borderRadius: 24,
+    // Wrapped in a scroll view so RefreshIndicator still works when empty.
+    return ListView(
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+        Center(
           child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.folder_open, size: 64),
-                const SizedBox(height: 12),
-                const Text(
-                  'No projects yet.\nAdd a repo or folder to get started.',
-                  textAlign: TextAlign.center,
+            padding: const EdgeInsets.all(32),
+            child: GlassSurface(
+              borderRadius: 24,
+              child: Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.hub_outlined, size: 64),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'No repos yet.\nAdd a git repo to get started.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: onAdd,
+                      icon: const Icon(Icons.create_new_folder_outlined),
+                      label: const Text('Add repo'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.create_new_folder_outlined),
-                  label: const Text('Add project'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
 
-class _ProjectSection extends ConsumerWidget {
-  const _ProjectSection({required this.project, required this.sessions});
-  final Project project;
+// ---------------------------------------------------------------------------
+// Repo card
+// ---------------------------------------------------------------------------
+
+class _RepoCard extends ConsumerWidget {
+  const _RepoCard({required this.repo, required this.sessions});
+  final RepoInfo repo;
   final List<Session> sessions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final drafts = sessions.where((s) => s.pending).toList();
+    final byId = {for (final s in sessions) s.id: s};
+
+    // Show worktrees with running sessions or changes first; hide empty
+    // non-primary worktrees behind the primary + active ones.
+    final worktrees = [...repo.worktrees]..sort((a, b) {
+      if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
+      final aActive = a.sessionIds.isNotEmpty || a.hasChanges;
+      final bActive = b.sessionIds.isNotEmpty || b.hasChanges;
+      if (aActive != bActive) return aActive ? -1 : 1;
+      return (b.insertions + b.deletions) - (a.insertions + a.deletions);
+    });
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassSurface(
+        borderRadius: 20,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _header(context, ref, theme),
+            _statStrip(context, theme),
+            const Divider(height: 1),
+            for (final wt in worktrees)
+              _WorktreeRow(
+                repo: repo,
+                worktree: wt,
+                sessions: wt.sessionIds
+                    .map((id) => byId[id])
+                    .whereType<Session>()
+                    .toList(),
+              ),
+            if (drafts.isNotEmpty) _draftsSection(context, drafts),
+            _footer(context, ref),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context, WidgetRef ref, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 6, 6),
+      child: Row(
+        children: [
+          const Icon(Icons.folder_special_outlined, size: 20),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              repo.name,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (repo.currentBranch != null)
+            _BranchChip(branch: repo.currentBranch!, subtle: true),
+          const Spacer(),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: 'Repo actions',
+            onSelected: (value) {
+              switch (value) {
+                case 'new':
+                  _newSession(context, ref);
+                case 'attach':
+                  _attachPast(context, ref);
+                case 'remove':
+                  _confirmRemove(context, ref);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'new',
+                child: ListTile(
+                  leading: Icon(Icons.add),
+                  title: Text('New session'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'attach',
+                child: ListTile(
+                  leading: Icon(Icons.replay),
+                  title: Text('Resume session'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'remove',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Remove from makit'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statStrip(BuildContext context, ThemeData theme) {
+    final outline = theme.colorScheme.outline;
+    final items = <Widget>[];
+
+    if (repo.defaultBranch != null) {
+      items.add(_metaText(context, Icons.flag_outlined, repo.defaultBranch!));
+    }
+    if (repo.totalInsertions > 0 || repo.totalDeletions > 0) {
+      items.add(_DiffChip(
+        insertions: repo.totalInsertions,
+        deletions: repo.totalDeletions,
+      ));
+    }
+    final active = repo.activeWorktreeCount;
+    if (active > 0) {
+      items.add(_metaText(
+        context,
+        Icons.account_tree_outlined,
+        '$active active',
+      ));
+    }
+    if (repo.openPrCount > 0) {
+      items.add(_metaText(
+        context,
+        Icons.merge_outlined,
+        '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
+        color: _kBrandBlue,
+      ));
+    }
+    if (items.isEmpty) {
+      items.add(Text(
+        repo.isGitRepo ? 'clean' : 'not a git repo',
+        style: theme.textTheme.bodySmall?.copyWith(color: outline),
+      ));
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(spacing: 14, runSpacing: 6, children: items),
+    );
+  }
+
+  Widget _draftsSection(BuildContext context, List<Session> drafts) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          onLongPress: () => _confirmRemove(context, ref),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 8, 4),
-            child: Row(
-              children: [
-                const Icon(Icons.folder_outlined, size: 18),
-                const SizedBox(width: 8),
-                Text(
-                  project.name,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(width: 8),
-                if (_workingCount(sessions) > 0)
-                  _WorkingBadge(count: _workingCount(sessions)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    project.path,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, size: 20),
-                  tooltip: 'Project actions',
-                  onSelected: (value) {
-                    switch (value) {
-                      case 'new':
-                        _spawnHere(context, ref);
-                      case 'attach':
-                        _attachPast(context, ref);
-                      case 'remove':
-                        _confirmRemove(context, ref);
-                    }
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
-                      value: 'new',
-                      child: ListTile(
-                        leading: Icon(Icons.add),
-                        title: Text('New session'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'attach',
-                      child: ListTile(
-                        leading: Icon(Icons.replay),
-                        title: Text('Resume session'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                    PopupMenuDivider(),
-                    PopupMenuItem(
-                      value: 'remove',
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline),
-                        title: Text('Remove from makit'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+          child: Text(
+            'DRAFTS',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+              letterSpacing: 1,
             ),
           ),
         ),
-        ...sessions.map((s) => _SessionTile(session: s)),
-        if (sessions.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-            child: Text(
-              'No active sessions.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        const Divider(height: 1),
+        ...drafts.map((s) => _SessionTile(session: s)),
       ],
     );
+  }
+
+  Widget _footer(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: () => _newSession(context, ref),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('New session'),
+          style: TextButton.styleFrom(foregroundColor: _kBrandBlue),
+        ),
+      ),
+    );
+  }
+
+  Widget _metaText(
+    BuildContext context,
+    IconData icon,
+    String text, {
+    Color? color,
+  }) {
+    final c = color ?? Theme.of(context).colorScheme.outline;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: c),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
+        ),
+      ],
+    );
+  }
+
+  // ---- actions ------------------------------------------------------------
+
+  Future<void> _newSession(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
+    try {
+      final agents = await store.fetchAgents();
+      final selectable = agents.where((a) => a.available).toList();
+      String? chosen;
+      if (selectable.length > 1) {
+        if (!context.mounted) return;
+        chosen = await showModalBottomSheet<String>(
+          context: context,
+          showDragHandle: true,
+          builder: (ctx) => _AgentPickerSheet(agents: selectable),
+        );
+        if (chosen == null) return;
+      }
+      final newId = await store.spawnSession(repo.id, agent: chosen);
+      if (!context.mounted) return;
+      context.go('/session/$newId');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not start session: $e')),
+      );
+    }
   }
 
   Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
@@ -189,9 +353,10 @@ class _ProjectSection extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Remove ${project.name}?'),
+        title: Text('Remove ${repo.name}?'),
         content: const Text(
-          'This removes the project from makit. Files on disk are not touched.',
+          'This removes the repo from makit. Files on disk (and worktrees) are '
+          'not touched.',
         ),
         actions: [
           TextButton(
@@ -207,40 +372,11 @@ class _ProjectSection extends ConsumerWidget {
     );
     if (confirmed != true) return;
     try {
-      await store.removeProject(project.id);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Removed ${project.name}')),
-      );
+      await store.removeProject(repo.id);
+      messenger.showSnackBar(SnackBar(content: Text('Removed ${repo.name}')));
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('Could not remove project: $e')),
-      );
-    }
-  }
-
-  Future<void> _spawnHere(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final store = ref.read(storeControllerProvider.notifier);
-    try {
-      // Offer an agent picker when the host exposes more than one usable agent.
-      final agents = await store.fetchAgents();
-      final selectable = agents.where((a) => a.available).toList();
-      String? chosen;
-      if (selectable.length > 1) {
-        if (!context.mounted) return;
-        chosen = await showModalBottomSheet<String>(
-          context: context,
-          showDragHandle: true,
-          builder: (ctx) => _AgentPickerSheet(agents: selectable),
-        );
-        if (chosen == null) return; // user dismissed the sheet
-      }
-      final newId = await store.spawnSession(project.id, agent: chosen);
-      if (!context.mounted) return;
-      context.go('/session/$newId');
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not spawn session: $e')),
+        SnackBar(content: Text('Could not remove repo: $e')),
       );
     }
   }
@@ -250,7 +386,7 @@ class _ProjectSection extends ConsumerWidget {
     final store = ref.read(storeControllerProvider.notifier);
     List<PiSessionMeta> metas;
     try {
-      metas = await store.listPiSessions(project.id);
+      metas = await store.listPiSessions(repo.id);
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not list past sessions: $e')),
@@ -261,7 +397,7 @@ class _ProjectSection extends ConsumerWidget {
 
     final chosen = await showSearchableListSheet<PiSessionMeta>(
       context: context,
-      title: 'Resume session in ${project.name}',
+      title: 'Resume session in ${repo.name}',
       items: metas,
       emptyState: const Padding(
         padding: EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -311,7 +447,7 @@ class _ProjectSection extends ConsumerWidget {
     if (chosen == null || !context.mounted) return;
 
     try {
-      final sid = await store.attachSession(project.id, chosen.piSessionId);
+      final sid = await store.attachSession(repo.id, chosen.piSessionId);
       if (!context.mounted) return;
       context.go('/session/$sid');
     } catch (e) {
@@ -319,6 +455,86 @@ class _ProjectSection extends ConsumerWidget {
         SnackBar(content: Text('Could not attach session: $e')),
       );
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Worktree row + its sessions
+// ---------------------------------------------------------------------------
+
+class _WorktreeRow extends StatelessWidget {
+  const _WorktreeRow({
+    required this.repo,
+    required this.worktree,
+    required this.sessions,
+  });
+  final RepoInfo repo;
+  final Worktree worktree;
+  final List<Session> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final branch = worktree.branch ?? 'detached';
+    final isDefault = worktree.branch == repo.defaultBranch;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
+          child: Row(
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                size: 15,
+                color: worktree.isPrimary
+                    ? theme.colorScheme.outline
+                    : _kBrandBlue,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  branch,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFeatures: const [],
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (isDefault) ...[
+                const SizedBox(width: 6),
+                _Tag(label: 'default', color: theme.colorScheme.outline),
+              ],
+              const SizedBox(width: 8),
+              if (worktree.hasChanges)
+                _DiffChip(
+                  insertions: worktree.insertions,
+                  deletions: worktree.deletions,
+                ),
+              if (worktree.pr != null) ...[
+                const SizedBox(width: 8),
+                _PrPill(pr: worktree.pr!),
+              ],
+            ],
+          ),
+        ),
+        if (sessions.isEmpty && !worktree.isPrimary)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(38, 0, 16, 6),
+            child: Text(
+              worktree.filesChanged > 0
+                  ? '${worktree.filesChanged} file(s) changed · no live session'
+                  : 'no live session',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
+        ...sessions.map((s) => _SessionTile(session: s, indented: true)),
+      ],
+    );
   }
 }
 
@@ -335,8 +551,9 @@ String _ago(int epochMs) {
 }
 
 class _SessionTile extends ConsumerWidget {
-  const _SessionTile({required this.session});
+  const _SessionTile({required this.session, this.indented = false});
   final Session session;
+  final bool indented;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -366,20 +583,30 @@ class _SessionTile extends ConsumerWidget {
       confirmDismiss: (_) => _confirmQuit(context),
       onDismissed: (_) => _quit(context, ref),
       child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.only(left: indented ? 30 : 16, right: 12),
         onTap: () => context.go('/session/${session.id}'),
         leading: _AgentAvatar(agent: session.agent),
         title: Row(
           children: [
             Expanded(
-              child: Text(session.title, overflow: TextOverflow.ellipsis),
+              child: Text(
+                session.pending && session.title.trim().isEmpty
+                    ? 'new session'
+                    : session.title,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            // Idle is the resting state — no pill; only surface active/error/exited.
-            if (session.status != SessionStatus.idle)
+            if (session.pending)
+              const _Tag(label: 'draft', color: Colors.amber)
+            else if (session.status != SessionStatus.idle)
               _StatusChip(status: session.status),
           ],
         ),
         subtitle: Text(
-          session.lastPreview,
+          session.pending
+              ? 'Send a message to create a branch'
+              : session.lastPreview,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -387,7 +614,6 @@ class _SessionTile extends ConsumerWidget {
     );
   }
 
-  /// Confirm before the swipe completes. Returns true to dismiss + quit.
   Future<bool> _confirmQuit(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -422,6 +648,10 @@ class _SessionTile extends ConsumerWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Small presentational widgets
+// ---------------------------------------------------------------------------
+
 /// Agent avatar: shows the agent's logo for known agents, else the initial.
 class _AgentAvatar extends StatelessWidget {
   const _AgentAvatar({required this.agent});
@@ -432,22 +662,161 @@ class _AgentAvatar extends StatelessWidget {
     final asset = _agentLogos[agent.toLowerCase()];
     if (asset == null) {
       return CircleAvatar(
+        radius: 16,
         backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-        child: Text(agent.substring(0, 1).toUpperCase()),
+        child: Text(agent.isEmpty ? '?' : agent.substring(0, 1).toUpperCase()),
       );
     }
     return ClipOval(
-      child: SvgPicture.asset(asset, width: 40, height: 40, fit: BoxFit.cover),
+      child: SvgPicture.asset(asset, width: 32, height: 32, fit: BoxFit.cover),
     );
   }
 }
 
-/// Maps an agent label to its bundled logo SVG in `assets/agents/`.
 const _agentLogos = <String, String>{
   'pi': 'assets/agents/pi.svg',
   'codex': 'assets/agents/codex.svg',
   'claude': 'assets/agents/claude.svg',
 };
+
+/// Branch name pill with a git branch glyph.
+class _BranchChip extends StatelessWidget {
+  const _BranchChip({required this.branch, this.subtle = false});
+  final String branch;
+  final bool subtle;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final color = subtle ? cs.outline : _kBrandBlue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.commit_outlined, size: 12, color: color),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(
+              branch,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// `+N −M` diff chip with additive-green / deletive-red counts.
+class _DiffChip extends StatelessWidget {
+  const _DiffChip({required this.insertions, required this.deletions});
+  final int insertions;
+  final int deletions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (insertions > 0)
+          Text(
+            '+$insertions',
+            style: const TextStyle(
+              color: _kAdd,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+            ),
+          ),
+        if (insertions > 0 && deletions > 0) const SizedBox(width: 5),
+        if (deletions > 0)
+          Text(
+            '−$deletions',
+            style: const TextStyle(
+              color: _kDel,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              fontFamily: 'monospace',
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Open-PR pill: `PR #42`, tinted grey for drafts, brand for ready.
+class _PrPill extends StatelessWidget {
+  const _PrPill({required this.pr});
+  final PullRequest pr;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = pr.isDraft ? Colors.grey : _kBrandBlue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            pr.isDraft ? Icons.merge_type : Icons.merge_outlined,
+            size: 12,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'PR #${pr.number}',
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Generic little tag chip (default / draft).
+class _Tag extends StatelessWidget {
+  const _Tag({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
 
 class _StatusChip extends StatelessWidget {
   const _StatusChip({required this.status});
@@ -476,73 +845,6 @@ class _StatusChip extends StatelessWidget {
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
-      ),
-    );
-  }
-}
-
-int _workingCount(List<Session> sessions) => sessions
-    .where(
-      (s) =>
-          s.status == SessionStatus.running ||
-          s.status == SessionStatus.awaitingInput ||
-          s.status == SessionStatus.awaitingApproval,
-    )
-    .length;
-
-class _WorkingBadge extends StatefulWidget {
-  const _WorkingBadge({required this.count});
-  final int count;
-
-  @override
-  State<_WorkingBadge> createState() => _WorkingBadgeState();
-}
-
-class _WorkingBadgeState extends State<_WorkingBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _ctl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: _kBrandBlue.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FadeTransition(
-            opacity: Tween(begin: 0.35, end: 1.0).animate(_ctl),
-            child: Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                color: _kBrandBlue,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '${widget.count} working',
-            style: const TextStyle(
-              color: _kBrandBlue,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }

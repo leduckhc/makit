@@ -62,6 +62,7 @@ class FakeServer {
       agent: 'codex',
       title: 'wire up pairing screen',
       preview: 'Patched lib/pairing/pairing_screen.dart, ran tests.',
+      branch: 'wire-up-pairing-screen',
     )..events.addAll(_scriptCodex('s-codex-1'));
 
     _sessions['s-pi-1'] = _FakeSession(
@@ -83,11 +84,17 @@ class FakeServer {
       title: 'fix tab drag-and-drop',
       preview: 'Editing Sources/Tabs/TabBar.swift',
       status: 'running',
+      branch: 'fix-tab-drag-and-drop',
     )..events.addAll(_scriptClaude('s-claude-1'));
   }
 
   void _pushInitialState() {
-    // Push projects.
+    _pushProjects();
+    _pushRepos();
+    _pushSessions();
+  }
+
+  void _pushProjects() {
     final projects = <String, Map<String, dynamic>>{};
     for (final s in _sessions.values) {
       projects.putIfAbsent(
@@ -111,8 +118,86 @@ class FakeServer {
         },
       ),
     );
+  }
 
-    // Push session list summaries.
+  /// Repo-centric snapshot: two demo repos, each with a primary worktree plus
+  /// a feature-branch worktree carrying diff stats / an open PR.
+  void _pushRepos() {
+    final byProject = <String, List<_FakeSession>>{};
+    for (final s in _sessions.values) {
+      byProject.putIfAbsent(s.projectId, () => []).add(s);
+    }
+
+    final repos = <Map<String, dynamic>>[];
+    byProject.forEach((pid, sess) {
+      final first = sess.first;
+      final repoPath = first.projectPath;
+      // Split sessions across two worktrees for a realistic demo.
+      final primaryIds =
+          sess.where((s) => s.branch == null).map((s) => s.id).toList();
+      final featureSessions = sess.where((s) => s.branch != null).toList();
+      final worktrees = <Map<String, dynamic>>[
+        {
+          'id': repoPath,
+          'path': repoPath,
+          'branch': 'main',
+          'isPrimary': true,
+          'insertions': 0,
+          'deletions': 0,
+          'filesChanged': 0,
+          'sessionIds': primaryIds,
+        },
+      ];
+      final featBranches = <String, List<String>>{};
+      for (final s in featureSessions) {
+        featBranches.putIfAbsent(s.branch!, () => []).add(s.id);
+      }
+      var i = 0;
+      featBranches.forEach((branch, ids) {
+        i++;
+        worktrees.add({
+          'id': '$repoPath/.wt/$branch',
+          'path': '$repoPath/.wt/$branch',
+          'branch': branch,
+          'isPrimary': false,
+          'insertions': 40 * i + 2,
+          'deletions': 6 * i,
+          'filesChanged': 2 + i,
+          'sessionIds': ids,
+          if (i == 1)
+            'pr': {
+              'number': 41 + i,
+              'url': 'https://github.com/demo/pull/${41 + i}',
+              'state': 'OPEN',
+              'title': branch,
+              'isDraft': false,
+            },
+        });
+      });
+
+      repos.add({
+        'id': pid,
+        'name': first.projectName,
+        'path': repoPath,
+        'pinned': true,
+        'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+        'isGitRepo': true,
+        'defaultBranch': 'main',
+        'currentBranch': 'main',
+        'worktrees': worktrees,
+      });
+    });
+
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {'kind': 'repos.snapshot', 'repos': repos},
+      ),
+    );
+  }
+
+  void _pushSessions() {
     _emit(
       Envelope(
         t: MsgType.event,
@@ -130,6 +215,8 @@ class FakeServer {
                   'policy': 'ask-on-risky',
                   'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
                   'lastPreview': s.preview,
+                  'pending': s.pending,
+                  if (s.branch != null) 'branch': s.branch,
                 },
               )
               .toList(),
@@ -154,6 +241,18 @@ class FakeServer {
 
   void _handleCmd(Envelope env) {
     final kind = env.body['kind'] as String? ?? '';
+
+    // Commands that don't target an existing session.
+    switch (kind) {
+      case 'session.spawn':
+        _spawnPending(env);
+        return;
+      case 'repo.refresh':
+        _emit(Envelope(t: MsgType.ack, id: env.id));
+        _pushRepos();
+        return;
+    }
+
     final sid = env.body['sessionId'] as String? ?? '';
     final session = _sessions[sid];
     if (session == null) {
@@ -170,6 +269,14 @@ class FakeServer {
     switch (kind) {
       case 'send.message':
         final text = env.body['text'] as String? ?? '';
+        // A pending draft materialises its worktree/branch on first message.
+        if (session.pending) {
+          session.pending = false;
+          session.branch = _slugify(text);
+          session.title = text.length > 40 ? text.substring(0, 40) : text;
+          _pushSessions();
+          _pushRepos();
+        }
         _appendEvent(session, EventKind.userMessage, {'text': text});
         _emit(Envelope(t: MsgType.ack, id: env.id));
         _scriptAgentReply(session, text);
@@ -177,6 +284,40 @@ class FakeServer {
         _emit(Envelope(t: MsgType.ack, id: env.id));
     }
   }
+
+  /// Create a draft (pending) session in a project, mirroring the real server's
+  /// deferred-worktree flow.
+  void _spawnPending(Envelope env) {
+    final pid = env.body['projectId'] as String? ?? '';
+    final agent = env.body['agent'] as String? ?? 'pi';
+    final template = _sessions.values.firstWhere(
+      (s) => s.projectId == pid,
+      orElse: () => _sessions.values.first,
+    );
+    final id = 's-draft-${DateTime.now().microsecondsSinceEpoch}';
+    _sessions[id] = _FakeSession(
+      id: id,
+      projectId: pid,
+      projectName: template.projectName,
+      projectPath: template.projectPath,
+      agent: agent,
+      title: '',
+      preview: '',
+      pending: true,
+    );
+    _emit(Envelope(t: MsgType.ack, id: env.id, body: {'sessionId': id}));
+    _pushSessions();
+    _pushRepos();
+  }
+
+  String _slugify(String text) => text
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9\s-]'), ' ')
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((w) => w.isNotEmpty)
+      .take(6)
+      .join('-');
 
   void _scriptAgentReply(_FakeSession s, String userText) {
     Timer(const Duration(milliseconds: 400), () {
@@ -329,15 +470,20 @@ class _FakeSession {
     required this.title,
     required this.preview,
     this.status = 'idle',
+    this.branch,
+    this.pending = false,
   });
   final String id;
   final String projectId;
   final String projectName;
   final String projectPath;
   final String agent;
-  final String title;
-  final String preview;
+  String title;
+  String preview;
   String status;
+  /// Feature-branch worktree this session runs in; null = primary checkout.
+  String? branch;
+  bool pending;
   final List<SessionEvent> events = [];
 }
 

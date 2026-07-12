@@ -73,6 +73,49 @@ export interface ProjectDTO {
   lastActivityAt: number;
 }
 
+/** Open pull request tied to a worktree's branch (via `gh`). */
+export interface PullRequestDTO {
+  number: number;
+  url: string;
+  state: string;
+  title: string;
+  isDraft: boolean;
+}
+
+/**
+ * A git worktree of a repo. `isPrimary` marks the repo's main checkout. Diff
+ * stats are measured against the repo's default branch; `pr` is present only
+ * when an open GitHub PR heads this branch. `sessionIds` links the makit
+ * sessions currently running in this worktree.
+ */
+export interface WorktreeDTO {
+  id: string;
+  path: string;
+  branch: string | null;
+  isPrimary: boolean;
+  insertions: number;
+  deletions: number;
+  filesChanged: number;
+  pr: PullRequestDTO | null;
+  sessionIds: string[];
+}
+
+/**
+ * Repo-centric home-screen unit. Wraps a {@link ProjectDTO} with git
+ * intelligence: the current + default branch and the list of live worktrees.
+ */
+export interface RepoDTO {
+  id: string;
+  name: string;
+  path: string;
+  pinned: boolean;
+  lastActivityAt: number;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
+  currentBranch: string | null;
+  worktrees: WorktreeDTO[];
+}
+
 export interface SessionDTO {
   id: string;
   projectId: string;
@@ -82,6 +125,15 @@ export interface SessionDTO {
   policy: ApprovalPolicy;
   lastActivityAt: number;
   lastPreview: string;
+  /**
+   * Draft state: a spawned session whose worktree + agent are deferred until
+   * the first substantive user message (which names the branch/worktree).
+   */
+  pending: boolean;
+  /** Branch this session runs on, once its worktree exists. */
+  branch?: string;
+  /** Absolute worktree path, once created. */
+  worktreePath?: string;
 }
 
 let _seq = 0;
@@ -105,4 +157,5 @@ export type CmdKind =
   | "session.kill"
   | "session.policy"
   | "agents.list"
+  | "repo.refresh"
   | "push.register";

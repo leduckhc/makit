@@ -28,6 +28,11 @@ class SessionsSnapshot extends Decoded {
   final List<Session> sessions;
 }
 
+class ReposSnapshot extends Decoded {
+  const ReposSnapshot(this.repos);
+  final List<RepoInfo> repos;
+}
+
 class SessionEventFrame extends Decoded {
   const SessionEventFrame(this.event);
   final SessionEvent event;
@@ -68,6 +73,13 @@ class WireCodec {
           return null;
         }
         return SessionsSnapshot(sessions);
+      case 'repos.snapshot':
+        final repos = decodeRepos(env.body['repos']);
+        if (repos == null) {
+          _warn('repos.snapshot');
+          return null;
+        }
+        return ReposSnapshot(repos);
       case 'session.event':
         final event = decodeEvent(env.body['event']);
         if (event == null) {
@@ -142,8 +154,26 @@ class WireCodec {
               ? j['lastPreview'] as String
               : '',
           pane: pane,
+          pending: j['pending'] == true,
+          branch: j['branch'] is String ? j['branch'] as String : null,
+          worktreePath: j['worktreePath'] is String
+              ? j['worktreePath'] as String
+              : null,
         ),
       );
+    }
+    return out;
+  }
+
+  /// Decode the `repos` array of a `repos.snapshot`, or null.
+  static List<RepoInfo>? decodeRepos(Object? raw) {
+    if (raw is! List) return null;
+    final out = <RepoInfo>[];
+    for (final entry in raw) {
+      if (entry is! Map) return null;
+      final repo = RepoInfo.fromJson(Map<String, dynamic>.from(entry));
+      if (repo == null) return null;
+      out.add(repo);
     }
     return out;
   }

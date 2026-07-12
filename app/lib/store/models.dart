@@ -146,6 +146,147 @@ class Project {
   final int lastActivityAt;
 }
 
+/// An open pull request tied to a worktree's branch (surfaced via `gh`).
+class PullRequest {
+  const PullRequest({
+    required this.number,
+    required this.url,
+    required this.state,
+    required this.title,
+    required this.isDraft,
+  });
+
+  final int number;
+  final String url;
+  final String state;
+  final String title;
+  final bool isDraft;
+
+  static PullRequest? fromJson(Map<String, dynamic> j) {
+    final number = j['number'];
+    if (number is! num) return null;
+    return PullRequest(
+      number: number.toInt(),
+      url: j['url'] is String ? j['url'] as String : '',
+      state: j['state'] is String ? j['state'] as String : 'OPEN',
+      title: j['title'] is String ? j['title'] as String : '',
+      isDraft: j['isDraft'] == true,
+    );
+  }
+}
+
+/// One git worktree of a repo. `isPrimary` marks the repo's main checkout;
+/// other worktrees are feature branches created for sessions. Diff stats are
+/// measured against the repo's default branch.
+class Worktree {
+  const Worktree({
+    required this.id,
+    required this.path,
+    required this.branch,
+    required this.isPrimary,
+    required this.insertions,
+    required this.deletions,
+    required this.filesChanged,
+    required this.sessionIds,
+    this.pr,
+  });
+
+  final String id;
+  final String path;
+  final String? branch;
+  final bool isPrimary;
+  final int insertions;
+  final int deletions;
+  final int filesChanged;
+  final List<String> sessionIds;
+  final PullRequest? pr;
+
+  bool get hasChanges => insertions > 0 || deletions > 0 || filesChanged > 0;
+
+  static Worktree? fromJson(Map<String, dynamic> j) {
+    final path = j['path'];
+    if (path is! String) return null;
+    final rawPr = j['pr'];
+    return Worktree(
+      id: j['id'] is String ? j['id'] as String : path,
+      path: path,
+      branch: j['branch'] is String ? j['branch'] as String : null,
+      isPrimary: j['isPrimary'] == true,
+      insertions: (j['insertions'] as num?)?.toInt() ?? 0,
+      deletions: (j['deletions'] as num?)?.toInt() ?? 0,
+      filesChanged: (j['filesChanged'] as num?)?.toInt() ?? 0,
+      sessionIds: ((j['sessionIds'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+      pr: rawPr is Map
+          ? PullRequest.fromJson(Map<String, dynamic>.from(rawPr))
+          : null,
+    );
+  }
+}
+
+/// A repo on the home screen: a [Project] enriched with git intelligence —
+/// its default/current branch and live worktrees.
+class RepoInfo {
+  const RepoInfo({
+    required this.id,
+    required this.name,
+    required this.path,
+    required this.pinned,
+    required this.lastActivityAt,
+    required this.isGitRepo,
+    required this.defaultBranch,
+    required this.currentBranch,
+    required this.worktrees,
+  });
+
+  final String id;
+  final String name;
+  final String path;
+  final bool pinned;
+  final int lastActivityAt;
+  final bool isGitRepo;
+  final String? defaultBranch;
+  final String? currentBranch;
+  final List<Worktree> worktrees;
+
+  /// Total added/removed lines across every worktree.
+  int get totalInsertions =>
+      worktrees.fold(0, (a, w) => a + w.insertions);
+  int get totalDeletions => worktrees.fold(0, (a, w) => a + w.deletions);
+
+  /// Worktrees that have any uncommitted/committed diff vs the default branch.
+  int get activeWorktreeCount => worktrees.where((w) => w.hasChanges).length;
+
+  int get openPrCount => worktrees.where((w) => w.pr != null).length;
+
+  static RepoInfo? fromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    final name = j['name'];
+    final path = j['path'];
+    if (id is! String || name is! String || path is! String) return null;
+    return RepoInfo(
+      id: id,
+      name: name,
+      path: path,
+      pinned: j['pinned'] == true,
+      lastActivityAt: (j['lastActivityAt'] as num?)?.toInt() ?? 0,
+      isGitRepo: j['isGitRepo'] == true,
+      defaultBranch: j['defaultBranch'] is String
+          ? j['defaultBranch'] as String
+          : null,
+      currentBranch: j['currentBranch'] is String
+          ? j['currentBranch'] as String
+          : null,
+      worktrees: ((j['worktrees'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((m) => Worktree.fromJson(Map<String, dynamic>.from(m)))
+          .whereType<Worktree>()
+          .toList(),
+    );
+  }
+}
+
 /// Metadata about a prior on-disk pi session, for the "attach" list.
 class PiSessionMeta {
   const PiSessionMeta({
@@ -293,6 +434,9 @@ class Session {
     this.lastActivityAt = 0,
     this.lastPreview = '',
     this.pane,
+    this.pending = false,
+    this.branch,
+    this.worktreePath,
   });
 
   final String id;
@@ -307,6 +451,15 @@ class Session {
   /// Set when this session runs in a multiplexer pane (SPEC-05).
   final PaneInfo? pane;
 
+  /// Draft session: worktree + agent are deferred until the first real message.
+  final bool pending;
+
+  /// Branch this session runs on, once its worktree exists.
+  final String? branch;
+
+  /// Absolute worktree path, once created.
+  final String? worktreePath;
+
   Session copyWith({
     SessionStatus? status,
     ApprovalPolicy? policy,
@@ -315,6 +468,9 @@ class Session {
     String? lastPreview,
     PaneInfo? pane,
     bool clearPane = false,
+    bool? pending,
+    String? branch,
+    String? worktreePath,
   }) => Session(
     id: id,
     projectId: projectId,
@@ -325,6 +481,9 @@ class Session {
     lastActivityAt: lastActivityAt ?? this.lastActivityAt,
     lastPreview: lastPreview ?? this.lastPreview,
     pane: clearPane ? null : (pane ?? this.pane),
+    pending: pending ?? this.pending,
+    branch: branch ?? this.branch,
+    worktreePath: worktreePath ?? this.worktreePath,
   );
 }
 
