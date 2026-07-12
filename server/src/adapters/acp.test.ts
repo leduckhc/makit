@@ -14,7 +14,7 @@ import {
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
-import { AcpAdapter, type AcpTransport } from "./acp.js";
+import { AcpAdapter, defaultConnect, type AcpTransport } from "./acp.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -420,4 +420,19 @@ test("emits exit + exited status on kill", async () => {
   await exitP;
 
   assert.ok(events.some((e) => e.kind === "session.status" && (e.payload as any).status === "exited"));
+});
+
+test("acp defaultConnect routes a spawn failure to onExit instead of crashing the daemon", async () => {
+  const transport = defaultConnect({
+    agent: "test",
+    command: "makit-nonexistent-binary-xyz",
+  })(process.cwd(), {});
+  const exit = new Promise<number | null>((resolve) => transport.onExit(resolve));
+  const code = await Promise.race([
+    exit,
+    new Promise<number | null>((_, reject) =>
+      setTimeout(() => reject(new Error("onExit never fired on spawn failure")), 2000).unref(),
+    ),
+  ]);
+  assert.equal(code, null);
 });
