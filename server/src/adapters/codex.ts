@@ -208,6 +208,46 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
       switch (method) {
         case "item/tool/requestUserInput":
           return this.reply(id, await this.handleUserInput(params));
+        case "item/permissions/requestApproval": {
+          const ok = await this.confirm(
+            { message: `Grant ${params.permissionType} permission?`, preview: params.permissionType },
+            "grant-permission",
+          );
+          return this.reply(id, { decision: ok ? "accept" : "decline" });
+        }
+        case "mcpServer/elicitation/request": {
+          // MCP elicitation: similar to ACP unstable_createElicitation; minimal support
+          // (URL + single-field form). Multi-field forms are declined.
+          const mode = params.mode;
+          if (mode?.kind === "url" && !this.askUser) return this.reply(id, { action: "decline", content: null });
+          if (mode?.kind === "url") {
+            const ok = await this.confirm(
+              { message: mode.description || "Open URL?", preview: mode.url || "" },
+              "navigate",
+            );
+            return this.reply(id, { action: ok ? "accept" : "decline", content: null });
+          }
+          if (mode?.kind === "form" && mode.schema?.properties && this.askUser) {
+            const props = Object.entries(mode.schema.properties);
+            if (props.length === 1) {
+              const [fieldName, fieldSpec] = props[0] as [string, any];
+              try {
+                const resp = await this.askUser({
+                  kind: "input",
+                  sessionId: this.makitSessionId,
+                  title: fieldName,
+                  placeholder: fieldSpec.description || fieldName,
+                  prefill: fieldSpec.default ?? "",
+                });
+                if (resp.kind === "input" && !resp.cancelled && typeof resp.value === "string") {
+                  return this.reply(id, { action: "accept", content: { [fieldName]: resp.value } });
+                }
+              } catch {}
+            }
+          }
+          // Multi-field or unknown mode: decline
+          return this.reply(id, { action: "decline", content: null });
+        }
         case "item/commandExecution/requestApproval": {
           const ok = await this.confirm(describeCommand(params), "execute");
           return this.reply(id, { decision: ok ? "accept" : "decline" });
@@ -216,6 +256,20 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
           const ok = await this.confirm(describeFileChange(params), "edit");
           return this.reply(id, { decision: ok ? "accept" : "decline" });
         }
+        case "item/permissions/requestApproval": {
+          const ok = await this.confirm(
+            { message: typeof params?.reason === "string" && params.reason ? params.reason : "Grant additional permissions?" },
+            "permissions",
+          );
+          // Approve → grant exactly what was requested for this turn; deny → grant nothing.
+          const req = params?.permissions ?? {};
+          return this.reply(id, {
+            permissions: ok ? { network: req.network ?? undefined, fileSystem: req.fileSystem ?? undefined } : {},
+            scope: "turn",
+          });
+        }
+        case "mcpServer/elicitation/request":
+          return this.reply(id, await this.handleElicitation(params));
         case "execCommandApproval": {
           const cmd = Array.isArray(params?.command) ? params.command.join(" ") : "";
           const ok = await this.confirm({ message: cmd || "Run command?", preview: cmd }, "execute");

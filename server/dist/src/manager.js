@@ -149,10 +149,10 @@ export class SessionManager extends EventEmitter {
             ? this._muxOverride
             : getMultiplexer();
         if (!mux)
-            return this.spawnPiSession(projectId, title);
+            return this.spawnPiSession(projectId, title, "pi");
         const available = await mux.isAvailable().catch(() => false);
         if (!available)
-            return this.spawnPiSession(projectId, title);
+            return this.spawnPiSession(projectId, title, "pi");
         const spawnToken = randomUUID();
         const label = `makit: ${title ?? DEFAULT_SESSION_TITLE}`;
         const piBin = process.env.MAKIT_PI_BIN ?? "pi";
@@ -166,7 +166,7 @@ export class SessionManager extends EventEmitter {
             if (e instanceof MuxError) {
                 log.info("[makit] hint: set MAKIT_MUX_ANCHOR to a valid pane id (e.g. w1:p1), not a workspace label");
             }
-            return this.spawnPiSession(projectId, title);
+            return this.spawnPiSession(projectId, title, "pi");
         }
         const pending = this.registerPendingSpawn(spawnToken, paneHandle, opts.timeoutMs ?? SPAWN_TIMEOUT_MS);
         try {

@@ -81,9 +81,14 @@ export class CodexEventMapper {
         this.emit("agent.message", { text: item.text ?? "", msgId: item.id });
         return;
       case "reasoning": {
-        const text = (Array.isArray(item.content) && item.content.length ? item.content : item.summary ?? [])
-          .filter((s: unknown) => typeof s === "string")
-          .join("\n");
+        const src = Array.isArray(item.content) && item.content.length
+          ? item.content
+          : Array.isArray(item.summary)
+            ? item.summary
+            : typeof item.summary === "string"
+              ? [item.summary]
+              : [];
+        const text = src.filter((s: unknown) => typeof s === "string").join("\n");
         if (text.trim()) this.emit("agent.thinking", { text, thinkId: item.id });
         return;
       }
