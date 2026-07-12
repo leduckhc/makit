@@ -188,6 +188,12 @@ as a `session.error`), then broadcasts `repos.snapshot`.
 **Result at implementation:** server 238 tests green (typecheck clean), app 196
 tests green (analyzer clean).
 
+## Screenshots (iOS simulator, seeded data)
+
+| Home (repo cards) | Second repo | Repo actions |
+|---|---|---|
+| ![home](../media/spec-11/spec-11-home.png) | ![second repo](../media/spec-11/spec-11-second-repo.png) | ![repo menu](../media/spec-11/spec-11-repo-menu.png) |
+
 ## Follow-ups (not in this spec)
 
 - Tappable PR pill → open the PR URL (`url_launcher`).
