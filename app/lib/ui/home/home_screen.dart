@@ -121,13 +121,14 @@ class _RepoCard extends ConsumerWidget {
 
     // Show worktrees with running sessions or changes first; hide empty
     // non-primary worktrees behind the primary + active ones.
-    final worktrees = [...repo.worktrees]..sort((a, b) {
-      if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
-      final aActive = a.sessionIds.isNotEmpty || a.hasChanges;
-      final bActive = b.sessionIds.isNotEmpty || b.hasChanges;
-      if (aActive != bActive) return aActive ? -1 : 1;
-      return (b.insertions + b.deletions) - (a.insertions + a.deletions);
-    });
+    final worktrees = [...repo.worktrees]
+      ..sort((a, b) {
+        if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
+        final aActive = a.sessionIds.isNotEmpty || a.hasChanges;
+        final bActive = b.sessionIds.isNotEmpty || b.hasChanges;
+        if (aActive != bActive) return aActive ? -1 : 1;
+        return (b.insertions + b.deletions) - (a.insertions + a.deletions);
+      });
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -230,32 +231,36 @@ class _RepoCard extends ConsumerWidget {
       items.add(_metaText(context, Icons.flag_outlined, repo.defaultBranch!));
     }
     if (repo.totalInsertions > 0 || repo.totalDeletions > 0) {
-      items.add(_DiffChip(
-        insertions: repo.totalInsertions,
-        deletions: repo.totalDeletions,
-      ));
+      items.add(
+        _DiffChip(
+          insertions: repo.totalInsertions,
+          deletions: repo.totalDeletions,
+        ),
+      );
     }
     final active = repo.activeWorktreeCount;
     if (active > 0) {
-      items.add(_metaText(
-        context,
-        Icons.account_tree_outlined,
-        '$active active',
-      ));
+      items.add(
+        _metaText(context, Icons.account_tree_outlined, '$active active'),
+      );
     }
     if (repo.openPrCount > 0) {
-      items.add(_metaText(
-        context,
-        Icons.merge_outlined,
-        '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
-        color: _kBrandBlue,
-      ));
+      items.add(
+        _metaText(
+          context,
+          Icons.merge_outlined,
+          '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
+          color: _kBrandBlue,
+        ),
+      );
     }
     if (items.isEmpty) {
-      items.add(Text(
-        repo.isGitRepo ? 'clean' : 'not a git repo',
-        style: theme.textTheme.bodySmall?.copyWith(color: outline),
-      ));
+      items.add(
+        Text(
+          repo.isGitRepo ? 'clean' : 'not a git repo',
+          style: theme.textTheme.bodySmall?.copyWith(color: outline),
+        ),
+      );
     }
 
     return Padding(

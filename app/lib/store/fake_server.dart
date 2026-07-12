@@ -133,8 +133,10 @@ class FakeServer {
       final first = sess.first;
       final repoPath = first.projectPath;
       // Split sessions across two worktrees for a realistic demo.
-      final primaryIds =
-          sess.where((s) => s.branch == null).map((s) => s.id).toList();
+      final primaryIds = sess
+          .where((s) => s.branch == null)
+          .map((s) => s.id)
+          .toList();
       final featureSessions = sess.where((s) => s.branch != null).toList();
       final worktrees = <Map<String, dynamic>>[
         {
@@ -481,6 +483,7 @@ class _FakeSession {
   String title;
   String preview;
   String status;
+
   /// Feature-branch worktree this session runs in; null = primary checkout.
   String? branch;
   bool pending;

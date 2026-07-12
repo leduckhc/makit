@@ -251,8 +251,7 @@ class RepoInfo {
   final List<Worktree> worktrees;
 
   /// Total added/removed lines across every worktree.
-  int get totalInsertions =>
-      worktrees.fold(0, (a, w) => a + w.insertions);
+  int get totalInsertions => worktrees.fold(0, (a, w) => a + w.insertions);
   int get totalDeletions => worktrees.fold(0, (a, w) => a + w.deletions);
 
   /// Worktrees that have any uncommitted/committed diff vs the default branch.

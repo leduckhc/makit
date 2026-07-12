@@ -8,10 +8,7 @@ import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/home_screen.dart';
 import 'package:makit/ui/widgets/glass.dart';
 
-Widget _host({
-  required List<RepoInfo> repos,
-  required List<Session> sessions,
-}) {
+Widget _host({required List<RepoInfo> repos, required List<Session> sessions}) {
   return ProviderScope(
     overrides: [
       reposProvider.overrideWithValue(ReposState(repos)),
@@ -84,7 +81,9 @@ void main() {
     expect(find.text('main'), findsWidgets);
   });
 
-  testWidgets('a worktree with changes renders a +/- diff chip', (tester) async {
+  testWidgets('a worktree with changes renders a +/- diff chip', (
+    tester,
+  ) async {
     final repo = _repo(
       worktrees: [
         const Worktree(
@@ -163,7 +162,10 @@ void main() {
       ],
     );
     await tester.pumpWidget(
-      _host(repos: [repo], sessions: [_session(status: SessionStatus.running)]),
+      _host(
+        repos: [repo],
+        sessions: [_session(status: SessionStatus.running)],
+      ),
     );
     await tester.pump();
 
