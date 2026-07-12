@@ -23,6 +23,11 @@ import 'package:window_manager/window_manager.dart';
 import '../app/theme.dart';
 import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
+import '../store/connection.dart';
+import '../store/store.dart';
+import 'chat/desktop_chat_bootstrap.dart';
+import 'chat/desktop_chat_shell.dart';
+import 'chat/loopback_pairing.dart';
 import 'daemon/daemon_lifecycle.dart';
 import 'desktop_controller.dart';
 import 'screens/devices_screen.dart';
@@ -39,6 +44,10 @@ final desktopControllerProvider = Provider<DesktopController>(
 
 /// Which dashboard tab is showing; the tray's "Pair QR…" switches to QR.
 final _selectedTab = ValueNotifier<int>(0);
+
+/// Navigator for the chat window, so the sidebar can push the Settings/Server
+/// page from a callback created above the [Navigator].
+final _desktopNavKey = GlobalKey<NavigatorState>();
 
 String _controlSocketPath() {
   final home = Platform.environment['HOME'] ?? '';
@@ -87,7 +96,7 @@ Future<void> runDesktopApp() async {
   controller.startPolling();
 
   const options = WindowOptions(
-    size: Size(760, 580),
+    size: Size(1120, 760),
     center: true,
     title: 'Makit',
     titleBarStyle: TitleBarStyle.normal,
@@ -123,18 +132,88 @@ void _copyInstallCommand(BuildContext context) {
   );
 }
 
-class _DesktopApp extends StatelessWidget {
+class _DesktopApp extends ConsumerStatefulWidget {
   const _DesktopApp();
+
+  @override
+  ConsumerState<_DesktopApp> createState() => _DesktopAppState();
+}
+
+class _DesktopAppState extends ConsumerState<_DesktopApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Eagerly create the store controller so it subscribes to the connection's
+    // frame stream before the WS connects and starts pushing snapshots
+    // (mirrors the mobile bootstrap in `main.dart`).
+    ref.read(storeControllerProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_bootstrapConnection());
+    });
+  }
+
+  /// Bring the local daemon up (if needed), then self-pair over loopback so the
+  /// reused chat stack can talk to it. Best-effort: on failure the window stays
+  /// on its empty state and the user can retry via Settings & Server.
+  Future<void> _bootstrapConnection() async {
+    final controller = ref.read(desktopControllerProvider);
+    final conn = ref.read(connectionControllerProvider.notifier);
+    final pairing = LoopbackPairing(
+      control: ref.read(controlClientProvider),
+      isPaired: () => ref.read(connectionProvider).paired,
+      pairWith: (info, {String label = 'Mac'}) async {
+        await conn.pairWith(info, label: label);
+      },
+    );
+    final boot = DesktopChatBootstrap(
+      ensureDaemonRunning: () => _ensureDaemonRunning(controller),
+      ensurePaired: pairing.ensurePaired,
+    );
+    await boot.run();
+  }
+
+  /// Start the daemon if it isn't running, then poll (via the controller's
+  /// existing status loop) until it reports running, up to a short timeout.
+  Future<bool> _ensureDaemonRunning(DesktopController controller) async {
+    if (controller.summary.state == DaemonState.running) return true;
+    await controller.start();
+    for (var i = 0; i < 24; i++) {
+      if (controller.summary.state == DaemonState.running) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return controller.summary.state == DaemonState.running;
+  }
+
+  void _openSettings() {
+    _desktopNavKey.currentState?.push(
+      MaterialPageRoute<void>(builder: (_) => const _SettingsServerPage()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Makit',
+      navigatorKey: _desktopNavKey,
       debugShowCheckedModeBanner: false,
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
-      home: const DesktopDashboard(),
+      home: DesktopChatShell(onOpenSettings: _openSettings),
+    );
+  }
+}
+
+/// Wraps the legacy control dashboard as a pushed page with a back button, so
+/// device pairing + server status remain reachable now that chat is the home.
+class _SettingsServerPage extends StatelessWidget {
+  const _SettingsServerPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Settings & Server')),
+      body: const DesktopDashboard(),
     );
   }
 }
