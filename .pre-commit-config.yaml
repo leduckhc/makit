@@ -50,7 +50,7 @@ repos:
           Run Flutter static analysis (fatal-infos, matching CI).
           Fix: address the reported warnings/errors.
         language: system
-        entry: bash -c 'cd app && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE flutter pub get && flutter analyze --no-pub --fatal-infos'
+        entry: bash -c 'cd app && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE sh -c "flutter pub get && flutter analyze --no-pub --fatal-infos"'
         files: ^app/.*\.dart$
         pass_filenames: false
 

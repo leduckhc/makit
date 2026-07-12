@@ -157,6 +157,9 @@ class NotificationService {
   /// [requestPermission]. Best-effort: any failure → [NotificationPermission.unsupported].
   Future<NotificationPermission> permissionStatus() async {
     try {
+      // Ensure the plugin is initialised before querying — `init()` is fired
+      // unawaited at boot, and this can run first (idempotent, cheap).
+      await init();
       final ios = _plugin
           .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin
@@ -196,8 +199,7 @@ class NotificationService {
   /// resulting status. Called from the onboarding notifications step.
   Future<NotificationPermission> requestPermission() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(kNotifAskedKey, true);
+      await init();
       final ios = _plugin
           .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin
@@ -217,6 +219,11 @@ class NotificationService {
       } else if (android != null) {
         await android.requestNotificationsPermission();
       }
+      // Only record that we asked once the prompt actually completed. Setting
+      // it earlier would (on a thrown request) misreport `notDetermined` as
+      // `denied` and suppress the onboarding gate forever.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(kNotifAskedKey, true);
     } catch (_) {
       // Best-effort: fall through to a fresh status query below.
     }

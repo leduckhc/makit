@@ -98,6 +98,7 @@ final onboardingListenableProvider = Provider<Listenable>((ref) {
   final notifier = ValueNotifier<OnboardingStep>(
     ref.read(onboardingStepProvider),
   );
+  ref.onDispose(notifier.dispose);
   ref.listen<OnboardingStep>(
     onboardingStepProvider,
     (_, next) => notifier.value = next,
