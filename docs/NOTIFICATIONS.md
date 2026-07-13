@@ -26,8 +26,8 @@ Requires a paired iPhone with notification permission granted.
 1. Pair the phone with a running `makit` server over Tailscale.
 2. Grant notification permission during onboarding (or Settings → Notifications).
 3. Open a session, then **background** the app (home button / swipe up).
-4. On the desktop, trigger a `confirmAction` (e.g. `piano_confirm` in
-   `server/connectors/makit-piano.ts`, or any agent tool that needs approval).
+4. On the desktop, trigger a `confirmAction` from any installed agent extension
+   or tool that needs approval (for Pi, this is a `ctx.ui.confirm` request).
 5. Within a few seconds the phone shows a notification with **Approve** and
    **Deny**.
 6. Tap **Approve** on the lock screen. The agent continues **without** opening

@@ -63,8 +63,8 @@ Adding a new variant:
 
 ## Writing a connector
 
-The working example is [`server/connectors/makit-pi.ts`](../server/connectors/makit-pi.ts).
-A drop-in template lives at [`server/connectors/makit-piano.ts`](../server/connectors/makit-piano.ts).
+No built-in connector is currently checked in. Use the minimum example below
+as the starting point for a new `server/connectors/<your-agent>.ts` file.
 
 A connector is a TypeScript file with a `default export` function that
 receives the agent's extension API. The function registers tools that:
@@ -124,7 +124,7 @@ Connectors are **auto-discovered** at server startup. Anything matching
 You'll see this in the server log:
 
 ```
-[makit] loading 2 connector(s): makit-pi.ts, makit-piano.ts
+[makit] loading 1 connector(s): my-agent.ts
 ```
 
 ## Environment contract

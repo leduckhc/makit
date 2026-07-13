@@ -479,7 +479,7 @@ void main() {
     },
   );
 
-  testWidgets('desktop reminder is cancelled once the request is answered', (
+  testWidgets('desktop dialog closes and reminder is cancelled once answered', (
     tester,
   ) async {
     final (transport, notifications, controller) = await pumpHandler(
@@ -506,7 +506,8 @@ void main() {
       'kind': 'confirmAction',
       'approved': true,
     });
-    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
 
     // No reminder should fire after the delay.
     await tester.pump(const Duration(minutes: 2));

@@ -60,6 +60,11 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   /// cancelled when the request is answered or the widget disposes.
   final Map<String, Timer> _reminderTimers = {};
 
+  /// Dialog contexts keyed by request id, so an answer from a notification can
+  /// remove that request's exact route without disturbing another open dialog.
+  final Map<String, BuildContext> _activeDialogContexts = {};
+  final Map<String, Object> _activeDialogTokens = {};
+
   /// Salted so request-notification ids can't collide with the status
   /// notifications keyed on `sessionId.hashCode`.
   int _notificationId(String requestId) =>
@@ -116,6 +121,36 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   void _onResponded(String id) {
     _pendingBackground.remove(id);
     _reminderTimers.remove(id)?.cancel();
+    _activeDialogTokens.remove(id);
+    final dialogContext = _activeDialogContexts.remove(id);
+    if (dialogContext == null || !dialogContext.mounted) return;
+    final route = ModalRoute.of(dialogContext);
+    if (route != null && route.isActive) {
+      Navigator.of(dialogContext).removeRoute(route);
+    }
+  }
+
+  Future<T?> _showTrackedDialog<T>({
+    required String requestId,
+    required BuildContext context,
+    required WidgetBuilder builder,
+    bool barrierDismissible = true,
+  }) async {
+    final dialogToken = Object();
+    final result = await showDialog<T>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      builder: (dctx) {
+        _activeDialogContexts[requestId] = dctx;
+        _activeDialogTokens[requestId] = dialogToken;
+        return builder(dctx);
+      },
+    );
+    if (identical(_activeDialogTokens[requestId], dialogToken)) {
+      _activeDialogTokens.remove(requestId);
+      _activeDialogContexts.remove(requestId);
+    }
+    return result;
   }
 
   /// Fire a system notification once a still-unanswered request has been
@@ -269,7 +304,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     String requestId,
     List<Map<String, dynamic>> questions,
   ) async {
-    final result = await showDialog<Map<String, dynamic>?>(
+    final result = await _showTrackedDialog<Map<String, dynamic>?>(
+      requestId: requestId,
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => _AskWizard(questions: questions),
@@ -305,7 +341,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     String requestId,
     Map<String, dynamic> body,
   ) async {
-    final approved = await showDialog<bool>(
+    final approved = await _showTrackedDialog<bool>(
+      requestId: requestId,
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
@@ -360,7 +397,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       text: body['prefill']?.toString() ?? '',
     );
     final multiline = body['multiline'] == true;
-    final value = await showDialog<String?>(
+    final value = await _showTrackedDialog<String?>(
+      requestId: requestId,
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
@@ -395,7 +433,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   Future<void> _showGeneric(BuildContext ctx, Envelope env) async {
     final controller = TextEditingController();
-    final text = await showDialog<String?>(
+    final text = await _showTrackedDialog<String?>(
+      requestId: env.id,
       context: ctx,
       builder: (dctx) => AlertDialog(
         title: Text(env.body['title']?.toString() ?? 'Server request'),
@@ -461,6 +500,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       t.cancel();
     }
     _reminderTimers.clear();
+    _activeDialogContexts.clear();
+    _activeDialogTokens.clear();
     super.dispose();
   }
 
