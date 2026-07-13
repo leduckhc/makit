@@ -490,31 +490,40 @@ class _ThinkingCardState extends State<_ThinkingCard> {
       fontStyle: FontStyle.italic,
       height: 1.3,
     );
-    return InkWell(
-      onTap: () => setState(() => _expanded = !_expanded),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.psychology_outlined,
-              size: 15,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.55),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                widget.text.trim(),
-                style: style,
-                maxLines: _expanded ? null : 1,
-                overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
+    void toggle() => setState(() => _expanded = !_expanded);
+    final row = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.psychology_outlined,
+            size: 15,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _expanded
+                // When expanded the text is selectable. A plain tap (no drag)
+                // still collapses the card; dragging selects text instead.
+                ? SelectableText(
+                    widget.text.trim(),
+                    style: style,
+                    onTap: toggle,
+                  )
+                : Text(
+                    widget.text.trim(),
+                    style: style,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+          ),
+        ],
       ),
     );
+    // Collapsed: whole row is a tap target that expands. Expanded: rely on
+    // SelectableText's onTap so selecting text doesn't collapse the card.
+    return _expanded ? row : InkWell(onTap: toggle, child: row);
   }
 }
 
