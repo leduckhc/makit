@@ -447,12 +447,24 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   /// Ask the server to recompute + rebroadcast the repo snapshot (git/gh
-  /// intelligence). Used by pull-to-refresh on the home screen.
+  /// intelligence). Used by pull-to-refresh on the home screen and as a
+  /// belt-and-suspenders retrigger after project add/remove.
+  ///
+  /// Best-effort: the server already broadcasts a fresh `repos.snapshot` on
+  /// add/remove/spawn/kill, so this is an optional optimization. A failure —
+  /// e.g. an older server that predates `repo.refresh` and replies with
+  /// `err {unknown cmd}`, or a transient error — must never bubble up and turn
+  /// a successful add/remove (or a pull-to-refresh gesture) into an error.
   Future<void> refreshRepos() async {
-    await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {'kind': 'repo.refresh'},
-    );
+    try {
+      await _ref.read(connectionControllerProvider.notifier).request(
+        MsgType.cmd,
+        {'kind': 'repo.refresh'},
+      );
+    } catch (_) {
+      // Swallow: the repo snapshot is refreshed by the server on its own for
+      // the operations that call this.
+    }
   }
 
   @override

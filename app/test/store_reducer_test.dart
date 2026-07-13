@@ -350,6 +350,45 @@ void main() {
         isNotEmpty,
       );
     });
+
+    test('addProject succeeds when server rejects repo.refresh', () async {
+      // An older server that predates SPEC-11 replies to `repo.refresh` with
+      // `err {unknown cmd}`. The project was still added (project.add acked and
+      // the server broadcasts its own repos.snapshot), so the best-effort
+      // refresh must not turn a successful add into a failure.
+      final transport = _SnapshotTransport(errOnRepoRefresh: true);
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      final addFuture = store.addProject('/repo/makit');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(await addFuture, 'p-new');
+    });
   });
 }
 
@@ -407,6 +446,12 @@ class _CapturingTransport implements Transport {
 
 /// Transport that auto-acks cmd requests and lets tests inject snapshot events.
 class _SnapshotTransport implements Transport {
+  _SnapshotTransport({this.errOnRepoRefresh = false});
+
+  /// When true, reply to `repo.refresh` with an `err` frame (mimicking a
+  /// server that predates the command) instead of an `ack`.
+  final bool errOnRepoRefresh;
+
   final sent = <Envelope>[];
   final _frames = StreamController<Envelope>.broadcast();
   final _state = StreamController<WsState>.broadcast();
@@ -436,6 +481,16 @@ class _SnapshotTransport implements Transport {
     sent.add(env);
     if (env.t == MsgType.cmd) {
       final kind = env.body['kind'];
+      if (kind == 'repo.refresh' && errOnRepoRefresh) {
+        _frames.add(
+          Envelope(
+            t: MsgType.err,
+            id: env.id,
+            body: {'code': 'bad_request', 'message': 'unknown cmd: repo.refresh'},
+          ),
+        );
+        return;
+      }
       final body = kind == 'project.add'
           ? {'projectId': 'p-new'}
           : <String, dynamic>{};
