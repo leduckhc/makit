@@ -19,7 +19,7 @@ class DesktopChatShell extends StatelessWidget {
       body: Row(
         children: [
           SizedBox(
-            width: 280,
+            width: 320,
             child: DesktopSidebar(onOpenSettings: onOpenSettings),
           ),
           const VerticalDivider(width: 1),

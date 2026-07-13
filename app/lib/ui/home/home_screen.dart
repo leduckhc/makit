@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -10,11 +9,10 @@ import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import '../widgets/searchable_list_sheet.dart';
+import 'repo_chips.dart';
 
 /// Brand green accent used for running/active glass affordances (shared token).
 const _kBrandBlue = kMakitAccent;
-const _kAdd = Color(0xFF3FB950); // git additions (green)
-const _kDel = Color(0xFFF85149); // git deletions (red)
 
 /// Home screen — organised around **repos**. Each repo card surfaces its
 /// branches (worktrees), diff size, open PRs, and the sessions running in each
@@ -184,14 +182,7 @@ class _RepoCard extends ConsumerWidget {
 
     // Show worktrees with running sessions or changes first; hide empty
     // non-primary worktrees behind the primary + active ones.
-    final worktrees = [...repo.worktrees]
-      ..sort((a, b) {
-        if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
-        final aActive = a.sessionIds.isNotEmpty || a.hasChanges;
-        final bActive = b.sessionIds.isNotEmpty || b.hasChanges;
-        if (aActive != bActive) return aActive ? -1 : 1;
-        return (b.insertions + b.deletions) - (a.insertions + a.deletions);
-      });
+    final worktrees = sortWorktreesForDisplay(repo.worktrees);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -238,7 +229,7 @@ class _RepoCard extends ConsumerWidget {
           ),
           const SizedBox(width: 8),
           if (repo.currentBranch != null)
-            _BranchChip(branch: repo.currentBranch!, subtle: true),
+            BranchChip(branch: repo.currentBranch!, subtle: true),
           const Spacer(),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, size: 20),
@@ -295,7 +286,7 @@ class _RepoCard extends ConsumerWidget {
     }
     if (repo.totalInsertions > 0 || repo.totalDeletions > 0) {
       items.add(
-        _DiffChip(
+        DiffChip(
           insertions: repo.totalInsertions,
           deletions: repo.totalDeletions,
         ),
@@ -573,17 +564,17 @@ class _WorktreeRow extends StatelessWidget {
               ),
               if (isDefault) ...[
                 const SizedBox(width: 6),
-                _Tag(label: 'default', color: theme.colorScheme.outline),
+                TagChip(label: 'default', color: theme.colorScheme.outline),
               ],
               const SizedBox(width: 8),
               if (worktree.hasChanges)
-                _DiffChip(
+                DiffChip(
                   insertions: worktree.insertions,
                   deletions: worktree.deletions,
                 ),
               if (worktree.pr != null) ...[
                 const SizedBox(width: 8),
-                _PrPill(pr: worktree.pr!),
+                PrPill(pr: worktree.pr!),
               ],
             ],
           ),
@@ -654,7 +645,7 @@ class _SessionTile extends ConsumerWidget {
         dense: true,
         contentPadding: EdgeInsets.only(left: indented ? 30 : 16, right: 12),
         onTap: () => context.go('/session/${session.id}'),
-        leading: _AgentAvatar(agent: session.agent),
+        leading: AgentAvatar(agent: session.agent),
         title: Row(
           children: [
             Expanded(
@@ -666,9 +657,9 @@ class _SessionTile extends ConsumerWidget {
               ),
             ),
             if (session.pending)
-              const _Tag(label: 'draft', color: Colors.amber)
+              const TagChip(label: 'draft', color: Colors.amber)
             else if (session.status != SessionStatus.idle)
-              _StatusChip(status: session.status),
+              SessionStatusChip(status: session.status),
           ],
         ),
         subtitle: Text(
@@ -713,208 +704,6 @@ class _SessionTile extends ConsumerWidget {
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Small presentational widgets
-// ---------------------------------------------------------------------------
-
-/// Agent avatar: shows the agent's logo for known agents, else the initial.
-class _AgentAvatar extends StatelessWidget {
-  const _AgentAvatar({required this.agent});
-  final String agent;
-
-  @override
-  Widget build(BuildContext context) {
-    final asset = _agentLogos[agent.toLowerCase()];
-    if (asset == null) {
-      return CircleAvatar(
-        radius: 16,
-        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-        child: Text(agent.isEmpty ? '?' : agent.substring(0, 1).toUpperCase()),
-      );
-    }
-    return ClipOval(
-      child: SvgPicture.asset(asset, width: 32, height: 32, fit: BoxFit.cover),
-    );
-  }
-}
-
-const _agentLogos = <String, String>{
-  'pi': 'assets/agents/pi.svg',
-  'codex': 'assets/agents/codex.svg',
-  'claude': 'assets/agents/claude.svg',
-};
-
-/// Branch name pill with a git branch glyph.
-class _BranchChip extends StatelessWidget {
-  const _BranchChip({required this.branch, this.subtle = false});
-  final String branch;
-  final bool subtle;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final color = subtle ? cs.outline : _kBrandBlue;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.commit_outlined, size: 12, color: color),
-          const SizedBox(width: 4),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 120),
-            child: Text(
-              branch,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// `+N −M` diff chip with additive-green / deletive-red counts.
-class _DiffChip extends StatelessWidget {
-  const _DiffChip({required this.insertions, required this.deletions});
-  final int insertions;
-  final int deletions;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (insertions > 0)
-          Text(
-            '+$insertions',
-            style: const TextStyle(
-              color: _kAdd,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
-            ),
-          ),
-        if (insertions > 0 && deletions > 0) const SizedBox(width: 5),
-        if (deletions > 0)
-          Text(
-            '−$deletions',
-            style: const TextStyle(
-              color: _kDel,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'monospace',
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Open-PR pill: `PR #42`, tinted grey for drafts, brand for ready.
-class _PrPill extends StatelessWidget {
-  const _PrPill({required this.pr});
-  final PullRequest pr;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = pr.isDraft ? Colors.grey : _kBrandBlue;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            pr.isDraft ? Icons.merge_type : Icons.merge_outlined,
-            size: 12,
-            color: color,
-          ),
-          const SizedBox(width: 3),
-          Text(
-            'PR #${pr.number}',
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Generic little tag chip (default / draft).
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label, required this.color});
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
-  final SessionStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color) = switch (status) {
-      SessionStatus.running => ('running', _kBrandBlue),
-      SessionStatus.awaitingInput => ('you', Colors.orange),
-      SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
-      SessionStatus.error => ('error', Colors.red),
-      SessionStatus.exited => ('exited', Colors.grey),
-      SessionStatus.idle => ('idle', Colors.grey),
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
   }
 }
 

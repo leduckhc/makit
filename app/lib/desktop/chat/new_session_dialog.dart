@@ -6,16 +6,23 @@ import '../../store/store.dart';
 import '../../ui/project/folder_browser.dart';
 import 'selected_session.dart';
 
-/// Opens the "New session" dialog: pick a project + a harness, then spawn.
-Future<void> showNewSessionDialog(BuildContext context, WidgetRef ref) {
+/// Opens the "New session" dialog: pick a repo + a harness, then spawn. Pass
+/// [projectId] to preselect a repo (e.g. from a repo row's + button).
+Future<void> showNewSessionDialog(
+  BuildContext context,
+  WidgetRef ref, {
+  String? projectId,
+}) {
   return showDialog<void>(
     context: context,
-    builder: (_) => const _NewSessionDialog(),
+    builder: (_) => _NewSessionDialog(initialProjectId: projectId),
   );
 }
 
 class _NewSessionDialog extends ConsumerStatefulWidget {
-  const _NewSessionDialog();
+  const _NewSessionDialog({this.initialProjectId});
+
+  final String? initialProjectId;
 
   @override
   ConsumerState<_NewSessionDialog> createState() => _NewSessionDialogState();
@@ -33,9 +40,10 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   void initState() {
     super.initState();
     _loadAgents();
-    // Preselect the first project if there is exactly one obvious choice.
-    final projects = ref.read(projectsProvider).projects;
-    if (projects.isNotEmpty) _projectId = projects.first.id;
+    // Preselect the caller's repo, else the first one.
+    final repos = ref.read(reposProvider).repos;
+    _projectId =
+        widget.initialProjectId ?? (repos.isNotEmpty ? repos.first.id : null);
   }
 
   Future<void> _loadAgents() async {
@@ -94,7 +102,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final projects = ref.watch(projectsProvider).projects;
+    final repos = ref.watch(reposProvider).repos;
     final canStart = _projectId != null && !_spawning;
 
     return AlertDialog(
@@ -105,21 +113,29 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Project'),
+            const Text('Repo'),
             const SizedBox(height: 6),
-            if (projects.isEmpty)
+            if (repos.isEmpty)
               OutlinedButton.icon(
                 onPressed: _addProject,
                 icon: const Icon(Icons.create_new_folder_outlined),
-                label: const Text('Add a project folder'),
+                label: const Text('Add a repo'),
               )
             else
               DropdownButtonFormField<String>(
                 initialValue: _projectId,
                 isExpanded: true,
                 items: [
-                  for (final p in projects)
-                    DropdownMenuItem(value: p.id, child: Text(p.name)),
+                  for (final r in repos)
+                    DropdownMenuItem(
+                      value: r.id,
+                      child: Text(
+                        r.currentBranch == null
+                            ? r.name
+                            : '${r.name} · ${r.currentBranch}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                 ],
                 onChanged: (v) => setState(() => _projectId = v),
               ),

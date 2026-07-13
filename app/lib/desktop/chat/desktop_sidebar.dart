@@ -4,13 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../store/connection.dart';
+import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
 
-/// The left pane of the desktop two-pane chat: projects → their sessions, a
-/// "New session" action, and a footer with the connection status + a hook for
+/// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
+/// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
+/// sessions running in each worktree, plus a DRAFTS section for sessions that
+/// haven't named a branch yet. Footer shows the connection status + a hook for
 /// the Settings/Server section.
 class DesktopSidebar extends ConsumerWidget {
   /// Creates the sidebar.
@@ -22,24 +25,28 @@ class DesktopSidebar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final projects = ref.watch(projectsProvider).projects;
+    final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
     final selected = ref.watch(selectedSessionProvider);
 
     return Column(
       children: [
-        _Header(onNewSession: () => showNewSessionDialog(context, ref)),
+        _Header(
+          onNewSession: () => showNewSessionDialog(context, ref),
+          onRefresh: () =>
+              ref.read(storeControllerProvider.notifier).refreshRepos(),
+        ),
         const Divider(height: 1),
         Expanded(
-          child: projects.isEmpty
+          child: repos.isEmpty
               ? const _EmptySidebar()
               : ListView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   children: [
-                    for (final project in projects)
-                      _ProjectGroup(
-                        project: project,
-                        sessions: sessions.forProject(project.id),
+                    for (final repo in repos)
+                      _RepoGroup(
+                        repo: repo,
+                        sessions: sessions.forProject(repo.id),
                         selectedId: selected,
                         onSelect: (id) =>
                             ref.read(selectedSessionProvider.notifier).state =
@@ -56,8 +63,9 @@ class DesktopSidebar extends ConsumerWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onNewSession});
+  const _Header({required this.onNewSession, required this.onRefresh});
   final VoidCallback onNewSession;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -74,6 +82,11 @@ class _Header extends StatelessWidget {
             ),
           ),
           IconButton(
+            tooltip: 'Refresh repos',
+            icon: const Icon(Icons.refresh, size: 20),
+            onPressed: onRefresh,
+          ),
+          IconButton(
             tooltip: 'New session',
             icon: const Icon(Icons.add),
             onPressed: onNewSession,
@@ -84,15 +97,136 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _ProjectGroup extends StatelessWidget {
-  const _ProjectGroup({
-    required this.project,
+/// One repo section: header row (name + current branch + stats), then its
+/// worktrees with their sessions, then drafts.
+class _RepoGroup extends ConsumerWidget {
+  const _RepoGroup({
+    required this.repo,
     required this.sessions,
     required this.selectedId,
     required this.onSelect,
   });
 
-  final Project project;
+  final RepoInfo repo;
+  final List<Session> sessions;
+  final String? selectedId;
+  final void Function(String id) onSelect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final drafts = sessions.where((s) => s.pending).toList();
+    final byId = {for (final s in sessions) s.id: s};
+    final worktrees = sortWorktreesForDisplay(repo.worktrees);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 2),
+          child: Row(
+            children: [
+              Icon(
+                Icons.folder_special_outlined,
+                size: 16,
+                color: theme.colorScheme.outline,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  repo.name.toUpperCase(),
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.outline,
+                    letterSpacing: 0.6,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (repo.currentBranch != null)
+                BranchChip(branch: repo.currentBranch!, subtle: true),
+              const Spacer(),
+              IconButton(
+                tooltip: 'New session in ${repo.name}',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.add, size: 16),
+                onPressed: () =>
+                    showNewSessionDialog(context, ref, projectId: repo.id),
+              ),
+            ],
+          ),
+        ),
+        if (repo.totalInsertions > 0 ||
+            repo.totalDeletions > 0 ||
+            repo.openPrCount > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              children: [
+                if (repo.totalInsertions > 0 || repo.totalDeletions > 0)
+                  DiffChip(
+                    insertions: repo.totalInsertions,
+                    deletions: repo.totalDeletions,
+                  ),
+                if (repo.openPrCount > 0)
+                  Text(
+                    '${repo.openPrCount} open PR${repo.openPrCount > 1 ? 's' : ''}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: kRepoAccent,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        for (final wt in worktrees)
+          _WorktreeGroup(
+            repo: repo,
+            worktree: wt,
+            sessions: wt.sessionIds
+                .map((id) => byId[id])
+                .whereType<Session>()
+                .toList(),
+            selectedId: selectedId,
+            onSelect: onSelect,
+          ),
+        if (drafts.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'DRAFTS',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.outline,
+                letterSpacing: 1,
+              ),
+            ),
+          ),
+          for (final s in drafts)
+            _SessionTile(
+              session: s,
+              selected: s.id == selectedId,
+              onTap: () => onSelect(s.id),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// A worktree line (branch + diff + PR) with its sessions nested below.
+class _WorktreeGroup extends StatelessWidget {
+  const _WorktreeGroup({
+    required this.repo,
+    required this.worktree,
+    required this.sessions,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final RepoInfo repo;
+  final Worktree worktree;
   final List<Session> sessions;
   final String? selectedId;
   final void Function(String id) onSelect;
@@ -100,23 +234,72 @@ class _ProjectGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final branch = worktree.branch ?? 'detached';
+    final isDefault = worktree.branch == repo.defaultBranch;
+
+    // Hide empty, clean, non-primary worktrees to keep the rail scannable.
+    if (sessions.isEmpty && !worktree.isPrimary && !worktree.hasChanges) {
+      return const SizedBox.shrink();
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-          child: Text(
-            project.name.toUpperCase(),
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.outline,
-              letterSpacing: 0.6,
-            ),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+          child: Row(
+            children: [
+              Icon(
+                Icons.account_tree_outlined,
+                size: 13,
+                color: worktree.isPrimary
+                    ? theme.colorScheme.outline
+                    : kRepoAccent,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  branch,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (isDefault) ...[
+                const SizedBox(width: 6),
+                TagChip(label: 'default', color: theme.colorScheme.outline),
+              ],
+              const SizedBox(width: 8),
+              if (worktree.hasChanges)
+                DiffChip(
+                  insertions: worktree.insertions,
+                  deletions: worktree.deletions,
+                ),
+              if (worktree.pr != null) ...[
+                const SizedBox(width: 6),
+                Flexible(child: PrPill(pr: worktree.pr!)),
+              ],
+            ],
           ),
         ),
+        if (sessions.isEmpty && !worktree.isPrimary)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(35, 0, 16, 4),
+            child: Text(
+              worktree.filesChanged > 0
+                  ? '${worktree.filesChanged} file(s) changed · no live session'
+                  : 'no live session',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ),
         for (final s in sessions)
           _SessionTile(
             session: s,
             selected: s.id == selectedId,
+            indented: true,
             onTap: () => onSelect(s.id),
           ),
       ],
@@ -129,25 +312,43 @@ class _SessionTile extends StatelessWidget {
     required this.session,
     required this.selected,
     required this.onTap,
+    this.indented = false,
   });
 
   final Session session;
   final bool selected;
+  final bool indented;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final title = session.title.trim().isNotEmpty
-        ? session.title.trim()
-        : session.id;
+    final title = session.pending && session.title.trim().isEmpty
+        ? 'new session'
+        : (session.title.trim().isNotEmpty ? session.title.trim() : session.id);
     return ListTile(
       dense: true,
       selected: selected,
       selectedTileColor: theme.colorScheme.surfaceContainerHighest,
-      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      contentPadding: EdgeInsets.only(left: indented ? 28 : 16, right: 12),
+      leading: AgentAvatar(agent: session.agent, size: 26),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          if (session.pending)
+            const TagChip(label: 'draft', color: Colors.amber)
+          else if (session.status != SessionStatus.idle)
+            SessionStatusChip(status: session.status),
+        ],
+      ),
       subtitle: Text(
-        session.agent,
+        session.pending
+            ? 'Send a message to create a branch'
+            : (session.lastPreview.isEmpty
+                  ? session.agent
+                  : session.lastPreview),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall?.copyWith(
@@ -209,7 +410,7 @@ class _EmptySidebar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          'No sessions yet.\nUse + to start one.',
+          'No repos yet.\nUse + to start a session\nin a git repo.',
           textAlign: TextAlign.center,
           style: TextStyle(color: cs.outline),
         ),
