@@ -11,6 +11,11 @@ import 'connection_endpoint.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
 
+/// Height of the sidebar's top drag strip. Sized to clear the macOS
+/// traffic-light buttons that overlay the top-left corner once the OS titlebar
+/// is hidden (matches the standard macOS titlebar height).
+const double _kTitleBarStripHeight = 28;
+
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
 /// sessions running in each worktree, plus a DRAFTS section for sessions that
@@ -67,7 +72,7 @@ class _Header extends StatelessWidget {
     // window's drag handle. Its height clears the macOS traffic-light buttons
     // that overlay the top-left corner.
     return const DragToMoveArea(
-      child: SizedBox(height: 28, width: double.infinity),
+      child: SizedBox(height: _kTitleBarStripHeight, width: double.infinity),
     );
   }
 }
