@@ -7,6 +7,7 @@ import '../../store/connection.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
+import 'notification_settings.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -102,20 +103,16 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           const Divider(),
+          const _SectionHeader('Notifications'),
+          const NotificationSettingsSection(),
+
+          const Divider(),
           const _SectionHeader('Coming soon'),
           ListTile(
             enabled: false,
-            leading: _leadingIcon(Icons.notifications_outlined),
-            title: const Text('Notifications'),
-            subtitle: const Text(
-              'Awaiting input · Approval · Long task · Errors',
-            ),
-          ),
-          ListTile(
-            enabled: false,
-            leading: _leadingIcon(Icons.security_outlined),
-            title: const Text('Default approval policy'),
-            subtitle: const Text('Ask on risky'),
+            leading: _leadingIcon(Icons.tune_outlined),
+            title: const Text('Notification preferences'),
+            subtitle: const Text('Per-type mute · default approval policy'),
           ),
 
           const Divider(),

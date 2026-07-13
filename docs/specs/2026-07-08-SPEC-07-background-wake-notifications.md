@@ -1,6 +1,6 @@
 # SPEC-07 — Slice 2: Background wake for notifications (content-free push over a private tailnet)
 
-**Status:** planned · ready for implementation
+**Status:** implemented · ready for on-device validation
 **Depends on:** [SPEC-08](./2026-07-08-SPEC-08-actionable-notifications.md) (Slice 1 actionable notifications)
 **Touches (new):** `server/src/push/{sender,payload,wake_coordinator,config,apns}.ts`,
 `server/test/push_payload.test.ts`, `server/test/wake_coordinator.test.ts`,

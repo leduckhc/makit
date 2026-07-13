@@ -26,6 +26,8 @@ import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
 import '../store/connection.dart';
 import '../store/store.dart';
+import '../ui/widgets/srv_request_handler.dart';
+import 'chat/desktop_auto_select.dart';
 import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
 import 'chat/loopback_pairing.dart';
@@ -220,6 +222,8 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
 
   @override
   Widget build(BuildContext context) {
+    // SPEC-10: auto-select the most recent session when none is picked.
+    ref.watch(desktopAutoSelectSessionProvider);
     return MaterialApp(
       title: 'Makit',
       navigatorKey: _desktopNavKey,
@@ -227,6 +231,10 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
+      builder: (context, child) => SrvRequestHandler(
+        navigatorKey: _desktopNavKey,
+        child: child ?? const SizedBox(),
+      ),
       home: DesktopChatShell(onOpenSettings: _openSettings),
     );
   }

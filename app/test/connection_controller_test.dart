@@ -355,6 +355,7 @@ void main() {
       expect(regs, hasLength(1));
       expect(regs.single.body['token'], 'tok-1');
       expect(regs.single.body['platform'], 'apns');
+      expect(controller.state.pushRegistered, isTrue);
 
       controller.dispose();
     });

@@ -69,12 +69,17 @@ class MakitConnState {
     this.wsState = WsState.idle,
     this.useFake = false,
     this.lastError,
+    this.pushRegistered = false,
   });
 
   final PairedServer? server;
   final WsState wsState;
   final bool useFake;
   final String? lastError;
+
+  /// True once this device has sent `push.register` on the current connection
+  /// (SPEC-07). Resets on reconnect; used by Settings to show wake status.
+  final bool pushRegistered;
 
   bool get paired => server != null || useFake || _wsUrl.isNotEmpty;
 
@@ -83,13 +88,18 @@ class MakitConnState {
     WsState? wsState,
     bool? useFake,
     String? lastError,
+    bool? pushRegistered,
     bool clearError = false,
     bool clearServer = false,
+    bool clearPushRegistered = false,
   }) => MakitConnState(
     server: clearServer ? null : (server ?? this.server),
     wsState: wsState ?? this.wsState,
     useFake: useFake ?? this.useFake,
     lastError: clearError ? null : (lastError ?? this.lastError),
+    pushRegistered: clearPushRegistered
+        ? false
+        : (pushRegistered ?? this.pushRegistered),
   );
 }
 
@@ -315,6 +325,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       // fresh socket always re-registers; no-op when no token is available.
       if (s == WsState.connected) {
         _registeredToken = null;
+        state = state.copyWith(clearPushRegistered: true);
         unawaited(_registerPush());
       }
     });
@@ -479,6 +490,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   void _sendPushRegister(String token) {
     if (token == _registeredToken) return;
     _registeredToken = token;
+    state = state.copyWith(pushRegistered: true);
     send(
       Envelope(
         t: MsgType.cmd,

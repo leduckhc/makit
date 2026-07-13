@@ -249,7 +249,28 @@ Same cert as before ⇒ no re-trust prompt. Then start a server
 
 ---
 
-## 5. Debugging tips
+## 5. Notifications & background wake
+
+Actionable lock-screen approvals (SPEC-08) and content-free APNs wake (SPEC-07)
+are implemented. Full on-device checklists and troubleshooting:
+
+- [docs/NOTIFICATIONS.md](NOTIFICATIONS.md) — SPEC-08/07 validation steps
+- [docs/PUSH.md](PUSH.md) — `~/.makit/push.json` APNs setup on the server
+
+In the iOS app: **Settings → Notifications** shows permission and background-wake
+registration status.
+
+Quick server check after configuring push:
+
+```sh
+makit restart
+# expect: [makit] push: APNs sender active (sandbox, dev.getmakit.app)
+makit devices   # paired device should list a push token
+```
+
+---
+
+## 6. Debugging tips
 
 ```sh
 # Live device console logs for the app

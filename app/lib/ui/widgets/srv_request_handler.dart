@@ -2,9 +2,8 @@
 /// appropriate UI (currently: AskUserQuestion dialog). Mount once at app
 /// root so any screen sees the dialog.
 ///
-/// We render against the router's Navigator (`makitNavigatorKey`) rather
-/// than our own `BuildContext`, because this widget sits in
-/// `MaterialApp.builder` — above the Navigator created by GoRouter.
+/// We render against the app's Navigator rather than our own `BuildContext`,
+/// because this widget sits in `MaterialApp.builder` — above the Navigator.
 library;
 
 import 'dart:async';
@@ -21,8 +20,9 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
-  const SrvRequestHandler({super.key, required this.child});
+  const SrvRequestHandler({super.key, required this.child, this.navigatorKey});
   final Widget child;
+  final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
   ConsumerState<SrvRequestHandler> createState() => _SrvRequestHandlerState();
@@ -142,8 +142,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   Future<void> _presentDialog(Envelope env) async {
     final kind = env.body['kind'] as String? ?? 'unknown';
 
-    // Use the router's Navigator, not this widget's context — we're above it.
-    final navCtx = makitNavigatorKey.currentContext;
+    // Use the app's Navigator, not this widget's context — we're above it.
+    final navCtx = (widget.navigatorKey ?? makitNavigatorKey).currentContext;
     if (navCtx == null) return;
 
     // Normalise: pi's "askUserQuestion" tool can arrive as either

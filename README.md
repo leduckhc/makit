@@ -38,7 +38,7 @@ _▶️ Demo video coming soon — see [`docs/media/`](./docs/media/) to add it.
 
 📱 [`app/`](./app/) (Flutter client) · 🖥 [`server/`](./server/) (Node/TS server)
 · 📚 [UX](./docs/UX.md) · [Architecture](./docs/ARCHITECTURE.md) ·
-[Development runbook](./docs/DEVELOPMENT.md)
+[Development runbook](./docs/DEVELOPMENT.md) · [Notifications](./docs/NOTIFICATIONS.md)
 
 ## Quick start — Mac + iPhone over Tailscale
 
@@ -192,14 +192,23 @@ makit/
 - `pi --mode json` adapter (real text + tool calls)
 - Multiple projects → sessions, presence-aware fan-out
 
+**M2 — sessions & approvals ✅**
+- Agent adapters (`pi`, `codex`, `claude-code`, ACP) with tool cards and approval flow
+- `srv.request` / `srv.response` for in-app and lock-screen approvals
+- Repo-centric home (worktrees, diff stats, PR badges)
+- SQLite event log for reconnect/resume
+
+**M5 — notifications ✅**
+- Actionable lock-screen Approve/Deny/Reply ([SPEC-08](docs/specs/2026-07-08-SPEC-08-actionable-notifications.md))
+- Content-free APNs background wake ([SPEC-07](docs/specs/2026-07-08-SPEC-07-background-wake-notifications.md)) — see [push setup](docs/PUSH.md)
+- On-device checklists: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)
+
 ## Not yet
 
-- Approval gating actually pausing tool execution (M2)
-- Multi-turn while agent is mid-turn — currently dropped (M2)
-- SQLite event log; in-memory only (M4)
-- Push notifications (M5)
+- Multi-turn while agent is mid-turn — currently dropped
 - QR auto-mint via long-press / button in server (instead of SIGUSR1)
-- Settings UI to view & revoke paired devices
+- Per-type notification mute & default approval policy in Settings
+- Signed macOS app distribution (see [specs README](docs/specs/README.md) M3)
 
 See [`docs/ARCHITECTURE.md §12`](./docs/ARCHITECTURE.md) for the full roadmap.
 

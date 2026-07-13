@@ -128,6 +128,7 @@ void main() {
   pumpHandler(
     WidgetTester tester, {
     _RecordingNotificationService? notifications,
+    GlobalKey<NavigatorState>? navigatorKey,
   }) async {
     final transport = _EmittingTransport();
     final service = notifications ?? _RecordingNotificationService();
@@ -139,6 +140,7 @@ void main() {
       rediscoverStall: Duration.zero,
     );
 
+    final key = navigatorKey ?? makitNavigatorKey;
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -146,8 +148,11 @@ void main() {
           notificationServiceProvider.overrideWithValue(service),
         ],
         child: MaterialApp(
-          navigatorKey: makitNavigatorKey,
-          home: const SrvRequestHandler(child: Scaffold(body: SizedBox())),
+          navigatorKey: key,
+          home: SrvRequestHandler(
+            navigatorKey: key,
+            child: const Scaffold(body: SizedBox()),
+          ),
         ),
       ),
     );
@@ -214,6 +219,34 @@ void main() {
     await tester.pump();
 
     expect(notifications.shown, isEmpty);
+    expect(find.text('Approve'), findsOneWidget);
+  });
+
+  testWidgets('uses the navigator key supplied by the desktop app', (
+    tester,
+  ) async {
+    final desktopNavigatorKey = GlobalKey<NavigatorState>();
+    final (transport, notifications, _) = await pumpHandler(
+      tester,
+      navigatorKey: desktopNavigatorKey,
+    );
+
+    transport.emit(
+      Envelope(
+        t: MsgType.srvRequest,
+        id: 'req-desktop',
+        body: {
+          'kind': 'confirmAction',
+          'title': 'Desktop approval',
+          'sessionId': 's1',
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(notifications.shown, isEmpty);
+    expect(find.text('Desktop approval'), findsOneWidget);
     expect(find.text('Approve'), findsOneWidget);
   });
 

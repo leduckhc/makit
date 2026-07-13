@@ -374,7 +374,7 @@ recommendation. Then we lock the v1 adapter set.
    stream, approvals, mirror to desktop pane.
 4. **M3 — Projects & multi-session**: project index, home screen, presence.
 5. **M4 — Resume/offline**: event log, reconnect, queued commands.
-6. **M5 — Notifications**: relay + APNs/FCM.
+6. **M5 — Notifications** ✅: actionable lock-screen approvals (SPEC-08) + content-free APNs wake (SPEC-07). See [NOTIFICATIONS.md](NOTIFICATIONS.md) and [PUSH.md](PUSH.md).
 7. **M6 — Polish**: slash palette, @-mentions, voice, diff viewer.
 
 ---
