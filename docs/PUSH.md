@@ -58,7 +58,7 @@ Create `~/.makit/push.json` (mode `0600`):
 | `keyId` | 10-character key ID from Apple |
 | `teamId` | Your Apple Developer Team ID |
 | `bundleId` | Must match the iOS app bundle ID |
-| `env` | `sandbox` for dev/TestFlight builds; `production` for App Store |
+| `env` | `sandbox` for local development builds; `production` for TestFlight/App Store |
 
 Restart the server:
 
@@ -97,9 +97,9 @@ TestFlight and App Store builds use the production APNs environment — set
 1. Install and pair the iOS app.
 2. Grant notification permission when prompted.
 3. In the app: **Settings → Notifications** — "Background wake" should show
-   **Registered** when connected.
+   **Registration sent** when the client has sent `push.register`.
 4. On the server: `makit devices` — the device entry should include a push
-   token (value redacted in logs).
+   token (value redacted in logs); this confirms server-side registration.
 
 The app sends `push.register` after each successful WebSocket connect. The
 server stores the token in `~/.makit/devices.json`.

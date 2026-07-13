@@ -77,7 +77,8 @@ class NotificationSettingsSection extends ConsumerWidget {
   }
 
   static String _permissionLabel(NotificationPermission p) => switch (p) {
-    NotificationPermission.granted => 'Enabled — status alerts & lock-screen actions',
+    NotificationPermission.granted =>
+      'Enabled — status alerts & lock-screen actions',
     NotificationPermission.denied =>
       'Disabled in iOS Settings — enable for alerts',
     NotificationPermission.notDetermined => 'Not yet enabled — tap Enable',
@@ -92,7 +93,7 @@ class NotificationSettingsSection extends ConsumerWidget {
       return 'Connect to register for background wake';
     }
     if (conn.pushRegistered) {
-      return 'Registered — force-quit wake via APNs when server has push.json';
+      return 'Registration sent — server setup determines wake availability';
     }
     return 'Not registered — configure APNs on the server (see guide)';
   }
@@ -124,5 +125,7 @@ final _notificationPermissionProvider = FutureProvider<NotificationPermission>(
 Widget _leadingIcon(IconData icon, {double size = 24.0, Color? color}) =>
     SizedBox(
       width: 24,
-      child: Center(child: Icon(icon, size: size, color: color)),
+      child: Center(
+        child: Icon(icon, size: size, color: color),
+      ),
     );
