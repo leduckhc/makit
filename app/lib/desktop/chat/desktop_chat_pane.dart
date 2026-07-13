@@ -5,6 +5,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
+import '../../ui/home/repo_chips.dart';
 import '../../ui/session/chat_message.dart';
 import '../../ui/session/tool_call_card.dart';
 import 'selected_session.dart';
@@ -67,8 +68,29 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     _ensureSubscribed(sessionId);
 
+    // Surface transient action errors (compact/model/etc.) as snackbars,
+    // matching the mobile session screen.
+    ref.listen<ActionError?>(sessionActionErrorProvider(sessionId), (
+      prev,
+      next,
+    ) {
+      if (next == null || prev?.seq == next.seq) return;
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${next.action} failed: ${next.reason}')),
+      );
+    });
+
     final session = ref.watch(sessionsProvider).byId(sessionId);
     final items = ref.watch(chatItemsProvider(sessionId));
+
+    // Which worktree branch this session runs in (repo-centric context).
+    String? branch;
+    for (final repo in ref.watch(reposProvider).repos) {
+      for (final wt in repo.worktrees) {
+        if (wt.sessionIds.contains(sessionId)) branch = wt.branch;
+      }
+    }
 
     // Keep the transcript pinned to the newest message as items stream in.
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
@@ -84,7 +106,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     return Column(
       children: [
-        _PaneHeader(session: session, fallbackId: sessionId),
+        _PaneHeader(session: session, fallbackId: sessionId, branch: branch),
         const Divider(height: 1),
         Expanded(
           child: items.isEmpty
@@ -131,9 +153,14 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 }
 
 class _PaneHeader extends StatelessWidget {
-  const _PaneHeader({required this.session, required this.fallbackId});
+  const _PaneHeader({
+    required this.session,
+    required this.fallbackId,
+    this.branch,
+  });
   final Session? session;
   final String fallbackId;
+  final String? branch;
 
   @override
   Widget build(BuildContext context) {
@@ -142,9 +169,13 @@ class _PaneHeader extends StatelessWidget {
         : fallbackId;
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
+          if (session != null) ...[
+            AgentAvatar(agent: session!.agent, size: 28),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,6 +199,18 @@ class _PaneHeader extends StatelessWidget {
               ],
             ),
           ),
+          if (branch != null) ...[
+            const SizedBox(width: 8),
+            BranchChip(branch: branch!),
+          ],
+          if (session != null && session!.pending) ...[
+            const SizedBox(width: 8),
+            const TagChip(label: 'draft', color: Colors.amber),
+          ] else if (session != null &&
+              session!.status != SessionStatus.idle) ...[
+            const SizedBox(width: 8),
+            SessionStatusChip(status: session!.status),
+          ],
         ],
       ),
     );
