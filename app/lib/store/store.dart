@@ -232,7 +232,18 @@ class StoreController extends StateNotifier<StoreState> {
     if (env.t != MsgType.event) return;
     final decoded = WireCodec.decode(env);
     if (decoded == null) return;
+    final prev = state;
     state = reduce(state, decoded);
+    // The home screen is repo-centric. `project.add` always pushes a fresh
+    // `projects.snapshot`, but `repos.snapshot` is computed asynchronously on
+    // the server and can arrive late or be dropped — leaving the UI stuck on
+    // "No repos yet" after a successful add. Re-fetch when projects grew but
+    // repos haven't caught up yet.
+    if (decoded is ProjectsSnapshot &&
+        state.projects.length > prev.projects.length &&
+        state.projects.length > state.repos.length) {
+      unawaited(refreshRepos());
+    }
   }
 
   /// Currently-subscribed sessionIds. We replay these on every reconnect.
@@ -413,7 +424,7 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   /// Register a new project rooted at [path]. Resolves with the new project id
-  /// once the server acks; the fresh `projects.snapshot` updates the store.
+  /// once the server acks; the fresh `repos.snapshot` updates the home screen.
   Future<String> addProject(String path) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
@@ -421,6 +432,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
     final id = ack['projectId'] as String?;
     if (id == null) throw StateError('server did not return projectId');
+    await refreshRepos();
     return id;
   }
 
@@ -431,6 +443,7 @@ class StoreController extends StateNotifier<StoreState> {
       MsgType.cmd,
       {'kind': 'project.remove', 'projectId': id},
     );
+    await refreshRepos();
   }
 
   /// Ask the server to recompute + rebroadcast the repo snapshot (git/gh

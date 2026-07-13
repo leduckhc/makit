@@ -248,6 +248,109 @@ void main() {
       expect(sub.body['fromSeq'], 0);
     });
   });
+
+  group('StoreController — repo refresh after project add', () {
+    test(
+      'projects snapshot growth triggers repo.refresh when repos lag',
+      () async {
+        final transport = _SnapshotTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        container.read(storeControllerProvider);
+        await Future<void>.delayed(Duration.zero);
+
+        transport.pushSnapshot(
+          Envelope(
+            t: MsgType.event,
+            id: 'snap-projects',
+            body: {
+              'kind': 'projects.snapshot',
+              'projects': [
+                {
+                  'id': 'p-new',
+                  'name': 'makit',
+                  'path': '/repo/makit',
+                  'pinned': false,
+                  'lastActivityAt': 1,
+                },
+              ],
+            },
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          transport.sent.any(
+            (e) => e.t == MsgType.cmd && e.body['kind'] == 'repo.refresh',
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test('addProject requests repo.refresh after server ack', () async {
+      final transport = _SnapshotTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      final addFuture = store.addProject('/repo/makit');
+      await Future<void>.delayed(Duration.zero);
+      await addFuture;
+
+      expect(
+        transport.sent.where(
+          (e) => e.t == MsgType.cmd && e.body['kind'] == 'repo.refresh',
+        ),
+        isNotEmpty,
+      );
+    });
+  });
 }
 
 /// Transport fake that records outgoing envelopes and lets a test inject
@@ -297,6 +400,48 @@ class _CapturingTransport implements Transport {
 
   @override
   void sendEnvelope(Envelope env) => sent.add(env);
+
+  @override
+  void forceReconnect() {}
+}
+
+/// Transport that auto-acks cmd requests and lets tests inject snapshot events.
+class _SnapshotTransport implements Transport {
+  final sent = <Envelope>[];
+  final _frames = StreamController<Envelope>.broadcast();
+  final _state = StreamController<WsState>.broadcast();
+
+  void pushSnapshot(Envelope env) => _frames.add(env);
+
+  @override
+  Future<void> connect(
+    String url, {
+    Map<String, dynamic> helloBody = const {},
+    String? pinnedFingerprint,
+  }) async {
+    _state.add(WsState.connected);
+  }
+
+  @override
+  Future<void> close() async {}
+
+  @override
+  Stream<Envelope> get frames => _frames.stream;
+
+  @override
+  Stream<WsState> get state => _state.stream;
+
+  @override
+  void sendEnvelope(Envelope env) {
+    sent.add(env);
+    if (env.t == MsgType.cmd) {
+      final kind = env.body['kind'];
+      final body = kind == 'project.add'
+          ? {'projectId': 'p-new'}
+          : <String, dynamic>{};
+      _frames.add(Envelope(t: MsgType.ack, id: env.id, body: body));
+    }
+  }
 
   @override
   void forceReconnect() {}
