@@ -1,22 +1,13 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/notifications/notification_observer.dart';
-import 'package:makit/notifications/notification_service.dart';
-import 'package:makit/pairing/onboarding_controller.dart';
-import 'package:makit/pairing/readiness.dart';
-import 'package:makit/store/connection.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
-/// A [NotificationService] whose permission query is fixed, so the onboarding
-/// controller resolves without touching the plugin. Mirrors a fresh install
-/// where the OS prompt hasn't been answered yet.
-class _FixedPermissionService extends NotificationService {
-  _FixedPermissionService(this._perm);
-  final NotificationPermission _perm;
-
-  @override
-  Future<NotificationPermission> permissionStatus() async => _perm;
-}
+import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/app/router.dart';
+import 'package:makit/pairing/onboarding_controller.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/store.dart';
+import 'package:makit/ui/home/home_screen.dart';
+import 'package:makit/pairing/readiness.dart';
 
 /// Minimal in-memory secure storage: the connection controller boots with no
 /// paired server, so the app starts unpaired (on the pairing screen).
@@ -61,9 +52,11 @@ class _EmptyStorage extends FlutterSecureStorage {
 ProviderContainer _container() {
   final container = ProviderContainer(
     overrides: [
-      // Fresh install: OS prompt not yet answered → notDetermined.
-      notificationServiceProvider.overrideWithValue(
-        _FixedPermissionService(NotificationPermission.notDetermined),
+      onboardingControllerProvider.overrideWith(
+        (_) => OnboardingController.withSeams(
+          query: () async => NotificationPermission.notDetermined,
+          request: () async => NotificationPermission.granted,
+        ),
       ),
       connectionControllerProvider.overrideWith(
         (ref) => ConnectionController(const _EmptyStorage()),
@@ -75,44 +68,33 @@ ProviderContainer _container() {
 }
 
 void main() {
-  group('Open with fake data → onboarding readiness', () {
-    test('unpaired app starts on the pair step', () async {
-      final container = _container();
-      // Let the onboarding controller resolve its (fixed) permission query.
-      await Future<void>.delayed(Duration.zero);
-      expect(container.read(onboardingStepProvider), OnboardingStep.pair);
-    });
-
-    test('attaching fake data WITHOUT skipping notifications is stuck at the '
-        'notifications gate (never reaches Home) — the reported bug', () async {
-      final container = _container();
-      await Future<void>.delayed(Duration.zero);
-
-      container.read(connectionControllerProvider.notifier).useFakeServer();
-
-      // paired is now true, but the notifications gate is unsatisfied, so the
-      // router redirect bounces off Home back to onboarding.
-      expect(
-        container.read(onboardingStepProvider),
-        OnboardingStep.notifications,
-      );
-    });
-
-    test(
-      'the fake-data action (attach fake + skip notifications) reaches ready '
-      'so the router lands on Home',
-      () async {
-        final container = _container();
-        await Future<void>.delayed(Duration.zero);
-
-        // Exactly what the "Open with fake data" button does.
-        container.read(connectionControllerProvider.notifier).useFakeServer();
-        container
-            .read(onboardingControllerProvider.notifier)
-            .skipNotifications();
-
-        expect(container.read(onboardingStepProvider), OnboardingStep.ready);
-      },
+  testWidgets('"Open with fake data" navigates to Home and stays there', (
+    tester,
+  ) async {
+    final container = _container();
+    container.read(storeControllerProvider);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(routerConfig: container.read(routerProvider)),
+      ),
     );
+    await tester.pump();
+
+    final button = find.text('Open with fake data');
+    expect(button, findsOneWidget);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(container.read(onboardingStepProvider), OnboardingStep.ready);
+    expect(container.read(routerProvider).state.matchedLocation, '/');
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(button, findsNothing);
+
+    // A later frame must not bounce Home back to onboarding.
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(HomeScreen), findsOneWidget);
   });
 }

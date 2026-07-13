@@ -432,7 +432,7 @@ class StoreController extends StateNotifier<StoreState> {
     );
     final id = ack['projectId'] as String?;
     if (id == null) throw StateError('server did not return projectId');
-    await refreshRepos();
+    unawaited(refreshRepos());
     return id;
   }
 
@@ -443,7 +443,7 @@ class StoreController extends StateNotifier<StoreState> {
       MsgType.cmd,
       {'kind': 'project.remove', 'projectId': id},
     );
-    await refreshRepos();
+    unawaited(refreshRepos());
   }
 
   /// Ask the server to recompute + rebroadcast the repo snapshot (git/gh

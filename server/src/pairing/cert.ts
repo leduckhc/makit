@@ -122,6 +122,10 @@ const defaultTailscaleRunner: TailscaleRunner = (bin, args) =>
     encoding: "utf8",
     timeout: 2000,
     stdio: ["ignore", "pipe", "ignore"],
+    // The macOS app-bundle executable guesses GUI vs CLI from terminal
+    // environment variables. A packaged GUI app has none, so force CLI mode;
+    // harmless for standalone/Homebrew binaries.
+    env: { ...process.env, TAILSCALE_BE_CLI: "1" },
   });
 
 /**

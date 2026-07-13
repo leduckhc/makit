@@ -389,6 +389,47 @@ void main() {
 
       expect(await addFuture, 'p-new');
     });
+
+    test('project mutations do not wait for a dropped repo.refresh', () async {
+      final transport = _SnapshotTransport(dropRepoRefresh: true);
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      await expectLater(
+        store
+            .addProject('/repo/makit')
+            .timeout(const Duration(milliseconds: 100)),
+        completion('p-new'),
+      );
+      await expectLater(
+        store.removeProject('p-new').timeout(const Duration(milliseconds: 100)),
+        completes,
+      );
+    });
   });
 }
 
@@ -446,11 +487,15 @@ class _CapturingTransport implements Transport {
 
 /// Transport that auto-acks cmd requests and lets tests inject snapshot events.
 class _SnapshotTransport implements Transport {
-  _SnapshotTransport({this.errOnRepoRefresh = false});
+  _SnapshotTransport({
+    this.errOnRepoRefresh = false,
+    this.dropRepoRefresh = false,
+  });
 
   /// When true, reply to `repo.refresh` with an `err` frame (mimicking a
   /// server that predates the command) instead of an `ack`.
   final bool errOnRepoRefresh;
+  final bool dropRepoRefresh;
 
   final sent = <Envelope>[];
   final _frames = StreamController<Envelope>.broadcast();
@@ -481,6 +526,7 @@ class _SnapshotTransport implements Transport {
     sent.add(env);
     if (env.t == MsgType.cmd) {
       final kind = env.body['kind'];
+      if (kind == 'repo.refresh' && dropRepoRefresh) return;
       if (kind == 'repo.refresh' && errOnRepoRefresh) {
         _frames.add(
           Envelope(

@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { chooseBindHost, tailscaleIP, TAILSCALE_BINARIES } from "./cert.js";
 
@@ -80,4 +83,24 @@ test("tailscaleIP: returns null when every candidate binary is missing", () => {
   assert.equal(ip, null);
   // Every candidate was attempted before giving up.
   assert.equal(tried.length, TAILSCALE_BINARIES.length);
+});
+
+test("tailscaleIP: forces the macOS app executable into CLI mode", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-tailscale-"));
+  const bin = join(dir, "tailscale");
+  writeFileSync(
+    bin,
+    '#!/bin/sh\n[ "$TAILSCALE_BE_CLI" = "1" ] || exit 1\necho 100.64.0.9\n',
+  );
+  chmodSync(bin, 0o755);
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = dir;
+  try {
+    assert.equal(tailscaleIP(), "100.64.0.9");
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
