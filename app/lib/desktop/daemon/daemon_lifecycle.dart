@@ -128,13 +128,13 @@ class DaemonLifecycle {
 
   /// Runs `makit start`, optionally binding a specific [host]/[port].
   Future<DaemonActionResult> start({String? host, int? port}) => _invoke(
-        'start',
-        DaemonActionOutcome.started,
-        extraArgs: [
-          if (host != null && host.isNotEmpty) ...['--host', host],
-          if (port != null && port > 0) ...['--port', '$port'],
-        ],
-      );
+    'start',
+    DaemonActionOutcome.started,
+    extraArgs: [
+      if (host != null && host.isNotEmpty) ...['--host', host],
+      if (port != null && port > 0) ...['--port', '$port'],
+    ],
+  );
 
   /// Runs `makit stop`.
   Future<DaemonActionResult> stop() =>
@@ -142,13 +142,13 @@ class DaemonLifecycle {
 
   /// Runs `makit restart`, optionally binding a specific [host]/[port].
   Future<DaemonActionResult> restart({String? host, int? port}) => _invoke(
-        'restart',
-        DaemonActionOutcome.restarted,
-        extraArgs: [
-          if (host != null && host.isNotEmpty) ...['--host', host],
-          if (port != null && port > 0) ...['--port', '$port'],
-        ],
-      );
+    'restart',
+    DaemonActionOutcome.restarted,
+    extraArgs: [
+      if (host != null && host.isNotEmpty) ...['--host', host],
+      if (port != null && port > 0) ...['--port', '$port'],
+    ],
+  );
 
   Future<DaemonActionResult> _invoke(
     String verb,

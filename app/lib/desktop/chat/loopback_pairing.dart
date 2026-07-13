@@ -33,11 +33,11 @@ class LoopbackPairing {
     required bool Function() isPaired,
     String host = '127.0.0.1',
     String label = 'Mac',
-  })  : _control = control,
-        _pairWith = pairWith,
-        _isPaired = isPaired,
-        _host = host,
-        _label = label;
+  }) : _control = control,
+       _pairWith = pairWith,
+       _isPaired = isPaired,
+       _host = host,
+       _label = label;
 
   final ControlClient _control;
   final PairWith _pairWith;

@@ -70,8 +70,10 @@ Future<void> runDesktopApp() async {
   );
   final lifecycle = DaemonLifecycle(resolver: MakitCliResolver());
   final prefs = await SharedPreferences.getInstance();
-  final configController =
-      ServerConfigController(prefs, ServerConfigController.load(prefs));
+  final configController = ServerConfigController(
+    prefs,
+    ServerConfigController.load(prefs),
+  );
   final controller = DesktopController(
     client: client,
     lifecycle: lifecycle,

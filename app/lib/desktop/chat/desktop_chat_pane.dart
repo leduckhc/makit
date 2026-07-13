@@ -54,11 +54,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   }
 
   void _cancelTurn(String sessionId) => handleClientCommand(
-        '/cancel',
-        context: context,
-        ref: ref,
-        sessionId: sessionId,
-      );
+    '/cancel',
+    context: context,
+    ref: ref,
+    sessionId: sessionId,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -116,12 +116,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   }
 
   Widget _buildItem(ChatItem item) => switch (item) {
-        UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
-        AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
-        ThinkingItem() => _ThinkingLine(text: item.text),
-        ToolCallItem() => ToolCallCard(item: item, onTap: () {}),
-        ErrorItem() => _ErrorBanner(message: item.message),
-      };
+    UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
+    AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
+    ThinkingItem() => _ThinkingLine(text: item.text),
+    ToolCallItem() => ToolCallCard(item: item, onTap: () {}),
+    ErrorItem() => _ErrorBanner(message: item.message),
+  };
 
   @override
   void dispose() {
@@ -154,14 +154,16 @@ class _PaneHeader extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w600),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 if (session != null)
                   Text(
                     session!.agent,
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.outline),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                    ),
                   ),
               ],
             ),

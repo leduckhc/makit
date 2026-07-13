@@ -28,9 +28,7 @@ class DesktopSidebar extends ConsumerWidget {
 
     return Column(
       children: [
-        _Header(
-          onNewSession: () => showNewSessionDialog(context, ref),
-        ),
+        _Header(onNewSession: () => showNewSessionDialog(context, ref)),
         const Divider(height: 1),
         Expanded(
           child: projects.isEmpty
@@ -43,9 +41,9 @@ class DesktopSidebar extends ConsumerWidget {
                         project: project,
                         sessions: sessions.forProject(project.id),
                         selectedId: selected,
-                        onSelect: (id) => ref
-                            .read(selectedSessionProvider.notifier)
-                            .state = id,
+                        onSelect: (id) =>
+                            ref.read(selectedSessionProvider.notifier).state =
+                                id,
                       ),
                   ],
                 ),
@@ -70,10 +68,9 @@ class _Header extends StatelessWidget {
           Expanded(
             child: Text(
               'makit',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
           IconButton(
@@ -153,8 +150,9 @@ class _SessionTile extends StatelessWidget {
         session.agent,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.outline),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.outline,
+        ),
       ),
       onTap: onTap,
     );

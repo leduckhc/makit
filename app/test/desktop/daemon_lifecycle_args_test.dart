@@ -11,16 +11,16 @@ void main() {
   late List<List<String>> calls;
 
   DaemonLifecycle build() => DaemonLifecycle(
-        resolver: MakitCliResolver(
-          candidatePaths: const ['/usr/local/bin/makit'],
-          exists: (p) => p == '/usr/local/bin/makit',
-          shellLookup: () async => null,
-        ),
-        run: (exe, args) async {
-          calls.add([exe, ...args]);
-          return ProcessResult(0, 0, '', '');
-        },
-      );
+    resolver: MakitCliResolver(
+      candidatePaths: const ['/usr/local/bin/makit'],
+      exists: (p) => p == '/usr/local/bin/makit',
+      shellLookup: () async => null,
+    ),
+    run: (exe, args) async {
+      calls.add([exe, ...args]);
+      return ProcessResult(0, 0, '', '');
+    },
+  );
 
   setUp(() => calls = []);
 

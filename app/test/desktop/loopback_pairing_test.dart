@@ -18,11 +18,11 @@ StatusData _status({int port = 8787, String fingerprint = 'ab12cd34'}) =>
     );
 
 PairMintData _mint({String token = 'tok-123'}) => PairMintData(
-      url: 'makit://pair?host=100.1.2.3&port=8787&fp=ab12cd34&t=$token',
-      token: token,
-      expiresAt: 0,
-      fingerprint: 'ab12cd34',
-    );
+  url: 'makit://pair?host=100.1.2.3&port=8787&fp=ab12cd34&t=$token',
+  token: token,
+  expiresAt: 0,
+  fingerprint: 'ab12cd34',
+);
 
 void main() {
   test('ensurePaired is a no-op when already paired', () async {

@@ -112,7 +112,9 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
               if (_saved)
                 Text(
                   'Saved',
-                  style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
             ],
           ),
@@ -120,8 +122,8 @@ class _ServerSettingsScreenState extends ConsumerState<ServerSettingsScreen> {
           Text(
             'A running server keeps its current port until restarted.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
+              color: Theme.of(context).colorScheme.outline,
+            ),
           ),
         ],
       ),

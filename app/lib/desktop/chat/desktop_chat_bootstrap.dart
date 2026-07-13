@@ -16,8 +16,8 @@ class DesktopChatBootstrap {
   DesktopChatBootstrap({
     required Future<bool> Function() ensureDaemonRunning,
     required Future<void> Function() ensurePaired,
-  })  : _ensureDaemonRunning = ensureDaemonRunning,
-        _ensurePaired = ensurePaired;
+  }) : _ensureDaemonRunning = ensureDaemonRunning,
+       _ensurePaired = ensurePaired;
 
   final Future<bool> Function() _ensureDaemonRunning;
   final Future<void> Function() _ensurePaired;

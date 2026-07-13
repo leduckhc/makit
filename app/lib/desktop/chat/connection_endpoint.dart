@@ -7,7 +7,8 @@ library;
 
 String? formatEndpoint(String? host, int? port) {
   if (port == null) return null;
-  final h = (host == null || host.isEmpty || host == '127.0.0.1' || host == '::1')
+  final h =
+      (host == null || host.isEmpty || host == '127.0.0.1' || host == '::1')
       ? 'localhost'
       : host;
   return '$h:$port';

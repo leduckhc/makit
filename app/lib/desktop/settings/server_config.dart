@@ -62,7 +62,9 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
     final host = prefs.getString(_kHostKey);
     final port = prefs.getInt(_kPortKey);
     return ServerConfig(
-      host: (host == null || host.trim().isEmpty) ? kDefaultServerHost : host.trim(),
+      host: (host == null || host.trim().isEmpty)
+          ? kDefaultServerHost
+          : host.trim(),
       port: (port == null || port <= 0) ? kDefaultServerPort : port,
     );
   }
@@ -86,5 +88,5 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
 /// a controller backed by real [SharedPreferences]; tests override it too.
 final serverConfigProvider =
     StateNotifierProvider<ServerConfigController, ServerConfig>(
-  (ref) => throw UnimplementedError('overridden in runDesktopApp'),
-);
+      (ref) => throw UnimplementedError('overridden in runDesktopApp'),
+    );

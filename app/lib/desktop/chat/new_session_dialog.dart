@@ -39,18 +39,25 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   }
 
   Future<void> _loadAgents() async {
-    final agents =
-        await ref.read(storeControllerProvider.notifier).fetchAgents();
+    final agents = await ref
+        .read(storeControllerProvider.notifier)
+        .fetchAgents();
     if (!mounted) return;
     setState(() {
       _agents = agents;
-      _agentId = agents.firstWhere(
-        (a) => a.available,
-        orElse: () => agents.isEmpty
-            ? const AgentDescriptor(
-                id: '', label: '', transport: '', available: false)
-            : agents.first,
-      ).id;
+      _agentId = agents
+          .firstWhere(
+            (a) => a.available,
+            orElse: () => agents.isEmpty
+                ? const AgentDescriptor(
+                    id: '',
+                    label: '',
+                    transport: '',
+                    available: false,
+                  )
+                : agents.first,
+          )
+          .id;
       if (_agentId!.isEmpty) _agentId = null;
       _loadingAgents = false;
     });
