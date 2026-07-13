@@ -233,6 +233,9 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       themeMode: ThemeMode.system,
       builder: (context, child) => SrvRequestHandler(
         navigatorKey: _desktopNavKey,
+        // Desktop is the control surface: always show the in-app dialog, and
+        // only fall back to a system notification if it goes unanswered.
+        reminderDelay: const Duration(minutes: 2),
         child: child ?? const SizedBox(),
       ),
       home: DesktopChatShell(onOpenSettings: _openSettings),

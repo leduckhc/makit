@@ -20,9 +20,22 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
-  const SrvRequestHandler({super.key, required this.child, this.navigatorKey});
+  const SrvRequestHandler({
+    super.key,
+    required this.child,
+    this.navigatorKey,
+    this.reminderDelay,
+  });
   final Widget child;
   final GlobalKey<NavigatorState>? navigatorKey;
+
+  /// Desktop mode. When set, requests ALWAYS present the in-app dialog
+  /// immediately (never diverted to a notification based on foreground
+  /// state — the desktop window is the control surface). If the request is
+  /// still unanswered after this delay, a system notification is fired as a
+  /// reminder. When null (mobile), backgrounded requests are diverted to an
+  /// actionable notification instead of the invisible dialog.
+  final Duration? reminderDelay;
 
   @override
   ConsumerState<SrvRequestHandler> createState() => _SrvRequestHandlerState();
@@ -41,6 +54,16 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   /// SPEC-07 status-notification queue); oldest entries are evicted first.
   final Map<String, Envelope> _pendingBackground = {};
   static const _kMaxPendingBackground = 50;
+
+  /// Desktop reminder timers, keyed by request id. Fires a system notification
+  /// when a dialog has been open (unanswered) for [SrvRequestHandler.reminderDelay];
+  /// cancelled when the request is answered or the widget disposes.
+  final Map<String, Timer> _reminderTimers = {};
+
+  /// Dialog contexts keyed by request id, so an answer from a notification can
+  /// remove that request's exact route without disturbing another open dialog.
+  final Map<String, BuildContext> _activeDialogContexts = {};
+  final Map<String, Object> _activeDialogTokens = {};
 
   /// Salted so request-notification ids can't collide with the status
   /// notifications keyed on `sessionId.hashCode`.
@@ -92,11 +115,85 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     final controller = ref.read(connectionControllerProvider.notifier);
     _sub = controller.srvRequests.listen(_dispatch);
     _respondedSub?.cancel();
-    _respondedSub = controller.responded.listen(_pendingBackground.remove);
+    _respondedSub = controller.responded.listen(_onResponded);
+  }
+
+  void _onResponded(String id) {
+    _pendingBackground.remove(id);
+    _reminderTimers.remove(id)?.cancel();
+    _activeDialogTokens.remove(id);
+    final dialogContext = _activeDialogContexts.remove(id);
+    if (dialogContext == null || !dialogContext.mounted) return;
+    final route = ModalRoute.of(dialogContext);
+    if (route != null && route.isActive) {
+      Navigator.of(dialogContext).removeRoute(route);
+    }
+  }
+
+  Future<T?> _showTrackedDialog<T>({
+    required String requestId,
+    required BuildContext context,
+    required WidgetBuilder builder,
+    bool barrierDismissible = true,
+  }) async {
+    final dialogToken = Object();
+    final result = await showDialog<T>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      builder: (dctx) {
+        _activeDialogContexts[requestId] = dctx;
+        _activeDialogTokens[requestId] = dialogToken;
+        return builder(dctx);
+      },
+    );
+    if (identical(_activeDialogTokens[requestId], dialogToken)) {
+      _activeDialogTokens.remove(requestId);
+      _activeDialogContexts.remove(requestId);
+    }
+    return result;
+  }
+
+  /// Fire a system notification once a still-unanswered request has been
+  /// on-screen for [SrvRequestHandler.reminderDelay] (desktop only).
+  void _scheduleReminder(Envelope env, String kind) {
+    final sessionId = env.body['sessionId'] as String? ?? '';
+    _reminderTimers.remove(env.id)?.cancel();
+    _reminderTimers[env.id] = Timer(widget.reminderDelay!, () async {
+      _reminderTimers.remove(env.id);
+      if (!mounted) return;
+      final notif = notificationForRequest(
+        kind: kind,
+        body: env.body,
+        label: _labelFor(sessionId),
+      );
+      if (notif == null) return;
+      await ref
+          .read(notificationServiceProvider)
+          .show(
+            id: _notificationId(env.id),
+            title: notif.title,
+            body: notif.body,
+            category: notif.category,
+            payload: encodeRequestPayload(
+              sessionId: sessionId,
+              requestId: env.id,
+              kind: kind,
+            ),
+          );
+    });
   }
 
   Future<void> _dispatch(Envelope env) async {
     final kind = env.body['kind'] as String? ?? 'unknown';
+
+    // Desktop: always present the dialog now; if it goes unanswered for
+    // `reminderDelay`, nudge with a system notification (the tap routes back
+    // through respondTo, and the in-app dialog stays answerable meanwhile).
+    if (widget.reminderDelay != null) {
+      _scheduleReminder(env, kind);
+      await _presentDialog(env);
+      return;
+    }
 
     // Backgrounded: if this request kind has an actionable-notification
     // affordance, fire the notification and skip the (invisible) dialog. The
@@ -207,7 +304,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     String requestId,
     List<Map<String, dynamic>> questions,
   ) async {
-    final result = await showDialog<Map<String, dynamic>?>(
+    final result = await _showTrackedDialog<Map<String, dynamic>?>(
+      requestId: requestId,
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => _AskWizard(questions: questions),
@@ -243,7 +341,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     String requestId,
     Map<String, dynamic> body,
   ) async {
-    final approved = await showDialog<bool>(
+    final approved = await _showTrackedDialog<bool>(
+      requestId: requestId,
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
@@ -298,7 +397,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       text: body['prefill']?.toString() ?? '',
     );
     final multiline = body['multiline'] == true;
-    final value = await showDialog<String?>(
+    final value = await _showTrackedDialog<String?>(
+      requestId: requestId,
       context: ctx,
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
@@ -333,7 +433,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   Future<void> _showGeneric(BuildContext ctx, Envelope env) async {
     final controller = TextEditingController();
-    final text = await showDialog<String?>(
+    final text = await _showTrackedDialog<String?>(
+      requestId: env.id,
       context: ctx,
       builder: (dctx) => AlertDialog(
         title: Text(env.body['title']?.toString() ?? 'Server request'),
@@ -395,6 +496,12 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _respondedSub?.cancel();
+    for (final t in _reminderTimers.values) {
+      t.cancel();
+    }
+    _reminderTimers.clear();
+    _activeDialogContexts.clear();
+    _activeDialogTokens.clear();
     super.dispose();
   }
 
