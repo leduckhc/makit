@@ -35,15 +35,22 @@ So the UI shows the last-known value first, then the fresh git computation lands
 few hundred ms → seconds later and corrects it. That is by design (don't block the
 UI on git).
 
-### Recommended fix for the local numbers (cheap, unlimited)
+### Fix for the local numbers (shipped)
 
-Move from event-driven recompute to a **filesystem watcher on the server**:
+The +/- numbers are pure local git and instant, but `listRepos()` computed each
+worktree's `diffStat()` **and then** its open-PR lookup (`findOpenPr` → `gh`,
+network, seconds) before emitting a single snapshot — so the cheap numbers were
+held hostage by the slow network calls, showing stale values until `gh` returned.
 
-- Watch each worktree (`fs.watch`/`chokidar`, or watch `.git/index`, `.git/HEAD`,
-  `.git/refs`, plus the working tree) → **debounce** (~300–500ms coalesce) →
-  run `diffStat()` → `broadcastReposSnapshot()`.
-- All local, so there is no rate limit. The server detects the change and *pushes*
-  the update; clients never poll for local diff numbers.
+`broadcastReposSnapshot()` now runs in **two phases**: emit the git-only snapshot
+first (`listRepos({ includePrs: false })`), then re-broadcast enriched with PRs
+(`includePrs: true`). The +/- numbers land immediately; PR badges fill in after.
+No filesystem watcher / dependency, no rate-limit concern.
+
+> A debounced server-side `fs.watch` (recompute on working-tree changes) remains
+> a possible follow-up for *live* updates while an agent edits files, but it needs
+> recursive watching (unsupported by `fs.watch` on Linux → `chokidar`), so it was
+> not done here.
 
 ---
 
@@ -156,7 +163,9 @@ comments are added (comments multiply endpoint count).
 
 ## 7. Decisions captured
 
-- Local +/- numbers: move to debounced server-side `fs.watch`. (Not a rate-limit concern.)
+- Local +/- numbers: **shipped** — `broadcastReposSnapshot()` emits a git-only
+  snapshot first, then re-broadcasts with PRs enriched (`listRepos({ includePrs })`).
+  A debounced `fs.watch` for live-editing freshness is a possible follow-up.
 - Remote PR signals: **no webhooks now** — no public endpoint configured.
 - Near-term: server-side conditional polling, 5–10s, open PRs only, coalesced.
 - Field scope: CI check-runs + PR state + mergeability (comments later).

@@ -500,3 +500,19 @@ test("reattachSession refuses a cold session with no resume path; it stays histo
   assert.match(errs[0] ?? "", /re-attach/);
   store.close();
 });
+
+test("listRepos({ includePrs: false }) returns git-only diff numbers and skips the PR lookup", async () => {
+  const cwd = makeGitRepo();
+  try {
+    // Uncommitted edit → insertions counted vs the default branch.
+    writeFileSync(join(cwd, "README.md"), "hello\nworld\nmore\n");
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const repos = await manager.listRepos({ includePrs: false });
+    const primary = repos[0].worktrees.find((w) => w.isPrimary);
+    assert.ok(primary, "primary worktree listed");
+    assert.equal(primary!.pr, null, "git-only pass performs no PR lookup");
+    assert.ok(primary!.insertions >= 2, `insertions ${primary!.insertions}`);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});

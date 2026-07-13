@@ -35,7 +35,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Envelope } from "./protocol.js";
+import type { Envelope, RepoDTO } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
@@ -554,19 +554,29 @@ export function startWsServer(opts: ServerOpts) {
 
   /**
    * Compute + broadcast the repo-centric snapshot (branches, worktrees, diff
-   * stats, PRs). Async because it shells out to git/gh; fired on connect,
-   * spawn, session start, kill, and explicit `repo.refresh` — never per event.
+   * stats, PRs). Fired on connect, spawn, session start, kill, and explicit
+   * `repo.refresh` — never per event.
+   *
+   * Two phases so the +/- diff numbers (pure local git, instant) never wait on
+   * the open-PR lookup (`gh`, network, seconds): first broadcast the git-only
+   * snapshot, then re-broadcast with PRs enriched.
    */
   async function broadcastReposSnapshot() {
-    let repos;
+    const emit = (repos: RepoDTO[]) => {
+      const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
+      for (const c of clients.values()) if (c.authed) c.send(frame);
+    };
     try {
-      repos = await manager.listRepos();
+      emit(await manager.listRepos({ includePrs: false }));
     } catch (e) {
-      log.warn(`[makit] listRepos failed: ${(e as Error).message}`);
+      log.warn(`[makit] listRepos (git-only) failed: ${(e as Error).message}`);
       return;
     }
-    const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
-    for (const c of clients.values()) if (c.authed) c.send(frame);
+    try {
+      emit(await manager.listRepos({ includePrs: true }));
+    } catch (e) {
+      log.warn(`[makit] listRepos (PR enrich) failed: ${(e as Error).message}`);
+    }
   }
 
   // SPEC-07 A6: replay lives ONLY here (on auth) and in the `sub` handler —
