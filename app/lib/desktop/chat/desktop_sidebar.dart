@@ -112,9 +112,9 @@ class _RepoGroup extends ConsumerWidget {
                 color: theme.colorScheme.outline,
               ),
               const SizedBox(width: 6),
-              Flexible(
+              Expanded(
                 child: Text(
-                  repo.name.toUpperCase(),
+                  repo.name,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.outline,
@@ -123,7 +123,6 @@ class _RepoGroup extends ConsumerWidget {
                   ),
                 ),
               ),
-              const Spacer(),
               IconButton(
                 tooltip: 'New session in ${repo.name}',
                 visualDensity: VisualDensity.compact,
