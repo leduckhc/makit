@@ -26,49 +26,112 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
+    final cs = Theme.of(context).colorScheme;
+    final topInset = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('makit'),
-        actions: [
-          const ConnectionChip(),
-          IconButton(
-            icon: const Icon(Icons.create_new_folder_outlined),
-            tooltip: 'Add repo',
-            onPressed: () => showFolderBrowser(context),
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            onRefresh: () =>
+                ref.read(storeControllerProvider.notifier).refreshRepos(),
+            child: repos.isEmpty
+                ? _EmptyState(
+                    onAdd: () => showFolderBrowser(context),
+                    topPadding: topInset + 60,
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.fromLTRB(12, topInset + 60, 12, 24),
+                    itemCount: repos.length,
+                    itemBuilder: (context, i) => _RepoCard(
+                      repo: repos[i],
+                      sessions: sessions.forProject(repos[i].id),
+                    ),
+                  ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => context.go('/settings'),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () =>
-            ref.read(storeControllerProvider.notifier).refreshRepos(),
-        child: repos.isEmpty
-            ? _EmptyState(onAdd: () => showFolderBrowser(context))
-            : ListView.builder(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-                itemCount: repos.length,
-                itemBuilder: (context, i) => _RepoCard(
-                  repo: repos[i],
-                  sessions: sessions.forProject(repos[i].id),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: topInset + 96,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      cs.surface.withValues(alpha: 0.80),
+                      cs.surface.withValues(alpha: 0.70),
+                      cs.surface.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.5, 1],
+                  ),
                 ),
               ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'makit',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              shadows: [
+                                Shadow(color: cs.surface, blurRadius: 6),
+                                Shadow(color: cs.surface, blurRadius: 12),
+                              ],
+                            ),
+                      ),
+                    ),
+                    GlassCircleButton(
+                      icon: Icons.create_new_folder_outlined,
+                      tooltip: 'Add repo',
+                      onTap: () => showFolderBrowser(context),
+                    ),
+                    const SizedBox(width: 6),
+                    GlassCircleButton(
+                      icon: Icons.settings_outlined,
+                      tooltip: 'Settings',
+                      onTap: () => context.go('/settings'),
+                    ),
+                    const SizedBox(width: 6),
+                    const ConnectionChip(circular: true),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onAdd});
+  const _EmptyState({required this.onAdd, required this.topPadding});
   final VoidCallback onAdd;
+  final double topPadding;
 
   @override
   Widget build(BuildContext context) {
     // Wrapped in a scroll view so RefreshIndicator still works when empty.
     return ListView(
+      padding: EdgeInsets.only(top: topPadding),
       children: [
         SizedBox(height: MediaQuery.of(context).size.height * 0.18),
         Center(

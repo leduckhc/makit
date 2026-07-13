@@ -198,7 +198,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: Row(
                   children: [
-                    _glassCircle(
+                    GlassCircleButton(
                       icon: Icons.arrow_back,
                       onTap: () => context.go('/'),
                     ),
@@ -292,27 +292,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     if (_scroll.hasClients) {
       _scroll.jumpTo(_scroll.position.maxScrollExtent);
     }
-  }
-
-  /// A round glass button for the top bar (back / toggle).
-  Widget _glassCircle({
-    required IconData icon,
-    required VoidCallback onTap,
-    String? tooltip,
-  }) {
-    return GlassSurface(
-      borderRadius: 23,
-      child: SizedBox(
-        width: 46,
-        height: 46,
-        child: IconButton(
-          tooltip: tooltip,
-          padding: EdgeInsets.zero,
-          icon: Icon(icon, size: 20),
-          onPressed: onTap,
-        ),
-      ),
-    );
   }
 
   /// Glass overflow menu for the top bar — session-level actions (rename,
