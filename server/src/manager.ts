@@ -239,7 +239,7 @@ export class SessionManager extends EventEmitter {
    * Uses a {@link DetachedAdapter} placeholder so the session wires + shows in
    * snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, baseBranch?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -252,6 +252,7 @@ export class SessionManager extends EventEmitter {
     });
     session.pending = true;
     session.pendingAgent = agentId;
+    session.pendingBaseBranch = baseBranch;
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
@@ -279,9 +280,13 @@ export class SessionManager extends EventEmitter {
     let worktreePath = repoPath;
 
     if (await isGitRepo(repoPath)) {
-      const defaultBranch = await detectDefaultBranch(repoPath);
+      const requested = session.pendingBaseBranch;
+      const baseBranch =
+        requested && (await branchExists(repoPath, requested))
+          ? requested
+          : await detectDefaultBranch(repoPath);
       branch = await this.uniqueBranch(repoPath, base);
-      worktreePath = await addWorktree({ repoPath, name: branch, branch, baseBranch: defaultBranch });
+      worktreePath = await addWorktree({ repoPath, name: branch, branch, baseBranch });
     }
 
     const built = this.buildAdapter(agentId);

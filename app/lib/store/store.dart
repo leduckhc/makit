@@ -336,16 +336,17 @@ class StoreController extends StateNotifier<StoreState> {
     String projectId, {
     String? title,
     String? agent,
+    String? baseBranch,
   }) async {
-    final ack = await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {
-        'kind': 'session.spawn',
-        'projectId': projectId,
-        'title': ?title,
-        'agent': ?agent,
-      },
-    );
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'session.spawn',
+          'projectId': projectId,
+          'title': ?title,
+          'agent': ?agent,
+          'baseBranch': ?baseBranch,
+        });
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
     return sid;

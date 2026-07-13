@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -154,6 +154,59 @@ test("startPendingSession creates a worktree named from the first message and st
     const wt = repos[0].worktrees.find((w) => w.branch === "add-a-login-form-to-the");
     assert.ok(wt, "worktree should be listed");
     assert.deepEqual(wt!.sessionIds, [s.id], "session linked to its worktree");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("startPendingSession forks the worktree off the chosen base branch", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    // A second branch `dev` with a file that does not exist on `main`.
+    const g = (...args: string[]) => execFileSync("git", args, { cwd });
+    g("checkout", "-q", "-b", "dev");
+    writeFileSync(join(cwd, "dev.txt"), "dev\n");
+    g("add", ".");
+    g("commit", "-q", "-m", "dev-only");
+    g("checkout", "-q", "main");
+
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(projectId, "pi", "dev");
+    const s = await manager.startPendingSession(draft.id, "work off dev");
+    // The worktree forked off `dev`, so the dev-only file is present.
+    assert.equal(existsSync(join(s.worktreePath!, "dev.txt")), true, "worktree forked off dev");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("startPendingSession falls back to the default branch for an unknown base", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(projectId, "pi", "no-such-branch");
+    const s = await manager.startPendingSession(draft.id, "work");
+    // Falls back to `main`: the worktree exists and the agent started.
+    assert.ok(s.worktreePath?.startsWith(base));
+    assert.equal(started.length, 1);
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
