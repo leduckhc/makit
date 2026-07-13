@@ -523,7 +523,9 @@ class _ThinkingCardState extends State<_ThinkingCard> {
     );
     // Collapsed: whole row is a tap target that expands. Expanded: rely on
     // SelectableText's onTap so selecting text doesn't collapse the card.
-    return _expanded ? row : InkWell(onTap: toggle, child: row);
+    return _expanded
+        ? Semantics(onTap: toggle, onTapHint: 'Collapse thinking', child: row)
+        : InkWell(onTap: toggle, child: row);
   }
 }
 
