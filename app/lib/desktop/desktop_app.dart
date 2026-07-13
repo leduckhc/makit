@@ -113,8 +113,12 @@ Future<void> runDesktopApp() async {
   const options = WindowOptions(
     size: Size(1120, 760),
     center: true,
-    title: 'Makit',
-    titleBarStyle: TitleBarStyle.normal,
+    title: '',
+    // Frameless look: hide the OS titlebar and let Flutter draw to the top of
+    // the window. On macOS the traffic-light buttons stay; the sidebar header
+    // (a DragToMoveArea) insets below them and doubles as the window drag
+    // handle. See docs/research/flutter-desktop-titlebar-window-managers.md.
+    titleBarStyle: TitleBarStyle.hidden,
   );
   unawaited(
     windowManager.waitUntilReadyToShow(options, () async {
