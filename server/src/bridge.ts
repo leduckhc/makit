@@ -1,5 +1,6 @@
 /**
- * Loopback HTTP bridge for agent connectors (makit-pi, makit-codex, etc.).
+ * Loopback HTTP bridge for agent connectors (e.g. a `makit-<agent>.ts` in
+ * `server/connectors/`, and the keyless e2e harness's StubAdapter).
  *
  * Listens on 127.0.0.1:<random> and exposes a single endpoint:
  *
