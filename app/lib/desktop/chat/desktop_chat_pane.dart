@@ -8,6 +8,8 @@ import '../../ui/composer/composer.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/session/chat_message.dart';
 import '../../ui/session/tool_call_card.dart';
+import '../../ui/session/tool_call_detail_screen.dart';
+import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'selected_session.dart';
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
@@ -61,6 +63,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     sessionId: sessionId,
   );
 
+  /// Push the fullscreen tool-call drilldown, matching the mobile chat where
+  /// tapping a tool card opens its args / output / diff view.
+  void _openToolDetail(ToolCallItem item) {
+    final sessionId = _subscribed;
+    if (sessionId == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ToolCallDetailScreen(sessionId: sessionId, callId: item.callId),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sessionId = ref.watch(selectedSessionProvider);
@@ -111,26 +126,40 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         Expanded(
           child: items.isEmpty
               ? const _EmptyTranscript()
-              : ListView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+              : Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: kReadableContentMaxWidth,
+                    ),
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      itemCount: items.length + (running ? 1 : 0),
+                      itemBuilder: (context, i) {
+                        if (i >= items.length) return const _WorkingIndicator();
+                        return _buildItem(items[i]);
+                      },
+                    ),
                   ),
-                  itemCount: items.length + (running ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= items.length) return const _WorkingIndicator();
-                    return _buildItem(items[i]);
-                  },
                 ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-          child: Composer(
-            commands: ref.watch(commandsProvider(sessionId)),
-            onSend: (text) => _handleSend(sessionId, text),
-            onCancel: () => _cancelTurn(sessionId),
-            running: running,
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxWidth: kReadableContentMaxWidth,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: Composer(
+                commands: ref.watch(commandsProvider(sessionId)),
+                onSend: (text) => _handleSend(sessionId, text),
+                onCancel: () => _cancelTurn(sessionId),
+                running: running,
+              ),
+            ),
           ),
         ),
       ],
@@ -141,7 +170,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
     AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
     ThinkingItem() => _ThinkingLine(text: item.text),
-    ToolCallItem() => ToolCallCard(item: item, onTap: () {}),
+    ToolCallItem() => ToolCallCard(
+      item: item,
+      onTap: () => _openToolDetail(item),
+    ),
     ErrorItem() => _ErrorBanner(message: item.message),
   };
 
@@ -217,20 +249,51 @@ class _PaneHeader extends StatelessWidget {
   }
 }
 
-class _ThinkingLine extends StatelessWidget {
+class _ThinkingLine extends StatefulWidget {
   const _ThinkingLine({required this.text});
   final String text;
 
   @override
+  State<_ThinkingLine> createState() => _ThinkingLineState();
+}
+
+/// Reasoning/thinking trace. Folded to a single greyed one-liner with an
+/// ellipsis; a single click toggles between the full text and the one-liner,
+/// matching the mobile chat's `_ThinkingCard`.
+class _ThinkingLineState extends State<_ThinkingLine> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Text(
-        text,
-        style: theme.textTheme.bodyMedium?.copyWith(
-          fontStyle: FontStyle.italic,
-          color: theme.colorScheme.outline,
+    final cs = Theme.of(context).colorScheme;
+    final style = TextStyle(
+      color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+      fontSize: 13,
+      fontStyle: FontStyle.italic,
+      height: 1.3,
+    );
+    return InkWell(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.psychology_outlined,
+              size: 15,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                widget.text.trim(),
+                style: style,
+                maxLines: _expanded ? null : 1,
+                overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );

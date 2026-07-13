@@ -150,8 +150,9 @@ class _CodeBlock extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF282C34) : cs.surfaceContainerHighest,
+        color: dark ? const Color(0xFF282C34) : const Color(0xFFF0F1F4),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: cs.outlineVariant),
       ),
       clipBehavior: Clip.antiAlias,
       child: Stack(
@@ -213,13 +214,28 @@ class _CopyButtonState extends State<_CopyButton> {
 MarkdownStyleSheet _styleSheet(BuildContext context) {
   final theme = Theme.of(context);
   final cs = theme.colorScheme;
+  final dark = theme.brightness == Brightness.dark;
   final mono = theme.textTheme.bodyMedium?.copyWith(
     fontFamily: 'monospace',
     fontSize: 13,
   );
+  // Inline `code`: mono font on a subtle-but-visible background, tuned per
+  // theme (a light grey on light mode, a lifted grey on dark mode).
+  final inlineCodeBg = dark ? const Color(0xFF33363E) : const Color(0xFFEBECF0);
+  // LLMs love emitting h1/h2/h3 headers; render them all as plain bold text at
+  // the normal body size instead of oversized headings.
+  final heading = theme.textTheme.bodyMedium?.copyWith(
+    fontWeight: FontWeight.w700,
+  );
   return MarkdownStyleSheet.fromTheme(theme).copyWith(
     p: theme.textTheme.bodyMedium,
-    code: mono?.copyWith(backgroundColor: cs.surfaceContainerHighest),
+    code: mono?.copyWith(backgroundColor: inlineCodeBg),
+    h1: heading,
+    h2: heading,
+    h3: heading,
+    h4: heading,
+    h5: heading,
+    h6: heading,
     blockquoteDecoration: BoxDecoration(
       color: cs.surfaceContainerHigh,
       border: Border(left: BorderSide(color: cs.primary, width: 3)),

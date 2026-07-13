@@ -27,6 +27,11 @@ import 'line_diff.dart';
 /// platforms); Android resolves `monospace` directly.
 const List<String> kMonoFallback = ['Menlo', 'monospace'];
 
+/// Max width for the readable content column. On wide (desktop) windows the
+/// transcript, composer and tool-detail body are centered within this width
+/// instead of stretching edge-to-edge (which is hard to read and unbalanced).
+const double kReadableContentMaxWidth = 760;
+
 abstract class ToolRenderer {
   const ToolRenderer();
 
@@ -283,7 +288,15 @@ class ToolDetailScaffold extends StatelessWidget {
           ),
         ),
       ),
-      body: ListView(padding: const EdgeInsets.all(12), children: children),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: kReadableContentMaxWidth),
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: children,
+          ),
+        ),
+      ),
     );
   }
 }
