@@ -227,8 +227,10 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
-      builder: (context, child) =>
-          SrvRequestHandler(child: child ?? const SizedBox()),
+      builder: (context, child) => SrvRequestHandler(
+        navigatorKey: _desktopNavKey,
+        child: child ?? const SizedBox(),
+      ),
       home: DesktopChatShell(onOpenSettings: _openSettings),
     );
   }

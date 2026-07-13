@@ -15,5 +15,6 @@ final desktopAutoSelectSessionProvider = Provider<void>((ref) {
     ref.read(selectedSessionProvider.notifier).state = sorted.first.id;
   }
 
-  ref.listen(sessionsProvider, (_, next) => pick(next), fireImmediately: true);
+  ref.listen(sessionsProvider, (_, next) => pick(next));
+  Future.microtask(() => pick(ref.read(sessionsProvider)));
 });

@@ -29,19 +29,23 @@ ProviderContainer _container(List<Session> sessions) {
 }
 
 void main() {
-  test('auto-selects the most recently active session when none selected', () {
-    final container = _container([
-      _session('older', 100),
-      _session('newer', 200),
-    ]);
-    addTearDown(container.dispose);
+  test(
+    'auto-selects the most recently active session when none selected',
+    () async {
+      final container = _container([
+        _session('older', 100),
+        _session('newer', 200),
+      ]);
+      addTearDown(container.dispose);
 
-    container.read(desktopAutoSelectSessionProvider);
+      container.read(desktopAutoSelectSessionProvider);
+      await Future<void>.delayed(Duration.zero);
 
-    expect(container.read(selectedSessionProvider), 'newer');
-  });
+      expect(container.read(selectedSessionProvider), 'newer');
+    },
+  );
 
-  test('does not override an existing valid selection', () {
+  test('does not override an existing valid selection', () async {
     final container = _container([
       _session('older', 100),
       _session('newer', 200),
@@ -50,16 +54,18 @@ void main() {
 
     container.read(selectedSessionProvider.notifier).state = 'older';
     container.read(desktopAutoSelectSessionProvider);
+    await Future<void>.delayed(Duration.zero);
 
     expect(container.read(selectedSessionProvider), 'older');
   });
 
-  test('re-selects when the current session disappears', () {
+  test('re-selects when the current session disappears', () async {
     final container = _container([_session('only', 50)]);
     addTearDown(container.dispose);
 
     container.read(selectedSessionProvider.notifier).state = 'gone';
     container.read(desktopAutoSelectSessionProvider);
+    await Future<void>.delayed(Duration.zero);
 
     expect(container.read(selectedSessionProvider), 'only');
   });

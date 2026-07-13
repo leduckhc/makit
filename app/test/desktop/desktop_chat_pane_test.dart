@@ -9,7 +9,7 @@ import 'package:makit/store/store.dart';
 void main() {
   testWidgets('shows empty state when no session is selected', (tester) async {
     await tester.pumpWidget(
-      ProviderScope(
+      const ProviderScope(
         child: MaterialApp(home: Scaffold(body: DesktopChatPane())),
       ),
     );
