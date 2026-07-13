@@ -35,7 +35,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Envelope } from "./protocol.js";
+import type { Envelope, RepoDTO } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
@@ -136,6 +136,8 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   const clients = new Map<WebSocket, ClientState>();
+  let reposSnapshotGeneration = 0;
+  let lastEnrichedRepos: RepoDTO[] | undefined;
 
   // Device ids with a live authenticated WS connection — feeds the control
   // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
@@ -554,19 +556,54 @@ export function startWsServer(opts: ServerOpts) {
 
   /**
    * Compute + broadcast the repo-centric snapshot (branches, worktrees, diff
-   * stats, PRs). Async because it shells out to git/gh; fired on connect,
-   * spawn, session start, kill, and explicit `repo.refresh` — never per event.
+   * stats, PRs). Fired on connect, spawn, session start, kill, and explicit
+   * `repo.refresh` — never per event.
+   *
+   * Two phases so the +/- diff numbers (pure local git, instant) never wait on
+   * the open-PR lookup (`gh`, network, seconds): first broadcast the git-only
+   * snapshot, then re-broadcast with PRs enriched.
    */
+  function preserveLastKnownPrs(repos: RepoDTO[]): RepoDTO[] {
+    if (!lastEnrichedRepos) return repos;
+    const prs = new Map<string, RepoDTO["worktrees"][number]["pr"]>();
+    for (const repo of lastEnrichedRepos) {
+      for (const worktree of repo.worktrees) prs.set(`${repo.id}\0${worktree.id}`, worktree.pr);
+    }
+    return repos.map((repo) => ({
+      ...repo,
+      worktrees: repo.worktrees.map((worktree) => {
+        const key = `${repo.id}\0${worktree.id}`;
+        return prs.has(key) ? { ...worktree, pr: prs.get(key)! } : worktree;
+      }),
+    }));
+  }
+
   async function broadcastReposSnapshot() {
-    let repos;
+    const generation = ++reposSnapshotGeneration;
+    const emit = (repos: RepoDTO[]) => {
+      const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
+      for (const c of clients.values()) if (c.authed) c.send(frame);
+    };
     try {
-      repos = await manager.listRepos();
+      const repos = await manager.listRepos({ includePrs: false });
+      if (generation !== reposSnapshotGeneration) return;
+      emit(preserveLastKnownPrs(repos));
     } catch (e) {
-      log.warn(`[makit] listRepos failed: ${(e as Error).message}`);
+      if (generation === reposSnapshotGeneration) {
+        log.warn(`[makit] listRepos (git-only) failed: ${(e as Error).message}`);
+      }
       return;
     }
-    const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
-    for (const c of clients.values()) if (c.authed) c.send(frame);
+    try {
+      const repos = await manager.listRepos({ includePrs: true });
+      if (generation !== reposSnapshotGeneration) return;
+      lastEnrichedRepos = repos;
+      emit(repos);
+    } catch (e) {
+      if (generation === reposSnapshotGeneration) {
+        log.warn(`[makit] listRepos (PR enrich) failed: ${(e as Error).message}`);
+      }
+    }
   }
 
   // SPEC-07 A6: replay lives ONLY here (on auth) and in the `sub` handler —

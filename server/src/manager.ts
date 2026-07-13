@@ -315,8 +315,15 @@ export class SessionManager extends EventEmitter {
    * default/current branch and worktrees (diff stats, open PR, running
    * sessions). Shells out to git/gh per worktree, so callers should treat this
    * as an occasional (connect / spawn / refresh) operation, not per-event.
+   *
+   * `includePrs` (default true) gates the open-PR lookup. The diff +/- numbers
+   * are pure local git and instant; the PR lookup shells out to `gh` (network,
+   * seconds). Pass `false` to skip `gh` and emit the fast git-only snapshot,
+   * then call again with `true` to enrich PRs — so the numbers never wait on
+   * the network.
    */
-  async listRepos(): Promise<RepoDTO[]> {
+  async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
+    const includePrs = opts.includePrs ?? true;
     const repos: RepoDTO[] = [];
     for (const p of this.projects.values()) {
       const repoPath = p.dto.path;
@@ -339,7 +346,7 @@ export class SessionManager extends EventEmitter {
       const worktrees: WorktreeDTO[] = [];
       for (const e of entries) {
         const stat = await diffStat(e.path, defaultBranch);
-        const pr = e.branch && !e.isPrimary ? await findOpenPr(repoPath, e.branch) : null;
+        const pr = includePrs && e.branch && !e.isPrimary ? await findOpenPr(repoPath, e.branch) : null;
         worktrees.push({
           id: e.path,
           path: e.path,
