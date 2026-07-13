@@ -106,7 +106,7 @@ void main() {
       sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
     );
 
-    expect(find.text('ALPHA'), findsOneWidget);
+    expect(find.text('alpha'), findsOneWidget);
     expect(find.text('feat/login'), findsOneWidget);
     expect(find.text('Fix login bug'), findsOneWidget);
     // Only the worktree diff chip now (the repo-rollup aggregate was removed).
