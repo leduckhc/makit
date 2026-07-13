@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -7,6 +9,7 @@ import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/transport/protocol.dart';
 
 class _EmptyStorage extends FlutterSecureStorage {
   const _EmptyStorage() : super();
@@ -46,7 +49,26 @@ class _EmptyStorage extends FlutterSecureStorage {
   }) async {}
 }
 
-Future<void> _pumpPane(WidgetTester tester, {required String sessionId}) async {
+class _ControllableConnection extends ConnectionController {
+  _ControllableConnection() : super(const _EmptyStorage());
+
+  final killCompleted = Completer<Map<String, dynamic>>();
+
+  @override
+  Future<Map<String, dynamic>> request(
+    MsgType type,
+    Map<String, dynamic> body,
+  ) {
+    if (body['kind'] == 'session.kill') return killCompleted.future;
+    return Future.value(const {});
+  }
+}
+
+Future<void> _pumpPane(
+  WidgetTester tester, {
+  required String sessionId,
+  ConnectionController? connection,
+}) async {
   final session = Session(
     id: sessionId,
     projectId: 'p1',
@@ -60,7 +82,7 @@ Future<void> _pumpPane(WidgetTester tester, {required String sessionId}) async {
     ProviderScope(
       overrides: [
         connectionControllerProvider.overrideWith(
-          (ref) => ConnectionController(const _EmptyStorage()),
+          (ref) => connection ?? ConnectionController(const _EmptyStorage()),
         ),
         selectedSessionProvider.overrideWith((ref) => sessionId),
         sessionsProvider.overrideWithValue(SessionsState([session])),
@@ -103,5 +125,30 @@ void main() {
     expect(find.text('Quit session?'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Cancel'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Quit'), findsOneWidget);
+  });
+
+  testWidgets('Quit completion preserves a newer session selection', (
+    tester,
+  ) async {
+    final connection = _ControllableConnection();
+    await _pumpPane(tester, sessionId: 's1', connection: connection);
+
+    await tester.tap(find.byTooltip('Session actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Quit session'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(DesktopChatPane)),
+    );
+    container.read(selectedSessionProvider.notifier).state = 's2';
+    await tester.pump();
+
+    connection.killCompleted.complete(const {});
+    await tester.pump();
+
+    expect(container.read(selectedSessionProvider), 's2');
   });
 }

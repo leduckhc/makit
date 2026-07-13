@@ -347,9 +347,12 @@ class _PaneHeader extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref.read(storeControllerProvider.notifier).killSession(fallbackId);
+      if (!context.mounted) return;
       // Clear the selection so the pane returns to its empty state (desktop's
       // analog of the mobile screen's pop-to-home after quit).
-      ref.read(selectedSessionProvider.notifier).state = null;
+      if (ref.read(selectedSessionProvider) == fallbackId) {
+        ref.read(selectedSessionProvider.notifier).state = null;
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
     }
