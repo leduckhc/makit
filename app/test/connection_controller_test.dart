@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:makit/store/secure_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/pairing/mdns_browser.dart';
 import 'package:makit/notifications/push_registration.dart';
@@ -76,33 +76,16 @@ class FakeTransport implements Transport {
 
 /// In-memory [FlutterSecureStorage] so the controller can persist without the
 /// platform channel. Only the surface used by ConnectionController is backed.
-class FakeSecureStorage extends FlutterSecureStorage {
-  FakeSecureStorage([Map<String, String>? seed]) : data = {...?seed}, super();
+class FakeSecureStorage implements SecureStore {
+  FakeSecureStorage([Map<String, String>? seed]) : data = {...?seed};
 
   final Map<String, String> data;
 
   @override
-  Future<String?> read({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => data[key];
+  Future<String?> read({required String key}) async => data[key];
 
   @override
-  Future<void> write({
-    required String key,
-    required String? value,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
+  Future<void> write({required String key, required String? value}) async {
     if (value == null) {
       data.remove(key);
     } else {
@@ -111,15 +94,7 @@ class FakeSecureStorage extends FlutterSecureStorage {
   }
 
   @override
-  Future<void> delete({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => data.remove(key);
+  Future<void> delete({required String key}) async => data.remove(key);
 }
 
 FakeSecureStorage _seededStorage({

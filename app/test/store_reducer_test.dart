@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:makit/store/secure_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/connection.dart';
@@ -551,32 +551,15 @@ class _SnapshotTransport implements Transport {
   void forceReconnect() {}
 }
 
-class _FakeStorage extends FlutterSecureStorage {
-  _FakeStorage(this.data) : super();
+class _FakeStorage implements SecureStore {
+  _FakeStorage(this.data);
   final Map<String, String> data;
 
   @override
-  Future<String?> read({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => data[key];
+  Future<String?> read({required String key}) async => data[key];
 
   @override
-  Future<void> write({
-    required String key,
-    required String? value,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {
+  Future<void> write({required String key, required String? value}) async {
     if (value == null) {
       data.remove(key);
     } else {
@@ -585,13 +568,5 @@ class _FakeStorage extends FlutterSecureStorage {
   }
 
   @override
-  Future<void> delete({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => data.remove(key);
+  Future<void> delete({required String key}) async => data.remove(key);
 }
