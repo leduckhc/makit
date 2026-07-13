@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../ui/home/repo_chips.dart';
 import '../../ui/project/folder_browser.dart';
 import 'selected_session.dart';
 
@@ -33,6 +34,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   bool _loadingAgents = true;
   String? _projectId;
   String? _agentId;
+  String? _baseBranch;
   bool _spawning = false;
   String? _error;
 
@@ -44,6 +46,69 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     final repos = ref.read(reposProvider).repos;
     _projectId =
         widget.initialProjectId ?? (repos.isNotEmpty ? repos.first.id : null);
+    _baseBranch = _defaultBranchFor(_projectId);
+  }
+
+  /// The repo's default fork point: its default branch, else current, else the
+  /// first known branch. Null when the repo has no branches (fresh repo).
+  String? _defaultBranchFor(String? projectId) {
+    if (projectId == null) return null;
+    final repos = ref.read(reposProvider).repos;
+    RepoInfo? repo;
+    for (final r in repos) {
+      if (r.id == projectId) {
+        repo = r;
+        break;
+      }
+    }
+    if (repo == null) return null;
+    final options = branchOptionsForRepo(repo);
+    return options.isEmpty ? null : options.first;
+  }
+
+  /// "Branch from" dropdown: pick the base branch the worktree forks off.
+  /// Hidden when the selected repo exposes no branches (nothing to choose).
+  Widget _branchField(List<RepoInfo> repos) {
+    RepoInfo? repo;
+    for (final r in repos) {
+      if (r.id == _projectId) {
+        repo = r;
+        break;
+      }
+    }
+    final options = repo == null
+        ? const <String>[]
+        : branchOptionsForRepo(repo);
+    if (options.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Branch from'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            // Key by repo so switching to a repo with a disjoint branch set
+            // rebuilds fresh FormField state — otherwise the retained value
+            // is no longer among `items` and trips DropdownButton's
+            // "exactly one item" assertion.
+            key: ValueKey('branch-$_projectId'),
+            initialValue: options.contains(_baseBranch)
+                ? _baseBranch
+                : options.first,
+            isExpanded: true,
+            items: [
+              for (final b in options)
+                DropdownMenuItem(
+                  value: b,
+                  child: Text(b, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: (v) => setState(() => _baseBranch = v),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadAgents() async {
@@ -87,7 +152,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     try {
       final sessionId = await ref
           .read(storeControllerProvider.notifier)
-          .spawnSession(projectId, agent: _agentId);
+          .spawnSession(projectId, agent: _agentId, baseBranch: _baseBranch);
       if (!mounted) return;
       ref.read(selectedSessionProvider.notifier).state = sessionId;
       Navigator.of(context).pop();
@@ -137,8 +202,12 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                       ),
                     ),
                 ],
-                onChanged: (v) => setState(() => _projectId = v),
+                onChanged: (v) => setState(() {
+                  _projectId = v;
+                  _baseBranch = _defaultBranchFor(v);
+                }),
               ),
+            _branchField(repos),
             const SizedBox(height: 16),
             const Text('Harness'),
             const SizedBox(height: 6),

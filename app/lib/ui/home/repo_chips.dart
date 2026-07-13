@@ -220,6 +220,23 @@ const _agentLogos = <String, String>{
   'claude': 'assets/agents/claude.svg',
 };
 
+/// Distinct base branches a new session can fork off, for the new-session
+/// picker: the repo's default branch first, then its current branch, then any
+/// other branches that back a live worktree. De-duplicated, order preserved.
+List<String> branchOptionsForRepo(RepoInfo repo) {
+  final out = <String>[];
+  void add(String? b) {
+    if (b != null && b.isNotEmpty && !out.contains(b)) out.add(b);
+  }
+
+  add(repo.defaultBranch);
+  add(repo.currentBranch);
+  for (final w in repo.worktrees) {
+    add(w.branch);
+  }
+  return out;
+}
+
 /// Display order shared by mobile home and the desktop sidebar: primary
 /// checkout first, then worktrees with live sessions or changes, biggest diff
 /// first.

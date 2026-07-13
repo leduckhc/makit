@@ -352,9 +352,11 @@ export function startWsServer(opts: ServerOpts) {
     r.register("session.spawn", async (ctx) => {
       const projectId = String(ctx.env.projectId ?? "");
       const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
+      const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
       // New sessions are DRAFTS: the worktree + agent are deferred until the
-      // first substantive message names the branch (see send.message).
-      const newSession = await manager.spawnPendingSession(projectId, agent);
+      // first substantive message names the branch (see send.message). The
+      // worktree forks off `baseBranch` (default branch when unset).
+      const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch);
       // wireSession is invoked via the manager's "sessionCreated" listener
       // registered above — don't call it explicitly or every event fans out
       // twice.

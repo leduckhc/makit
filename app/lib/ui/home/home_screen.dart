@@ -227,9 +227,6 @@ class _RepoCard extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(width: 8),
-          if (repo.currentBranch != null)
-            BranchChip(branch: repo.currentBranch!, subtle: true),
           const Spacer(),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, size: 20),
@@ -283,14 +280,6 @@ class _RepoCard extends ConsumerWidget {
 
     if (repo.defaultBranch != null) {
       items.add(_metaText(context, Icons.flag_outlined, repo.defaultBranch!));
-    }
-    if (repo.totalInsertions > 0 || repo.totalDeletions > 0) {
-      items.add(
-        DiffChip(
-          insertions: repo.totalInsertions,
-          deletions: repo.totalDeletions,
-        ),
-      );
     }
     final active = repo.activeWorktreeCount;
     if (active > 0) {
@@ -347,7 +336,7 @@ class _RepoCard extends ConsumerWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: Alignment.centerRight,
         child: TextButton.icon(
           onPressed: () => _newSession(context, ref),
           icon: const Icon(Icons.add, size: 18),
@@ -383,20 +372,33 @@ class _RepoCard extends ConsumerWidget {
   Future<void> _newSession(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final store = ref.read(storeControllerProvider.notifier);
+    final branches = branchOptionsForRepo(repo);
     try {
       final agents = await store.fetchAgents();
       final selectable = agents.where((a) => a.available).toList();
-      String? chosen;
-      if (selectable.length > 1) {
+      String? chosenAgent;
+      String? chosenBranch = branches.isEmpty ? null : branches.first;
+      // Only prompt when there's an actual choice to make.
+      if (selectable.length > 1 || branches.length > 1) {
         if (!context.mounted) return;
-        chosen = await showModalBottomSheet<String>(
+        final choice = await showModalBottomSheet<_NewSessionChoice>(
           context: context,
           showDragHandle: true,
-          builder: (ctx) => _AgentPickerSheet(agents: selectable),
+          builder: (ctx) => _NewSessionSheet(
+            agents: selectable.length > 1 ? selectable : const [],
+            branches: branches.length > 1 ? branches : const [],
+            initialBranch: chosenBranch,
+          ),
         );
-        if (chosen == null) return;
+        if (choice == null) return;
+        chosenAgent = choice.agent;
+        chosenBranch = choice.baseBranch ?? chosenBranch;
       }
-      final newId = await store.spawnSession(repo.id, agent: chosen);
+      final newId = await store.spawnSession(
+        repo.id,
+        agent: chosenAgent,
+        baseBranch: chosenBranch,
+      );
       if (!context.mounted) return;
       context.go('/session/$newId');
     } catch (e) {
@@ -536,6 +538,11 @@ class _WorktreeRow extends StatelessWidget {
     final theme = Theme.of(context);
     final branch = worktree.branch ?? 'detached';
     final isDefault = worktree.branch == repo.defaultBranch;
+    final isCurrent =
+        worktree.branch != null && worktree.branch == repo.currentBranch;
+
+    // Only surface worktrees with a live session (strict).
+    if (sessions.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -562,6 +569,10 @@ class _WorktreeRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (isCurrent) ...[
+                const SizedBox(width: 5),
+                const Icon(Icons.star, size: 15, color: Colors.amber),
+              ],
               if (isDefault) ...[
                 const SizedBox(width: 6),
                 TagChip(label: 'default', color: theme.colorScheme.outline),
@@ -579,18 +590,6 @@ class _WorktreeRow extends StatelessWidget {
             ],
           ),
         ),
-        if (sessions.isEmpty && !worktree.isPrimary)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(38, 0, 16, 6),
-            child: Text(
-              worktree.filesChanged > 0
-                  ? '${worktree.filesChanged} file(s) changed · no live session'
-                  : 'no live session',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ),
         ...sessions.map((s) => _SessionTile(session: s, indented: true)),
       ],
     );
@@ -707,36 +706,99 @@ class _SessionTile extends ConsumerWidget {
   }
 }
 
-/// Bottom sheet that lets the user pick which agent to spawn. Pops the chosen
-/// agent id, or null if dismissed.
-class _AgentPickerSheet extends StatelessWidget {
-  const _AgentPickerSheet({required this.agents});
+/// Choice returned by [_NewSessionSheet]: which agent + base branch to use.
+class _NewSessionChoice {
+  const _NewSessionChoice({this.agent, this.baseBranch});
+  final String? agent;
+  final String? baseBranch;
+}
+
+/// Bottom sheet that lets the user pick the base branch to fork off and, when
+/// more than one agent is available, which agent to spawn. Empty [agents] or
+/// [branches] hide that section. Pops a [_NewSessionChoice], or null if
+/// dismissed.
+class _NewSessionSheet extends StatefulWidget {
+  const _NewSessionSheet({
+    required this.agents,
+    required this.branches,
+    this.initialBranch,
+  });
 
   final List<AgentDescriptor> agents;
+  final List<String> branches;
+  final String? initialBranch;
+
+  @override
+  State<_NewSessionSheet> createState() => _NewSessionSheetState();
+}
+
+class _NewSessionSheetState extends State<_NewSessionSheet> {
+  String? _agent;
+  String? _branch;
+
+  @override
+  void initState() {
+    super.initState();
+    _branch =
+        widget.initialBranch ??
+        (widget.branches.isEmpty ? null : widget.branches.first);
+    _agent = widget.agents.isEmpty ? null : widget.agents.first.id;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
-            child: Text(
-              'Choose an agent',
-              style: Theme.of(context).textTheme.titleMedium,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('New session', style: theme.textTheme.titleMedium),
+            if (widget.branches.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Branch from'),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: widget.branches.contains(_branch)
+                    ? _branch
+                    : widget.branches.first,
+                isExpanded: true,
+                items: [
+                  for (final b in widget.branches)
+                    DropdownMenuItem(
+                      value: b,
+                      child: Text(b, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (v) => setState(() => _branch = v),
+              ),
+            ],
+            if (widget.agents.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              const Text('Agent'),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                initialValue: _agent,
+                isExpanded: true,
+                items: [
+                  for (final a in widget.agents)
+                    DropdownMenuItem(value: a.id, child: Text(a.label)),
+                ],
+                onChanged: (v) => setState(() => _agent = v),
+              ),
+            ],
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: () => Navigator.pop(
+                context,
+                _NewSessionChoice(agent: _agent, baseBranch: _branch),
+              ),
+              child: const Text('Start'),
             ),
-          ),
-          for (final a in agents)
-            ListTile(
-              leading: const Icon(Icons.smart_toy_outlined),
-              title: Text(a.label),
-              subtitle: Text(a.transport.toUpperCase()),
-              onTap: () => Navigator.pop(context, a.id),
-            ),
-          const SizedBox(height: 8),
-        ],
+          ],
+        ),
       ),
     );
   }

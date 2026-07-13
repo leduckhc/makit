@@ -109,9 +109,9 @@ void main() {
     expect(find.text('ALPHA'), findsOneWidget);
     expect(find.text('feat/login'), findsOneWidget);
     expect(find.text('Fix login bug'), findsOneWidget);
-    // Worktree + repo-rollup diff chips.
-    expect(find.text('+12'), findsNWidgets(2));
-    expect(find.text('−3'), findsNWidgets(2));
+    // Only the worktree diff chip now (the repo-rollup aggregate was removed).
+    expect(find.text('+12'), findsOneWidget);
+    expect(find.text('−3'), findsOneWidget);
   });
 
   testWidgets('tapping a session selects it', (tester) async {
@@ -173,6 +173,7 @@ void main() {
               'wt-feat',
               branch: 'feat/x',
               insertions: 1,
+              sessionIds: ['s1'],
               pr: const PullRequest(
                 number: 42,
                 url: '',
@@ -184,7 +185,7 @@ void main() {
           ],
         ),
       ],
-      sessions: const [],
+      sessions: [_session('s1', 'p1', 'work', 'pi')],
     );
 
     expect(find.text('PR #42'), findsOneWidget);

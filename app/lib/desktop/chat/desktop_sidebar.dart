@@ -143,9 +143,6 @@ class _RepoGroup extends ConsumerWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              if (repo.currentBranch != null)
-                BranchChip(branch: repo.currentBranch!, subtle: true),
               const Spacer(),
               IconButton(
                 tooltip: 'New session in ${repo.name}',
@@ -157,28 +154,12 @@ class _RepoGroup extends ConsumerWidget {
             ],
           ),
         ),
-        if (repo.totalInsertions > 0 ||
-            repo.totalDeletions > 0 ||
-            repo.openPrCount > 0)
+        if (repo.openPrCount > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 4,
-              children: [
-                if (repo.totalInsertions > 0 || repo.totalDeletions > 0)
-                  DiffChip(
-                    insertions: repo.totalInsertions,
-                    deletions: repo.totalDeletions,
-                  ),
-                if (repo.openPrCount > 0)
-                  Text(
-                    '${repo.openPrCount} open PR${repo.openPrCount > 1 ? 's' : ''}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: kRepoAccent,
-                    ),
-                  ),
-              ],
+            child: Text(
+              '${repo.openPrCount} open PR${repo.openPrCount > 1 ? 's' : ''}',
+              style: theme.textTheme.bodySmall?.copyWith(color: kRepoAccent),
             ),
           ),
         for (final wt in worktrees)
@@ -236,11 +217,11 @@ class _WorktreeGroup extends StatelessWidget {
     final theme = Theme.of(context);
     final branch = worktree.branch ?? 'detached';
     final isDefault = worktree.branch == repo.defaultBranch;
+    final isCurrent =
+        worktree.branch != null && worktree.branch == repo.currentBranch;
 
-    // Hide empty, clean, non-primary worktrees to keep the rail scannable.
-    if (sessions.isEmpty && !worktree.isPrimary && !worktree.hasChanges) {
-      return const SizedBox.shrink();
-    }
+    // Only surface worktrees with a live session (strict).
+    if (sessions.isEmpty) return const SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -266,6 +247,10 @@ class _WorktreeGroup extends StatelessWidget {
                   ),
                 ),
               ),
+              if (isCurrent) ...[
+                const SizedBox(width: 5),
+                const Icon(Icons.star, size: 13, color: Colors.amber),
+              ],
               if (isDefault) ...[
                 const SizedBox(width: 6),
                 TagChip(label: 'default', color: theme.colorScheme.outline),
@@ -283,18 +268,6 @@ class _WorktreeGroup extends StatelessWidget {
             ],
           ),
         ),
-        if (sessions.isEmpty && !worktree.isPrimary)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(35, 0, 16, 4),
-            child: Text(
-              worktree.filesChanged > 0
-                  ? '${worktree.filesChanged} file(s) changed · no live session'
-                  : 'no live session',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ),
         for (final s in sessions)
           _SessionTile(
             session: s,

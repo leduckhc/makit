@@ -73,12 +73,57 @@ void main() {
     expect(find.text('Add repo'), findsOneWidget);
   });
 
-  testWidgets('repo card shows the current branch chip', (tester) async {
-    await tester.pumpWidget(_host(repos: [_repo()], sessions: const []));
+  testWidgets('the current branch worktree is marked with a star', (
+    tester,
+  ) async {
+    // Primary worktree is on `main` (== currentBranch) and has a live session
+    // so it renders; it should carry the current-branch star.
+    await tester.pumpWidget(
+      _host(
+        repos: [
+          _repo(
+            worktrees: [
+              const Worktree(
+                id: '/tmp/demo',
+                path: '/tmp/demo',
+                branch: 'main',
+                isPrimary: true,
+                insertions: 0,
+                deletions: 0,
+                filesChanged: 0,
+                sessionIds: ['s1'],
+              ),
+            ],
+          ),
+        ],
+        sessions: [_session()],
+      ),
+    );
     await tester.pump();
 
-    // The current branch surfaces as a chip on the repo header.
-    expect(find.text('main'), findsWidgets);
+    expect(find.byIcon(Icons.star), findsOneWidget);
+  });
+
+  testWidgets('a worktree with no live session is hidden', (tester) async {
+    // A feature worktree with changes but no session must not render.
+    final repo = _repo(
+      worktrees: [
+        const Worktree(
+          id: '/wt/feature',
+          path: '/wt/feature',
+          branch: 'add-login',
+          isPrimary: false,
+          insertions: 42,
+          deletions: 7,
+          filesChanged: 3,
+          sessionIds: [],
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(repos: [repo], sessions: const []));
+    await tester.pump();
+
+    expect(find.text('add-login'), findsNothing);
   });
 
   testWidgets('a worktree with changes renders a +/- diff chip', (
@@ -94,7 +139,7 @@ void main() {
           insertions: 0,
           deletions: 0,
           filesChanged: 0,
-          sessionIds: ['s1'],
+          sessionIds: [],
         ),
         const Worktree(
           id: '/wt/feature',
@@ -104,11 +149,11 @@ void main() {
           insertions: 42,
           deletions: 7,
           filesChanged: 3,
-          sessionIds: [],
+          sessionIds: ['s1'],
         ),
       ],
     );
-    await tester.pumpWidget(_host(repos: [repo], sessions: const []));
+    await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
     await tester.pump();
 
     expect(find.text('add-login'), findsOneWidget);
@@ -127,7 +172,7 @@ void main() {
           insertions: 10,
           deletions: 0,
           filesChanged: 1,
-          sessionIds: [],
+          sessionIds: ['s1'],
           pr: PullRequest(
             number: 42,
             url: 'https://x/pull/42',
@@ -138,7 +183,7 @@ void main() {
         ),
       ],
     );
-    await tester.pumpWidget(_host(repos: [repo], sessions: const []));
+    await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
     await tester.pump();
 
     expect(find.text('PR #42'), findsOneWidget);

@@ -61,6 +61,9 @@ export class Session extends EventEmitter {
   pending = false;
   /** Agent id to launch once the pending session starts. */
   pendingAgent?: string;
+  /** Base branch to fork the worktree off, chosen at spawn. Defaults to the
+   * repo's default branch when unset (see {@link Manager.startPendingSession}). */
+  pendingBaseBranch?: string;
   /** Branch this session runs on, set when its worktree is created. */
   branch?: string;
   /** Absolute worktree path, set when its worktree is created. */
