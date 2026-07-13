@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -503,16 +503,38 @@ test("reattachSession refuses a cold session with no resume path; it stays histo
 
 test("listRepos({ includePrs: false }) returns git-only diff numbers and skips the PR lookup", async () => {
   const cwd = makeGitRepo();
+  const worktree = mkdtempSync(join(tmpdir(), "makit-repo-wt-"));
+  const bin = mkdtempSync(join(tmpdir(), "makit-fake-gh-"));
+  const marker = join(bin, "called");
+  const prevPath = process.env.PATH;
+  const prevMarker = process.env.GH_MARKER;
   try {
+    rmSync(worktree, { recursive: true, force: true });
+    execFileSync("git", ["worktree", "add", "-q", "-b", "feature", worktree], { cwd });
+    const gh = join(bin, "gh");
+    writeFileSync(gh, '#!/bin/sh\nprintf "called\\n" >> "$GH_MARKER"\nprintf "[]\\n"\n');
+    chmodSync(gh, 0o755);
+    process.env.PATH = `${bin}:${prevPath ?? ""}`;
+    process.env.GH_MARKER = marker;
+
     // Uncommitted edit → insertions counted vs the default branch.
     writeFileSync(join(cwd, "README.md"), "hello\nworld\nmore\n");
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
     const repos = await manager.listRepos({ includePrs: false });
     const primary = repos[0].worktrees.find((w) => w.isPrimary);
     assert.ok(primary, "primary worktree listed");
-    assert.equal(primary!.pr, null, "git-only pass performs no PR lookup");
+    assert.equal(existsSync(marker), false, "git-only pass performs no PR lookup");
     assert.ok(primary!.insertions >= 2, `insertions ${primary!.insertions}`);
+
+    await manager.listRepos({ includePrs: true });
+    assert.equal(existsSync(marker), true, "fixture exercises the secondary worktree PR lookup");
   } finally {
+    if (prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = prevPath;
+    if (prevMarker === undefined) delete process.env.GH_MARKER;
+    else process.env.GH_MARKER = prevMarker;
+    execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd });
+    rmSync(bin, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   }
 });

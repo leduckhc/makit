@@ -18,6 +18,7 @@ import { startWsServer } from "../../src/server.js";
 import { loadOrCreateCert } from "../../src/pairing/cert.js";
 import { DeviceRegistry } from "../../src/pairing/registry.js";
 import { StubAdapter } from "../../src/adapters/stub.js";
+import type { RepoDTO } from "../../src/protocol.js";
 
 interface Client {
   ws: WebSocket;
@@ -60,6 +61,45 @@ async function waitFor(
 
 const isSessionsSnapshot = (m: Record<string, unknown>) =>
   m.t === "event" && m.kind === "sessions.snapshot";
+
+const isReposSnapshot = (m: Record<string, unknown>) =>
+  m.t === "event" && m.kind === "repos.snapshot";
+
+function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
+  return [
+    {
+      id: "repo-1",
+      name: "repo",
+      path: "/repo",
+      pinned: false,
+      lastActivityAt: 0,
+      isGitRepo: true,
+      defaultBranch: "main",
+      currentBranch: "main",
+      worktrees: [
+        {
+          id: "/repo-feature",
+          path: "/repo-feature",
+          branch: "feature",
+          isPrimary: false,
+          insertions,
+          deletions: 0,
+          filesChanged: 1,
+          pr: prNumber === null
+            ? null
+            : { number: prNumber, url: `https://example.test/${prNumber}`, state: "OPEN", title: "PR", isDraft: false },
+          sessionIds: [],
+        },
+      ],
+    },
+  ];
+}
+
+function snapshotValues(message: Record<string, unknown>) {
+  const repo = (message.repos as RepoDTO[])[0]!;
+  const worktree = repo.worktrees[0]!;
+  return { insertions: worktree.insertions, prNumber: worktree.pr?.number ?? null };
+}
 
 function agentEcho(text: string) {
   return (m: Record<string, unknown>) => {
@@ -138,5 +178,98 @@ test("a session event fans out to every authed client, even one that never subsc
     else process.env.MAKIT_HOME = prevHome;
     rmSync(home, { recursive: true, force: true });
     rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test("a fast repo snapshot preserves the last enriched PR fields", async () => {
+  const home = mkdtempSync(join(tmpdir(), "makit-repos-home-"));
+  const prevHome = process.env.MAKIT_HOME;
+  process.env.MAKIT_HOME = home;
+  const manager = new SessionManager({ projects: [] });
+  let call = 0;
+  manager.listRepos = async ({ includePrs } = {}) => {
+    call++;
+    if (call <= 2) return repoSnapshot(1, includePrs ? 44 : null);
+    return repoSnapshot(2, includePrs ? 44 : null);
+  };
+  const cert = await loadOrCreateCert();
+  const srv = startWsServer({
+    host: "127.0.0.1",
+    port: 0,
+    manager,
+    cert,
+    registry: new DeviceRegistry(),
+    trustLocalhost: true,
+  });
+  await new Promise<void>((resolve) => srv.https.listening ? resolve() : srv.https.once("listening", resolve));
+  const client = connect((srv.https.address() as AddressInfo).port);
+  try {
+    await waitOpen(client.ws);
+    await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).prNumber === 44);
+    client.msgs.length = 0;
+    client.ws.send(JSON.stringify({ v: 1, t: "cmd", id: "refresh", kind: "repo.refresh" }));
+    const fast = await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).insertions === 2);
+    assert.deepEqual(snapshotValues(fast), { insertions: 2, prNumber: 44 });
+  } finally {
+    client.ws.close();
+    srv.wss.close();
+    srv.https.close();
+    srv.localHttps?.close();
+    if (prevHome === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a superseded PR enrichment cannot overwrite a newer repo snapshot", async () => {
+  const home = mkdtempSync(join(tmpdir(), "makit-repos-home-"));
+  const prevHome = process.env.MAKIT_HOME;
+  process.env.MAKIT_HOME = home;
+  const manager = new SessionManager({ projects: [] });
+  let call = 0;
+  let releaseStale!: () => void;
+  const stale = new Promise<void>((resolve) => { releaseStale = resolve; });
+  manager.listRepos = async ({ includePrs } = {}) => {
+    call++;
+    if (call <= 2) return repoSnapshot(1, includePrs ? 44 : null);
+    if (call === 3) return repoSnapshot(2, null);
+    if (call === 4) {
+      await stale;
+      return repoSnapshot(2, 44);
+    }
+    return repoSnapshot(3, includePrs ? 44 : null);
+  };
+  const cert = await loadOrCreateCert();
+  const srv = startWsServer({
+    host: "127.0.0.1",
+    port: 0,
+    manager,
+    cert,
+    registry: new DeviceRegistry(),
+    trustLocalhost: true,
+  });
+  await new Promise<void>((resolve) => srv.https.listening ? resolve() : srv.https.once("listening", resolve));
+  const client = connect((srv.https.address() as AddressInfo).port);
+  try {
+    await waitOpen(client.ws);
+    await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).prNumber === 44);
+    client.msgs.length = 0;
+    client.ws.send(JSON.stringify({ v: 1, t: "cmd", id: "refresh-a", kind: "repo.refresh" }));
+    await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).insertions === 2);
+    client.ws.send(JSON.stringify({ v: 1, t: "cmd", id: "refresh-b", kind: "repo.refresh" }));
+    await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).insertions === 3);
+    releaseStale();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const values = client.msgs.filter(isReposSnapshot).map(snapshotValues);
+    assert.equal(values.at(-1)?.insertions, 3);
+  } finally {
+    releaseStale();
+    client.ws.close();
+    srv.wss.close();
+    srv.https.close();
+    srv.localHttps?.close();
+    if (prevHome === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
   }
 });

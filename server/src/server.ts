@@ -136,6 +136,8 @@ export function startWsServer(opts: ServerOpts) {
   });
 
   const clients = new Map<WebSocket, ClientState>();
+  let reposSnapshotGeneration = 0;
+  let lastEnrichedRepos: RepoDTO[] | undefined;
 
   // Device ids with a live authenticated WS connection — feeds the control
   // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
@@ -561,21 +563,46 @@ export function startWsServer(opts: ServerOpts) {
    * the open-PR lookup (`gh`, network, seconds): first broadcast the git-only
    * snapshot, then re-broadcast with PRs enriched.
    */
+  function preserveLastKnownPrs(repos: RepoDTO[]): RepoDTO[] {
+    if (!lastEnrichedRepos) return repos;
+    const prs = new Map<string, RepoDTO["worktrees"][number]["pr"]>();
+    for (const repo of lastEnrichedRepos) {
+      for (const worktree of repo.worktrees) prs.set(`${repo.id}\0${worktree.id}`, worktree.pr);
+    }
+    return repos.map((repo) => ({
+      ...repo,
+      worktrees: repo.worktrees.map((worktree) => {
+        const key = `${repo.id}\0${worktree.id}`;
+        return prs.has(key) ? { ...worktree, pr: prs.get(key)! } : worktree;
+      }),
+    }));
+  }
+
   async function broadcastReposSnapshot() {
+    const generation = ++reposSnapshotGeneration;
     const emit = (repos: RepoDTO[]) => {
       const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
       for (const c of clients.values()) if (c.authed) c.send(frame);
     };
     try {
-      emit(await manager.listRepos({ includePrs: false }));
+      const repos = await manager.listRepos({ includePrs: false });
+      if (generation !== reposSnapshotGeneration) return;
+      emit(preserveLastKnownPrs(repos));
     } catch (e) {
-      log.warn(`[makit] listRepos (git-only) failed: ${(e as Error).message}`);
+      if (generation === reposSnapshotGeneration) {
+        log.warn(`[makit] listRepos (git-only) failed: ${(e as Error).message}`);
+      }
       return;
     }
     try {
-      emit(await manager.listRepos({ includePrs: true }));
+      const repos = await manager.listRepos({ includePrs: true });
+      if (generation !== reposSnapshotGeneration) return;
+      lastEnrichedRepos = repos;
+      emit(repos);
     } catch (e) {
-      log.warn(`[makit] listRepos (PR enrich) failed: ${(e as Error).message}`);
+      if (generation === reposSnapshotGeneration) {
+        log.warn(`[makit] listRepos (PR enrich) failed: ${(e as Error).message}`);
+      }
     }
   }
 
