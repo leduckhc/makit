@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:makit/store/secure_store.dart';
 
 const _testHost = String.fromEnvironment('MAKIT_TEST_HOST');
 const _testPort = String.fromEnvironment('MAKIT_TEST_PORT');
@@ -15,9 +15,8 @@ const _testServerLabel = 'e2e test server';
 /// permission, which pops a blocking system dialog on the simulator).
 bool get isE2ETestMode => _testHost.isNotEmpty;
 
-Future<void> seedTestPairingIfRequested({
-  FlutterSecureStorage storage = const FlutterSecureStorage(),
-}) async {
+Future<void> seedTestPairingIfRequested({SecureStore? storage}) async {
+  storage ??= defaultSecureStore();
   if (_testHost.isEmpty) return;
 
   final port = int.tryParse(_testPort);

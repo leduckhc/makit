@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'secure_store.dart';
 
 import '../pairing/mdns_browser.dart';
 import '../pairing/pair_info.dart';
@@ -127,7 +127,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     _boot();
   }
 
-  final FlutterSecureStorage _storage;
+  final SecureStore _storage;
   final Transport Function() _transportFactory;
   final BrowseLan _browseLan;
 
@@ -528,16 +528,13 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 /// top-level tear-off so the constructor default doesn't shadow it.
 const BrowseLan _defaultBrowseLan = browseLan;
 
-final _secureStorageProvider = Provider<FlutterSecureStorage>(
-  // macOS: use the legacy (file-based) keychain instead of the data-protection
-  // keychain. The data-protection keychain requires a `keychain-access-groups`
-  // entitlement, which needs a signing team; the desktop app ships ad-hoc
-  // ("Sign to Run Locally", CODE_SIGN_IDENTITY = "-"), so writes would fail with
-  // errSecMissingEntitlement (-34018). `mOptions` is read only on macOS — iOS
-  // uses `iOptions` — so this does not affect the mobile app.
-  (_) => const FlutterSecureStorage(
-    mOptions: MacOsOptions(usesDataProtectionKeychain: false),
-  ),
+final _secureStorageProvider = Provider<SecureStore>(
+  // macOS: the desktop app ships ad-hoc signed ("Sign to Run Locally",
+  // CODE_SIGN_IDENTITY = "-"), so any keychain item's ACL is bound to an
+  // unstable code signature and macOS re-prompts for the login password on
+  // every rebuild. `defaultSecureStore()` swaps in a file-backed store on
+  // macOS to avoid the prompt; other platforms keep the OS keychain/keystore.
+  (_) => defaultSecureStore(),
 );
 
 /// SPEC-07: the native push-token provider injected into the controller.

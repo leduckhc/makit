@@ -4,7 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:makit/store/secure_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/router.dart';
 import 'package:makit/notifications/notification_observer.dart';
@@ -69,43 +69,18 @@ class _EmittingTransport implements Transport {
   void forceReconnect() {}
 }
 
-class _FakeSecureStorage extends FlutterSecureStorage {
-  _FakeSecureStorage(this._data) : super();
+class _FakeSecureStorage implements SecureStore {
+  _FakeSecureStorage(this._data);
   final Map<String, String> _data;
 
   @override
-  Future<String?> read({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => _data[key];
+  Future<String?> read({required String key}) async => _data[key];
 
   @override
-  Future<void> write({
-    required String key,
-    required String? value,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
+  Future<void> write({required String key, required String? value}) async {}
 
   @override
-  Future<void> delete({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
+  Future<void> delete({required String key}) async {}
 }
 
 const _fingerprint =

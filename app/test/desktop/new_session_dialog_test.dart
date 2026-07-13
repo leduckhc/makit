@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:makit/store/secure_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/new_session_dialog.dart';
 import 'package:makit/store/connection.dart';
@@ -9,42 +9,17 @@ import 'package:makit/store/store.dart';
 
 /// Minimal in-memory secure storage so ConnectionController boots without
 /// hitting platform channels (mirrors fake_data_onboarding_test).
-class _EmptyStorage extends FlutterSecureStorage {
-  const _EmptyStorage() : super();
+class _EmptyStorage implements SecureStore {
+  const _EmptyStorage();
 
   @override
-  Future<String?> read({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async => null;
+  Future<String?> read({required String key}) async => null;
 
   @override
-  Future<void> write({
-    required String key,
-    required String? value,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
+  Future<void> write({required String key, required String? value}) async {}
 
   @override
-  Future<void> delete({
-    required String key,
-    AppleOptions? iOptions,
-    AndroidOptions? aOptions,
-    LinuxOptions? lOptions,
-    WebOptions? webOptions,
-    AppleOptions? mOptions,
-    WindowsOptions? wOptions,
-  }) async {}
+  Future<void> delete({required String key}) async {}
 }
 
 Worktree _wt(

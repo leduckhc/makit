@@ -157,8 +157,15 @@ no ATS exception is granted. See `app/lib/transport/ws_client.dart` and
 
 ## Secrets
 
-- The server bearer is stored in **flutter_secure_storage** (iOS
-  Keychain `kSecAttrAccessibleAfterFirstUnlock`, Android Keystore).
+- The server bearer is stored via a `SecureStore` abstraction (`lib/store/
+  secure_store.dart`):
+  - iOS/Android: **flutter_secure_storage** (iOS Keychain
+    `kSecAttrAccessibleAfterFirstUnlock`, Android Keystore).
+  - macOS (control app): a `0600` JSON file under `~/Library/Application
+    Support/dev.getmakit.app/`. The desktop app ships ad-hoc signed, so a
+    keychain item's ACL is bound to an unstable code signature and macOS
+    re-prompts for the login password on every rebuild. The file store trades
+    that prompt away for weaker at-rest protection (no OS keychain).
 - The server cert fingerprint is **not** secret — it's embedded in the
   pair QR.
 - No API keys ship in the app. Provider credentials live on the server.
