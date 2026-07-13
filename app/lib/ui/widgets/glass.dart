@@ -81,3 +81,34 @@ class GlassSurface extends ConsumerWidget {
     );
   }
 }
+
+/// Round glass icon button used in floating top bars (home, chat).
+class GlassCircleButton extends StatelessWidget {
+  const GlassCircleButton({
+    super.key,
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassSurface(
+      borderRadius: 23,
+      child: SizedBox(
+        width: 46,
+        height: 46,
+        child: IconButton(
+          tooltip: tooltip,
+          padding: EdgeInsets.zero,
+          icon: Icon(icon, size: 20),
+          onPressed: onTap,
+        ),
+      ),
+    );
+  }
+}
