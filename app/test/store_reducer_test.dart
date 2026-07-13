@@ -486,7 +486,10 @@ class _SnapshotTransport implements Transport {
           Envelope(
             t: MsgType.err,
             id: env.id,
-            body: {'code': 'bad_request', 'message': 'unknown cmd: repo.refresh'},
+            body: {
+              'code': 'bad_request',
+              'message': 'unknown cmd: repo.refresh',
+            },
           ),
         );
         return;

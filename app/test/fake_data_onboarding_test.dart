@@ -83,23 +83,20 @@ void main() {
       expect(container.read(onboardingStepProvider), OnboardingStep.pair);
     });
 
-    test(
-      'attaching fake data WITHOUT skipping notifications is stuck at the '
-      'notifications gate (never reaches Home) — the reported bug',
-      () async {
-        final container = _container();
-        await Future<void>.delayed(Duration.zero);
+    test('attaching fake data WITHOUT skipping notifications is stuck at the '
+        'notifications gate (never reaches Home) — the reported bug', () async {
+      final container = _container();
+      await Future<void>.delayed(Duration.zero);
 
-        container.read(connectionControllerProvider.notifier).useFakeServer();
+      container.read(connectionControllerProvider.notifier).useFakeServer();
 
-        // paired is now true, but the notifications gate is unsatisfied, so the
-        // router redirect bounces off Home back to onboarding.
-        expect(
-          container.read(onboardingStepProvider),
-          OnboardingStep.notifications,
-        );
-      },
-    );
+      // paired is now true, but the notifications gate is unsatisfied, so the
+      // router redirect bounces off Home back to onboarding.
+      expect(
+        container.read(onboardingStepProvider),
+        OnboardingStep.notifications,
+      );
+    });
 
     test(
       'the fake-data action (attach fake + skip notifications) reaches ready '
@@ -110,7 +107,9 @@ void main() {
 
         // Exactly what the "Open with fake data" button does.
         container.read(connectionControllerProvider.notifier).useFakeServer();
-        container.read(onboardingControllerProvider.notifier).skipNotifications();
+        container
+            .read(onboardingControllerProvider.notifier)
+            .skipNotifications();
 
         expect(container.read(onboardingStepProvider), OnboardingStep.ready);
       },
