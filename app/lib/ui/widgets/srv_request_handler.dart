@@ -20,9 +20,22 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
-  const SrvRequestHandler({super.key, required this.child, this.navigatorKey});
+  const SrvRequestHandler({
+    super.key,
+    required this.child,
+    this.navigatorKey,
+    this.reminderDelay,
+  });
   final Widget child;
   final GlobalKey<NavigatorState>? navigatorKey;
+
+  /// Desktop mode. When set, requests ALWAYS present the in-app dialog
+  /// immediately (never diverted to a notification based on foreground
+  /// state — the desktop window is the control surface). If the request is
+  /// still unanswered after this delay, a system notification is fired as a
+  /// reminder. When null (mobile), backgrounded requests are diverted to an
+  /// actionable notification instead of the invisible dialog.
+  final Duration? reminderDelay;
 
   @override
   ConsumerState<SrvRequestHandler> createState() => _SrvRequestHandlerState();
@@ -41,6 +54,11 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   /// SPEC-07 status-notification queue); oldest entries are evicted first.
   final Map<String, Envelope> _pendingBackground = {};
   static const _kMaxPendingBackground = 50;
+
+  /// Desktop reminder timers, keyed by request id. Fires a system notification
+  /// when a dialog has been open (unanswered) for [SrvRequestHandler.reminderDelay];
+  /// cancelled when the request is answered or the widget disposes.
+  final Map<String, Timer> _reminderTimers = {};
 
   /// Salted so request-notification ids can't collide with the status
   /// notifications keyed on `sessionId.hashCode`.
@@ -92,11 +110,55 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     final controller = ref.read(connectionControllerProvider.notifier);
     _sub = controller.srvRequests.listen(_dispatch);
     _respondedSub?.cancel();
-    _respondedSub = controller.responded.listen(_pendingBackground.remove);
+    _respondedSub = controller.responded.listen(_onResponded);
+  }
+
+  void _onResponded(String id) {
+    _pendingBackground.remove(id);
+    _reminderTimers.remove(id)?.cancel();
+  }
+
+  /// Fire a system notification once a still-unanswered request has been
+  /// on-screen for [SrvRequestHandler.reminderDelay] (desktop only).
+  void _scheduleReminder(Envelope env, String kind) {
+    final sessionId = env.body['sessionId'] as String? ?? '';
+    _reminderTimers.remove(env.id)?.cancel();
+    _reminderTimers[env.id] = Timer(widget.reminderDelay!, () async {
+      _reminderTimers.remove(env.id);
+      if (!mounted) return;
+      final notif = notificationForRequest(
+        kind: kind,
+        body: env.body,
+        label: _labelFor(sessionId),
+      );
+      if (notif == null) return;
+      await ref
+          .read(notificationServiceProvider)
+          .show(
+            id: _notificationId(env.id),
+            title: notif.title,
+            body: notif.body,
+            category: notif.category,
+            payload: encodeRequestPayload(
+              sessionId: sessionId,
+              requestId: env.id,
+              kind: kind,
+            ),
+          );
+    });
   }
 
   Future<void> _dispatch(Envelope env) async {
     final kind = env.body['kind'] as String? ?? 'unknown';
+
+    // Desktop: always present the dialog now; if it goes unanswered for
+    // `reminderDelay`, nudge with a system notification (the tap routes back
+    // through respondTo, and the in-app dialog stays answerable meanwhile).
+    if (widget.reminderDelay != null) {
+      _scheduleReminder(env, kind);
+      await _presentDialog(env);
+      return;
+    }
 
     // Backgrounded: if this request kind has an actionable-notification
     // affordance, fire the notification and skip the (invisible) dialog. The
@@ -395,6 +457,10 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     WidgetsBinding.instance.removeObserver(this);
     _sub?.cancel();
     _respondedSub?.cancel();
+    for (final t in _reminderTimers.values) {
+      t.cancel();
+    }
+    _reminderTimers.clear();
     super.dispose();
   }
 
