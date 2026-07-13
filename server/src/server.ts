@@ -443,7 +443,7 @@ export function startWsServer(opts: ServerOpts) {
       }
       const project = manager.addProject(full);
       broadcastSnapshots();
-      void broadcastReposSnapshot();
+      await broadcastReposSnapshot();
       ctx.ack({ projectId: project.id });
     });
 
@@ -460,7 +460,7 @@ export function startWsServer(opts: ServerOpts) {
         return;
       }
       broadcastSnapshots();
-      void broadcastReposSnapshot();
+      await broadcastReposSnapshot();
       ctx.ack({});
     });
 

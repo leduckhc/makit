@@ -18,6 +18,7 @@ class FakeServer {
   Stream<Envelope> get outgoing => _outCtrl.stream;
 
   final Map<String, _FakeSession> _sessions = {};
+  final Map<String, String> _addedProjects = {};
   Timer? _seedTimer;
 
   void start() {
@@ -108,6 +109,18 @@ class FakeServer {
         },
       );
     }
+    for (final entry in _addedProjects.entries) {
+      projects.putIfAbsent(
+        entry.key,
+        () => {
+          'id': entry.key,
+          'name': entry.value.split('/').where((s) => s.isNotEmpty).last,
+          'path': entry.value,
+          'pinned': false,
+          'lastActivityAt': DateTime.now().millisecondsSinceEpoch,
+        },
+      );
+    }
     _emit(
       Envelope(
         t: MsgType.event,
@@ -127,10 +140,26 @@ class FakeServer {
     for (final s in _sessions.values) {
       byProject.putIfAbsent(s.projectId, () => []).add(s);
     }
+    for (final entry in _addedProjects.entries) {
+      byProject.putIfAbsent(entry.key, () => []);
+    }
 
     final repos = <Map<String, dynamic>>[];
     byProject.forEach((pid, sess) {
-      final first = sess.first;
+      final first = sess.isNotEmpty
+          ? sess.first
+          : _FakeSession(
+              id: '',
+              projectId: pid,
+              projectName: _addedProjects[pid]!
+                  .split('/')
+                  .where((s) => s.isNotEmpty)
+                  .last,
+              projectPath: _addedProjects[pid]!,
+              agent: 'pi',
+              title: '',
+              preview: '',
+            );
       final repoPath = first.projectPath;
       // Split sessions across two worktrees for a realistic demo.
       final primaryIds = sess
@@ -249,6 +278,12 @@ class FakeServer {
       case 'session.spawn':
         _spawnPending(env);
         return;
+      case 'project.browse':
+        _browse(env);
+        return;
+      case 'project.add':
+        _addProject(env);
+        return;
       case 'repo.refresh':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         _pushRepos();
@@ -287,8 +322,6 @@ class FakeServer {
     }
   }
 
-  /// Create a draft (pending) session in a project, mirroring the real server's
-  /// deferred-worktree flow.
   void _spawnPending(Envelope env) {
     final pid = env.body['projectId'] as String? ?? '';
     final agent = env.body['agent'] as String? ?? 'pi';
@@ -309,6 +342,45 @@ class FakeServer {
     );
     _emit(Envelope(t: MsgType.ack, id: env.id, body: {'sessionId': id}));
     _pushSessions();
+    _pushRepos();
+  }
+
+  void _browse(Envelope env) {
+    final path = env.body['path'] as String? ?? '/Users/demo';
+    _emit(
+      Envelope(
+        t: MsgType.ack,
+        id: env.id,
+        body: {
+          'path': path,
+          'parent': path == '/'
+              ? null
+              : path.replaceAll(RegExp(r'/[^/]+$'), ''),
+          'entries': [
+            {'name': 'makit', 'path': '$path/makit', 'isRepo': true},
+            {'name': 'notes', 'path': '$path/notes', 'isRepo': false},
+          ],
+        },
+      ),
+    );
+  }
+
+  void _addProject(Envelope env) {
+    final path = env.body['path'] as String? ?? '';
+    if (path.isEmpty) {
+      _emit(
+        Envelope(
+          t: MsgType.err,
+          id: env.id,
+          body: {'message': 'project.add requires a string `path`'},
+        ),
+      );
+      return;
+    }
+    final id = 'proj-added-${_addedProjects.length + 1}';
+    _addedProjects[id] = path;
+    _emit(Envelope(t: MsgType.ack, id: env.id, body: {'projectId': id}));
+    _pushProjects();
     _pushRepos();
   }
 
