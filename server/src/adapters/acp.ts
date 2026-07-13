@@ -361,7 +361,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
 // ---------- default subprocess transport -----------------------------------
 
-function defaultConnect(spec: AcpSpawnSpec) {
+export function defaultConnect(spec: AcpSpawnSpec) {
   return (cwd: string, env: Record<string, string>): AcpTransport => {
     const child: ChildProcess = spawn(spec.command, spec.args ?? [], {
       cwd,
@@ -371,11 +371,38 @@ function defaultConnect(spec: AcpSpawnSpec) {
 
     child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(`[${spec.agent}-acp] ${chunk}`));
 
+    // A spawn failure (ENOENT/EACCES) or a runtime process fault arrives as an
+    // 'error' event, and writing to a dead agent's stdin surfaces as an async
+    // 'error' (EPIPE). Node re-throws an unlistened 'error' as an uncaught
+    // exception — crashing the whole daemon. Route the process error to the
+    // exit path (settle-once, buffered until onExit registers) and swallow
+    // stdin faults; the exit handler owns the real teardown.
+    let onExitCb: ((code: number | null) => void) | undefined;
+    let settled = false;
+    let bufferedCode: number | null = null;
+    const settle = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      bufferedCode = code;
+      onExitCb?.(code);
+    };
+    child.on("exit", (code) => settle(code));
+    child.on("error", (e: Error) => {
+      process.stderr.write(`[${spec.agent}-acp] process error: ${e.message}\n`);
+      settle(null);
+    });
+    child.stdin?.on("error", (e: Error) =>
+      process.stderr.write(`[${spec.agent}-acp] stdin error: ${e.message}\n`),
+    );
+
     const stream = ndJsonStream(nodeWritable(child), nodeReadable(child));
 
     return {
       stream,
-      onExit: (cb) => child.on("exit", (code) => cb(code)),
+      onExit: (cb) => {
+        onExitCb = cb;
+        if (settled) cb(bufferedCode); // replay a settle that beat registration
+      },
       dispose: () => {
         try {
           child.kill("SIGTERM");
@@ -394,7 +421,14 @@ function nodeWritable(child: ChildProcess): WritableStream<Uint8Array> {
       return new Promise<void>((resolve) => {
         const stdin = child.stdin;
         if (!stdin || stdin.destroyed || !stdin.writable) return resolve();
-        stdin.write(chunk, () => resolve());
+        try {
+          stdin.write(chunk, () => resolve());
+        } catch {
+          // Stream torn down between the guard and the write; the stdin 'error'
+          // listener + exit handler own the teardown. Never reject here — a
+          // rejected sink would surface as an unhandled rejection.
+          resolve();
+        }
       });
     },
     close() {

@@ -126,22 +126,35 @@ class DaemonLifecycle {
   /// Spawns the CLI.
   final ProcessRunner run;
 
-  /// Runs `makit start`.
-  Future<DaemonActionResult> start() =>
-      _invoke('start', DaemonActionOutcome.started);
+  /// Runs `makit start`, optionally binding a specific [host]/[port].
+  Future<DaemonActionResult> start({String? host, int? port}) => _invoke(
+    'start',
+    DaemonActionOutcome.started,
+    extraArgs: [
+      if (host != null && host.isNotEmpty) ...['--host', host],
+      if (port != null && port > 0) ...['--port', '$port'],
+    ],
+  );
 
   /// Runs `makit stop`.
   Future<DaemonActionResult> stop() =>
       _invoke('stop', DaemonActionOutcome.stopped);
 
-  /// Runs `makit restart`.
-  Future<DaemonActionResult> restart() =>
-      _invoke('restart', DaemonActionOutcome.restarted);
+  /// Runs `makit restart`, optionally binding a specific [host]/[port].
+  Future<DaemonActionResult> restart({String? host, int? port}) => _invoke(
+    'restart',
+    DaemonActionOutcome.restarted,
+    extraArgs: [
+      if (host != null && host.isNotEmpty) ...['--host', host],
+      if (port != null && port > 0) ...['--port', '$port'],
+    ],
+  );
 
   Future<DaemonActionResult> _invoke(
     String verb,
-    DaemonActionOutcome onSuccess,
-  ) async {
+    DaemonActionOutcome onSuccess, {
+    List<String> extraArgs = const [],
+  }) async {
     final path = await resolver.resolve();
     if (path == null) {
       return const DaemonActionResult(
@@ -151,7 +164,7 @@ class DaemonLifecycle {
       );
     }
     try {
-      final res = await run(path, [verb]);
+      final res = await run(path, [verb, ...extraArgs]);
       if (res.exitCode == 0) return DaemonActionResult(onSuccess);
       final stderr = (res.stderr is String) ? res.stderr as String : '';
       return DaemonActionResult(

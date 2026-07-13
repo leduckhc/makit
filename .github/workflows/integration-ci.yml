@@ -7,6 +7,11 @@ name: Integration E2E (stub adapter)
 # MANUAL (workflow_dispatch) only — not a per-PR gate. The cheap Linux gates
 # (server-ci unit tests + typecheck, protocol-contract, real-pi-pinned headless
 # smoke) cover regressions on every PR. The real-pi path stays in real-pi-e2e.yml.
+#
+# LOCAL-FIRST: prefer running this locally before pushing —
+#   app/tool/e2e.sh --mode=stub
+# (see CONTRIBUTING.md → "End-to-end tests"). This CI job is a convenience
+# escape hatch you trigger by hand from the Actions tab, not an automatic gate.
 
 on:
   workflow_dispatch: {}

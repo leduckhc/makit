@@ -37,7 +37,10 @@ export function loadProjectPaths(file: string): string[] {
     if (typeof parsed !== "object" || parsed === null) return [];
     const projects = (parsed as { projects?: unknown }).projects;
     if (!Array.isArray(projects)) return [];
-    return projects.filter((p): p is string => typeof p === "string");
+    return projects.filter(
+      (p): p is string =>
+        typeof p === "string" && existsSync(p) && statSync(p).isDirectory(),
+    );
   } catch (e) {
     log.warn(`[makit] failed to read projects file ${file}: ${(e as Error).message}`);
     return [];
