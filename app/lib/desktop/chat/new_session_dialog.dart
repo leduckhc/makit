@@ -88,6 +88,11 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
           const Text('Branch from'),
           const SizedBox(height: 6),
           DropdownButtonFormField<String>(
+            // Key by repo so switching to a repo with a disjoint branch set
+            // rebuilds fresh FormField state — otherwise the retained value
+            // is no longer among `items` and trips DropdownButton's
+            // "exactly one item" assertion.
+            key: ValueKey('branch-$_projectId'),
             initialValue: options.contains(_baseBranch)
                 ? _baseBranch
                 : options.first,
