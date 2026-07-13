@@ -184,7 +184,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   }
 }
 
-class _PaneHeader extends StatelessWidget {
+class _PaneHeader extends ConsumerWidget {
   const _PaneHeader({
     required this.session,
     required this.fallbackId,
@@ -195,7 +195,7 @@ class _PaneHeader extends StatelessWidget {
   final String? branch;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final title = (session?.title.trim().isNotEmpty ?? false)
         ? session!.title.trim()
         : fallbackId;
@@ -243,9 +243,119 @@ class _PaneHeader extends StatelessWidget {
             const SizedBox(width: 8),
             SessionStatusChip(status: session!.status),
           ],
+          const SizedBox(width: 4),
+          _actionsMenu(context, ref),
         ],
       ),
     );
+  }
+
+  /// Session-level overflow menu (Rename / Model / Thinking / Quit). Mirrors
+  /// the mobile [SessionScreen] top-bar menu so both platforms expose the same
+  /// actions.
+  Widget _actionsMenu(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<String>(
+      tooltip: 'Session actions',
+      icon: const Icon(Icons.more_vert, size: 20),
+      onSelected: (value) {
+        switch (value) {
+          case 'rename':
+            handleClientCommand(
+              '/name',
+              context: context,
+              ref: ref,
+              sessionId: fallbackId,
+            );
+          case 'model':
+            handleClientCommand(
+              '/model',
+              context: context,
+              ref: ref,
+              sessionId: fallbackId,
+            );
+          case 'thinking':
+            handleClientCommand(
+              '/thinking',
+              context: context,
+              ref: ref,
+              sessionId: fallbackId,
+            );
+          case 'quit':
+            _confirmQuit(context, ref);
+        }
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: 'rename',
+          child: ListTile(
+            leading: Icon(Icons.drive_file_rename_outline),
+            title: Text('Rename session'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'model',
+          child: ListTile(
+            leading: Icon(Icons.smart_toy_outlined),
+            title: Text('Model'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuItem(
+          value: 'thinking',
+          child: ListTile(
+            leading: Icon(Icons.psychology_outlined),
+            title: Text('Thinking'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'quit',
+          child: ListTile(
+            leading: Icon(Icons.power_settings_new),
+            title: Text('Quit session'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _confirmQuit(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('Quit session?'),
+        content: const Text(
+          'This stops the agent process and removes the session. '
+          'The transcript stays on disk and can be re-attached later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dctx, true),
+            child: const Text('Quit'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(storeControllerProvider.notifier).killSession(fallbackId);
+      if (!context.mounted) return;
+      // Clear the selection so the pane returns to its empty state (desktop's
+      // analog of the mobile screen's pop-to-home after quit).
+      if (ref.read(selectedSessionProvider) == fallbackId) {
+        ref.read(selectedSessionProvider.notifier).state = null;
+      }
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+    }
   }
 }
 
