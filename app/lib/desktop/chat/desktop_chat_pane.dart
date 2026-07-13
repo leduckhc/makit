@@ -9,12 +9,8 @@ import '../../ui/home/repo_chips.dart';
 import '../../ui/session/chat_message.dart';
 import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
+import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'selected_session.dart';
-
-/// Max width for the readable content column. On wide desktop windows the
-/// transcript and composer are centered within this width instead of
-/// stretching edge-to-edge (which is hard to read and looks unbalanced).
-const double _kMaxContentWidth = 760;
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -133,7 +129,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               : Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(
-                      maxWidth: _kMaxContentWidth,
+                      maxWidth: kReadableContentMaxWidth,
                     ),
                     child: ListView.builder(
                       controller: _scroll,
@@ -152,7 +148,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         ),
         Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: _kMaxContentWidth),
+            constraints: const BoxConstraints(
+              maxWidth: kReadableContentMaxWidth,
+            ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Composer(
@@ -267,8 +265,13 @@ class _ThinkingLineState extends State<_ThinkingLine> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final cs = theme.colorScheme;
+    final cs = Theme.of(context).colorScheme;
+    final style = TextStyle(
+      color: cs.onSurfaceVariant.withValues(alpha: 0.65),
+      fontSize: 13,
+      fontStyle: FontStyle.italic,
+      height: 1.3,
+    );
     return InkWell(
       onTap: () => setState(() => _expanded = !_expanded),
       child: Padding(
@@ -276,17 +279,18 @@ class _ThinkingLineState extends State<_ThinkingLine> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.psychology_outlined, size: 15, color: cs.outline),
+            Icon(
+              Icons.psychology_outlined,
+              size: 15,
+              color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 widget.text.trim(),
+                style: style,
                 maxLines: _expanded ? null : 1,
                 overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontStyle: FontStyle.italic,
-                  color: cs.outline,
-                ),
               ),
             ),
           ],
