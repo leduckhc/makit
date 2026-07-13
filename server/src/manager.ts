@@ -16,9 +16,20 @@ import { AcpAdapter, codexAcpSpec } from "./adapters/acp.js";
 import { CodexAppServerAdapter } from "./adapters/codex.js";
 import { listAgents, type AgentDescriptor } from "./adapters/catalog.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type WorktreeDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
+import {
+  isGitRepo,
+  detectDefaultBranch,
+  detectCurrentBranch,
+  listWorktrees,
+  diffStat,
+  findOpenPr,
+  addWorktree,
+  branchExists,
+  slugify,
+} from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
 
@@ -221,6 +232,137 @@ export class SessionManager extends EventEmitter {
     return this.spawnPiSession(projectId, title, agentId);
   }
 
+  /**
+   * Spawn a DRAFT session: no worktree, no agent process. Worktree + agent
+   * creation is deferred until the first substantive user message (see
+   * {@link startPendingSession}), which supplies the branch/worktree name.
+   * Uses a {@link DetachedAdapter} placeholder so the session wires + shows in
+   * snapshots immediately.
+   */
+  async spawnPendingSession(projectId: string, agent?: string): Promise<Session> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const agentId = agent ?? this.defaultAgentId;
+    const session = new Session({
+      projectId: project.dto.id,
+      agent: this.adapterFactory ? "stub" : agentId,
+      title: DEFAULT_SESSION_TITLE,
+      adapter: new DetachedAdapter(agentId),
+      store: this.store,
+    });
+    session.pending = true;
+    session.pendingAgent = agentId;
+    this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
+    return session;
+  }
+
+  /**
+   * Promote a pending session on its first real request: derive a branch +
+   * worktree name from `firstMessage`, create the worktree under
+   * `MAKIT_WORKTREE_DIR` off the repo's default branch, then start the chosen
+   * agent there. Idempotent — a non-pending session is returned unchanged. For
+   * a non-git project the agent runs in the repo dir (no worktree).
+   */
+  async startPendingSession(sessionId: string, firstMessage: string): Promise<Session> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no such session: ${sessionId}`);
+    if (!session.pending) return session;
+
+    const project = this.projects.get(session.projectId);
+    if (!project) throw new Error(`unknown project: ${session.projectId}`);
+    const repoPath = project.dto.path;
+    const agentId = session.pendingAgent ?? this.defaultAgentId;
+
+    const base = slugify(firstMessage) || `session-${session.id.slice(0, 8)}`;
+    let branch = base;
+    let worktreePath = repoPath;
+
+    if (await isGitRepo(repoPath)) {
+      const defaultBranch = await detectDefaultBranch(repoPath);
+      branch = await this.uniqueBranch(repoPath, base);
+      worktreePath = await addWorktree({ repoPath, name: branch, branch, baseBranch: defaultBranch });
+    }
+
+    const built = this.buildAdapter(agentId);
+    const adapter =
+      this.adapterFactory?.({ projectPath: worktreePath, sessionId: session.id, agent: agentId }) ??
+      built.adapter;
+    session.replaceAdapter(adapter);
+    await adapter.start(this.startOpts(worktreePath, session.id));
+    session.markStarted({ branch, worktreePath, title: humanizeSlug(base) });
+    return session;
+  }
+
+  /** Find an unused branch name, appending `-2`, `-3`, … on collision. */
+  private async uniqueBranch(repoPath: string, base: string): Promise<string> {
+    let candidate = base;
+    let n = 1;
+    while (await branchExists(repoPath, candidate)) {
+      n += 1;
+      candidate = `${base}-${n}`;
+    }
+    return candidate;
+  }
+
+  /**
+   * Repo-centric snapshot for the home screen: each project enriched with its
+   * default/current branch and worktrees (diff stats, open PR, running
+   * sessions). Shells out to git/gh per worktree, so callers should treat this
+   * as an occasional (connect / spawn / refresh) operation, not per-event.
+   */
+  async listRepos(): Promise<RepoDTO[]> {
+    const repos: RepoDTO[] = [];
+    for (const p of this.projects.values()) {
+      const repoPath = p.dto.path;
+      const gitRepo = await isGitRepo(repoPath);
+      const defaultBranch = gitRepo ? await detectDefaultBranch(repoPath) : null;
+      const currentBranch = gitRepo ? await detectCurrentBranch(repoPath) : null;
+      const entries = gitRepo ? await listWorktrees(repoPath) : [];
+
+      // Group this project's STARTED sessions by the worktree path they run
+      // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
+      const sessionsByPath = new Map<string, string[]>();
+      for (const s of this.sessions.values()) {
+        if (s.projectId !== p.dto.id || s.pending) continue;
+        const key = s.worktreePath ?? repoPath;
+        const list = sessionsByPath.get(key) ?? [];
+        list.push(s.id);
+        sessionsByPath.set(key, list);
+      }
+
+      const worktrees: WorktreeDTO[] = [];
+      for (const e of entries) {
+        const stat = await diffStat(e.path, defaultBranch);
+        const pr = e.branch && !e.isPrimary ? await findOpenPr(repoPath, e.branch) : null;
+        worktrees.push({
+          id: e.path,
+          path: e.path,
+          branch: e.branch,
+          isPrimary: e.isPrimary,
+          insertions: stat.insertions,
+          deletions: stat.deletions,
+          filesChanged: stat.filesChanged,
+          pr,
+          sessionIds: sessionsByPath.get(e.path) ?? [],
+        });
+      }
+
+      repos.push({
+        id: p.dto.id,
+        name: p.dto.name,
+        path: repoPath,
+        pinned: p.dto.pinned,
+        lastActivityAt: p.dto.lastActivityAt,
+        isGitRepo: gitRepo,
+        defaultBranch,
+        currentBranch,
+        worktrees,
+      });
+    }
+    return repos;
+  }
+
   /** List a project's prior on-disk pi sessions (newest first). */
   listPiSessions(projectId: string): PiSessionMeta[] {
     const project = this.projects.get(projectId);
@@ -413,4 +555,12 @@ export class SessionManager extends EventEmitter {
   allSessions(): Session[] {
     return [...this.sessions.values()];
   }
+}
+
+/** Turn a kebab slug into a human title, e.g. "add-login-form" → "Add login form". */
+function humanizeSlug(slug: string): string {
+  const words = slug.split("-").filter(Boolean);
+  if (words.length === 0) return DEFAULT_SESSION_TITLE;
+  const joined = words.join(" ");
+  return joined.charAt(0).toUpperCase() + joined.slice(1);
 }

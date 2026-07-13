@@ -37,6 +37,7 @@ but are otherwise independently implementable. Respect the dependency order.
 | [SPEC-08](./2026-07-08-SPEC-08-actionable-notifications.md) | Slice 1: actionable notifications (approve/reply from lock screen) | — (ready to implement) |
 | [SPEC-07](./2026-07-08-SPEC-07-background-wake-notifications.md) | Slice 2: background wake for notifications (force-quit push) | SPEC-08 |
 | [SPEC-10](./2026-07-12-SPEC-10-desktop-chat-app.md) | makit **desktop chat app** (chat-first macOS client; multi-harness; git/PR roadmap) | SPEC-01, SPEC-03, mobile chat stack |
+| [SPEC-11](./2026-07-12-SPEC-11-repo-centric-home.md) | Repo-centric mobile home (worktrees, diff stats, PRs) | SPEC-05, SPEC-06 |
 
 ```
 SPEC-01 ─┬─> SPEC-02 (CLI clients)

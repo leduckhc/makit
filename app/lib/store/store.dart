@@ -15,6 +15,13 @@ class ProjectsState {
   final List<Project> projects;
 }
 
+class ReposState {
+  ReposState(this.repos);
+  final List<RepoInfo> repos;
+
+  RepoInfo? byId(String id) => repos.firstWhereOrNull((r) => r.id == id);
+}
+
 class SessionsState {
   SessionsState(this.sessions);
   final List<Session> sessions;
@@ -40,6 +47,7 @@ class EventsState {
 class StoreState {
   StoreState({
     required this.projects,
+    required this.repos,
     required this.sessions,
     required this.events,
     required this.cursors,
@@ -50,6 +58,7 @@ class StoreState {
 
   factory StoreState.empty() => StoreState(
     projects: const [],
+    repos: const [],
     sessions: const [],
     events: const {},
     cursors: const {},
@@ -59,6 +68,7 @@ class StoreState {
   );
 
   final List<Project> projects;
+  final List<RepoInfo> repos;
   final List<Session> sessions;
   final Map<String, List<SessionEvent>> events;
   final Map<String, int> cursors;
@@ -75,6 +85,7 @@ class StoreState {
 
   StoreState copyWith({
     List<Project>? projects,
+    List<RepoInfo>? repos,
     List<Session>? sessions,
     Map<String, List<SessionEvent>>? events,
     Map<String, int>? cursors,
@@ -83,6 +94,7 @@ class StoreState {
     Map<String, ActionError>? actionErrors,
   }) => StoreState(
     projects: projects ?? this.projects,
+    repos: repos ?? this.repos,
     sessions: sessions ?? this.sessions,
     events: events ?? this.events,
     cursors: cursors ?? this.cursors,
@@ -97,6 +109,7 @@ class StoreState {
 /// in. `_onFrame` is just `decode → reduce`.
 StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
   ProjectsSnapshot(:final projects) => state.copyWith(projects: projects),
+  ReposSnapshot(:final repos) => state.copyWith(repos: repos),
   SessionsSnapshot(:final sessions) => state.copyWith(sessions: sessions),
   SessionEventFrame(:final event) => reduceEvent(state, event),
 };
@@ -420,6 +433,15 @@ class StoreController extends StateNotifier<StoreState> {
     );
   }
 
+  /// Ask the server to recompute + rebroadcast the repo snapshot (git/gh
+  /// intelligence). Used by pull-to-refresh on the home screen.
+  Future<void> refreshRepos() async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'repo.refresh'},
+    );
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
@@ -435,6 +457,11 @@ final storeControllerProvider =
 final projectsProvider = Provider<ProjectsState>((ref) {
   final s = ref.watch(storeControllerProvider);
   return ProjectsState(s.projects);
+});
+
+final reposProvider = Provider<ReposState>((ref) {
+  final s = ref.watch(storeControllerProvider);
+  return ReposState(s.repos);
 });
 
 final sessionsProvider = Provider<SessionsState>((ref) {

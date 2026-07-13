@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,6 +98,89 @@ test("listAgents exposes pi without pi-acp", () => {
     assert.ok(!ids.includes("pi-acp"));
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+/** Init a throwaway git repo with one commit on `main`. */
+function makeGitRepo(): string {
+  const dir = mkdtempSync(join(tmpdir(), "makit-repo-"));
+  const g = (...args: string[]) => execFileSync("git", args, { cwd: dir });
+  g("init", "-q", "-b", "main");
+  g("config", "user.email", "t@t.io");
+  g("config", "user.name", "Test");
+  writeFileSync(join(dir, "README.md"), "hello\n");
+  g("add", ".");
+  g("commit", "-q", "-m", "init");
+  return dir;
+}
+
+test("spawnPendingSession is a draft: no worktree, no agent started", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const s = await manager.spawnPendingSession(projectId, "pi");
+    assert.equal(s.pending, true);
+    assert.equal(started.length, 0, "no adapter should start for a draft");
+    assert.equal(s.toDTO().pending, true);
+    assert.equal(s.toDTO().branch, undefined);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("startPendingSession creates a worktree named from the first message and starts the agent there", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(projectId, "pi");
+    const s = await manager.startPendingSession(draft.id, "Add a login form to the app");
+
+    assert.equal(s.pending, false);
+    assert.equal(s.branch, "add-a-login-form-to-the");
+    assert.ok(s.worktreePath?.startsWith(base), `worktree ${s.worktreePath} under ${base}`);
+    assert.equal(started.length, 1, "agent should start once");
+    assert.equal(started[0]?.cwd, s.worktreePath, "agent runs in the worktree");
+
+    const repos = await manager.listRepos();
+    const wt = repos[0].worktrees.find((w) => w.branch === "add-a-login-form-to-the");
+    assert.ok(wt, "worktree should be listed");
+    assert.deepEqual(wt!.sessionIds, [s.id], "session linked to its worktree");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("startPendingSession is idempotent for a live session", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+    const draft = await manager.spawnPendingSession(projectId, "pi");
+    const s1 = await manager.startPendingSession(draft.id, "fix bug");
+    const s2 = await manager.startPendingSession(draft.id, "fix bug again");
+    assert.equal(s1.id, s2.id);
+    assert.equal(started.length, 1, "second call must not start another agent");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   }
 });
 

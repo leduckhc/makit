@@ -54,6 +54,18 @@ export class Session extends EventEmitter {
   /** On-disk transcript path used to relaunch a pi session (resume linkage). */
   readonly resumeSessionPath?: string;
 
+  /**
+   * Draft state: worktree + agent creation is deferred until the first
+   * substantive user message. Cleared by {@link markStarted}.
+   */
+  pending = false;
+  /** Agent id to launch once the pending session starts. */
+  pendingAgent?: string;
+  /** Branch this session runs on, set when its worktree is created. */
+  branch?: string;
+  /** Absolute worktree path, set when its worktree is created. */
+  worktreePath?: string;
+
   readonly events: SessionEvent[] = [];
   adapter: AgentAdapter;
   private readonly store?: EventStore;
@@ -159,6 +171,19 @@ export class Session extends EventEmitter {
     adapter.on("title", (title) => this.setTitle(title));
   }
 
+  /**
+   * Promote a pending (draft) session once its worktree + agent are live.
+   * Records the branch/worktree it now runs in and clears the pending flag.
+   */
+  markStarted(opts: { branch: string; worktreePath: string; title?: string }): void {
+    this.branch = opts.branch;
+    this.worktreePath = opts.worktreePath;
+    this.pending = false;
+    this.pendingAgent = undefined;
+    if (opts.title) this.setTitle(opts.title);
+    this.persistMeta();
+  }
+
   toDTO(): SessionDTO {
     return {
       id: this.id,
@@ -169,6 +194,9 @@ export class Session extends EventEmitter {
       policy: this.policy,
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
+      pending: this.pending,
+      branch: this.branch,
+      worktreePath: this.worktreePath,
     };
   }
 
