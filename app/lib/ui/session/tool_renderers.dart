@@ -283,7 +283,15 @@ class ToolDetailScaffold extends StatelessWidget {
           ),
         ),
       ),
-      body: ListView(padding: const EdgeInsets.all(12), children: children),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: ListView(
+            padding: const EdgeInsets.all(12),
+            children: children,
+          ),
+        ),
+      ),
     );
   }
 }
