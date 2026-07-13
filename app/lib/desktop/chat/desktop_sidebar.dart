@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -9,6 +10,11 @@ import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
+
+/// Height of the sidebar's top drag strip. Sized to clear the macOS
+/// traffic-light buttons that overlay the top-left corner once the OS titlebar
+/// is hidden (matches the standard macOS titlebar height).
+const double _kTitleBarStripHeight = 28;
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
@@ -31,12 +37,7 @@ class DesktopSidebar extends ConsumerWidget {
 
     return Column(
       children: [
-        _Header(
-          onNewSession: () => showNewSessionDialog(context, ref),
-          onRefresh: () =>
-              ref.read(storeControllerProvider.notifier).refreshRepos(),
-        ),
-        const Divider(height: 1),
+        const _Header(),
         Expanded(
           child: repos.isEmpty
               ? const _EmptySidebar()
@@ -63,36 +64,15 @@ class DesktopSidebar extends ConsumerWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onNewSession, required this.onRefresh});
-  final VoidCallback onNewSession;
-  final VoidCallback onRefresh;
+  const _Header();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              'makit',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Refresh repos',
-            icon: const Icon(Icons.refresh, size: 20),
-            onPressed: onRefresh,
-          ),
-          IconButton(
-            tooltip: 'New session',
-            icon: const Icon(Icons.add),
-            onPressed: onNewSession,
-          ),
-        ],
-      ),
+    // The OS titlebar is hidden (TitleBarStyle.hidden), so this strip is the
+    // window's drag handle. Its height clears the macOS traffic-light buttons
+    // that overlay the top-left corner.
+    return const DragToMoveArea(
+      child: SizedBox(height: _kTitleBarStripHeight, width: double.infinity),
     );
   }
 }
