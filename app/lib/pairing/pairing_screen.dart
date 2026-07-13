@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../store/connection.dart';
 import 'device_name.dart';
 import 'mdns_browser.dart';
+import 'onboarding_controller.dart';
 import 'pair_info.dart';
 import 'qr_scanner_screen.dart';
 
@@ -207,6 +208,15 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                       ref
                           .read(connectionControllerProvider.notifier)
                           .useFakeServer();
+                      // Fake data is a dev shortcut that bypasses pairing
+                      // entirely. Attaching the fake makes `paired` true, but
+                      // the router only routes to Home once onboarding reaches
+                      // `ready` — which still requires the notifications gate.
+                      // Clear that gate too so Home actually sticks instead of
+                      // the redirect bouncing back to the notifications step.
+                      ref
+                          .read(onboardingControllerProvider.notifier)
+                          .skipNotifications();
                       context.go('/');
                     },
                     child: const Text('Open with fake data'),
