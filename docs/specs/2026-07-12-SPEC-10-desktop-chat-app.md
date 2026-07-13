@@ -1,6 +1,6 @@
 # SPEC-10 — makit desktop chat app
 
-**Status:** draft · **Depends on:** SPEC-01 (control plane), SPEC-03 (desktop control app), the mobile chat stack (`app/lib/{transport,store,ui}`) · **Blocks:** —
+**Status:** Phase 1 implemented · **Depends on:** SPEC-01 (control plane), SPEC-03 (desktop control app), the mobile chat stack (`app/lib/{transport,store,ui}`) · **Blocks:** —
 
 ## Goal
 
@@ -130,19 +130,19 @@ Flutter desktop app  ──loopback WSS──▶  makit daemon (Node/TS)  ──
   (the existing `main.dart` branch).
 
 ## Acceptance criteria (Phase 1 / v1)
-- [ ] macOS build launches into the **two-pane chat window**, not the control
+- [x] macOS build launches into the **two-pane chat window**, not the control
       dashboard; Devices/QR/Status remain reachable via **Settings & Server**.
-- [ ] On launch the app brings the daemon up (if needed) and **self-pairs over
+- [x] On launch the app brings the daemon up (if needed) and **self-pairs over
       loopback** with no QR scan; a second launch reconnects from the persisted
       bearer without re-pairing.
-- [ ] The sidebar lists real projects/sessions; selecting one shows its
+- [x] The sidebar lists real projects/sessions; selecting one shows its
       transcript in the chat pane.
-- [ ] **New session** lets the user choose a project + a harness from
+- [x] **New session** lets the user choose a project + a harness from
       `agents.list` and spawns it; the new session becomes selected.
-- [ ] A message sent from the composer **round-trips end-to-end** against a real
+- [x] A message sent from the composer **round-trips end-to-end** against a real
       harness (e.g. `pi`): user message → streamed agent reply → tool/diff cards
-      render.
-- [ ] Mobile build unaffected; `flutter analyze --fatal-infos` clean; `flutter
+      render (manual verification on macOS with a real harness).
+- [x] Mobile build unaffected; `flutter analyze --fatal-infos` clean; `flutter
       test` green (including new desktop tests); `app/tool/audit.sh` passes.
 
 ## Open questions

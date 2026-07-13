@@ -1,6 +1,6 @@
 # SPEC-08 — Slice 1: Actionable notifications (resolve approvals from the lock screen)
 
-**Status:** planned · ready for implementation · **Depends on:** none
+**Status:** implemented · **Depends on:** none
 **Fast-follow:** [SPEC-07](./2026-07-08-SPEC-07-background-wake-notifications.md) (force-quit wake)
 **Touches (new):** `app/lib/notifications/notification_request.dart`,
 `app/test/notification_request_test.dart`, `app/test/srv_request_handler_notify_test.dart`
