@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir, networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { createHash, X509Certificate } from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import selfsigned from "selfsigned";
 
 function makitHome(): string {
@@ -92,17 +92,65 @@ export function localIPv4s(): string[] {
   return out;
 }
 
-/** Detect Tailscale IP (100.x.x.x) if online. Returns null if offline. */
-export function tailscaleIP(): string | null {
-  try {
-    const output = execSync("tailscale status --json", { encoding: "utf8", timeout: 2000 });
-    const status = JSON.parse(output) as { Self?: { TailscaleIPs?: string[] } };
-    const ips = status.Self?.TailscaleIPs ?? [];
-    const tailscaleIp = ips.find((ip) => ip.startsWith("100."));
-    return tailscaleIp ?? null;
-  } catch {
-    return null; // offline or tailscale not installed
+/**
+ * Candidate locations for the `tailscale` CLI, tried in order.
+ *
+ * A bare `tailscale` only works when the binary is on the process `PATH`.
+ * GUI-launched apps on macOS (the packaged desktop app that spawns this
+ * server) inherit a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) that omits
+ * Homebrew and the Tailscale.app bundle, so a bare spawn fails with `ENOENT`
+ * even when Tailscale is installed and up — which is why the server fell back
+ * to loopback despite Tailscale running. Probe the well-known install paths
+ * too so detection survives a stripped `PATH`.
+ */
+export const TAILSCALE_BINARIES: readonly string[] = [
+  "tailscale",
+  "/usr/local/bin/tailscale",
+  "/opt/homebrew/bin/tailscale",
+  "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+];
+
+/**
+ * Runs a `tailscale` subcommand and returns its stdout, or throws if the binary
+ * is missing / the command fails. Injectable so [tailscaleIP] is unit-testable
+ * without a real CLI on the machine.
+ */
+export type TailscaleRunner = (bin: string, args: string[]) => string;
+
+const defaultTailscaleRunner: TailscaleRunner = (bin, args) =>
+  execFileSync(bin, args, {
+    encoding: "utf8",
+    timeout: 2000,
+    stdio: ["ignore", "pipe", "ignore"],
+    // The macOS app-bundle executable guesses GUI vs CLI from terminal
+    // environment variables. A packaged GUI app has none, so force CLI mode;
+    // harmless for standalone/Homebrew binaries.
+    env: { ...process.env, TAILSCALE_BE_CLI: "1" },
+  });
+
+/**
+ * Detect this machine's Tailscale IPv4 (`100.x`) address, or null if Tailscale
+ * isn't installed / isn't up.
+ *
+ * Uses `tailscale ip -4` (cheaper and more direct than parsing
+ * `tailscale status --json`) and tries each candidate in [TAILSCALE_BINARIES]
+ * so detection works even when the CLI isn't on a GUI-launched server's
+ * minimal `PATH`.
+ */
+export function tailscaleIP(run: TailscaleRunner = defaultTailscaleRunner): string | null {
+  for (const bin of TAILSCALE_BINARIES) {
+    try {
+      const out = run(bin, ["ip", "-4"]);
+      const ip = out
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.startsWith("100."));
+      if (ip) return ip;
+    } catch {
+      // Not found at this path (ENOENT) or the command failed — try the next.
+    }
   }
+  return null; // offline or tailscale not installed
 }
 
 /**
