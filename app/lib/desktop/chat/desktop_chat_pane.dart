@@ -211,9 +211,13 @@ class _PaneHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final collapsed = ref.watch(sidebarCollapsedProvider);
+    // Same fallback order as the sidebar tiles (SPEC-12 decision 8):
+    // title → agent name → raw session id.
     final title = (session?.title.trim().isNotEmpty ?? false)
         ? session!.title.trim()
-        : fallbackId;
+        : ((session?.agent.trim().isNotEmpty ?? false)
+              ? session!.agent
+              : fallbackId);
     final theme = Theme.of(context);
     final content = Padding(
       // When collapsed the pane starts at window x=0, so inset the leading
