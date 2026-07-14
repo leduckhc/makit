@@ -11,6 +11,7 @@ import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'selected_session.dart';
+import 'sidebar_layout.dart';
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -99,14 +100,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     final session = ref.watch(sessionsProvider).byId(sessionId);
     final items = ref.watch(chatItemsProvider(sessionId));
 
-    // Which worktree branch this session runs in (repo-centric context).
-    String? branch;
-    for (final repo in ref.watch(reposProvider).repos) {
-      for (final wt in repo.worktrees) {
-        if (wt.sessionIds.contains(sessionId)) branch = wt.branch;
-      }
-    }
-
     // Keep the transcript pinned to the newest message as items stream in.
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
@@ -121,8 +114,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     return Column(
       children: [
-        _PaneHeader(session: session, fallbackId: sessionId, branch: branch),
-        const Divider(height: 1),
+        _PaneHeader(session: session, fallbackId: sessionId),
         Expanded(
           child: items.isEmpty
               ? const _EmptyTranscript()

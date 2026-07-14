@@ -10,6 +10,7 @@ import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
+import 'sidebar_layout.dart';
 
 /// Height of the sidebar's top drag strip. Sized to clear the macOS
 /// traffic-light buttons that overlay the top-left corner once the OS titlebar
@@ -63,16 +64,39 @@ class DesktopSidebar extends ConsumerWidget {
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   const _Header();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // The OS titlebar is hidden (TitleBarStyle.hidden), so this strip is the
     // window's drag handle. Its height clears the macOS traffic-light buttons
-    // that overlay the top-left corner.
-    return const DragToMoveArea(
-      child: SizedBox(height: _kTitleBarStripHeight, width: double.infinity),
+    // that overlay the top-left corner. The fold button sits just to the right
+    // of the traffic lights and hides the sidebar entirely.
+    return SizedBox(
+      height: _kTitleBarStripHeight,
+      width: double.infinity,
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: DragToMoveArea(child: SizedBox.expand()),
+          ),
+          Positioned(
+            left: 72,
+            top: 2,
+            child: IconButton(
+              iconSize: 16,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              tooltip: 'Hide sidebar',
+              icon: const Icon(Icons.view_sidebar_outlined),
+              onPressed: () =>
+                  ref.read(sidebarCollapsedProvider.notifier).state = true,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -175,8 +199,9 @@ class _RepoGroup extends ConsumerWidget {
   }
 }
 
-/// A worktree line (branch + diff + PR) with its sessions nested below.
-class _WorktreeGroup extends StatelessWidget {
+/// A worktree line (branch + diff, then an optional PR line) with its sessions
+/// nested below. Clicking the branch row collapses/expands its sessions.
+class _WorktreeGroup extends StatefulWidget {
   const _WorktreeGroup({
     required this.repo,
     required this.worktree,
@@ -192,8 +217,18 @@ class _WorktreeGroup extends StatelessWidget {
   final void Function(String id) onSelect;
 
   @override
+  State<_WorktreeGroup> createState() => _WorktreeGroupState();
+}
+
+class _WorktreeGroupState extends State<_WorktreeGroup> {
+  bool _expanded = true;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final repo = widget.repo;
+    final worktree = widget.worktree;
+    final sessions = widget.sessions;
     final branch = worktree.branch ?? 'detached';
     final isDefault = worktree.branch == repo.defaultBranch;
     final isCurrent =
@@ -205,55 +240,69 @@ class _WorktreeGroup extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-          child: Row(
-            children: [
-              Icon(
-                Icons.account_tree_outlined,
-                size: 13,
-                color: worktree.isPrimary
-                    ? theme.colorScheme.outline
-                    : kRepoAccent,
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  branch,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.w600,
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+            child: Row(
+              children: [
+                Icon(
+                  _expanded ? Icons.expand_more : Icons.chevron_right,
+                  size: 14,
+                  color: theme.colorScheme.outline,
+                ),
+                const SizedBox(width: 2),
+                Icon(
+                  Icons.account_tree_outlined,
+                  size: 13,
+                  color: worktree.isPrimary
+                      ? theme.colorScheme.outline
+                      : kRepoAccent,
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    branch,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-              if (isCurrent) ...[
-                const SizedBox(width: 5),
-                const Icon(Icons.star, size: 13, color: Colors.amber),
+                if (isCurrent) ...[
+                  const SizedBox(width: 5),
+                  const Icon(Icons.star, size: 13, color: Colors.amber),
+                ],
+                if (isDefault) ...[
+                  const SizedBox(width: 6),
+                  TagChip(label: 'default', color: theme.colorScheme.outline),
+                ],
+                const SizedBox(width: 8),
+                if (worktree.hasChanges)
+                  DiffChip(
+                    insertions: worktree.insertions,
+                    deletions: worktree.deletions,
+                  ),
               ],
-              if (isDefault) ...[
-                const SizedBox(width: 6),
-                TagChip(label: 'default', color: theme.colorScheme.outline),
-              ],
-              const SizedBox(width: 8),
-              if (worktree.hasChanges)
-                DiffChip(
-                  insertions: worktree.insertions,
-                  deletions: worktree.deletions,
-                ),
-              if (worktree.pr != null) ...[
-                const SizedBox(width: 6),
-                Flexible(child: PrPill(pr: worktree.pr!)),
-              ],
-            ],
+            ),
           ),
         ),
-        for (final s in sessions)
-          _SessionTile(
-            session: s,
-            selected: s.id == selectedId,
-            indented: true,
-            onTap: () => onSelect(s.id),
+        if (worktree.pr != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(38, 0, 16, 2),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: PrPill(pr: worktree.pr!),
+            ),
           ),
+        if (_expanded)
+          for (final s in sessions)
+            _SessionTile(
+              session: s,
+              selected: s.id == widget.selectedId,
+              indented: true,
+              onTap: () => widget.onSelect(s.id),
+            ),
       ],
     );
   }
@@ -280,10 +329,10 @@ class _SessionTile extends StatelessWidget {
         : (session.title.trim().isNotEmpty ? session.title.trim() : session.id);
     return ListTile(
       dense: true,
+      visualDensity: VisualDensity.compact,
       selected: selected,
       selectedTileColor: theme.colorScheme.surfaceContainerHighest,
-      contentPadding: EdgeInsets.only(left: indented ? 28 : 16, right: 12),
-      leading: AgentAvatar(agent: session.agent, size: 26),
+      contentPadding: EdgeInsets.only(left: indented ? 38 : 16, right: 12),
       title: Row(
         children: [
           Expanded(
@@ -292,22 +341,62 @@ class _SessionTile extends StatelessWidget {
           if (session.pending)
             const TagChip(label: 'draft', color: Colors.amber)
           else if (session.status != SessionStatus.idle)
-            SessionStatusChip(status: session.status),
+            _StatusDot(status: session.status),
         ],
       ),
-      subtitle: Text(
-        session.pending
-            ? 'Send a message to create a branch'
-            : (session.lastPreview.isEmpty
-                  ? session.agent
-                  : session.lastPreview),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.outline,
-        ),
-      ),
       onTap: onTap,
+    );
+  }
+}
+
+/// A tiny status indicator dot. Active states (running / awaiting) pulse; the
+/// rest render as a solid dot. Replaces the old text status chip on the compact
+/// single-line session tiles.
+class _StatusDot extends StatefulWidget {
+  const _StatusDot({required this.status});
+  final SessionStatus status;
+
+  @override
+  State<_StatusDot> createState() => _StatusDotState();
+}
+
+class _StatusDotState extends State<_StatusDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  bool get _pulses =>
+      widget.status == SessionStatus.running ||
+      widget.status == SessionStatus.awaitingInput ||
+      widget.status == SessionStatus.awaitingApproval;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (widget.status) {
+      SessionStatus.running => kRepoAccent,
+      SessionStatus.awaitingInput => Colors.orange,
+      SessionStatus.awaitingApproval => Colors.deepOrange,
+      SessionStatus.error => Colors.red,
+      SessionStatus.exited => Colors.grey,
+      SessionStatus.idle => Colors.grey,
+    };
+    final dot = Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+    );
+    if (!_pulses) return dot;
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.3, end: 1).animate(_controller),
+      child: dot,
     );
   }
 }
