@@ -320,6 +320,53 @@ void main() {
     expect(find.byTooltip('running'), findsNothing);
   });
 
+  testWidgets('status dot follows in-place status transitions', (tester) async {
+    SessionsState state(SessionStatus status) => SessionsState([
+      _session('s1', 'p1', 'Fix login bug', 'codex', status: status),
+    ]);
+    final mutable = StateProvider<SessionsState>(
+      (_) => state(SessionStatus.running),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(
+          ReposState([
+            _repo(
+              'p1',
+              'alpha',
+              worktrees: [
+                _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+              ],
+            ),
+          ]),
+        ),
+        sessionsProvider.overrideWith((ref) => ref.watch(mutable)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+        ),
+      ),
+    );
+    expect(find.byTooltip('running'), findsOneWidget);
+
+    // running → exited: the pulsing controller must stop (pumpAndSettle would
+    // hang otherwise) and the dot must re-label.
+    container.read(mutable.notifier).state = state(SessionStatus.exited);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('running'), findsNothing);
+    expect(find.byTooltip('exited'), findsOneWidget);
+
+    // exited → running: pulsing resumes on the reused State object.
+    container.read(mutable.notifier).state = state(SessionStatus.running);
+    await tester.pump();
+    expect(find.byTooltip('running'), findsOneWidget);
+  });
+
   for (final entry in {
     SessionStatus.awaitingInput: 'awaiting input',
     SessionStatus.awaitingApproval: 'awaiting approval',
@@ -341,58 +388,12 @@ void main() {
           ),
         ],
         sessions: [
-          _session(
-            's1',
-            'p1',
-            'Fix login bug',
-            'codex',
-            status: entry.key,
-          ),
+          _session('s1', 'p1', 'Fix login bug', 'codex', status: entry.key),
         ],
       );
 
       expect(find.byTooltip(entry.value), findsOneWidget);
     });
-  }
-
-  for (final entry in {
-    SessionStatus.error: 'error',
-    SessionStatus.exited: 'exited',
-  }.entries) {
-    testWidgets(
-      'solid status dot (${entry.key}) settles without a repeating '
-      'animation',
-      (tester) async {
-        // Regression: _StatusDot must not start an AnimationController.repeat
-        // for non-active statuses — that would leave a pending timer and
-        // hang pumpAndSettle forever.
-        await _pump(
-          tester,
-          repos: [
-            _repo(
-              'p1',
-              'alpha',
-              worktrees: [
-                _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
-              ],
-            ),
-          ],
-          sessions: [
-            _session(
-              's1',
-              'p1',
-              'Fix login bug',
-              'codex',
-              status: entry.key,
-            ),
-          ],
-        );
-
-        // A hanging repeat animation would make this call never return.
-        await tester.pumpAndSettle();
-        expect(find.byTooltip(entry.value), findsOneWidget);
-      },
-    );
   }
 
   testWidgets('PR pill renders on its own line below the branch row', (
@@ -468,9 +469,7 @@ void main() {
         UncontrolledProviderScope(
           container: container,
           child: const MaterialApp(
-            home: Scaffold(
-              body: SizedBox(width: 320, child: DesktopSidebar()),
-            ),
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
           ),
         ),
       );

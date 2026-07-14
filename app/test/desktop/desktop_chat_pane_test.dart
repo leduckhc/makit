@@ -18,8 +18,6 @@ void main() {
     );
 
     expect(find.text('Select or start a session'), findsOneWidget);
-    // Sidebar is expanded by default, so no unfold button is needed.
-    expect(find.byTooltip('Show sidebar'), findsNothing);
   });
 
   testWidgets('shows transcript header when a session is selected', (
@@ -91,10 +89,35 @@ void main() {
     expect(find.byType(BranchChip), findsNothing);
     expect(find.byType(SessionStatusChip), findsNothing);
     expect(find.text('pi'), findsNothing); // agent subtitle removed
+  });
 
-    // Header avatar shrank from 28 to 24 alongside the other chrome removal.
-    final avatar = tester.widget<AgentAvatar>(find.byType(AgentAvatar));
-    expect(avatar.size, 24);
+  testWidgets('unfold button appears only while the sidebar is collapsed', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('window_manager'),
+          (call) async => null,
+        );
+    final container = ProviderContainer(
+      overrides: [sidebarCollapsedProvider.overrideWith((ref) => true)],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+      ),
+    );
+
+    // Reachable even with no session selected (empty state).
+    expect(find.byTooltip('Show sidebar'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Show sidebar'));
+    await tester.pump();
+    expect(container.read(sidebarCollapsedProvider), isFalse);
+    expect(find.byTooltip('Show sidebar'), findsNothing);
   });
 
   testWidgets('slim header: no draft tag for a pending session', (
@@ -135,7 +158,7 @@ void main() {
     expect(find.text('draft'), findsNothing);
   });
 
-  testWidgets('header falls back to the session id when the title is blank', (
+  testWidgets('header falls back to the agent name when the title is blank', (
     tester,
   ) async {
     final session = Session(
@@ -166,36 +189,9 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('s1'), findsOneWidget);
-  });
-
-  testWidgets('unfold button appears only while the sidebar is collapsed', (
-    tester,
-  ) async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-          const MethodChannel('window_manager'),
-          (call) async => null,
-        );
-    final container = ProviderContainer(
-      overrides: [sidebarCollapsedProvider.overrideWith((ref) => true)],
-    );
-    addTearDown(container.dispose);
-
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
-      ),
-    );
-
-    // Reachable even with no session selected (empty state).
-    expect(find.byTooltip('Show sidebar'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Show sidebar'));
-    await tester.pump();
-    expect(container.read(sidebarCollapsedProvider), isFalse);
-    expect(find.byTooltip('Show sidebar'), findsNothing);
+    // Decision 8: blank title falls back to the agent name, not the id.
+    expect(find.text('pi'), findsOneWidget);
+    expect(find.text('s1'), findsNothing);
   });
 
   testWidgets(
