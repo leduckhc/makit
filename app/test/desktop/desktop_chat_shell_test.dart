@@ -111,4 +111,40 @@ void main() {
     await tester.pump();
     expect(container.read(sidebarWidthProvider), kSidebarMaxWidth);
   });
+
+  testWidgets('drag handle resizes incrementally within bounds', (
+    tester,
+  ) async {
+    final container = await pumpShell(tester);
+    const handleX = kSidebarDefaultWidth + 4;
+    final handleY = tester.getSize(find.byType(DesktopChatShell)).height / 2;
+
+    // Two small, in-bounds drags should accumulate additively rather than
+    // overwrite each other.
+    await tester.dragFrom(Offset(handleX, handleY), const Offset(20, 0));
+    await tester.pump();
+    expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth + 20);
+
+    await tester.dragFrom(
+      Offset(kSidebarDefaultWidth + 20 + 4, handleY),
+      const Offset(15, 0),
+    );
+    await tester.pump();
+    expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth + 35);
+  });
+
+  testWidgets('collapsed shell has no resize handle to drag', (tester) async {
+    final container = await pumpShell(tester, collapsed: true);
+    final size = tester.getSize(find.byType(DesktopChatShell));
+
+    // With the sidebar gone, the pane occupies the full width; dragging near
+    // where the handle used to sit must not touch the width provider.
+    await tester.dragFrom(
+      Offset(kSidebarDefaultWidth + 4, size.height / 2),
+      const Offset(50, 0),
+    );
+    await tester.pump();
+
+    expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth);
+  });
 }

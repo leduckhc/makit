@@ -37,4 +37,27 @@ void main() {
     );
     expect(container.read(sidebarWidthProvider), kSidebarMaxWidth);
   });
+
+  test('width provider accumulates in-bounds deltas without overshoot', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(sidebarWidthProvider.notifier);
+
+    notifier.update((w) => (w + 10).clamp(kSidebarMinWidth, kSidebarMaxWidth));
+    notifier.update((w) => (w + 10).clamp(kSidebarMinWidth, kSidebarMaxWidth));
+
+    expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth + 20);
+  });
+
+  test('collapsed provider toggles independently of width', () {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(sidebarCollapsedProvider.notifier).state = true;
+    expect(container.read(sidebarCollapsedProvider), isTrue);
+    expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth);
+
+    container.read(sidebarCollapsedProvider.notifier).state = false;
+    expect(container.read(sidebarCollapsedProvider), isFalse);
+  });
 }

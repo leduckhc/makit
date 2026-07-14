@@ -366,4 +366,136 @@ void main() {
     await tester.pump();
     expect(find.byTooltip('running'), findsOneWidget);
   });
+
+  for (final entry in {
+    SessionStatus.awaitingInput: 'awaiting input',
+    SessionStatus.awaitingApproval: 'awaiting approval',
+    SessionStatus.error: 'error',
+    SessionStatus.exited: 'exited',
+  }.entries) {
+    testWidgets('status dot tooltip for ${entry.key} reads "${entry.value}"', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+            ],
+          ),
+        ],
+        sessions: [
+          _session('s1', 'p1', 'Fix login bug', 'codex', status: entry.key),
+        ],
+      );
+
+      expect(find.byTooltip(entry.value), findsOneWidget);
+    });
+  }
+
+  testWidgets('PR pill renders on its own line below the branch row', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree(
+              'wt-feat',
+              branch: 'feat/x',
+              insertions: 1,
+              deletions: 1,
+              sessionIds: ['s1'],
+              pr: const PullRequest(
+                number: 42,
+                url: '',
+                state: 'OPEN',
+                title: 'x',
+                isDraft: false,
+              ),
+            ),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'work', 'pi')],
+    );
+
+    // The diff chip stays inline with the branch row...
+    expect(find.text('+1'), findsOneWidget);
+    // ...while the PR pill drops to its own line below it.
+    final branchY = tester.getTopLeft(find.text('feat/x')).dy;
+    final prY = tester.getTopLeft(find.byType(PrPill)).dy;
+    expect(prY, greaterThan(branchY));
+  });
+
+  testWidgets(
+    'worktree collapse state follows worktree identity, not list position',
+    (tester) async {
+      // Regression: _WorktreeGroup is keyed by worktree id so collapsing one
+      // worktree's sessions survives the list being reordered underneath it.
+      // reposProvider is a plain (non-state) Provider, so route it through a
+      // StateProvider proxy to allow pushing a new value mid-test.
+      final reposOverride = StateProvider<ReposState>(
+        (_) => ReposState([
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree('wt-a', branch: 'branch-a', sessionIds: ['s1']),
+              _worktree('wt-b', branch: 'branch-b', sessionIds: ['s2']),
+            ],
+          ),
+        ]),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWith((ref) => ref.watch(reposOverride)),
+          sessionsProvider.overrideWithValue(
+            SessionsState([
+              _session('s1', 'p1', 'Session A', 'codex'),
+              _session('s2', 'p1', 'Session B', 'codex'),
+            ]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+
+      // Collapse the first worktree (branch-a).
+      await tester.tap(find.text('branch-a'));
+      await tester.pumpAndSettle();
+      expect(find.text('Session A'), findsNothing);
+      expect(find.text('Session B'), findsOneWidget);
+
+      // Reorder the worktrees underneath the same widget tree — branch-a is
+      // now second. Its collapsed state must travel with it via the key.
+      container.read(reposOverride.notifier).state = ReposState([
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-b', branch: 'branch-b', sessionIds: ['s2']),
+            _worktree('wt-a', branch: 'branch-a', sessionIds: ['s1']),
+          ],
+        ),
+      ]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Session A'), findsNothing);
+      expect(find.text('Session B'), findsOneWidget);
+    },
+  );
 }
