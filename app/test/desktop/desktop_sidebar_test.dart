@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
+import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/home/repo_chips.dart';
 
 RepoInfo _repo(
   String id,
@@ -51,14 +55,17 @@ Session _session(
   String title,
   String agent, {
   bool pending = false,
+  SessionStatus status = SessionStatus.idle,
+  String lastPreview = '',
 }) => Session(
   id: id,
   projectId: projectId,
   agent: agent,
   title: title,
-  status: SessionStatus.idle,
+  status: status,
   policy: ApprovalPolicy.askOnRisky,
   pending: pending,
+  lastPreview: lastPreview,
 );
 
 Future<ProviderContainer> _pump(
@@ -196,4 +203,299 @@ void main() {
     await _pump(tester, repos: const [], sessions: const []);
     expect(find.textContaining('No repos yet'), findsOneWidget);
   });
+
+  testWidgets('tapping the worktree branch row collapses its sessions', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    expect(find.text('Fix login bug'), findsOneWidget);
+
+    await tester.tap(find.text('feat/login'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fix login bug'), findsNothing);
+
+    await tester.tap(find.text('feat/login'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fix login bug'), findsOneWidget);
+  });
+
+  testWidgets('fold button collapses the sidebar via the provider', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('window_manager'),
+          (call) async => null,
+        );
+    final container = await _pump(tester, repos: const [], sessions: const []);
+
+    expect(container.read(sidebarCollapsedProvider), isFalse);
+    await tester.tap(find.byTooltip('Hide sidebar'));
+    await tester.pump();
+    expect(container.read(sidebarCollapsedProvider), isTrue);
+  });
+
+  testWidgets('untitled session falls back to its agent name', (tester) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', '', 'codex')],
+    );
+
+    expect(find.text('codex'), findsOneWidget);
+    expect(find.text('s1'), findsNothing);
+  });
+
+  testWidgets('session tiles are single-line: no avatar, preview, or chip', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [
+        _session(
+          's1',
+          'p1',
+          'Fix login bug',
+          'codex',
+          status: SessionStatus.running,
+          lastPreview: 'Patched pairing_screen.dart, ran tests.',
+        ),
+      ],
+    );
+
+    expect(find.byType(AgentAvatar), findsNothing);
+    expect(find.text('Patched pairing_screen.dart, ran tests.'), findsNothing);
+    expect(find.text('running'), findsNothing); // text chip replaced by a dot
+    expect(find.byType(SessionStatusChip), findsNothing);
+    // The status is surfaced as a dot with an accessible tooltip/semantics.
+    expect(find.byTooltip('running'), findsOneWidget);
+  });
+
+  testWidgets('idle sessions render no status dot', (tester) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    expect(find.byTooltip('idle'), findsNothing);
+    expect(find.byTooltip('running'), findsNothing);
+  });
+
+  testWidgets('status dot follows in-place status transitions', (tester) async {
+    SessionsState state(SessionStatus status) => SessionsState([
+      _session('s1', 'p1', 'Fix login bug', 'codex', status: status),
+    ]);
+    final mutable = StateProvider<SessionsState>(
+      (_) => state(SessionStatus.running),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(
+          ReposState([
+            _repo(
+              'p1',
+              'alpha',
+              worktrees: [
+                _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+              ],
+            ),
+          ]),
+        ),
+        sessionsProvider.overrideWith((ref) => ref.watch(mutable)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+        ),
+      ),
+    );
+    expect(find.byTooltip('running'), findsOneWidget);
+
+    // running → exited: the pulsing controller must stop (pumpAndSettle would
+    // hang otherwise) and the dot must re-label.
+    container.read(mutable.notifier).state = state(SessionStatus.exited);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('running'), findsNothing);
+    expect(find.byTooltip('exited'), findsOneWidget);
+
+    // exited → running: pulsing resumes on the reused State object.
+    container.read(mutable.notifier).state = state(SessionStatus.running);
+    await tester.pump();
+    expect(find.byTooltip('running'), findsOneWidget);
+  });
+
+  for (final entry in {
+    SessionStatus.awaitingInput: 'awaiting input',
+    SessionStatus.awaitingApproval: 'awaiting approval',
+    SessionStatus.error: 'error',
+    SessionStatus.exited: 'exited',
+  }.entries) {
+    testWidgets('status dot tooltip for ${entry.key} reads "${entry.value}"', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+            ],
+          ),
+        ],
+        sessions: [
+          _session('s1', 'p1', 'Fix login bug', 'codex', status: entry.key),
+        ],
+      );
+
+      expect(find.byTooltip(entry.value), findsOneWidget);
+    });
+  }
+
+  testWidgets('PR pill renders on its own line below the branch row', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree(
+              'wt-feat',
+              branch: 'feat/x',
+              insertions: 1,
+              deletions: 1,
+              sessionIds: ['s1'],
+              pr: const PullRequest(
+                number: 42,
+                url: '',
+                state: 'OPEN',
+                title: 'x',
+                isDraft: false,
+              ),
+            ),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'work', 'pi')],
+    );
+
+    // The diff chip stays inline with the branch row...
+    expect(find.text('+1'), findsOneWidget);
+    // ...while the PR pill drops to its own line below it.
+    final branchY = tester.getTopLeft(find.text('feat/x')).dy;
+    final prY = tester.getTopLeft(find.byType(PrPill)).dy;
+    expect(prY, greaterThan(branchY));
+  });
+
+  testWidgets(
+    'worktree collapse state follows worktree identity, not list position',
+    (tester) async {
+      // Regression: _WorktreeGroup is keyed by worktree id so collapsing one
+      // worktree's sessions survives the list being reordered underneath it.
+      // reposProvider is a plain (non-state) Provider, so route it through a
+      // StateProvider proxy to allow pushing a new value mid-test.
+      final reposOverride = StateProvider<ReposState>(
+        (_) => ReposState([
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree('wt-a', branch: 'branch-a', sessionIds: ['s1']),
+              _worktree('wt-b', branch: 'branch-b', sessionIds: ['s2']),
+            ],
+          ),
+        ]),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWith((ref) => ref.watch(reposOverride)),
+          sessionsProvider.overrideWithValue(
+            SessionsState([
+              _session('s1', 'p1', 'Session A', 'codex'),
+              _session('s2', 'p1', 'Session B', 'codex'),
+            ]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+
+      // Collapse the first worktree (branch-a).
+      await tester.tap(find.text('branch-a'));
+      await tester.pumpAndSettle();
+      expect(find.text('Session A'), findsNothing);
+      expect(find.text('Session B'), findsOneWidget);
+
+      // Reorder the worktrees underneath the same widget tree — branch-a is
+      // now second. Its collapsed state must travel with it via the key.
+      container.read(reposOverride.notifier).state = ReposState([
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-b', branch: 'branch-b', sessionIds: ['s2']),
+            _worktree('wt-a', branch: 'branch-a', sessionIds: ['s1']),
+          ],
+        ),
+      ]);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Session A'), findsNothing);
+      expect(find.text('Session B'), findsOneWidget);
+    },
+  );
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -11,6 +12,7 @@ import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'selected_session.dart';
+import 'sidebar_layout.dart';
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -79,7 +81,16 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   @override
   Widget build(BuildContext context) {
     final sessionId = ref.watch(selectedSessionProvider);
-    if (sessionId == null) return const _NoSelection();
+    if (sessionId == null) {
+      // No session yet, but the pane still owns the unfold affordance when the
+      // sidebar is hidden — surface a minimal top strip above the placeholder.
+      return const Column(
+        children: [
+          _UnfoldStrip(),
+          Expanded(child: _NoSelection()),
+        ],
+      );
+    }
 
     _ensureSubscribed(sessionId);
 
@@ -99,14 +110,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     final session = ref.watch(sessionsProvider).byId(sessionId);
     final items = ref.watch(chatItemsProvider(sessionId));
 
-    // Which worktree branch this session runs in (repo-centric context).
-    String? branch;
-    for (final repo in ref.watch(reposProvider).repos) {
-      for (final wt in repo.worktrees) {
-        if (wt.sessionIds.contains(sessionId)) branch = wt.branch;
-      }
-    }
-
     // Keep the transcript pinned to the newest message as items stream in.
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
@@ -121,8 +124,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     return Column(
       children: [
-        _PaneHeader(session: session, fallbackId: sessionId, branch: branch),
-        const Divider(height: 1),
+        _PaneHeader(session: session, fallbackId: sessionId),
         Expanded(
           child: items.isEmpty
               ? const _EmptyTranscript()
@@ -184,69 +186,75 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   }
 }
 
+/// The pane header's leading control when the sidebar is hidden: restores it.
+/// Styled to match the sidebar's fold button (see `desktop_sidebar.dart`).
+IconButton _showSidebarButton(WidgetRef ref) => IconButton(
+  iconSize: 16,
+  visualDensity: VisualDensity.compact,
+  padding: EdgeInsets.zero,
+  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+  tooltip: 'Show sidebar',
+  icon: const Icon(Icons.view_sidebar_outlined),
+  onPressed: () => ref.read(sidebarCollapsedProvider.notifier).state = false,
+);
+
 class _PaneHeader extends ConsumerWidget {
-  const _PaneHeader({
-    required this.session,
-    required this.fallbackId,
-    this.branch,
-  });
+  const _PaneHeader({required this.session, required this.fallbackId});
   final Session? session;
   final String fallbackId;
-  final String? branch;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final collapsed = ref.watch(sidebarCollapsedProvider);
+    // Same fallback order as the sidebar tiles (SPEC-12 decision 8):
+    // title → agent name → raw session id.
     final title = (session?.title.trim().isNotEmpty ?? false)
         ? session!.title.trim()
-        : fallbackId;
+        : ((session?.agent.trim().isNotEmpty ?? false)
+              ? session!.agent
+              : fallbackId);
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+    final content = Padding(
+      // When collapsed the pane starts at window x=0, so inset the leading
+      // control past the traffic lights; otherwise use the normal gutter.
+      padding: EdgeInsets.fromLTRB(
+        collapsed ? kTrafficLightInset : 16,
+        12,
+        16,
+        12,
+      ),
       child: Row(
         children: [
+          if (collapsed) ...[_showSidebarButton(ref), const SizedBox(width: 8)],
           if (session != null) ...[
-            AgentAvatar(agent: session!.agent, size: 28),
+            AgentAvatar(agent: session!.agent, size: 24),
             const SizedBox(width: 10),
           ],
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (session != null)
-                  Text(
-                    session!.agent,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-              ],
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          if (branch != null) ...[
-            const SizedBox(width: 8),
-            BranchChip(branch: branch!),
-          ],
-          if (session != null && session!.pending) ...[
-            const SizedBox(width: 8),
-            const TagChip(label: 'draft', color: Colors.amber),
-          ] else if (session != null &&
-              session!.status != SessionStatus.idle) ...[
-            const SizedBox(width: 8),
-            SessionStatusChip(status: session!.status),
-          ],
           const SizedBox(width: 4),
           _actionsMenu(context, ref),
         ],
       ),
+    );
+    // Keep the window draggable where the sidebar's drag strip used to be.
+    // DragToMoveArea sits UNDER the content (Stack sibling, like the sidebar's
+    // _Header) rather than wrapping it: its double-tap recognizer would
+    // otherwise delay every button tap by the gesture-disambiguation window.
+    if (!collapsed) return content;
+    return Stack(
+      children: [
+        const Positioned.fill(child: DragToMoveArea(child: SizedBox.expand())),
+        content,
+      ],
     );
   }
 
@@ -461,6 +469,35 @@ class _EmptyTranscript extends StatelessWidget {
       child: Text(
         'Send a message to start.',
         style: TextStyle(color: cs.outline),
+      ),
+    );
+  }
+}
+
+/// A slim top strip shown above the pane's empty state when the sidebar is
+/// hidden, so the unfold control stays reachable with no session selected.
+/// Renders nothing while the sidebar is visible. Mirrors the sidebar's
+/// `_Header` drag-strip + overlaid fold button.
+class _UnfoldStrip extends ConsumerWidget {
+  const _UnfoldStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(sidebarCollapsedProvider)) return const SizedBox.shrink();
+    return SizedBox(
+      height: kTitleBarStripHeight,
+      width: double.infinity,
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: DragToMoveArea(child: SizedBox.expand()),
+          ),
+          Positioned(
+            left: kTrafficLightInset,
+            top: 2,
+            child: _showSidebarButton(ref),
+          ),
+        ],
       ),
     );
   }
