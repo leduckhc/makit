@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -317,5 +318,52 @@ void main() {
 
     expect(find.byTooltip('idle'), findsNothing);
     expect(find.byTooltip('running'), findsNothing);
+  });
+
+  testWidgets('status dot follows in-place status transitions', (tester) async {
+    SessionsState state(SessionStatus status) => SessionsState([
+      _session('s1', 'p1', 'Fix login bug', 'codex', status: status),
+    ]);
+    final mutable = StateProvider<SessionsState>(
+      (_) => state(SessionStatus.running),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(
+          ReposState([
+            _repo(
+              'p1',
+              'alpha',
+              worktrees: [
+                _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+              ],
+            ),
+          ]),
+        ),
+        sessionsProvider.overrideWith((ref) => ref.watch(mutable)),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+        ),
+      ),
+    );
+    expect(find.byTooltip('running'), findsOneWidget);
+
+    // running → exited: the pulsing controller must stop (pumpAndSettle would
+    // hang otherwise) and the dot must re-label.
+    container.read(mutable.notifier).state = state(SessionStatus.exited);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('running'), findsNothing);
+    expect(find.byTooltip('exited'), findsOneWidget);
+
+    // exited → running: pulsing resumes on the reused State object.
+    container.read(mutable.notifier).state = state(SessionStatus.running);
+    await tester.pump();
+    expect(find.byTooltip('running'), findsOneWidget);
   });
 }

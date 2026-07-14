@@ -12,11 +12,6 @@ import 'new_session_dialog.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 
-/// Height of the sidebar's top drag strip. Sized to clear the macOS
-/// traffic-light buttons that overlay the top-left corner once the OS titlebar
-/// is hidden (matches the standard macOS titlebar height).
-const double _kTitleBarStripHeight = 28;
-
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
 /// sessions running in each worktree, plus a DRAFTS section for sessions that
@@ -74,7 +69,7 @@ class _Header extends ConsumerWidget {
     // that overlay the top-left corner. The fold button sits just to the right
     // of the traffic lights and hides the sidebar entirely.
     return SizedBox(
-      height: _kTitleBarStripHeight,
+      height: kTitleBarStripHeight,
       width: double.infinity,
       child: Stack(
         children: [
@@ -82,7 +77,7 @@ class _Header extends ConsumerWidget {
             child: DragToMoveArea(child: SizedBox.expand()),
           ),
           Positioned(
-            left: 72,
+            left: kTrafficLightInset,
             top: 2,
             child: IconButton(
               iconSize: 16,
@@ -364,8 +359,7 @@ class _StatusDot extends StatefulWidget {
   State<_StatusDot> createState() => _StatusDotState();
 }
 
-class _StatusDotState extends State<_StatusDot>
-    with SingleTickerProviderStateMixin {
+class _StatusDotState extends State<_StatusDot> with TickerProviderStateMixin {
   AnimationController? _controller;
 
   bool get _pulses =>
@@ -376,13 +370,29 @@ class _StatusDotState extends State<_StatusDot>
   @override
   void initState() {
     super.initState();
-    // Only active states animate — solid states must not leave a repeating
-    // controller running (it would also make pumpAndSettle hang in tests).
-    if (_pulses) {
+    _syncController();
+  }
+
+  @override
+  void didUpdateWidget(_StatusDot oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Sessions transition status in place (running → exited, idle → running…)
+    // and this State object is reused, so the controller must track the
+    // current status — not the one we mounted with.
+    if (oldWidget.status != widget.status) _syncController();
+  }
+
+  /// Only active states animate — solid states must not leave a repeating
+  /// controller running (it would also make pumpAndSettle hang in tests).
+  void _syncController() {
+    if (_pulses && _controller == null) {
       _controller = AnimationController(
         vsync: this,
         duration: const Duration(milliseconds: 900),
       )..repeat(reverse: true);
+    } else if (!_pulses && _controller != null) {
+      _controller!.dispose();
+      _controller = null;
     }
   }
 

@@ -186,11 +186,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   }
 }
 
-/// Left inset applied to the collapsed pane header and the [_UnfoldStrip] so
-/// the leading control clears the macOS traffic-light buttons that overlay the
-/// top-left corner once the OS titlebar is hidden and the sidebar is gone.
-const double _kTrafficLightInset = 72;
-
 /// The pane header's leading control when the sidebar is hidden: restores it.
 /// Styled to match the sidebar's fold button (see `desktop_sidebar.dart`).
 IconButton _showSidebarButton(WidgetRef ref) => IconButton(
@@ -223,7 +218,7 @@ class _PaneHeader extends ConsumerWidget {
       // When collapsed the pane starts at window x=0, so inset the leading
       // control past the traffic lights; otherwise use the normal gutter.
       padding: EdgeInsets.fromLTRB(
-        collapsed ? _kTrafficLightInset : 16,
+        collapsed ? kTrafficLightInset : 16,
         12,
         16,
         12,
@@ -483,7 +478,7 @@ class _UnfoldStrip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (!ref.watch(sidebarCollapsedProvider)) return const SizedBox.shrink();
     return SizedBox(
-      height: 28,
+      height: kTitleBarStripHeight,
       width: double.infinity,
       child: Stack(
         children: [
@@ -491,7 +486,7 @@ class _UnfoldStrip extends ConsumerWidget {
             child: DragToMoveArea(child: SizedBox.expand()),
           ),
           Positioned(
-            left: _kTrafficLightInset,
+            left: kTrafficLightInset,
             top: 2,
             child: _showSidebarButton(ref),
           ),

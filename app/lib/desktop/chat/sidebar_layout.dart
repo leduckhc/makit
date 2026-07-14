@@ -14,6 +14,15 @@ const double kSidebarMaxWidth = 450;
 /// Width the sidebar opens at before the user resizes it.
 const double kSidebarDefaultWidth = 320;
 
+/// Height of the top drag strip that stands in for the hidden OS titlebar
+/// (matches the standard macOS titlebar height, clearing the traffic lights).
+const double kTitleBarStripHeight = 28;
+
+/// Left inset that clears the macOS traffic-light buttons overlaying the
+/// window's top-left corner — used by the sidebar fold button and, when the
+/// sidebar is hidden, by the pane header's unfold button.
+const double kTrafficLightInset = 72;
+
 /// Whether the sidebar is folded away (fully hidden).
 final sidebarCollapsedProvider = StateProvider<bool>((_) => false);
 
