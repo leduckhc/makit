@@ -167,6 +167,7 @@ class _RepoGroup extends ConsumerWidget {
           ),
         for (final wt in worktrees)
           _WorktreeGroup(
+            key: ValueKey(wt.id),
             repo: repo,
             worktree: wt,
             sessions: wt.sessionIds
@@ -203,6 +204,7 @@ class _RepoGroup extends ConsumerWidget {
 /// nested below. Clicking the branch row collapses/expands its sessions.
 class _WorktreeGroup extends StatefulWidget {
   const _WorktreeGroup({
+    super.key,
     required this.repo,
     required this.worktree,
     required this.sessions,
@@ -326,7 +328,9 @@ class _SessionTile extends StatelessWidget {
     final theme = Theme.of(context);
     final title = session.pending && session.title.trim().isEmpty
         ? 'new session'
-        : (session.title.trim().isNotEmpty ? session.title.trim() : session.id);
+        : (session.title.trim().isNotEmpty
+              ? session.title.trim()
+              : (session.agent.trim().isNotEmpty ? session.agent : session.id));
     return ListTile(
       dense: true,
       visualDensity: VisualDensity.compact,
@@ -362,10 +366,7 @@ class _StatusDot extends StatefulWidget {
 
 class _StatusDotState extends State<_StatusDot>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
+  AnimationController? _controller;
 
   bool get _pulses =>
       widget.status == SessionStatus.running ||
@@ -373,10 +374,34 @@ class _StatusDotState extends State<_StatusDot>
       widget.status == SessionStatus.awaitingApproval;
 
   @override
+  void initState() {
+    super.initState();
+    // Only active states animate — solid states must not leave a repeating
+    // controller running (it would also make pumpAndSettle hang in tests).
+    if (_pulses) {
+      _controller = AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 900),
+      )..repeat(reverse: true);
+    }
+  }
+
+  @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
+
+  /// Human-readable status, used for the tooltip + screen-reader semantics so
+  /// the dot is not a color-only signal.
+  String get _label => switch (widget.status) {
+    SessionStatus.running => 'running',
+    SessionStatus.awaitingInput => 'awaiting input',
+    SessionStatus.awaitingApproval => 'awaiting approval',
+    SessionStatus.error => 'error',
+    SessionStatus.exited => 'exited',
+    SessionStatus.idle => 'idle',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -388,15 +413,21 @@ class _StatusDotState extends State<_StatusDot>
       SessionStatus.exited => Colors.grey,
       SessionStatus.idle => Colors.grey,
     };
-    final dot = Container(
+    Widget dot = Container(
       width: 8,
       height: 8,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
-    if (!_pulses) return dot;
-    return FadeTransition(
-      opacity: Tween<double>(begin: 0.3, end: 1).animate(_controller),
-      child: dot,
+    final controller = _controller;
+    if (controller != null) {
+      dot = FadeTransition(
+        opacity: Tween<double>(begin: 0.3, end: 1).animate(controller),
+        child: dot,
+      );
+    }
+    return Tooltip(
+      message: _label,
+      child: Semantics(label: 'status: $_label', child: dot),
     );
   }
 }

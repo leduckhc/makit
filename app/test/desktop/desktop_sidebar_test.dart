@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
+import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/home/repo_chips.dart';
 
 RepoInfo _repo(
   String id,
@@ -51,14 +54,17 @@ Session _session(
   String title,
   String agent, {
   bool pending = false,
+  SessionStatus status = SessionStatus.idle,
+  String lastPreview = '',
 }) => Session(
   id: id,
   projectId: projectId,
   agent: agent,
   title: title,
-  status: SessionStatus.idle,
+  status: status,
   policy: ApprovalPolicy.askOnRisky,
   pending: pending,
+  lastPreview: lastPreview,
 );
 
 Future<ProviderContainer> _pump(
@@ -195,5 +201,121 @@ void main() {
   testWidgets('empty state prompts to start a session', (tester) async {
     await _pump(tester, repos: const [], sessions: const []);
     expect(find.textContaining('No repos yet'), findsOneWidget);
+  });
+
+  testWidgets('tapping the worktree branch row collapses its sessions', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    expect(find.text('Fix login bug'), findsOneWidget);
+
+    await tester.tap(find.text('feat/login'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fix login bug'), findsNothing);
+
+    await tester.tap(find.text('feat/login'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fix login bug'), findsOneWidget);
+  });
+
+  testWidgets('fold button collapses the sidebar via the provider', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('window_manager'),
+          (call) async => null,
+        );
+    final container = await _pump(tester, repos: const [], sessions: const []);
+
+    expect(container.read(sidebarCollapsedProvider), isFalse);
+    await tester.tap(find.byTooltip('Hide sidebar'));
+    await tester.pump();
+    expect(container.read(sidebarCollapsedProvider), isTrue);
+  });
+
+  testWidgets('untitled session falls back to its agent name', (tester) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', '', 'codex')],
+    );
+
+    expect(find.text('codex'), findsOneWidget);
+    expect(find.text('s1'), findsNothing);
+  });
+
+  testWidgets('session tiles are single-line: no avatar, preview, or chip', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [
+        _session(
+          's1',
+          'p1',
+          'Fix login bug',
+          'codex',
+          status: SessionStatus.running,
+          lastPreview: 'Patched pairing_screen.dart, ran tests.',
+        ),
+      ],
+    );
+
+    expect(find.byType(AgentAvatar), findsNothing);
+    expect(find.text('Patched pairing_screen.dart, ran tests.'), findsNothing);
+    expect(find.text('running'), findsNothing); // text chip replaced by a dot
+    expect(find.byType(SessionStatusChip), findsNothing);
+    // The status is surfaced as a dot with an accessible tooltip/semantics.
+    expect(find.byTooltip('running'), findsOneWidget);
+  });
+
+  testWidgets('idle sessions render no status dot', (tester) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    expect(find.byTooltip('idle'), findsNothing);
+    expect(find.byTooltip('running'), findsNothing);
   });
 }
