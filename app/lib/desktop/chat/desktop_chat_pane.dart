@@ -246,9 +246,16 @@ class _PaneHeader extends ConsumerWidget {
       ),
     );
     // Keep the window draggable where the sidebar's drag strip used to be.
-    // DragToMoveArea passes taps through to children that handle them, so the
-    // unfold button and actions menu stay clickable.
-    return collapsed ? DragToMoveArea(child: content) : content;
+    // DragToMoveArea sits UNDER the content (Stack sibling, like the sidebar's
+    // _Header) rather than wrapping it: its double-tap recognizer would
+    // otherwise delay every button tap by the gesture-disambiguation window.
+    if (!collapsed) return content;
+    return Stack(
+      children: [
+        const Positioned.fill(child: DragToMoveArea(child: SizedBox.expand())),
+        content,
+      ],
+    );
   }
 
   /// Session-level overflow menu (Rename / Model / Thinking / Quit). Mirrors
