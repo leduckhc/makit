@@ -14,7 +14,7 @@ import 'sidebar_layout.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
-/// sessions running in each worktree, plus a DRAFTS section for sessions that
+/// sessions running in each worktree, plus pending draft sessions that
 /// haven't named a branch yet. Footer shows the connection status + a hook for
 /// the Settings/Server section.
 class DesktopSidebar extends ConsumerWidget {
@@ -78,14 +78,17 @@ class _Header extends ConsumerWidget {
           ),
           Positioned(
             left: kTrafficLightInset,
-            top: 2,
+            top: 7,
             child: IconButton(
-              iconSize: 16,
+              iconSize: 19,
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               tooltip: 'Hide sidebar',
-              icon: const Icon(Icons.view_sidebar_outlined),
+              icon: Transform.flip(
+                flipX: true,
+                child: const Icon(Icons.view_sidebar_outlined),
+              ),
               onPressed: () =>
                   ref.read(sidebarCollapsedProvider.notifier).state = true,
             ),
@@ -97,7 +100,7 @@ class _Header extends ConsumerWidget {
 }
 
 /// One repo section: header row (name + current branch + stats), then its
-/// worktrees with their sessions, then drafts.
+/// worktrees with their sessions, then any pending draft sessions.
 class _RepoGroup extends ConsumerWidget {
   const _RepoGroup({
     required this.repo,
@@ -134,16 +137,16 @@ class _RepoGroup extends ConsumerWidget {
               Expanded(
                 child: Text(
                   repo.name,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.outline,
+                  style: theme.textTheme.titleSmall?.copyWith(
                     letterSpacing: 0.6,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ),
               IconButton(
-                tooltip: 'New session in ${repo.name}',
+                tooltip: 'New session',
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.add, size: 16),
                 onPressed: () =>
@@ -173,20 +176,11 @@ class _RepoGroup extends ConsumerWidget {
             onSelect: onSelect,
           ),
         if (drafts.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text(
-              'DRAFTS',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
-                letterSpacing: 1,
-              ),
-            ),
-          ),
           for (final s in drafts)
             _SessionTile(
               session: s,
               selected: s.id == selectedId,
+              indented: true,
               onTap: () => onSelect(s.id),
             ),
         ],
@@ -337,9 +331,7 @@ class _SessionTile extends StatelessWidget {
           Expanded(
             child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
-          if (session.pending)
-            const TagChip(label: 'draft', color: Colors.amber)
-          else if (session.status != SessionStatus.idle)
+          if (session.status != SessionStatus.idle)
             _StatusDot(status: session.status),
         ],
       ),

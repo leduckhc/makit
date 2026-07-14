@@ -6,7 +6,6 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
-import '../../ui/home/repo_chips.dart';
 import '../../ui/session/chat_message.dart';
 import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
@@ -189,12 +188,15 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 /// The pane header's leading control when the sidebar is hidden: restores it.
 /// Styled to match the sidebar's fold button (see `desktop_sidebar.dart`).
 IconButton _showSidebarButton(WidgetRef ref) => IconButton(
-  iconSize: 16,
+  iconSize: 19,
   visualDensity: VisualDensity.compact,
   padding: EdgeInsets.zero,
   constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
   tooltip: 'Show sidebar',
-  icon: const Icon(Icons.view_sidebar_outlined),
+  icon: Transform.flip(
+    flipX: true,
+    child: const Icon(Icons.view_sidebar_outlined),
+  ),
   onPressed: () => ref.read(sidebarCollapsedProvider.notifier).state = false,
 );
 
@@ -216,18 +218,21 @@ class _PaneHeader extends ConsumerWidget {
     final theme = Theme.of(context);
     final content = Padding(
       // When collapsed the pane starts at window x=0, so inset the leading
-      // control past the traffic lights; otherwise use the normal gutter.
+      // control past the traffic lights and align it to the traffic-light row;
+      // otherwise use the normal gutter.
       padding: EdgeInsets.fromLTRB(
         collapsed ? kTrafficLightInset : 16,
-        12,
+        7,
         16,
         12,
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (collapsed) ...[_showSidebarButton(ref), const SizedBox(width: 8)],
           if (session != null) ...[
-            AgentAvatar(agent: session!.agent, size: 24),
+            // Match the sidebar-fold icon scale so the fold icon,
+            // title, and actions menu all sit on the traffic-light row.
             const SizedBox(width: 10),
           ],
           Expanded(
@@ -235,8 +240,8 @@ class _PaneHeader extends ConsumerWidget {
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w400,
               ),
             ),
           ),
@@ -264,7 +269,14 @@ class _PaneHeader extends ConsumerWidget {
   Widget _actionsMenu(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<String>(
       tooltip: 'Session actions',
-      icon: const Icon(Icons.more_vert, size: 20),
+      padding: EdgeInsets.zero,
+      // Use `child` (not `icon`): `icon` builds an internal IconButton that
+      // enforces a 48px min tap target, which inflates the header row and
+      // pushes the centered row content below the traffic-light line.
+      child: const Padding(
+        padding: EdgeInsets.all(3),
+        child: Icon(Icons.more_vert, size: 18),
+      ),
       onSelected: (value) {
         switch (value) {
           case 'rename':
@@ -494,7 +506,7 @@ class _UnfoldStrip extends ConsumerWidget {
           ),
           Positioned(
             left: kTrafficLightInset,
-            top: 2,
+            top: 8,
             child: _showSidebarButton(ref),
           ),
         ],
