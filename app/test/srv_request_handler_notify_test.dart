@@ -104,6 +104,7 @@ void main() {
     WidgetTester tester, {
     _RecordingNotificationService? notifications,
     GlobalKey<NavigatorState>? navigatorKey,
+    Duration? reminderDelay,
   }) async {
     final transport = _EmittingTransport();
     final service = notifications ?? _RecordingNotificationService();
@@ -126,6 +127,7 @@ void main() {
           navigatorKey: key,
           home: SrvRequestHandler(
             navigatorKey: key,
+            reminderDelay: reminderDelay,
             child: const Scaffold(body: SizedBox()),
           ),
         ),
@@ -404,4 +406,112 @@ void main() {
       expect(otherId, isNot(firstId));
     },
   );
+
+  testWidgets(
+    'desktop mode shows the dialog immediately even when backgrounded',
+    (tester) async {
+      final (transport, notifications, _) = await pumpHandler(
+        tester,
+        reminderDelay: const Duration(minutes: 2),
+      );
+      // Not frontmost (as a macOS window often is while the agent runs).
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-desk-q',
+          body: {
+            'kind': 'askUserQuestion',
+            'question': 'Deploy to prod?',
+            'options': [
+              {'label': 'Yes'},
+              {'label': 'No'},
+            ],
+            'sessionId': 's1',
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      // No diversion to a notification while backgrounded — the dialog route
+      // is pushed instead. Settle its entrance animation to confirm it shows.
+      expect(notifications.shown, isEmpty);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text('Deploy to prod?'), findsOneWidget);
+      expect(notifications.shown, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'desktop mode fires a reminder notification only if left unanswered',
+    (tester) async {
+      final (transport, notifications, _) = await pumpHandler(
+        tester,
+        reminderDelay: const Duration(minutes: 2),
+      );
+
+      transport.emit(
+        Envelope(
+          t: MsgType.srvRequest,
+          id: 'req-remind',
+          body: {
+            'kind': 'confirmAction',
+            'action': 'rm -rf build/',
+            'sessionId': 's1',
+          },
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Approve'), findsOneWidget);
+      expect(notifications.shown, isEmpty);
+
+      // Past the reminder delay while still unanswered → notification fires.
+      await tester.pump(const Duration(minutes: 2));
+      await tester.pump();
+      expect(notifications.shown, hasLength(1));
+      expect(notifications.shown.single.category, kConfirmCategoryId);
+    },
+  );
+
+  testWidgets('desktop dialog closes and reminder is cancelled once answered', (
+    tester,
+  ) async {
+    final (transport, notifications, controller) = await pumpHandler(
+      tester,
+      reminderDelay: const Duration(minutes: 2),
+    );
+
+    transport.emit(
+      Envelope(
+        t: MsgType.srvRequest,
+        id: 'req-answered-fast',
+        body: {
+          'kind': 'confirmAction',
+          'action': 'rm -rf build/',
+          'sessionId': 's1',
+        },
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    // Answered before the delay elapses.
+    controller.respondTo('req-answered-fast', {
+      'kind': 'confirmAction',
+      'approved': true,
+    });
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+
+    // No reminder should fire after the delay.
+    await tester.pump(const Duration(minutes: 2));
+    await tester.pump();
+    expect(notifications.shown, isEmpty);
+  });
 }

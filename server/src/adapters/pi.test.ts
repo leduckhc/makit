@@ -163,6 +163,171 @@ function msgUpdate(e: Record<string, unknown>) {
   return { type: "message_update", assistantMessageEvent: e };
 }
 
+// ---------------------------------------------------------------------------
+// Integration: the ctx.ui.* → extension_ui_request interceptor ("Path B").
+//
+// This is the ONLY path that carries pi-ask-user's rpc fallback (ask_user →
+// ctx.ui.select/input) to the app now that the makit-pi connector + HTTP bridge
+// were removed. We drive a raw pi rpc line through handleLine (parse + route +
+// intercept), answer via a stub askUser (the app), and assert the exact
+// extension_ui_response written back to pi's stdin.
+// ---------------------------------------------------------------------------
+
+import type { UICall, UIResponse } from "../uicall.js";
+
+/** Wire a stub askUser (the "app") + capture stdin, then feed a raw pi line. */
+function wireInterceptor(
+  answer: UIResponse | ((call: UICall) => UIResponse),
+): { adapter: PiAdapter; calls: UICall[]; writes: string[] } {
+  const adapter = new PiAdapter();
+  (adapter as any).sessionId = "sess-int";
+  const calls: UICall[] = [];
+  (adapter as any).askUser = async (call: UICall): Promise<UIResponse> => {
+    calls.push(call);
+    return typeof answer === "function" ? answer(call) : answer;
+  };
+  const writes = withFakeStdin(adapter);
+  return { adapter, calls, writes };
+}
+
+function feedLine(adapter: PiAdapter, obj: unknown): void {
+  (adapter as any).handleLine(JSON.stringify(obj));
+}
+
+test("select UI request round-trips: askUserQuestion → extension_ui_response {value}", async () => {
+  const { adapter, calls, writes } = wireInterceptor({
+    kind: "askUserQuestion",
+    indices: [0],
+    answers: ["Yes"],
+  } as UIResponse);
+
+  // Exactly what pi-ask-user's rpc fallback (ctx.ui.select) makes pi emit.
+  feedLine(adapter, {
+    type: "extension_ui_request",
+    id: "ui-sel",
+    method: "select",
+    title: "Pick one?",
+    options: ["Yes", "No"],
+  });
+  await delay(10);
+
+  assert.equal(calls.length, 1, "askUser should be called exactly once");
+  assert.equal(calls[0].kind, "askUserQuestion");
+  assert.equal((calls[0] as any).questions[0].question, "Pick one?");
+  assert.deepEqual(
+    (calls[0] as any).questions[0].options.map((o: any) => o.label),
+    ["Yes", "No"],
+  );
+
+  const cmds = writes.map((w) => JSON.parse(w));
+  assert.equal(cmds.length, 1);
+  assert.deepEqual(cmds[0], { type: "extension_ui_response", id: "ui-sel", value: "Yes" });
+});
+
+test("input UI request round-trips: input UICall → extension_ui_response {value}", async () => {
+  const { adapter, calls, writes } = wireInterceptor({
+    kind: "input",
+    value: "typed answer",
+  } as UIResponse);
+
+  feedLine(adapter, {
+    type: "extension_ui_request",
+    id: "ui-in",
+    method: "input",
+    title: "Your answer",
+    placeholder: "type...",
+  });
+  await delay(10);
+
+  assert.equal(calls[0].kind, "input");
+  assert.equal((calls[0] as any).multiline, false);
+  const cmds = writes.map((w) => JSON.parse(w));
+  assert.deepEqual(cmds[0], { type: "extension_ui_response", id: "ui-in", value: "typed answer" });
+});
+
+test("editor UI request maps to multiline input", async () => {
+  const { adapter, calls, writes } = wireInterceptor({ kind: "input", value: "body" } as UIResponse);
+  feedLine(adapter, { type: "extension_ui_request", id: "ui-ed", method: "editor", title: "Edit" });
+  await delay(10);
+  assert.equal(calls[0].kind, "input");
+  assert.equal((calls[0] as any).multiline, true);
+  assert.deepEqual(JSON.parse(writes[0]), { type: "extension_ui_response", id: "ui-ed", value: "body" });
+});
+
+test("confirm UI request round-trips: confirmAction → extension_ui_response {confirmed}", async () => {
+  const { adapter, calls, writes } = wireInterceptor({
+    kind: "confirmAction",
+    approved: true,
+  } as UIResponse);
+
+  feedLine(adapter, {
+    type: "extension_ui_request",
+    id: "ui-cf",
+    method: "confirm",
+    title: "Deploy?",
+    message: "to prod",
+  });
+  await delay(10);
+
+  assert.equal(calls[0].kind, "confirmAction");
+  assert.deepEqual(JSON.parse(writes[0]), { type: "extension_ui_response", id: "ui-cf", confirmed: true });
+});
+
+// ---------------------------------------------------------------------------
+// Regression guards.
+// ---------------------------------------------------------------------------
+
+test("regression: a cancelled answer maps to extension_ui_response {cancelled:true}", async () => {
+  const { adapter, writes } = wireInterceptor({
+    kind: "askUserQuestion",
+    indices: [],
+    answers: [],
+    cancelled: true,
+  } as UIResponse);
+
+  feedLine(adapter, {
+    type: "extension_ui_request",
+    id: "ui-cancel",
+    method: "select",
+    title: "Pick",
+    options: ["A", "B"],
+  });
+  await delay(10);
+
+  assert.deepEqual(JSON.parse(writes[0]), { type: "extension_ui_response", id: "ui-cancel", cancelled: true });
+});
+
+test("regression: no askUser wired (no app / post-connector-removal) → cancel, pi never hangs", async () => {
+  // After removing the makit-pi connector + HTTP bridge, ask_user relies solely
+  // on the askUser callback. If none is wired, the interceptor must still reply
+  // (cancelled) so pi's ctx.ui.select promise resolves instead of hanging.
+  const adapter = new PiAdapter();
+  (adapter as any).sessionId = "sess-none";
+  // NB: askUser intentionally left undefined.
+  const writes = withFakeStdin(adapter);
+
+  feedLine(adapter, {
+    type: "extension_ui_request",
+    id: "ui-noapp",
+    method: "select",
+    title: "Pick",
+    options: ["A"],
+  });
+  await delay(10);
+
+  assert.deepEqual(JSON.parse(writes[0]), { type: "extension_ui_response", id: "ui-noapp", cancelled: true });
+});
+
+test("regression: interception is keyed on method, not the tool name", async () => {
+  // ask_user is invisible to makit — detection switches on evt.method. A
+  // never-before-seen method must cancel (not throw, not hang).
+  const { adapter, calls, writes } = wireInterceptor({ kind: "input", value: "x" } as UIResponse);
+  feedLine(adapter, { type: "extension_ui_request", id: "ui-unknown", method: "someFutureMethod" });
+  await delay(10);
+  assert.equal(calls.length, 0, "unknown method should not reach askUser");
+  assert.deepEqual(JSON.parse(writes[0]), { type: "extension_ui_response", id: "ui-unknown", cancelled: true });
+});
+
 test("thinking is anchored before the answer even when text streams before thinking_end", () => {
   // Reproduces the GPT-5/Responses ordering where the answer's text_delta
   // arrives before the reasoning item's thinking_end. The thinking must still

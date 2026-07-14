@@ -76,11 +76,6 @@ export interface BridgeBinding {
    * PiAdapter UI interceptor to transport pi's ctx.ui.* calls to the app.
    */
   askUser?: AskUser;
-  /**
-   * Override for pi's config dir (PI_CODING_AGENT_DIR). Used to load a
-   * filtered settings.json that excludes TUI-only packages like pi-ask.
-   */
-  agentDir?: string;
 }
 
 interface ProjectEntry {
@@ -204,8 +199,8 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
-  /** Set the loopback bridge so subsequently-spawned pi sessions can use
-   *  the makit-pi extension for AskUserQuestion round-trip. */
+  /** Set the loopback bridge + askUser wiring so subsequently-spawned pi
+   *  sessions can transport `ctx.ui.*` calls to the app (PiAdapter interceptor). */
   setBridge(bridge: BridgeBinding) {
     this.bridge = bridge;
   }
@@ -510,9 +505,6 @@ export class SessionManager extends EventEmitter {
             MAKIT_BRIDGE_URL: this.bridge.url,
             MAKIT_BRIDGE_TOKEN: this.bridge.token,
             MAKIT_SESSION_ID: sessionId,
-            ...(this.bridge.agentDir
-              ? { PI_CODING_AGENT_DIR: this.bridge.agentDir }
-              : {}),
           }
         : undefined,
       extensions: this.bridge ? this.bridge.extensionPaths : [],

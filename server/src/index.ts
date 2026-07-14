@@ -31,7 +31,6 @@ import qrcode from "qrcode-terminal";
 import { SessionManager } from "./manager.js";
 import { SqliteEventStore } from "./storage/sqlite_event_store.js";
 import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
-import { buildFilteredAgentDir } from "./pi-agent-dir.js";
 import { startWsServer } from "./server.js";
 import { loadApnsConfig, createPushSender } from "./push/config.js";
 import { type PushSender } from "./push/sender.js";
@@ -339,8 +338,6 @@ async function main() {
       const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
       return env as unknown as import("./uicall.js").UIResponse;
     },
-    // Exclude TUI-only packages that can't run headless (see UI-TRANSPORT.md).
-    agentDir: buildFilteredAgentDir(["@mammothb/pi-ask"]),
   });
 
   await manager.ensureDefaultSessions();
