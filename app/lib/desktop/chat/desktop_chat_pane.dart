@@ -3,6 +3,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../shortcuts/keymap_controller.dart';
+import '../../shortcuts/shortcut_action.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
@@ -11,6 +13,7 @@ import '../../ui/session/chat_message.dart';
 import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
+import 'composer_focus.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 
@@ -171,6 +174,13 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                 onSend: (text) => _handleSend(sessionId, text),
                 onCancel: () => _cancelTurn(sessionId),
                 running: running,
+                focusNode: ref.watch(desktopComposerFocusProvider),
+                sendChord: ref
+                    .watch(keymapProvider)
+                    .chordFor(ShortcutAction.sendMessage),
+                newlineChord: ref
+                    .watch(keymapProvider)
+                    .chordFor(ShortcutAction.composerNewline),
               ),
             ),
           ),
