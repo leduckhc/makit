@@ -6,6 +6,7 @@ import 'package:makit/desktop/settings/sections/shortcuts_section.dart';
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
+
 Future<void> _pump(WidgetTester tester, KeymapController controller) async {
   await tester.pumpWidget(
     ProviderScope(

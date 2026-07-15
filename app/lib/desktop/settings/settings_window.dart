@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
@@ -29,7 +30,13 @@ class DesktopWindowBody extends ConsumerWidget {
     final open = ref.watch(settingsOpenProvider);
     return Stack(
       children: [
-        child,
+        // While Settings is open the chat underneath is excluded from focus
+        // traversal and the semantics tree so it isn't reachable by keyboard or
+        // assistive tech behind the modal overlay.
+        ExcludeFocus(
+          excluding: open,
+          child: ExcludeSemantics(excluding: open, child: child),
+        ),
         if (open)
           Positioned.fill(
             child: SettingsWindow(
@@ -90,23 +97,41 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
   @override
   Widget build(BuildContext context) {
     final section = kSettingsSections.firstWhere((s) => s.id == _selectedId);
-    return Scaffold(
-      body: Row(
-        children: [
-          SizedBox(
-            width: _navWidth,
-            child: SettingsNavPane(
-              sections: kSettingsSections,
-              selectedId: _selectedId,
-              query: _query,
-              onQueryChanged: (q) => setState(() => _query = q),
-              onSelect: _select,
-              onClose: widget.onClose,
+    // A modal focus scope: traps tab traversal inside Settings, binds Escape to
+    // close, and marks the subtree as a route for assistive tech.
+    return FocusScope(
+      autofocus: true,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): widget.onClose,
+        },
+        child: Focus(
+          autofocus: true,
+          skipTraversal: true,
+          child: Semantics(
+            scopesRoute: true,
+            explicitChildNodes: true,
+            child: Scaffold(
+              body: Row(
+                children: [
+                  SizedBox(
+                    width: _navWidth,
+                    child: SettingsNavPane(
+                      sections: kSettingsSections,
+                      selectedId: _selectedId,
+                      query: _query,
+                      onQueryChanged: (q) => setState(() => _query = q),
+                      onSelect: _select,
+                      onClose: widget.onClose,
+                    ),
+                  ),
+                  const VerticalDivider(width: 1),
+                  Expanded(child: SettingsDetailPane(section: section)),
+                ],
+              ),
             ),
           ),
-          const VerticalDivider(width: 1),
-          Expanded(child: SettingsDetailPane(section: section)),
-        ],
+        ),
       ),
     );
   }

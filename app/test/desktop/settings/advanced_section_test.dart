@@ -21,7 +21,10 @@ StatusData _status() => const StatusData(
   version: '0.1.0',
 );
 
-Future<void> _pump(WidgetTester tester, PreferencesController controller) async {
+Future<void> _pump(
+  WidgetTester tester,
+  PreferencesController controller,
+) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -50,16 +53,18 @@ void main() {
     expect(find.text('v1'), findsOneWidget); // protocolVersion == 1
   });
 
-  testWidgets('reset-all is disabled with no changes and shows a defaults note',
-      (tester) async {
-    await _pump(tester, PreferencesController.ephemeral());
+  testWidgets(
+    'reset-all is disabled with no changes and shows a defaults note',
+    (tester) async {
+      await _pump(tester, PreferencesController.ephemeral());
 
-    expect(find.text('All settings are at their defaults.'), findsOneWidget);
-    final button = tester.widget<OutlinedButton>(
-      find.widgetWithText(OutlinedButton, 'Reset all'),
-    );
-    expect(button.onPressed, isNull);
-  });
+      expect(find.text('All settings are at their defaults.'), findsOneWidget);
+      final button = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, 'Reset all'),
+      );
+      expect(button.onPressed, isNull);
+    },
+  );
 
   testWidgets('reset-all clears every override after confirming', (
     tester,

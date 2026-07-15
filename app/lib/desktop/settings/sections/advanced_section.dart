@@ -78,13 +78,11 @@ class _StatusRowsState extends ConsumerState<_StatusRows> {
             ListTile(
               leading: Icon(Symbols.memory, weight: 200, color: cs.outline),
               title: const Text('Process id'),
-              subtitle: Text(
-                switch ((waiting, status)) {
-                  (true, _) => 'Loading…',
-                  (_, final s?) => '${s.pid}',
-                  _ => 'Server not reachable',
-                },
-              ),
+              subtitle: Text(switch ((waiting, status)) {
+                (true, _) => 'Loading…',
+                (_, final s?) => '${s.pid}',
+                _ => 'Server not reachable',
+              }),
               trailing: IconButton(
                 tooltip: 'Refresh',
                 icon: const Icon(Symbols.refresh, weight: 200, size: 18),
@@ -157,7 +155,10 @@ class _TelemetryRow extends StatelessWidget {
         children: [
           Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
           const SizedBox(width: 6),
-          Text('Coming soon', style: TextStyle(color: cs.outline, fontSize: 12)),
+          Text(
+            'Coming soon',
+            style: TextStyle(color: cs.outline, fontSize: 12),
+          ),
         ],
       ),
     );

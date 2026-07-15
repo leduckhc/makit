@@ -25,7 +25,10 @@ class _RecordingObserver extends NavigatorObserver {
 
 late SharedPreferences _prefs;
 
-Widget _wrap(Widget child, {PreferencesController? controller}) => ProviderScope(
+Widget _wrap(
+  Widget child, {
+  PreferencesController? controller,
+}) => ProviderScope(
   // The Server & Devices section body reads these providers, so navigating to
   // it (e.g. via a search deep-link) requires them to be overridden.
   overrides: [
@@ -131,7 +134,9 @@ void main() {
 
   testWidgets('close affordance invokes onClose', (tester) async {
     var closed = false;
-    await tester.pumpWidget(_wrap(SettingsWindow(onClose: () => closed = true)));
+    await tester.pumpWidget(
+      _wrap(SettingsWindow(onClose: () => closed = true)),
+    );
 
     await tester.tap(find.byTooltip('Close settings'));
     await tester.pump();

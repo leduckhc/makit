@@ -8,6 +8,7 @@ import 'composer_focus.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
+import '../settings/settings_window.dart' show settingsOpenProvider;
 
 /// Installs the window-level (global-scope) keyboard shortcuts around the
 /// desktop chat shell. Composer-scope actions (send / newline) are wired inside
@@ -75,6 +76,10 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   /// outside our subtree.
   void _reclaimFocusWhenIdle() {
     if (!mounted || !_scopeFocus.canRequestFocus) return;
+    // Don't reclaim focus while the modal Settings overlay is open, otherwise
+    // the scope steals focus back from the overlay (breaking Escape and the
+    // overlay's own shortcuts, and re-exposing the chat to key events).
+    if (ref.read(settingsOpenProvider)) return;
     final primary = FocusManager.instance.primaryFocus;
     final isIdle =
         primary == null ||
@@ -139,6 +144,16 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   }
 
   void _invoke(BuildContext context, WidgetRef ref, ShortcutAction action) {
+    // The Settings overlay is modal to keyboard input: while it is open, window
+    // shortcuts must not leak through to the chat underneath (they could
+    // collapse the sidebar or open dialogs behind the overlay). The
+    // open-settings chord still toggles the overlay closed as a convenience.
+    if (ref.read(settingsOpenProvider)) {
+      if (action == ShortcutAction.openSettings) {
+        ref.read(settingsOpenProvider.notifier).state = false;
+      }
+      return;
+    }
     switch (action) {
       case ShortcutAction.toggleSidebar:
         ref.read(sidebarCollapsedProvider.notifier).update((v) => !v);

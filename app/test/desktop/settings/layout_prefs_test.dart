@@ -86,7 +86,8 @@ void main() {
       await pumpEventQueue();
       expect(controller.isModified(sidebarWidthPreference), isTrue);
 
-      container.read(sidebarWidthProvider.notifier).state = kSidebarDefaultWidth;
+      container.read(sidebarWidthProvider.notifier).state =
+          kSidebarDefaultWidth;
       await pumpEventQueue();
       expect(controller.isModified(sidebarWidthPreference), isFalse);
     });

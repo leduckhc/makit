@@ -31,7 +31,9 @@ Future<void> _pump(
     ProviderScope(
       overrides: [
         serverConfigProvider.overrideWith((ref) => config),
-        desktopControllerProvider.overrideWithValue(controller ?? _controller()),
+        desktopControllerProvider.overrideWithValue(
+          controller ?? _controller(),
+        ),
         connectionProvider.overrideWithValue(connection ?? MakitConnState()),
       ],
       child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
@@ -48,7 +50,9 @@ void main() {
     return ServerConfigController(prefs, const ServerConfig());
   }
 
-  testWidgets('renders the section with its subsection headers', (tester) async {
+  testWidgets('renders the section with its subsection headers', (
+    tester,
+  ) async {
     await _pump(tester, config: await makeConfig());
 
     expect(find.text('SERVER & DEVICES'), findsOneWidget);

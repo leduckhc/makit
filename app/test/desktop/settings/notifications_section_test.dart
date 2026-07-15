@@ -92,7 +92,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.get(notificationsReminderDelayPreference), 2);
-    expect(controller.isModified(notificationsReminderDelayPreference), isFalse);
+    expect(
+      controller.isModified(notificationsReminderDelayPreference),
+      isFalse,
+    );
     expect(find.text('delay:2'), findsOneWidget);
   });
 }

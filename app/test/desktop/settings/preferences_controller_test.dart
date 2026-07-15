@@ -61,20 +61,22 @@ void main() {
       expect(controller.state, isEmpty);
     });
 
-    test('internal entries do not count as user-facing modifications',
-        () async {
-      final controller = PreferencesController.ephemeral();
-      expect(controller.modifiedUserFacingCount, 0);
+    test(
+      'internal entries do not count as user-facing modifications',
+      () async {
+        final controller = PreferencesController.ephemeral();
+        expect(controller.modifiedUserFacingCount, 0);
 
-      // Selecting sections writes the internal lastSection entry.
-      await controller.set(lastSectionPreference, 'appearance');
-      expect(controller.isModified(lastSectionPreference), isTrue);
-      expect(controller.modifiedUserFacingCount, 0);
+        // Selecting sections writes the internal lastSection entry.
+        await controller.set(lastSectionPreference, 'appearance');
+        expect(controller.isModified(lastSectionPreference), isTrue);
+        expect(controller.modifiedUserFacingCount, 0);
 
-      // A real preference bumps the user-facing count.
-      await controller.set(themeModePreference, ThemeMode.dark);
-      expect(controller.modifiedUserFacingCount, 1);
-    });
+        // A real preference bumps the user-facing count.
+        await controller.set(themeModePreference, ThemeMode.dark);
+        expect(controller.modifiedUserFacingCount, 1);
+      },
+    );
 
     test('resetAll clears user prefs but preserves internal entries', () async {
       final controller = PreferencesController.ephemeral();
@@ -145,17 +147,20 @@ void main() {
       expect(controller.state, isEmpty);
     });
 
-    test('unknown ids and undecodable values fall back to the default', () async {
-      SharedPreferences.setMockInitialValues({
-        PreferencesController.storageKey: jsonEncode({
-          'appearance.themeMode': 42, // wrong type -> default
-          'some.unknown.id': 'ignored-by-consumers',
-        }),
-      });
-      final prefs = await SharedPreferences.getInstance();
-      final controller = PreferencesController.load(prefs);
-      // Undecodable value falls back to the entry default.
-      expect(controller.get(themeModePreference), ThemeMode.system);
-    });
+    test(
+      'unknown ids and undecodable values fall back to the default',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          PreferencesController.storageKey: jsonEncode({
+            'appearance.themeMode': 42, // wrong type -> default
+            'some.unknown.id': 'ignored-by-consumers',
+          }),
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final controller = PreferencesController.load(prefs);
+        // Undecodable value falls back to the entry default.
+        expect(controller.get(themeModePreference), ThemeMode.system);
+      },
+    );
   });
 }
