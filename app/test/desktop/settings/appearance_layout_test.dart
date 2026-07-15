@@ -8,6 +8,13 @@ import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
 import 'package:makit/desktop/settings/sections/appearance_section.dart';
 
 Future<PreferencesController> _pump(WidgetTester tester) async {
+  // Give the test a tall viewport so the whole (scrollable) section — including
+  // the text-scale slider — is laid out on-screen and hit-testable by drag().
+  tester.view.physicalSize = const Size(1200, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
   final controller = PreferencesController.ephemeral();
   await tester.pumpWidget(
     ProviderScope(
