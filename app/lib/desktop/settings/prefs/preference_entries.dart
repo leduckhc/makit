@@ -37,12 +37,44 @@ const PreferenceEntry<String> lastSectionPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+/// Default desktop sidebar width, in logical pixels. Backs the in-memory
+/// `sidebarWidthProvider` so a resized sidebar survives restarts. The default
+/// mirrors `kSidebarDefaultWidth` (320); values are clamped to the sidebar's
+/// min/max at the call sites.
+const PreferenceEntry<double> sidebarWidthPreference = PreferenceEntry(
+  id: 'layout.sidebarWidth',
+  defaultValue: 320,
+  encode: _encodeDouble,
+  decode: _decodeDouble,
+);
+
+/// Whether the desktop sidebar starts folded away. Backs the in-memory
+/// `sidebarCollapsedProvider` so the fold state survives restarts.
+const PreferenceEntry<bool> sidebarStartCollapsedPreference = PreferenceEntry(
+  id: 'layout.startCollapsed',
+  defaultValue: false,
+  encode: _encodeBool,
+  decode: _decodeBool,
+);
+
+/// UI text scale applied via `MediaQuery.textScaler` in `desktop_app.dart`.
+/// 1.0 is the system default; the slider offers a 0.9–1.3 range.
+const PreferenceEntry<double> textScalePreference = PreferenceEntry(
+  id: 'appearance.textScale',
+  defaultValue: 1,
+  encode: _encodeDouble,
+  decode: _decodeDouble,
+);
+
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   themeModePreference,
   notificationsReminderDelayPreference,
   lastSectionPreference,
+  sidebarWidthPreference,
+  sidebarStartCollapsedPreference,
+  textScalePreference,
 ];
 
 Object? _encodeThemeMode(ThemeMode value) => value.name;
@@ -62,3 +94,11 @@ String? _decodeString(Object? json) => json is String ? json : null;
 Object? _encodeInt(int value) => value;
 
 int? _decodeInt(Object? json) => json is int ? json : null;
+
+Object? _encodeDouble(double value) => value;
+
+double? _decodeDouble(Object? json) => json is num ? json.toDouble() : null;
+
+Object? _encodeBool(bool value) => value;
+
+bool? _decodeBool(Object? json) => json is bool ? json : null;

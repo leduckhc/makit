@@ -33,6 +33,7 @@ import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
 import 'chat/keymap_scope.dart';
 import 'chat/loopback_pairing.dart';
+import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
 import 'desktop_controller.dart';
 import 'screens/devices_screen.dart';
@@ -142,6 +143,7 @@ Future<void> runDesktopApp() async {
 
   runApp(
     ProviderScope(
+      observers: const [SidebarLayoutPrefsObserver()],
       overrides: [
         controlClientProvider.overrideWithValue(client),
         desktopControllerProvider.overrideWithValue(controller),
@@ -244,6 +246,9 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
     final reminderDelay = Duration(
       minutes: ref.preference(notificationsReminderDelayPreference),
     );
+    // UI text scale (SPEC-13 Appearance → Text). Applied via a MediaQuery
+    // wrapper in `builder` so it scales the whole app, dialogs included.
+    final textScaler = TextScaler.linear(ref.preference(textScalePreference));
     return MaterialApp(
       title: 'Makit',
       navigatorKey: _desktopNavKey,
@@ -252,11 +257,15 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ref.preference(themeModePreference),
-      builder: (context, child) => SrvRequestHandler(
-        navigatorKey: _desktopNavKey,
-        // Desktop is the control surface: always show the in-app dialog, and
-        // only fall back to a system notification if it goes unanswered.
-        reminderDelay: reminderDelay,        child: child ?? const SizedBox(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: SrvRequestHandler(
+          navigatorKey: _desktopNavKey,
+          // Desktop is the control surface: always show the in-app dialog, and
+          // only fall back to a system notification if it goes unanswered.
+          reminderDelay: reminderDelay,
+          child: child ?? const SizedBox(),
+        ),
       ),
       home: DesktopKeymapScope(
         onOpenSettings: _openSettings,

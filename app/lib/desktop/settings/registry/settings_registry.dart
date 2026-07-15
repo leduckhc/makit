@@ -73,16 +73,14 @@ final List<SettingsSection> kSettingsSections = [
       SettingsItem(
         id: 'appearance.text_code',
         title: 'Text & code',
-        help: 'UI text scale and the monospace code font.',
-        keywords: ['font', 'scale', 'size', 'monospace'],
-        availability: SettingsAvailability.comingSoon,
+        help: 'UI text scale; monospace code font (coming soon).',
+        keywords: ['font', 'scale', 'size', 'monospace', 'text'],
       ),
       SettingsItem(
         id: 'appearance.layout',
         title: 'Layout',
-        help: 'Density, default sidebar width, and start collapsed.',
-        keywords: ['density', 'sidebar', 'width', 'collapsed'],
-        availability: SettingsAvailability.comingSoon,
+        help: 'Default sidebar width and start collapsed.',
+        keywords: ['sidebar', 'width', 'collapsed', 'fold'],
       ),
       SettingsItem(
         id: 'appearance.chat_rendering',
