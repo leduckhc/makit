@@ -258,7 +258,6 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
     final worktree = widget.worktree;
     final sessions = widget.sessions;
     final branch = worktree.branch ?? 'detached';
-    final isDefault = worktree.branch == repo.defaultBranch;
     final isCurrent =
         worktree.branch != null && worktree.branch == repo.currentBranch;
     // A worktree with no sessions is selectable: clicking it opens the harness
@@ -320,13 +319,6 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                 Symbols.star,
                                 size: 13,
                                 weight: 200,
-                                color: theme.colorScheme.outline,
-                              ),
-                            ],
-                            if (isDefault) ...[
-                              const SizedBox(width: 6),
-                              TagChip(
-                                label: 'default',
                                 color: theme.colorScheme.outline,
                               ),
                             ],
