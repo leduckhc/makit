@@ -103,8 +103,10 @@ class _SidebarWidthRow extends ConsumerWidget {
       children: [
         ListTile(
           title: const Text('Default sidebar width'),
-          subtitle: Text('${clamped.round()} px. Also set by dragging the '
-              'sidebar edge.'),
+          subtitle: Text(
+            '${clamped.round()} px. Also set by dragging the '
+            'sidebar edge.',
+          ),
           trailing: _ResetButton(
             visible: modified,
             onPressed: () => ref.read(sidebarWidthProvider.notifier).state =
@@ -178,8 +180,10 @@ class _TextScaleRow extends ConsumerWidget {
       children: [
         ListTile(
           title: const Text('UI text scale'),
-          subtitle: Text('${(clamped * 100).round()}% of the default text '
-              'size.'),
+          subtitle: Text(
+            '${(clamped * 100).round()}% of the default text '
+            'size.',
+          ),
           trailing: _ResetButton(
             visible: modified,
             onPressed: () => controller.reset(textScalePreference),
@@ -285,7 +289,10 @@ class _ComingSoonRow extends StatelessWidget {
         children: [
           Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
           const SizedBox(width: 6),
-          Text('Coming soon', style: TextStyle(color: cs.outline, fontSize: 12)),
+          Text(
+            'Coming soon',
+            style: TextStyle(color: cs.outline, fontSize: 12),
+          ),
         ],
       ),
     );

@@ -10,6 +10,7 @@ import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
 import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
 import 'package:makit/desktop/settings/sections/appearance_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
+import 'package:makit/desktop/settings/settings_item_anchor.dart';
 import 'package:makit/desktop/settings/settings_window.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -117,10 +118,33 @@ void main() {
     expect(find.byType(AppearanceSection), findsOneWidget);
   });
 
-  testWidgets('search deep-links a result to its section', (tester) async {
+  testWidgets('search deep-links a result to its section and item', (
+    tester,
+  ) async {
     final controller = PreferencesController.ephemeral();
+    final container = ProviderContainer(
+      overrides: [
+        preferencesControllerProvider.overrideWith((ref) => controller),
+        serverConfigProvider.overrideWith(
+          (ref) => ServerConfigController(_prefs, const ServerConfig()),
+        ),
+        desktopControllerProvider.overrideWithValue(
+          DesktopController(
+            client: FakeControlClient(),
+            lifecycle: DaemonLifecycle(
+              resolver: MakitCliResolver(shellLookup: () async => null),
+            ),
+          ),
+        ),
+        connectionProvider.overrideWithValue(MakitConnState()),
+      ],
+    );
+    addTearDown(container.dispose);
     await tester.pumpWidget(
-      _wrap(SettingsWindow(onClose: () {}), controller: controller),
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: SettingsWindow(onClose: () {})),
+      ),
     );
 
     await tester.enterText(find.byType(TextField), 'endpoint');
@@ -130,6 +154,11 @@ void main() {
     await tester.tap(find.text('Endpoint'));
     await tester.pumpAndSettle();
     expect(controller.get(lastSectionPreference), 'server_devices');
+    // The deep-link records the specific item so its row can be revealed.
+    expect(
+      container.read(settingsTargetItemProvider),
+      'server_devices.endpoint',
+    );
   });
 
   testWidgets('close affordance invokes onClose', (tester) async {

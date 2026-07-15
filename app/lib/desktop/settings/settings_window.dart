@@ -7,6 +7,7 @@ import 'prefs/preference_entries.dart';
 import 'prefs/preferences_providers.dart';
 import 'registry/settings_registry.dart';
 import 'settings_detail_pane.dart';
+import 'settings_item_anchor.dart';
 import 'settings_nav_pane.dart';
 
 /// Whether the in-window Settings surface is showing. Flipped by the sidebar's
@@ -84,7 +85,7 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
         : kSettingsSections.first.id;
   }
 
-  void _select(String sectionId) {
+  void _select(String sectionId, {String? targetItemId}) {
     setState(() {
       _selectedId = sectionId;
       _query = '';
@@ -92,7 +93,14 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
     ref
         .read(preferencesControllerProvider.notifier)
         .set(lastSectionPreference, sectionId);
+    // Point any anchored row at the deep-linked item (null when navigating by
+    // section, so a prior highlight target is cleared).
+    ref.read(settingsTargetItemProvider.notifier).state = targetItemId;
   }
+
+  /// Selects the section that owns a search result and deep-links to the item.
+  void _selectResult(String sectionId, String itemId) =>
+      _select(sectionId, targetItemId: itemId);
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +130,7 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
                       query: _query,
                       onQueryChanged: (q) => setState(() => _query = q),
                       onSelect: _select,
+                      onSelectResult: _selectResult,
                       onClose: widget.onClose,
                     ),
                   ),

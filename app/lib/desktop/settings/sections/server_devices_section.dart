@@ -14,12 +14,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../../store/connection.dart' show connectionProvider;
-import '../../desktop_app.dart' show desktopControllerProvider, makitInstallCommand;
+import '../../desktop_app.dart'
+    show desktopControllerProvider, makitInstallCommand;
 import '../../screens/devices_screen.dart';
 import '../../screens/qr_screen.dart';
 import '../../screens/sessions_screen.dart';
 import '../../tray/tray_controller.dart' show DaemonState;
 import '../server_config.dart';
+import '../settings_item_anchor.dart';
 import 'section_header.dart';
 
 /// Lowest valid TCP port (inclusive).
@@ -40,7 +42,10 @@ class ServerDevicesSection extends StatelessWidget {
       children: const [
         SettingsSectionHeader(title: 'Server & Devices'),
         SettingsSectionHeader(title: 'Server'),
-        _EndpointRow(),
+        SettingsItemAnchor(
+          itemId: 'server_devices.endpoint',
+          child: _EndpointRow(),
+        ),
         _LifecycleRow(),
         _CliRow(),
         _FingerprintRow(),
@@ -215,7 +220,10 @@ class _LifecycleRow extends ConsumerWidget {
         final running = summary.state == DaemonState.running;
         final starting = summary.state == DaemonState.starting;
         final (Color dot, String label) = switch (summary.state) {
-          DaemonState.running => (cs.primary, 'Running · pid ${summary.pid ?? '—'}'),
+          DaemonState.running => (
+            cs.primary,
+            'Running · pid ${summary.pid ?? '—'}',
+          ),
           DaemonState.starting => (cs.outline, 'Starting…'),
           DaemonState.stopped => (cs.outline, 'Stopped'),
         };
@@ -268,7 +276,11 @@ class _CliRowState extends ConsumerState<_CliRow> {
   @override
   void initState() {
     super.initState();
-    _resolved = ref.read(desktopControllerProvider).lifecycle.resolver.resolve();
+    _resolved = ref
+        .read(desktopControllerProvider)
+        .lifecycle
+        .resolver
+        .resolve();
   }
 
   void _copyInstallCommand() {
@@ -290,8 +302,9 @@ class _CliRowState extends ConsumerState<_CliRow> {
         final resolving = snapshot.connectionState == ConnectionState.waiting;
         final subtitle = resolving
             ? 'Locating the makit CLI…'
-            : (path ?? 'The makit CLI was not found. Install it to control '
-                  'the server from here.');
+            : (path ??
+                  'The makit CLI was not found. Install it to control '
+                      'the server from here.');
         return ListTile(
           leading: Icon(Symbols.terminal, weight: 200, color: cs.outline),
           title: const Text('CLI'),
@@ -327,9 +340,7 @@ class _FingerprintRow extends ConsumerWidget {
             : _shorten(fingerprint),
         style: fingerprint == null
             ? null
-            : const TextStyle(
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
+            : const TextStyle(fontFeatures: [FontFeature.tabularFigures()]),
       ),
       trailing: fingerprint == null
           ? null
@@ -338,9 +349,7 @@ class _FingerprintRow extends ConsumerWidget {
               icon: const Icon(Symbols.content_copy, weight: 200, size: 18),
               onPressed: () {
                 final messenger = ScaffoldMessenger.of(context);
-                unawaited(
-                  Clipboard.setData(ClipboardData(text: fingerprint)),
-                );
+                unawaited(Clipboard.setData(ClipboardData(text: fingerprint)));
                 messenger.showSnackBar(
                   const SnackBar(content: Text('Fingerprint copied')),
                 );
@@ -349,8 +358,9 @@ class _FingerprintRow extends ConsumerWidget {
     );
   }
 
-  static String _shorten(String fingerprint) =>
-      fingerprint.length <= 24 ? fingerprint : '${fingerprint.substring(0, 24)}…';
+  static String _shorten(String fingerprint) => fingerprint.length <= 24
+      ? fingerprint
+      : '${fingerprint.substring(0, 24)}…';
 }
 
 /// A row that opens an embedded control screen as a sub-page (SPEC-13 keeps
@@ -376,9 +386,9 @@ class _NavRow extends StatelessWidget {
       title: Text(title),
       subtitle: Text(help),
       trailing: const Icon(Symbols.chevron_right, weight: 200),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => destination),
-      ),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => destination)),
     );
   }
 }

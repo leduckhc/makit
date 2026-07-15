@@ -12,5 +12,6 @@ class AgentsChatSection extends StatelessWidget {
   const AgentsChatSection({super.key});
 
   @override
-  Widget build(BuildContext context) => const ComingSoon(title: 'Agents & Chat');
+  Widget build(BuildContext context) =>
+      const ComingSoon(title: 'Agents & Chat');
 }

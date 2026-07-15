@@ -46,7 +46,9 @@ class _ReminderDelayRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final minutes = ref.preference(notificationsReminderDelayPreference);
-    final modified = ref.preferenceModified(notificationsReminderDelayPreference);
+    final modified = ref.preferenceModified(
+      notificationsReminderDelayPreference,
+    );
     final controller = ref.read(preferencesControllerProvider.notifier);
 
     // Guard against a stale/foreign stored value: always render a valid choice.
@@ -113,14 +115,19 @@ class _PerTypeMuteRow extends StatelessWidget {
       enabled: false,
       leading: Icon(Symbols.notifications_off, weight: 200, color: cs.outline),
       title: const Text('Per-type mute & approval reminders'),
-      subtitle: const Text('Mute specific notification types; approval '
-          'reminders.'),
+      subtitle: const Text(
+        'Mute specific notification types; approval '
+        'reminders.',
+      ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
           const SizedBox(width: 6),
-          Text('Coming soon', style: TextStyle(color: cs.outline, fontSize: 12)),
+          Text(
+            'Coming soon',
+            style: TextStyle(color: cs.outline, fontSize: 12),
+          ),
         ],
       ),
     );

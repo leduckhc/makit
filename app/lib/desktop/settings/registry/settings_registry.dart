@@ -304,9 +304,7 @@ class SettingsSearchIndex {
     for (final section in _sections) {
       for (final item in section.items) {
         if (_matches(item, q)) {
-          results.add(
-            SettingsSearchResult(sectionId: section.id, item: item),
-          );
+          results.add(SettingsSearchResult(sectionId: section.id, item: item));
         }
       }
     }

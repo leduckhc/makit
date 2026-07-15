@@ -15,6 +15,7 @@ class SettingsNavPane extends StatelessWidget {
     required this.query,
     required this.onQueryChanged,
     required this.onSelect,
+    required this.onSelectResult,
     required this.onClose,
     super.key,
   });
@@ -33,6 +34,10 @@ class SettingsNavPane extends StatelessWidget {
 
   /// Called to select a section (from a tile or a search result).
   final ValueChanged<String> onSelect;
+
+  /// Called to deep-link a search result: selects its [sectionId] and reveals
+  /// the matching item id.
+  final void Function(String sectionId, String itemId) onSelectResult;
 
   /// Dismisses the settings surface.
   final VoidCallback onClose;
@@ -58,7 +63,7 @@ class SettingsNavPane extends StatelessWidget {
         ),
         Expanded(
           child: searching
-              ? _SearchResults(query: query, onSelect: onSelect)
+              ? _SearchResults(query: query, onSelectResult: onSelectResult)
               : _SectionList(
                   sections: sections,
                   selectedId: selectedId,
@@ -127,9 +132,9 @@ class _SectionList extends StatelessWidget {
 }
 
 class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.query, required this.onSelect});
+  const _SearchResults({required this.query, required this.onSelectResult});
   final String query;
-  final ValueChanged<String> onSelect;
+  final void Function(String sectionId, String itemId) onSelectResult;
 
   @override
   Widget build(BuildContext context) {
@@ -150,13 +155,14 @@ class _SearchResults extends StatelessWidget {
             dense: true,
             title: Text(result.item.title),
             subtitle: Text(sectionTitles[result.sectionId] ?? result.sectionId),
-            trailing: result.item.availability == SettingsAvailability.comingSoon
+            trailing:
+                result.item.availability == SettingsAvailability.comingSoon
                 ? Text(
                     'Coming soon',
                     style: TextStyle(color: cs.outline, fontSize: 11),
                   )
                 : null,
-            onTap: () => onSelect(result.sectionId),
+            onTap: () => onSelectResult(result.sectionId, result.item.id),
           ),
       ],
     );
