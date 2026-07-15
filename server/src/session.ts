@@ -44,7 +44,7 @@ export interface SessionInit {
 export class Session extends EventEmitter {
   readonly id: string;
   readonly projectId: string;
-  readonly agent: string;
+  agent: string;
   readonly createdAt: number;
   title: string;
   status: SessionStatus = "idle";

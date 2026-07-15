@@ -86,7 +86,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       // start a session in that existing worktree.
       final worktree = ref.watch(selectedWorktreeProvider);
       if (worktree != null) {
-        return _WorktreeStartView(worktree: worktree);
+        return _WorktreeStartView(
+          key: ValueKey(worktree.path),
+          worktree: worktree,
+        );
       }
       // No session yet, but the pane still owns the unfold affordance when the
       // sidebar is hidden — surface a minimal top strip above the placeholder.
@@ -625,7 +628,7 @@ class _HarnessCard extends StatelessWidget {
 /// harness, then send a message to start a session IN that existing worktree.
 /// The session is spawned only on first send (no orphan drafts).
 class _WorktreeStartView extends ConsumerStatefulWidget {
-  const _WorktreeStartView({required this.worktree});
+  const _WorktreeStartView({super.key, required this.worktree});
   final SelectedWorktree worktree;
 
   @override
