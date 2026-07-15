@@ -421,30 +421,51 @@ class _ThinkingLineState extends State<_ThinkingLine> {
       fontStyle: FontStyle.italic,
       height: 1.3,
     );
-    return InkWell(
-      onTap: () => setState(() => _expanded = !_expanded),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Symbols.psychology,
-              weight: 200,
-              size: 15,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.55),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                widget.text.trim(),
-                style: style,
-                maxLines: _expanded ? null : 1,
-                overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
+    void toggle() => setState(() => _expanded = !_expanded);
+    final textWidget = _expanded
+        ? SelectableText(widget.text.trim(), style: style, onTap: toggle)
+        : Text(
+            widget.text.trim(),
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+    // Expanded: SelectableText handles taps on the text for selection; a tap
+    // on the leading icon collapses. Collapsed: whole row is a tap target that
+    // expands.
+    return _expanded
+        ? Semantics(
+            onTap: toggle,
+            onTapHint: 'Collapse thinking',
+            child: _buildRow(textWidget, onLeadingTap: toggle),
+          )
+        : InkWell(onTap: toggle, child: _buildRow(textWidget));
+  }
+
+  Widget _buildRow(Widget textWidget, {VoidCallback? onLeadingTap}) {
+    final cs = Theme.of(context).colorScheme;
+    Widget leading = Icon(
+      Symbols.psychology,
+      weight: 200,
+      size: 15,
+      color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+    );
+    if (onLeadingTap != null) {
+      leading = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onLeadingTap,
+        child: leading,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          leading,
+          const SizedBox(width: 6),
+          Expanded(child: textWidget),
+        ],
       ),
     );
   }

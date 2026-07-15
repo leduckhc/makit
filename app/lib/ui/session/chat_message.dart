@@ -118,7 +118,8 @@ Future<void> _openLink(String text, String? href, String title) async {
 }
 
 /// Renders fenced code blocks with syntax highlighting + a copy button.
-/// Inline `code` returns null → falls back to the stylesheet's inline style.
+/// Inline `code` returns a Container with background (not TextStyle.backgroundColor)
+/// so text selection highlight renders on top.
 class _CodeBlockBuilder extends MarkdownElementBuilder {
   _CodeBlockBuilder(this.context);
   final BuildContext context;
@@ -133,8 +134,29 @@ class _CodeBlockBuilder extends MarkdownElementBuilder {
     var code = element.textContent;
     if (code.endsWith('\n')) code = code.substring(0, code.length - 1);
     final isBlock = className != null || code.contains('\n');
-    if (!isBlock) return null; // inline code
-    return _CodeBlock(code: code, language: language);
+
+    if (isBlock) {
+      return _CodeBlock(code: code, language: language);
+    }
+
+    // Inline code - wrap in Container with background for proper selection rendering
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final bg = dark ? const Color(0xFF33363E) : const Color(0xFFEBECF0);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        code,
+        style: preferredStyle?.copyWith(
+          fontFamily: 'monospace',
+          fontSize: 13,
+          backgroundColor: Colors.transparent,
+        ),
+      ),
+    );
   }
 }
 
@@ -214,14 +236,12 @@ class _CopyButtonState extends State<_CopyButton> {
 MarkdownStyleSheet _styleSheet(BuildContext context) {
   final theme = Theme.of(context);
   final cs = theme.colorScheme;
-  final dark = theme.brightness == Brightness.dark;
+  // Inline `code`: mono font. Background is applied by _CodeBlockBuilder
+  // to allow text selection to render on top.
   final mono = theme.textTheme.bodyMedium?.copyWith(
     fontFamily: 'monospace',
     fontSize: 13,
   );
-  // Inline `code`: mono font on a subtle-but-visible background, tuned per
-  // theme (a light grey on light mode, a lifted grey on dark mode).
-  final inlineCodeBg = dark ? const Color(0xFF33363E) : const Color(0xFFEBECF0);
   // LLMs love emitting h1/h2/h3 headers; render them all as plain bold text at
   // the normal body size instead of oversized headings.
   final heading = theme.textTheme.bodyMedium?.copyWith(
@@ -229,7 +249,7 @@ MarkdownStyleSheet _styleSheet(BuildContext context) {
   );
   return MarkdownStyleSheet.fromTheme(theme).copyWith(
     p: theme.textTheme.bodyMedium,
-    code: mono?.copyWith(backgroundColor: inlineCodeBg),
+    code: mono,
     h1: heading,
     h2: heading,
     h3: heading,
