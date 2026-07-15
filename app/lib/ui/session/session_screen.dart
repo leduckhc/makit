@@ -268,6 +268,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     footerActions: [
                       ComposerModelSelector(sessionId: widget.sessionId),
                       ComposerThinkingSelector(sessionId: widget.sessionId),
+                      ComposerModeSelector(sessionId: widget.sessionId),
                     ],
                   ),
                 ),

@@ -114,6 +114,43 @@ void main() {
     });
   });
 
+  group('ComposerModeSelector', () {
+    testWidgets('hidden when the agent advertises no modes', (tester) async {
+      final c = _container(
+        meta: const SessionMeta(model: modelA, thinking: '', models: [modelA]),
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _wrap(c, const ComposerModeSelector(sessionId: 's1')),
+      );
+      expect(find.byType(InkWell), findsNothing);
+    });
+
+    testWidgets('shows the current mode name from the available modes', (
+      tester,
+    ) async {
+      final c = _container(
+        meta: const SessionMeta(
+          thinking: '',
+          models: [],
+          modes: SessionModes(
+            current: 'code',
+            available: [
+              SessionMode(id: 'ask', name: 'Ask'),
+              SessionMode(id: 'code', name: 'Code'),
+            ],
+          ),
+        ),
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(
+        _wrap(c, const ComposerModeSelector(sessionId: 's1')),
+      );
+      expect(find.text('Code'), findsOneWidget);
+      expect(find.byType(InkWell), findsOneWidget);
+    });
+  });
+
   testWidgets(
     'long model label ellipsizes in a narrow composer footer (no overflow)',
     (tester) async {

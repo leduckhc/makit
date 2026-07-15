@@ -179,6 +179,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                 footerActions: [
                   ComposerModelSelector(sessionId: sessionId),
                   ComposerThinkingSelector(sessionId: sessionId),
+                  ComposerModeSelector(sessionId: sessionId),
                 ],
                 focusNode: ref.watch(desktopComposerFocusProvider),
                 sendChord: ref
