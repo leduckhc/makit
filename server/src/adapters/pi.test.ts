@@ -36,6 +36,71 @@ function fakeSpawn(
   return { spawn, children };
 }
 
+test("emits session.meta from get_state + get_available_models and maps model/thinking actions", async () => {
+  const writes: string[] = [];
+  const { spawn, children } = fakeSpawn((child) => {
+    child.stdin.write = (s: string) => {
+      writes.push(s);
+      return true;
+    };
+  });
+  const adapter = new PiAdapter({ spawn });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: "/tmp", sessionId: "s1" });
+  await delay(150); // boot has a 100ms settle before it queries pi
+
+  // At boot the adapter asks pi for its state + selectable models.
+  const booted = writes.map((w) => JSON.parse(w));
+  assert.ok(booted.some((c) => c.type === "get_state"), "expected get_state");
+  assert.ok(
+    booted.some((c) => c.type === "get_available_models"),
+    "expected get_available_models",
+  );
+
+  const child = children[0]!;
+  const line = (o: unknown) => child.stdout.emit("data", JSON.stringify(o) + "\n");
+  line({
+    type: "response",
+    command: "get_state",
+    success: true,
+    data: { model: { provider: "openai", id: "gpt-5", name: "GPT-5" }, thinkingLevel: "medium" },
+  });
+  line({
+    type: "response",
+    command: "get_available_models",
+    success: true,
+    data: {
+      models: [
+        { provider: "openai", id: "gpt-5", name: "GPT-5" },
+        { provider: "anthropic", id: "claude", name: "Claude" },
+      ],
+    },
+  });
+
+  const meta = events.filter((e) => e.kind === "session.meta").at(-1);
+  assert.ok(meta, "expected a session.meta event");
+  const payload = meta!.payload as any;
+  assert.equal(payload.thinking, "medium");
+  assert.equal(payload.model.id, "gpt-5");
+  assert.equal(payload.models.length, 2);
+
+  // The composer selectors' actions map to pi's rpc commands.
+  writes.length = 0;
+  await adapter.sendAction("model", { provider: "anthropic", id: "claude" });
+  await adapter.sendAction("thinking", { level: "high" });
+  const cmds = writes.map((w) => JSON.parse(w));
+  assert.ok(
+    cmds.some((c) => c.type === "set_model" && c.provider === "anthropic" && c.modelId === "claude"),
+    "expected set_model",
+  );
+  assert.ok(
+    cmds.some((c) => c.type === "set_thinking_level" && c.level === "high"),
+    "expected set_thinking_level",
+  );
+});
+
 test("a spawn failure surfaces session.error+exited instead of crashing the daemon", async () => {
   const { spawn } = fakeSpawn((child) =>
     child.emit("error", Object.assign(new Error("spawn pi ENOENT"), { code: "ENOENT" })),

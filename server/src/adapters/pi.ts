@@ -63,6 +63,16 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   /** Stable streamed-thinking id per content-index (ties deltas to the final). */
   private thinkIds = new Map<number, string>();
 
+  // ---- session.meta (model / thinking / selectable models) ----------------
+  // pi reports these via the `get_state` + `get_available_models` rpc commands
+  // (see docs/rpc.md). We cache the latest of each and emit a merged
+  // `session.meta` event whenever either changes, so the app can drive its
+  // model + thinking selectors. Nothing emitted pi-mirror-style anymore
+  // (#26 removed the extension), so the adapter owns this now.
+  private metaModel: { provider: string; id: string; name: string } | null = null;
+  private metaThinking = "";
+  private metaModels: { provider: string; id: string; name: string }[] = [];
+
   async start(opts: SpawnOpts): Promise<void> {
     this.cwd = opts.cwd;
     this.extraEnv = opts.env ?? {};
@@ -99,11 +109,29 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
     await this.ensureProcess();
     // `name` → persist the session name in pi so it survives resume/re-attach.
-    // Other actions (compact/thinking/…) are not yet mapped in rpc mode.
     if (action === "name") {
       const name = typeof args?.name === "string" ? args.name.trim() : "";
       if (name) this.writeCommand({ type: "set_session_name", name });
+      return;
     }
+    // `model` → switch the active model; the response carries the new Model and
+    // triggers a fresh session.meta (see handleLine).
+    if (action === "model") {
+      const provider = typeof args?.provider === "string" ? args.provider : "";
+      const id = typeof args?.id === "string" ? args.id : "";
+      if (provider && id) {
+        this.writeCommand({ type: "set_model", provider, modelId: id });
+      }
+      return;
+    }
+    // `thinking` → set the reasoning level; re-query state after so the emitted
+    // meta reflects what pi actually applied (some levels are model-gated).
+    if (action === "thinking") {
+      const level = typeof args?.level === "string" ? args.level : "";
+      if (level) this.writeCommand({ type: "set_thinking_level", level });
+      return;
+    }
+    // Other actions (compact/…) are not yet mapped in rpc mode.
   }
 
   async cancel(): Promise<void> {
@@ -225,9 +253,34 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     });
 
     // Give pi a moment to initialize, then ask for available commands so the
-    // app can populate its slash palette with real extensions/skills/prompts.
+    // app can populate its slash palette with real extensions/skills/prompts,
+    // plus the model/thinking state that drives the composer selectors.
     await new Promise((r) => setTimeout(r, 100));
     this.writeCommand({ id: "boot-commands", type: "get_commands" });
+    this.requestMeta();
+  }
+
+  /**
+   * Ask pi for its current model + thinking level ([get_state]) and the list of
+   * selectable models ([get_available_models]). Their responses are handled in
+   * [handleLine] and merged into a single `session.meta` event via [pushMeta].
+   */
+  private requestMeta(): void {
+    this.writeCommand({ id: "meta-state", type: "get_state" });
+    this.writeCommand({ id: "meta-models", type: "get_available_models" });
+  }
+
+  /** Emit the current cached model/thinking/models snapshot as `session.meta`. */
+  private pushMeta(): void {
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "session.meta",
+      payload: {
+        model: this.metaModel,
+        thinking: this.metaThinking,
+        models: this.metaModels,
+      },
+    });
   }
 
   private writeCommand(cmd: Record<string, unknown>): void {
@@ -370,6 +423,30 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
             kind: "session.commands",
             payload: { commands: evt.data.commands },
           });
+        } else if (evt.command === "get_state" && evt.success && evt.data) {
+          this.metaModel = normalizeModel(evt.data.model);
+          if (typeof evt.data.thinkingLevel === "string") {
+            this.metaThinking = evt.data.thinkingLevel;
+          }
+          this.pushMeta();
+        } else if (
+          evt.command === "get_available_models" &&
+          evt.success &&
+          Array.isArray(evt.data?.models)
+        ) {
+          this.metaModels = evt.data.models
+            .map(normalizeModel)
+            .filter((m: unknown): m is { provider: string; id: string; name: string } => m !== null);
+          this.pushMeta();
+        } else if (evt.command === "set_model" && evt.success) {
+          // Response data is the new Model; adopt it and re-query state so the
+          // thinking level (which pi may adjust per-model) stays accurate.
+          const m = normalizeModel(evt.data);
+          if (m) this.metaModel = m;
+          this.requestMeta();
+        } else if (evt.command === "set_thinking_level" && evt.success) {
+          // No payload on this response — re-query for the applied level.
+          this.requestMeta();
         }
         return;
 
@@ -542,6 +619,23 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
  * use `readline` because it also splits on U+2028/U+2029 which are valid
  * inside JSON strings.
  */
+/**
+ * Reduce a pi rpc [Model] object (see docs/rpc.md) to the `{provider,id,name}`
+ * triple the app's `session.meta` carries. Returns null for a null/malformed
+ * model so callers can render "no model yet".
+ */
+function normalizeModel(
+  m: unknown,
+): { provider: string; id: string; name: string } | null {
+  if (!m || typeof m !== "object") return null;
+  const o = m as Record<string, unknown>;
+  const provider = typeof o.provider === "string" ? o.provider : "";
+  const id = typeof o.id === "string" ? o.id : "";
+  if (!provider || !id) return null;
+  const name = typeof o.name === "string" && o.name ? o.name : id;
+  return { provider, id, name };
+}
+
 function bindLfLines(stream: NodeJS.ReadableStream, onLine: (line: string) => void): void {
   let buf = "";
   stream.setEncoding?.("utf8");
