@@ -129,6 +129,40 @@ test("emits session.meta from ACP modes and maps the mode action to set_session_
   assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).modes.current, "ask");
 });
 
+test("agent-initiated current_mode_update re-emits session.meta with the new mode", async () => {
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async () => {});
+    (agentRef as unknown as { newSession: () => Promise<unknown> }).newSession = async () => ({
+      sessionId: "acp-sess-1",
+      modes: {
+        currentModeId: "code",
+        availableModes: [
+          { id: "ask", name: "Ask" },
+          { id: "code", name: "Code" },
+        ],
+      },
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({ spec: { agent: "codex", command: "x" }, connect: () => transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).modes.current, "code");
+
+  // The agent switches modes autonomously → a current_mode_update notification
+  // (per ACP's CurrentModeUpdate, the field is `currentModeId`) must re-emit
+  // session.meta with the new current mode.
+  events.length = 0;
+  await agentRef!.update("acp-sess-1", { sessionUpdate: "current_mode_update", currentModeId: "ask" });
+  await collectUntil(events, "session.meta");
+  assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).modes.current, "ask");
+});
+
 test("initializes, prompts, and streams a full turn end-to-end", async () => {
   let agentRef: ScriptedAgent;
   const { transport } = pair((conn) => {

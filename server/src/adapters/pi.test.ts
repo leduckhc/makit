@@ -101,6 +101,62 @@ test("emits session.meta from get_state + get_available_models and maps model/th
   );
 });
 
+test("set_model / set_thinking_level responses adopt the model and re-query state", async () => {
+  const writes: string[] = [];
+  const { spawn, children } = fakeSpawn((child) => {
+    child.stdin.write = (s: string) => {
+      writes.push(s);
+      return true;
+    };
+  });
+  const adapter = new PiAdapter({ spawn });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: "/tmp", sessionId: "s1" });
+  await delay(150); // boot settles, then queries pi
+
+  const child = children[0]!;
+  const line = (o: unknown) => child.stdout.emit("data", JSON.stringify(o) + "\n");
+
+  // set_model's response payload IS the new Model (per docs/rpc.md): the branch
+  // normalizes + adopts it, then re-queries state.
+  writes.length = 0;
+  line({
+    type: "response",
+    command: "set_model",
+    success: true,
+    data: { provider: "anthropic", id: "claude", name: "Claude" },
+  });
+  const afterSetModel = writes.map((w) => JSON.parse(w));
+  assert.ok(afterSetModel.some((c) => c.type === "get_state"), "set_model re-queries get_state");
+  assert.ok(
+    afterSetModel.some((c) => c.type === "get_available_models"),
+    "set_model re-queries get_available_models",
+  );
+
+  // The adopted model surfaces on the next pushMeta (here via the models
+  // response, which does not overwrite metaModel).
+  line({
+    type: "response",
+    command: "get_available_models",
+    success: true,
+    data: { models: [{ provider: "anthropic", id: "claude", name: "Claude" }] },
+  });
+  const metaAfterModel = events.filter((e) => e.kind === "session.meta").at(-1);
+  assert.equal((metaAfterModel!.payload as any).model.id, "claude", "set_model adopted the returned model");
+
+  // set_thinking_level has no payload — it only re-queries state.
+  writes.length = 0;
+  line({ type: "response", command: "set_thinking_level", success: true });
+  const afterSetThinking = writes.map((w) => JSON.parse(w));
+  assert.ok(afterSetThinking.some((c) => c.type === "get_state"), "set_thinking_level re-queries get_state");
+  assert.ok(
+    afterSetThinking.some((c) => c.type === "get_available_models"),
+    "set_thinking_level re-queries get_available_models",
+  );
+});
+
 test("a spawn failure surfaces session.error+exited instead of crashing the daemon", async () => {
   const { spawn } = fakeSpawn((child) =>
     child.emit("error", Object.assign(new Error("spawn pi ENOENT"), { code: "ENOENT" })),
