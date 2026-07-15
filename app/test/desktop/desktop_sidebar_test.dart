@@ -200,7 +200,6 @@ void main() {
     );
 
     expect(find.text('PR #42'), findsOneWidget);
-    expect(find.text('1 open PR'), findsOneWidget);
   });
 
   testWidgets('empty state prompts to start a session', (tester) async {
@@ -432,9 +431,9 @@ void main() {
 
     // The diff chip stays inline with the branch row...
     expect(find.text('+1'), findsOneWidget);
-    // ...while the PR pill drops to its own line below it.
+    // ...while the PR label drops to its own line below it.
     final branchY = tester.getTopLeft(find.text('feat/x')).dy;
-    final prY = tester.getTopLeft(find.byType(PrPill)).dy;
+    final prY = tester.getTopLeft(find.text('PR #42')).dy;
     expect(prY, greaterThan(branchY));
   });
 
