@@ -9,6 +9,26 @@ import type { AdapterEvent } from "./adapter.js";
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
+ * Polls [writes] until the adapter's boot commands (get_state +
+ * get_available_models) have both been issued, instead of racing a fixed
+ * timer against pi's settle delay. Rejects if they never arrive.
+ */
+async function waitForBoot(writes: string[], timeoutMs = 2000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const cmds = writes.map((w) => JSON.parse(w));
+    if (
+      cmds.some((c) => c.type === "get_state") &&
+      cmds.some((c) => c.type === "get_available_models")
+    ) {
+      return;
+    }
+    await delay(5);
+  }
+  throw new Error("timed out waiting for boot commands (get_state + get_available_models)");
+}
+
+/**
  * A fake ChildProcess: an EventEmitter with pipe-shaped stdio streams. Enough
  * for PiAdapter.ensureProcess to bind its listeners. [onSpawn] runs once the
  * adapter has attached its handlers, so a test can emit 'error'/'exit' into a
@@ -49,7 +69,7 @@ test("emits session.meta from get_state + get_available_models and maps model/th
   adapter.on("event", (e) => events.push(e));
 
   await adapter.start({ cwd: "/tmp", sessionId: "s1" });
-  await delay(150); // boot has a 100ms settle before it queries pi
+  await waitForBoot(writes); // wait until boot has queried pi, not a fixed timer
 
   // At boot the adapter asks pi for its state + selectable models.
   const booted = writes.map((w) => JSON.parse(w));
@@ -114,7 +134,7 @@ test("set_model / set_thinking_level responses adopt the model and re-query stat
   adapter.on("event", (e) => events.push(e));
 
   await adapter.start({ cwd: "/tmp", sessionId: "s1" });
-  await delay(150); // boot settles, then queries pi
+  await waitForBoot(writes); // wait for delayed boot commands before clearing writes
 
   const child = children[0]!;
   const line = (o: unknown) => child.stdout.emit("data", JSON.stringify(o) + "\n");

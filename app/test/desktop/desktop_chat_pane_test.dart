@@ -9,6 +9,8 @@ import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_chips.dart';
+import 'package:makit/ui/session/tool_renderers.dart'
+    show kReadableContentMaxWidth;
 
 Session _session() => Session(
   id: 's1',
@@ -335,29 +337,21 @@ void main() {
   );
 
   testWidgets(
-    'unfold button and title coexist when collapsed with a session selected',
+    'transcript ListView fills the full pane width so scrolling works anywhere',
     (tester) async {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(
-            const MethodChannel('window_manager'),
-            (call) async => null,
-          );
-      final session = Session(
-        id: 's1',
-        projectId: 'p1',
-        agent: 'pi',
-        title: 'Test session',
-        status: SessionStatus.idle,
-        policy: ApprovalPolicy.askOnRisky,
-        lastPreview: '',
-        lastActivityAt: 0,
-      );
+      // A wide pane: full-width ListView should be wider than the readable cap,
+      // proving the scroll/hit area is not limited to the centered column.
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
 
       final container = ProviderContainer(
         overrides: [
-          sessionsProvider.overrideWithValue(SessionsState([session])),
+          sessionsProvider.overrideWithValue(SessionsState([_session()])),
           eventsProvider.overrideWithValue(EventsState(const {}, const {})),
-          sidebarCollapsedProvider.overrideWith((ref) => true),
+          chatItemsProvider(
+            's1',
+          ).overrideWithValue([UserMessageItem(seq: 1, ts: 0, text: 'hi')]),
         ],
       );
       addTearDown(container.dispose);
@@ -371,12 +365,9 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byTooltip('Show sidebar'), findsOneWidget);
-      expect(find.text('Test session'), findsOneWidget);
-
-      await tester.tap(find.byTooltip('Show sidebar'));
-      await tester.pump();
-      expect(container.read(sidebarCollapsedProvider), isFalse);
+      final listWidth = tester.getSize(find.byType(ListView)).width;
+      expect(listWidth, 1200);
+      expect(listWidth, greaterThan(kReadableContentMaxWidth));
     },
   );
 }
