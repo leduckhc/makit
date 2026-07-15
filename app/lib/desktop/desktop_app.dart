@@ -239,6 +239,11 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
   Widget build(BuildContext context) {
     // SPEC-10: auto-select the most recent session when none is picked.
     ref.watch(desktopAutoSelectSessionProvider);
+    // Read reactively here (not inside `builder`, which builds in a descendant
+    // context) so changing the pref rebuilds and re-wires the reminder delay.
+    final reminderDelay = Duration(
+      minutes: ref.preference(notificationsReminderDelayPreference),
+    );
     return MaterialApp(
       title: 'Makit',
       navigatorKey: _desktopNavKey,
@@ -251,8 +256,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
         navigatorKey: _desktopNavKey,
         // Desktop is the control surface: always show the in-app dialog, and
         // only fall back to a system notification if it goes unanswered.
-        reminderDelay: const Duration(minutes: 2),
-        child: child ?? const SizedBox(),
+        reminderDelay: reminderDelay,        child: child ?? const SizedBox(),
       ),
       home: DesktopKeymapScope(
         onOpenSettings: _openSettings,

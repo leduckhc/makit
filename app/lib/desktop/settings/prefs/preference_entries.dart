@@ -17,6 +17,17 @@ const PreferenceEntry<ThemeMode> themeModePreference = PreferenceEntry(
   decode: _decodeThemeMode,
 );
 
+/// Desktop notification reminder delay, in whole minutes. When a server
+/// request goes unanswered for this long the desktop fires a system
+/// notification as a nudge (see `SrvRequestHandler.reminderDelay`). Default: 2.
+const PreferenceEntry<int> notificationsReminderDelayPreference =
+    PreferenceEntry(
+      id: 'notifications.reminderDelayMinutes',
+      defaultValue: 2,
+      encode: _encodeInt,
+      decode: _decodeInt,
+    );
+
 /// The section id shown when the Settings window last closed, so reopening
 /// restores the same spot. Defaults to the first section (`general`).
 const PreferenceEntry<String> lastSectionPreference = PreferenceEntry(
@@ -30,6 +41,7 @@ const PreferenceEntry<String> lastSectionPreference = PreferenceEntry(
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   themeModePreference,
+  notificationsReminderDelayPreference,
   lastSectionPreference,
 ];
 
@@ -46,3 +58,7 @@ ThemeMode? _decodeThemeMode(Object? json) {
 Object? _encodeString(String value) => value;
 
 String? _decodeString(Object? json) => json is String ? json : null;
+
+Object? _encodeInt(int value) => value;
+
+int? _decodeInt(Object? json) => json is int ? json : null;

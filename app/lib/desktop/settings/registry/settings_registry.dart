@@ -189,8 +189,8 @@ final List<SettingsSection> kSettingsSections = [
       SettingsItem(
         id: 'notifications.local',
         title: 'Local notifications',
-        help: 'Local notifications and background wake.',
-        keywords: ['alerts', 'background', 'wake'],
+        help: 'Local notifications, background wake, and reminder delay.',
+        keywords: ['alerts', 'background', 'wake', 'reminder', 'delay'],
       ),
       SettingsItem(
         id: 'notifications.per_type',
