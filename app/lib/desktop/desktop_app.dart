@@ -24,12 +24,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../app/theme.dart';
 import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
+import '../shortcuts/keymap_controller.dart';
 import '../store/connection.dart';
 import '../store/store.dart';
 import '../ui/widgets/srv_request_handler.dart';
 import 'chat/desktop_auto_select.dart';
 import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
+import 'chat/keymap_scope.dart';
 import 'chat/loopback_pairing.dart';
 import 'daemon/daemon_lifecycle.dart';
 import 'desktop_controller.dart';
@@ -38,6 +40,7 @@ import 'screens/providers.dart';
 import 'screens/qr_screen.dart';
 import 'screens/sessions_screen.dart';
 import 'screens/status_screen.dart';
+import 'settings/keymap_settings_screen.dart';
 import 'settings/server_config.dart';
 import 'settings/server_settings_screen.dart';
 import 'tray/tray_controller.dart';
@@ -75,6 +78,10 @@ Future<void> runDesktopApp() async {
   final configController = ServerConfigController(
     prefs,
     ServerConfigController.load(prefs),
+  );
+  final keymapController = KeymapController.load(
+    prefs,
+    cmdIsPrimary: cmdIsPrimaryModifier,
   );
   final controller = DesktopController(
     client: client,
@@ -135,6 +142,7 @@ Future<void> runDesktopApp() async {
         controlClientProvider.overrideWithValue(client),
         desktopControllerProvider.overrideWithValue(controller),
         serverConfigProvider.overrideWith((ref) => configController),
+        keymapProvider.overrideWith((ref) => keymapController),
       ],
       child: const _DesktopApp(),
     ),
@@ -238,7 +246,10 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
         reminderDelay: const Duration(minutes: 2),
         child: child ?? const SizedBox(),
       ),
-      home: DesktopChatShell(onOpenSettings: _openSettings),
+      home: DesktopKeymapScope(
+        onOpenSettings: _openSettings,
+        child: DesktopChatShell(onOpenSettings: _openSettings),
+      ),
     );
   }
 }
@@ -251,7 +262,20 @@ class _SettingsServerPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings & Server')),
+      appBar: AppBar(
+        title: const Text('Settings & Server'),
+        actions: [
+          IconButton(
+            tooltip: 'Keyboard shortcuts',
+            icon: const Icon(Icons.keyboard_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const KeymapSettingsScreen(),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: const DesktopDashboard(),
     );
   }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/ui/composer/composer.dart';
 
 void main() {
@@ -148,5 +150,60 @@ void main() {
     );
     expect(find.byIcon(Icons.stop), findsNothing);
     expect(find.byIcon(Icons.arrow_upward), findsNothing);
+  });
+
+  group('configurable send/newline chords', () {
+    Future<void> focusWithText(WidgetTester tester, String text) async {
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), text);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('Shift+Enter inserts a newline instead of sending', (
+      tester,
+    ) async {
+      final sent = <String>[];
+      await tester.pumpWidget(
+        wrap(
+          Composer(
+            onSend: sent.add,
+            sendChord: const KeyChord(LogicalKeyboardKey.enter),
+            newlineChord: const KeyChord(LogicalKeyboardKey.enter, shift: true),
+          ),
+        ),
+      );
+      await focusWithText(tester, 'hi');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pumpAndSettle();
+
+      expect(sent, isEmpty);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      // Newline inserted at the caret (end of 'hi'), caret left after it.
+      expect(field.controller!.text, 'hi\n');
+      expect(field.controller!.selection.baseOffset, 3);
+    });
+
+    testWidgets('configured plain Enter sends', (tester) async {
+      final sent = <String>[];
+      await tester.pumpWidget(
+        wrap(
+          Composer(
+            onSend: sent.add,
+            sendChord: const KeyChord(LogicalKeyboardKey.enter),
+            newlineChord: const KeyChord(LogicalKeyboardKey.enter, shift: true),
+          ),
+        ),
+      );
+      await focusWithText(tester, 'ship it');
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+
+      expect(sent, ['ship it']);
+    });
   });
 }

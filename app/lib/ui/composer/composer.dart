@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../shortcuts/key_chord.dart';
 import '../../store/models.dart';
 import 'slash_palette.dart';
 
@@ -22,8 +23,28 @@ class Composer extends StatefulWidget {
     this.running = false,
     this.commands = const [],
     this.glass = false,
+    this.sendChord,
+    this.newlineChord,
+    this.focusNode,
   });
   final void Function(String text) onSend;
+
+  /// The chord that sends the message. Null uses the built-in default
+  /// (⌘/Ctrl+Enter), which keeps mobile behavior unchanged.
+  final KeyChord? sendChord;
+
+  /// The chord that inserts a newline instead of sending. When [sendChord]
+  /// claims a key the field would otherwise use for line breaks (e.g. plain
+  /// Enter), callers must supply a matching [newlineChord] — leaving it null
+  /// lets the send activator capture that key, making the field's native
+  /// Return-inserts-newline behavior unreachable. Null is safe only when
+  /// [sendChord] does not take over the newline key.
+  final KeyChord? newlineChord;
+
+  /// An externally-owned focus node for the text field. When provided, the
+  /// caller controls focus (e.g. a global "focus composer" shortcut) and is
+  /// responsible for disposing it. Null makes the composer own its node.
+  final FocusNode? focusNode;
 
   /// Called when the user taps the cancel (stop) button while a turn is
   /// running and the input is empty. Null disables the cancel affordance.
@@ -44,7 +65,7 @@ class Composer extends StatefulWidget {
 
 class _ComposerState extends State<Composer> {
   final _ctrl = TextEditingController();
-  final _focus = FocusNode();
+  late final FocusNode _focus = widget.focusNode ?? FocusNode();
   final _fieldKey = GlobalKey(); // stable element across compact↔expanded swap
   bool _showSlash = false;
   bool _hasText = false;
@@ -199,18 +220,49 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  Widget _buildField() {
-    return Shortcuts(
-      shortcuts: const {
-        // ⌘+Enter (macOS) and Ctrl+Enter (Windows/Linux/desktop) both send.
+  Map<ShortcutActivator, Intent> _shortcuts() {
+    final sendChord = widget.sendChord;
+    if (sendChord == null) {
+      // Default (mobile + un-configured): ⌘+Enter and Ctrl+Enter both send.
+      return const {
         SingleActivator(LogicalKeyboardKey.enter, meta: true): _SendIntent(),
         SingleActivator(LogicalKeyboardKey.enter, control: true): _SendIntent(),
-      },
+      };
+    }
+    return {
+      sendChord.toActivator(): const _SendIntent(),
+      if (widget.newlineChord != null)
+        widget.newlineChord!.toActivator(): const _NewlineIntent(),
+    };
+  }
+
+  void _insertNewline() {
+    final value = _ctrl.value;
+    final sel = value.selection;
+    final start = sel.isValid ? sel.start : value.text.length;
+    final end = sel.isValid ? sel.end : value.text.length;
+    final text = value.text.replaceRange(start, end, '\n');
+    _ctrl.value = value.copyWith(
+      text: text,
+      selection: TextSelection.collapsed(offset: start + 1),
+      composing: TextRange.empty,
+    );
+  }
+
+  Widget _buildField() {
+    return Shortcuts(
+      shortcuts: _shortcuts(),
       child: Actions(
         actions: <Type, Action<Intent>>{
           _SendIntent: CallbackAction<_SendIntent>(
             onInvoke: (_) {
               _send();
+              return null;
+            },
+          ),
+          _NewlineIntent: CallbackAction<_NewlineIntent>(
+            onInvoke: (_) {
+              _insertNewline();
               return null;
             },
           ),
@@ -223,8 +275,10 @@ class _ComposerState extends State<Composer> {
           minLines: _isFocused ? 3 : 1,
           maxLines: _isFocused ? 3 : 1,
           textCapitalization: TextCapitalization.sentences,
-          // Standard "Return" key: inserts a newline (UIReturnKeyType.default).
-          // Sending is done via the send button or ⌘/Ctrl+Enter.
+          // Return behavior is driven by _shortcuts(): unconfigured (mobile)
+          // keeps the native Return-inserts-newline action, with sending via
+          // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
+          // configured (desktop), Return itself may send instead.
           textInputAction: TextInputAction.newline,
           onChanged: _onChanged,
           decoration: const InputDecoration(
@@ -242,11 +296,16 @@ class _ComposerState extends State<Composer> {
     _ctrl.removeListener(_onControllerChanged);
     _focus.removeListener(_onFocusChanged);
     _ctrl.dispose();
-    _focus.dispose();
+    // Only dispose a focus node we created; an injected one is caller-owned.
+    if (widget.focusNode == null) _focus.dispose();
     super.dispose();
   }
 }
 
 class _SendIntent extends Intent {
   const _SendIntent();
+}
+
+class _NewlineIntent extends Intent {
+  const _NewlineIntent();
 }
