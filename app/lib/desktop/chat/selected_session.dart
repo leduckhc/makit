@@ -12,3 +12,47 @@ final selectedSessionProvider = StateProvider<String?>((ref) => null);
 @visibleForTesting
 void selectSession(WidgetRef ref, String? sessionId) =>
     ref.read(selectedSessionProvider.notifier).state = sessionId;
+
+/// A sessionless worktree the user picked in the sidebar. Puts the pane in
+/// "start a session here" mode (harness cards); the session is spawned in this
+/// existing worktree on the first message. Mutually exclusive with
+/// [selectedSessionProvider].
+@immutable
+class SelectedWorktree {
+  const SelectedWorktree({
+    required this.projectId,
+    required this.path,
+    required this.branch,
+  });
+
+  final String projectId;
+  final String path;
+  final String? branch;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SelectedWorktree &&
+      other.projectId == projectId &&
+      other.path == path &&
+      other.branch == branch;
+
+  @override
+  int get hashCode => Object.hash(projectId, path, branch);
+}
+
+/// The sessionless worktree currently shown in the pane, or null.
+final selectedWorktreeProvider = StateProvider<SelectedWorktree?>(
+  (ref) => null,
+);
+
+/// Select a session, clearing any selected sessionless worktree.
+void selectSessionExclusive(WidgetRef ref, String id) {
+  ref.read(selectedWorktreeProvider.notifier).state = null;
+  ref.read(selectedSessionProvider.notifier).state = id;
+}
+
+/// Select a sessionless worktree, clearing any selected session.
+void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
+  ref.read(selectedSessionProvider.notifier).state = null;
+  ref.read(selectedWorktreeProvider.notifier).state = worktree;
+}

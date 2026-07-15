@@ -355,10 +355,14 @@ export function startWsServer(opts: ServerOpts) {
       const projectId = String(ctx.env.projectId ?? "");
       const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
       const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+      // Optional: bind the draft to an EXISTING worktree so the first message
+      // starts the agent there instead of forking a new one.
+      const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
+      const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
       // New sessions are DRAFTS: the worktree + agent are deferred until the
       // first substantive message names the branch (see send.message). The
       // worktree forks off `baseBranch` (default branch when unset).
-      const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch);
+      const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch, worktreePath, branch);
       // wireSession is invoked via the manager's "sessionCreated" listener
       // registered above — don't call it explicitly or every event fans out
       // twice.
@@ -374,6 +378,39 @@ export function startWsServer(opts: ServerOpts) {
 
     r.register("agents.list", async (ctx) => {
       ctx.ack({ agents: manager.listAgents() });
+    });
+
+    r.register("session.setAgent", async (ctx) => {
+      const sessionId = String(ctx.env.sessionId ?? "");
+      const agent = String(ctx.env.agent ?? "");
+      if (!sessionId || !agent) {
+        ctx.err(WireErrorCode.BadRequest, "session.setAgent requires sessionId and agent");
+        return;
+      }
+      try {
+        manager.setPendingAgent(sessionId, agent);
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+        return;
+      }
+      broadcastSnapshots();
+      ctx.ack();
+    });
+
+    r.register("worktree.create", async (ctx) => {
+      const projectId = String(ctx.env.projectId ?? "");
+      const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+      if (!projectId) {
+        ctx.err(WireErrorCode.BadRequest, "worktree.create requires a projectId");
+        return;
+      }
+      try {
+        const wt = await manager.createWorktree(projectId, baseBranch);
+        void broadcastReposSnapshot();
+        ctx.ack({ projectId, path: wt.path, branch: wt.branch });
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+      }
     });
 
     r.register("session.list", async (ctx) => {

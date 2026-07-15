@@ -188,6 +188,7 @@ class Worktree {
     required this.deletions,
     required this.filesChanged,
     required this.sessionIds,
+    this.committedAt,
     this.pr,
   });
 
@@ -199,6 +200,9 @@ class Worktree {
   final int deletions;
   final int filesChanged;
   final List<String> sessionIds;
+
+  /// HEAD commit time, or null when unavailable.
+  final DateTime? committedAt;
   final PullRequest? pr;
 
   bool get hasChanges => insertions > 0 || deletions > 0 || filesChanged > 0;
@@ -218,6 +222,11 @@ class Worktree {
       sessionIds: ((j['sessionIds'] as List?) ?? const [])
           .whereType<String>()
           .toList(),
+      committedAt: (j['committedAt'] as num?) != null
+          ? DateTime.fromMillisecondsSinceEpoch(
+              (j['committedAt'] as num).toInt(),
+            )
+          : null,
       pr: rawPr is Map
           ? PullRequest.fromJson(Map<String, dynamic>.from(rawPr))
           : null,
@@ -434,6 +443,7 @@ class Session {
     this.lastPreview = '',
     this.pane,
     this.pending = false,
+    this.pendingAgent,
     this.branch,
     this.worktreePath,
   });
@@ -453,6 +463,9 @@ class Session {
   /// Draft session: worktree + agent are deferred until the first real message.
   final bool pending;
 
+  /// Chosen harness for a still-pending draft (before its worktree exists).
+  final String? pendingAgent;
+
   /// Branch this session runs on, once its worktree exists.
   final String? branch;
 
@@ -468,6 +481,7 @@ class Session {
     PaneInfo? pane,
     bool clearPane = false,
     bool? pending,
+    String? pendingAgent,
     String? branch,
     String? worktreePath,
   }) => Session(
@@ -481,6 +495,7 @@ class Session {
     lastPreview: lastPreview ?? this.lastPreview,
     pane: clearPane ? null : (pane ?? this.pane),
     pending: pending ?? this.pending,
+    pendingAgent: pendingAgent ?? this.pendingAgent,
     branch: branch ?? this.branch,
     worktreePath: worktreePath ?? this.worktreePath,
   );

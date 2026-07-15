@@ -71,7 +71,7 @@ class DiffChip extends StatelessWidget {
             style: const TextStyle(
               color: kDiffAdd,
               fontSize: 12,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w400,
               fontFamily: 'monospace',
             ),
           ),
@@ -82,7 +82,7 @@ class DiffChip extends StatelessWidget {
             style: const TextStyle(
               color: kDiffDel,
               fontSize: 12,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w400,
               fontFamily: 'monospace',
             ),
           ),
@@ -118,7 +118,7 @@ class PrPill extends StatelessWidget {
             'PR #${pr.number}',
             style: TextStyle(
               color: color,
-              fontSize: 11,
+              fontSize: 8,
               fontWeight: FontWeight.w600,
             ),
           ),

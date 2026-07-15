@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../store/models.dart';
@@ -45,9 +46,7 @@ class DesktopSidebar extends ConsumerWidget {
                         repo: repo,
                         sessions: sessions.forProject(repo.id),
                         selectedId: selected,
-                        onSelect: (id) =>
-                            ref.read(selectedSessionProvider.notifier).state =
-                                id,
+                        onSelect: (id) => selectSessionExclusive(ref, id),
                       ),
                   ],
                 ),
@@ -85,10 +84,7 @@ class _Header extends ConsumerWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               tooltip: 'Hide sidebar',
-              icon: Transform.flip(
-                flipX: true,
-                child: const Icon(Icons.view_sidebar_outlined),
-              ),
+              icon: const Icon(Symbols.thumbnail_bar, weight: 300),
               onPressed: () =>
                   ref.read(sidebarCollapsedProvider.notifier).state = true,
             ),
@@ -101,7 +97,7 @@ class _Header extends ConsumerWidget {
 
 /// One repo section: header row (name + current branch + stats), then its
 /// worktrees with their sessions, then any pending draft sessions.
-class _RepoGroup extends ConsumerWidget {
+class _RepoGroup extends ConsumerStatefulWidget {
   const _RepoGroup({
     required this.repo,
     required this.sessions,
@@ -115,11 +111,28 @@ class _RepoGroup extends ConsumerWidget {
   final void Function(String id) onSelect;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_RepoGroup> createState() => _RepoGroupState();
+}
+
+class _RepoGroupState extends ConsumerState<_RepoGroup> {
+  /// How many worktrees to show before the "show more" pill kicks in.
+  static const int _maxCollapsed = 5;
+  bool _showAll = false;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final repo = widget.repo;
+    final sessions = widget.sessions;
+    final selectedId = widget.selectedId;
+    final onSelect = widget.onSelect;
     final drafts = sessions.where((s) => s.pending).toList();
     final byId = {for (final s in sessions) s.id: s};
     final worktrees = sortWorktreesForDisplay(repo.worktrees);
+    final showMore = worktrees.length > _maxCollapsed;
+    final visible = (_showAll || !showMore)
+        ? worktrees
+        : worktrees.take(_maxCollapsed).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -129,8 +142,9 @@ class _RepoGroup extends ConsumerWidget {
           child: Row(
             children: [
               Icon(
-                Icons.folder_special_outlined,
+                Symbols.folder_special,
                 size: 16,
+                weight: 200,
                 color: theme.colorScheme.outline,
               ),
               const SizedBox(width: 6),
@@ -146,9 +160,9 @@ class _RepoGroup extends ConsumerWidget {
                 ),
               ),
               IconButton(
-                tooltip: 'New session',
+                tooltip: 'New worktree',
                 visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add, size: 16),
+                icon: const Icon(Symbols.add, size: 16, weight: 200),
                 onPressed: () =>
                     showNewSessionDialog(context, ref, projectId: repo.id),
               ),
@@ -163,7 +177,7 @@ class _RepoGroup extends ConsumerWidget {
               style: theme.textTheme.bodySmall?.copyWith(color: kRepoAccent),
             ),
           ),
-        for (final wt in worktrees)
+        for (final wt in visible)
           _WorktreeGroup(
             key: ValueKey(wt.id),
             repo: repo,
@@ -175,15 +189,38 @@ class _RepoGroup extends ConsumerWidget {
             selectedId: selectedId,
             onSelect: onSelect,
           ),
-        if (drafts.isNotEmpty) ...[
-          for (final s in drafts)
-            _SessionTile(
-              session: s,
-              selected: s.id == selectedId,
-              indented: true,
-              onTap: () => onSelect(s.id),
+        if (showMore)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(38, 2, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: InkWell(
+                onTap: () => setState(() => _showAll = !_showAll),
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  child: Text(
+                    _showAll
+                        ? 'Show less'
+                        : 'Show ${worktrees.length - _maxCollapsed} more',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
             ),
-        ],
+          ),
+        for (final s in drafts)
+          _DraftWorktreeTile(
+            session: s,
+            selected: s.id == selectedId,
+            onTap: () => onSelect(s.id),
+          ),
       ],
     );
   }
@@ -191,7 +228,7 @@ class _RepoGroup extends ConsumerWidget {
 
 /// A worktree line (branch + diff, then an optional PR line) with its sessions
 /// nested below. Clicking the branch row collapses/expands its sessions.
-class _WorktreeGroup extends StatefulWidget {
+class _WorktreeGroup extends ConsumerStatefulWidget {
   const _WorktreeGroup({
     super.key,
     required this.repo,
@@ -208,10 +245,10 @@ class _WorktreeGroup extends StatefulWidget {
   final void Function(String id) onSelect;
 
   @override
-  State<_WorktreeGroup> createState() => _WorktreeGroupState();
+  ConsumerState<_WorktreeGroup> createState() => _WorktreeGroupState();
 }
 
-class _WorktreeGroupState extends State<_WorktreeGroup> {
+class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   bool _expanded = true;
 
   @override
@@ -224,68 +261,112 @@ class _WorktreeGroupState extends State<_WorktreeGroup> {
     final isDefault = worktree.branch == repo.defaultBranch;
     final isCurrent =
         worktree.branch != null && worktree.branch == repo.currentBranch;
-
-    // Only surface worktrees with a live session (strict).
-    if (sessions.isEmpty) return const SizedBox.shrink();
+    // A worktree with no sessions is selectable: clicking it opens the harness
+    // picker in the pane to start a session in this existing worktree.
+    final selectable = sessions.isEmpty;
+    final worktreeSelected =
+        ref.watch(selectedWorktreeProvider)?.path == worktree.path;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         InkWell(
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-            child: Row(
+          onTap: () {
+            if (selectable) {
+              selectWorktree(
+                ref,
+                SelectedWorktree(
+                  projectId: repo.id,
+                  path: worktree.path,
+                  branch: worktree.branch,
+                ),
+              );
+            } else {
+              setState(() => _expanded = !_expanded);
+            }
+          },
+          child: Container(
+            color: worktreeSelected
+                ? theme.colorScheme.surfaceContainerHighest
+                : null,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(
-                  _expanded ? Icons.expand_more : Icons.chevron_right,
-                  size: 14,
-                  color: theme.colorScheme.outline,
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 4),
+                      Icon(
+                        Symbols.fork_right,
+                        size: 24,
+                        weight: 200,
+                        color: theme.colorScheme.outline,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                branch,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                            if (isCurrent) ...[
+                              const SizedBox(width: 5),
+                              Icon(
+                                Symbols.star,
+                                size: 13,
+                                weight: 200,
+                                color: theme.colorScheme.outline,
+                              ),
+                            ],
+                            if (isDefault) ...[
+                              const SizedBox(width: 6),
+                              TagChip(
+                                label: 'default',
+                                color: theme.colorScheme.outline,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (worktree.hasChanges)
+                        DiffChip(
+                          insertions: worktree.insertions,
+                          deletions: worktree.deletions,
+                        ),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.account_tree_outlined,
-                  size: 13,
-                  color: worktree.isPrimary
-                      ? theme.colorScheme.outline
-                      : kRepoAccent,
-                ),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    branch,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                // Sub-row below the branch, inside the same hover/tap group: the
+                // PR pill when present, else the low-emphasis branch age. Fixed
+                // height so the row always reserves its place, even when empty.
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(38, 0, 16, 4),
+                  child: SizedBox(
+                    height: 16,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: worktree.pr != null
+                          ? PrPill(pr: worktree.pr!)
+                          : Text(
+                              _branchAgeLabel(worktree.committedAt),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.outline,
+                                fontWeight: FontWeight.w300,
+                              ),
+                            ),
                     ),
                   ),
                 ),
-                if (isCurrent) ...[
-                  const SizedBox(width: 5),
-                  const Icon(Icons.star, size: 13, color: Colors.amber),
-                ],
-                if (isDefault) ...[
-                  const SizedBox(width: 6),
-                  TagChip(label: 'default', color: theme.colorScheme.outline),
-                ],
-                const SizedBox(width: 8),
-                if (worktree.hasChanges)
-                  DiffChip(
-                    insertions: worktree.insertions,
-                    deletions: worktree.deletions,
-                  ),
               ],
             ),
           ),
         ),
-        if (worktree.pr != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(38, 0, 16, 2),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: PrPill(pr: worktree.pr!),
-            ),
-          ),
         if (_expanded)
           for (final s in sessions)
             _SessionTile(
@@ -297,6 +378,92 @@ class _WorktreeGroupState extends State<_WorktreeGroup> {
       ],
     );
   }
+}
+
+/// A pending draft rendered to match a worktree row. The worktree doesn't
+/// exist yet, so it shows "new worktree" in place of the branch name and its
+/// age counts from when the user clicked New worktree (the draft's creation),
+/// since the real worktree creation is postponed until the first message.
+class _DraftWorktreeTile extends StatelessWidget {
+  const _DraftWorktreeTile({
+    required this.session,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final Session session;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final createdAt = session.lastActivityAt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(session.lastActivityAt)
+        : null;
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        color: selected ? theme.colorScheme.surfaceContainerHighest : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+              child: Row(
+                children: [
+                  const SizedBox(width: 4),
+                  Icon(
+                    Symbols.fork_right,
+                    size: 24,
+                    weight: 200,
+                    color: theme.colorScheme.outline,
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'new worktree',
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(38, 0, 16, 4),
+              child: SizedBox(
+                height: 16,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _branchAgeLabel(createdAt),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.outline,
+                      fontWeight: FontWeight.w300,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Human-readable HEAD-commit age like `3d ago`. Empty string when unknown,
+/// so the sub-row below the branch still reserves its vertical space.
+String _branchAgeLabel(DateTime? committedAt) {
+  if (committedAt == null) return '';
+  final d = DateTime.now().difference(committedAt);
+  if (d.inSeconds < 60) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24) return '${d.inHours}h ago';
+  if (d.inDays < 30) return '${d.inDays}d ago';
+  if (d.inDays < 365) return '${(d.inDays / 30).floor()}mo ago';
+  return '${(d.inDays / 365).floor()}y ago';
 }
 
 class _SessionTile extends StatelessWidget {
@@ -316,7 +483,7 @@ class _SessionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final title = session.pending && session.title.trim().isEmpty
-        ? 'new session'
+        ? 'new worktree'
         : (session.title.trim().isNotEmpty
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
@@ -465,7 +632,7 @@ class _Footer extends ConsumerWidget {
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',
-              icon: const Icon(Icons.settings_outlined),
+              icon: const Icon(Symbols.settings, weight: 200),
               onPressed: onOpenSettings,
             ),
         ],

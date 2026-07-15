@@ -64,6 +64,9 @@ export class Session extends EventEmitter {
   /** Base branch to fork the worktree off, chosen at spawn. Defaults to the
    * repo's default branch when unset (see {@link Manager.startPendingSession}). */
   pendingBaseBranch?: string;
+  /** When set, a pending session starts in this EXISTING worktree instead of
+   * creating a new one (start-a-session-in-worktree flow). */
+  pendingWorktreePath?: string;
   /** Branch this session runs on, set when its worktree is created. */
   branch?: string;
   /** Absolute worktree path, set when its worktree is created. */
@@ -198,6 +201,7 @@ export class Session extends EventEmitter {
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
       pending: this.pending,
+      pendingAgent: this.pendingAgent,
       branch: this.branch,
       worktreePath: this.worktreePath,
     };
