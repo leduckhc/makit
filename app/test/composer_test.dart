@@ -100,30 +100,6 @@ void main() {
     },
   );
 
-  testWidgets('long footer selector labels ellipsize instead of overflowing', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      wrap(
-        const SizedBox(
-          width: 320, // narrow (phone) width
-          child: Composer(
-            onSend: _noop,
-            alwaysExpanded: true,
-            footerActions: [
-              Text('claude-3-5-sonnet-20241022-very-long-model-name'),
-              Text('a-similarly-very-long-thinking-effort-label'),
-            ],
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    // A RenderFlex overflow would surface as a thrown exception during layout.
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('losing focus collapses back to 1 line while preserving text', (
     tester,
   ) async {

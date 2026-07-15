@@ -3,7 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/composer/composer.dart';
 import 'package:makit/ui/composer/composer_selectors.dart';
+
+void _noop(String _) {}
 
 /// Uses an agent name that is NOT one of the bundled logos (pi/codex/claude)
 /// so [AgentAvatar] renders a text initial instead of loading an SVG asset.
@@ -110,4 +113,52 @@ void main() {
       expect(find.byType(InkWell), findsOneWidget);
     });
   });
+
+  testWidgets(
+    'long model label ellipsizes in a narrow composer footer (no overflow)',
+    (tester) async {
+      const longModel = ModelInfo(
+        provider: 'anthropic',
+        id: 'claude-3-5-sonnet-20241022',
+        name: 'claude-3-5-sonnet-20241022-very-long-model-name',
+      );
+      final c = _container(
+        meta: const SessionMeta(
+          model: longModel,
+          thinking: 'medium',
+          models: [longModel],
+        ),
+      );
+      addTearDown(c.dispose);
+
+      await tester.pumpWidget(
+        _wrap(
+          c,
+          const SizedBox(
+            width: 320, // narrow (phone) width
+            child: Composer(
+              onSend: _noop,
+              alwaysExpanded: true,
+              footerActions: [
+                ComposerModelSelector(sessionId: 's1'),
+                ComposerThinkingSelector(sessionId: 's1'),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // A RenderFlex overflow would surface as a thrown exception during layout.
+      expect(tester.takeException(), isNull);
+      // The real selector renders its label and constrains it to a single
+      // ellipsized line, so it shrinks under the footer's Flexible instead of
+      // wrapping or overflowing.
+      final label = tester.widget<Text>(
+        find.text('claude-3-5-sonnet-20241022-very-long-model-name'),
+      );
+      expect(label.maxLines, 1);
+      expect(label.overflow, TextOverflow.ellipsis);
+    },
+  );
 }
