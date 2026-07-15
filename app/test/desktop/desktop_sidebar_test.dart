@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
@@ -200,6 +201,44 @@ void main() {
     );
 
     expect(find.text('PR #42'), findsOneWidget);
+  });
+
+  testWidgets('worktree icon: merge symbol only when a PR is open', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-plain', branch: 'feat/no-pr', sessionIds: ['s1']),
+            _worktree(
+              'wt-pr',
+              branch: 'feat/has-pr',
+              sessionIds: ['s2'],
+              pr: const PullRequest(
+                number: 7,
+                url: '',
+                state: 'OPEN',
+                title: 'x',
+                isDraft: false,
+              ),
+            ),
+          ],
+        ),
+      ],
+      sessions: [
+        _session('s1', 'p1', 'a', 'pi'),
+        _session('s2', 'p1', 'b', 'pi'),
+      ],
+    );
+
+    // Exactly one worktree has an open PR → one merge symbol; the PR-less
+    // worktree keeps the plain fork/branch icon that predated the redesign.
+    expect(find.byIcon(Symbols.call_merge), findsOneWidget);
+    expect(find.byIcon(Symbols.fork_right), findsOneWidget);
   });
 
   testWidgets('empty state prompts to start a session', (tester) async {
