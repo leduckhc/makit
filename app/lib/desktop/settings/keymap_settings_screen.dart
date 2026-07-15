@@ -112,6 +112,9 @@ class _ShortcutRow extends ConsumerWidget {
       builder: (_) => _RecordChordDialog(action: action),
     );
     if (chord == null) return;
+    // The dialog is async; bail if the settings screen was disposed meanwhile
+    // so we don't touch a stale messenger/ref.
+    if (!context.mounted) return;
 
     // Global shortcuts must carry a non-shift modifier or they would swallow
     // ordinary typing; composer shortcuts (e.g. plain Enter) may be bare.

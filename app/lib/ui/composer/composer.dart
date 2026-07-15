@@ -33,8 +33,12 @@ class Composer extends StatefulWidget {
   /// (⌘/Ctrl+Enter), which keeps mobile behavior unchanged.
   final KeyChord? sendChord;
 
-  /// The chord that inserts a newline instead of sending. Null leaves the
-  /// field's native Return-inserts-newline behavior untouched.
+  /// The chord that inserts a newline instead of sending. When [sendChord]
+  /// claims a key the field would otherwise use for line breaks (e.g. plain
+  /// Enter), callers must supply a matching [newlineChord] — leaving it null
+  /// lets the send activator capture that key, making the field's native
+  /// Return-inserts-newline behavior unreachable. Null is safe only when
+  /// [sendChord] does not take over the newline key.
   final KeyChord? newlineChord;
 
   /// An externally-owned focus node for the text field. When provided, the
@@ -271,8 +275,10 @@ class _ComposerState extends State<Composer> {
           minLines: _isFocused ? 3 : 1,
           maxLines: _isFocused ? 3 : 1,
           textCapitalization: TextCapitalization.sentences,
-          // Standard "Return" key: inserts a newline (UIReturnKeyType.default).
-          // Sending is done via the send button or ⌘/Ctrl+Enter.
+          // Return behavior is driven by _shortcuts(): unconfigured (mobile)
+          // keeps the native Return-inserts-newline action, with sending via
+          // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
+          // configured (desktop), Return itself may send instead.
           textInputAction: TextInputAction.newline,
           onChanged: _onChanged,
           decoration: const InputDecoration(

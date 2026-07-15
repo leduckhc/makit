@@ -37,9 +37,9 @@ class KeyChord {
   /// Whether Shift (⇧) must be held.
   final bool shift;
 
-  /// True when this chord carries no non-shift modifier — i.e. it is a bare
-  /// key or a Shift+key. Used to reject unmodified global shortcuts that would
-  /// swallow ordinary typing.
+  /// True when this chord carries at least one non-shift modifier (⌘, ⌃, or
+  /// ⌥) — i.e. it is more than a bare key or a Shift+key. Used to reject
+  /// unmodified global shortcuts that would swallow ordinary typing.
   bool get hasNonShiftModifier => meta || control || alt;
 
   /// Builds the Flutter activator for a [Shortcuts] map.
