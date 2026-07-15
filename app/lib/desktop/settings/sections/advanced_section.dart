@@ -198,7 +198,12 @@ class _ResetAllRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final changed = ref.watch(preferencesControllerProvider).length;
+    // Watch the overrides map so the count refreshes on change, but derive the
+    // user-facing count (internal bookkeeping entries don't count).
+    ref.watch(preferencesControllerProvider);
+    final changed = ref
+        .read(preferencesControllerProvider.notifier)
+        .modifiedUserFacingCount;
     return ListTile(
       leading: Icon(
         Symbols.settings_backup_restore,

@@ -60,6 +60,34 @@ void main() {
       expect(controller.isModified(_intEntry), isFalse);
       expect(controller.state, isEmpty);
     });
+
+    test('internal entries do not count as user-facing modifications',
+        () async {
+      final controller = PreferencesController.ephemeral();
+      expect(controller.modifiedUserFacingCount, 0);
+
+      // Selecting sections writes the internal lastSection entry.
+      await controller.set(lastSectionPreference, 'appearance');
+      expect(controller.isModified(lastSectionPreference), isTrue);
+      expect(controller.modifiedUserFacingCount, 0);
+
+      // A real preference bumps the user-facing count.
+      await controller.set(themeModePreference, ThemeMode.dark);
+      expect(controller.modifiedUserFacingCount, 1);
+    });
+
+    test('resetAll clears user prefs but preserves internal entries', () async {
+      final controller = PreferencesController.ephemeral();
+      await controller.set(themeModePreference, ThemeMode.dark);
+      await controller.set(lastSectionPreference, 'appearance');
+
+      await controller.resetAll();
+
+      expect(controller.isModified(themeModePreference), isFalse);
+      expect(controller.isModified(lastSectionPreference), isTrue);
+      expect(controller.get(lastSectionPreference), 'appearance');
+      expect(controller.modifiedUserFacingCount, 0);
+    });
   });
 
   group('PreferencesController (persistent)', () {

@@ -18,6 +18,7 @@ class PreferenceEntry<T> {
     required this.defaultValue,
     required this.encode,
     required this.decode,
+    this.internal = false,
   });
 
   /// Stable identifier used as the key inside the persisted overrides map.
@@ -33,4 +34,10 @@ class PreferenceEntry<T> {
   /// Deserializes a stored [json] object, or returns `null` when it cannot be
   /// interpreted (corrupt / wrong type).
   final T? Function(Object? json) decode;
+
+  /// Whether this entry is internal bookkeeping rather than a user-facing
+  /// preference (e.g. the remembered last section). Internal entries are
+  /// excluded from the "modified" count and are preserved by
+  /// [PreferencesController.resetAll].
+  final bool internal;
 }

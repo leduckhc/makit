@@ -35,6 +35,7 @@ const PreferenceEntry<String> lastSectionPreference = PreferenceEntry(
   defaultValue: 'general',
   encode: _encodeString,
   decode: _decodeString,
+  internal: true,
 );
 
 /// Default desktop sidebar width, in logical pixels. Backs the in-memory

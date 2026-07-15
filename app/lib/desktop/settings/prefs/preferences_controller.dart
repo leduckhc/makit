@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'preference.dart';
+import 'preference_entries.dart';
 
 /// SharedPreferences key holding all desktop settings overrides as a single
 /// JSON object of `{ entryId: encodedValue }`. Only entries whose value differs
@@ -27,6 +28,13 @@ class PreferencesController extends StateNotifier<Map<String, Object?>> {
   PreferencesController.ephemeral() : this(null, const {});
 
   final SharedPreferences? _prefs;
+
+  /// Ids of internal (non-user-facing) entries, excluded from the modified
+  /// count and preserved across [resetAll].
+  static final Set<String> _internalIds = {
+    for (final e in kPreferenceEntries)
+      if (e.internal) e.id,
+  };
 
   /// The SharedPreferences key under which the overrides map is stored.
   static String get storageKey => _kOverridesKey;
@@ -58,6 +66,19 @@ class PreferencesController extends StateNotifier<Map<String, Object?>> {
   /// Whether [entry] currently has a stored override (differs from default).
   bool isModified<T>(PreferenceEntry<T> entry) => state.containsKey(entry.id);
 
+  /// The number of user-facing preferences that differ from their default.
+  ///
+  /// Internal bookkeeping entries (e.g. the remembered last section) are
+  /// excluded so they don't inflate the "N settings changed" count or enable
+  /// Reset-all when no real preference has changed.
+  int get modifiedUserFacingCount {
+    var count = 0;
+    for (final id in state.keys) {
+      if (!_internalIds.contains(id)) count++;
+    }
+    return count;
+  }
+
   /// Sets [entry] to [value], writing through immediately. A value equal to the
   /// default removes the override; otherwise it is stored.
   Future<void> set<T>(PreferenceEntry<T> entry, T value) async {
@@ -79,10 +100,16 @@ class PreferencesController extends StateNotifier<Map<String, Object?>> {
     await _persist();
   }
 
-  /// Clears every override, reverting all preferences to their defaults.
+  /// Clears every user-facing override, reverting those preferences to their
+  /// defaults. Internal bookkeeping entries (e.g. the remembered last section)
+  /// are preserved.
   Future<void> resetAll() async {
-    state = const {};
-    await _prefs?.remove(_kOverridesKey);
+    final next = <String, Object?>{
+      for (final e in state.entries)
+        if (_internalIds.contains(e.key)) e.key: e.value,
+    };
+    state = Map.unmodifiable(next);
+    await _persist();
   }
 
   Future<void> _persist() async {
