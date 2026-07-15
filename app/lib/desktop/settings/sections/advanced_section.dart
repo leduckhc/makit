@@ -13,6 +13,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../../../control/control_types.dart' show StatusData;
 import '../../../store/connection.dart' show connectionProvider;
 import '../../../transport/protocol.dart' show protocolVersion;
+import '../../chat/sidebar_layout.dart'
+    show kSidebarDefaultWidth, sidebarCollapsedProvider, sidebarWidthProvider;
 import '../../screens/providers.dart' show controlClientProvider;
 import '../../screens/time_format.dart' show formatUptime;
 import '../prefs/preferences_providers.dart';
@@ -193,6 +195,12 @@ class _ResetAllRow extends ConsumerWidget {
     );
     if (confirmed ?? false) {
       await ref.read(preferencesControllerProvider.notifier).resetAll();
+      // The sidebar providers seed from prefs only at startup, so clearing the
+      // stored overrides isn't enough — re-seed the live values to their
+      // defaults so the reset is visible immediately (theme / text scale react
+      // via their own providers).
+      ref.read(sidebarWidthProvider.notifier).state = kSidebarDefaultWidth;
+      ref.read(sidebarCollapsedProvider.notifier).state = false;
     }
   }
 

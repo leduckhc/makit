@@ -75,7 +75,11 @@ class _ThemeRow extends ConsumerWidget {
           if (modified)
             IconButton(
               tooltip: 'Reset to default',
-              icon: const Icon(Symbols.settings_backup_restore, size: 18),
+              icon: const Icon(
+                Symbols.settings_backup_restore,
+                weight: 200,
+                size: 18,
+              ),
               onPressed: () => controller.reset(themeModePreference),
             )
           else
@@ -218,7 +222,7 @@ class _ResetButton extends StatelessWidget {
     if (!visible) return const SizedBox(width: 40);
     return IconButton(
       tooltip: 'Reset to default',
-      icon: const Icon(Symbols.settings_backup_restore, size: 18),
+      icon: const Icon(Symbols.settings_backup_restore, weight: 200, size: 18),
       onPressed: onPressed,
     );
   }

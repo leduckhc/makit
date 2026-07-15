@@ -1,16 +1,16 @@
 // Full-stack control-plane e2e for the macOS desktop control app (SPEC-03).
 //
 // Counterpart to the mobile stub suite (integration_test/stub/): instead of the
-// WS client, this drives the real desktop control screens against a real daemon
+// WS client, this drives the real desktop control surface against a real daemon
 // control socket served by `server/test/e2e-control-server.ts`. The whole stack
 // is genuine — `MakitControlClient` speaks the real NDJSON protocol over the
 // real unix socket to the real `createServerBackend`, and the real
-// `DesktopDashboard`/`DesktopController` render the responses.
+// `ServerDevicesSection`/`DesktopController` render the responses.
 //
 // The socket path is injected by `app/tool/e2e-desktop.sh` via
 // `--dart-define=MAKIT_CONTROL_SOCK`. We wire the same client/controller
-// `runDesktopApp` builds, but pump `DesktopDashboard` directly so the test
-// needs no tray/window native plugins.
+// `runDesktopApp` builds, but pump the Server & Devices settings section
+// directly so the test needs no tray/window native plugins.
 //
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';
@@ -23,6 +23,10 @@ import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
 import 'package:makit/desktop/desktop_app.dart';
 import 'package:makit/desktop/desktop_controller.dart';
 import 'package:makit/desktop/screens/providers.dart';
+import 'package:makit/desktop/settings/sections/server_devices_section.dart';
+import 'package:makit/desktop/settings/server_config.dart';
+import 'package:makit/store/connection.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _socketPath = String.fromEnvironment('MAKIT_CONTROL_SOCK');
 const _timeout = Duration(seconds: 20);
@@ -44,10 +48,18 @@ Future<void> _pumpUntil(
   fail(reason ?? 'timed out waiting for $finder');
 }
 
+/// Scrolls [finder] into view (the section is a long [ListView]) and taps it.
+Future<void> _scrollAndTap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('desktop dashboard drives a real daemon control socket', (
+  testWidgets('Server & Devices section drives a real daemon control socket', (
     tester,
   ) async {
     expect(
@@ -55,6 +67,9 @@ void main() {
       isTrue,
       reason: 'MAKIT_CONTROL_SOCK must be passed via --dart-define',
     );
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
 
     final client = ReconnectingControlClient(
       create: () => MakitControlClient(socketPath: _socketPath),
@@ -76,37 +91,48 @@ void main() {
         overrides: [
           controlClientProvider.overrideWithValue(client),
           desktopControllerProvider.overrideWithValue(controller),
+          serverConfigProvider.overrideWith(
+            (ref) => ServerConfigController(prefs, const ServerConfig()),
+          ),
+          connectionProvider.overrideWithValue(MakitConnState()),
         ],
-        child: const MaterialApp(home: DesktopDashboard()),
+        child: const MaterialApp(
+          home: Scaffold(body: ServerDevicesSection()),
+        ),
       ),
     );
 
-    // status → the header renders the live pid over the real socket.
+    // status → the lifecycle row renders the live pid over the real socket.
     await _pumpUntil(
       tester,
-      find.textContaining('Server running (pid'),
+      find.textContaining('Running · pid'),
       reason:
-          'header never showed a running daemon — control socket handshake '
+          'lifecycle never showed a running daemon — control socket handshake '
           'or status verb failed',
     );
 
-    // devices.list → the seeded device shows on the (default) Devices tab.
+    // devices.list → the seeded device shows on the pushed Devices sub-page.
+    await _scrollAndTap(tester, find.text('Paired devices'));
     await _pumpUntil(
       tester,
       find.text('e2e phone'),
       reason: 'devices.list did not surface the seeded device',
     );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
-    // pair.mint → the QR tab mints and renders a makit:// pair url.
-    await tester.tap(find.text('Pair QR'));
+    // pair.mint → the QR sub-page mints and renders a makit:// pair url.
+    await _scrollAndTap(tester, find.text('Pair new device'));
     await _pumpUntil(
       tester,
       find.textContaining('makit://pair'),
       reason: 'pair.mint did not return a pair url',
     );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
 
-    // sessions.list → the Sessions tab lists the seeded default session.
-    await tester.tap(find.textContaining('Sessions ('));
+    // sessions.list → the Sessions sub-page lists the seeded default session.
+    await _scrollAndTap(tester, find.text('Running sessions'));
     await _pumpUntil(
       tester,
       find.text('new session'),

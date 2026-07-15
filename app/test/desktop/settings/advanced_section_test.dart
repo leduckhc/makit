@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/control/control_types.dart';
+import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/screens/providers.dart';
 import 'package:makit/desktop/settings/prefs/preference_entries.dart';
@@ -96,5 +97,41 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(controller.isModified(themeModePreference), isTrue);
+  });
+
+  testWidgets('reset-all re-seeds live sidebar width/collapsed to defaults', (
+    tester,
+  ) async {
+    final controller = PreferencesController.ephemeral();
+    await controller.set(themeModePreference, ThemeMode.dark);
+    final container = ProviderContainer(
+      overrides: [
+        preferencesControllerProvider.overrideWith((ref) => controller),
+        controlClientProvider.overrideWithValue(
+          FakeControlClient(status: _status()),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    // Move the live sidebar state away from its defaults.
+    container.read(sidebarWidthProvider.notifier).state = 400;
+    container.read(sidebarCollapsedProvider.notifier).state = true;
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: AdvancedSection())),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Reset all'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset all'));
+    await tester.pumpAndSettle();
+
+    expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth);
+    expect(container.read(sidebarCollapsedProvider), isFalse);
   });
 }

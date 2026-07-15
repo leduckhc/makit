@@ -88,7 +88,11 @@ class _ReminderDelayRow extends ConsumerWidget {
           if (modified)
             IconButton(
               tooltip: 'Reset to default',
-              icon: const Icon(Symbols.settings_backup_restore, size: 18),
+              icon: const Icon(
+                Symbols.settings_backup_restore,
+                weight: 200,
+                size: 18,
+              ),
               onPressed: () =>
                   controller.reset(notificationsReminderDelayPreference),
             )

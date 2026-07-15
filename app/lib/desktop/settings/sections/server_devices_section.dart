@@ -143,7 +143,11 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
           trailing: modified
               ? IconButton(
                   tooltip: 'Reset to default',
-                  icon: const Icon(Symbols.settings_backup_restore, size: 18),
+                  icon: const Icon(
+                    Symbols.settings_backup_restore,
+                    weight: 200,
+                    size: 18,
+                  ),
                   onPressed: _reset,
                 )
               : null,
