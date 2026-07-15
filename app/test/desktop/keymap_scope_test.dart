@@ -68,6 +68,31 @@ void main() {
     expect(container.read(sidebarCollapsedProvider), isFalse);
   });
 
+  testWidgets('Ctrl+B toggles the sidebar when nothing holds focus', (
+    tester,
+  ) async {
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [keymapProvider.overrideWith((_) => keymap)],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    // Simulate the user clicking an empty/non-focusable region: focus falls
+    // back to the framework root scope, which sits above the keymap scope.
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+
+    expect(container.read(sidebarCollapsedProvider), isFalse);
+    await pressCtrl(tester, LogicalKeyboardKey.keyB);
+    expect(container.read(sidebarCollapsedProvider), isTrue);
+  });
+
   testWidgets('Ctrl+, invokes the open-settings callback', (tester) async {
     final keymap = await controller();
     var opened = 0;

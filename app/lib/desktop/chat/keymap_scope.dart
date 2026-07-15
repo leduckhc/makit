@@ -13,7 +13,7 @@ import 'sidebar_layout.dart';
 /// desktop chat shell. Composer-scope actions (send / newline) are wired inside
 /// the [Composer] itself; this scope handles navigation and window actions that
 /// must fire regardless of which widget holds focus.
-class DesktopKeymapScope extends ConsumerWidget {
+class DesktopKeymapScope extends ConsumerStatefulWidget {
   /// Wraps [child]; [onOpenSettings] backs the "Open settings" action.
   const DesktopKeymapScope({
     super.key,
@@ -28,7 +28,50 @@ class DesktopKeymapScope extends ConsumerWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DesktopKeymapScope> createState() => _DesktopKeymapScopeState();
+}
+
+class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
+  /// The fallback focus holder for the whole window. Flutter dispatches key
+  /// events to the primary focus and bubbles them **up** the focus tree, so a
+  /// [Shortcuts] map only fires while the focused node is a descendant of it.
+  /// This node keeps focus inside the scope whenever it would otherwise drain
+  /// to a bare focus scope (e.g. after clicking an empty region or dismissing a
+  /// dialog), which is what previously left the global shortcuts dead until the
+  /// user clicked back into the composer.
+  final FocusNode _scopeFocus = FocusNode(
+    debugLabel: 'desktopKeymapScope',
+    skipTraversal: true,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addListener(_reclaimFocusWhenIdle);
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_reclaimFocusWhenIdle);
+    _scopeFocus.dispose();
+    super.dispose();
+  }
+
+  /// Re-grabs focus for [_scopeFocus] when no concrete widget holds it. A real
+  /// focusable (text field, button) is a leaf [FocusNode]; when focus instead
+  /// rests on a [FocusScopeNode] (or is null) nothing is truly focused, so we
+  /// pull it back into the scope without stealing from any active widget.
+  void _reclaimFocusWhenIdle() {
+    if (!mounted || !_scopeFocus.canRequestFocus) return;
+    final primary = FocusManager.instance.primaryFocus;
+    final idle = primary == null || primary is FocusScopeNode;
+    if (idle && !_scopeFocus.hasPrimaryFocus) {
+      _scopeFocus.requestFocus();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final keymap = ref.watch(keymapProvider);
     final shortcuts = <ShortcutActivator, Intent>{};
     for (final action in ShortcutAction.values) {
@@ -43,7 +86,11 @@ class DesktopKeymapScope extends ConsumerWidget {
         actions: <Type, Action<Intent>>{
           VoidCallbackIntent: VoidCallbackAction(),
         },
-        child: Focus(autofocus: true, child: child),
+        child: Focus(
+          focusNode: _scopeFocus,
+          autofocus: true,
+          child: widget.child,
+        ),
       ),
     );
   }
@@ -55,7 +102,7 @@ class DesktopKeymapScope extends ConsumerWidget {
       case ShortcutAction.focusComposer:
         ref.read(desktopComposerFocusProvider).requestFocus();
       case ShortcutAction.openSettings:
-        onOpenSettings();
+        widget.onOpenSettings();
       case ShortcutAction.newSession:
         final projectId = _currentProjectId(ref);
         showNewSessionDialog(context, ref, projectId: projectId);
