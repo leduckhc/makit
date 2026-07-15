@@ -40,9 +40,12 @@ import 'screens/providers.dart';
 import 'screens/qr_screen.dart';
 import 'screens/sessions_screen.dart';
 import 'screens/status_screen.dart';
-import 'settings/keymap_settings_screen.dart';
+import 'settings/prefs/preference_entries.dart';
+import 'settings/prefs/preferences_controller.dart';
+import 'settings/prefs/preferences_providers.dart';
 import 'settings/server_config.dart';
 import 'settings/server_settings_screen.dart';
+import 'settings/settings_window.dart';
 import 'tray/tray_controller.dart';
 
 /// Exposes the [DesktopController] to the dashboard widgets.
@@ -83,6 +86,7 @@ Future<void> runDesktopApp() async {
     prefs,
     cmdIsPrimary: cmdIsPrimaryModifier,
   );
+  final preferencesController = PreferencesController.load(prefs);
   final controller = DesktopController(
     client: client,
     lifecycle: lifecycle,
@@ -143,6 +147,9 @@ Future<void> runDesktopApp() async {
         desktopControllerProvider.overrideWithValue(controller),
         serverConfigProvider.overrideWith((ref) => configController),
         keymapProvider.overrideWith((ref) => keymapController),
+        preferencesControllerProvider.overrideWith(
+          (ref) => preferencesController,
+        ),
       ],
       child: const _DesktopApp(),
     ),
@@ -222,10 +229,10 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
     return controller.summary.state == DaemonState.running;
   }
 
+  /// Shows the two-pane Settings window in-window (no route push) so it opens
+  /// instantly and the chat state underneath is preserved (SPEC-13 #5).
   void _openSettings() {
-    _desktopNavKey.currentState?.push(
-      MaterialPageRoute<void>(builder: (_) => const _SettingsServerPage()),
-    );
+    ref.read(settingsOpenProvider.notifier).state = true;
   }
 
   @override
@@ -239,7 +246,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       scrollBehavior: const _NoScrollbarBehavior(),
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: ref.preference(themeModePreference),
       builder: (context, child) => SrvRequestHandler(
         navigatorKey: _desktopNavKey,
         // Desktop is the control surface: always show the in-app dialog, and
@@ -249,7 +256,9 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       ),
       home: DesktopKeymapScope(
         onOpenSettings: _openSettings,
-        child: DesktopChatShell(onOpenSettings: _openSettings),
+        child: DesktopWindowBody(
+          child: DesktopChatShell(onOpenSettings: _openSettings),
+        ),
       ),
     );
   }
@@ -267,33 +276,6 @@ class _NoScrollbarBehavior extends MaterialScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) => child;
-}
-
-/// Wraps the legacy control dashboard as a pushed page with a back button, so
-/// device pairing + server status remain reachable now that chat is the home.
-class _SettingsServerPage extends StatelessWidget {
-  const _SettingsServerPage();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings & Server'),
-        actions: [
-          IconButton(
-            tooltip: 'Keyboard shortcuts',
-            icon: const Icon(Icons.keyboard_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const KeymapSettingsScreen(),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: const DesktopDashboard(),
-    );
-  }
 }
 
 /// The control dashboard: a header with server state + Start/Stop/Restart and a

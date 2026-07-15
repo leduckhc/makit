@@ -55,7 +55,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(SettingsWindow), findsOneWidget);
-    expect(observer.pushed.whereType<MaterialPageRoute>(), isEmpty);
+    expect(observer.pushed.whereType<MaterialPageRoute<dynamic>>(), isEmpty);
     // Default lastSection ('general') renders the General placeholder.
     expect(find.text('GENERAL'), findsOneWidget);
   });
