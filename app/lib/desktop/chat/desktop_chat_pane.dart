@@ -816,7 +816,7 @@ class _UnfoldStrip extends ConsumerWidget {
           ),
           Positioned(
             left: kTrafficLightInset,
-            top: 8,
+            top: 7,
             child: _showSidebarButton(ref),
           ),
         ],
