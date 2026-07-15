@@ -228,6 +228,13 @@ test("spawnPendingSession binds an existing worktree (branch from git) and rejec
     // + New worktree: create the worktree up front.
     const wt = await manager.createWorktree(projectId);
     assert.ok(wt.branch, "created worktree has a branch");
+    // Independently read the worktree's branch from git so the assertions
+    // below prove derivation from git, not just agreement with the manager.
+    const gitBranch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: wt.path,
+    })
+      .toString()
+      .trim();
 
     // A path that is not a worktree of this project is rejected.
     await assert.rejects(
@@ -238,12 +245,12 @@ test("spawnPendingSession binds an existing worktree (branch from git) and rejec
     // Binding a real worktree derives the branch from git, ignoring the
     // client-supplied branch arg.
     const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path, "client-lied");
-    assert.equal(draft.branch, wt.branch, "branch derived from git, not the client");
+    assert.equal(draft.branch, gitBranch, "branch derived from git, not the client");
 
     // First message starts the agent IN the bound worktree (no new tree).
     const s = await manager.startPendingSession(draft.id, "do work");
     assert.equal(s.worktreePath, wt.path);
-    assert.equal(s.branch, wt.branch);
+    assert.equal(s.branch, gitBranch);
     assert.equal(started[0]?.cwd, wt.path, "agent runs in the bound worktree");
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
