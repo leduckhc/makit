@@ -93,6 +93,43 @@ void main() {
     expect(container.read(sidebarCollapsedProvider), isTrue);
   });
 
+  testWidgets('a focused field inside the scope keeps focus (not reclaimed)', (
+    tester,
+  ) async {
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [keymapProvider.overrideWith((_) => keymap)],
+    );
+    addTearDown(container.dispose);
+    final fieldFocus = FocusNode(debugLabel: 'testField');
+    addTearDown(fieldFocus.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: DesktopKeymapScope(
+            onOpenSettings: () {},
+            child: Scaffold(body: TextField(focusNode: fieldFocus)),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Clicking into the composer-like field must focus it and keep focus: the
+    // idle-focus reclaim only pulls back empty scopes, never a real leaf.
+    fieldFocus.requestFocus();
+    await tester.pump();
+    expect(fieldFocus.hasPrimaryFocus, isTrue);
+
+    // Typing must reach the field (regression: focus was stolen on tap).
+    await tester.enterText(find.byType(TextField), 'hello');
+    await tester.pump();
+    expect(find.text('hello'), findsOneWidget);
+    expect(fieldFocus.hasPrimaryFocus, isTrue);
+  });
+
   testWidgets('Ctrl+, invokes the open-settings callback', (tester) async {
     final keymap = await controller();
     var opened = 0;

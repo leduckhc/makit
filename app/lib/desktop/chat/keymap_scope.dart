@@ -93,10 +93,18 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     return node.focusedChild == null;
   }
 
-  /// Returns true if [node] is [_scopeFocus] or a descendant of it in the
-  /// focus tree. Used to distinguish internal idle scopes from external scopes
-  /// (dialogs, routes) that should not have focus stolen.
+  /// Returns true if [node] is an empty [FocusScopeNode] that is [_scopeFocus]
+  /// or a descendant of it in the focus tree. Used to distinguish internal idle
+  /// scopes from external scopes (dialogs, routes) that should not have focus
+  /// stolen.
+  ///
+  /// The [FocusScopeNode] guard is essential: a real focusable leaf (text
+  /// field, button) inside our subtree is also a descendant of [_scopeFocus],
+  /// and must keep its focus. Without this guard, focusing the composer would
+  /// be treated as idle and immediately reclaimed, making the input impossible
+  /// to type into.
   bool _isDescendantOfScopeFocus(FocusNode node) {
+    if (node is! FocusScopeNode) return false;
     FocusNode? current = node;
     while (current != null) {
       if (current == _scopeFocus) return true;
