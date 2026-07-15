@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
+import 'package:makit/desktop/desktop_app.dart' show desktopControllerProvider;
+import 'package:makit/desktop/desktop_controller.dart';
+import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/settings/prefs/preference_entries.dart';
 import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
 import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
 import 'package:makit/desktop/settings/sections/appearance_section.dart';
+import 'package:makit/desktop/settings/server_config.dart';
 import 'package:makit/desktop/settings/settings_window.dart';
+import 'package:makit/store/connection.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _RecordingObserver extends NavigatorObserver {
   final List<Route<dynamic>> pushed = [];
@@ -16,15 +23,36 @@ class _RecordingObserver extends NavigatorObserver {
   }
 }
 
+late SharedPreferences _prefs;
+
 Widget _wrap(Widget child, {PreferencesController? controller}) => ProviderScope(
+  // The Server & Devices section body reads these providers, so navigating to
+  // it (e.g. via a search deep-link) requires them to be overridden.
   overrides: [
     if (controller != null)
       preferencesControllerProvider.overrideWith((ref) => controller),
+    serverConfigProvider.overrideWith(
+      (ref) => ServerConfigController(_prefs, const ServerConfig()),
+    ),
+    desktopControllerProvider.overrideWithValue(
+      DesktopController(
+        client: FakeControlClient(),
+        lifecycle: DaemonLifecycle(
+          resolver: MakitCliResolver(shellLookup: () async => null),
+        ),
+      ),
+    ),
+    connectionProvider.overrideWithValue(MakitConnState()),
   ],
   child: MaterialApp(home: child),
 );
 
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    _prefs = await SharedPreferences.getInstance();
+  });
+
   testWidgets('opens in-window without pushing a MaterialPageRoute', (
     tester,
   ) async {
