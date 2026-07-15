@@ -165,19 +165,21 @@ class ComposerModeSelector extends ConsumerWidget {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SheetHeader(title: 'Mode'),
-            for (final m in modes.available)
-              ListTile(
-                title: Text(m.name),
-                trailing: m.id == modes.current
-                    ? const Icon(Icons.check)
-                    : null,
-                onTap: () => Navigator.pop(sheetContext, m.id),
-              ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SheetHeader(title: 'Mode'),
+              for (final m in modes.available)
+                ListTile(
+                  title: Text(m.name),
+                  trailing: m.id == modes.current
+                      ? const Icon(Icons.check)
+                      : null,
+                  onTap: () => Navigator.pop(sheetContext, m.id),
+                ),
+            ],
+          ),
         ),
       ),
     );
