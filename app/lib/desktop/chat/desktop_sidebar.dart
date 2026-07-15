@@ -169,14 +169,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
             ],
           ),
         ),
-        if (repo.openPrCount > 0)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-            child: Text(
-              '${repo.openPrCount} open PR${repo.openPrCount > 1 ? 's' : ''}',
-              style: theme.textTheme.bodySmall?.copyWith(color: kRepoAccent),
-            ),
-          ),
         for (final wt in visible)
           _WorktreeGroup(
             key: ValueKey(wt.id),
@@ -296,11 +288,11 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                   child: Row(
                     children: [
                       const SizedBox(width: 4),
-                      Icon(
-                        Symbols.fork_right,
+                      const Icon(
+                        Symbols.call_merge,
                         size: 24,
                         weight: 200,
-                        color: theme.colorScheme.outline,
+                        color: kRepoAccent,
                       ),
                       const SizedBox(width: 6),
                       Expanded(
@@ -335,23 +327,38 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                   ),
                 ),
                 // Sub-row below the branch, inside the same hover/tap group: the
-                // PR pill when present, else the low-emphasis branch age. Fixed
-                // height so the row always reserves its place, even when empty.
+                // PR number label (when present) followed by the low-emphasis
+                // branch age. Fixed height so the row always reserves its place.
                 Padding(
                   padding: const EdgeInsets.fromLTRB(38, 0, 16, 4),
                   child: SizedBox(
                     height: 16,
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: worktree.pr != null
-                          ? PrPill(pr: worktree.pr!)
-                          : Text(
-                              _branchAgeLabel(worktree.committedAt),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (worktree.pr != null) ...[
+                            Text(
+                              'PR #${worktree.pr!.number}',
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.outline,
-                                fontWeight: FontWeight.w300,
+                                color: worktree.pr!.isDraft
+                                    ? theme.colorScheme.outline
+                                    : kRepoAccent,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
+                            const SizedBox(width: 8),
+                          ],
+                          Text(
+                            _branchAgeLabel(worktree.committedAt),
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                              fontWeight: FontWeight.w300,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
