@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../shortcuts/key_chord.dart';
+import '../../app/theme.dart' show kComposerBoxDark, kComposerBoxLight;
 import '../../store/models.dart';
 import 'slash_palette.dart';
 
@@ -141,8 +142,8 @@ class _ComposerState extends State<Composer> {
     final boxColor = widget.glass
         ? Colors.transparent
         : (Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF0E0E0E)
-              : const Color(0xFFEFEFEF));
+              ? kComposerBoxDark
+              : kComposerBoxLight);
     return SafeArea(
       top: false,
       child: Column(

@@ -18,6 +18,15 @@ const _textDark = Color(0xFFF5F5F5);
 const _mutedDark = Color(0xFF9E9E9E);
 const _hairlineDark = Color(0xFF333333);
 
+/// Composer box surface — deliberately a touch darker than the transcript
+/// background so the input group reads as one coherent, static panel. The
+/// theme's `surfaceContainer*` tokens all collapse onto `surface` (which is
+/// *lighter* than the scaffold bg here), so there is no existing token for this
+/// darker-than-content tone; these live alongside the palette instead of as
+/// magic literals in the composer.
+const kComposerBoxLight = Color(0xFFEFEFEF);
+const kComposerBoxDark = Color(0xFF0E0E0E);
+
 ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final bg = dark ? _bgDark : _bgLight;
