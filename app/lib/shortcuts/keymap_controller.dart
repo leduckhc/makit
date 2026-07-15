@@ -20,8 +20,13 @@ class KeymapController extends StateNotifier<Keymap> {
   /// Creates a controller over [prefs], seeded from [initial]. When [prefs] is
   /// null the controller is ephemeral: mutations update state but are not
   /// persisted (used for the provider's non-desktop default and in tests).
-  KeymapController(this._prefs, Keymap initial)
-    : _base = initial,
+  ///
+  /// [base] is the platform-default keymap that `reset`/`resetAll` restore to
+  /// and that persistence diffs against; it must stay distinct from any loaded
+  /// overrides. Defaults to [initial] for callers (like the ephemeral and test
+  /// constructors) that seed straight from defaults with no overrides applied.
+  KeymapController(this._prefs, Keymap initial, {Keymap? base})
+    : _base = base ?? initial,
       super(initial);
 
   /// A non-persisting controller seeded from the platform defaults.
@@ -44,7 +49,7 @@ class KeymapController extends StateNotifier<Keymap> {
   }) {
     final defaults = Keymap.defaults(cmdIsPrimary: cmdIsPrimary);
     final merged = _applyOverrides(defaults, prefs.getString(kKeymapPrefsKey));
-    return KeymapController(prefs, merged);
+    return KeymapController(prefs, merged, base: defaults);
   }
 
   static Keymap _applyOverrides(Keymap defaults, String? raw) {

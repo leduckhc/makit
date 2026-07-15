@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/shortcuts/key_chord.dart';
+import 'package:makit/shortcuts/keymap.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -77,5 +78,61 @@ void main() {
       c.current.chordFor(ShortcutAction.newSession),
       const KeyChord(LogicalKeyboardKey.keyN, meta: true),
     );
+  });
+
+  test('reset after reload restores the platform default, not the override',
+      () async {
+    final prefs = await SharedPreferences.getInstance();
+    const override = KeyChord(LogicalKeyboardKey.keyK, meta: true);
+    await KeymapController.load(prefs, cmdIsPrimary: true)
+        .rebind(ShortcutAction.newSession, override);
+
+    // Fresh controller seeded from the persisted override.
+    final reloaded = KeymapController.load(prefs, cmdIsPrimary: true);
+    expect(reloaded.current.chordFor(ShortcutAction.newSession), override);
+
+    await reloaded.reset(ShortcutAction.newSession);
+    expect(
+      reloaded.current.chordFor(ShortcutAction.newSession),
+      const KeyChord(LogicalKeyboardKey.keyN, meta: true),
+    );
+    expect(prefs.getString(kKeymapPrefsKey), isNull);
+  });
+
+  test('resetAll after reload restores defaults and clears prefs', () async {
+    final prefs = await SharedPreferences.getInstance();
+    await KeymapController.load(prefs, cmdIsPrimary: true).rebind(
+      ShortcutAction.newSession,
+      const KeyChord(LogicalKeyboardKey.keyK, meta: true),
+    );
+
+    final reloaded = KeymapController.load(prefs, cmdIsPrimary: true);
+    await reloaded.resetAll();
+    expect(
+      reloaded.current,
+      Keymap.defaults(cmdIsPrimary: true),
+    );
+    expect(prefs.getString(kKeymapPrefsKey), isNull);
+  });
+
+  test('rebinding a second action after reload preserves the first override',
+      () async {
+    final prefs = await SharedPreferences.getInstance();
+    const first = KeyChord(LogicalKeyboardKey.keyK, meta: true);
+    await KeymapController.load(prefs, cmdIsPrimary: true)
+        .rebind(ShortcutAction.newSession, first);
+
+    // Reload from the persisted override, then rebind a different action.
+    final reloaded = KeymapController.load(prefs, cmdIsPrimary: true);
+    const second = KeyChord(LogicalKeyboardKey.keyJ, meta: true);
+    await reloaded.rebind(ShortcutAction.toggleSidebar, second);
+
+    final raw = prefs.getString(kKeymapPrefsKey)!;
+    expect(raw, contains('newSession'), reason: 'first override must survive');
+    expect(raw, contains('toggleSidebar'));
+
+    final second2 = KeymapController.load(prefs, cmdIsPrimary: true);
+    expect(second2.current.chordFor(ShortcutAction.newSession), first);
+    expect(second2.current.chordFor(ShortcutAction.toggleSidebar), second);
   });
 }
