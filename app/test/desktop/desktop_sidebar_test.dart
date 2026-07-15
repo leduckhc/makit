@@ -226,19 +226,32 @@ void main() {
                 isDraft: false,
               ),
             ),
+            _worktree(
+              'wt-closed-pr',
+              branch: 'feat/closed-pr',
+              sessionIds: ['s3'],
+              pr: const PullRequest(
+                number: 8,
+                url: '',
+                state: 'MERGED',
+                title: 'y',
+                isDraft: false,
+              ),
+            ),
           ],
         ),
       ],
       sessions: [
         _session('s1', 'p1', 'a', 'pi'),
         _session('s2', 'p1', 'b', 'pi'),
+        _session('s3', 'p1', 'c', 'pi'),
       ],
     );
 
-    // Exactly one worktree has an open PR → one merge symbol; the PR-less
-    // worktree keeps the plain fork/branch icon that predated the redesign.
+    // Exactly one worktree has an *open* PR → one merge symbol. Both the
+    // PR-less and the merged-PR worktrees keep the plain fork/branch icon.
     expect(find.byIcon(Symbols.call_merge), findsOneWidget);
-    expect(find.byIcon(Symbols.fork_right), findsOneWidget);
+    expect(find.byIcon(Symbols.fork_right), findsNWidgets(2));
   });
 
   testWidgets('empty state prompts to start a session', (tester) async {

@@ -290,8 +290,9 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                       const SizedBox(width: 4),
                       // Open PR → the merge symbol; otherwise the plain
                       // worktree/branch icon that predated the PR-centric
-                      // redesign (still used by the draft-worktree tile).
-                      if (worktree.pr != null)
+                      // redesign (still used by the draft-worktree tile and
+                      // any non-open PR).
+                      if (worktree.pr?.state.toUpperCase() == 'OPEN')
                         const Icon(
                           Symbols.call_merge,
                           size: 24,
