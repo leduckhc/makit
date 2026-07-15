@@ -430,30 +430,39 @@ class _ThinkingLineState extends State<_ThinkingLine> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           );
-    // Expanded: SelectableText handles taps for selection; tap on the row
-    // collapses. Collapsed: whole row is a tap target that expands.
+    // Expanded: SelectableText handles taps on the text for selection; a tap
+    // on the leading icon collapses. Collapsed: whole row is a tap target that
+    // expands.
     return _expanded
         ? Semantics(
             onTap: toggle,
             onTapHint: 'Collapse thinking',
-            child: _buildRow(textWidget),
+            child: _buildRow(textWidget, onLeadingTap: toggle),
           )
         : InkWell(onTap: toggle, child: _buildRow(textWidget));
   }
 
-  Widget _buildRow(Widget textWidget) {
+  Widget _buildRow(Widget textWidget, {VoidCallback? onLeadingTap}) {
     final cs = Theme.of(context).colorScheme;
+    Widget leading = Icon(
+      Symbols.psychology,
+      weight: 200,
+      size: 15,
+      color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+    );
+    if (onLeadingTap != null) {
+      leading = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onLeadingTap,
+        child: leading,
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Symbols.psychology,
-            weight: 200,
-            size: 15,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.55),
-          ),
+          leading,
           const SizedBox(width: 6),
           Expanded(child: textWidget),
         ],
