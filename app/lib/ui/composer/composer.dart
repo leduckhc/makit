@@ -190,12 +190,23 @@ class _ComposerState extends State<Composer> {
           padding: const EdgeInsets.only(top: 4),
           child: Row(
             children: [
-              for (final action in widget.footerActions)
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: action,
+              // The selectors share the row's free space and shrink (their
+              // labels ellipsize) rather than overflowing on narrow widths.
+              // Expanded here also stands in for the trailing Spacer, pushing
+              // [+]/send to the right when the actions are short or absent.
+              Expanded(
+                child: Row(
+                  children: [
+                    for (final action in widget.footerActions)
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: action,
+                        ),
+                      ),
+                  ],
                 ),
-              const Spacer(),
+              ),
               _buildPlus(),
               // Reserve the send button's footprint so the layout doesn't
               // jump when the send button fades in/out.
