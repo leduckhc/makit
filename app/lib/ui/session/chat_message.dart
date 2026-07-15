@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/themes/atom-one-dark.dart';
@@ -81,11 +82,30 @@ class ChatBubble extends StatelessWidget {
 }
 
 /// Assistant output — full-width, no bubble, markdown-rendered.
-class AgentMessage extends StatelessWidget {
+class AgentMessage extends StatefulWidget {
   const AgentMessage({required this.text, required this.ts, super.key});
 
   final String text;
   final int ts;
+
+  @override
+  State<AgentMessage> createState() => _AgentMessageState();
+}
+
+class _AgentMessageState extends State<AgentMessage> {
+  // One SelectionArea lets a single drag span every block; the SelectionContainer
+  // swaps in a delegate that re-inserts newlines between blocks when copying
+  // (the default delegate concatenates block text into one unreadable blob).
+  // The delegate holds selection state, so it must outlive rebuilds (streaming
+  // updates rebuild this widget as text grows).
+  final _MarkdownSelectionDelegate _selectionDelegate =
+      _MarkdownSelectionDelegate();
+
+  @override
+  void dispose() {
+    _selectionDelegate.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,17 +114,71 @@ class AgentMessage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MarkdownBody(
-            data: text,
-            selectable: true,
-            styleSheet: _styleSheet(context),
-            onTapLink: _openLink,
-            builders: {'code': _CodeBlockBuilder(context)},
+          SelectionArea(
+            child: SelectionContainer(
+              delegate: _selectionDelegate,
+              child: MarkdownBody(
+                data: widget.text,
+                selectable: false,
+                styleSheet: _styleSheet(context),
+                onTapLink: _openLink,
+                builders: {'code': _CodeBlockBuilder(context)},
+              ),
+            ),
           ),
-          _Timestamp(ts: ts, alignRight: false),
+          _Timestamp(ts: widget.ts, alignRight: false),
         ],
       ),
     );
+  }
+}
+
+/// Joins the selected content of markdown blocks with a newline so a
+/// multi-block copy is readable. flutter_markdown renders each block
+/// (paragraph, list item, heading) and each inline builder widget (our inline
+/// `code`) as a separate [Selectable]; the default delegate concatenates them
+/// with no separator. We insert `\n` only at real line breaks — detected by
+/// comparing the global vertical position of consecutive selected fragments —
+/// so inline widgets that sit on the same visual line stay joined without a
+/// spurious newline.
+class _MarkdownSelectionDelegate extends StaticSelectionContainerDelegate {
+  // Fragments overlapping vertically by more than this many logical pixels are
+  // treated as the same line (guards against the few-pixel baseline shift that
+  // WidgetSpan/inline widgets introduce).
+  static const double _sameLineOverlap = 2.0;
+
+  @override
+  SelectedContent? getSelectedContent() {
+    final StringBuffer buffer = StringBuffer();
+    var wroteAny = false;
+    Rect? prev;
+    for (final Selectable selectable in selectables) {
+      final SelectedContent? content = selectable.getSelectedContent();
+      if (content == null || content.plainText.isEmpty) continue;
+
+      final List<Rect> rects = selectable.value.selectionRects;
+      Rect? firstGlobal;
+      Rect? lastGlobal;
+      if (rects.isNotEmpty) {
+        final Matrix4 transform = selectable.getTransformTo(null);
+        firstGlobal = MatrixUtils.transformRect(transform, rects.first);
+        lastGlobal = MatrixUtils.transformRect(transform, rects.last);
+      }
+
+      if (wroteAny) {
+        final bool sameLine =
+            prev != null &&
+            firstGlobal != null &&
+            firstGlobal.top < prev.bottom - _sameLineOverlap &&
+            firstGlobal.bottom > prev.top + _sameLineOverlap;
+        if (!sameLine) buffer.write('\n');
+      }
+      buffer.write(content.plainText);
+      wroteAny = true;
+      prev = lastGlobal ?? prev;
+    }
+    if (!wroteAny) return null;
+    return SelectedContent(plainText: buffer.toString());
   }
 }
 
