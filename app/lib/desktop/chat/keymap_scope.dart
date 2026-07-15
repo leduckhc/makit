@@ -62,21 +62,22 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   /// rests on a [FocusScopeNode] with no focused children (or is null) nothing
   /// is truly focused, so we pull it back into the scope without stealing from
   /// any active widget.
-  /// 
+  ///
   /// Focus is considered "idle" only when:
   /// 1. No widget has focus (primaryFocus is null)
   /// 2. Focus is on the framework root scope (empty focus)
   /// 3. Focus is on a [FocusScopeNode] that has no focused children (empty scope)
   /// 4. Focus is on a [FocusScopeNode] that is a descendant of our scope
   ///    (internal idle scope like an empty [FocusScope] wrapper in our subtree)
-  /// 
+  ///
   /// We do NOT reclaim focus when a dialog, settings route, or other overlay
   /// holds focus, since those create their own focus scopes WITH focused children
   /// outside our subtree.
   void _reclaimFocusWhenIdle() {
     if (!mounted || !_scopeFocus.canRequestFocus) return;
     final primary = FocusManager.instance.primaryFocus;
-    final isIdle = primary == null ||
+    final isIdle =
+        primary == null ||
         primary == FocusManager.instance.rootScope ||
         _isEmptyFocusScope(primary) ||
         _isDescendantOfScopeFocus(primary);
