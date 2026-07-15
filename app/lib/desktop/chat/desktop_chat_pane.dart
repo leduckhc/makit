@@ -143,24 +143,30 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               ? _HarnessPicker(session: session!)
               : items.isEmpty
               ? const _EmptyTranscript()
-              : Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: kReadableContentMaxWidth,
-                    ),
-                    child: ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+              // The ListView fills the full pane width so the mouse wheel
+              // scrolls the transcript anywhere in the pane, not just over the
+              // centered content column. Each row keeps the readable-width cap
+              // via its own centered ConstrainedBox, so the layout is unchanged.
+              : ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  itemCount: items.length + (running ? 1 : 0),
+                  itemBuilder: (context, i) {
+                    final Widget child = i >= items.length
+                        ? const _WorkingIndicator()
+                        : _buildItem(items[i]);
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: kReadableContentMaxWidth,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: child,
+                        ),
                       ),
-                      itemCount: items.length + (running ? 1 : 0),
-                      itemBuilder: (context, i) {
-                        if (i >= items.length) return const _WorkingIndicator();
-                        return _buildItem(items[i]);
-                      },
-                    ),
-                  ),
+                    );
+                  },
                 ),
         ),
         Center(
