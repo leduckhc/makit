@@ -9,6 +9,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
+import '../composer/composer_selectors.dart';
 import 'chat_message.dart';
 import 'tool_call_card.dart';
 import '../widgets/connection_chip.dart';
@@ -41,7 +42,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
-    final meta = ref.watch(sessionMetaProvider(widget.sessionId));
 
     ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
       prev,
@@ -234,19 +234,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                     ],
                                   ),
                             ),
-                          if (meta?.model != null)
-                            Text(
-                              '${meta!.model!.name} · ${meta.thinking}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurface.withValues(alpha: 0.55),
-                                    shadows: [
-                                      Shadow(color: cs.surface, blurRadius: 6),
-                                    ],
-                                  ),
-                            ),
                         ],
                       ),
                     ),
@@ -278,6 +265,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                     onSend: (text) => _handleSend(text),
                     running: session?.status == SessionStatus.running,
                     onCancel: _cancelTurn,
+                    footerActions: [
+                      ComposerModelSelector(sessionId: widget.sessionId),
+                      ComposerThinkingSelector(sessionId: widget.sessionId),
+                    ],
                   ),
                 ),
               ),

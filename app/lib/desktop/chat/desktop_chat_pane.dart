@@ -16,6 +16,7 @@ import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
+import '../../ui/composer/composer_selectors.dart';
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -174,6 +175,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                 onSend: (text) => _handleSend(sessionId, text),
                 onCancel: () => _cancelTurn(sessionId),
                 running: running,
+                alwaysExpanded: true,
+                footerActions: [
+                  ComposerModelSelector(sessionId: sessionId),
+                  ComposerThinkingSelector(sessionId: sessionId),
+                ],
                 focusNode: ref.watch(desktopComposerFocusProvider),
                 sendChord: ref
                     .watch(keymapProvider)
@@ -282,9 +288,8 @@ class _PaneHeader extends ConsumerWidget {
     );
   }
 
-  /// Session-level overflow menu (Rename / Model / Thinking / Quit). Mirrors
-  /// the mobile [SessionScreen] top-bar menu so both platforms expose the same
-  /// actions.
+  /// Session-level overflow menu (Rename / Quit). Model and thinking-effort
+  /// live inline in the composer footer now, so they are not repeated here.
   Widget _actionsMenu(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<String>(
       tooltip: 'Session actions',
@@ -305,20 +310,6 @@ class _PaneHeader extends ConsumerWidget {
               ref: ref,
               sessionId: fallbackId,
             );
-          case 'model':
-            handleClientCommand(
-              '/model',
-              context: context,
-              ref: ref,
-              sessionId: fallbackId,
-            );
-          case 'thinking':
-            handleClientCommand(
-              '/thinking',
-              context: context,
-              ref: ref,
-              sessionId: fallbackId,
-            );
           case 'quit':
             _confirmQuit(context, ref);
         }
@@ -329,22 +320,6 @@ class _PaneHeader extends ConsumerWidget {
           child: ListTile(
             leading: Icon(Symbols.drive_file_rename_outline, weight: 200),
             title: Text('Rename session'),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        PopupMenuItem(
-          value: 'model',
-          child: ListTile(
-            leading: Icon(Symbols.smart_toy, weight: 200),
-            title: Text('Model'),
-            contentPadding: EdgeInsets.zero,
-          ),
-        ),
-        PopupMenuItem(
-          value: 'thinking',
-          child: ListTile(
-            leading: Icon(Symbols.psychology, weight: 200),
-            title: Text('Thinking'),
             contentPadding: EdgeInsets.zero,
           ),
         ),
@@ -785,7 +760,11 @@ class _WorktreeStartViewState extends ConsumerState<_WorktreeStartView> {
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Composer(onSend: _start, running: _starting),
+              child: Composer(
+                onSend: _start,
+                running: _starting,
+                alwaysExpanded: true,
+              ),
             ),
           ),
         ),
