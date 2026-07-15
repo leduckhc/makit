@@ -236,6 +236,7 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       title: 'Makit',
       navigatorKey: _desktopNavKey,
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const _NoScrollbarBehavior(),
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,
@@ -252,6 +253,20 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
       ),
     );
   }
+}
+
+/// App-wide scroll behavior that suppresses scrollbars everywhere (transcript,
+/// sidebar, pickers). Modern trackpads/wheels make persistent scrollbars
+/// unnecessary; content still scrolls normally.
+class _NoScrollbarBehavior extends MaterialScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) => child;
 }
 
 /// Wraps the legacy control dashboard as a pushed page with a back button, so
