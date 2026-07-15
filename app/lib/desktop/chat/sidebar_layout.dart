@@ -21,7 +21,7 @@ const double kTitleBarStripHeight = 28;
 /// Left inset that clears the macOS traffic-light buttons overlaying the
 /// window's top-left corner — used by the sidebar fold button and, when the
 /// sidebar is hidden, by the pane header's unfold button.
-const double kTrafficLightInset = 72;
+const double kTrafficLightInset = 90;
 
 /// Whether the sidebar is folded away (fully hidden).
 final sidebarCollapsedProvider = StateProvider<bool>((_) => false);

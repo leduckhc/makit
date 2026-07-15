@@ -155,6 +155,9 @@ class WireCodec {
               : '',
           pane: pane,
           pending: j['pending'] == true,
+          pendingAgent: j['pendingAgent'] is String
+              ? j['pendingAgent'] as String
+              : null,
           branch: j['branch'] is String ? j['branch'] as String : null,
           worktreePath: j['worktreePath'] is String
               ? j['worktreePath'] as String

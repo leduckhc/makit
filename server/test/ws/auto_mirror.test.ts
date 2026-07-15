@@ -85,6 +85,7 @@ function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
           insertions,
           deletions: 0,
           filesChanged: 1,
+          committedAt: null,
           pr: prNumber === null
             ? null
             : { number: prNumber, url: `https://example.test/${prNumber}`, state: "OPEN", title: "PR", isDraft: false },

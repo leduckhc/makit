@@ -234,7 +234,7 @@ export class SessionManager extends EventEmitter {
    * Uses a {@link DetachedAdapter} placeholder so the session wires + shows in
    * snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, baseBranch?: string): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, baseBranch?: string, worktreePath?: string, branch?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -248,9 +248,73 @@ export class SessionManager extends EventEmitter {
     session.pending = true;
     session.pendingAgent = agentId;
     session.pendingBaseBranch = baseBranch;
+    // Bind to an existing worktree when provided (start-a-session-in-worktree):
+    // first message launches the agent there instead of forking a new tree.
+    // The path comes from the wire, so verify it is genuinely a worktree of
+    // this project and derive the branch from git rather than trusting the
+    // client — otherwise a client could launch an agent outside the project.
+    if (worktreePath) {
+      const entries = await listWorktrees(project.dto.path);
+      const match = entries.find(
+        (e) => resolve(e.path) === resolve(worktreePath),
+      );
+      if (!match) {
+        throw new Error(
+          `worktree is not part of project ${projectId}: ${worktreePath}`,
+        );
+      }
+      session.pendingWorktreePath = match.path;
+      session.branch = match.branch ?? branch;
+    }
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
+  }
+
+  /**
+   * Change the harness a still-pending draft will start with. No-op once the
+   * session has been promoted (its agent process already exists).
+   */
+  setPendingAgent(sessionId: string, agent: string): Session {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error(`no such session: ${sessionId}`);
+    if (session.pending) session.pendingAgent = agent;
+    return session;
+  }
+
+  /**
+   * Create a fresh worktree off `baseBranch` (default branch when unset) with
+   * an auto-generated branch name, WITHOUT a session (the + New worktree flow).
+   * The worktree exists immediately; the session is started later once the
+   * user picks a harness and sends the first message (see spawnPendingSession
+   * with a bound worktreePath). For a non-git project, returns the repo dir.
+   */
+  async createWorktree(
+    projectId: string,
+    baseBranch?: string,
+  ): Promise<{ path: string; branch: string | null }> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    if (!(await isGitRepo(repoPath))) return { path: repoPath, branch: null };
+    const base =
+      baseBranch && (await branchExists(repoPath, baseBranch))
+        ? baseBranch
+        : await detectDefaultBranch(repoPath);
+    // Unborn HEAD (no commits yet): `git worktree add -b` would fail, so run
+    // the session in the repo dir instead of forking a worktree.
+    if (!base) return { path: repoPath, branch: null };
+    const branch = await this.uniqueBranch(
+      repoPath,
+      `worktree-${randomUUID().slice(0, 6)}`,
+    );
+    const path = await addWorktree({
+      repoPath,
+      name: branch,
+      branch,
+      baseBranch: base,
+    });
+    return { path, branch };
   }
 
   /**
@@ -269,19 +333,31 @@ export class SessionManager extends EventEmitter {
     if (!project) throw new Error(`unknown project: ${session.projectId}`);
     const repoPath = project.dto.path;
     const agentId = session.pendingAgent ?? this.defaultAgentId;
+    // Preserve the harness the user actually chose: markStarted() clears
+    // pendingAgent, so pin the authoritative agent field here (unless the
+    // stub adapter factory is driving tests).
+    if (!this.adapterFactory) session.agent = agentId;
 
     const base = slugify(firstMessage) || `session-${session.id.slice(0, 8)}`;
     let branch = base;
     let worktreePath = repoPath;
 
-    if (await isGitRepo(repoPath)) {
+    if (session.pendingWorktreePath) {
+      // Start in the existing worktree the user picked — no new tree/branch.
+      worktreePath = session.pendingWorktreePath;
+      branch = session.branch ?? base;
+    } else if (await isGitRepo(repoPath)) {
       const requested = session.pendingBaseBranch;
       const baseBranch =
         requested && (await branchExists(repoPath, requested))
           ? requested
           : await detectDefaultBranch(repoPath);
-      branch = await this.uniqueBranch(repoPath, base);
-      worktreePath = await addWorktree({ repoPath, name: branch, branch, baseBranch });
+      // Unborn HEAD (no base commit): skip worktree creation, run in the repo
+      // dir — `git worktree add -b` would otherwise fail.
+      if (baseBranch) {
+        branch = await this.uniqueBranch(repoPath, base);
+        worktreePath = await addWorktree({ repoPath, name: branch, branch, baseBranch });
+      }
     }
 
     const built = this.buildAdapter(agentId);
@@ -350,6 +426,7 @@ export class SessionManager extends EventEmitter {
           insertions: stat.insertions,
           deletions: stat.deletions,
           filesChanged: stat.filesChanged,
+          committedAt: e.committedAt,
           pr,
           sessionIds: sessionsByPath.get(e.path) ?? [],
         });

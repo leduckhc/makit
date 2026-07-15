@@ -215,6 +215,51 @@ test("startPendingSession falls back to the default branch for an unknown base",
   }
 });
 
+test("spawnPendingSession binds an existing worktree (branch from git) and rejects foreign paths", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    // + New worktree: create the worktree up front.
+    const wt = await manager.createWorktree(projectId);
+    assert.ok(wt.branch, "created worktree has a branch");
+    // Independently read the worktree's branch from git so the assertions
+    // below prove derivation from git, not just agreement with the manager.
+    const gitBranch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd: wt.path,
+    })
+      .toString()
+      .trim();
+
+    // A path that is not a worktree of this project is rejected.
+    await assert.rejects(
+      () => manager.spawnPendingSession(projectId, "pi", undefined, "/tmp/definitely-not-a-worktree"),
+      /not part of project/,
+    );
+
+    // Binding a real worktree derives the branch from git, ignoring the
+    // client-supplied branch arg.
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path, "client-lied");
+    assert.equal(draft.branch, gitBranch, "branch derived from git, not the client");
+
+    // First message starts the agent IN the bound worktree (no new tree).
+    const s = await manager.startPendingSession(draft.id, "do work");
+    assert.equal(s.worktreePath, wt.path);
+    assert.equal(s.branch, gitBranch);
+    assert.equal(started[0]?.cwd, wt.path, "agent runs in the bound worktree");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("startPendingSession is idempotent for a live session", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

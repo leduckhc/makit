@@ -337,6 +337,8 @@ class StoreController extends StateNotifier<StoreState> {
     String? title,
     String? agent,
     String? baseBranch,
+    String? worktreePath,
+    String? branch,
   }) async {
     final ack = await _ref
         .read(connectionControllerProvider.notifier)
@@ -346,6 +348,8 @@ class StoreController extends StateNotifier<StoreState> {
           'title': ?title,
           'agent': ?agent,
           'baseBranch': ?baseBranch,
+          'worktreePath': ?worktreePath,
+          'branch': ?branch,
         });
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
@@ -381,6 +385,37 @@ class StoreController extends StateNotifier<StoreState> {
       MsgType.cmd,
       {'kind': 'session.kill', 'sessionId': sessionId},
     );
+  }
+
+  /// Set the harness a still-pending draft will start with. The server
+  /// broadcasts a fresh sessions.snapshot so the draft's [Session.pendingAgent]
+  /// updates.
+  Future<void> setSessionAgent(String sessionId, String agent) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.setAgent', 'sessionId': sessionId, 'agent': agent},
+    );
+  }
+
+  /// Create a new worktree up front (the + New worktree flow) with an
+  /// auto-generated branch off [baseBranch]. Returns the new worktree's path +
+  /// branch; the caller then lands on it to pick a harness. The server
+  /// broadcasts a repos.snapshot so the sidebar shows the new worktree.
+  Future<({String path, String? branch})> createWorktree(
+    String projectId, {
+    String? baseBranch,
+  }) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.create',
+        'projectId': projectId,
+        'baseBranch': ?baseBranch,
+      },
+    );
+    final path = ack['path'] as String?;
+    if (path == null) throw StateError('server did not return a worktree path');
+    return (path: path, branch: ack['branch'] as String?);
   }
 
   /// List a project's prior on-disk pi sessions (newest first).
@@ -479,6 +514,12 @@ final storeControllerProvider =
     StateNotifierProvider<StoreController, StoreState>(
       (ref) => StoreController(ref),
     );
+
+/// The harnesses this host can spawn. Fetched once; used by the harness picker
+/// cards shown for a pending draft.
+final agentsProvider = FutureProvider<List<AgentDescriptor>>((ref) {
+  return ref.read(storeControllerProvider.notifier).fetchAgents();
+});
 
 final projectsProvider = Provider<ProjectsState>((ref) {
   final s = ref.watch(storeControllerProvider);

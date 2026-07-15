@@ -96,6 +96,8 @@ export interface WorktreeDTO {
   insertions: number;
   deletions: number;
   filesChanged: number;
+  /** HEAD commit time in epoch milliseconds, or null when unavailable. */
+  committedAt: number | null;
   pr: PullRequestDTO | null;
   sessionIds: string[];
 }
@@ -130,6 +132,8 @@ export interface SessionDTO {
    * the first substantive user message (which names the branch/worktree).
    */
   pending: boolean;
+  /** Chosen harness for a still-pending draft (before its worktree exists). */
+  pendingAgent?: string;
   /** Branch this session runs on, once its worktree exists. */
   branch?: string;
   /** Absolute worktree path, once created. */

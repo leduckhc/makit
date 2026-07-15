@@ -19,6 +19,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 // (no path/url imports needed — pi binary is resolved from PATH)
@@ -127,6 +128,12 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
       args.push("--model", this.model);
     }
     for (const ext of this.extensions) {
+      // A removed/renamed extension must not take down the whole pi session:
+      // pi hard-exits (code 1) if an `-e <path>` no longer exists on disk.
+      if (!existsSync(ext)) {
+        log.warn(`[makit] skipping missing pi extension: ${ext}`);
+        continue;
+      }
       args.push("-e", ext);
     }
     // The real pi coding agent (@earendil-works/pi-coding-agent) — resolved

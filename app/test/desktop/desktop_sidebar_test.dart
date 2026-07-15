@@ -149,7 +149,9 @@ void main() {
     expect(container.read(selectedSessionProvider), 's1');
   });
 
-  testWidgets('drafts land in a DRAFTS section', (tester) async {
+  testWidgets('drafts render as a worktree row (no DRAFTS section)', (
+    tester,
+  ) async {
     await _pump(
       tester,
       repos: [
@@ -162,9 +164,11 @@ void main() {
       sessions: [_session('s1', 'p1', '', 'pi', pending: true)],
     );
 
-    expect(find.text('DRAFTS'), findsOneWidget);
-    expect(find.text('new session'), findsOneWidget);
-    expect(find.text('draft'), findsOneWidget);
+    // The DRAFTS section header + `draft` tag were removed; a pending draft now
+    // renders as a worktree-style row labelled "new worktree".
+    expect(find.text('DRAFTS'), findsNothing);
+    expect(find.text('new worktree'), findsOneWidget);
+    expect(find.text('draft'), findsNothing);
   });
 
   testWidgets('open PR renders a PR pill on its worktree row', (tester) async {

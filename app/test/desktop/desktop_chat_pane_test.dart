@@ -139,6 +139,9 @@ void main() {
       overrides: [
         sessionsProvider.overrideWithValue(SessionsState([session])),
         eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+        // Pending sessions now show the harness picker, which reads the agent
+        // list; stub it so the widget test doesn't hit the network.
+        agentsProvider.overrideWith((ref) => const <AgentDescriptor>[]),
       ],
     );
     addTearDown(container.dispose);
@@ -195,8 +198,7 @@ void main() {
   });
 
   testWidgets(
-    'unfold button, avatar, and title all coexist when collapsed with a '
-    'session selected',
+    'unfold button and title coexist when collapsed with a session selected',
     (tester) async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
@@ -233,7 +235,6 @@ void main() {
       await tester.pump();
 
       expect(find.byTooltip('Show sidebar'), findsOneWidget);
-      expect(find.byType(AgentAvatar), findsOneWidget);
       expect(find.text('Test session'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Show sidebar'));

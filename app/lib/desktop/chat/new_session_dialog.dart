@@ -7,7 +7,8 @@ import '../../ui/home/repo_chips.dart';
 import '../../ui/project/folder_browser.dart';
 import 'selected_session.dart';
 
-/// Opens the "New session" dialog: pick a repo + a harness, then spawn. Pass
+/// Opens the "New worktree" dialog: pick a repo + base branch, then spawn a
+/// draft. The harness is chosen afterwards from cards in the chat pane. Pass
 /// [projectId] to preselect a repo (e.g. from a repo row's + button).
 Future<void> showNewSessionDialog(
   BuildContext context,
@@ -30,10 +31,7 @@ class _NewSessionDialog extends ConsumerStatefulWidget {
 }
 
 class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
-  List<AgentDescriptor> _agents = const [];
-  bool _loadingAgents = true;
   String? _projectId;
-  String? _agentId;
   String? _baseBranch;
   bool _spawning = false;
   String? _error;
@@ -41,7 +39,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   @override
   void initState() {
     super.initState();
-    _loadAgents();
     // Preselect the caller's repo, else the first one.
     final repos = ref.read(reposProvider).repos;
     _projectId =
@@ -111,31 +108,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     );
   }
 
-  Future<void> _loadAgents() async {
-    final agents = await ref
-        .read(storeControllerProvider.notifier)
-        .fetchAgents();
-    if (!mounted) return;
-    setState(() {
-      _agents = agents;
-      _agentId = agents
-          .firstWhere(
-            (a) => a.available,
-            orElse: () => agents.isEmpty
-                ? const AgentDescriptor(
-                    id: '',
-                    label: '',
-                    transport: '',
-                    available: false,
-                  )
-                : agents.first,
-          )
-          .id;
-      if (_agentId!.isEmpty) _agentId = null;
-      _loadingAgents = false;
-    });
-  }
-
   Future<void> _addProject() async {
     final id = await showFolderBrowser(context);
     if (!mounted || id == null) return;
@@ -150,11 +122,20 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       _error = null;
     });
     try {
-      final sessionId = await ref
+      final result = await ref
           .read(storeControllerProvider.notifier)
-          .spawnSession(projectId, agent: _agentId, baseBranch: _baseBranch);
+          .createWorktree(projectId, baseBranch: _baseBranch);
       if (!mounted) return;
-      ref.read(selectedSessionProvider.notifier).state = sessionId;
+      // Land on the new (sessionless) worktree — the pane shows the harness
+      // cards; the session starts in it on the first message.
+      selectWorktree(
+        ref,
+        SelectedWorktree(
+          projectId: projectId,
+          path: result.path,
+          branch: result.branch,
+        ),
+      );
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
@@ -171,7 +152,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     final canStart = _projectId != null && !_spawning;
 
     return AlertDialog(
-      title: const Text('New session'),
+      title: const Text('New worktree'),
       content: SizedBox(
         width: 420,
         child: Column(
@@ -208,36 +189,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                 }),
               ),
             _branchField(repos),
-            const SizedBox(height: 16),
-            const Text('Harness'),
-            const SizedBox(height: 6),
-            if (_loadingAgents)
-              const Padding(
-                padding: EdgeInsets.all(8),
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            else if (_agents.isEmpty)
-              const Text('Using the host default harness.')
-            else
-              DropdownButtonFormField<String>(
-                initialValue: _agentId,
-                isExpanded: true,
-                items: [
-                  for (final a in _agents)
-                    DropdownMenuItem(
-                      value: a.id,
-                      enabled: a.available,
-                      child: Text(
-                        a.available ? a.label : '${a.label} (unavailable)',
-                      ),
-                    ),
-                ],
-                onChanged: (v) => setState(() => _agentId = v),
-              ),
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(
@@ -261,7 +212,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Start'),
+              : const Text('Create'),
         ),
       ],
     );
