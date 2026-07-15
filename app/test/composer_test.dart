@@ -50,8 +50,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final fieldAfter = tester.widget<TextField>(find.byType(TextField));
-    // Auto-grows with the caret: min 1 line, up to 10 before scrolling.
-    expect(fieldAfter.minLines, 1);
+    // Expanded starts 3 rows tall and auto-grows up to 10 before scrolling.
+    expect(fieldAfter.minLines, 3);
     expect(fieldAfter.maxLines, 10);
   });
 

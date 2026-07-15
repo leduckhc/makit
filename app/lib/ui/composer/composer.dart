@@ -134,6 +134,15 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // One coherent, static box behind the whole composer (field + footer
+    // controls). Deliberately darker than the transcript background and
+    // painted by a plain Container so it never shifts on hover. Glass surfaces
+    // supply their own backdrop, so stay transparent there.
+    final boxColor = widget.glass
+        ? Colors.transparent
+        : (Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF0E0E0E)
+              : const Color(0xFFEFEFEF));
     return SafeArea(
       top: false,
       child: Column(
@@ -146,18 +155,20 @@ class _ComposerState extends State<Composer> {
               onPick: _onSlashPicked,
             ),
           Container(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-            decoration: widget.glass
-                ? null
-                : BoxDecoration(
-                    color: cs.surface,
-                    border: Border(top: BorderSide(color: cs.outlineVariant)),
-                  ),
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+            decoration: widget.glass ? null : BoxDecoration(color: cs.surface),
             child: AnimatedSize(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               alignment: Alignment.bottomCenter,
-              child: _expanded ? _buildExpanded(cs) : _buildCompact(cs),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: boxColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: _expanded ? _buildExpanded(cs) : _buildCompact(cs),
+              ),
             ),
           ),
         ],
@@ -303,25 +314,34 @@ class _ComposerState extends State<Composer> {
             },
           ),
         },
-        child: TextField(
-          key: _fieldKey, // stable element across compact↔expanded reparenting
-          controller: _ctrl,
-          focusNode: _focus,
-          // Compact = exactly 1 line; expanded auto-grows with the caret up to
-          // 10 lines, then scrolls internally.
-          minLines: 1,
-          maxLines: _expanded ? 10 : 1,
-          textCapitalization: TextCapitalization.sentences,
-          // Return behavior is driven by _shortcuts(): unconfigured (mobile)
-          // keeps the native Return-inserts-newline action, with sending via
-          // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
-          // configured (desktop), Return itself may send instead.
-          textInputAction: TextInputAction.newline,
-          onChanged: _onChanged,
-          decoration: const InputDecoration(
-            hintText: 'Message …',
-            border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: ScrollConfiguration(
+          // Hide the input's scrollbar; the field still scrolls once it grows
+          // past its max line count.
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: TextField(
+            key:
+                _fieldKey, // stable element across compact↔expanded reparenting
+            controller: _ctrl,
+            focusNode: _focus,
+            // Compact = exactly 1 line; expanded starts 3 rows tall and
+            // auto-grows with the caret up to 10 lines, then scrolls internally.
+            minLines: _expanded ? 3 : 1,
+            maxLines: _expanded ? 10 : 1,
+            textCapitalization: TextCapitalization.sentences,
+            // Return behavior is driven by _shortcuts(): unconfigured (mobile)
+            // keeps the native Return-inserts-newline action, with sending via
+            // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
+            // configured (desktop), Return itself may send instead.
+            textInputAction: TextInputAction.newline,
+            onChanged: _onChanged,
+            // Transparent: the shared composer box supplies the background, so
+            // the field, selectors, [+] and send all sit on one static surface.
+            decoration: const InputDecoration(
+              hintText: 'Message …',
+              filled: false,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            ),
           ),
         ),
       ),
