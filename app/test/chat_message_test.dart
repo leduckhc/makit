@@ -30,16 +30,20 @@ void main() {
         return null;
       },
     );
+    // Guarantee the global mock is removed even if invoke/pump throws, so it
+    // can't leak into later tests (the binary messenger persists per file).
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
     // Trigger the same copy path as Cmd/Ctrl+C (non-deprecated).
     Actions.invoke(
       tester.element(find.byType(MarkdownBody)),
       CopySelectionTextIntent.copy,
     );
     await tester.pump();
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      null,
-    );
     return copied ?? '';
   }
 
