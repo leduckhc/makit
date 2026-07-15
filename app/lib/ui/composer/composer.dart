@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../shortcuts/key_chord.dart';
+import '../../app/theme.dart' show kComposerBoxDark, kComposerBoxLight;
 import '../../store/models.dart';
 import 'slash_palette.dart';
 
@@ -9,12 +10,14 @@ import 'slash_palette.dart';
 ///
 /// Two visual states:
 /// - **Compact** (unfocused): `[+] [1-line field] [send?]`.
-/// - **Expanded** (focused): full-width 3-line field on top, with
-///   `[+] … [send?]` in an action row beneath it.
+/// - **Expanded** (focused, or always on desktop): an auto-growing multiline
+///   field on top (grows with the caret up to 10 lines, then scrolls), with a
+///   footer row beneath it: `[footerActions…] … [+] [send?]`.
 ///
-/// Tapping into the field expands it; losing focus collapses it back to the
-/// 1-line compact form (text is preserved). The send button fades in only
-/// while the field is non-empty.
+/// On mobile the field is compact until focused, then expands to the full
+/// form; losing focus collapses it back to the 1-line compact form (text is
+/// preserved). On desktop [alwaysExpanded] keeps the full form up permanently.
+/// The send button fades in only while the field is non-empty.
 class Composer extends StatefulWidget {
   const Composer({
     super.key,
@@ -26,8 +29,20 @@ class Composer extends StatefulWidget {
     this.sendChord,
     this.newlineChord,
     this.focusNode,
+    this.footerActions = const <Widget>[],
+    this.alwaysExpanded = false,
   });
   final void Function(String text) onSend;
+
+  /// Leading controls placed on the left of the footer action row when the
+  /// composer is in its full (expanded) form — e.g. the model + thinking
+  /// selectors. Each may render nothing (a shrunk box) when it has no data.
+  final List<Widget> footerActions;
+
+  /// When true the composer is permanently in its full form (multiline field +
+  /// footer), regardless of focus. Desktop sets this; mobile leaves it false so
+  /// the field collapses to a one-liner when unfocused.
+  final bool alwaysExpanded;
 
   /// The chord that sends the message. Null uses the built-in default
   /// (⌘/Ctrl+Enter), which keeps mobile behavior unchanged.
@@ -113,9 +128,22 @@ class _ComposerState extends State<Composer> {
     setState(() => _showSlash = false);
   }
 
+  /// Whether to show the full (multiline + footer) form: always on desktop,
+  /// otherwise only while the field is focused.
+  bool get _expanded => widget.alwaysExpanded || _isFocused;
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // One coherent, static box behind the whole composer (field + footer
+    // controls). Deliberately darker than the transcript background and
+    // painted by a plain Container so it never shifts on hover. Glass surfaces
+    // supply their own backdrop, so stay transparent there.
+    final boxColor = widget.glass
+        ? Colors.transparent
+        : (Theme.of(context).brightness == Brightness.dark
+              ? kComposerBoxDark
+              : kComposerBoxLight);
     return SafeArea(
       top: false,
       child: Column(
@@ -128,18 +156,20 @@ class _ComposerState extends State<Composer> {
               onPick: _onSlashPicked,
             ),
           Container(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-            decoration: widget.glass
-                ? null
-                : BoxDecoration(
-                    color: cs.surface,
-                    border: Border(top: BorderSide(color: cs.outlineVariant)),
-                  ),
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+            decoration: widget.glass ? null : BoxDecoration(color: cs.surface),
             child: AnimatedSize(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
               alignment: Alignment.bottomCenter,
-              child: _isFocused ? _buildExpanded(cs) : _buildCompact(cs),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: boxColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: _expanded ? _buildExpanded(cs) : _buildCompact(cs),
+              ),
             ),
           ),
         ],
@@ -159,7 +189,9 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  /// Expanded: full-width 3-line field, then `[+] … [send?]` beneath.
+  /// Expanded: auto-growing multiline field, then a footer row with the
+  /// caller's [Composer.footerActions] on the left (model/thinking selectors)
+  /// and `[+] [send?]` on the right.
   Widget _buildExpanded(ColorScheme cs) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -170,8 +202,24 @@ class _ComposerState extends State<Composer> {
           padding: const EdgeInsets.only(top: 4),
           child: Row(
             children: [
+              // The selectors share the row's free space and shrink (their
+              // labels ellipsize) rather than overflowing on narrow widths.
+              // Expanded here also stands in for the trailing Spacer, pushing
+              // [+]/send to the right when the actions are short or absent.
+              Expanded(
+                child: Row(
+                  children: [
+                    for (final action in widget.footerActions)
+                      Flexible(
+                        child: Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: action,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               _buildPlus(),
-              const Spacer(),
               // Reserve the send button's footprint so the layout doesn't
               // jump when the send button fades in/out.
               SizedBox(width: 48, child: _buildSendSlot()),
@@ -267,24 +315,34 @@ class _ComposerState extends State<Composer> {
             },
           ),
         },
-        child: TextField(
-          key: _fieldKey, // stable element across compact↔expanded reparenting
-          controller: _ctrl,
-          focusNode: _focus,
-          // Compact = exactly 1 line; expanded = fixed 3 lines (scrolls past).
-          minLines: _isFocused ? 3 : 1,
-          maxLines: _isFocused ? 3 : 1,
-          textCapitalization: TextCapitalization.sentences,
-          // Return behavior is driven by _shortcuts(): unconfigured (mobile)
-          // keeps the native Return-inserts-newline action, with sending via
-          // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
-          // configured (desktop), Return itself may send instead.
-          textInputAction: TextInputAction.newline,
-          onChanged: _onChanged,
-          decoration: const InputDecoration(
-            hintText: 'Message …',
-            border: InputBorder.none,
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        child: ScrollConfiguration(
+          // Hide the input's scrollbar; the field still scrolls once it grows
+          // past its max line count.
+          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+          child: TextField(
+            key:
+                _fieldKey, // stable element across compact↔expanded reparenting
+            controller: _ctrl,
+            focusNode: _focus,
+            // Compact = exactly 1 line; expanded starts 3 rows tall and
+            // auto-grows with the caret up to 10 lines, then scrolls internally.
+            minLines: _expanded ? 3 : 1,
+            maxLines: _expanded ? 10 : 1,
+            textCapitalization: TextCapitalization.sentences,
+            // Return behavior is driven by _shortcuts(): unconfigured (mobile)
+            // keeps the native Return-inserts-newline action, with sending via
+            // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
+            // configured (desktop), Return itself may send instead.
+            textInputAction: TextInputAction.newline,
+            onChanged: _onChanged,
+            // Transparent: the shared composer box supplies the background, so
+            // the field, selectors, [+] and send all sit on one static surface.
+            decoration: const InputDecoration(
+              hintText: 'Message …',
+              filled: false,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            ),
           ),
         ),
       ),

@@ -292,6 +292,49 @@ void main() {
   });
 
   testWidgets(
+    'session actions menu offers Rename + Quit only (no model/thinking)',
+    (tester) async {
+      final session = Session(
+        id: 's1',
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Test session',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        lastPreview: '',
+        lastActivityAt: 0,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState([session])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(selectedSessionProvider.notifier).state = 's1';
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Session actions'));
+      await tester.pumpAndSettle();
+
+      // Model + thinking moved into the composer footer; the overflow menu keeps
+      // only rename + quit.
+      expect(find.text('Rename session'), findsOneWidget);
+      expect(find.text('Quit session'), findsOneWidget);
+      expect(find.text('Model'), findsNothing);
+      expect(find.text('Thinking'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'unfold button and title coexist when collapsed with a session selected',
     (tester) async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

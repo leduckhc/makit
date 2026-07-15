@@ -82,6 +82,13 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   private pendingApprovals = 0;
   private exited = false;
 
+  /**
+   * ACP session modes (currentModeId + availableModes), when the agent supports
+   * them. ACP has no model/thinking concept, so this is the only meta an ACP
+   * agent can feed the composer — surfaced as the session-mode selector.
+   */
+  private modes?: { current: string; available: { id: string; name: string }[] };
+
   constructor(opts: AcpAdapterOpts) {
     super();
     this.spec = opts.spec;
@@ -120,7 +127,9 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
     const res = await this.conn.newSession({ cwd: opts.cwd, mcpServers: [] });
     this.acpSessionId = res.sessionId;
+    this.captureModes(res.modes);
     this.emit("status", "idle");
+    this.emitMeta();
   }
 
   async send(input: UserInput): Promise<void> {
@@ -168,6 +177,53 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     }
   }
 
+  /**
+   * Control actions from the app. ACP only supports session-mode switching
+   * (no model/thinking), so `mode` maps to `session/set_session_mode`; other
+   * actions are silently ignored on this transport.
+   */
+  async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action !== "mode" || !this.conn || !this.acpSessionId) return;
+    const modeId = typeof args?.id === "string" ? args.id : "";
+    if (!modeId) return;
+    if (!this.conn.setSessionMode) return;
+    await this.conn.setSessionMode({ sessionId: this.acpSessionId, modeId });
+    // Reflect immediately; the agent may also confirm via current_mode_update.
+    if (this.modes) {
+      this.modes = { ...this.modes, current: modeId };
+      this.emitMeta();
+    }
+  }
+
+  /** Cache ACP mode state from a newSession response (no-op if unsupported). */
+  private captureModes(
+    state:
+      | { currentModeId?: string; availableModes?: { id: string; name: string }[] }
+      | null
+      | undefined,
+  ): void {
+    if (!state || !Array.isArray(state.availableModes) || state.availableModes.length === 0) {
+      return;
+    }
+    this.modes = {
+      current:
+        typeof state.currentModeId === "string"
+          ? state.currentModeId
+          : state.availableModes[0]!.id,
+      available: state.availableModes.map((m) => ({ id: m.id, name: m.name })),
+    };
+  }
+
+  /** Emit the ACP session modes as `session.meta` (only when modes exist). */
+  private emitMeta(): void {
+    if (!this.modes) return;
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "session.meta",
+      payload: { model: null, thinking: "", models: [], modes: this.modes },
+    });
+  }
+
   async kill(): Promise<void> {
     this.transport?.dispose();
     this.handleExit(null);
@@ -179,6 +235,15 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     return {
       sessionUpdate: async (params: SessionNotification) => {
         if (params.sessionId !== this.acpSessionId) return;
+        // The agent can switch modes autonomously; keep the selector in sync.
+        const u = params.update as { sessionUpdate?: string; currentModeId?: string };
+        if (u.sessionUpdate === "current_mode_update") {
+          if (this.modes && typeof u.currentModeId === "string") {
+            this.modes = { ...this.modes, current: u.currentModeId };
+            this.emitMeta();
+          }
+          return;
+        }
         this.mapper.handle(params.update);
       },
       requestPermission: async (params: RequestPermissionRequest): Promise<RequestPermissionResponse> => {

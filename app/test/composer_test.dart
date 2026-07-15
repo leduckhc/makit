@@ -4,11 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/ui/composer/composer.dart';
 
+void _noop(String _) {}
+
 void main() {
   Widget wrap(Widget child) => MaterialApp(
     home: Scaffold(body: Center(child: child)),
   );
-
   testWidgets(
     'send button is hidden when empty and fades in once text is entered',
     (tester) async {
@@ -36,7 +37,7 @@ void main() {
     },
   );
 
-  testWidgets('field starts compact (1 line) and expands to 3 lines on focus', (
+  testWidgets('field starts compact (1 line) and grows to 10 lines on focus', (
     tester,
   ) async {
     await tester.pumpWidget(wrap(Composer(onSend: (_) {})));
@@ -49,9 +50,55 @@ void main() {
     await tester.pumpAndSettle();
 
     final fieldAfter = tester.widget<TextField>(find.byType(TextField));
+    // Expanded starts 3 rows tall and auto-grows up to 10 before scrolling.
     expect(fieldAfter.minLines, 3);
-    expect(fieldAfter.maxLines, 3);
+    expect(fieldAfter.maxLines, 10);
   });
+
+  testWidgets(
+    'alwaysExpanded keeps the full form (10-line field + footer) when unfocused',
+    (tester) async {
+      await tester.pumpWidget(
+        wrap(
+          const Composer(
+            onSend: _noop,
+            alwaysExpanded: true,
+            footerActions: [Text('MODEL'), Text('THINK')],
+          ),
+        ),
+      );
+
+      // Full form up immediately, with no focus and no text.
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.maxLines, 10);
+      // Footer actions render in the action row.
+      expect(find.text('MODEL'), findsOneWidget);
+      expect(find.text('THINK'), findsOneWidget);
+      // The add affordance is present (disabled placeholder).
+      expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'footerActions stay hidden while compact (unfocused, not alwaysExpanded)',
+    (tester) async {
+      await tester.pumpWidget(
+        wrap(
+          const Composer(
+            onSend: _noop,
+            footerActions: [Text('MODEL'), Text('THINK')],
+          ),
+        ),
+      );
+
+      // Mobile default: compact one-liner, so the footer (and its selectors)
+      // is not rendered until the field is focused/expanded.
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.maxLines, 1);
+      expect(find.text('MODEL'), findsNothing);
+      expect(find.text('THINK'), findsNothing);
+    },
+  );
 
   testWidgets('losing focus collapses back to 1 line while preserving text', (
     tester,

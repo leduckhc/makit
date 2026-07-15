@@ -108,14 +108,25 @@ class ActionError {
 /// Per-session model + thinking-level snapshot. Drives the subtle header
 /// indicator and the `/model` picker. Pushed via the `session.meta` event.
 class SessionMeta {
-  const SessionMeta({this.model, required this.thinking, required this.models});
+  const SessionMeta({
+    this.model,
+    required this.thinking,
+    required this.models,
+    this.modes,
+  });
 
   final ModelInfo? model;
   final String thinking;
   final List<ModelInfo> models;
 
+  /// ACP session modes (e.g. ask/code/architect), when the agent is an ACP
+  /// agent that advertises them. Native pi has no modes (null); ACP has no
+  /// model/thinking. Drives the composer's mode selector.
+  final SessionModes? modes;
+
   static SessionMeta fromJson(Map<String, dynamic> j) {
     final rawModel = j['model'];
+    final rawModes = j['modes'];
     return SessionMeta(
       model: rawModel is Map
           ? ModelInfo.fromJson(Map<String, dynamic>.from(rawModel))
@@ -126,8 +137,42 @@ class SessionMeta {
           .map((m) => ModelInfo.fromJson(Map<String, dynamic>.from(m)))
           .whereType<ModelInfo>()
           .toList(),
+      modes: rawModes is Map
+          ? SessionModes.fromJson(Map<String, dynamic>.from(rawModes))
+          : null,
     );
   }
+}
+
+/// One selectable agent mode (ACP session mode).
+class SessionMode {
+  const SessionMode({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  static SessionMode? fromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String?;
+    if (id == null) return null;
+    return SessionMode(id: id, name: (j['name'] as String?) ?? id);
+  }
+}
+
+/// The set of agent modes and the one currently active (ACP `SessionModeState`).
+class SessionModes {
+  const SessionModes({required this.current, required this.available});
+
+  final String current;
+  final List<SessionMode> available;
+
+  static SessionModes fromJson(Map<String, dynamic> j) => SessionModes(
+    current: (j['current'] as String?) ?? '',
+    available: ((j['available'] as List?) ?? const [])
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => SessionMode.fromJson(Map<String, dynamic>.from(m)))
+        .whereType<SessionMode>()
+        .toList(),
+  );
 }
 
 class Project {

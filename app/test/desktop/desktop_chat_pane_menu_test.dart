@@ -73,19 +73,21 @@ Future<void> _pumpPane(
 }
 
 void main() {
-  testWidgets('actions menu exposes the same items as the mobile screen', (
-    tester,
-  ) async {
-    await _pumpPane(tester, sessionId: 's1');
+  testWidgets(
+    'actions menu exposes rename + quit (model/thinking moved to composer)',
+    (tester) async {
+      await _pumpPane(tester, sessionId: 's1');
 
-    await tester.tap(find.byTooltip('Session actions'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Session actions'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Rename session'), findsOneWidget);
-    expect(find.text('Model'), findsOneWidget);
-    expect(find.text('Thinking'), findsOneWidget);
-    expect(find.text('Quit session'), findsOneWidget);
-  });
+      expect(find.text('Rename session'), findsOneWidget);
+      expect(find.text('Quit session'), findsOneWidget);
+      // Model + thinking-effort now live inline in the composer footer.
+      expect(find.text('Model'), findsNothing);
+      expect(find.text('Thinking'), findsNothing);
+    },
+  );
 
   testWidgets('Quit prompts for confirmation before killing the session', (
     tester,

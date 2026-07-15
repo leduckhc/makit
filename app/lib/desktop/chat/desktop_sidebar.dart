@@ -288,12 +288,24 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                   child: Row(
                     children: [
                       const SizedBox(width: 4),
-                      const Icon(
-                        Symbols.call_merge,
-                        size: 24,
-                        weight: 200,
-                        color: kRepoAccent,
-                      ),
+                      // Open PR → the merge symbol; otherwise the plain
+                      // worktree/branch icon that predated the PR-centric
+                      // redesign (still used by the draft-worktree tile and
+                      // any non-open PR).
+                      if (worktree.pr?.state.toUpperCase() == 'OPEN')
+                        const Icon(
+                          Symbols.call_merge,
+                          size: 24,
+                          weight: 200,
+                          color: kRepoAccent,
+                        )
+                      else
+                        Icon(
+                          Symbols.fork_right,
+                          size: 24,
+                          weight: 200,
+                          color: theme.colorScheme.outline,
+                        ),
                       const SizedBox(width: 6),
                       Expanded(
                         child: Row(
