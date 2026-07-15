@@ -69,9 +69,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   // `session.meta` event whenever either changes, so the app can drive its
   // model + thinking selectors. Nothing emitted pi-mirror-style anymore
   // (#26 removed the extension), so the adapter owns this now.
-  private metaModel: { provider: string; id: string; name: string } | null = null;
+  private metaModel: MetaModel | null = null;
   private metaThinking = "";
-  private metaModels: { provider: string; id: string; name: string }[] = [];
+  private metaModels: MetaModel[] = [];
 
   async start(opts: SpawnOpts): Promise<void> {
     this.cwd = opts.cwd;
@@ -436,7 +436,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
         ) {
           this.metaModels = evt.data.models
             .map(normalizeModel)
-            .filter((m: unknown): m is { provider: string; id: string; name: string } => m !== null);
+            .filter((m: unknown): m is MetaModel => m !== null);
           this.pushMeta();
         } else if (evt.command === "set_model" && evt.success) {
           // Response data is the new Model; adopt it and re-query state so the
@@ -619,14 +619,15 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
  * use `readline` because it also splits on U+2028/U+2029 which are valid
  * inside JSON strings.
  */
+/** The `{provider, id, name}` triple carried in `session.meta` for a model. */
+type MetaModel = { provider: string; id: string; name: string };
+
 /**
  * Reduce a pi rpc [Model] object (see docs/rpc.md) to the `{provider,id,name}`
  * triple the app's `session.meta` carries. Returns null for a null/malformed
  * model so callers can render "no model yet".
  */
-function normalizeModel(
-  m: unknown,
-): { provider: string; id: string; name: string } | null {
+function normalizeModel(m: unknown): MetaModel | null {
   if (!m || typeof m !== "object") return null;
   const o = m as Record<string, unknown>;
   const provider = typeof o.provider === "string" ? o.provider : "";
