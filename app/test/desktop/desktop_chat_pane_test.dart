@@ -3,13 +3,107 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_chips.dart';
 
+Session _session() => Session(
+  id: 's1',
+  projectId: 'p1',
+  agent: 'pi',
+  title: 'Test session',
+  status: SessionStatus.idle,
+  policy: ApprovalPolicy.askOnRisky,
+  lastPreview: '',
+  lastActivityAt: 0,
+);
+
+ProviderContainer _thinkingContainer(String text) {
+  final container = ProviderContainer(
+    overrides: [
+      sessionsProvider.overrideWithValue(SessionsState([_session()])),
+      eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+      chatItemsProvider(
+        's1',
+      ).overrideWithValue([ThinkingItem(seq: 1, ts: 0, text: text)]),
+    ],
+  );
+  container.read(selectedSessionProvider.notifier).state = 's1';
+  return container;
+}
+
 void main() {
+  group('_ThinkingLine interaction', () {
+    const thinking = 'Reasoning about the answer in detail';
+
+    Future<void> pumpThinking(WidgetTester tester) async {
+      final container = _thinkingContainer(thinking);
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('collapsed by default: plain Text, no SelectableText', (
+      tester,
+    ) async {
+      await pumpThinking(tester);
+
+      expect(find.byType(SelectableText), findsNothing);
+      final textWidget = tester.widget<Text>(find.text(thinking));
+      expect(textWidget.maxLines, 1);
+      expect(textWidget.overflow, TextOverflow.ellipsis);
+    });
+
+    testWidgets('tapping the collapsed row expands to a SelectableText', (
+      tester,
+    ) async {
+      await pumpThinking(tester);
+
+      await tester.tap(find.text(thinking));
+      await tester.pump();
+
+      expect(find.byType(SelectableText), findsOneWidget);
+    });
+
+    testWidgets('expanded exposes a "Collapse thinking" semantics action', (
+      tester,
+    ) async {
+      await pumpThinking(tester);
+      await tester.tap(find.text(thinking));
+      await tester.pump();
+
+      final semantics = tester.widgetList<Semantics>(find.byType(Semantics));
+      expect(
+        semantics.any(
+          (s) => s.properties.hintOverrides?.onTapHint == 'Collapse thinking',
+        ),
+        isTrue,
+      );
+    });
+
+    testWidgets('tapping the leading icon while expanded collapses', (
+      tester,
+    ) async {
+      await pumpThinking(tester);
+      await tester.tap(find.text(thinking));
+      await tester.pump();
+      expect(find.byType(SelectableText), findsOneWidget);
+
+      await tester.tap(find.byIcon(Symbols.psychology));
+      await tester.pump();
+
+      expect(find.byType(SelectableText), findsNothing);
+    });
+  });
+
   testWidgets('shows empty state when no session is selected', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(
