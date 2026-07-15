@@ -421,30 +421,42 @@ class _ThinkingLineState extends State<_ThinkingLine> {
       fontStyle: FontStyle.italic,
       height: 1.3,
     );
-    return InkWell(
-      onTap: () => setState(() => _expanded = !_expanded),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Symbols.psychology,
-              weight: 200,
-              size: 15,
-              color: cs.onSurfaceVariant.withValues(alpha: 0.55),
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                widget.text.trim(),
-                style: style,
-                maxLines: _expanded ? null : 1,
-                overflow: _expanded ? TextOverflow.clip : TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
+    void toggle() => setState(() => _expanded = !_expanded);
+    final textWidget = _expanded
+        ? SelectableText(widget.text.trim(), style: style, onTap: toggle)
+        : Text(
+            widget.text.trim(),
+            style: style,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          );
+    // Expanded: SelectableText handles taps for selection; tap on the row
+    // collapses. Collapsed: whole row is a tap target that expands.
+    return _expanded
+        ? Semantics(
+            onTap: toggle,
+            onTapHint: 'Collapse thinking',
+            child: _buildRow(textWidget),
+          )
+        : InkWell(onTap: toggle, child: _buildRow(textWidget));
+  }
+
+  Widget _buildRow(Widget textWidget) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Symbols.psychology,
+            weight: 200,
+            size: 15,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.55),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: textWidget),
+        ],
       ),
     );
   }
