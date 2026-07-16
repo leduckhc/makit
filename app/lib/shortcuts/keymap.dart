@@ -37,6 +37,11 @@ class Keymap {
       ShortcutAction.nextSession: primary(LogicalKeyboardKey.bracketRight),
       ShortcutAction.previousSession: primary(LogicalKeyboardKey.bracketLeft),
       ShortcutAction.openSettings: primary(LogicalKeyboardKey.comma),
+      ShortcutAction.splitPaneVertical: primary(LogicalKeyboardKey.keyD),
+      ShortcutAction.splitPaneHorizontal: primary(
+        LogicalKeyboardKey.keyD,
+        shift: true,
+      ),
     });
   }
 

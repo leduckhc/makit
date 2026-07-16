@@ -6,6 +6,7 @@ import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
 import 'composer_focus.dart';
 import 'new_session_dialog.dart';
+import 'panes/pane_tree_controller.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 import '../settings/settings_window.dart' show settingsOpenProvider;
@@ -168,11 +169,28 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleSession(ref, 1);
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
+      case ShortcutAction.splitPaneVertical:
+        _splitPane(context, ref, Axis.horizontal);
+      case ShortcutAction.splitPaneHorizontal:
+        _splitPane(context, ref, Axis.vertical);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:
         break;
     }
+  }
+
+  /// Splits the active pane and opens the new-session flow in the fresh pane.
+  ///
+  /// The current pane is pinned to its resolved session (explicit id, else the
+  /// global selection) so it keeps its transcript, then the new-worktree dialog
+  /// starts a new session that lands in the new pane.
+  void _splitPane(BuildContext context, WidgetRef ref, Axis axis) {
+    final controller = ref.read(paneTreeControllerProvider.notifier);
+    final pinned =
+        controller.activeLeafSessionId ?? ref.read(selectedSessionProvider);
+    controller.splitActive(axis, pinnedSessionId: pinned);
+    showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
   }
 
   /// Session ids in sidebar display order (repo order, then each repo's

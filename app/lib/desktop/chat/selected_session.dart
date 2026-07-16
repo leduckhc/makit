@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import 'panes/pane_tree_controller.dart';
+
 /// The session currently shown in the desktop chat pane, or `null` when none
 /// is selected (empty state). Desktop is a two-pane master/detail layout, so —
 /// unlike the mobile push-navigation flow — the "current session" is app state,
@@ -45,14 +47,20 @@ final selectedWorktreeProvider = StateProvider<SelectedWorktree?>(
   (ref) => null,
 );
 
-/// Select a session, clearing any selected sessionless worktree.
+/// Select a session, clearing any selected sessionless worktree. Also binds
+/// the session to the active split pane so a sidebar pick lands in the focused
+/// pane; the global providers stay in sync for the sidebar highlight and
+/// empty-state / auto-select logic.
 void selectSessionExclusive(WidgetRef ref, String id) {
   ref.read(selectedWorktreeProvider.notifier).state = null;
   ref.read(selectedSessionProvider.notifier).state = id;
+  ref.read(paneTreeControllerProvider.notifier).bindActiveSession(id);
 }
 
-/// Select a sessionless worktree, clearing any selected session.
+/// Select a sessionless worktree, clearing any selected session. The active
+/// pane's bound session is cleared too so it falls back to the worktree draft.
 void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
   ref.read(selectedSessionProvider.notifier).state = null;
   ref.read(selectedWorktreeProvider.notifier).state = worktree;
+  ref.read(paneTreeControllerProvider.notifier).clearActiveSession();
 }
