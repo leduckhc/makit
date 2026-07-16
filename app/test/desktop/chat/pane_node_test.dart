@@ -126,6 +126,40 @@ void main() {
       expect((setRatio(root, 'sp', 0.01) as PaneSplit).ratio, 0.1);
       expect((setRatio(root, 'sp', 0.99) as PaneSplit).ratio, 0.9);
     });
+
+    test('updates a nested split without rebuilding the untouched sibling', () {
+      const untouched = PaneSplit(
+        id: 'left',
+        axis: Axis.vertical,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      const root = PaneSplit(
+        id: 'root',
+        axis: Axis.horizontal,
+        first: untouched,
+        second: PaneSplit(
+          id: 'right',
+          axis: Axis.vertical,
+          first: PaneLeaf(id: 'c'),
+          second: PaneLeaf(id: 'd'),
+        ),
+      );
+      final result = setRatio(root, 'right', 0.8) as PaneSplit;
+      expect((result.second as PaneSplit).ratio, 0.8);
+      // The unaffected subtree keeps its identity (no needless rebuild).
+      expect(identical(result.first, untouched), isTrue);
+    });
+
+    test('is a no-op for an unknown split id', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      expect(identical(setRatio(root, 'nope', 0.7), root), isTrue);
+    });
   });
 
   group('moveLeaf', () {
@@ -273,6 +307,71 @@ void main() {
       );
       expect(containsLeaf(root, 'b'), isTrue);
       expect(containsLeaf(root, 'z'), isFalse);
+    });
+  });
+
+  group('mapLeaves', () {
+    test('rebuilds every leaf, preserving split structure', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a'),
+        second: PaneSplit(
+          id: 'sp2',
+          axis: Axis.vertical,
+          first: PaneLeaf(id: 'b'),
+          second: PaneLeaf(id: 'c'),
+        ),
+        ratio: 0.3,
+      );
+      final result =
+          mapLeaves(root, (l) => PaneLeaf(id: l.id, sessionId: 's-${l.id}'))
+              as PaneSplit;
+      expect(result.id, 'sp');
+      expect(result.ratio, 0.3);
+      expect(result.first, const PaneLeaf(id: 'a', sessionId: 's-a'));
+      final inner = result.second as PaneSplit;
+      expect(inner.id, 'sp2');
+      expect(inner.first, const PaneLeaf(id: 'b', sessionId: 's-b'));
+      expect(inner.second, const PaneLeaf(id: 'c', sessionId: 's-c'));
+    });
+
+    test('maps a single root leaf', () {
+      const root = PaneLeaf(id: 'a', sessionId: 's1');
+      final result = mapLeaves(root, (l) => PaneLeaf(id: l.id));
+      expect(result, const PaneLeaf(id: 'a'));
+    });
+  });
+
+  group('firstLeafWhere', () {
+    const root = PaneSplit(
+      id: 'sp',
+      axis: Axis.horizontal,
+      first: PaneSplit(
+        id: 'sp2',
+        axis: Axis.vertical,
+        first: PaneLeaf(id: 'a', sessionId: 's1'),
+        second: PaneLeaf(id: 'b'),
+      ),
+      second: PaneLeaf(id: 'c', sessionId: 's3'),
+    );
+
+    test('returns the first (left-most, depth-first) matching value', () {
+      expect(
+        firstLeafWhere(root, (l) => l.sessionId != null ? l.id : null),
+        'a',
+      );
+    });
+
+    test('returns null when no leaf matches', () {
+      expect(firstLeafWhere(root, (l) => l.id == 'z' ? l : null), isNull);
+    });
+
+    test('finds a leaf deeper in the second subtree', () {
+      expect(
+        firstLeafWhere(root, (l) => l.id == 'c' ? l.sessionId : null),
+        's3',
+      );
     });
   });
 

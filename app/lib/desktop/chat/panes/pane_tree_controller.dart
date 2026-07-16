@@ -46,36 +46,18 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
     );
   }
 
-  PaneLeaf? _activeLeaf(PaneNode node) {
-    switch (node) {
-      case PaneLeaf():
-        return node.id == state.activeLeafId ? node : null;
-      case PaneSplit():
-        return _activeLeaf(node.first) ?? _activeLeaf(node.second);
-    }
-  }
+  PaneLeaf? _activeLeaf(PaneNode node) =>
+      firstLeafWhere(node, (l) => l.id == state.activeLeafId ? l : null);
 
   /// The session id explicitly stored on the active leaf (null when it is a
   /// fresh pane still tracking the global selection). Callers resolve the
   /// fallback themselves since the controller cannot read providers.
   String? get activeLeafSessionId => _activeLeaf(state.root)?.sessionId;
 
-  PaneNode _pinLeaf(PaneNode node, String id, String? sessionId) {
-    switch (node) {
-      case PaneLeaf():
-        return node.id == id
-            ? PaneLeaf(id: node.id, sessionId: sessionId)
-            : node;
-      case PaneSplit():
-        return PaneSplit(
-          id: node.id,
-          axis: node.axis,
-          first: _pinLeaf(node.first, id, sessionId),
-          second: _pinLeaf(node.second, id, sessionId),
-          ratio: node.ratio,
-        );
-    }
-  }
+  PaneNode _pinLeaf(PaneNode node, String id, String? sessionId) => mapLeaves(
+    node,
+    (l) => l.id == id ? PaneLeaf(id: l.id, sessionId: sessionId) : l,
+  );
 
   /// Splits the active pane along [axis]. The current pane is pinned to
   /// [pinnedSessionId] (its resolved session) so it keeps showing that session,
@@ -191,20 +173,8 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
     );
   }
 
-  PaneNode _clearSession(PaneNode node, String sessionId) {
-    switch (node) {
-      case PaneLeaf():
-        return node.sessionId == sessionId ? PaneLeaf(id: node.id) : node;
-      case PaneSplit():
-        return PaneSplit(
-          id: node.id,
-          axis: node.axis,
-          first: _clearSession(node.first, sessionId),
-          second: _clearSession(node.second, sessionId),
-          ratio: node.ratio,
-        );
-    }
-  }
+  PaneNode _clearSession(PaneNode node, String sessionId) =>
+      mapLeaves(node, (l) => l.sessionId == sessionId ? PaneLeaf(id: l.id) : l);
 
   /// Re-docks the [source] leaf onto [edge] of the [target] leaf; the moved
   /// pane stays active.
