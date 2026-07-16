@@ -17,14 +17,20 @@ class AskWizard extends StatefulWidget {
 
 class _AskWizardState extends State<AskWizard> {
   int _i = 0;
-  late final List<Set<int>> _picks = List.generate(widget.questions.length, (_) => <int>{});
+  late final List<Set<int>> _picks = List.generate(
+    widget.questions.length,
+    (_) => <int>{},
+  );
 
   Map<String, dynamic> get _q => widget.questions[_i];
 
   List<Map<String, dynamic>> _options() {
     final raw = _q['options'];
     if (raw is! List) return const [];
-    return raw.whereType<Map<dynamic, dynamic>>().map(Map<String, dynamic>.from).toList();
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map(Map<String, dynamic>.from)
+        .toList();
   }
 
   bool get _multi => _q['multi'] == true;
@@ -60,7 +66,9 @@ class _AskWizardState extends State<AskWizard> {
                 .toList() ??
             const [];
         final pickedSorted = _picks[qi].toList()..sort();
-        final labels = pickedSorted.map((i) => opts[i]['label']?.toString() ?? '').toList();
+        final labels = pickedSorted
+            .map((i) => opts[i]['label']?.toString() ?? '')
+            .toList();
         indices.add(pickedSorted.isEmpty ? -1 : pickedSorted.first);
         answers.add(labels.join(' + '));
       }
@@ -115,7 +123,10 @@ class _AskWizardState extends State<AskWizard> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
         if (_i > 0) TextButton(onPressed: _back, child: const Text('Back')),
         FilledButton(
           onPressed: _canAdvance ? _next : null,
@@ -168,18 +179,27 @@ class _OptionTile extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          Text(
+                            label,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
                           if (recommended) ...[
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: cs.tertiary.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
                                 'Recommended',
-                                style: TextStyle(fontSize: 10, color: cs.tertiary),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: cs.tertiary,
+                                ),
                               ),
                             ),
                           ],
@@ -188,7 +208,10 @@ class _OptionTile extends StatelessWidget {
                       if (description != null && description!.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: Text(description!, style: Theme.of(context).textTheme.bodySmall),
+                          child: Text(
+                            description!,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
                     ],
                   ),
@@ -205,4 +228,5 @@ class _OptionTile extends StatelessWidget {
 /// Test-only entrypoint to render the wizard with a given question list.
 /// Use in widget tests via `showDialog(builder: (_) => debugAskWizardFor(qs))`.
 @visibleForTesting
-Widget debugAskWizardFor(List<Map<String, dynamic>> questions) => AskWizard(questions: questions);
+Widget debugAskWizardFor(List<Map<String, dynamic>> questions) =>
+    AskWizard(questions: questions);

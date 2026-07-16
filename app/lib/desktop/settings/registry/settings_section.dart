@@ -15,7 +15,6 @@ class SettingsSection {
     required this.icon,
     required this.builder,
     this.items = const [],
-    this.availability = SettingsAvailability.now,
   });
 
   /// Stable identifier; also the value stored in `settings.lastSection`.
@@ -32,7 +31,4 @@ class SettingsSection {
 
   /// The section's leaves, used to build the search index.
   final List<SettingsItem> items;
-
-  /// Section-level availability (a whole section may be reserved).
-  final SettingsAvailability availability;
 }
