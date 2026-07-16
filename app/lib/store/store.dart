@@ -232,18 +232,7 @@ class StoreController extends StateNotifier<StoreState> {
     if (env.t != MsgType.event) return;
     final decoded = WireCodec.decode(env);
     if (decoded == null) return;
-    final prev = state;
     state = reduce(state, decoded);
-    // The home screen is repo-centric. `project.add` always pushes a fresh
-    // `projects.snapshot`, but `repos.snapshot` is computed asynchronously on
-    // the server and can arrive late or be dropped — leaving the UI stuck on
-    // "No repos yet" after a successful add. Re-fetch when projects grew but
-    // repos haven't caught up yet.
-    if (decoded is ProjectsSnapshot &&
-        state.projects.length > prev.projects.length &&
-        state.projects.length > state.repos.length) {
-      unawaited(refreshRepos());
-    }
   }
 
   /// Currently-subscribed sessionIds. We replay these on every reconnect.

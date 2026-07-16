@@ -5,6 +5,55 @@ library;
 
 import 'dart:convert';
 
+/// Canonical `srv.response` body builder — the single source of truth for the
+/// shapes the app sends back to the server (SPEC-18 T4). Both the in-app dialog
+/// path (`SrvRequestHandler`) and the notification-action path
+/// ([responseForAction]) build their responses here so the two can never drift.
+///
+/// The `kind` field is ALWAYS present: server consumers dispatch on it
+/// (`resp.kind === "confirmAction"` / `"askUserQuestion"` / `"input"`), so a
+/// response without it falls through and is silently dropped.
+abstract final class SrvResponse {
+  /// Answer to a `confirmAction` request.
+  static Map<String, dynamic> confirmAction({required bool approved}) => {
+    'kind': 'confirmAction',
+    'approved': approved,
+  };
+
+  /// Answer to an `askUserQuestion` request. Consumers read `answers` (label
+  /// text) and `indices` (selected option per question); `answer` is the
+  /// single-question convenience alias.
+  static Map<String, dynamic> askUserQuestion({
+    required List<int> indices,
+    required List<String> answers,
+    String? answer,
+  }) => {
+    'kind': 'askUserQuestion',
+    'indices': indices,
+    'answers': answers,
+    'answer': ?answer,
+  };
+
+  /// Answer to an `input` request carrying the user's [value].
+  static Map<String, dynamic> input(String value) => {
+    'kind': 'input',
+    'value': value,
+  };
+
+  /// A cancellation for a request of [kind]. `askUserQuestion` carries empty
+  /// `indices`/`answers` so consumers iterating them stay safe; other kinds
+  /// carry just the cancelled flag.
+  static Map<String, dynamic> cancelled(String kind) => switch (kind) {
+    'askUserQuestion' => {
+      'kind': 'askUserQuestion',
+      'indices': <int>[],
+      'answers': <String>[],
+      'cancelled': true,
+    },
+    _ => {'kind': kind, 'cancelled': true},
+  };
+}
+
 /// Category identifiers registered with the OS notification categories.
 const kConfirmCategoryId = 'makit_confirm';
 const kQuestionCategoryId = 'makit_question';
@@ -93,19 +142,18 @@ Map<String, dynamic>? responseForAction({
   switch (actionId) {
     case kApproveActionId:
       if (kind != 'confirmAction') return null;
-      return {'kind': kind, 'approved': true};
+      return SrvResponse.confirmAction(approved: true);
     case kDenyActionId:
       if (kind != 'confirmAction') return null;
-      return {'kind': kind, 'approved': false};
+      return SrvResponse.confirmAction(approved: false);
     case kReplyActionId:
       if (kind != 'askUserQuestion') return null;
       final text = input ?? '';
-      return {
-        'kind': kind,
-        'answers': [text],
-        'answer': text,
-        'indices': [-1],
-      };
+      return SrvResponse.askUserQuestion(
+        indices: [-1],
+        answers: [text],
+        answer: text,
+      );
     default:
       return null;
   }

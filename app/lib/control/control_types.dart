@@ -153,19 +153,6 @@ class StatusData {
       version: version,
     );
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {
-    'pid': pid,
-    'uptimeMs': uptimeMs,
-    'host': host,
-    'port': port,
-    'fingerprint': fingerprint,
-    'advertiseHost': advertiseHost,
-    'pairedDevices': pairedDevices,
-    'runningSessions': runningSessions,
-    'version': version,
-  };
 }
 
 /// `pair.mint` result: a fresh pairing token + the `makit://` URL that carries it.
@@ -210,14 +197,6 @@ class PairMintData {
       fingerprint: fingerprint,
     );
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {
-    'url': url,
-    'token': token,
-    'expiresAt': expiresAt,
-    'fingerprint': fingerprint,
-  };
 }
 
 /// `pair.current` result: the active unexpired token (or `null` if none).
@@ -248,13 +227,6 @@ class PairCurrentData {
     if (url == null || token == null || expiresAt == null) return null;
     return PairCurrentData(url: url, token: token, expiresAt: expiresAt);
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {
-    'url': url,
-    'token': token,
-    'expiresAt': expiresAt,
-  };
 }
 
 /// One paired device (an entry of `devices.list`).
@@ -306,15 +278,6 @@ class DeviceInfo {
       connected: connected,
     );
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'label': label,
-    'pairedAt': pairedAt,
-    'lastSeenAt': lastSeenAt,
-    'connected': connected,
-  };
 }
 
 /// `devices.list` result.
@@ -337,11 +300,6 @@ class DevicesListData {
     }
     return DevicesListData(devices: devices);
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {
-    'devices': devices.map((d) => d.toJson()).toList(),
-  };
 }
 
 /// `devices.revoke` result.
@@ -359,9 +317,6 @@ class DevicesRevokeData {
     if (removed == null) return null;
     return DevicesRevokeData(removed: removed);
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {'removed': removed};
 }
 
 /// One session (an entry of `sessions.list`). Ports `SessionDTO` from
@@ -467,9 +422,6 @@ class ServerStopData {
     if (_bool(json['stopping']) != true) return null;
     return const ServerStopData(stopping: true);
   }
-
-  /// Serializes to a wire-compatible JSON map.
-  Map<String, dynamic> toJson() => {'stopping': true};
 }
 
 /// One frame of a `logs.tail` stream: either a [LogLine] or the terminal
