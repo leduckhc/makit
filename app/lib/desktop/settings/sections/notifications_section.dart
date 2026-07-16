@@ -15,6 +15,7 @@ import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
+import 'coming_soon.dart';
 
 /// The reminder-delay choices offered in the dropdown, in whole minutes.
 const List<int> kReminderDelayChoicesMinutes = [1, 2, 5, 10];
@@ -30,7 +31,18 @@ class NotificationsSection extends StatelessWidget {
     return ListView(
       children: const [
         SettingsSectionHeader(title: 'Notifications'),
-        SettingsGroup(children: [_ReminderDelayRow(), _PerTypeMuteRow()]),
+        SettingsGroup(
+          children: [
+            _ReminderDelayRow(),
+            ComingSoonRow(
+              icon: Symbols.notifications_off,
+              title: 'Per-type mute & approval reminders',
+              subtitle:
+                  'Mute specific notification types; approval '
+                  'reminders.',
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -105,35 +117,4 @@ class _ReminderDelayRow extends ConsumerWidget {
 
   static String _minuteLabel(int minutes) =>
       minutes == 1 ? '1 minute' : '$minutes minutes';
-}
-
-/// Per-type mute / approval reminders — a reserved `[future]` placeholder
-/// (SPEC-13 §5). Rendered disabled so the taxonomy is discoverable.
-class _PerTypeMuteRow extends StatelessWidget {
-  const _PerTypeMuteRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      enabled: false,
-      leading: Icon(Symbols.notifications_off, weight: 200, color: cs.outline),
-      title: const Text('Per-type mute & approval reminders'),
-      subtitle: const Text(
-        'Mute specific notification types; approval '
-        'reminders.',
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
-          const SizedBox(width: 6),
-          Text(
-            'Coming soon',
-            style: TextStyle(color: cs.outline, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
 }

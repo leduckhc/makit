@@ -7,6 +7,7 @@ import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
+import 'coming_soon.dart';
 
 /// Lowest UI text scale offered by the slider.
 const double _kMinTextScale = 0.9;
@@ -234,7 +235,7 @@ class _AccentColorRow extends StatelessWidget {
   const _AccentColorRow();
 
   @override
-  Widget build(BuildContext context) => const _ComingSoonRow(
+  Widget build(BuildContext context) => const ComingSoonRow(
     icon: Symbols.palette,
     title: 'Accent color',
     subtitle: 'The single accent hue used for active and selected states.',
@@ -247,7 +248,7 @@ class _MonospaceFontRow extends StatelessWidget {
   const _MonospaceFontRow();
 
   @override
-  Widget build(BuildContext context) => const _ComingSoonRow(
+  Widget build(BuildContext context) => const ComingSoonRow(
     icon: Symbols.code,
     title: 'Monospace code font',
     subtitle: 'The font used for code blocks and inline code.',
@@ -260,44 +261,9 @@ class _ChatRenderingRow extends StatelessWidget {
   const _ChatRenderingRow();
 
   @override
-  Widget build(BuildContext context) => const _ComingSoonRow(
+  Widget build(BuildContext context) => const ComingSoonRow(
     icon: Symbols.chat,
     title: 'Chat rendering',
     subtitle: 'Markdown, code highlight theme, and timestamps.',
   );
-}
-
-/// A disabled row with a "Coming soon" tag for reserved `[future]` leaves.
-class _ComingSoonRow extends StatelessWidget {
-  const _ComingSoonRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      enabled: false,
-      leading: Icon(icon, weight: 200, color: cs.outline),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
-          const SizedBox(width: 6),
-          Text(
-            'Coming soon',
-            style: TextStyle(color: cs.outline, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
 }
