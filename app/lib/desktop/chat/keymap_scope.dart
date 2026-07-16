@@ -184,13 +184,29 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
   ///
   /// The current pane is pinned to its resolved session (explicit id, else the
   /// global selection) so it keeps its transcript, then the new-worktree dialog
-  /// starts a new session that lands in the new pane.
-  void _splitPane(BuildContext context, WidgetRef ref, Axis axis) {
+  /// starts a new session that lands in the new pane. If the dialog is
+  /// cancelled (no worktree started), the fresh pane is removed so a cancelled
+  /// split doesn't leave a duplicate pane mirroring the same session.
+  Future<void> _splitPane(
+    BuildContext context,
+    WidgetRef ref,
+    Axis axis,
+  ) async {
     final controller = ref.read(paneTreeControllerProvider.notifier);
     final pinned =
         controller.activeLeafSessionId ?? ref.read(selectedSessionProvider);
     controller.splitActive(axis, pinnedSessionId: pinned);
-    showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
+    final freshId = ref.read(paneTreeControllerProvider).activeLeafId;
+    final worktreeBefore = ref.read(selectedWorktreeProvider);
+    await showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
+    final cancelled = identical(
+      ref.read(selectedWorktreeProvider),
+      worktreeBefore,
+    );
+    if (cancelled &&
+        ref.read(paneTreeControllerProvider).activeLeafId == freshId) {
+      controller.closeActive();
+    }
   }
 
   /// Session ids in sidebar display order (repo order, then each repo's

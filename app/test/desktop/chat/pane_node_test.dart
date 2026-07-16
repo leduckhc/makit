@@ -60,6 +60,14 @@ void main() {
       expect(inner.first, const PaneLeaf(id: 'b'));
       expect(inner.second, const PaneLeaf(id: 'c'));
     });
+
+    test('is a no-op for an unknown target leaf id', () {
+      const root = PaneLeaf(id: 'a');
+      expect(
+        splitLeaf(root, 'z', Axis.horizontal, const PaneLeaf(id: 'b')),
+        root,
+      );
+    });
   });
 
   group('closeLeaf', () {
@@ -160,6 +168,83 @@ void main() {
       expect(split.axis, Axis.vertical);
       expect(split.first, const PaneLeaf(id: 'a'));
       expect(split.second, const PaneLeaf(id: 'b'));
+    });
+
+    test('left edge docks the source before the target (horizontal)', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.vertical,
+        first: PaneLeaf(id: 'a', sessionId: 's1'),
+        second: PaneLeaf(id: 'b', sessionId: 's2'),
+      );
+      final split =
+          moveLeaf(root, 'a', 'b', DropEdge.left, splitId: 'sp2') as PaneSplit;
+      expect(split.axis, Axis.horizontal);
+      // left → source comes first (newAfter=false).
+      expect(split.first, const PaneLeaf(id: 'a', sessionId: 's1'));
+      expect(split.second, const PaneLeaf(id: 'b', sessionId: 's2'));
+    });
+
+    test('bottom edge stacks the source below the target (vertical)', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      final split =
+          moveLeaf(root, 'a', 'b', DropEdge.bottom, splitId: 'sp2')
+              as PaneSplit;
+      expect(split.axis, Axis.vertical);
+      // bottom → source comes second (newAfter=true).
+      expect(split.first, const PaneLeaf(id: 'b'));
+      expect(split.second, const PaneLeaf(id: 'a'));
+    });
+
+    test('is a no-op when the source leaf does not exist', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      expect(moveLeaf(root, 'z', 'b', DropEdge.right), root);
+    });
+
+    test('is a no-op when the target leaf does not exist', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      expect(moveLeaf(root, 'a', 'z', DropEdge.right), root);
+    });
+
+    test('re-docks across a nested tree: prunes source then splits target', () {
+      // a | (b / c): move a onto c's bottom edge. a is pruned (outer split
+      // collapses to b/c), then c is split vertically with a below it.
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a', sessionId: 's1'),
+        second: PaneSplit(
+          id: 'sp2',
+          axis: Axis.vertical,
+          first: PaneLeaf(id: 'b'),
+          second: PaneLeaf(id: 'c'),
+        ),
+      );
+      final result =
+          moveLeaf(root, 'a', 'c', DropEdge.bottom, splitId: 'sp3')
+              as PaneSplit;
+      // Outer axis is now the inner split's vertical layout (a pruned).
+      expect(result.axis, Axis.vertical);
+      expect(result.first, const PaneLeaf(id: 'b'));
+      final inner = result.second as PaneSplit;
+      expect(inner.axis, Axis.vertical);
+      expect(inner.first, const PaneLeaf(id: 'c'));
+      expect(inner.second, const PaneLeaf(id: 'a', sessionId: 's1'));
     });
   });
 

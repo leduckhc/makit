@@ -235,7 +235,8 @@ String firstLeafId(PaneNode root) => switch (root) {
 };
 
 /// Whether a leaf with [leafId] exists anywhere in [root].
-bool containsLeaf(PaneNode root, String leafId) => _findLeaf(root, leafId) != null;
+bool containsLeaf(PaneNode root, String leafId) =>
+    _findLeaf(root, leafId) != null;
 
 PaneLeaf? _findLeaf(PaneNode root, String leafId) {
   switch (root) {

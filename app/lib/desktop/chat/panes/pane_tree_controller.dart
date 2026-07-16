@@ -40,7 +40,10 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
 
   static PaneTreeState _seed() {
     final id = nextPaneId();
-    return PaneTreeState(root: PaneLeaf(id: id), activeLeafId: id);
+    return PaneTreeState(
+      root: PaneLeaf(id: id),
+      activeLeafId: id,
+    );
   }
 
   PaneLeaf? _activeLeaf(PaneNode node) {
@@ -92,11 +95,38 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
   }
 
   /// Closes the active pane, collapsing its parent split into the sibling. The
-  /// left-most surviving leaf becomes active. No-op when only one pane remains.
+  /// sibling subtree's left-most leaf becomes active (falling back to the whole
+  /// tree's first leaf), so focus stays near the closed pane. No-op when only
+  /// one pane remains.
   void closeActive() {
-    final next = closeLeaf(state.root, state.activeLeafId);
+    final target = state.activeLeafId;
+    final sibling = _siblingFirstLeafId(state.root, target);
+    final next = closeLeaf(state.root, target);
     if (identical(next, state.root) || next == state.root) return;
-    state = PaneTreeState(root: next, activeLeafId: firstLeafId(next));
+    final focus = (sibling != null && containsLeaf(next, sibling))
+        ? sibling
+        : firstLeafId(next);
+    state = PaneTreeState(root: next, activeLeafId: focus);
+  }
+
+  /// The left-most leaf id of [targetId]'s sibling subtree, or null when
+  /// [targetId] has no parent split (it is the root leaf).
+  String? _siblingFirstLeafId(PaneNode node, String targetId) {
+    switch (node) {
+      case PaneLeaf():
+        return null;
+      case PaneSplit():
+        final first = node.first;
+        final second = node.second;
+        if (first is PaneLeaf && first.id == targetId) {
+          return firstLeafId(second);
+        }
+        if (second is PaneLeaf && second.id == targetId) {
+          return firstLeafId(first);
+        }
+        return _siblingFirstLeafId(first, targetId) ??
+            _siblingFirstLeafId(second, targetId);
+    }
   }
 
   /// Marks the leaf [leafId] active (visible focus ring).
@@ -131,6 +161,49 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
       root: tree.setRatio(state.root, splitId, ratio),
       activeLeafId: state.activeLeafId,
     );
+  }
+
+  /// Adds [delta] to split [splitId]'s current ratio, reading the live state so
+  /// rapid divider drags accumulate correctly.
+  void adjustRatio(String splitId, double delta) {
+    final current = _ratioOf(state.root, splitId);
+    if (current == null) return;
+    setRatio(splitId, current + delta);
+  }
+
+  double? _ratioOf(PaneNode node, String splitId) {
+    switch (node) {
+      case PaneLeaf():
+        return null;
+      case PaneSplit():
+        if (node.id == splitId) return node.ratio;
+        return _ratioOf(node.first, splitId) ?? _ratioOf(node.second, splitId);
+    }
+  }
+
+  /// Unbinds [sessionId] from every pane pinned to it (e.g. after the session
+  /// is quit), so those panes drop back to their empty/fallback state instead
+  /// of pointing at a dead session id.
+  void unbindSession(String sessionId) {
+    state = PaneTreeState(
+      root: _clearSession(state.root, sessionId),
+      activeLeafId: state.activeLeafId,
+    );
+  }
+
+  PaneNode _clearSession(PaneNode node, String sessionId) {
+    switch (node) {
+      case PaneLeaf():
+        return node.sessionId == sessionId ? PaneLeaf(id: node.id) : node;
+      case PaneSplit():
+        return PaneSplit(
+          id: node.id,
+          axis: node.axis,
+          first: _clearSession(node.first, sessionId),
+          second: _clearSession(node.second, sessionId),
+          ratio: node.ratio,
+        );
+    }
   }
 
   /// Re-docks the [source] leaf onto [edge] of the [target] leaf; the moved

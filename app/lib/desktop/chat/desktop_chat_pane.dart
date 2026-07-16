@@ -14,6 +14,7 @@ import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
+import 'panes/pane_tree_controller.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 import '../../ui/composer/composer_selectors.dart';
@@ -30,7 +31,12 @@ import '../../ui/composer/composer_selectors.dart';
 class DesktopChatPane extends ConsumerStatefulWidget {
   /// Creates the desktop chat pane. When [sessionId] is null the pane falls
   /// back to the globally [selectedSessionProvider] (single-pane behaviour).
-  const DesktopChatPane({super.key, this.sessionId, this.showHeader = true});
+  const DesktopChatPane({
+    super.key,
+    this.sessionId,
+    this.showHeader = true,
+    this.trackGlobalSelection = true,
+  });
 
   /// The session this pane hosts, or null to defer to the global selection.
   final String? sessionId;
@@ -39,6 +45,12 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   /// split pane tree shows a single merged header in its tab strip, so it
   /// passes false to avoid a second stacked bar.
   final bool showHeader;
+
+  /// Whether a null [sessionId] should fall back to the global
+  /// [selectedSessionProvider]. The split pane tree resolves the fallback
+  /// itself (only the active pane tracks the global selection), so it passes
+  /// false to keep inactive empty panes truly empty.
+  final bool trackGlobalSelection;
 
   @override
   ConsumerState<DesktopChatPane> createState() => _DesktopChatPaneState();
@@ -93,7 +105,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionId = widget.sessionId ?? ref.watch(selectedSessionProvider);
+    final sessionId =
+        widget.sessionId ??
+        (widget.trackGlobalSelection
+            ? ref.watch(selectedSessionProvider)
+            : null);
     if (sessionId == null) {
       // A sessionless worktree selected in the sidebar → harness picker to
       // start a session in that existing worktree.
@@ -300,7 +316,6 @@ class _PaneHeader extends ConsumerWidget {
       ],
     );
   }
-
 }
 
 /// The session name shown in a pane header: title, else agent name, else id.
@@ -395,6 +410,8 @@ class SessionActionsMenu extends ConsumerWidget {
     try {
       await ref.read(storeControllerProvider.notifier).killSession(sessionId);
       if (!context.mounted) return;
+      // Drop any panes bound to the now-dead session back to their empty state.
+      ref.read(paneTreeControllerProvider.notifier).unbindSession(sessionId);
       // Clear the selection so the pane returns to its empty state (desktop's
       // analog of the mobile screen's pop-to-home after quit).
       if (ref.read(selectedSessionProvider) == sessionId) {

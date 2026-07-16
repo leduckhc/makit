@@ -144,7 +144,11 @@ void main() {
     // 4: start dragging the left pane's header and hover it over another pane
     // to reveal the drop-edge guidance highlight (captured mid-gesture).
     final draggables = find.byType(Draggable<String>);
-    expect(draggables, findsWidgets, reason: 'each leaf has a draggable header');
+    expect(
+      draggables,
+      findsWidgets,
+      reason: 'each leaf has a draggable header',
+    );
     final src = tester.getCenter(draggables.first);
     final target = Offset(treeRect.right - 260, treeRect.top + 180);
     final drag = await tester.startGesture(src);

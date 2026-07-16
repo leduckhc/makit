@@ -60,9 +60,9 @@ class PaneTreeView extends ConsumerWidget {
                     ),
                     tooltip: 'Show sidebar',
                     icon: const Icon(Symbols.thumbnail_bar, weight: 300),
-                    onPressed: () => ref
-                        .read(sidebarCollapsedProvider.notifier)
-                        .state = false,
+                    onPressed: () =>
+                        ref.read(sidebarCollapsedProvider.notifier).state =
+                            false,
                   ),
                 ),
             ],
@@ -131,9 +131,12 @@ class _PaneSplitView extends ConsumerWidget {
           axis: split.axis,
           onDrag: (delta) {
             if (extent <= 0) return;
+            // Nudge against the controller's live ratio (not the snapshot
+            // captured in this build) so multiple move events within one frame
+            // accumulate instead of clobbering each other.
             ref
                 .read(paneTreeControllerProvider.notifier)
-                .setRatio(split.id, split.ratio + delta / extent);
+                .adjustRatio(split.id, delta / extent);
           },
         );
         final children = [first, divider, second];
@@ -257,8 +260,13 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
                       ),
                       Expanded(
                         child: DesktopChatPane(
-                          sessionId: widget.leaf.sessionId,
+                          sessionId:
+                              widget.leaf.sessionId ??
+                              (widget.active
+                                  ? ref.watch(selectedSessionProvider)
+                                  : null),
                           showHeader: false,
+                          trackGlobalSelection: false,
                         ),
                       ),
                     ],
@@ -287,9 +295,10 @@ class _PaneHeaderStrip extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final controller = ref.read(paneTreeControllerProvider.notifier);
-    // Resolve the session the same way DesktopChatPane does (explicit id, else
-    // the global selection) so the merged header shows the pane's real title.
-    final sessionId = leaf.sessionId ?? ref.watch(selectedSessionProvider);
+    // Only the active pane tracks the global selection; an inactive null pane
+    // stays empty rather than mirroring whatever the sidebar last selected.
+    final sessionId =
+        leaf.sessionId ?? (active ? ref.watch(selectedSessionProvider) : null);
     final session = sessionId == null
         ? null
         : ref.watch(sessionsProvider).byId(sessionId);
@@ -332,7 +341,7 @@ class _PaneHeaderStrip extends ConsumerWidget {
             iconSize: 13,
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
             tooltip: 'Close pane',
             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
             icon: const Icon(Icons.close),
@@ -358,17 +367,21 @@ class _PaneHeaderStrip extends ConsumerWidget {
       ),
       child: MouseRegion(
         cursor: SystemMouseCursors.grab,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () {},
-          child: ColoredBox(
-            // Borderless tabs: transparent when idle, a faint accent wash on the
-            // active pane's header so the focused pane reads softly rather than
-            // with a hard outline.
-            color: active
-                ? cs.primary.withValues(alpha: 0.06)
-                : Colors.transparent,
-            child: bar,
+        child: Semantics(
+          label: 'Move pane',
+          button: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => controller.setActive(leaf.id),
+            child: ColoredBox(
+              // Borderless tabs: transparent when idle, a faint accent wash on the
+              // active pane's header so the focused pane reads softly rather than
+              // with a hard outline.
+              color: active
+                  ? cs.primary.withValues(alpha: 0.06)
+                  : Colors.transparent,
+              child: bar,
+            ),
           ),
         ),
       ),
