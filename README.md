@@ -66,7 +66,7 @@ Install the Tailscale app on the phone and sign into the same account.
 ```sh
 cd server
 pnpm install
-pnpm start -- --project ~/Work/Vibe/makit --project ~/Work/Vibe/cmux
+pnpm start
 ```
 
 First run generates a self-signed cert in `~/.makit/` and prints a QR with a
@@ -76,17 +76,17 @@ First run generates a self-signed cert in `~/.makit/` and prints a QR with a
 [makit] cert fingerprint: 3b54c69fec19cbad88efaef52a0c5f163aa4d65e55c9796312a1506a22636144
 [makit] mDNS: advertising _makit._tcp on port 8787
 [makit] projects:
-  · makit  (/Users/le/Work/Vibe/makit)
-  · cmux  (/Users/le/Work/Vibe/cmux)
-[makit] transport: Tailscale (100.119.58.97) — private ✓
+  · makit  (~/Vibe/makit)
+  · cmux  (~/Vibe/cmux)
+[makit] transport: Tailscale (100.120.70.21) — private ✓
 
 [makit] no paired devices yet — scan this QR with the app:
 
   █▀▀▀▀▀█ ... (QR here)
   █▄▄▄▄▄█
 
-[makit] makit://pair?host=100.119.58.97&port=8787&fp=...&t=...
-[makit] wss listening on wss://100.119.58.97:8787
+[makit] makit://pair?host=100.120.70.21&port=8787&fp=...&t=...
+[makit] wss listening on wss://100.120.70.21:8787
 ```
 
 **If Tailscale isn't running**, makit binds **loopback only** and refuses to
@@ -142,7 +142,7 @@ For local dev on the same machine, skip pairing entirely:
 
 ```sh
 # Terminal 1:
-cd server && pnpm start -- --no-auth --project ~/Work/Vibe/makit
+cd server && pnpm start -- --no-auth
 
 # Terminal 2:
 cd app && flutter run -d macos \
