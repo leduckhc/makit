@@ -25,12 +25,7 @@ import 'srv_dialogs/ask_wizard.dart';
 export 'srv_dialogs/ask_wizard.dart' show debugAskWizardFor;
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
-  const SrvRequestHandler({
-    super.key,
-    required this.child,
-    this.navigatorKey,
-    this.reminderDelay,
-  });
+  const SrvRequestHandler({super.key, required this.child, this.navigatorKey, this.reminderDelay});
   final Widget child;
   final GlobalKey<NavigatorState>? navigatorKey;
 
@@ -46,8 +41,7 @@ class SrvRequestHandler extends ConsumerStatefulWidget {
   ConsumerState<SrvRequestHandler> createState() => _SrvRequestHandlerState();
 }
 
-class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
-    with WidgetsBindingObserver {
+class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler> with WidgetsBindingObserver {
   StreamSubscription<Envelope>? _sub;
   StreamSubscription<String>? _respondedSub;
   bool _foreground = true;
@@ -72,8 +66,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   /// Salted so request-notification ids can't collide with the status
   /// notifications keyed on `sessionId.hashCode`.
-  int _notificationId(String requestId) =>
-      (requestId.hashCode ^ 0x52455148).toUnsigned(31);
+  int _notificationId(String requestId) => (requestId.hashCode ^ 0x52455148).toUnsigned(31);
 
   @override
   void initState() {
@@ -89,9 +82,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     // the app behind. A true background→foreground transition drains any
     // queued fallback dialogs.
     final wasForeground = _foreground;
-    _foreground =
-        state == AppLifecycleState.resumed ||
-        state == AppLifecycleState.inactive;
+    _foreground = state == AppLifecycleState.resumed || state == AppLifecycleState.inactive;
     if (!wasForeground && _foreground) _drainPendingBackground();
   }
 
@@ -166,11 +157,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     _reminderTimers[env.id] = Timer(widget.reminderDelay!, () async {
       _reminderTimers.remove(env.id);
       if (!mounted) return;
-      final notif = notificationForRequest(
-        kind: kind,
-        body: env.body,
-        label: _labelFor(sessionId),
-      );
+      final notif = notificationForRequest(kind: kind, body: env.body, label: _labelFor(sessionId));
       if (notif == null) return;
       await ref
           .read(notificationServiceProvider)
@@ -179,11 +166,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
             title: notif.title,
             body: notif.body,
             category: notif.category,
-            payload: encodeRequestPayload(
-              sessionId: sessionId,
-              requestId: env.id,
-              kind: kind,
-            ),
+            payload: encodeRequestPayload(sessionId: sessionId, requestId: env.id, kind: kind),
           );
     });
   }
@@ -206,11 +189,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     // `respondTo` (see main.dart onAction).
     if (!_foreground) {
       final sessionId = env.body['sessionId'] as String? ?? '';
-      final notif = notificationForRequest(
-        kind: kind,
-        body: env.body,
-        label: _labelFor(sessionId),
-      );
+      final notif = notificationForRequest(kind: kind, body: env.body, label: _labelFor(sessionId));
       if (notif != null) {
         final shown = await ref
             .read(notificationServiceProvider)
@@ -219,11 +198,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
               title: notif.title,
               body: notif.body,
               category: notif.category,
-              payload: encodeRequestPayload(
-                sessionId: sessionId,
-                requestId: env.id,
-                kind: kind,
-              ),
+              payload: encodeRequestPayload(sessionId: sessionId, requestId: env.id, kind: kind),
             );
         // Shown: keep it so a resume-without-action still surfaces a dialog.
         // Not shown (no permission / dismissed / platform throw): fall through
@@ -284,10 +259,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   List<Map<String, dynamic>> _normaliseQuestions(Map<String, dynamic> body) {
     final raw = body['questions'];
     if (raw is List) {
-      return raw
-          .whereType<Map<dynamic, dynamic>>()
-          .map(Map<String, dynamic>.from)
-          .toList();
+      return raw.whereType<Map<dynamic, dynamic>>().map(Map<String, dynamic>.from).toList();
     }
     // Single-question form — wrap as one-element wizard.
     if (body['question'] is String) {
@@ -326,16 +298,10 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     // and (for the single-question form) a convenience `answer`.
     final indices = (result['indices'] as List).cast<int>();
     final answers = (result['answers'] as List).cast<String>();
-    final answer = (questions.length == 1 && answers.isNotEmpty)
-        ? answers.first
-        : null;
+    final answer = (questions.length == 1 && answers.isNotEmpty) ? answers.first : null;
     _respond(
       requestId,
-      SrvResponse.askUserQuestion(
-        indices: indices,
-        answers: answers,
-        answer: answer,
-      ),
+      SrvResponse.askUserQuestion(indices: indices, answers: answers, answer: answer),
     );
   }
 
@@ -372,14 +338,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dctx, false),
-            child: const Text('Deny'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dctx, true),
-            child: const Text('Approve'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dctx, false), child: const Text('Deny')),
+          FilledButton(onPressed: () => Navigator.pop(dctx, true), child: const Text('Approve')),
         ],
       ),
     );
@@ -388,14 +348,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
 
   /// Free-text input (maps pi's ctx.ui.input / ctx.ui.editor via the PiAdapter
   /// UI interceptor). Responds with the canonical `input` shape.
-  Future<void> _showInput(
-    BuildContext ctx,
-    String requestId,
-    Map<String, dynamic> body,
-  ) async {
-    final controller = TextEditingController(
-      text: body['prefill']?.toString() ?? '',
-    );
+  Future<void> _showInput(BuildContext ctx, String requestId, Map<String, dynamic> body) async {
+    final controller = TextEditingController(text: body['prefill']?.toString() ?? '');
     final multiline = body['multiline'] == true;
     final value = await _showTrackedDialog<String?>(
       requestId: requestId,
@@ -408,15 +362,10 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
           autofocus: true,
           minLines: multiline ? 3 : 1,
           maxLines: multiline ? 8 : 1,
-          decoration: InputDecoration(
-            hintText: body['placeholder']?.toString(),
-          ),
+          decoration: InputDecoration(hintText: body['placeholder']?.toString()),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(dctx, controller.text),
             child: const Text('Send'),
@@ -442,11 +391,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              env.body['message']?.toString() ??
-                  env.body['kind']?.toString() ??
-                  '',
-            ),
+            Text(env.body['message']?.toString() ?? env.body['kind']?.toString() ?? ''),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
@@ -456,10 +401,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dctx),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(dctx), child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.pop(dctx, controller.text),
             child: const Text('Send'),
