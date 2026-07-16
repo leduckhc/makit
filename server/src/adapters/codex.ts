@@ -18,6 +18,7 @@ import type { SpawnOpts, UserInput } from "./adapter.js";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
+import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
@@ -281,29 +282,12 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    */
   private async handleElicitation(params: any): Promise<{ action: string; content: unknown; _meta: null }> {
     if (!this.askUser) return { action: "decline", content: null, _meta: null };
-    const message = typeof params?.message === "string" ? params.message : "The agent needs input.";
     this.turns.enterApproval("awaiting-input");
     try {
-      if (params?.mode === "url") {
-        const ok = await this.confirm({ message, preview: typeof params?.url === "string" ? params.url : undefined }, "open-url");
-        return { action: ok ? "accept" : "decline", content: null, _meta: null };
-      }
-      const props = (params?.requestedSchema?.properties ?? {}) as Record<string, any>;
-      const names = Object.keys(props);
-      if (names.length !== 1) return { action: "decline", content: null, _meta: null };
-      const name = names[0];
-      const field = props[name] ?? {};
-      const resp = await this.askUser({
-        kind: "input",
-        sessionId: this.makitSessionId,
-        title: message,
-        placeholder: typeof field.description === "string" ? field.description : field.title,
-        multiline: false,
-      });
-      if (resp.kind === "input" && !(resp as any).cancelled && typeof resp.value === "string") {
-        return { action: "accept", content: { [name]: resp.value }, _meta: null };
-      }
-      return { action: "decline", content: null, _meta: null };
+      const result = await mapElicitation(params as ElicitationParams, this.askUser, this.makitSessionId);
+      // Codex's wire shape has no `cancel`; a user cancel maps to decline.
+      const action = result.action === "cancel" ? "decline" : result.action;
+      return { action, content: result.content ?? null, _meta: null };
     } finally {
       this.turns.leaveApproval();
     }
@@ -316,15 +300,13 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     if (!this.askUser) return false; // fail safe: deny
     this.turns.enterApproval("awaiting-approval");
     try {
-      const resp = await this.askUser({
-        kind: "confirmAction",
+      return await confirmViaUser(this.askUser, {
         sessionId: this.makitSessionId,
         title: action === "execute" ? "Run command?" : "Approve change?",
         message: prompt.message,
         action,
         ...(prompt.preview ? { preview: prompt.preview } : {}),
       });
-      return resp.kind === "confirmAction" && !(resp as any).cancelled && resp.approved === true;
     } finally {
       this.turns.leaveApproval();
     }

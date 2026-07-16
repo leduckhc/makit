@@ -34,6 +34,7 @@ import type { SpawnOpts, UserInput } from "./adapter.js";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
 import { spawnLineProcess } from "./child_transport.js";
+import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
@@ -304,50 +305,13 @@ export class AcpAdapter extends SubprocessAdapter {
    * Fail-safe declines when no phone is attached.
    */
   private async handleElicitation(params: CreateElicitationRequest): Promise<CreateElicitationResponse> {
-    const p = params as any;
     if (!this.askUser) return { action: "decline" };
-
-    const message = typeof p.message === "string" ? p.message : "The agent needs input.";
     this.turns.enterApproval("awaiting-approval");
     try {
-      if (p.mode === "url") {
-        const resp = await this.askUser({
-          kind: "confirmAction",
-          sessionId: this.makitSessionId,
-          title: "Open link?",
-          message,
-          action: "open-url",
-          ...(typeof p.url === "string" ? { preview: p.url } : {}),
-        });
-        if (resp.kind === "confirmAction" && !(resp as any).cancelled) {
-          return resp.approved ? { action: "accept" } : { action: "decline" };
-        }
-        return { action: "cancel" };
-      }
-
-      // form mode
-      const props = (p.requestedSchema?.properties ?? {}) as Record<string, any>;
-      const names = Object.keys(props);
-      if (names.length !== 1) {
-        // Multi-field (or empty) forms need the full form UI (deferred).
-        log.warn(`[makit] AcpAdapter: declining ${names.length}-field elicitation form (single-field only)`);
-        return { action: "decline" };
-      }
-
-      const name = names[0];
-      const field = props[name] ?? {};
-      const resp = await this.askUser({
-        kind: "input",
-        sessionId: this.makitSessionId,
-        title: message,
-        placeholder: typeof field.description === "string" ? field.description : field.title,
-        prefill: field.default != null ? String(field.default) : undefined,
-        multiline: false,
-      });
-      if (resp.kind === "input" && !resp.cancelled && typeof resp.value === "string") {
-        return { action: "accept", content: { [name]: coerceFieldValue(resp.value, field.type) } };
-      }
-      return { action: "decline" };
+      const result = await mapElicitation(params as ElicitationParams, this.askUser, this.makitSessionId);
+      return result.action === "accept"
+        ? { action: "accept", content: result.content }
+        : { action: result.action };
     } catch (e) {
       log.warn(`[makit] AcpAdapter elicitation error: ${(e as Error).message}`);
       return { action: "cancel" };
@@ -499,17 +463,6 @@ function permissionPreview(tc: any): string | undefined {
     }
   }
   return undefined;
-}
-
-// ---------- elicitation helper ---------------------------------------------
-/** Coerce a free-text input value to the elicitation field's declared type. */
-function coerceFieldValue(value: string, type: unknown): string | number | boolean {
-  if (type === "number" || type === "integer") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : value;
-  }
-  if (type === "boolean") return /^(true|yes|1|y)$/i.test(value.trim());
-  return value;
 }
 
 // ---------- production spec helper -----------------------------------------
