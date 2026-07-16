@@ -52,7 +52,14 @@ class _SettingsItemAnchorState extends ConsumerState<SettingsItemAnchor> {
   String? _handledTarget;
 
   void _maybeReveal(String? target) {
-    if (target != widget.itemId || _handledTarget == target) return;
+    // Reset once the deep-link points elsewhere (or is cleared) so re-targeting
+    // the same item later fires the reveal again, matching the documented
+    // "restarts even when the same item is deep-linked twice" intent.
+    if (target != widget.itemId) {
+      _handledTarget = null;
+      return;
+    }
+    if (_handledTarget == target) return;
     _handledTarget = target;
     WidgetsBinding.instance.addPostFrameCallback((_) => _reveal());
   }

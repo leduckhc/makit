@@ -159,6 +159,13 @@ void main() {
       container.read(settingsTargetItemProvider),
       'server_devices.endpoint',
     );
+    // The search field is cleared after picking a result (controlled field),
+    // so no stale query lingers over the section list. It is the first
+    // TextField (nav pane), before the detail pane's own fields.
+    expect(
+      tester.widget<TextField>(find.byType(TextField).first).controller?.text,
+      '',
+    );
   });
 
   testWidgets('close affordance invokes onClose', (tester) async {

@@ -493,8 +493,16 @@ class _UnpairRow extends ConsumerWidget {
       ),
     );
     if (confirmed ?? false) {
-      await ref.read(connectionControllerProvider.notifier).unpair();
-      messenger.showSnackBar(const SnackBar(content: Text('Device unpaired')));
+      try {
+        await ref.read(connectionControllerProvider.notifier).unpair();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Device unpaired')),
+        );
+      } catch (error) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Unpair failed: $error')),
+        );
+      }
     }
   }
 

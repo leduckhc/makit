@@ -73,6 +73,13 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
 
   late String _selectedId;
   String _query = '';
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -90,6 +97,9 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
       _selectedId = sectionId;
       _query = '';
     });
+    // Clear the visible search text too (the field is controlled), otherwise a
+    // stale query lingers after switching sections / picking a result.
+    _searchController.clear();
     ref
         .read(preferencesControllerProvider.notifier)
         .set(lastSectionPreference, sectionId);
@@ -128,6 +138,7 @@ class _SettingsWindowState extends ConsumerState<SettingsWindow> {
                       sections: kSettingsSections,
                       selectedId: _selectedId,
                       query: _query,
+                      controller: _searchController,
                       onQueryChanged: (q) => setState(() => _query = q),
                       onSelect: _select,
                       onSelectResult: _selectResult,

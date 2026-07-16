@@ -14,6 +14,7 @@ class SettingsNavPane extends StatelessWidget {
     required this.sections,
     required this.selectedId,
     required this.query,
+    required this.controller,
     required this.onQueryChanged,
     required this.onSelect,
     required this.onSelectResult,
@@ -29,6 +30,10 @@ class SettingsNavPane extends StatelessWidget {
 
   /// The current search query (empty = show the section list).
   final String query;
+
+  /// Controls the search field's text, so the owner can clear it (e.g. after a
+  /// result is picked) and the displayed text stays in sync with [query].
+  final TextEditingController controller;
 
   /// Called as the search field changes.
   final ValueChanged<String> onQueryChanged;
@@ -57,6 +62,7 @@ class SettingsNavPane extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
           child: TextField(
+            controller: controller,
             onChanged: onQueryChanged,
             decoration: const InputDecoration(
               isDense: true,

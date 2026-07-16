@@ -68,7 +68,14 @@ class _DocsRow extends StatelessWidget {
 
   Future<void> _open(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    final ok = await launchUrl(_kDocsUri, mode: LaunchMode.externalApplication);
+    // launchUrl can throw (e.g. PlatformException) as well as return false;
+    // treat both as failure so the fallback message always shows.
+    var ok = false;
+    try {
+      ok = await launchUrl(_kDocsUri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
     if (!ok) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not open $_kDocsUri')),
