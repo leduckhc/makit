@@ -22,6 +22,7 @@ void main() {
       for (final section in kSettingsSections) {
         expect(section.title, isNotEmpty);
         expect(section.builder, isNotNull);
+        expect(section.icon, isNotNull);
       }
     });
 
