@@ -417,30 +417,47 @@ export class SessionManager extends EventEmitter {
    */
   async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    const repos: RepoDTO[] = [];
-    for (const p of this.projects.values()) {
-      const repoPath = p.dto.path;
-      const gitRepo = await isGitRepo(repoPath);
-      const defaultBranch = gitRepo ? await detectDefaultBranch(repoPath) : null;
-      const currentBranch = gitRepo ? await detectCurrentBranch(repoPath) : null;
-      const entries = gitRepo ? await listWorktrees(repoPath) : [];
+    // Independent read-only shells: fan out across projects (SPEC-17 P3).
+    return Promise.all(
+      [...this.projects.values()].map((p) => this.listRepo(p, includePrs)),
+    );
+  }
 
-      // Group this project's STARTED sessions by the worktree path they run
-      // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
-      const sessionsByPath = new Map<string, string[]>();
-      for (const s of this.sessions.values()) {
-        if (s.projectId !== p.dto.id || s.pending) continue;
-        const key = s.worktreePath ?? repoPath;
-        const list = sessionsByPath.get(key) ?? [];
-        list.push(s.id);
-        sessionsByPath.set(key, list);
-      }
+  /** Build the {@link RepoDTO} for one project, parallelizing per-worktree shells. */
+  private async listRepo(p: ProjectEntry, includePrs: boolean): Promise<RepoDTO> {
+    const repoPath = p.dto.path;
+    const gitRepo = await isGitRepo(repoPath);
+    // Branch detection + worktree enumeration are independent reads — run
+    // them concurrently rather than in a serial chain.
+    const [defaultBranch, currentBranch, entries] = gitRepo
+      ? await Promise.all([
+          detectDefaultBranch(repoPath),
+          detectCurrentBranch(repoPath),
+          listWorktrees(repoPath),
+        ])
+      : [null, null, [] as Awaited<ReturnType<typeof listWorktrees>>];
 
-      const worktrees: WorktreeDTO[] = [];
-      for (const e of entries) {
-        const stat = await diffStat(e.path, defaultBranch);
-        const pr = includePrs && e.branch && !e.isPrimary ? await findOpenPr(repoPath, e.branch) : null;
-        worktrees.push({
+    // Group this project's STARTED sessions by the worktree path they run
+    // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
+    const sessionsByPath = new Map<string, string[]>();
+    for (const s of this.sessions.values()) {
+      if (s.projectId !== p.dto.id || s.pending) continue;
+      const key = s.worktreePath ?? repoPath;
+      const list = sessionsByPath.get(key) ?? [];
+      list.push(s.id);
+      sessionsByPath.set(key, list);
+    }
+
+    // Per-worktree diff stat + PR lookup are independent shells — fan out.
+    const worktrees: WorktreeDTO[] = await Promise.all(
+      entries.map(async (e): Promise<WorktreeDTO> => {
+        const [stat, pr] = await Promise.all([
+          diffStat(e.path, defaultBranch),
+          includePrs && e.branch && !e.isPrimary
+            ? findOpenPr(repoPath, e.branch)
+            : Promise.resolve(null),
+        ]);
+        return {
           id: e.path,
           path: e.path,
           branch: e.branch,
@@ -451,22 +468,21 @@ export class SessionManager extends EventEmitter {
           committedAt: e.committedAt,
           pr,
           sessionIds: sessionsByPath.get(e.path) ?? [],
-        });
-      }
+        };
+      }),
+    );
 
-      repos.push({
-        id: p.dto.id,
-        name: p.dto.name,
-        path: repoPath,
-        pinned: p.dto.pinned,
-        lastActivityAt: p.dto.lastActivityAt,
-        isGitRepo: gitRepo,
-        defaultBranch,
-        currentBranch,
-        worktrees,
-      });
-    }
-    return repos;
+    return {
+      id: p.dto.id,
+      name: p.dto.name,
+      path: repoPath,
+      pinned: p.dto.pinned,
+      lastActivityAt: p.dto.lastActivityAt,
+      isGitRepo: gitRepo,
+      defaultBranch,
+      currentBranch,
+      worktrees,
+    };
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */
