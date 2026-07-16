@@ -24,6 +24,7 @@ import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 // (no path/url imports needed — pi binary is resolved from PATH)
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import { spawnLineProcess, type ChildExitInfo, type ChildLineTransport } from "./child_transport.js";
 import { log } from "../log.js";
 import { newId } from "../protocol.js";
 
@@ -32,6 +33,9 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
   private cwd = process.cwd();
   private piSessionId = randomUUID();
+  /** Live subprocess transport; undefined before first spawn and after exit. */
+  private transport?: ChildLineTransport;
+  /** Test-only seam: unit tests inject a fake `child` and drive writeCommand. */
   private child?: ChildProcess;
   private extraEnv: Record<string, string> = {};
   private extensions: string[] = [];
@@ -135,11 +139,12 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async cancel(): Promise<void> {
-    if (this.child) this.writeCommand({ type: "abort" });
+    if (this.transport) this.writeCommand({ type: "abort" });
   }
 
-  async kill(signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
-    if (this.child) this.child.kill(signal);
+  async kill(_signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
+    this.transport?.dispose();
+    this.transport = undefined;
     this.child = undefined;
     this.emit("exit", null);
   }
@@ -147,7 +152,7 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   // ---- subprocess lifecycle ------------------------------------------------
 
   private async ensureProcess(): Promise<void> {
-    if (this.child && !this.child.killed) return;
+    if (this.transport) return;
 
     const args = this.resumeSessionPath
       ? ["--mode", "rpc", "--session", this.resumeSessionPath]
@@ -169,88 +174,22 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     // NOT use node_modules/.bin/pi — that resolves to the unrelated "pi" npm
     // package (a trivial stub that just prints "3" and exits).
     const piBin = process.env.MAKIT_PI_BIN || "pi";
-    const child = this._spawn(piBin, args, {
+    const transport = spawnLineProcess({
+      command: piBin,
+      args,
       cwd: this.cwd,
-      env: { ...process.env, ...this.extraEnv },
-      stdio: ["pipe", "pipe", "pipe"],
+      env: this.extraEnv,
+      label: "pi",
+      spawn: this._spawn,
     });
-    this.child = child;
-
-    // A spawn failure (ENOENT/EACCES, or a fork limit under load) is delivered
-    // as an 'error' event on the ChildProcess — NOT as an exit. Node re-throws
-    // an unlistened 'error' as an uncaught exception, which would crash the
-    // whole daemon and take every other session down with it. Handle it like a
-    // failed run: surface it and drop the child so the next send() re-spawns.
-    child.on("error", (err: Error) => {
-      const wasAlive = !!this.child;
-      this.isStreaming = false;
-      this.child = undefined;
-      if (!wasAlive) return; // exit already handled the teardown
-      this.emitEvent({
-        ts: Date.now(),
-        kind: "session.error",
-        payload: { message: `pi process error: ${err.message}` },
-      });
-      this.emitEvent({
-        ts: Date.now(),
-        kind: "session.status",
-        payload: { status: "exited" },
-      });
-      this.emit("exit", null);
-    });
-
-    // Writing to pi's stdin after it dies surfaces as an async 'error' (EPIPE)
-    // on the stream; a read fault on stdout/stderr likewise. None of these must
-    // become an unlistened 'error' — the child 'error'/'exit' handlers own the
-    // real state transition, so here we only log and swallow.
-    child.stdin!.on("error", (err: Error) =>
-      log.warn(`[makit] pi stdin error: ${err.message}`),
-    );
-    child.stdout!.on("error", (err: Error) =>
-      log.warn(`[makit] pi stdout error: ${err.message}`),
-    );
-    child.stderr!.on("error", (err: Error) =>
-      log.warn(`[makit] pi stderr error: ${err.message}`),
-    );
+    this.transport = transport;
 
     // pi.stdout — JSON-line stream of events and command responses.
-    bindLfLines(child.stdout!, (line) => this.handleLine(line));
-
-    // pi.stderr — pi's own diagnostic output. Forward to our log; if it's
-    // really bad, surface as a session.error.
-    let stderrBuf = "";
-    child.stderr!.on("data", (chunk: Buffer) => {
-      const s = chunk.toString();
-      stderrBuf += s;
-      if (stderrBuf.length > 8192) stderrBuf = stderrBuf.slice(-8192);
-      process.stderr.write(`[pi] ${s}`);
-    });
-
-    child.on("exit", (code, signal) => {
-      this.isStreaming = false;
-      const wasAlive = !!this.child;
-      this.child = undefined;
-      if (wasAlive) {
-        if (code !== 0 && code !== null) {
-          this.emitEvent({
-            ts: Date.now(),
-            kind: "session.error",
-            payload: {
-              message: `pi exited with code ${code}${signal ? ` (${signal})` : ""}: ${stderrBuf.slice(-500)}`,
-            },
-          });
-        }
-        // Don't emit("status","idle") here — the session has actually exited,
-        // not gone idle. The emitEvent below conveys the right status and
-        // Session.status will be updated from the event-log replay path.
-        this.emitEvent({
-          ts: Date.now(),
-          kind: "session.status",
-          payload: { status: "exited" },
-        });
-        this.emit("exit", code);
-      }
-    });
+    transport.onLine((line) => this.handleLine(line));
+    // The shared transport swallows async stream faults and settles the exit
+    // (buffering the code until this listener registers). We only add the
+    // pi-specific domain reaction here.
+    transport.onExit((code, info) => this.onChildExit(code, info));
 
     // Give pi a moment to initialize, then ask for available commands so the
     // app can populate its slash palette with real extensions/skills/prompts,
@@ -258,6 +197,44 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
     await new Promise((r) => setTimeout(r, 100));
     this.writeCommand({ id: "boot-commands", type: "get_commands" });
     this.requestMeta();
+  }
+
+  /**
+   * pi-specific reaction to the subprocess exiting or faulting. The daemon-
+   * safety plumbing (settle-once, error swallowing) lives in the shared
+   * transport; here we translate the exit into session events and drop the
+   * transport so the next send() re-spawns.
+   */
+  private onChildExit(code: number | null, info: ChildExitInfo): void {
+    this.isStreaming = false;
+    const wasAlive = !!this.transport;
+    this.transport = undefined;
+    this.child = undefined;
+    if (!wasAlive) return; // kill() already tore the process down
+    if (info.error) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `pi process error: ${info.error.message}` },
+      });
+    } else if (code !== 0 && code !== null) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: {
+          message: `pi exited with code ${code}${info.signal ? ` (${info.signal})` : ""}: ${info.stderrTail.slice(-500)}`,
+        },
+      });
+    }
+    // Don't emit("status","idle") here — the session has actually exited, not
+    // gone idle. The event below conveys the right status and Session.status
+    // is updated from the event-log replay path.
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "session.status",
+      payload: { status: "exited" },
+    });
+    this.emit("exit", code);
   }
 
   /**
@@ -284,14 +261,20 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
   }
 
   private writeCommand(cmd: Record<string, unknown>): void {
+    const line = JSON.stringify(cmd);
+    if (this.transport) {
+      this.transport.send(line);
+      return;
+    }
+    // Fallback path for unit tests that inject a fake `child` directly (no
+    // spawned transport). Production always has a transport.
     const stdin = this.child?.stdin;
     if (!stdin || stdin.destroyed) return;
     try {
-      stdin.write(JSON.stringify(cmd) + "\n");
+      stdin.write(line + "\n");
     } catch (err) {
       // A synchronous write throw (stream torn down between the guard and the
-      // write) must not crash the daemon; the async stdin 'error' listener
-      // handles the EPIPE path.
+      // write) must not crash the daemon.
       log.warn(`[makit] pi stdin write failed: ${(err as Error).message}`);
     }
   }
@@ -614,11 +597,6 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
 // ---------- helpers ---------------------------------------------------------
 
-/**
- * LF-only line splitter — required by pi's RPC mode framing rules. We can't
- * use `readline` because it also splits on U+2028/U+2029 which are valid
- * inside JSON strings.
- */
 /** The `{provider, id, name}` triple carried in `session.meta` for a model. */
 type MetaModel = { provider: string; id: string; name: string };
 
@@ -635,24 +613,6 @@ function normalizeModel(m: unknown): MetaModel | null {
   if (!provider || !id) return null;
   const name = typeof o.name === "string" && o.name ? o.name : id;
   return { provider, id, name };
-}
-
-function bindLfLines(stream: NodeJS.ReadableStream, onLine: (line: string) => void): void {
-  let buf = "";
-  stream.setEncoding?.("utf8");
-  stream.on("data", (chunk: string | Buffer) => {
-    buf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    let i: number;
-    while ((i = buf.indexOf("\n")) !== -1) {
-      let line = buf.slice(0, i);
-      buf = buf.slice(i + 1);
-      if (line.endsWith("\r")) line = line.slice(0, -1);
-      onLine(line);
-    }
-  });
-  stream.on("end", () => {
-    if (buf.length > 0) onLine(buf);
-  });
 }
 
 function stringifyDelta(v: unknown): string {

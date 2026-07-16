@@ -14,13 +14,11 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   ClientSideConnection,
-  ndJsonStream,
   type Agent as AcpAgent,
   type Client as AcpClient,
   type Stream,
@@ -32,8 +30,10 @@ import {
   type CreateElicitationRequest,
   type CreateElicitationResponse,
 } from "@agentclientprotocol/sdk";
+import type { AnyMessage } from "@agentclientprotocol/sdk";
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
+import { spawnLineProcess } from "./child_transport.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
@@ -428,106 +428,58 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
 export function defaultConnect(spec: AcpSpawnSpec) {
   return (cwd: string, env: Record<string, string>): AcpTransport => {
-    const child: ChildProcess = spawn(spec.command, spec.args ?? [], {
+    const proc = spawnLineProcess({
+      command: spec.command,
+      args: spec.args ?? [],
       cwd,
-      env: { ...process.env, ...env },
-      stdio: ["pipe", "pipe", "pipe"],
+      env,
+      label: `${spec.agent}-acp`,
     });
-
-    child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(`[${spec.agent}-acp] ${chunk}`));
-
-    // A spawn failure (ENOENT/EACCES) or a runtime process fault arrives as an
-    // 'error' event, and writing to a dead agent's stdin surfaces as an async
-    // 'error' (EPIPE). Node re-throws an unlistened 'error' as an uncaught
-    // exception — crashing the whole daemon. Route the process error to the
-    // exit path (settle-once, buffered until onExit registers) and swallow
-    // stdin faults; the exit handler owns the real teardown.
-    let onExitCb: ((code: number | null) => void) | undefined;
-    let settled = false;
-    let bufferedCode: number | null = null;
-    const settle = (code: number | null) => {
-      if (settled) return;
-      settled = true;
-      bufferedCode = code;
-      onExitCb?.(code);
-    };
-    child.on("exit", (code) => settle(code));
-    child.on("error", (e: Error) => {
-      process.stderr.write(`[${spec.agent}-acp] process error: ${e.message}\n`);
-      settle(null);
-    });
-    child.stdin?.on("error", (e: Error) =>
-      process.stderr.write(`[${spec.agent}-acp] stdin error: ${e.message}\n`),
-    );
-
-    const stream = ndJsonStream(nodeWritable(child), nodeReadable(child));
-
     return {
-      stream,
-      onExit: (cb) => {
-        onExitCb = cb;
-        if (settled) cb(bufferedCode); // replay a settle that beat registration
-      },
-      dispose: () => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          /* ignore */
-        }
-      },
+      stream: lineTransportToStream(proc),
+      onExit: (cb) => proc.onExit((code) => cb(code)),
+      dispose: () => proc.dispose(),
     };
   };
 }
 
-/** Our outgoing bytes → the agent's stdin. */
-function nodeWritable(child: ChildProcess): WritableStream<Uint8Array> {
-  return new WritableStream<Uint8Array>({
-    write(chunk) {
-      return new Promise<void>((resolve) => {
-        const stdin = child.stdin;
-        if (!stdin || stdin.destroyed || !stdin.writable) return resolve();
+/**
+ * Adapt the shared LF-delimited-JSON line transport to the ACP SDK's
+ * {@link Stream} (a duplex of parsed messages). This is the ACP equivalent of
+ * `ndJsonStream` over a subprocess, but layered on the shared crash-guarded
+ * transport so the spawn/stderr/settle/error-swallow invariant lives in one
+ * place.
+ */
+function lineTransportToStream(proc: {
+  send: (line: string) => void;
+  onLine: (cb: (line: string) => void) => void;
+  onExit: (cb: (code: number | null) => void) => void;
+}): Stream {
+  const readable = new ReadableStream<AnyMessage>({
+    start(controller) {
+      proc.onLine((line) => {
+        if (!line.trim()) return;
         try {
-          stdin.write(chunk, () => resolve());
+          controller.enqueue(JSON.parse(line) as AnyMessage);
         } catch {
-          // Stream torn down between the guard and the write; the stdin 'error'
-          // listener + exit handler own the teardown. Never reject here — a
-          // rejected sink would surface as an unhandled rejection.
-          resolve();
+          /* skip a malformed line rather than tear down the connection */
         }
       });
-    },
-    close() {
-      try {
-        child.stdin?.end();
-      } catch {
-        /* ignore */
-      }
-    },
-  });
-}
-
-/** The agent's stdout → our incoming bytes. */
-function nodeReadable(child: ChildProcess): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      const stdout = child.stdout!;
-      stdout.on("data", (c: Buffer) => controller.enqueue(new Uint8Array(c)));
-      stdout.on("end", () => {
+      proc.onExit(() => {
         try {
           controller.close();
         } catch {
           /* already closed */
         }
       });
-      stdout.on("error", (e) => {
-        try {
-          controller.error(e);
-        } catch {
-          /* ignore */
-        }
-      });
     },
   });
+  const writable = new WritableStream<AnyMessage>({
+    write(msg) {
+      proc.send(JSON.stringify(msg));
+    },
+  });
+  return { readable, writable };
 }
 
 /** ACP `fs/read_text_file` supports optional 1-based line + limit windows. */

@@ -14,20 +14,15 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { spawn, type ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
+import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
-export interface CodexTransport {
-  /** Send one raw JSON line (no trailing newline) to the agent. */
-  send(line: string): void;
-  onLine(cb: (line: string) => void): void;
-  onExit(cb: (code: number | null) => void): void;
-  dispose(): void;
-}
+/** Codex speaks LF-delimited JSON over stdio — the shared line transport. */
+export type CodexTransport = ChildLineTransport;
 
 export interface CodexAdapterOpts {
   /** Executable + args (default: `codex app-server`). */
@@ -379,80 +374,8 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
 // ---------- default subprocess transport -----------------------------------
 
 export function defaultConnect(command: string, args: string[]) {
-  return (cwd: string, env: Record<string, string>): CodexTransport => {
-    const child: ChildProcess = spawn(command, args, {
-      cwd,
-      env: { ...process.env, ...env },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(`[codex-app-server] ${chunk}`));
-
-    // A spawn failure (ENOENT/EACCES) or runtime process fault arrives as an
-    // 'error' event; writing to a dead agent's stdin surfaces as an async
-    // 'error' (EPIPE); a read fault hits stdout. Node re-throws an unlistened
-    // 'error' as an uncaught exception — crashing the whole daemon. Route the
-    // process error to the exit path (settle-once, buffered until onExit
-    // registers) so pending requests reject cleanly, and swallow stream faults.
-    let onExitCb: ((code: number | null) => void) | undefined;
-    let settled = false;
-    let bufferedCode: number | null = null;
-    const settle = (code: number | null) => {
-      if (settled) return;
-      settled = true;
-      bufferedCode = code;
-      onExitCb?.(code);
-    };
-    child.on("exit", (code) => settle(code));
-    child.on("error", (e: Error) => {
-      process.stderr.write(`[codex-app-server] process error: ${e.message}\n`);
-      settle(null);
-    });
-    child.stdin?.on("error", (e: Error) =>
-      process.stderr.write(`[codex-app-server] stdin error: ${e.message}\n`),
-    );
-    child.stdout?.on("error", (e: Error) =>
-      process.stderr.write(`[codex-app-server] stdout error: ${e.message}\n`),
-    );
-
-    let buf = "";
-    const lineCbs: Array<(l: string) => void> = [];
-    child.stdout!.setEncoding("utf8");
-    child.stdout!.on("data", (chunk: string) => {
-      buf += chunk;
-      let i: number;
-      while ((i = buf.indexOf("\n")) !== -1) {
-        const line = buf.slice(0, i);
-        buf = buf.slice(i + 1);
-        for (const cb of lineCbs) cb(line.endsWith("\r") ? line.slice(0, -1) : line);
-      }
-    });
-
-    return {
-      send: (line: string) => {
-        const stdin = child.stdin;
-        if (!stdin || stdin.destroyed || !stdin.writable) return;
-        try {
-          stdin.write(line + "\n");
-        } catch (e) {
-          // Torn down between the guard and the write; the stdin 'error'
-          // listener + exit handler own the teardown.
-          process.stderr.write(`[codex-app-server] stdin write failed: ${(e as Error).message}\n`);
-        }
-      },
-      onLine: (cb) => lineCbs.push(cb),
-      onExit: (cb) => {
-        onExitCb = cb;
-        if (settled) cb(bufferedCode); // replay a settle that beat registration
-      },
-      dispose: () => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          /* ignore */
-        }
-      },
-    };
-  };
+  return (cwd: string, env: Record<string, string>): CodexTransport =>
+    spawnLineProcess({ command, args, cwd, env, label: "codex-app-server" });
 }
 
 function describeCommand(params: any): { message: string; preview?: string } {
