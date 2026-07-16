@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -321,8 +321,10 @@ test("denies permission when no phone is attached (fail safe)", async () => {
 });
 
 test("limits ACP filesystem requests to the session workspace", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "makit-acp-workspace-"));
-  const outside = join(tmpdir(), `makit-acp-outside-${Date.now()}.txt`);
+  // Canonicalize like the adapter does: a real agent receives the realpath'd
+  // cwd via newSession and references files under it, so the test must too.
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "makit-acp-workspace-")));
+  const outside = realpathSync(tmpdir()) + `/makit-acp-outside-${Date.now()}.txt`;
   writeFileSync(join(cwd, "inside.txt"), "allowed");
   writeFileSync(outside, "private");
   symlinkSync(outside, join(cwd, "escape"));

@@ -32,6 +32,18 @@ test("append assigns monotonic per-session seqs starting at 1", () => {
   store.close();
 });
 
+test("append after deleteSession restarts the session's seq space at 1", () => {
+  const store = new SqliteEventStore();
+  store.append("s1", { ts: 1, kind: "user.message", payload: { text: "one" } });
+  store.append("s1", { ts: 2, kind: "agent.message", payload: { text: "two" } });
+  store.deleteSession("s1");
+
+  // A cached seq counter must not survive the delete.
+  const fresh = store.append("s1", { ts: 3, kind: "user.message", payload: { text: "anew" } });
+  assert.equal(fresh.seq, 1);
+  store.close();
+});
+
 test("read returns events with seq > fromSeq, ascending; fromSeq=0 returns all", () => {
   const store = new SqliteEventStore();
   store.append("s1", { ts: 1, kind: "user.message", payload: { text: "one" } });

@@ -53,6 +53,7 @@ import { WakeCoordinator } from "./push/wake_coordinator.js";
 import { NoopPushSender, type PushSender } from "./push/sender.js";
 import { buildWakePayload } from "./push/payload.js";
 import { registerPushCommands } from "./push/register_cmd.js";
+import { throttleTrailing } from "./ws/throttle.js";
 
 export interface ServerOpts {
   host: string;
@@ -70,6 +71,12 @@ export interface ServerOpts {
   sender?: PushSender;
   /** Content-free payload builder (injected for testability/wiring). */
   buildWakePayload?: typeof buildWakePayload;
+  /**
+   * Called when a listener fails to bind (e.g. EADDRINUSE). Defaults to
+   * logging a clear one-liner and exiting — an unbound server is useless, and
+   * the default unhandled-'error' crash buries the cause in a stack trace.
+   */
+  onListenError?: (err: NodeJS.ErrnoException, where: string) => void;
 }
 
 /** Concrete client: a {@link WsClient} backed by a live `ws` socket. */
@@ -103,6 +110,17 @@ export function startWsServer(opts: ServerOpts) {
     trustLocalhost = false,
     sender = new NoopPushSender(),
     buildWakePayload: buildWakePayloadFn = buildWakePayload,
+    onListenError = (err, where) => {
+      if (err.code === "EADDRINUSE") {
+        log.error(
+          `[makit] cannot listen on ${where} — the port is already in use. ` +
+            `Is another makit (or a dev server) still running? Stop it (\`makit stop\`, or kill the process holding the port) or pass a different --port.`,
+        );
+      } else {
+        log.error(`[makit] failed to listen on ${where}: ${err.message}`);
+      }
+      process.exit(1);
+    },
   } = opts;
 
   // The WSS uses noServer mode so we can forward upgrades from TWO HTTPS
@@ -170,6 +188,10 @@ export function startWsServer(opts: ServerOpts) {
 
   // -------- session wiring ------------------------------------------------
 
+  // Coalesce sessions-snapshot broadcasts: at most one per interval, with a
+  // trailing flush so the final state always goes out (see wireSession).
+  const throttledSessionsSnapshot = throttleTrailing(() => broadcastSessionsSnapshot(), 150);
+
   for (const s of manager.allSessions()) wireSession(s);
   // Also wire any sessions created later (e.g. via ensureDefaultSessions which
   // runs after startWsServer, or via the session.spawn cmd handler).
@@ -206,10 +228,12 @@ export function startWsServer(opts: ServerOpts) {
     }
   });
 
+  https.on("error", (err: NodeJS.ErrnoException) => onListenError(err, `${host}:${port}`));
   https.listen(port, host, () => {
     log.info(`[makit] wss listening on wss://${host}:${port}`);
   });
   if (localHttps) {
+    localHttps.on("error", (err: NodeJS.ErrnoException) => onListenError(err, `127.0.0.1:${port}`));
     localHttps.listen(port, "127.0.0.1", () => {
       log.info(`[makit] wss also listening on 127.0.0.1:${port} (loopback)`);
     });
@@ -579,10 +603,13 @@ export function startWsServer(opts: ServerOpts) {
       log.debug(
         `[makit] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`,
       );
-      broadcastSessionsSnapshot();
+      // Coalesced: a streaming turn produces hundreds of deltas; re-encoding
+      // the full sessions list for every client on each one made the server
+      // (and the app) visibly unresponsive.
+      throttledSessionsSnapshot();
     });
     session.on("titleChanged", () => {
-      broadcastSessionsSnapshot();
+      throttledSessionsSnapshot();
     });
   }
 
@@ -621,10 +648,11 @@ export function startWsServer(opts: ServerOpts) {
       const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
       for (const c of clients.values()) if (c.authed) c.send(frame);
     };
+    let gitOnly: RepoDTO[];
     try {
-      const repos = await manager.listRepos({ includePrs: false });
+      gitOnly = await manager.listRepos({ includePrs: false });
       if (generation !== reposSnapshotGeneration) return;
-      emit(preserveLastKnownPrs(repos));
+      emit(preserveLastKnownPrs(gitOnly));
     } catch (e) {
       if (generation === reposSnapshotGeneration) {
         log.warn(`[makit] listRepos (git-only) failed: ${(e as Error).message}`);
@@ -632,7 +660,9 @@ export function startWsServer(opts: ServerOpts) {
       return;
     }
     try {
-      const repos = await manager.listRepos({ includePrs: true });
+      // Enrich the snapshot we already have — PR lookups only, no second full
+      // pass of git work.
+      const repos = await manager.enrichPrs(gitOnly);
       if (generation !== reposSnapshotGeneration) return;
       lastEnrichedRepos = repos;
       emit(repos);

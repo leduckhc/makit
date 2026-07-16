@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 
 import { Session } from "./session.js";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
+import type { SessionEvent } from "./protocol.js";
 
 function fakeAdapter(): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
@@ -92,4 +93,29 @@ test("with a store, events persist durably and seq survives a session restart", 
   s2.adapter.emit("event", { ts: 3, kind: "user.message", payload: { text: "again" } });
   assert.deepEqual(store.read(s1.id).map((e) => e.seq), [1, 2, 3]);
   store.close();
+});
+
+test("lazy hydrateFrom is retained when the loader throws, and retried on next access", () => {
+  const history: SessionEvent[] = [
+    { seq: 1, sessionId: "s-lazy-retry", ts: 1, kind: "user.message", payload: { text: "old" } },
+  ];
+  let calls = 0;
+  const session = new Session({
+    id: "s-lazy-retry",
+    projectId: "p",
+    agent: "pi",
+    adapter: fakeAdapter(),
+    hydrateFrom: () => {
+      calls += 1;
+      if (calls === 1) throw new Error("transient read failure");
+      return history;
+    },
+  });
+
+  // First access: loader throws → surfaced, and the loader is NOT consumed.
+  assert.throws(() => session.events, /transient read failure/);
+  // Retry: loader runs again and history is restored (not permanently lost).
+  assert.equal(session.events.length, 1);
+  assert.equal(session.events[0].payload.text, "old");
+  assert.equal(calls, 2, "loader retried exactly once after the failure");
 });

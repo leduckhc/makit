@@ -13,6 +13,8 @@ import type { EventStore, NewEvent, SessionMeta } from "./event_store.js";
 
 export class SqliteEventStore implements EventStore {
   private readonly db: DatabaseSync;
+  /** Next seq per session — avoids a MAX(seq) query on every append. */
+  private readonly nextSeq = new Map<string, number>();
 
   constructor(path = ":memory:") {
     this.db = new DatabaseSync(path);
@@ -54,13 +56,17 @@ export class SqliteEventStore implements EventStore {
   }
 
   append(sessionId: string, e: NewEvent): SessionEvent {
-    const row = this.db
-      .prepare("SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM events WHERE session_id = ?")
-      .get(sessionId) as { maxSeq: number };
-    const seq = Number(row.maxSeq) + 1;
+    let seq = this.nextSeq.get(sessionId);
+    if (seq === undefined) {
+      const row = this.db
+        .prepare("SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM events WHERE session_id = ?")
+        .get(sessionId) as { maxSeq: number };
+      seq = Number(row.maxSeq) + 1;
+    }
     this.db
       .prepare("INSERT INTO events (session_id, seq, ts, kind, payload) VALUES (?, ?, ?, ?, ?)")
       .run(sessionId, seq, e.ts, e.kind, JSON.stringify(e.payload ?? {}));
+    this.nextSeq.set(sessionId, seq + 1);
     return { seq, sessionId, ts: e.ts, kind: e.kind, payload: e.payload };
   }
 
@@ -131,6 +137,7 @@ export class SqliteEventStore implements EventStore {
   }
 
   deleteSession(id: string): void {
+    this.nextSeq.delete(id);
     this.db.prepare("DELETE FROM events WHERE session_id = ?").run(id);
     this.db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
   }
