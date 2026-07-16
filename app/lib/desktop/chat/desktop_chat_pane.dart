@@ -9,8 +9,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
-import '../../ui/session/chat_message.dart';
-import '../../ui/session/tool_call_card.dart';
+import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
@@ -22,12 +21,12 @@ import '../../ui/composer/composer_selectors.dart';
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
 ///
-/// Reuses the mobile chat item widgets ([ChatBubble], [AgentMessage],
-/// [ToolCallCard]) and the shared [Composer] + [handleClientCommand] send path
-/// so desktop and mobile render and behave identically. Unlike the mobile
-/// [SessionScreen] (a full-screen route with floating glass bars), this is a
-/// docked pane: a plain scroll transcript with the composer pinned at the
-/// bottom — the shape desktop chat apps use.
+/// Renders each item through the shared [chatItemWidget] and reuses the shared
+/// [Composer] + [handleClientCommand] send path so desktop and mobile render
+/// and behave identically. Unlike the mobile [SessionScreen] (a full-screen
+/// route with floating glass bars), this is a docked pane: a plain scroll
+/// transcript with the composer pinned at the bottom — the shape desktop chat
+/// apps use.
 class DesktopChatPane extends ConsumerStatefulWidget {
   /// Creates the desktop chat pane. When [sessionId] is null the pane falls
   /// back to the globally [selectedSessionProvider] (single-pane behaviour).
@@ -189,8 +188,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   itemCount: items.length + (running ? 1 : 0),
                   itemBuilder: (context, i) {
                     final Widget child = i >= items.length
-                        ? const _WorkingIndicator()
-                        : _buildItem(items[i]);
+                        ? const WorkingIndicator(compact: true)
+                        : chatItemWidget(
+                            items[i],
+                            onOpenTool: _openToolDetail,
+                            compact: true,
+                          );
                     return Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(
@@ -241,17 +244,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       ],
     );
   }
-
-  Widget _buildItem(ChatItem item) => switch (item) {
-    UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
-    AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
-    ThinkingItem() => _ThinkingLine(text: item.text),
-    ToolCallItem() => ToolCallCard(
-      item: item,
-      onTap: () => _openToolDetail(item),
-    ),
-    ErrorItem() => _ErrorBanner(message: item.message),
-  };
 
   @override
   void dispose() {
@@ -439,120 +431,6 @@ class SessionActionsMenu extends ConsumerWidget {
         messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
       }
     }
-  }
-}
-
-class _ThinkingLine extends StatefulWidget {
-  const _ThinkingLine({required this.text});
-  final String text;
-
-  @override
-  State<_ThinkingLine> createState() => _ThinkingLineState();
-}
-
-/// Reasoning/thinking trace. Folded to a single greyed one-liner with an
-/// ellipsis; a single click toggles between the full text and the one-liner,
-/// matching the mobile chat's `_ThinkingCard`.
-class _ThinkingLineState extends State<_ThinkingLine> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final style = TextStyle(
-      color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-      fontSize: 13,
-      fontStyle: FontStyle.italic,
-      height: 1.3,
-    );
-    void toggle() => setState(() => _expanded = !_expanded);
-    final textWidget = _expanded
-        ? SelectableText(widget.text.trim(), style: style, onTap: toggle)
-        : Text(
-            widget.text.trim(),
-            style: style,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          );
-    // Expanded: SelectableText handles taps on the text for selection; a tap
-    // on the leading icon collapses. Collapsed: whole row is a tap target that
-    // expands.
-    return _expanded
-        ? Semantics(
-            onTap: toggle,
-            onTapHint: 'Collapse thinking',
-            child: _buildRow(textWidget, onLeadingTap: toggle),
-          )
-        : InkWell(onTap: toggle, child: _buildRow(textWidget));
-  }
-
-  Widget _buildRow(Widget textWidget, {VoidCallback? onLeadingTap}) {
-    final cs = Theme.of(context).colorScheme;
-    Widget leading = Icon(
-      Symbols.psychology,
-      weight: 200,
-      size: 15,
-      color: cs.onSurfaceVariant.withValues(alpha: 0.55),
-    );
-    if (onLeadingTap != null) {
-      leading = GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onLeadingTap,
-        child: leading,
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          leading,
-          const SizedBox(width: 6),
-          Expanded(child: textWidget),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cs.errorContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(message, style: TextStyle(color: cs.onErrorContainer)),
-    );
-  }
-}
-
-class _WorkingIndicator extends StatelessWidget {
-  const _WorkingIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 10),
-          Text('working…'),
-        ],
-      ),
-    );
   }
 }
 

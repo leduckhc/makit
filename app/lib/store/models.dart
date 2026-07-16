@@ -448,6 +448,21 @@ SessionStatus parseStatus(String s) => switch (s) {
 
 enum ApprovalPolicy { yolo, askOnRisky, askAlways }
 
+/// How dangerous a tool call is, as classified by the agent. Parsed at the
+/// model boundary (unknown/missing → [ToolRisk.safe]) so the UI switches on a
+/// closed set instead of raw `'safe'`/`'risky'`/`'destructive'` strings.
+enum ToolRisk { safe, risky, destructive }
+
+ToolRisk parseToolRisk(String? s) => switch (s) {
+  'risky' => ToolRisk.risky,
+  'destructive' => ToolRisk.destructive,
+  _ => ToolRisk.safe,
+};
+
+/// A tool call's lifecycle state, derived from [ToolCallItem.ended] and its
+/// exit code so the UI has a single tri-state to switch on.
+enum ToolStatus { running, ok, failed }
+
 ApprovalPolicy parsePolicy(String s) => switch (s) {
   'yolo' => ApprovalPolicy.yolo,
   'ask-on-risky' => ApprovalPolicy.askOnRisky,
@@ -624,7 +639,7 @@ class ToolCallItem extends ChatItem {
     this.summary,
     this.output,
     this.details,
-    this.risk = 'safe',
+    this.risk = ToolRisk.safe,
   });
 
   final String callId;
@@ -641,7 +656,19 @@ class ToolCallItem extends ChatItem {
   /// Structured tool result (e.g. askUserQuestion's {indices, answers}) for
   /// renderers that want more than the text. Null for most tools.
   final Map<String, dynamic>? details;
-  final String risk;
+  final ToolRisk risk;
+
+  /// The tool result text: streamed [deltas] when present, else the final
+  /// [output] (empty string when neither is set). The single source of this
+  /// idiom, which was previously copy-pasted with inconsistent precedence.
+  String get resultText => deltas.isNotEmpty ? deltas.join() : (output ?? '');
+
+  /// Lifecycle state derived from [ended] and [exitCode].
+  ToolStatus get status => !ended
+      ? ToolStatus.running
+      : (exitCode ?? 0) != 0
+      ? ToolStatus.failed
+      : ToolStatus.ok;
 
   ToolCallItem copyWith({
     List<String>? deltas,
@@ -671,6 +698,30 @@ class ErrorItem extends ChatItem {
   final String message;
 }
 
+/// Find the in-progress [ChatItem] registered under [id] in [index] and update
+/// it via [append]; otherwise build a fresh one via [create] and (when
+/// [register] is set) record its position so later deltas find it. [create]
+/// may return null to add nothing — used by tool deltas (which must not create
+/// a card without a preceding start) and the empty-final thinking guard.
+void _upsertStream<T extends ChatItem>(
+  List<ChatItem> items,
+  Map<String, int> index,
+  String? id,
+  T? Function() create,
+  T Function(T current) append, {
+  bool register = true,
+}) {
+  final idx = id != null ? index[id] : null;
+  if (idx != null && items[idx] is T) {
+    items[idx] = append(items[idx] as T);
+    return;
+  }
+  final created = create();
+  if (created == null) return;
+  if (register && id != null) index[id] = items.length;
+  items.add(created);
+}
+
 /// Fold a raw [SessionEvent] stream into ordered [ChatItem]s. Tool-call deltas
 /// are merged into the matching [ToolCallItem] so the UI sees one card per call.
 List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
@@ -690,78 +741,71 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ),
         );
       case EventKind.agentMessage:
-        // Final (authoritative) message. If it finalizes a streamed msgId,
-        // replace the in-progress bubble's text; otherwise it's a fresh
-        // (non-streamed) message — a new bubble.
+        // Final (authoritative) message. Finalizes the streamed msgId's bubble
+        // in place, or appends a fresh (non-streamed) bubble when there is none.
         final msgId = e.payload['msgId'] as String?;
         final text = e.payload['text'] as String? ?? '';
-        final idx = msgId != null ? byMsg[msgId] : null;
-        if (idx != null && items[idx] is AgentMessageItem) {
-          items[idx] = (items[idx] as AgentMessageItem).copyWith(
-            text: text,
-            streaming: false,
-          );
-        } else {
-          items.add(AgentMessageItem(seq: e.seq, ts: e.ts, text: text));
-        }
+        _upsertStream<AgentMessageItem>(
+          items,
+          byMsg,
+          msgId,
+          () => AgentMessageItem(seq: e.seq, ts: e.ts, text: text),
+          (cur) => cur.copyWith(text: text, streaming: false),
+          register: false,
+        );
       case EventKind.agentMessageDelta:
         // Streaming token. Append to the bubble for this msgId, creating it on
         // the first delta.
         final msgId = e.payload['msgId'] as String? ?? '';
         final chunk = e.payload['chunk'] as String? ?? '';
-        final idx = byMsg[msgId];
-        if (idx != null && items[idx] is AgentMessageItem) {
-          final cur = items[idx] as AgentMessageItem;
-          items[idx] = cur.copyWith(text: cur.text + chunk);
-        } else {
-          byMsg[msgId] = items.length;
-          items.add(
-            AgentMessageItem(
-              seq: e.seq,
-              ts: e.ts,
-              text: chunk,
-              msgId: msgId,
-              streaming: true,
-            ),
-          );
-        }
+        _upsertStream<AgentMessageItem>(
+          items,
+          byMsg,
+          msgId,
+          () => AgentMessageItem(
+            seq: e.seq,
+            ts: e.ts,
+            text: chunk,
+            msgId: msgId,
+            streaming: true,
+          ),
+          (cur) => cur.copyWith(text: cur.text + chunk),
+        );
       case EventKind.agentThinkingDelta:
         // Streaming reasoning token. Append to the card for this thinkId,
         // creating it on the first delta so it is anchored at the point
         // reasoning STARTED (before the answer), matching the terminal.
         final thinkId = e.payload['thinkId'] as String? ?? '';
         final chunk = e.payload['chunk'] as String? ?? '';
-        final idx = byThink[thinkId];
-        if (idx != null && items[idx] is ThinkingItem) {
-          final cur = items[idx] as ThinkingItem;
-          items[idx] = cur.copyWith(text: cur.text + chunk);
-        } else {
-          byThink[thinkId] = items.length;
-          items.add(
-            ThinkingItem(
-              seq: e.seq,
-              ts: e.ts,
-              text: chunk,
-              thinkId: thinkId,
-              streaming: true,
-            ),
-          );
-        }
+        _upsertStream<ThinkingItem>(
+          items,
+          byThink,
+          thinkId,
+          () => ThinkingItem(
+            seq: e.seq,
+            ts: e.ts,
+            text: chunk,
+            thinkId: thinkId,
+            streaming: true,
+          ),
+          (cur) => cur.copyWith(text: cur.text + chunk),
+        );
       case EventKind.agentThinking:
-        // Final (authoritative) thinking. If it finalizes a streamed thinkId,
-        // replace the in-progress card's text; otherwise it's a fresh
-        // (non-streamed) card — a new item.
+        // Final (authoritative) thinking. Finalizes the streamed thinkId's card
+        // in place, or appends a fresh card — but only when non-empty (the
+        // empty-final guard skips blank standalone thinking).
         final thinkId = e.payload['thinkId'] as String?;
         final text = e.payload['text'] as String? ?? '';
-        final idx = thinkId != null ? byThink[thinkId] : null;
-        if (idx != null && items[idx] is ThinkingItem) {
-          items[idx] = (items[idx] as ThinkingItem).copyWith(
-            text: text,
-            streaming: false,
-          );
-        } else if (text.trim().isNotEmpty) {
-          items.add(ThinkingItem(seq: e.seq, ts: e.ts, text: text));
-        }
+        _upsertStream<ThinkingItem>(
+          items,
+          byThink,
+          thinkId,
+          () => text.trim().isNotEmpty
+              ? ThinkingItem(seq: e.seq, ts: e.ts, text: text)
+              : null,
+          (cur) => cur.copyWith(text: text, streaming: false),
+          register: false,
+        );
       case EventKind.toolCallStart:
         final callId = e.payload['callId'] as String;
         final item = ToolCallItem(
@@ -772,19 +816,21 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           args: Map<String, dynamic>.from(
             e.payload['args'] as Map? ?? const {},
           ),
-          risk: e.payload['risk'] as String? ?? 'safe',
+          risk: parseToolRisk(e.payload['risk'] as String?),
         );
         byCall[callId] = items.length;
         items.add(item);
       case EventKind.toolCallDelta:
         final callId = e.payload['callId'] as String;
-        final idx = byCall[callId];
-        if (idx != null && items[idx] is ToolCallItem) {
-          final cur = items[idx] as ToolCallItem;
-          items[idx] = cur.copyWith(
+        _upsertStream<ToolCallItem>(
+          items,
+          byCall,
+          callId,
+          () => null, // A delta without a preceding start creates nothing.
+          (cur) => cur.copyWith(
             deltas: [...cur.deltas, e.payload['chunk'] as String? ?? ''],
-          );
-        }
+          ),
+        );
       case EventKind.toolCallEnd:
         final callId = e.payload['callId'] as String;
         final idx = byCall[callId];

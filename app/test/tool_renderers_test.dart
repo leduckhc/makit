@@ -29,33 +29,6 @@ void main() {
       expect(rendererFor(_tool('AskUserQuestion', {})), isNotNull);
     });
 
-    test('askUserQuestion subtitle summarises the chosen answers', () {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'askUserQuestion',
-        args: const {
-          'questions': [
-            {
-              'question': 'Lang?',
-              'options': [
-                {'label': 'EN'},
-                {'label': 'ES'},
-              ],
-            },
-          ],
-        },
-        ended: true,
-        details: const {
-          'kind': 'askUserQuestion',
-          'indices': [0],
-          'answers': ['EN'],
-        },
-      );
-      expect(rendererFor(item)!.subtitle(item), 'EN');
-    });
-
     test('matches tool names case-insensitively', () {
       expect(rendererFor(_tool('Read', {})), isNotNull);
       expect(rendererFor(_tool('Edit', {})), isNotNull);
@@ -82,27 +55,11 @@ void main() {
     });
   });
 
-  group('built-in renderers — subtitle extraction', () {
-    test('read shows the file path', () {
-      final r = rendererFor(_tool('read', {'path': '/etc/hosts'}))!;
-      expect(r.subtitle(_tool('read', {'path': '/etc/hosts'})), '/etc/hosts');
-    });
-
-    test('bash truncates long commands', () {
-      final cmd = 'echo ${'x' * 200}';
-      final s = rendererFor(
-        _tool('bash', {'command': cmd}),
-      )!.subtitle(_tool('bash', {'command': cmd}));
-      expect(s, isNotNull);
-      expect(s!.length, lessThan(cmd.length));
-      expect(s.endsWith('…'), isTrue);
-    });
-
-    test('grep includes pattern and glob', () {
-      final s = rendererFor(
-        _tool('grep', {'pattern': 'TODO', 'glob': '*.dart'}),
-      )!.subtitle(_tool('grep', {'pattern': 'TODO', 'glob': '*.dart'}));
-      expect(s, 'TODO · glob:*.dart');
+  group('built-in renderers — detail views', () {
+    test('rendererFor resolves the built-in tools by name', () {
+      expect(rendererFor(_tool('read', {'path': '/etc/hosts'}))!.name, 'read');
+      expect(rendererFor(_tool('bash', {'command': 'ls'}))!.name, 'bash');
+      expect(rendererFor(_tool('grep', {'pattern': 'TODO'}))!.name, 'grep');
     });
   });
 

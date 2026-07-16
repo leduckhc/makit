@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,8 +8,7 @@ import '../../store/store.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
-import 'chat_message.dart';
-import 'tool_call_card.dart';
+import 'chat_transcript.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 
@@ -117,26 +114,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   (session?.status == SessionStatus.running ? 1 : 0),
               itemBuilder: (context, i) {
                 // Trailing "working…" indicator while the agent is running.
-                if (i >= items.length) return const _WorkingIndicator();
-                final item = items[i];
-                return switch (item) {
-                  UserMessageItem() => ChatBubble.user(
-                    text: item.text,
-                    ts: item.ts,
+                if (i >= items.length) return const WorkingIndicator();
+                return chatItemWidget(
+                  items[i],
+                  onOpenTool: (tool) => context.go(
+                    '/session/${widget.sessionId}/tool/${tool.callId}',
                   ),
-                  AgentMessageItem() => AgentMessage(
-                    text: item.text,
-                    ts: item.ts,
-                  ),
-                  ThinkingItem() => _ThinkingCard(text: item.text),
-                  ToolCallItem() => ToolCallCard(
-                    item: item,
-                    onTap: () => context.go(
-                      '/session/${widget.sessionId}/tool/${item.callId}',
-                    ),
-                  ),
-                  ErrorItem() => _ErrorBanner(message: item.message),
-                };
+                );
               },
             ),
           ),
@@ -433,179 +417,5 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   void dispose() {
     _scroll.dispose();
     super.dispose();
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  const _ErrorBanner({required this.message});
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Reasoning/thinking trace. Folded to a single greyed one-liner with an
-/// ellipsis; tap to expand the full text.
-class _ThinkingCard extends StatefulWidget {
-  const _ThinkingCard({required this.text});
-  final String text;
-
-  @override
-  State<_ThinkingCard> createState() => _ThinkingCardState();
-}
-
-class _ThinkingCardState extends State<_ThinkingCard> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final style = TextStyle(
-      color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-      fontSize: 13,
-      fontStyle: FontStyle.italic,
-      height: 1.3,
-    );
-    void toggle() => setState(() => _expanded = !_expanded);
-    final row = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.psychology_outlined,
-            size: 15,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.55),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _expanded
-                // When expanded the text is selectable. A plain tap (no drag)
-                // still collapses the card; dragging selects text instead.
-                ? SelectableText(
-                    widget.text.trim(),
-                    style: style,
-                    onTap: toggle,
-                  )
-                : Text(
-                    widget.text.trim(),
-                    style: style,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-          ),
-        ],
-      ),
-    );
-    // Collapsed: whole row is a tap target that expands. Expanded: rely on
-    // SelectableText's onTap so selecting text doesn't collapse the card.
-    return _expanded
-        ? Semantics(onTap: toggle, onTapHint: 'Collapse thinking', child: row)
-        : InkWell(onTap: toggle, child: row);
-  }
-}
-
-/// Shimmering "working" text shown at the tail of the transcript while the
-/// session status is `running`. Picks a random work-flavoured word per turn.
-class _WorkingIndicator extends StatefulWidget {
-  const _WorkingIndicator();
-
-  @override
-  State<_WorkingIndicator> createState() => _WorkingIndicatorState();
-}
-
-class _WorkingIndicatorState extends State<_WorkingIndicator>
-    with SingleTickerProviderStateMixin {
-  static const _words = [
-    'Thinking',
-    'Cooking',
-    'Pondering',
-    'Crunching',
-    'Conjuring',
-    'Reasoning',
-    'Tinkering',
-    'Brewing',
-    'Computing',
-    'Noodling',
-    'Scheming',
-    'Percolating',
-    'Wrangling',
-    'Analyzing',
-    'Plotting',
-    'Untangling',
-  ];
-
-  late final String _word = _words[Random().nextInt(_words.length)];
-
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final base = cs.onSurfaceVariant.withValues(alpha: 0.18);
-    final highlight = cs.onSurface;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (context, child) {
-          return ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: (bounds) => LinearGradient(
-              colors: [base, highlight, base],
-              stops: const [0.35, 0.5, 0.65],
-              transform: _SlideGradient(_c.value),
-            ).createShader(bounds),
-            child: child,
-          );
-        },
-        child: Text(
-          _word,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Slides a gradient horizontally across its bounds as [t] goes 0→1, so the
-/// highlight band sweeps left→right (a shimmer). Clamp tiling keeps the
-/// off-band area the base colour.
-class _SlideGradient extends GradientTransform {
-  const _SlideGradient(this.t);
-  final double t;
-
-  @override
-  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
-    return Matrix4.translationValues((t * 2 - 1) * bounds.width, 0, 0);
   }
 }
