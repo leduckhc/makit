@@ -41,3 +41,26 @@ test("mapLimit treats limit <= 0 as unbounded (runs all, order preserved)", asyn
   const out = await mapLimit([1, 2, 3], 0, async (n) => n * 2);
   assert.deepEqual(out, [2, 4, 6]);
 });
+
+test("mapLimit stops scheduling queued tasks after a sibling rejects", async () => {
+  const invoked: number[] = [];
+  await assert.rejects(
+    mapLimit([0, 1, 2, 3, 4, 5], 2, async (n) => {
+      invoked.push(n);
+      if (n === 1) throw new Error("boom"); // rejects while index 0 is still in flight
+      await new Promise((r) => setTimeout(r, 10));
+      return n;
+    }),
+    /boom/,
+  );
+  // Wait long enough that a surviving worker WOULD have claimed queued items
+  // (each in-flight task is only 10ms) if fail-fast weren't enforced.
+  await new Promise((r) => setTimeout(r, 60));
+  // Only the two initially-running tasks ran; 2..5 were queued and never
+  // claimed once index 1 rejected.
+  assert.deepEqual(
+    [...invoked].sort((a, b) => a - b),
+    [0, 1],
+    "no queued task should be invoked after a sibling rejected",
+  );
+});

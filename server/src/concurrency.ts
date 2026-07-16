@@ -9,9 +9,12 @@
  * parallel but caps how many tasks run concurrently.
  *
  * Semantics mirror `Promise.all`: results are returned in input order and the
- * first rejection propagates (remaining scheduled tasks still settle, but no
- * new ones start after a rejection surfaces). A non-positive `limit` means
- * "unbounded" (equivalent to `Promise.all`).
+ * first rejection propagates. Scheduling is fail-fast — once any task rejects,
+ * surviving workers stop claiming queued items (a task already in flight can't
+ * be cancelled, so it runs to completion, but no NEW task is started). This
+ * matters here: after a git/gh failure we don't want to keep spawning more
+ * child processes. A non-positive `limit` means "unbounded" (equivalent to
+ * `Promise.all`).
  */
 export async function mapLimit<T, R>(
   items: readonly T[],
@@ -23,11 +26,18 @@ export async function mapLimit<T, R>(
   }
   const results = new Array<R>(items.length);
   let next = 0;
+  let aborted = false;
   const worker = async (): Promise<void> => {
-    while (true) {
+    while (!aborted) {
       const i = next++;
       if (i >= items.length) return;
-      results[i] = await fn(items[i], i);
+      try {
+        results[i] = await fn(items[i], i);
+      } catch (err) {
+        // Stop siblings from claiming further work, then surface the error.
+        aborted = true;
+        throw err;
+      }
     }
   };
   await Promise.all(Array.from({ length: limit }, () => worker()));
