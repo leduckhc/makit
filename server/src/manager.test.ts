@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -146,7 +146,7 @@ test("startPendingSession creates a worktree named from the first message and st
 
     assert.equal(s.pending, false);
     assert.equal(s.branch, "add-a-login-form-to-the");
-    assert.ok(s.worktreePath?.startsWith(base), `worktree ${s.worktreePath} under ${base}`);
+    assert.ok(s.worktreePath?.startsWith(realpathSync(base)), `worktree ${s.worktreePath} under ${base}`);
     assert.equal(started.length, 1, "agent should start once");
     assert.equal(started[0]?.cwd, s.worktreePath, "agent runs in the worktree");
 
@@ -205,7 +205,7 @@ test("startPendingSession falls back to the default branch for an unknown base",
     const draft = await manager.spawnPendingSession(projectId, "pi", "no-such-branch");
     const s = await manager.startPendingSession(draft.id, "work");
     // Falls back to `main`: the worktree exists and the agent started.
-    assert.ok(s.worktreePath?.startsWith(base));
+    assert.ok(s.worktreePath?.startsWith(realpathSync(base)));
     assert.equal(started.length, 1);
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;

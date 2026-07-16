@@ -11,6 +11,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { log } from "./log.js";
@@ -274,9 +275,13 @@ export function slugify(text: string, maxWords = 6): string {
 
 /**
  * Create a new worktree at `<worktreeBaseDir()>/<repoName>/<name>` on a fresh
- * branch `branch`, based off `baseBranch`. Returns the absolute worktree path.
- * Throws on failure (the caller surfaces it) — unlike the read helpers this is
- * a user-initiated mutation whose error must not be swallowed.
+ * branch `branch`, based off `baseBranch`. Returns the absolute worktree path,
+ * canonicalized (symlinks resolved) so it matches what `git worktree list`
+ * reports — callers store this as `session.worktreePath` and later compare it
+ * against git's output to link sessions to worktrees, which silently breaks if
+ * the base contains a symlink (e.g. macOS `/var`→`/private/var`, or a symlinked
+ * projects dir). Throws on failure (the caller surfaces it) — unlike the read
+ * helpers this is a user-initiated mutation whose error must not be swallowed.
  */
 export async function addWorktree(opts: {
   repoPath: string;
@@ -295,7 +300,9 @@ export async function addWorktree(opts: {
   if (r.code !== 0) {
     throw new Error(`git worktree add failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
   }
-  return target;
+  // Canonicalize so the returned path matches `git worktree list` output
+  // (which realpaths); the dir exists now that `git worktree add` succeeded.
+  return realpathSync(target);
 }
 
 /**
