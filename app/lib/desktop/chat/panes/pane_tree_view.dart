@@ -265,13 +265,11 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
                       ),
                       Expanded(
                         child: DesktopChatPane(
-                          sessionId:
-                              widget.leaf.sessionId ??
-                              (widget.active
-                                  ? ref.watch(selectedSessionProvider)
-                                  : null),
+                          sessionId: widget.leaf.sessionId,
                           showHeader: false,
-                          trackGlobalSelection: false,
+                          // Only the active pane tracks the global session /
+                          // worktree selection; inactive panes stay empty.
+                          trackGlobalSelection: widget.active,
                         ),
                       ),
                     ],

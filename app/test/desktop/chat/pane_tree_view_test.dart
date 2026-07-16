@@ -262,4 +262,43 @@ void main() {
       },
     );
   });
+
+  group('global fallback gating', () {
+    testWidgets('a non-tracking pane ignores the global worktree draft', (
+      tester,
+    ) async {
+      final c = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+        ],
+      );
+      addTearDown(c.dispose);
+      // A worktree draft is selected globally.
+      c.read(selectedWorktreeProvider.notifier).state = const SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt',
+        branch: 'main',
+      );
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: DesktopChatPane(
+                showHeader: false,
+                trackGlobalSelection: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Not tracking the global selection → no worktree start view; the pane
+      // stays empty rather than mirroring the global worktree draft.
+      expect(find.text('Select or start a session'), findsOneWidget);
+    });
+  });
 }

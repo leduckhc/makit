@@ -112,8 +112,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
             : null);
     if (sessionId == null) {
       // A sessionless worktree selected in the sidebar → harness picker to
-      // start a session in that existing worktree.
-      final worktree = ref.watch(selectedWorktreeProvider);
+      // start a session in that existing worktree. Only the active pane tracks
+      // this global draft; inactive split panes stay empty.
+      final worktree = widget.trackGlobalSelection
+          ? ref.watch(selectedWorktreeProvider)
+          : null;
       if (worktree != null) {
         return _WorktreeStartView(
           key: ValueKey(worktree.path),
@@ -407,18 +410,23 @@ class SessionActionsMenu extends ConsumerWidget {
     );
     if (ok != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    // Capture notifiers before the async gap so the model cleanup still runs if
+    // this menu's widget is disposed (e.g. its pane closed) while killing.
+    final store = ref.read(storeControllerProvider.notifier);
+    final panes = ref.read(paneTreeControllerProvider.notifier);
+    final selection = ref.read(selectedSessionProvider.notifier);
     try {
-      await ref.read(storeControllerProvider.notifier).killSession(sessionId);
-      if (!context.mounted) return;
-      // Drop any panes bound to the now-dead session back to their empty state.
-      ref.read(paneTreeControllerProvider.notifier).unbindSession(sessionId);
-      // Clear the selection so the pane returns to its empty state (desktop's
-      // analog of the mobile screen's pop-to-home after quit).
-      if (ref.read(selectedSessionProvider) == sessionId) {
-        ref.read(selectedSessionProvider.notifier).state = null;
+      await store.killSession(sessionId);
+      // Drop any panes bound to the now-dead session back to their empty state
+      // and clear the selection — regardless of whether this widget survived.
+      panes.unbindSession(sessionId);
+      if (selection.state == sessionId) {
+        selection.state = null;
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      if (messenger.mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      }
     }
   }
 }

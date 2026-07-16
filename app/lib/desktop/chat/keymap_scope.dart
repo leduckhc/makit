@@ -199,6 +199,9 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     final freshId = ref.read(paneTreeControllerProvider).activeLeafId;
     final worktreeBefore = ref.read(selectedWorktreeProvider);
     await showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
+    // The scope may have unmounted while the dialog was open; bail before
+    // touching providers through a potentially disposed ref.
+    if (!mounted) return;
     final cancelled = identical(
       ref.read(selectedWorktreeProvider),
       worktreeBefore,
