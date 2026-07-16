@@ -109,27 +109,28 @@ void main() {
           'or status verb failed',
     );
 
-    // devices.list → the seeded device shows on the pushed Devices sub-page.
+    // devices.list → expanding the Paired-devices row reveals the seeded
+    // device inline.
     await _scrollAndTap(tester, find.text('Paired devices'));
     await _pumpUntil(
       tester,
       find.text('e2e phone'),
       reason: 'devices.list did not surface the seeded device',
     );
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    await _scrollAndTap(tester, find.text('Paired devices')); // collapse
 
-    // pair.mint → the QR sub-page mints and renders a makit:// pair url.
+    // pair.mint → expanding the Pair-new-device row mints and renders a
+    // makit:// pair url inline.
     await _scrollAndTap(tester, find.text('Pair new device'));
     await _pumpUntil(
       tester,
       find.textContaining('makit://pair'),
       reason: 'pair.mint did not return a pair url',
     );
-    await tester.pageBack();
-    await tester.pumpAndSettle();
+    await _scrollAndTap(tester, find.text('Pair new device')); // collapse
 
-    // sessions.list → the Sessions sub-page lists the seeded default session.
+    // sessions.list → expanding the Running-sessions row lists the seeded
+    // default session inline.
     await _scrollAndTap(tester, find.text('Running sessions'));
     await _pumpUntil(
       tester,

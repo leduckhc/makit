@@ -11,6 +11,8 @@ import 'providers.dart';
 import 'time_format.dart';
 
 /// Lists devices paired with the daemon and lets the operator revoke them.
+/// Embedded inline under a disclosure row in the Server & Devices settings
+/// section (no Scaffold/AppBar of its own).
 ///
 /// Reads the [ControlClient] from [controlClientProvider], rendering loading,
 /// error, empty, and data states, and re-fetches after each revoke.
@@ -73,25 +75,30 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Devices'),
-        actions: [
-          IconButton(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, size: 18),
             onPressed: _load,
           ),
-        ],
-      ),
-      body: _buildBody(),
+        ),
+        _buildBody(),
+      ],
     );
   }
 
   Widget _buildBody() {
     // First load: nothing fetched yet.
     if (_devices == null && _error == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
     // Errored before any data arrived.
     if (_devices == null) {
@@ -99,9 +106,14 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     }
     final devices = _devices!;
     if (devices.isEmpty) {
-      return const Center(child: Text('No paired devices'));
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: Text('No paired devices')),
+      );
     }
     return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: devices.length,
       itemBuilder: (context, i) => _DeviceTile(
         device: devices[i],

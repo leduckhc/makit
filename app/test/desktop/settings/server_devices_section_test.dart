@@ -5,10 +5,22 @@ import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
 import 'package:makit/desktop/desktop_app.dart' show desktopControllerProvider;
 import 'package:makit/desktop/desktop_controller.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
+import 'package:makit/desktop/screens/providers.dart'
+    show controlClientProvider;
 import 'package:makit/desktop/settings/sections/server_devices_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:makit/store/connection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Records pushed routes so a test can assert no page was navigated to.
+class _RecordingObserver extends NavigatorObserver {
+  final List<Route<dynamic>> pushed = [];
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushed.add(route);
+    super.didPush(route, previousRoute);
+  }
+}
 
 DesktopController _controller() => DesktopController(
   client: FakeControlClient(),
@@ -156,5 +168,82 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
     await tester.pumpAndSettle();
     expect(find.text('Unpair this device?'), findsNothing);
+  });
+
+  testWidgets('nav rows disclose their content inline (no page push)', (
+    tester,
+  ) async {
+    // Tall viewport so every row lays out (a ListView doesn't build far
+    // off-screen children) and is hit-testable without scrolling.
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final config = await makeConfig();
+    final observer = _RecordingObserver();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          serverConfigProvider.overrideWith((ref) => config),
+          desktopControllerProvider.overrideWithValue(_controller()),
+          connectionProvider.overrideWithValue(MakitConnState()),
+          controlClientProvider.overrideWithValue(
+            FakeControlClient(sessions: const []),
+          ),
+        ],
+        child: MaterialApp(
+          navigatorObservers: [observer],
+          home: const Scaffold(body: ServerDevicesSection()),
+        ),
+      ),
+    );
+    await tester.pump();
+    observer.pushed.clear();
+
+    // Collapsed: the row's inline content is not built yet.
+    expect(find.text('No running sessions'), findsNothing);
+
+    await tester.tap(find.text('Running sessions'));
+    await tester.pumpAndSettle();
+
+    // Expanded inline — content is revealed and nothing was pushed onto the
+    // navigator.
+    expect(find.text('No running sessions'), findsOneWidget);
+    expect(observer.pushed.whereType<MaterialPageRoute<dynamic>>(), isEmpty);
+  });
+
+  testWidgets('rows behave as an accordion (opening one closes the other)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final config = await makeConfig();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          serverConfigProvider.overrideWith((ref) => config),
+          desktopControllerProvider.overrideWithValue(_controller()),
+          connectionProvider.overrideWithValue(MakitConnState()),
+          controlClientProvider.overrideWithValue(
+            FakeControlClient(devices: const [], sessions: const []),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Paired devices'));
+    await tester.pumpAndSettle();
+    expect(find.text('No paired devices'), findsOneWidget);
+
+    await tester.tap(find.text('Running sessions'));
+    await tester.pumpAndSettle();
+
+    // Opening Sessions collapses the previously-open Devices row.
+    expect(find.text('No running sessions'), findsOneWidget);
+    expect(find.text('No paired devices'), findsNothing);
   });
 }

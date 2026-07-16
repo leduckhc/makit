@@ -34,17 +34,29 @@ const int _kMaxPort = 65535;
 
 /// Server & Devices section body: the single home for endpoint config, daemon
 /// lifecycle, the CLI, device pairing/management, sessions, and TLS trust.
-class ServerDevicesSection extends StatelessWidget {
+class ServerDevicesSection extends StatefulWidget {
   /// Creates the Server & Devices section body.
   const ServerDevicesSection({super.key});
 
   @override
+  State<ServerDevicesSection> createState() => _ServerDevicesSectionState();
+}
+
+class _ServerDevicesSectionState extends State<ServerDevicesSection> {
+  /// Id of the single expanded disclosure row, or null when all are collapsed.
+  /// Kept here (not per-row) so the rows behave as an accordion.
+  String? _openRow;
+
+  void _toggle(String id) =>
+      setState(() => _openRow = _openRow == id ? null : id);
+
+  @override
   Widget build(BuildContext context) {
     return ListView(
-      children: const [
-        SettingsSectionHeader(title: 'Server & Devices'),
-        SettingsSectionHeader(title: 'Server'),
-        SettingsGroup(
+      children: [
+        const SettingsSectionHeader(title: 'Server & Devices'),
+        const SettingsSectionHeader(title: 'Server'),
+        const SettingsGroup(
           children: [
             SettingsItemAnchor(
               itemId: 'server_devices.endpoint',
@@ -55,12 +67,42 @@ class ServerDevicesSection extends StatelessWidget {
             _FingerprintRow(),
           ],
         ),
-        SettingsSectionHeader(title: 'Devices'),
-        SettingsGroup(children: [_PairedDevicesRow(), _PairNewDeviceRow()]),
-        SettingsSectionHeader(title: 'Sessions'),
-        SettingsGroup(children: [_RunningSessionsRow()]),
-        SettingsSectionHeader(title: 'Danger zone'),
-        SettingsGroup(children: [_UnpairRow()]),
+        const SettingsSectionHeader(title: 'Devices'),
+        SettingsGroup(
+          children: [
+            _ExpandableRow(
+              icon: Symbols.devices,
+              title: 'Paired devices',
+              help: 'List and revoke the devices paired with this server.',
+              expanded: _openRow == 'paired',
+              onToggle: () => _toggle('paired'),
+              child: const DevicesScreen(),
+            ),
+            _ExpandableRow(
+              icon: Symbols.qr_code_2,
+              title: 'Pair new device',
+              help: 'Show a QR code to pair a new device.',
+              expanded: _openRow == 'pair',
+              onToggle: () => _toggle('pair'),
+              child: const QrScreen(),
+            ),
+          ],
+        ),
+        const SettingsSectionHeader(title: 'Sessions'),
+        SettingsGroup(
+          children: [
+            _ExpandableRow(
+              icon: Symbols.list_alt,
+              title: 'Running sessions',
+              help: 'Live agent sessions known to the daemon.',
+              expanded: _openRow == 'sessions',
+              onToggle: () => _toggle('sessions'),
+              child: const SessionsScreen(),
+            ),
+          ],
+        ),
+        const SettingsSectionHeader(title: 'Danger zone'),
+        const SettingsGroup(children: [_UnpairRow()]),
       ],
     );
   }
@@ -374,76 +416,49 @@ class _FingerprintRow extends ConsumerWidget {
       : '${fingerprint.substring(0, 24)}…';
 }
 
-/// A row that opens an embedded control screen as a sub-page (SPEC-13 keeps
-/// this simple: a [ListTile] that pushes the reused widget).
-///
-/// Uses an anonymous [MaterialPageRoute] rather than a named route on purpose:
-/// these sub-pages are local to the in-window Settings overlay and are never
-/// deep-linked or restored from a URL, so a route table would add ceremony for
-/// no benefit. Back-navigation (including `WidgetTester.pageBack`) works via
-/// the ambient [Navigator].
-class _NavRow extends StatelessWidget {
-  const _NavRow({
+/// A settings row that discloses [child] *inline* when tapped, rather than
+/// pushing a new page. The toggle is instant (no expand animation) by design.
+/// It is *controlled* — [expanded]/[onToggle] are owned by the section so the
+/// rows act as an accordion (only one open at a time). Used for the embedded
+/// control views (paired devices / pairing QR / running sessions), which render
+/// themselves without a Scaffold/AppBar so they sit directly inside the card.
+class _ExpandableRow extends StatelessWidget {
+  const _ExpandableRow({
     required this.icon,
     required this.title,
     required this.help,
-    required this.destination,
+    required this.expanded,
+    required this.onToggle,
+    required this.child,
   });
 
   final IconData icon;
   final String title;
   final String help;
-  final Widget destination;
+  final bool expanded;
+  final VoidCallback onToggle;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon, weight: 200, color: cs.outline),
-      title: Text(title),
-      subtitle: Text(help),
-      trailing: const Icon(Symbols.chevron_right, weight: 200),
-      onTap: () => Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => destination)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          leading: Icon(icon, weight: 200, color: cs.outline),
+          title: Text(title),
+          subtitle: Text(help),
+          trailing: Icon(
+            expanded ? Symbols.expand_less : Symbols.expand_more,
+            weight: 200,
+          ),
+          onTap: onToggle,
+        ),
+        if (expanded) ...[const Divider(height: 1), child],
+      ],
     );
   }
-}
-
-class _PairedDevicesRow extends StatelessWidget {
-  const _PairedDevicesRow();
-
-  @override
-  Widget build(BuildContext context) => const _NavRow(
-    icon: Symbols.devices,
-    title: 'Paired devices',
-    help: 'List and revoke the devices paired with this server.',
-    destination: DevicesScreen(),
-  );
-}
-
-class _PairNewDeviceRow extends StatelessWidget {
-  const _PairNewDeviceRow();
-
-  @override
-  Widget build(BuildContext context) => const _NavRow(
-    icon: Symbols.qr_code_2,
-    title: 'Pair new device',
-    help: 'Show a QR code to pair a new device.',
-    destination: QrScreen(),
-  );
-}
-
-class _RunningSessionsRow extends StatelessWidget {
-  const _RunningSessionsRow();
-
-  @override
-  Widget build(BuildContext context) => const _NavRow(
-    icon: Symbols.list_alt,
-    title: 'Running sessions',
-    help: 'Live agent sessions known to the daemon.',
-    destination: SessionsScreen(),
-  );
 }
 
 /// Unpair this device (danger): clears this app's stored server pairing via the
