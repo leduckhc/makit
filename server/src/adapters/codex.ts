@@ -12,13 +12,12 @@
  * field. Lines are newline-delimited JSON.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import type { SpawnOpts, UserInput } from "./adapter.js";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
+import { isRecord, parseJsonLine } from "./wire.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
@@ -52,7 +51,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   private threadId?: string;
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: unknown) => void }>();
+  private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
 
   constructor(opts: CodexAdapterOpts = {}) {
     super();
@@ -82,10 +81,10 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     });
     this.notify("initialized", {});
 
-    const started = await this.request("thread/start", {
+    const started = (await this.request("thread/start", {
       cwd: opts.cwd,
       ...(this.model ? { model: this.model } : {}),
-    });
+    })) as { thread?: { id?: string } };
     this.threadId = started?.thread?.id;
     if (!this.threadId) throw new Error("codex app-server: thread/start returned no thread id");
     this.emit("status", "idle");
@@ -98,10 +97,10 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.emit("status", "running");
 
     try {
-      const res = await this.request("turn/start", {
+      const res = (await this.request("turn/start", {
         threadId: this.threadId,
         input: [{ type: "text", text: input.text, text_elements: [] }],
-      });
+      })) as { turn?: { id?: string } };
       const turnId = res?.turn?.id;
       if (turnId) this.turns.enterTurn(turnId);
     } catch (err) {
@@ -128,7 +127,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   // ---- JSON-RPC plumbing ---------------------------------------------------
 
-  private request(method: string, params: unknown): Promise<any> {
+  private request(method: string, params: unknown): Promise<unknown> {
     const id = this.nextId++;
     this.write({ method, id, params });
     return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
@@ -143,29 +142,29 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 
   private handleLine(line: string): void {
-    if (!line.trim()) return;
-    let msg: any;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (msg == null || typeof msg !== "object") return;
+    const msg = parseJsonLine(line);
+    if (!isRecord(msg)) return;
 
     // Response to one of our requests.
     if (msg.id !== undefined && (msg.result !== undefined || msg.error !== undefined)) {
-      const p = this.pending.get(msg.id);
+      const p = this.pending.get(msg.id as number);
       if (p) {
-        this.pending.delete(msg.id);
-        if (msg.error) p.reject(new Error(msg.error?.message ?? JSON.stringify(msg.error)));
-        else p.resolve(msg.result);
+        this.pending.delete(msg.id as number);
+        if (msg.error !== undefined) {
+          const err = msg.error;
+          const message =
+            isRecord(err) && typeof err.message === "string" ? err.message : JSON.stringify(err);
+          p.reject(new Error(message));
+        } else {
+          p.resolve(msg.result);
+        }
       }
       return;
     }
 
     // Server → client request (needs a response).
     if (typeof msg.method === "string" && msg.id !== undefined) {
-      void this.handleServerRequest(msg.method, msg.id, msg.params);
+      void this.handleServerRequest(msg.method, msg.id as number | string, msg.params);
       return;
     }
 
@@ -175,15 +174,16 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     }
   }
 
-  private handleNotification(method: string, params: any): void {
+  private handleNotification(method: string, params: unknown): void {
+    const p = isRecord(params) ? params : {};
+    const turn = isRecord(p.turn) ? p.turn : undefined;
+    const id = typeof turn?.id === "string" ? turn.id : undefined;
     if (method === "turn/started") {
-      const id = params?.turn?.id;
       if (id) this.turns.enterTurn(id);
       else this.emit("status", "running");
       return;
     }
     if (method === "turn/completed") {
-      const id = params?.turn?.id;
       this.mapper.endTurn();
       if (id) this.turns.leaveTurn(id);
       else this.turns.settleIdle();
@@ -194,7 +194,8 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   // ---- server → client requests -------------------------------------------
 
-  private async handleServerRequest(method: string, id: number | string, params: any): Promise<void> {
+  private async handleServerRequest(method: string, id: number | string, params: unknown): Promise<void> {
+    const p = isRecord(params) ? params : {};
     try {
       switch (method) {
         case "item/tool/requestUserInput":
@@ -209,11 +210,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         }
         case "item/permissions/requestApproval": {
           const ok = await this.confirm(
-            { message: typeof params?.reason === "string" && params.reason ? params.reason : "Grant additional permissions?" },
+            { message: typeof p.reason === "string" && p.reason ? p.reason : "Grant additional permissions?" },
             "permissions",
           );
           // Approve → grant exactly what was requested for this turn; deny → grant nothing.
-          const req = params?.permissions ?? {};
+          const req = isRecord(p.permissions) ? p.permissions : {};
           return this.reply(id, {
             permissions: ok ? { network: req.network ?? undefined, fileSystem: req.fileSystem ?? undefined } : {},
             scope: "turn",
@@ -222,12 +223,12 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         case "mcpServer/elicitation/request":
           return this.reply(id, await this.handleElicitation(params));
         case "execCommandApproval": {
-          const cmd = Array.isArray(params?.command) ? params.command.join(" ") : "";
+          const cmd = Array.isArray(p.command) ? p.command.join(" ") : "";
           const ok = await this.confirm({ message: cmd || "Run command?", preview: cmd }, "execute");
           return this.reply(id, { decision: ok ? "approved" : "denied" });
         }
         case "applyPatchApproval": {
-          const ok = await this.confirm({ message: "Apply patch?", preview: patchPaths(params?.fileChanges) }, "edit");
+          const ok = await this.confirm({ message: "Apply patch?", preview: patchPaths(p.fileChanges) }, "edit");
           return this.reply(id, { decision: ok ? "approved" : "denied" });
         }
         case "currentTime/read":
@@ -244,8 +245,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   }
 
   /** Codex's native structured questions → makit askUserQuestion. */
-  private async handleUserInput(params: any): Promise<{ answers: Record<string, { answers: string[] }> }> {
-    const questions: any[] = Array.isArray(params?.questions) ? params.questions : [];
+  private async handleUserInput(params: unknown): Promise<{ answers: Record<string, { answers: string[] }> }> {
+    const rawQuestions = isRecord(params) ? params.questions : undefined;
+    const questions: Record<string, unknown>[] = Array.isArray(rawQuestions)
+      ? rawQuestions.filter(isRecord)
+      : [];
     if (!this.askUser || questions.length === 0) return { answers: {} };
 
     this.turns.enterApproval("awaiting-input");
@@ -259,12 +263,16 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
           options: (Array.isArray(q?.options) && q.options.length
             ? q.options
             : [{ label: "Yes" }, { label: "No" }]
-          ).map((o: any) => ({ label: String(o?.label ?? o), description: o?.description })),
+          ).map((o: unknown) =>
+            isRecord(o)
+              ? { label: String(o.label ?? o), description: typeof o.description === "string" ? o.description : undefined }
+              : { label: String(o), description: undefined },
+          ),
           multi: q?.multiSelect === true,
         })),
       });
       const answers: Record<string, { answers: string[] }> = {};
-      if (resp.kind === "askUserQuestion" && !(resp as any).cancelled && Array.isArray(resp.answers)) {
+      if (resp.kind === "askUserQuestion" && !(resp as { cancelled?: boolean }).cancelled && Array.isArray(resp.answers)) {
         questions.forEach((q, i) => {
           const a = resp.answers[i];
           if (typeof a === "string") answers[String(q.id)] = { answers: [a] };
@@ -280,7 +288,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * Minimal MCP elicitation (mirrors the ACP path): url mode -> confirmAction,
    * single-field form -> input, complex/multi-field -> decline.
    */
-  private async handleElicitation(params: any): Promise<{ action: string; content: unknown; _meta: null }> {
+  private async handleElicitation(params: unknown): Promise<{ action: string; content: unknown; _meta: null }> {
     if (!this.askUser) return { action: "decline", content: null, _meta: null };
     this.turns.enterApproval("awaiting-input");
     try {
@@ -333,15 +341,17 @@ export function defaultConnect(command: string, args: string[]) {
     spawnLineProcess({ command, args, cwd, env, label: "codex-app-server" });
 }
 
-function describeCommand(params: any): { message: string; preview?: string } {
-  const cmd = typeof params?.command === "string" ? params.command : "";
-  const reason = typeof params?.reason === "string" ? params.reason : "";
+function describeCommand(params: unknown): { message: string; preview?: string } {
+  const p = isRecord(params) ? params : {};
+  const cmd = typeof p.command === "string" ? p.command : "";
+  const reason = typeof p.reason === "string" ? p.reason : "";
   return { message: reason || cmd || "Run command?", preview: cmd || undefined };
 }
 
-function describeFileChange(params: any): { message: string; preview?: string } {
-  const reason = typeof params?.reason === "string" ? params.reason : "";
-  return { message: reason || "Apply file changes?", preview: params?.grantRoot ? String(params.grantRoot) : undefined };
+function describeFileChange(params: unknown): { message: string; preview?: string } {
+  const p = isRecord(params) ? params : {};
+  const reason = typeof p.reason === "string" ? p.reason : "";
+  return { message: reason || "Apply file changes?", preview: p.grantRoot ? String(p.grantRoot) : undefined };
 }
 
 function patchPaths(fileChanges: unknown): string | undefined {

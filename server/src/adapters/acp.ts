@@ -12,8 +12,6 @@
  * ctx.ui.* transport). This path trades some of that for multi-agent reach.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
@@ -35,6 +33,7 @@ import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
 import { spawnLineProcess } from "./child_transport.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
+import { isRecord } from "./wire.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
@@ -143,7 +142,7 @@ export class AcpAdapter extends SubprocessAdapter {
       .then((res) => {
         // Turn complete: finalize buffered text/thinking + tool state.
         this.mapper.endTurn();
-        if ((res as any)?.stopReason === "refusal") {
+        if ((res as { stopReason?: string })?.stopReason === "refusal") {
           this.emitEvent({
             ts: Date.now(),
             kind: "session.error",
@@ -285,7 +284,7 @@ export class AcpAdapter extends SubprocessAdapter {
         action: prompt.action,
         ...(prompt.preview ? { preview: prompt.preview } : {}),
       });
-      if (resp.kind === "confirmAction" && !(resp as any).cancelled) {
+      if (resp.kind === "confirmAction" && !(resp as { cancelled?: boolean }).cancelled) {
         const pick = resp.approved ? allow : reject;
         if (pick) return { outcome: { outcome: "selected", optionId: pick.optionId } };
       }
@@ -431,7 +430,7 @@ function describePermission(toolCall: RequestPermissionRequest["toolCall"] | und
   action: string;
   preview?: string;
 } {
-  const tc = (toolCall ?? {}) as any;
+  const tc: Record<string, unknown> = isRecord(toolCall) ? toolCall : {};
   const kind: string = typeof tc.kind === "string" ? tc.kind : "tool";
   const title =
     {
@@ -446,17 +445,20 @@ function describePermission(toolCall: RequestPermissionRequest["toolCall"] | und
   return { title, message, action: kind, preview: permissionPreview(tc) };
 }
 
-function permissionPreview(tc: any): string | undefined {
+function permissionPreview(tc: Record<string, unknown>): string | undefined {
   // Prefer an explicit shell command; then a diff path; else compact rawInput.
-  const cmd = tc?.rawInput?.command ?? tc?.rawInput?.cmd;
+  const rawInput = isRecord(tc.rawInput) ? tc.rawInput : undefined;
+  const cmd = rawInput?.command ?? rawInput?.cmd;
   if (typeof cmd === "string" && cmd.trim()) return cmd;
-  if (Array.isArray(tc?.content)) {
-    const diff = tc.content.find((c: any) => c?.type === "diff");
-    if (diff?.path) return `${diff.path}${typeof diff.newText === "string" ? `\n${diff.newText}` : ""}`;
+  if (Array.isArray(tc.content)) {
+    const diff = tc.content.find((c: unknown): c is Record<string, unknown> => isRecord(c) && c.type === "diff");
+    if (diff && typeof diff.path === "string") {
+      return `${diff.path}${typeof diff.newText === "string" ? `\n${diff.newText}` : ""}`;
+    }
   }
-  if (tc?.rawInput && typeof tc.rawInput === "object") {
+  if (rawInput) {
     try {
-      const s = JSON.stringify(tc.rawInput);
+      const s = JSON.stringify(rawInput);
       if (s && s !== "{}") return s.length > 500 ? `${s.slice(0, 497)}…` : s;
     } catch {
       /* ignore */

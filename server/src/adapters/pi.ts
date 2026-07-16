@@ -16,8 +16,6 @@
  * roll a tiny LF-only splitter over the raw stdout stream.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -26,6 +24,7 @@ import type { SpawnOpts, UserInput } from "./adapter.js";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { spawnLineProcess, type ChildExitInfo, type ChildLineTransport } from "./child_transport.js";
 import { summarizeLine } from "./summarize.js";
+import { isRecord, parseJsonLine } from "./wire.js";
 import { log } from "../log.js";
 import { newId } from "../protocol.js";
 
@@ -100,7 +99,7 @@ export class PiAdapter extends SubprocessAdapter {
       payload: { text: input.text },
     });
 
-    const cmd: any = {
+    const cmd: { id: string; type: string; message: string; streamingBehavior?: string } = {
       id: `prompt-${Date.now()}`,
       type: "prompt",
       message: input.text,
@@ -294,9 +293,9 @@ export class PiAdapter extends SubprocessAdapter {
    *   editor  → { value } | { cancelled }
    * Fire-and-forget methods (notify/setStatus/…) need no reply.
    */
-  private async handleUiRequest(evt: any): Promise<void> {
-    const id: string = evt.id;
-    const method: string = evt.method;
+  private async handleUiRequest(evt: PiFrame): Promise<void> {
+    const id = String(evt.id);
+    const method = String(evt.method);
     const reply = (fields: Record<string, unknown>) =>
       this.writeCommand({ type: "extension_ui_response", id, ...fields });
 
@@ -332,7 +331,7 @@ export class PiAdapter extends SubprocessAdapter {
               },
             ],
           });
-          if (resp.kind === "askUserQuestion" && !(resp as any).cancelled && resp.answers?.[0]) {
+          if (resp.kind === "askUserQuestion" && !(resp as { cancelled?: boolean }).cancelled && resp.answers?.[0]) {
             reply({ value: resp.answers[0] });
           } else {
             reply({ cancelled: true });
@@ -347,7 +346,7 @@ export class PiAdapter extends SubprocessAdapter {
             message: String(evt.message ?? ""),
             action: "confirm",
           });
-          if (resp.kind === "confirmAction" && !(resp as any).cancelled) {
+          if (resp.kind === "confirmAction" && !(resp as { cancelled?: boolean }).cancelled) {
             reply({ confirmed: resp.approved });
           } else {
             reply({ cancelled: true });
@@ -384,14 +383,9 @@ export class PiAdapter extends SubprocessAdapter {
   // ---- pi → wire mapping --------------------------------------------------
 
   private handleLine(line: string): void {
-    if (!line.trim()) return;
-    let evt: any;
-    try {
-      evt = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (!evt || typeof evt !== "object") return;
+    const parsed = parseJsonLine(line);
+    if (!isRecord(parsed)) return;
+    const evt = parsed as PiFrame;
 
     log.debug(`[pi.line] type=${evt.type}${evt.assistantMessageEvent ? " sub=" + evt.assistantMessageEvent.type : ""}`);
 
@@ -404,25 +398,26 @@ export class PiAdapter extends SubprocessAdapter {
     }
 
     switch (evt.type) {
-      case "response":
-        if (evt.command === "get_commands" && evt.success && evt.data?.commands) {
+      case "response": {
+        const data = isRecord(evt.data) ? evt.data : undefined;
+        if (evt.command === "get_commands" && evt.success && data?.commands) {
           this.emitEvent({
             ts: Date.now(),
             kind: "session.commands",
-            payload: { commands: evt.data.commands },
+            payload: { commands: data.commands },
           });
-        } else if (evt.command === "get_state" && evt.success && evt.data) {
-          this.metaModel = normalizeModel(evt.data.model);
-          if (typeof evt.data.thinkingLevel === "string") {
-            this.metaThinking = evt.data.thinkingLevel;
+        } else if (evt.command === "get_state" && evt.success && data) {
+          this.metaModel = normalizeModel(data.model);
+          if (typeof data.thinkingLevel === "string") {
+            this.metaThinking = data.thinkingLevel;
           }
           this.pushMeta();
         } else if (
           evt.command === "get_available_models" &&
           evt.success &&
-          Array.isArray(evt.data?.models)
+          Array.isArray(data?.models)
         ) {
-          this.metaModels = evt.data.models
+          this.metaModels = data.models
             .map(normalizeModel)
             .filter((m: unknown): m is MetaModel => m !== null);
           this.pushMeta();
@@ -437,6 +432,7 @@ export class PiAdapter extends SubprocessAdapter {
           this.requestMeta();
         }
         return;
+      }
 
       case "session":
       case "agent_start":
@@ -581,7 +577,7 @@ export class PiAdapter extends SubprocessAdapter {
             output,
             // Structured tool result (e.g. askUserQuestion's {indices,answers})
             // for renderers that want more than the text. Best-effort.
-            ...(evt.result && typeof evt.result === "object" && evt.result.details
+            ...(isRecord(evt.result) && evt.result.details
               ? { details: evt.result.details }
               : {}),
           },
@@ -596,6 +592,46 @@ export class PiAdapter extends SubprocessAdapter {
 }
 
 // ---------- helpers ---------------------------------------------------------
+
+/** One `assistantMessageEvent` sub-frame (text/thinking streaming). */
+interface PiAssistantEvent {
+  type?: string;
+  contentIndex?: number;
+  delta?: unknown;
+  content?: unknown;
+}
+
+/**
+ * The handful of pi rpc frame fields the adapter actually consumes. Inbound
+ * frames are untrusted JSON; nested payloads stay `unknown` and are narrowed at
+ * the point of use. This is the minimal wire contract that lets us drop the
+ * file-level `no-explicit-any` and confine `any` to the JSON.parse boundary
+ * (see `wire.ts`).
+ */
+interface PiFrame {
+  type?: string;
+  // response frames
+  command?: string;
+  success?: boolean;
+  data?: unknown;
+  // extension_ui_request frames
+  id?: unknown;
+  method?: unknown;
+  title?: unknown;
+  message?: unknown;
+  options?: unknown;
+  placeholder?: unknown;
+  prefill?: unknown;
+  // message_update frames
+  assistantMessageEvent?: PiAssistantEvent;
+  // tool_execution_* frames
+  toolCallId?: unknown;
+  toolName?: unknown;
+  args?: unknown;
+  partialResult?: unknown;
+  result?: unknown;
+  isError?: unknown;
+}
 
 /** The `{provider, id, name}` triple carried in `session.meta` for a model. */
 type MetaModel = { provider: string; id: string; name: string };
@@ -639,9 +675,7 @@ function extractResultText(result: unknown): string {
     if (Array.isArray(r.content)) {
       const parts = r.content
         .map((c) =>
-          c && typeof c === "object" && typeof (c as any).text === "string"
-            ? (c as any).text
-            : "",
+          isRecord(c) && typeof c.text === "string" ? c.text : "",
         )
         .filter((s) => s.length > 0);
       if (parts.length > 0) return parts.join("\n");
