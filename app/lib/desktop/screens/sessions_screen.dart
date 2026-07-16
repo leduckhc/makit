@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../control/control_contract.dart';
+import '../../store/models.dart' show SessionStatus;
 import 'providers.dart';
 import 'time_format.dart';
 
-/// Lists sessions known to the daemon with a colored status chip each.
+/// Running-sessions list, embedded inline under a disclosure row in the
+/// Server & Devices settings section (no Scaffold/AppBar of its own).
 ///
 /// Reads the [ControlClient] from [controlClientProvider], rendering loading,
 /// error, empty, and data states. Tapping a tile logs the target route; real
@@ -36,38 +38,53 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
     });
   }
 
+  /// Only surface sessions that are actually open/active — hide idle and
+  /// exited ones, which are just noise in the control surface.
+  static bool _isActive(ControlSession s) =>
+      s.status != SessionStatus.idle && s.status != SessionStatus.exited;
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sessions'),
-        actions: [
-          IconButton(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, size: 18),
             onPressed: _refresh,
           ),
-        ],
-      ),
-      body: FutureBuilder<List<ControlSession>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _SessionsError(onRetry: _refresh, error: snapshot.error);
-          }
-          final sessions = snapshot.requireData;
-          if (sessions.isEmpty) {
-            return const Center(child: Text('No running sessions'));
-          }
-          return ListView.builder(
-            itemCount: sessions.length,
-            itemBuilder: (context, i) => _SessionTile(session: sessions[i]),
-          );
-        },
-      ),
+        ),
+        FutureBuilder<List<ControlSession>>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return _SessionsError(onRetry: _refresh, error: snapshot.error);
+            }
+            final sessions = snapshot.requireData.where(_isActive).toList();
+            if (sessions.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: Text('No running sessions')),
+              );
+            }
+            return ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: sessions.length,
+              itemBuilder: (context, i) => _SessionTile(session: sessions[i]),
+            );
+          },
+        ),
+      ],
     );
   }
 }

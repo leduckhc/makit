@@ -11,8 +11,9 @@ import '../../control/control_contract.dart';
 import 'providers.dart';
 import 'time_format.dart';
 
-/// Side of the rendered QR image in logical pixels.
-const double _kQrSize = 280;
+/// Side of the rendered QR image in logical pixels. Kept compact since the
+/// pairing view is now embedded inline in the settings section.
+const double _kQrSize = 140;
 
 /// Displays a pairing QR code and its live expiry countdown.
 ///
@@ -105,29 +106,37 @@ class _QrScreenState extends ConsumerState<QrScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pair'),
-        actions: [
-          IconButton(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, size: 18),
             onPressed: _refresh,
           ),
-        ],
-      ),
-      body: FutureBuilder<_Pairing>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return _QrError(onRetry: _refresh, error: snapshot.error);
-          }
-          return _QrBody(pairing: snapshot.requireData, remaining: _remaining);
-        },
-      ),
+        ),
+        FutureBuilder<_Pairing>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return _QrError(onRetry: _refresh, error: snapshot.error);
+            }
+            return _QrBody(
+              pairing: snapshot.requireData,
+              remaining: _remaining,
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -141,47 +150,45 @@ class _QrBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: QrImageView(
-                data: pairing.url,
-                size: _kQrSize,
-                backgroundColor: Colors.white,
-              ),
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 24),
-            SelectableText(
-              pairing.url,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium,
+            child: QrImageView(
+              data: pairing.url,
+              size: _kQrSize,
+              backgroundColor: Colors.white,
             ),
-            if (pairing.fingerprint != null) ...[
-              const SizedBox(height: 12),
-              SelectableText(
-                pairing.fingerprint!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ],
+          ),
+          const SizedBox(height: 24),
+          SelectableText(
+            pairing.url,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium,
+          ),
+          if (pairing.fingerprint != null) ...[
             const SizedBox(height: 12),
-            Text(
-              'Expires in ${formatCountdown(remaining)}',
-              style: theme.textTheme.labelLarge,
+            SelectableText(
+              pairing.fingerprint!,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+              ),
             ),
           ],
-        ),
+          const SizedBox(height: 12),
+          Text(
+            'Expires in ${formatCountdown(remaining)}',
+            style: theme.textTheme.labelLarge,
+          ),
+        ],
       ),
     );
   }

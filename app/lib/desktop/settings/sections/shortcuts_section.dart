@@ -1,48 +1,75 @@
+/// Shortcuts section body (SPEC-13 migration map).
+///
+/// Migrates the keyboard-shortcuts UI out of the retired `KeymapSettingsScreen`
+/// into the two-pane Settings surface. Lists every [ShortcutAction] grouped by
+/// scope (Chat = composer, Window = global) with its current [KeyChord] chip,
+/// tap-to-rebind, per-row reset, and a "Reset all" affordance — all backed by
+/// [keymapProvider]. The row/dialog logic mirrors the old screen; only the
+/// scope headers adopt the [SettingsSectionHeader] idiom.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
-import '../../shortcuts/key_chord.dart';
-import '../../shortcuts/keymap.dart';
-import '../../shortcuts/keymap_controller.dart';
-import '../../shortcuts/shortcut_action.dart';
+import '../../../shortcuts/key_chord.dart';
+import '../../../shortcuts/keymap.dart';
+import '../../../shortcuts/keymap_controller.dart';
+import '../../../shortcuts/shortcut_action.dart';
+import 'section_header.dart';
+import 'settings_group.dart';
 
-/// Settings page listing every [ShortcutAction] and its current [KeyChord],
-/// with tap-to-rebind and per-row / global reset. Backed by [keymapProvider].
-class KeymapSettingsScreen extends ConsumerWidget {
-  /// Creates the keyboard-shortcuts settings page.
-  const KeymapSettingsScreen({super.key});
+/// Shortcuts section body: every [ShortcutAction] grouped by scope, rebindable
+/// and resettable, backed by [keymapProvider].
+class ShortcutsSection extends ConsumerWidget {
+  /// Creates the Shortcuts section body.
+  const ShortcutsSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final keymap = ref.watch(keymapProvider);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Keyboard shortcuts'),
-        actions: [
-          TextButton(
-            onPressed: () => ref.read(keymapProvider.notifier).resetAll(),
-            child: const Text('Reset all'),
-          ),
-        ],
-      ),
-      body: ListView(
-        children: [
-          const _ScopeHeader(
-            label: 'Chat',
-            hint: 'Active while the message field is focused',
-          ),
-          for (final action in _actionsInScope(ShortcutScope.composer))
-            _ShortcutRow(action: action, keymap: keymap),
-          const Divider(),
-          const _ScopeHeader(
-            label: 'Window',
-            hint: 'Active anywhere in the window',
-          ),
-          for (final action in _actionsInScope(ShortcutScope.global))
-            _ShortcutRow(action: action, keymap: keymap),
-        ],
-      ),
+    final defaults = Keymap.defaults(cmdIsPrimary: cmdIsPrimaryModifier);
+    final anyModified = ShortcutAction.values.any(
+      (a) => keymap.chordFor(a) != defaults.chordFor(a),
+    );
+
+    return ListView(
+      children: [
+        Row(
+          children: [
+            const Expanded(child: SettingsSectionHeader(title: 'Shortcuts')),
+            if (anyModified)
+              Padding(
+                padding: const EdgeInsets.only(right: 16, top: 16),
+                child: TextButton(
+                  onPressed: () => ref.read(keymapProvider.notifier).resetAll(),
+                  child: const Text('Reset all'),
+                ),
+              ),
+          ],
+        ),
+        const SettingsSectionHeader(
+          title: 'Chat',
+          hint: 'Active while the message field is focused',
+        ),
+        SettingsGroup(
+          children: [
+            for (final action in _actionsInScope(ShortcutScope.composer))
+              _ShortcutRow(action: action, keymap: keymap, defaults: defaults),
+          ],
+        ),
+        const SettingsSectionHeader(
+          title: 'Window',
+          hint: 'Active anywhere in the window',
+        ),
+        SettingsGroup(
+          children: [
+            for (final action in _actionsInScope(ShortcutScope.global))
+              _ShortcutRow(action: action, keymap: keymap, defaults: defaults),
+          ],
+        ),
+      ],
     );
   }
 
@@ -50,55 +77,54 @@ class KeymapSettingsScreen extends ConsumerWidget {
       ShortcutAction.values.where((a) => a.scope == scope).toList();
 }
 
-class _ScopeHeader extends StatelessWidget {
-  const _ScopeHeader({required this.label, required this.hint});
-  final String label;
-  final String hint;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              color: cs.primary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-          Text(hint, style: TextStyle(color: cs.outline, fontSize: 12)),
-        ],
-      ),
-    );
-  }
-}
-
+/// A single shortcut row: label + description, the current chord chip, a
+/// per-row reset (↺, shown only when the chord differs from its default —
+/// SPEC-13 #9), and tap-to-rebind.
 class _ShortcutRow extends ConsumerWidget {
-  const _ShortcutRow({required this.action, required this.keymap});
+  const _ShortcutRow({
+    required this.action,
+    required this.keymap,
+    required this.defaults,
+  });
+
   final ShortcutAction action;
   final Keymap keymap;
+  final Keymap defaults;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     final chord = keymap.chordFor(action);
+    final modified = chord != defaults.chordFor(action);
+
     return ListTile(
       title: Text(action.label),
       subtitle: Text(action.description),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (modified)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Text(
+                'Modified',
+                style: TextStyle(color: cs.primary, fontSize: 12),
+              ),
+            ),
           _ChordChip(label: chord.label),
-          IconButton(
-            tooltip: 'Reset to default',
-            icon: const Icon(Icons.settings_backup_restore, size: 18),
-            onPressed: () => ref.read(keymapProvider.notifier).reset(action),
-          ),
+          const SizedBox(width: 8),
+          if (modified)
+            IconButton(
+              tooltip: 'Reset to default',
+              icon: const Icon(
+                Symbols.settings_backup_restore,
+                weight: 200,
+                size: 18,
+              ),
+              onPressed: () => ref.read(keymapProvider.notifier).reset(action),
+            )
+          else
+            const SizedBox(width: 40),
         ],
       ),
       onTap: () => _rebind(context, ref),
@@ -112,8 +138,8 @@ class _ShortcutRow extends ConsumerWidget {
       builder: (_) => _RecordChordDialog(action: action),
     );
     if (chord == null) return;
-    // The dialog is async; bail if the settings screen was disposed meanwhile
-    // so we don't touch a stale messenger/ref.
+    // The dialog is async; bail if the section was disposed meanwhile so we
+    // don't touch a stale messenger/ref.
     if (!context.mounted) return;
 
     // Global shortcuts must carry a non-shift modifier or they would swallow
@@ -129,8 +155,7 @@ class _ShortcutRow extends ConsumerWidget {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            '${chord.label} is already used by '
-            '"${conflict.label}".',
+            '${chord.label} is already used by "${conflict.label}".',
           ),
         ),
       );
@@ -140,6 +165,7 @@ class _ShortcutRow extends ConsumerWidget {
   }
 }
 
+/// A monospace chip rendering a chord's [label] (e.g. `⌘,`).
 class _ChordChip extends StatelessWidget {
   const _ChordChip({required this.label});
   final String label;

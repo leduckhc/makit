@@ -64,7 +64,9 @@ List<ControlSession> _sessions() => [
 
 Widget _host(ControlClient client, Widget child) => ProviderScope(
   overrides: [controlClientProvider.overrideWithValue(client)],
-  child: MaterialApp(home: child),
+  // The list/pairing views now render without a Scaffold of their own (they
+  // embed inline in the settings section), so provide a Material ancestor here.
+  child: MaterialApp(home: Scaffold(body: child)),
 );
 
 void main() {
@@ -263,6 +265,37 @@ void main() {
       await tester.pumpWidget(_host(client, const SessionsScreen()));
       await tester.pumpAndSettle();
       expect(find.text('No running sessions'), findsOneWidget);
+    });
+
+    testWidgets('hides idle and exited sessions, keeps active ones', (
+      tester,
+    ) async {
+      ControlSession session(String title, SessionStatus status) =>
+          ControlSession(
+            id: title,
+            projectId: 'p1',
+            agent: 'codex',
+            title: title,
+            status: status,
+            policy: ApprovalPolicy.askOnRisky,
+            lastActivityAt: DateTime.now().millisecondsSinceEpoch,
+            lastPreview: '',
+          );
+      final client = FakeControlClient(
+        sessions: [
+          session('active one', SessionStatus.running),
+          session('needs input', SessionStatus.awaitingInput),
+          session('idle one', SessionStatus.idle),
+          session('exited one', SessionStatus.exited),
+        ],
+      );
+      await tester.pumpWidget(_host(client, const SessionsScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('active one'), findsOneWidget);
+      expect(find.text('needs input'), findsOneWidget);
+      expect(find.text('idle one'), findsNothing);
+      expect(find.text('exited one'), findsNothing);
     });
 
     testWidgets('renders an error state', (tester) async {

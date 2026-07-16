@@ -8,6 +8,19 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
+/// Flutter's `'monospace'` logical family only resolves on Android; on Apple
+/// platforms it silently falls back to the default proportional font. Provide
+/// real monospace faces so code renders monospaced everywhere.
+const String _kMonoFont = 'monospace';
+const List<String> _kMonoFallback = [
+  'SF Mono',
+  'Menlo',
+  'Consolas',
+  'Roboto Mono',
+  'Courier New',
+  'monospace',
+];
+
 String _hhmm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
   return '${d.hour.toString().padLeft(2, '0')}:'
@@ -225,7 +238,8 @@ class _CodeBlockBuilder extends MarkdownElementBuilder {
       child: Text(
         code,
         style: preferredStyle?.copyWith(
-          fontFamily: 'monospace',
+          fontFamily: _kMonoFont,
+          fontFamilyFallback: _kMonoFallback,
           fontSize: 13,
           backgroundColor: Colors.transparent,
         ),
@@ -260,7 +274,11 @@ class _CodeBlock extends StatelessWidget {
               language: language.isEmpty ? 'plaintext' : language,
               theme: dark ? atomOneDarkTheme : githubTheme,
               padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
-              textStyle: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              textStyle: const TextStyle(
+                fontFamily: _kMonoFont,
+                fontFamilyFallback: _kMonoFallback,
+                fontSize: 13,
+              ),
             ),
           ),
           Positioned(top: 2, right: 2, child: _CopyButton(code: code)),
@@ -313,7 +331,8 @@ MarkdownStyleSheet _styleSheet(BuildContext context) {
   // Inline `code`: mono font. Background is applied by _CodeBlockBuilder
   // to allow text selection to render on top.
   final mono = theme.textTheme.bodyMedium?.copyWith(
-    fontFamily: 'monospace',
+    fontFamily: _kMonoFont,
+    fontFamilyFallback: _kMonoFallback,
     fontSize: 13,
   );
   // LLMs love emitting h1/h2/h3 headers; render them all as plain bold text at
