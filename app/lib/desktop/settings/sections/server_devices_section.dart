@@ -13,7 +13,8 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import '../../../store/connection.dart' show connectionProvider;
+import '../../../store/connection.dart'
+    show connectionControllerProvider, connectionProvider;
 import '../../desktop_app.dart'
     show desktopControllerProvider, makitInstallCommand;
 import '../../screens/devices_screen.dart';
@@ -23,6 +24,7 @@ import '../../tray/tray_controller.dart' show DaemonState;
 import '../server_config.dart';
 import '../settings_item_anchor.dart';
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// Lowest valid TCP port (inclusive).
 const int _kMinPort = 1;
@@ -42,18 +44,25 @@ class ServerDevicesSection extends StatelessWidget {
       children: const [
         SettingsSectionHeader(title: 'Server & Devices'),
         SettingsSectionHeader(title: 'Server'),
-        SettingsItemAnchor(
-          itemId: 'server_devices.endpoint',
-          child: _EndpointRow(),
+        SettingsGroup(
+          children: [
+            SettingsItemAnchor(
+              itemId: 'server_devices.endpoint',
+              child: _EndpointRow(),
+            ),
+            _LifecycleRow(),
+            _CliRow(),
+            _FingerprintRow(),
+          ],
         ),
-        _LifecycleRow(),
-        _CliRow(),
-        _FingerprintRow(),
         SettingsSectionHeader(title: 'Devices'),
-        _PairedDevicesRow(),
-        _PairNewDeviceRow(),
+        SettingsGroup(
+          children: [_PairedDevicesRow(), _PairNewDeviceRow()],
+        ),
         SettingsSectionHeader(title: 'Sessions'),
-        _RunningSessionsRow(),
+        SettingsGroup(children: [_RunningSessionsRow()]),
+        SettingsSectionHeader(title: 'Danger zone'),
+        SettingsGroup(children: [_UnpairRow()]),
       ],
     );
   }
@@ -369,6 +378,12 @@ class _FingerprintRow extends ConsumerWidget {
 
 /// A row that opens an embedded control screen as a sub-page (SPEC-13 keeps
 /// this simple: a [ListTile] that pushes the reused widget).
+///
+/// Uses an anonymous [MaterialPageRoute] rather than a named route on purpose:
+/// these sub-pages are local to the in-window Settings overlay and are never
+/// deep-linked or restored from a URL, so a route table would add ceremony for
+/// no benefit. Back-navigation (including `WidgetTester.pageBack`) works via
+/// the ambient [Navigator].
 class _NavRow extends StatelessWidget {
   const _NavRow({
     required this.icon,
@@ -431,4 +446,57 @@ class _RunningSessionsRow extends StatelessWidget {
     help: 'Live agent sessions known to the daemon.',
     destination: SessionsScreen(),
   );
+}
+
+/// Unpair this device (danger): clears this app's stored server pairing via the
+/// existing [connectionControllerProvider] flow, behind a confirm dialog. On
+/// desktop the app re-pairs over loopback on the next launch; this still
+/// clears the current pairing and disconnects, so it is a real action.
+class _UnpairRow extends ConsumerWidget {
+  const _UnpairRow();
+
+  Future<void> _confirmAndUnpair(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unpair this device?'),
+        content: const Text(
+          'This clears the stored pairing and disconnects from the server.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Unpair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed ?? false) {
+      await ref.read(connectionControllerProvider.notifier).unpair();
+      messenger.showSnackBar(const SnackBar(content: Text('Device unpaired')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(Symbols.link_off, weight: 200, color: cs.error),
+      title: Text('Unpair this device', style: TextStyle(color: cs.error)),
+      subtitle: const Text('Remove this device\'s pairing and disconnect.'),
+      trailing: OutlinedButton(
+        style: OutlinedButton.styleFrom(foregroundColor: cs.error),
+        onPressed: () => unawaited(_confirmAndUnpair(context, ref)),
+        child: const Text('Unpair'),
+      ),
+    );
+  }
 }

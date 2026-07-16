@@ -18,6 +18,7 @@ import '../../../shortcuts/keymap.dart';
 import '../../../shortcuts/keymap_controller.dart';
 import '../../../shortcuts/shortcut_action.dart';
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// Shortcuts section body: every [ShortcutAction] grouped by scope, rebindable
 /// and resettable, backed by [keymapProvider].
@@ -52,14 +53,22 @@ class ShortcutsSection extends ConsumerWidget {
           title: 'Chat',
           hint: 'Active while the message field is focused',
         ),
-        for (final action in _actionsInScope(ShortcutScope.composer))
-          _ShortcutRow(action: action, keymap: keymap, defaults: defaults),
+        SettingsGroup(
+          children: [
+            for (final action in _actionsInScope(ShortcutScope.composer))
+              _ShortcutRow(action: action, keymap: keymap, defaults: defaults),
+          ],
+        ),
         const SettingsSectionHeader(
           title: 'Window',
           hint: 'Active anywhere in the window',
         ),
-        for (final action in _actionsInScope(ShortcutScope.global))
-          _ShortcutRow(action: action, keymap: keymap, defaults: defaults),
+        SettingsGroup(
+          children: [
+            for (final action in _actionsInScope(ShortcutScope.global))
+              _ShortcutRow(action: action, keymap: keymap, defaults: defaults),
+          ],
+        ),
       ],
     );
   }

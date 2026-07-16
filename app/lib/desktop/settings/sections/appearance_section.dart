@@ -6,6 +6,7 @@ import '../../chat/sidebar_layout.dart';
 import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// Lowest UI text scale offered by the slider.
 const double _kMinTextScale = 0.9;
@@ -28,15 +29,13 @@ class AppearanceSection extends StatelessWidget {
     return ListView(
       children: const [
         SettingsSectionHeader(title: 'Appearance'),
-        _ThemeRow(),
-        _AccentColorRow(),
+        SettingsGroup(children: [_ThemeRow(), _AccentColorRow()]),
         SettingsSectionHeader(title: 'Layout'),
-        _SidebarWidthRow(),
-        _StartCollapsedRow(),
+        SettingsGroup(children: [_SidebarWidthRow(), _StartCollapsedRow()]),
         SettingsSectionHeader(title: 'Text'),
-        _TextScaleRow(),
-        _MonospaceFontRow(),
-        _ChatRenderingRow(),
+        SettingsGroup(
+          children: [_TextScaleRow(), _MonospaceFontRow(), _ChatRenderingRow()],
+        ),
       ],
     );
   }

@@ -26,6 +26,12 @@ Future<void> _pump(
   WidgetTester tester,
   PreferencesController controller,
 ) async {
+  // Tall viewport so the whole (scrollable) section — including the Reset-all
+  // button below the grouped cards — is laid out on-screen and hit-testable.
+  tester.view.physicalSize = const Size(1200, 2400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -79,8 +85,7 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, 'Reset all'));
     await tester.pumpAndSettle();
     // Confirm in the dialog (FilledButton labelled 'Reset all').
-    await tester.tap(find.widgetWithText(FilledButton, 'Reset all'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset all'));    await tester.pumpAndSettle();
 
     expect(controller.isModified(themeModePreference), isFalse);
     expect(find.text('All settings are at their defaults.'), findsOneWidget);
@@ -116,6 +121,12 @@ void main() {
     // Move the live sidebar state away from its defaults.
     container.read(sidebarWidthProvider.notifier).state = 400;
     container.read(sidebarCollapsedProvider.notifier).state = true;
+
+    // Tall viewport so the Reset-all button is on-screen (see _pump).
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(

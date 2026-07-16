@@ -135,4 +135,26 @@ void main() {
 
     expect(find.byTooltip('Copy fingerprint'), findsOneWidget);
   });
+
+  testWidgets('unpair shows a confirm dialog that can be cancelled', (
+    tester,
+  ) async {
+    await _pump(tester, config: await makeConfig());
+
+    await tester.dragUntilVisible(
+      find.widgetWithText(OutlinedButton, 'Unpair'),
+      find.byType(ListView),
+      const Offset(0, -100),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('DANGER ZONE'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Unpair'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unpair this device?'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unpair this device?'), findsNothing);
+  });
 }

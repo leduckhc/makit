@@ -48,6 +48,23 @@ final sidebarWidthProvider = StateProvider<double>(
       .get(sidebarWidthPreference),
 );
 
+/// Re-seeds the live sidebar layout providers to their code-defined defaults.
+///
+/// [sidebarWidthProvider] and [sidebarCollapsedProvider] read their initial
+/// value from the preferences store only once (on first read), so clearing the
+/// stored overrides — e.g. via `PreferencesController.resetAll` — does NOT push
+/// new values into them; the live sidebar would keep its old size/fold until
+/// the next launch. Call this right after such a reset so the change is visible
+/// immediately. (Theme and text scale need no equivalent because their UI
+/// watches the store reactively.)
+///
+/// Any future read-once sidebar-layout provider must be re-seeded here too, so
+/// this stays the single place that knows the reset invariant.
+void resetSidebarLayoutToDefaults(WidgetRef ref) {
+  ref.read(sidebarWidthProvider.notifier).state = kSidebarDefaultWidth;
+  ref.read(sidebarCollapsedProvider.notifier).state = false;
+}
+
 /// Persists sidebar layout state to the preferences store on change.
 ///
 /// The sidebar providers are legacy [StateProvider]s mutated directly by many

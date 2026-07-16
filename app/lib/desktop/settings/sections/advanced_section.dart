@@ -13,12 +13,12 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../../../control/control_types.dart' show StatusData;
 import '../../../store/connection.dart' show connectionProvider;
 import '../../../transport/protocol.dart' show protocolVersion;
-import '../../chat/sidebar_layout.dart'
-    show kSidebarDefaultWidth, sidebarCollapsedProvider, sidebarWidthProvider;
+import '../../chat/sidebar_layout.dart' show resetSidebarLayoutToDefaults;
 import '../../screens/providers.dart' show controlClientProvider;
 import '../../screens/time_format.dart' show formatUptime;
 import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// Advanced section body.
 class AdvancedSection extends StatelessWidget {
@@ -31,12 +31,11 @@ class AdvancedSection extends StatelessWidget {
       children: const [
         SettingsSectionHeader(title: 'Advanced'),
         SettingsSectionHeader(title: 'Developer'),
-        _FakeServerRow(),
+        SettingsGroup(children: [_FakeServerRow()]),
         SettingsSectionHeader(title: 'Status'),
-        _StatusRows(),
-        _TelemetryRow(),
+        SettingsGroup(children: [_StatusRows(), _TelemetryRow()]),
         SettingsSectionHeader(title: 'Reset'),
-        _ResetAllRow(),
+        SettingsGroup(children: [_ResetAllRow()]),
       ],
     );
   }
@@ -198,9 +197,9 @@ class _ResetAllRow extends ConsumerWidget {
       // The sidebar providers seed from prefs only at startup, so clearing the
       // stored overrides isn't enough — re-seed the live values to their
       // defaults so the reset is visible immediately (theme / text scale react
-      // via their own providers).
-      ref.read(sidebarWidthProvider.notifier).state = kSidebarDefaultWidth;
-      ref.read(sidebarCollapsedProvider.notifier).state = false;
+      // via their own providers). Kept next to the provider definitions so the
+      // reset invariant lives in one place.
+      resetSidebarLayoutToDefaults(ref);
     }
   }
 

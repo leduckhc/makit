@@ -14,6 +14,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// The reminder-delay choices offered in the dropdown, in whole minutes.
 const List<int> kReminderDelayChoicesMinutes = [1, 2, 5, 10];
@@ -29,8 +30,7 @@ class NotificationsSection extends StatelessWidget {
     return ListView(
       children: const [
         SettingsSectionHeader(title: 'Notifications'),
-        _ReminderDelayRow(),
-        _PerTypeMuteRow(),
+        SettingsGroup(children: [_ReminderDelayRow(), _PerTypeMuteRow()]),
       ],
     );
   }

@@ -23,19 +23,4 @@ void main() {
     expect(find.text('v1'), findsOneWidget); // protocolVersion == 1
     expect(find.text('Documentation & source'), findsOneWidget);
   });
-
-  testWidgets('unpair shows a confirm dialog that can be cancelled', (
-    tester,
-  ) async {
-    await _pump(tester);
-
-    expect(find.text('DANGER ZONE'), findsOneWidget);
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Unpair'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Unpair this device?'), findsOneWidget);
-    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.text('Unpair this device?'), findsNothing);
-  });
 }

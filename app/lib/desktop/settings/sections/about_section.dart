@@ -1,20 +1,17 @@
 /// About section body (SPEC-13 migration map).
 ///
-/// App identity (name, protocol version), a docs link, and the destructive
-/// **Unpair this device** action — mirroring the mobile About idiom
-/// (`app/lib/ui/settings/settings_screen.dart`).
+/// App identity (name, protocol version) and a docs link — mirroring the mobile
+/// About idiom (`app/lib/ui/settings/settings_screen.dart`). The destructive
+/// **Unpair this device** action lives in the Server & Devices section.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../store/connection.dart' show connectionControllerProvider;
 import '../../../transport/protocol.dart' show protocolVersion;
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// The project docs / source link surfaced in About.
 final Uri _kDocsUri = Uri.parse('https://github.com/leduckhc/makit');
@@ -29,11 +26,9 @@ class AboutSection extends StatelessWidget {
     return ListView(
       children: const [
         SettingsSectionHeader(title: 'About'),
-        _AppInfoRow(),
-        _ProtocolRow(),
-        _DocsRow(),
-        SettingsSectionHeader(title: 'Danger zone'),
-        _UnpairRow(),
+        SettingsGroup(
+          children: [_AppInfoRow(), _ProtocolRow(), _DocsRow()],
+        ),
       ],
     );
   }
@@ -96,55 +91,3 @@ class _DocsRow extends StatelessWidget {
   }
 }
 
-/// Unpair this device (danger): clears this app's stored server pairing via the
-/// existing [connectionControllerProvider] flow, behind a confirm dialog. On
-/// desktop the app re-pairs over loopback on the next launch; this still
-/// clears the current pairing and disconnects, so it is a real action.
-class _UnpairRow extends ConsumerWidget {
-  const _UnpairRow();
-
-  Future<void> _confirmAndUnpair(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Unpair this device?'),
-        content: const Text(
-          'This clears the stored pairing and disconnects from the server.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Unpair'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed ?? false) {
-      await ref.read(connectionControllerProvider.notifier).unpair();
-      messenger.showSnackBar(const SnackBar(content: Text('Device unpaired')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(Symbols.link_off, weight: 200, color: cs.error),
-      title: Text('Unpair this device', style: TextStyle(color: cs.error)),
-      subtitle: const Text('Remove this device\'s pairing and disconnect.'),
-      trailing: OutlinedButton(
-        style: OutlinedButton.styleFrom(foregroundColor: cs.error),
-        onPressed: () => unawaited(_confirmAndUnpair(context, ref)),
-        child: const Text('Unpair'),
-      ),
-    );
-  }
-}

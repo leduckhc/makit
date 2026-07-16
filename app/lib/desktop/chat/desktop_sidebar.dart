@@ -342,7 +342,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                 // PR number label (when present) followed by the low-emphasis
                 // branch age. Fixed height so the row always reserves its place.
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(38, 0, 16, 4),
+                  padding: const EdgeInsets.fromLTRB(52, 0, 16, 4),
                   child: SizedBox(
                     height: 16,
                     child: Align(
@@ -354,13 +354,19 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                             Text(
                               'PR #${worktree.pr!.number}',
                               style: theme.textTheme.labelSmall?.copyWith(
-                                color: worktree.pr!.isDraft
-                                    ? theme.colorScheme.outline
-                                    : kRepoAccent,
-                                fontWeight: FontWeight.w500,
+                                color: theme.colorScheme.outline,
+                                fontWeight: FontWeight.w300,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 4),
+                            Text(
+                              '•',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.outline,
+                                fontWeight: FontWeight.w300,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
                           ],
                           Text(
                             _branchAgeLabel(worktree.committedAt),

@@ -176,6 +176,12 @@ final List<SettingsSection> kSettingsSections = [
         help: 'Certificate fingerprint and TLS trust.',
         keywords: ['tls', 'certificate', 'fingerprint', 'trust'],
       ),
+      SettingsItem(
+        id: 'server_devices.unpair',
+        title: 'Unpair this device',
+        help: 'Remove this device\'s pairing (danger).',
+        keywords: ['unpair', 'remove', 'danger'],
+      ),
     ],
   ),
   SettingsSection(
@@ -263,12 +269,6 @@ final List<SettingsSection> kSettingsSections = [
         title: 'Version & links',
         help: 'App version, protocol version, and links.',
         keywords: ['version', 'protocol', 'links', 'about'],
-      ),
-      SettingsItem(
-        id: 'about.unpair',
-        title: 'Unpair this device',
-        help: 'Remove this device\'s pairing (danger).',
-        keywords: ['unpair', 'remove', 'danger'],
       ),
     ],
   ),

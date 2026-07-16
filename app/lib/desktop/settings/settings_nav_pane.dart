@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import '../chat/sidebar_layout.dart' show kTitleBarStripHeight;
 import 'registry/settings_item.dart';
 import 'registry/settings_registry.dart';
 import 'registry/settings_section.dart';
@@ -48,6 +49,10 @@ class SettingsNavPane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Clear the macOS traffic-light buttons that overlay the top-left
+        // corner (the OS titlebar is hidden), so the close button / title
+        // don't collide with them.
+        const SizedBox(height: kTitleBarStripHeight),
         _Header(onClose: onClose),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),

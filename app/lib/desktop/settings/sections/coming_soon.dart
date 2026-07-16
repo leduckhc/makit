@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'section_header.dart';
+import 'settings_group.dart';
 
 /// Placeholder body for an unimplemented section (and for `[future]` leaves).
 ///
@@ -22,21 +23,24 @@ class ComingSoon extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SettingsSectionHeader(title: title),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-          child: Row(
-            children: [
-              Icon(Symbols.schedule, weight: 200, size: 18, color: cs.outline),
-              const SizedBox(width: 8),
-              Text(
+        SettingsGroup(
+          children: [
+            ListTile(
+              leading: Icon(
+                Symbols.schedule,
+                weight: 200,
+                size: 18,
+                color: cs.outline,
+              ),
+              title: Text(
                 detail ?? 'Coming soon',
                 style: TextStyle(color: cs.outline),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
