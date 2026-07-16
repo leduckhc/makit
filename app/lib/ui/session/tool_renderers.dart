@@ -10,9 +10,10 @@
 /// style as the output. Tool views use a monospace font since they mostly show
 /// arguments, CLI output and file contents.
 ///
-/// To add support for a new tool, write a [ToolRenderer] subclass and
-/// register it in [toolRenderers]. The card view is shown inline in the chat
-/// transcript; tapping it opens [detail] full-screen.
+/// The chat transcript renders the collapsed card itself (see `ToolCallCard`),
+/// reading only [ToolRenderer.icon] and [toolDisplayName]. Tapping a card opens
+/// [ToolRenderer.detail] full-screen. To add support for a new tool, write a
+/// [ToolRenderer] subclass and register it in [toolRenderers].
 library;
 
 import 'dart:convert';
@@ -42,96 +43,12 @@ abstract class ToolRenderer {
   /// Defaults to the (lowercase) tool [name] — e.g. `read`, `bash`.
   String get displayName => name;
 
-  /// One-line description for the card subtitle.
-  String? subtitle(ToolCallItem item) => null;
-
   /// Material icon shown on the card.
   IconData get icon => Icons.terminal;
-
-  /// Whether this renderer should display approve/deny / input controls
-  /// inline (otherwise the user just taps through to [detail]).
-  bool get inlineInteractive => false;
-
-  /// Inline card. Default: generic title + subtitle. Override for richer
-  /// inline UIs (e.g. AskUserQuestion options).
-  Widget card(BuildContext context, ToolCallItem item, VoidCallback onTap) {
-    return _DefaultCard(renderer: this, item: item, onTap: onTap);
-  }
 
   /// Full-screen detail view. Default: readable args + result text.
   Widget detail(BuildContext context, ToolCallItem item) {
     return genericToolDetail(context, item);
-  }
-}
-
-class _DefaultCard extends StatelessWidget {
-  const _DefaultCard({
-    required this.renderer,
-    required this.item,
-    required this.onTap,
-  });
-  final ToolRenderer renderer;
-  final ToolCallItem item;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final sub = renderer.subtitle(item);
-    return Material(
-      color: cs.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              Icon(renderer.icon, size: 18, color: cs.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      renderer.displayName,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontFamilyFallback: kMonoFallback,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (sub != null && sub.isNotEmpty)
-                      Text(
-                        sub,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          fontFamilyFallback: kMonoFallback,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (!item.ended)
-                const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else if (item.exitCode != null && item.exitCode != 0)
-                Icon(Icons.error_outline, size: 18, color: cs.error),
-              const Icon(Icons.chevron_right, size: 18),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -140,9 +57,7 @@ class _DefaultCard extends StatelessWidget {
 /// wrapped in the same [ToolDetailScaffold] as every other tool.
 Widget genericToolDetail(BuildContext context, ToolCallItem item) {
   final args = item.args;
-  final text = extractToolResultText(
-    item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? ''),
-  );
+  final text = extractToolResultText(item.resultText);
   final failed = item.ended && (item.exitCode ?? 0) != 0;
   final title = rendererFor(item)?.displayName ?? item.name;
   return ToolDetailScaffold(
@@ -405,8 +320,6 @@ class _ReadRenderer extends ToolRenderer {
   String get name => 'read';
   @override
   IconData get icon => Icons.menu_book_outlined;
-  @override
-  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -443,8 +356,6 @@ class _WriteRenderer extends ToolRenderer {
   String get name => 'write';
   @override
   IconData get icon => Icons.edit_note_outlined;
-  @override
-  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -473,8 +384,6 @@ class _EditRenderer extends ToolRenderer {
   String get name => 'edit';
   @override
   IconData get icon => Icons.difference_outlined;
-  @override
-  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -488,19 +397,11 @@ class _BashRenderer extends ToolRenderer {
   String get name => 'bash';
   @override
   IconData get icon => Icons.terminal;
-  @override
-  String? subtitle(ToolCallItem item) {
-    final cmd = item.args['command']?.toString();
-    if (cmd == null) return null;
-    return cmd.length > 80 ? '${cmd.substring(0, 80)}…' : cmd;
-  }
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
     final command = item.args['command']?.toString() ?? '';
-    final output = extractToolResultText(
-      item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? ''),
-    );
+    final output = extractToolResultText(item.resultText);
     final failed = item.ended && (item.exitCode ?? 0) != 0;
     return ToolDetailScaffold(
       title: displayName,
@@ -528,12 +429,6 @@ class _GrepRenderer extends ToolRenderer {
   String get name => 'grep';
   @override
   IconData get icon => Icons.search;
-  @override
-  String? subtitle(ToolCallItem item) {
-    final p = item.args['pattern']?.toString();
-    final g = item.args['glob']?.toString();
-    return [p, if (g != null) 'glob:$g'].whereType<String>().join(' · ');
-  }
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -575,7 +470,6 @@ const List<ToolRenderer> toolRenderers = [
   _BashRenderer(),
   _GrepRenderer(),
   _AskUserQuestionRenderer('askUserQuestion'),
-  _AskUserQuestionRenderer('AskUserQuestion'),
 ];
 
 /// Pick a renderer for [item] by name (case-insensitive so `Read`/`read` and
@@ -631,9 +525,7 @@ class _EditDiffView extends StatelessWidget {
     ]);
     final lines = computeLineDiff(oldText, newText);
     final hasDiff = oldText.isNotEmpty || newText.isNotEmpty;
-    final output = extractToolResultText(
-      item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? ''),
-    );
+    final output = extractToolResultText(item.resultText);
 
     return ToolDetailScaffold(
       title: 'edit',
@@ -796,16 +688,6 @@ class _AskUserQuestionRenderer extends ToolRenderer {
     final answers = (item.details?['answers'] as List?)?.cast<dynamic>();
     if (answers == null || i >= answers.length) return const [];
     return answers[i].toString().split(' + ').map((s) => s.trim()).toList();
-  }
-
-  @override
-  String? subtitle(ToolCallItem item) {
-    final answers = (item.details?['answers'] as List?)?.cast<dynamic>();
-    if (answers != null && answers.isNotEmpty) {
-      return answers.map((a) => a.toString()).join(' · ');
-    }
-    final qs = _questions(item);
-    return qs.isEmpty ? null : qs.first['question']?.toString();
   }
 
   @override

@@ -43,7 +43,7 @@ void main() {
       expect(items.length, 1);
       final tool = items.single as ToolCallItem;
       expect(tool.name, 'edit');
-      expect(tool.risk, 'risky');
+      expect(tool.risk, ToolRisk.risky);
       expect(tool.deltas.join(), 'aaabbb');
       expect(tool.ended, true);
       expect(tool.exitCode, 0);
@@ -138,6 +138,49 @@ void main() {
       ]);
       expect(items.length, 1);
       expect((items.single as ThinkingItem).text, 'pondering');
+    });
+
+    test('empty-final guard: blank standalone thinking adds nothing', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentThinking, {'text': '   '}),
+      ]);
+      expect(items, isEmpty);
+    });
+
+    test('empty-final thinking still finalizes a streamed card in place', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentThinkingDelta, {'thinkId': 't', 'chunk': 'pon'}),
+        _ev(2, EventKind.agentThinking, {'thinkId': 't', 'text': ''}),
+      ]);
+      expect(items.length, 1);
+      final think = items.single as ThinkingItem;
+      expect(think.text, '');
+      expect(think.streaming, false);
+    });
+
+    test('a tool delta with no preceding start creates no card', () {
+      final items = foldEvents([
+        _ev(1, EventKind.toolCallDelta, {'callId': 'ghost', 'chunk': 'x'}),
+      ]);
+      expect(items, isEmpty);
+    });
+
+    test('tool start defaults missing risk to safe', () {
+      final items = foldEvents([
+        _ev(1, EventKind.toolCallStart, {'callId': 'c', 'name': 'read'}),
+      ]);
+      expect((items.single as ToolCallItem).risk, ToolRisk.safe);
+    });
+
+    test('tool start parses an unknown risk string to safe', () {
+      final items = foldEvents([
+        _ev(1, EventKind.toolCallStart, {
+          'callId': 'c',
+          'name': 'read',
+          'risk': 'nonsense',
+        }),
+      ]);
+      expect((items.single as ToolCallItem).risk, ToolRisk.safe);
     });
 
     test(
