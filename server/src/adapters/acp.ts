@@ -12,15 +12,10 @@
  * ctx.ui.* transport). This path trades some of that for multi-agent reach.
  */
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import { spawn, type ChildProcess } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   ClientSideConnection,
-  ndJsonStream,
   type Agent as AcpAgent,
   type Client as AcpClient,
   type Stream,
@@ -32,8 +27,13 @@ import {
   type CreateElicitationRequest,
   type CreateElicitationResponse,
 } from "@agentclientprotocol/sdk";
-import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import type { AnyMessage } from "@agentclientprotocol/sdk";
+import type { SpawnOpts, UserInput } from "./adapter.js";
+import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
+import { spawnLineProcess } from "./child_transport.js";
+import { mapElicitation, type ElicitationParams } from "./interaction.js";
+import { isRecord } from "./wire.js";
 import type { AskUser } from "../uicall.js";
 import { log } from "../log.js";
 
@@ -62,7 +62,7 @@ export interface AcpAdapterOpts {
   connect?: (cwd: string, env: Record<string, string>) => AcpTransport;
 }
 
-export class AcpAdapter extends EventEmitter implements AgentAdapter {
+export class AcpAdapter extends SubprocessAdapter {
   readonly agent: string;
 
   private readonly spec: AcpSpawnSpec;
@@ -75,12 +75,6 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   private workspaceRoot = "";
   private askUser?: AskUser;
   private mapper: AcpEventMapper;
-
-  /** Number of prompt turns currently in flight (mid-turn sends queue at the agent). */
-  private inflight = 0;
-  /** Number of pending permission approvals (gates awaiting-approval status). */
-  private pendingApprovals = 0;
-  private exited = false;
 
   /**
    * ACP session modes (currentModeId + availableModes), when the agent supports
@@ -138,8 +132,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     // Echo the user message so transcripts are complete (mirrors PiAdapter).
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: { text: input.text } });
 
-    this.inflight += 1;
-    this.emit("status", "running");
+    const turnKey = this.turns.enterTurn();
 
     this.conn
       .prompt({
@@ -149,7 +142,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
       .then((res) => {
         // Turn complete: finalize buffered text/thinking + tool state.
         this.mapper.endTurn();
-        if ((res as any)?.stopReason === "refusal") {
+        if ((res as { stopReason?: string })?.stopReason === "refusal") {
           this.emitEvent({
             ts: Date.now(),
             kind: "session.error",
@@ -166,8 +159,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
         });
       })
       .finally(() => {
-        this.inflight = Math.max(0, this.inflight - 1);
-        if (this.inflight === 0 && !this.exited) this.emit("status", "idle");
+        this.turns.leaveTurn(turnKey);
       });
   }
 
@@ -282,7 +274,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     }
 
     const prompt = describePermission(params.toolCall);
-    this.enterApproval();
+    this.turns.enterApproval("awaiting-approval");
     try {
       const resp = await this.askUser({
         kind: "confirmAction",
@@ -292,32 +284,16 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
         action: prompt.action,
         ...(prompt.preview ? { preview: prompt.preview } : {}),
       });
-      if (resp.kind === "confirmAction" && !(resp as any).cancelled) {
+      if (resp.kind === "confirmAction" && !(resp as { cancelled?: boolean }).cancelled) {
         const pick = resp.approved ? allow : reject;
         if (pick) return { outcome: { outcome: "selected", optionId: pick.optionId } };
       }
     } catch (e) {
       log.warn(`[makit] AcpAdapter permission error: ${(e as Error).message}`);
     } finally {
-      this.leaveApproval();
+      this.turns.leaveApproval();
     }
     return { outcome: { outcome: "cancelled" } };
-  }
-
-  /** Enter the awaiting-approval state (first pending request flips the status). */
-  private enterApproval(): void {
-    this.pendingApprovals += 1;
-    if (this.pendingApprovals === 1) {
-      this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status: "awaiting-approval" } });
-    }
-  }
-
-  /** Leave awaiting-approval; restore running while the turn is still in flight. */
-  private leaveApproval(): void {
-    this.pendingApprovals = Math.max(0, this.pendingApprovals - 1);
-    if (this.pendingApprovals === 0 && !this.exited && this.inflight > 0) {
-      this.emit("status", "running");
-    }
   }
 
   /**
@@ -328,67 +304,19 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
    * Fail-safe declines when no phone is attached.
    */
   private async handleElicitation(params: CreateElicitationRequest): Promise<CreateElicitationResponse> {
-    const p = params as any;
     if (!this.askUser) return { action: "decline" };
-
-    const message = typeof p.message === "string" ? p.message : "The agent needs input.";
-    this.enterApproval();
+    this.turns.enterApproval("awaiting-approval");
     try {
-      if (p.mode === "url") {
-        const resp = await this.askUser({
-          kind: "confirmAction",
-          sessionId: this.makitSessionId,
-          title: "Open link?",
-          message,
-          action: "open-url",
-          ...(typeof p.url === "string" ? { preview: p.url } : {}),
-        });
-        if (resp.kind === "confirmAction" && !(resp as any).cancelled) {
-          return resp.approved ? { action: "accept" } : { action: "decline" };
-        }
-        return { action: "cancel" };
-      }
-
-      // form mode
-      const props = (p.requestedSchema?.properties ?? {}) as Record<string, any>;
-      const names = Object.keys(props);
-      if (names.length !== 1) {
-        // Multi-field (or empty) forms need the full form UI (deferred).
-        log.warn(`[makit] AcpAdapter: declining ${names.length}-field elicitation form (single-field only)`);
-        return { action: "decline" };
-      }
-
-      const name = names[0];
-      const field = props[name] ?? {};
-      const resp = await this.askUser({
-        kind: "input",
-        sessionId: this.makitSessionId,
-        title: message,
-        placeholder: typeof field.description === "string" ? field.description : field.title,
-        prefill: field.default != null ? String(field.default) : undefined,
-        multiline: false,
-      });
-      if (resp.kind === "input" && !resp.cancelled && typeof resp.value === "string") {
-        return { action: "accept", content: { [name]: coerceFieldValue(resp.value, field.type) } };
-      }
-      return { action: "decline" };
+      const result = await mapElicitation(params as ElicitationParams, this.askUser, this.makitSessionId);
+      return result.action === "accept"
+        ? { action: "accept", content: result.content }
+        : { action: result.action };
     } catch (e) {
       log.warn(`[makit] AcpAdapter elicitation error: ${(e as Error).message}`);
       return { action: "cancel" };
     } finally {
-      this.leaveApproval();
+      this.turns.leaveApproval();
     }
-  }
-
-  private handleExit(code: number | null): void {
-    if (this.exited) return;
-    this.exited = true;
-    this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status: "exited" } });
-    this.emit("exit", code);
-  }
-
-  private emitEvent(e: AdapterEvent): void {
-    this.emit("event", e);
   }
 
   private async workspacePath(requestedPath: string, forWrite: boolean): Promise<string> {
@@ -428,106 +356,58 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
 
 export function defaultConnect(spec: AcpSpawnSpec) {
   return (cwd: string, env: Record<string, string>): AcpTransport => {
-    const child: ChildProcess = spawn(spec.command, spec.args ?? [], {
+    const proc = spawnLineProcess({
+      command: spec.command,
+      args: spec.args ?? [],
       cwd,
-      env: { ...process.env, ...env },
-      stdio: ["pipe", "pipe", "pipe"],
+      env,
+      label: `${spec.agent}-acp`,
     });
-
-    child.stderr?.on("data", (chunk: Buffer) => process.stderr.write(`[${spec.agent}-acp] ${chunk}`));
-
-    // A spawn failure (ENOENT/EACCES) or a runtime process fault arrives as an
-    // 'error' event, and writing to a dead agent's stdin surfaces as an async
-    // 'error' (EPIPE). Node re-throws an unlistened 'error' as an uncaught
-    // exception — crashing the whole daemon. Route the process error to the
-    // exit path (settle-once, buffered until onExit registers) and swallow
-    // stdin faults; the exit handler owns the real teardown.
-    let onExitCb: ((code: number | null) => void) | undefined;
-    let settled = false;
-    let bufferedCode: number | null = null;
-    const settle = (code: number | null) => {
-      if (settled) return;
-      settled = true;
-      bufferedCode = code;
-      onExitCb?.(code);
-    };
-    child.on("exit", (code) => settle(code));
-    child.on("error", (e: Error) => {
-      process.stderr.write(`[${spec.agent}-acp] process error: ${e.message}\n`);
-      settle(null);
-    });
-    child.stdin?.on("error", (e: Error) =>
-      process.stderr.write(`[${spec.agent}-acp] stdin error: ${e.message}\n`),
-    );
-
-    const stream = ndJsonStream(nodeWritable(child), nodeReadable(child));
-
     return {
-      stream,
-      onExit: (cb) => {
-        onExitCb = cb;
-        if (settled) cb(bufferedCode); // replay a settle that beat registration
-      },
-      dispose: () => {
-        try {
-          child.kill("SIGTERM");
-        } catch {
-          /* ignore */
-        }
-      },
+      stream: lineTransportToStream(proc),
+      onExit: (cb) => proc.onExit((code) => cb(code)),
+      dispose: () => proc.dispose(),
     };
   };
 }
 
-/** Our outgoing bytes → the agent's stdin. */
-function nodeWritable(child: ChildProcess): WritableStream<Uint8Array> {
-  return new WritableStream<Uint8Array>({
-    write(chunk) {
-      return new Promise<void>((resolve) => {
-        const stdin = child.stdin;
-        if (!stdin || stdin.destroyed || !stdin.writable) return resolve();
+/**
+ * Adapt the shared LF-delimited-JSON line transport to the ACP SDK's
+ * {@link Stream} (a duplex of parsed messages). This is the ACP equivalent of
+ * `ndJsonStream` over a subprocess, but layered on the shared crash-guarded
+ * transport so the spawn/stderr/settle/error-swallow invariant lives in one
+ * place.
+ */
+function lineTransportToStream(proc: {
+  send: (line: string) => void;
+  onLine: (cb: (line: string) => void) => void;
+  onExit: (cb: (code: number | null) => void) => void;
+}): Stream {
+  const readable = new ReadableStream<AnyMessage>({
+    start(controller) {
+      proc.onLine((line) => {
+        if (!line.trim()) return;
         try {
-          stdin.write(chunk, () => resolve());
+          controller.enqueue(JSON.parse(line) as AnyMessage);
         } catch {
-          // Stream torn down between the guard and the write; the stdin 'error'
-          // listener + exit handler own the teardown. Never reject here — a
-          // rejected sink would surface as an unhandled rejection.
-          resolve();
+          /* skip a malformed line rather than tear down the connection */
         }
       });
-    },
-    close() {
-      try {
-        child.stdin?.end();
-      } catch {
-        /* ignore */
-      }
-    },
-  });
-}
-
-/** The agent's stdout → our incoming bytes. */
-function nodeReadable(child: ChildProcess): ReadableStream<Uint8Array> {
-  return new ReadableStream<Uint8Array>({
-    start(controller) {
-      const stdout = child.stdout!;
-      stdout.on("data", (c: Buffer) => controller.enqueue(new Uint8Array(c)));
-      stdout.on("end", () => {
+      proc.onExit(() => {
         try {
           controller.close();
         } catch {
           /* already closed */
         }
       });
-      stdout.on("error", (e) => {
-        try {
-          controller.error(e);
-        } catch {
-          /* ignore */
-        }
-      });
     },
   });
+  const writable = new WritableStream<AnyMessage>({
+    write(msg) {
+      proc.send(JSON.stringify(msg));
+    },
+  });
+  return { readable, writable };
 }
 
 /** ACP `fs/read_text_file` supports optional 1-based line + limit windows. */
@@ -550,7 +430,7 @@ function describePermission(toolCall: RequestPermissionRequest["toolCall"] | und
   action: string;
   preview?: string;
 } {
-  const tc = (toolCall ?? {}) as any;
+  const tc: Record<string, unknown> = isRecord(toolCall) ? toolCall : {};
   const kind: string = typeof tc.kind === "string" ? tc.kind : "tool";
   const title =
     {
@@ -565,34 +445,26 @@ function describePermission(toolCall: RequestPermissionRequest["toolCall"] | und
   return { title, message, action: kind, preview: permissionPreview(tc) };
 }
 
-function permissionPreview(tc: any): string | undefined {
+function permissionPreview(tc: Record<string, unknown>): string | undefined {
   // Prefer an explicit shell command; then a diff path; else compact rawInput.
-  const cmd = tc?.rawInput?.command ?? tc?.rawInput?.cmd;
+  const rawInput = isRecord(tc.rawInput) ? tc.rawInput : undefined;
+  const cmd = rawInput?.command ?? rawInput?.cmd;
   if (typeof cmd === "string" && cmd.trim()) return cmd;
-  if (Array.isArray(tc?.content)) {
-    const diff = tc.content.find((c: any) => c?.type === "diff");
-    if (diff?.path) return `${diff.path}${typeof diff.newText === "string" ? `\n${diff.newText}` : ""}`;
+  if (Array.isArray(tc.content)) {
+    const diff = tc.content.find((c: unknown): c is Record<string, unknown> => isRecord(c) && c.type === "diff");
+    if (diff && typeof diff.path === "string") {
+      return `${diff.path}${typeof diff.newText === "string" ? `\n${diff.newText}` : ""}`;
+    }
   }
-  if (tc?.rawInput && typeof tc.rawInput === "object") {
+  if (rawInput) {
     try {
-      const s = JSON.stringify(tc.rawInput);
+      const s = JSON.stringify(rawInput);
       if (s && s !== "{}") return s.length > 500 ? `${s.slice(0, 497)}…` : s;
     } catch {
       /* ignore */
     }
   }
   return undefined;
-}
-
-// ---------- elicitation helper ---------------------------------------------
-/** Coerce a free-text input value to the elicitation field's declared type. */
-function coerceFieldValue(value: string, type: unknown): string | number | boolean {
-  if (type === "number" || type === "integer") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : value;
-  }
-  if (type === "boolean") return /^(true|yes|1|y)$/i.test(value.trim());
-  return value;
 }
 
 // ---------- production spec helper -----------------------------------------

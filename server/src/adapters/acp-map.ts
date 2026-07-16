@@ -13,6 +13,7 @@
 
 import type { SessionUpdate, ToolKind } from "@agentclientprotocol/sdk";
 import type { AdapterEvent } from "./adapter.js";
+import { summarizeLine } from "./summarize.js";
 import { newId } from "../protocol.js";
 
 export interface AcpMapperHooks {
@@ -162,7 +163,7 @@ export class AcpEventMapper {
     this.emit("tool.call.end", {
       callId: id,
       exitCode,
-      summary: summarize(output),
+      summary: summarizeLine(output),
       output,
     });
     this.toolText.delete(id);
@@ -253,14 +254,4 @@ function riskFromKind(kind: ToolKind | undefined): "safe" | "risky" | "destructi
       // read, search, fetch, think, switch_mode, other, undefined
       return "safe";
   }
-}
-
-function summarize(text: string): string {
-  const firstLine =
-    text
-      .split("\n")
-      .map((l) => l.trim())
-      .find((l) => l.length > 0) ?? "";
-  if (!firstLine) return "ok";
-  return firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : firstLine;
 }
