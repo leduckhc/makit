@@ -22,17 +22,18 @@ class ConnectionChip extends ConsumerWidget {
     final conn = ref.watch(connectionProvider);
     final cs = Theme.of(context).colorScheme;
 
-    // Hide entirely on the happy path so the bar stays clean.
-    if (conn.wsState == WsState.connected && conn.lastError == null) {
-      return const SizedBox.shrink();
-    }
+    // Fake/demo mode is always shown so the bar signals seeded data.
     if (conn.useFake) {
       return _chip(
         context,
         color: cs.tertiary,
         icon: Icons.science_outlined,
-        label: 'Fake',
+        label: 'Demo',
       );
+    }
+    // Hide entirely on the happy path so the bar stays clean.
+    if (conn.wsState == WsState.connected && conn.lastError == null) {
+      return const SizedBox.shrink();
     }
 
     switch (conn.wsState) {

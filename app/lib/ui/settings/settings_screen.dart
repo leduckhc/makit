@@ -125,11 +125,17 @@ class SettingsScreen extends ConsumerWidget {
 
           const Divider(),
           ListTile(
-            leading: _leadingIcon(Icons.logout, color: Colors.red),
-            title: const Text(
-              'Unpair this device',
-              style: TextStyle(color: Colors.red),
+            leading: _leadingIcon(
+              conn.useFake ? Icons.close : Icons.logout,
+              color: Colors.red,
             ),
+            title: Text(
+              conn.useFake ? 'Exit demo' : 'Unpair this device',
+              style: const TextStyle(color: Colors.red),
+            ),
+            subtitle: conn.useFake
+                ? const Text('Leave fake data and return to pairing')
+                : null,
             onTap: () async {
               await ref.read(connectionControllerProvider.notifier).unpair();
               if (context.mounted) context.go('/pair');

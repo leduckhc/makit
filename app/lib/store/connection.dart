@@ -503,9 +503,12 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   Future<void> unpair() async {
     await _storage.delete(key: _kPairedServerKey);
     await _ws?.close();
+    _ws = null;
     _fake?.stop();
+    _fake = null;
+    // Leave unpaired. Fake data is opt-in from the pairing screen — do not
+    // re-attach it here or "Exit demo" / Unpair can never leave fake mode.
     state = MakitConnState();
-    _attachFake();
   }
 
   @override

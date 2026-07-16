@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../store/connection.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../app/theme.dart' show kMakitAccent;
@@ -24,6 +25,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
+    final useFake = ref.watch(connectionProvider).useFake;
     final cs = Theme.of(context).colorScheme;
     final topInset = MediaQuery.of(context).padding.top;
 
@@ -96,6 +98,19 @@ class HomeScreen extends ConsumerWidget {
                             ),
                       ),
                     ),
+                    if (useFake) ...[
+                      GlassCircleButton(
+                        icon: Icons.close,
+                        tooltip: 'Exit demo',
+                        onTap: () async {
+                          await ref
+                              .read(connectionControllerProvider.notifier)
+                              .unpair();
+                          if (context.mounted) context.go('/pair');
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                    ],
                     GlassCircleButton(
                       icon: Icons.create_new_folder_outlined,
                       tooltip: 'Add repo',
