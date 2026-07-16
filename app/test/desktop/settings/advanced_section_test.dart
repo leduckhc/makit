@@ -85,7 +85,8 @@ void main() {
     await tester.tap(find.widgetWithText(OutlinedButton, 'Reset all'));
     await tester.pumpAndSettle();
     // Confirm in the dialog (FilledButton labelled 'Reset all').
-    await tester.tap(find.widgetWithText(FilledButton, 'Reset all'));    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Reset all'));
+    await tester.pumpAndSettle();
 
     expect(controller.isModified(themeModePreference), isFalse);
     expect(find.text('All settings are at their defaults.'), findsOneWidget);

@@ -56,9 +56,7 @@ class ServerDevicesSection extends StatelessWidget {
           ],
         ),
         SettingsSectionHeader(title: 'Devices'),
-        SettingsGroup(
-          children: [_PairedDevicesRow(), _PairNewDeviceRow()],
-        ),
+        SettingsGroup(children: [_PairedDevicesRow(), _PairNewDeviceRow()]),
         SettingsSectionHeader(title: 'Sessions'),
         SettingsGroup(children: [_RunningSessionsRow()]),
         SettingsSectionHeader(title: 'Danger zone'),

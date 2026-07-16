@@ -26,9 +26,7 @@ class AboutSection extends StatelessWidget {
     return ListView(
       children: const [
         SettingsSectionHeader(title: 'About'),
-        SettingsGroup(
-          children: [_AppInfoRow(), _ProtocolRow(), _DocsRow()],
-        ),
+        SettingsGroup(children: [_AppInfoRow(), _ProtocolRow(), _DocsRow()]),
       ],
     );
   }
@@ -90,4 +88,3 @@ class _DocsRow extends StatelessWidget {
     );
   }
 }
-
