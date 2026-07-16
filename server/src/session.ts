@@ -39,6 +39,14 @@ export interface SessionInit {
   lastPreview?: string;
   /** On-disk transcript path so a cold session can be re-attached (pi resume). */
   resumeSessionPath?: string;
+  /**
+   * Lazy history source for rehydrated sessions. When present, the persisted
+   * event log is NOT loaded at construction — it is read once, on first
+   * access to {@link Session.events} (or first {@link record}). Keeps boot
+   * O(sessions) instead of O(events) and avoids holding every transcript in
+   * memory for sessions nobody opens.
+   */
+  hydrateFrom?: () => SessionEvent[];
 }
 
 export class Session extends EventEmitter {
@@ -53,6 +61,9 @@ export class Session extends EventEmitter {
   lastPreview = "";
   /** On-disk transcript path used to relaunch a pi session (resume linkage). */
   readonly resumeSessionPath?: string;
+
+  /** Pending lazy history loader — consumed (set to undefined) on first use. */
+  private hydrateFrom?: () => SessionEvent[];
 
   /**
    * Draft state: worktree + agent creation is deferred until the first
@@ -72,9 +83,18 @@ export class Session extends EventEmitter {
   /** Absolute worktree path, set when its worktree is created. */
   worktreePath?: string;
 
-  readonly events: SessionEvent[] = [];
+  private readonly _events: SessionEvent[] = [];
   adapter: AgentAdapter;
   private readonly store?: EventStore;
+
+  /**
+   * The in-memory event cache. For a lazily-rehydrated session the first
+   * access loads the persisted history (once) before returning.
+   */
+  get events(): SessionEvent[] {
+    this.ensureHydrated();
+    return this._events;
+  }
 
   constructor(init: SessionInit) {
     super();
@@ -90,6 +110,7 @@ export class Session extends EventEmitter {
     if (typeof init.lastActivityAt === "number") this.lastActivityAt = init.lastActivityAt;
     if (typeof init.lastPreview === "string") this.lastPreview = init.lastPreview;
     this.resumeSessionPath = init.resumeSessionPath;
+    this.hydrateFrom = init.hydrateFrom;
 
     this.persistMeta();
     this.bindAdapter(this.adapter);
@@ -102,9 +123,19 @@ export class Session extends EventEmitter {
    * after a server restart so `session.events` reflects prior history.
    */
   hydrate(events: SessionEvent[]): void {
-    for (const e of events) this.events.push(e);
+    for (const e of events) this._events.push(e);
     const last = events.at(-1);
     if (last) this.lastActivityAt = Math.max(this.lastActivityAt, last.ts);
+  }
+
+  /** Run the pending lazy loader (if any) exactly once. History must precede
+   *  anything recorded since boot, and record() hydrates first, so a plain
+   *  hydrate() keeps ordering correct. */
+  private ensureHydrated(): void {
+    if (!this.hydrateFrom) return;
+    const load = this.hydrateFrom;
+    this.hydrateFrom = undefined;
+    this.hydrate(load());
   }
 
   /**
@@ -113,10 +144,13 @@ export class Session extends EventEmitter {
    * emit — callers decide whether to fan out. Returns the formed event.
    */
   private record(e: NewEvent): SessionEvent {
+    // Load persisted history first so the cache stays complete + ordered even
+    // when a cold session records before anyone read `events`.
+    this.ensureHydrated();
     const event: SessionEvent = this.store
       ? this.store.append(this.id, e)
-      : { seq: this.events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
-    this.events.push(event);
+      : { seq: this._events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
+    this._events.push(event);
     this.lastActivityAt = event.ts;
     if (event.kind === "user.message" || event.kind === "agent.message") {
       const t = (event.payload as { text?: string }).text;

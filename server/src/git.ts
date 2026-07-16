@@ -51,7 +51,16 @@ function run(cmd: string, args: string[], cwd?: string, timeoutMs?: number): Pro
   });
 }
 
-const git = (args: string[], cwd: string) => run("git", args, cwd);
+/**
+ * Hard cap for read-only git invocations. Local git is normally milliseconds;
+ * the cap exists so one wedged repo (dead network mount, fsmonitor prompt,
+ * lock contention) cannot hang the whole repos snapshot forever. Mutations
+ * (worktree add/remove) are NOT capped — a large checkout may legitimately
+ * take longer, and killing it halfway is worse than waiting.
+ */
+const GIT_READ_TIMEOUT_MS = 15_000;
+
+const git = (args: string[], cwd: string) => run("git", args, cwd, GIT_READ_TIMEOUT_MS);
 
 /** True when `path` is inside a git working tree. */
 export async function isGitRepo(path: string): Promise<boolean> {
@@ -141,13 +150,16 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeEntry[]> 
   }
   flush();
 
-  // Best-effort HEAD commit time per worktree (epoch ms). A git failure or
+  // Best-effort HEAD commit time per worktree (epoch ms), in parallel — one
+  // wall-clock git latency instead of one per worktree. A git failure or
   // unparseable value leaves committedAt null.
-  for (const e of out) {
-    const r2 = await git(["log", "-1", "--format=%ct"], e.path);
-    const secs = r2.code === 0 ? Number.parseInt(r2.stdout.trim(), 10) : NaN;
-    e.committedAt = Number.isFinite(secs) ? secs * 1000 : null;
-  }
+  await Promise.all(
+    out.map(async (e) => {
+      const r2 = await git(["log", "-1", "--format=%ct"], e.path);
+      const secs = r2.code === 0 ? Number.parseInt(r2.stdout.trim(), 10) : NaN;
+      e.committedAt = Number.isFinite(secs) ? secs * 1000 : null;
+    }),
+  );
   return out;
 }
 
@@ -183,19 +195,21 @@ export async function diffStat(worktreePath: string, baseBranch: string | null):
     }
   };
 
-  // Committed delta vs the merge-base with the default branch.
+  // The three git reads are independent — run them concurrently.
   const cur = await detectCurrentBranch(worktreePath);
-  if (baseBranch && cur !== baseBranch) {
-    const committed = await git(["diff", "--numstat", `${baseBranch}...HEAD`], worktreePath);
-    if (committed.code === 0) addNumstat(committed.stdout);
-  }
+  const [committed, working, untracked] = await Promise.all([
+    // Committed delta vs the merge-base with the default branch.
+    baseBranch && cur !== baseBranch
+      ? git(["diff", "--numstat", `${baseBranch}...HEAD`], worktreePath)
+      : Promise.resolve(null),
+    // Uncommitted: staged + unstaged tracked changes.
+    git(["diff", "--numstat", "HEAD"], worktreePath),
+    // Untracked files: count each as an added file (no cheap line count).
+    git(["ls-files", "--others", "--exclude-standard"], worktreePath),
+  ]);
 
-  // Uncommitted: staged + unstaged tracked changes.
-  const working = await git(["diff", "--numstat", "HEAD"], worktreePath);
+  if (committed && committed.code === 0) addNumstat(committed.stdout);
   if (working.code === 0) addNumstat(working.stdout);
-
-  // Untracked files: count each line as an added file (no cheap line count).
-  const untracked = await git(["ls-files", "--others", "--exclude-standard"], worktreePath);
   if (untracked.code === 0) {
     for (const line of untracked.stdout.split("\n")) if (line.trim()) files.add(line.trim());
   }
@@ -276,7 +290,8 @@ export async function addWorktree(opts: {
   const target = join(base, repoName, opts.name);
   const args = ["worktree", "add", "-b", opts.branch, target];
   if (opts.baseBranch) args.push(opts.baseBranch);
-  const r = await git(args, opts.repoPath);
+  // No timeout: populating a worktree on a big repo can take a while.
+  const r = await run("git", args, opts.repoPath);
   if (r.code !== 0) {
     throw new Error(`git worktree add failed: ${r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`}`);
   }

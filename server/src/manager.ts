@@ -123,10 +123,16 @@ export class SessionManager extends EventEmitter {
    * reconnecting client sees prior transcripts after a server restart. Cold
    * sessions use {@link DetachedAdapter} (no process); sending input to one
    * emits a `session.error` until it is re-attached. No-op without a store.
+   *
+   * Only session METADATA is loaded here — each session's event history is
+   * read lazily on first access (see {@link SessionInit.hydrateFrom}), so boot
+   * stays fast and memory stays proportional to the sessions actually opened,
+   * not the total size of the event log.
    */
   private rehydrate(): void {
-    if (!this.store) return;
-    for (const meta of this.store.loadSessions()) {
+    const store = this.store;
+    if (!store) return;
+    for (const meta of store.loadSessions()) {
       const session = new Session({
         id: meta.id,
         projectId: meta.projectId,
@@ -134,14 +140,14 @@ export class SessionManager extends EventEmitter {
         title: meta.title,
         policy: meta.policy,
         adapter: new DetachedAdapter(meta.agent),
-        store: this.store,
+        store,
         createdAt: meta.createdAt,
         status: "exited",
         lastActivityAt: meta.lastActivityAt,
         lastPreview: meta.lastPreview,
         resumeSessionPath: meta.resumeSessionPath,
+        hydrateFrom: () => store.read(meta.id),
       });
-      session.hydrate(this.store.read(meta.id));
       this.sessions.set(session.id, session);
     }
     if (this.sessions.size > 0) {
@@ -384,41 +390,52 @@ export class SessionManager extends EventEmitter {
   /**
    * Repo-centric snapshot for the home screen: each project enriched with its
    * default/current branch and worktrees (diff stats, open PR, running
-   * sessions). Shells out to git/gh per worktree, so callers should treat this
-   * as an occasional (connect / spawn / refresh) operation, not per-event.
+   * sessions). Shells out to git/gh per worktree — projects and worktrees are
+   * processed in parallel so the snapshot cost is roughly the slowest single
+   * repo, not the sum of all of them. Callers should still treat this as an
+   * occasional (connect / spawn / refresh) operation, not per-event.
    *
    * `includePrs` (default true) gates the open-PR lookup. The diff +/- numbers
    * are pure local git and instant; the PR lookup shells out to `gh` (network,
-   * seconds). Pass `false` to skip `gh` and emit the fast git-only snapshot,
-   * then call again with `true` to enrich PRs — so the numbers never wait on
-   * the network.
+   * seconds). Pass `false` to get the fast git-only snapshot, then call
+   * {@link enrichPrs} on the result to add PR info without redoing the git
+   * work — so the numbers never wait on the network.
    */
   async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    const repos: RepoDTO[] = [];
-    for (const p of this.projects.values()) {
-      const repoPath = p.dto.path;
-      const gitRepo = await isGitRepo(repoPath);
-      const defaultBranch = gitRepo ? await detectDefaultBranch(repoPath) : null;
-      const currentBranch = gitRepo ? await detectCurrentBranch(repoPath) : null;
-      const entries = gitRepo ? await listWorktrees(repoPath) : [];
+    const repos = await Promise.all(
+      [...this.projects.values()].map((p) => this.repoSnapshot(p)),
+    );
+    return includePrs ? this.enrichPrs(repos) : repos;
+  }
 
-      // Group this project's STARTED sessions by the worktree path they run
-      // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
-      const sessionsByPath = new Map<string, string[]>();
-      for (const s of this.sessions.values()) {
-        if (s.projectId !== p.dto.id || s.pending) continue;
-        const key = s.worktreePath ?? repoPath;
-        const list = sessionsByPath.get(key) ?? [];
-        list.push(s.id);
-        sessionsByPath.set(key, list);
-      }
+  /** Git-only snapshot of one project (no `gh`/network). */
+  private async repoSnapshot(p: ProjectEntry): Promise<RepoDTO> {
+    const repoPath = p.dto.path;
+    const gitRepo = await isGitRepo(repoPath);
+    const [defaultBranch, currentBranch, entries] = gitRepo
+      ? await Promise.all([
+          detectDefaultBranch(repoPath),
+          detectCurrentBranch(repoPath),
+          listWorktrees(repoPath),
+        ])
+      : [null, null, []];
 
-      const worktrees: WorktreeDTO[] = [];
-      for (const e of entries) {
+    // Group this project's STARTED sessions by the worktree path they run
+    // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
+    const sessionsByPath = new Map<string, string[]>();
+    for (const s of this.sessions.values()) {
+      if (s.projectId !== p.dto.id || s.pending) continue;
+      const key = s.worktreePath ?? repoPath;
+      const list = sessionsByPath.get(key) ?? [];
+      list.push(s.id);
+      sessionsByPath.set(key, list);
+    }
+
+    const worktrees: WorktreeDTO[] = await Promise.all(
+      entries.map(async (e) => {
         const stat = await diffStat(e.path, defaultBranch);
-        const pr = includePrs && e.branch && !e.isPrimary ? await findOpenPr(repoPath, e.branch) : null;
-        worktrees.push({
+        return {
           id: e.path,
           path: e.path,
           branch: e.branch,
@@ -427,24 +444,44 @@ export class SessionManager extends EventEmitter {
           deletions: stat.deletions,
           filesChanged: stat.filesChanged,
           committedAt: e.committedAt,
-          pr,
+          pr: null,
           sessionIds: sessionsByPath.get(e.path) ?? [],
-        });
-      }
+        };
+      }),
+    );
 
-      repos.push({
-        id: p.dto.id,
-        name: p.dto.name,
-        path: repoPath,
-        pinned: p.dto.pinned,
-        lastActivityAt: p.dto.lastActivityAt,
-        isGitRepo: gitRepo,
-        defaultBranch,
-        currentBranch,
-        worktrees,
-      });
-    }
-    return repos;
+    return {
+      id: p.dto.id,
+      name: p.dto.name,
+      path: repoPath,
+      pinned: p.dto.pinned,
+      lastActivityAt: p.dto.lastActivityAt,
+      isGitRepo: gitRepo,
+      defaultBranch,
+      currentBranch,
+      worktrees,
+    };
+  }
+
+  /**
+   * Add open-PR info (via `gh`, network) to a git-only snapshot from
+   * {@link listRepos}. Returns new objects — the input is not mutated — so the
+   * caller can keep the fast snapshot around while this one is in flight.
+   * Lookups run in parallel across all worktrees.
+   */
+  async enrichPrs(repos: RepoDTO[]): Promise<RepoDTO[]> {
+    return Promise.all(
+      repos.map(async (repo) => ({
+        ...repo,
+        worktrees: await Promise.all(
+          repo.worktrees.map(async (w) =>
+            w.branch && !w.isPrimary
+              ? { ...w, pr: await findOpenPr(repo.path, w.branch) }
+              : w,
+          ),
+        ),
+      })),
+    );
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */
