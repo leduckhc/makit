@@ -16,6 +16,7 @@ import 'composer_focus.dart';
 import 'panes/pane_tree_controller.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
+import 'title_bar_strip.dart';
 import '../../ui/composer/composer_selectors.dart';
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
@@ -254,16 +255,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
 /// The pane header's leading control when the sidebar is hidden: restores it.
 /// Styled to match the sidebar's fold button (see `desktop_sidebar.dart`).
-IconButton _showSidebarButton(WidgetRef ref) => IconButton(
-  iconSize: 19,
-  visualDensity: VisualDensity.compact,
-  padding: EdgeInsets.zero,
-  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-  tooltip: 'Show sidebar',
-  icon: const Icon(Symbols.thumbnail_bar, weight: 300),
-  onPressed: () => ref.read(sidebarCollapsedProvider.notifier).state = false,
-);
-
 class _PaneHeader extends ConsumerWidget {
   const _PaneHeader({required this.session, required this.fallbackId});
   final Session? session;
@@ -289,7 +280,10 @@ class _PaneHeader extends ConsumerWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (collapsed) ...[_showSidebarButton(ref), const SizedBox(width: 8)],
+          if (collapsed) ...[
+            const SidebarToggleButton(collapse: false),
+            const SizedBox(width: 8),
+          ],
           if (session != null) ...[
             // Match the sidebar-fold icon scale so the fold icon,
             // title, and actions menu all sit on the traffic-light row.
@@ -766,22 +760,7 @@ class _UnfoldStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (!ref.watch(sidebarCollapsedProvider)) return const SizedBox.shrink();
-    return SizedBox(
-      height: kTitleBarStripHeight,
-      width: double.infinity,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: DragToMoveArea(child: SizedBox.expand()),
-          ),
-          Positioned(
-            left: kTrafficLightInset,
-            top: 7,
-            child: _showSidebarButton(ref),
-          ),
-        ],
-      ),
-    );
+    return const TitleBarStrip(leading: SidebarToggleButton(collapse: false));
   }
 }
 
