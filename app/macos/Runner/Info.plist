@@ -36,5 +36,8 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<!-- Impeller only — do not fall back to Skia on macOS. -->
+	<key>FLTEnableImpeller</key>
+	<true/>
 </dict>
 </plist>
