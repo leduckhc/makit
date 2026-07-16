@@ -96,9 +96,7 @@ void main() {
           ),
           connectionProvider.overrideWithValue(MakitConnState()),
         ],
-        child: const MaterialApp(
-          home: Scaffold(body: ServerDevicesSection()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
       ),
     );
 
