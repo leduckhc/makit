@@ -30,9 +30,6 @@
  * malformed input yields an `err {code: bad_request}` and is never thrown.
  */
 
-import { existsSync, statSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { Envelope, RepoDTO } from "./protocol.js";
@@ -43,7 +40,6 @@ import type { Session } from "./session.js";
 import type { DeviceRegistry } from "./pairing/registry.js";
 import type { ServerCert } from "./pairing/cert.js";
 import { log } from "./log.js";
-import { browseDirectory } from "./project-store.js";
 import type { OutgoingFrame, WsClient } from "./ws/client.js";
 import { AuthGate } from "./ws/auth_gate.js";
 import { SubscriptionHub } from "./ws/subscription_hub.js";
@@ -53,6 +49,11 @@ import { WakeCoordinator } from "./push/wake_coordinator.js";
 import { NoopPushSender, type PushSender } from "./push/sender.js";
 import { buildWakePayload } from "./push/payload.js";
 import { registerPushCommands } from "./push/register_cmd.js";
+import { register as registerSessionCommands } from "./ws/commands/session.js";
+import { register as registerProjectCommands } from "./ws/commands/project.js";
+import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
+import { register as registerRepoCommands } from "./ws/commands/repo.js";
+import { register as registerDebugCommands } from "./ws/commands/debug.js";
 
 export interface ServerOpts {
   host: string;
@@ -165,6 +166,7 @@ export function startWsServer(opts: ServerOpts) {
     clients: () => clients.values(),
     onUndeliverable: (env, ctx) => wakeCoordinator.wake(env, ctx),
   });
+  const askDevice = rpc.askDevice.bind(rpc);
   const authGate = new AuthGate({ registry, onAuthenticated });
   const router = buildCommandRouter();
 
@@ -215,7 +217,6 @@ export function startWsServer(opts: ServerOpts) {
     });
   }
 
-  const askDevice = rpc.askDevice.bind(rpc);
   return { wss, https, localHttps, askDevice, connectedDeviceIds };
 
   // -------- dispatch ------------------------------------------------------
@@ -259,308 +260,20 @@ export function startWsServer(opts: ServerOpts) {
 
   function buildCommandRouter(): CommandRouter {
     const r = new CommandRouter();
+    const deps = { manager, broadcastSnapshots, broadcastReposSnapshot, askDevice };
 
-    r.register("send.message", async (ctx) => {
-      const sid = String(ctx.env.sessionId ?? "");
-      const text = ctx.env.text;
-      if (typeof text !== "string") {
-        ctx.err(WireErrorCode.BadRequest, "send.message requires a string `text`");
-        return;
-      }
-      const session = sid ? manager.getSession(sid) : undefined;
-      log.info(
-        `[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} text="${text.slice(0, 40)}"`,
-      );
-      if (!session) {
-        ctx.err(WireErrorCode.NoSuchSession, "no such session");
-        return;
-      }
-      ctx.ack();
-      // A pending (draft) session materializes its worktree + agent on the
-      // first real request, which names the branch. The manager routes any
-      // promotion failure through the session's own event pipeline (a real,
-      // persisted, monotonic `session.error`), so the handler just checks
-      // whether to proceed and refreshes the repo snapshot on success.
-      if (session.pending) {
-        const started = await manager.promotePendingSession(session, text);
-        if (!started) return;
-        broadcastSnapshots();
-        void broadcastReposSnapshot();
-      }
-      await session.sendUserMessage(text);
-    });
-
-    // Built-in control actions (e.g. /compact, /thinking) — NOT user turns.
-    // Routed to the adapter's sendAction, which maps them to the agent's SDK
-    // calls (e.g. pi's set_session_name). Adapters that can't map an action
-    // ignore it.
-    r.register("session.action", async (ctx) => {
-      const sid = String(ctx.env.sessionId ?? "");
-      const action = ctx.env.action;
-      if (typeof action !== "string" || !action) {
-        ctx.err(WireErrorCode.BadRequest, "session.action requires a string `action`");
-        return;
-      }
-      const session = sid ? manager.getSession(sid) : undefined;
-      if (!session) {
-        ctx.err(WireErrorCode.NoSuchSession, "no such session");
-        return;
-      }
-      const args =
-        ctx.env.args && typeof ctx.env.args === "object" && !Array.isArray(ctx.env.args)
-          ? (ctx.env.args as Record<string, unknown>)
-          : undefined;
-      ctx.ack();
-      // Manual rename: reflect the new title in makit immediately, then let the
-      // adapter persist it (pi's set_session_name).
-      if (action === "name" && typeof args?.name === "string") {
-        session.setTitle(args.name);
-      }
-      await session.sendAction(action, args);
-    });
-
-    r.register("cancel", async (ctx) => {
-      const sid = String(ctx.env.sessionId ?? "");
-      const session = sid ? manager.getSession(sid) : undefined;
-      if (!session) {
-        ctx.err(WireErrorCode.NoSuchSession, "no such session");
-        return;
-      }
-      await session.adapter.cancel();
-      ctx.ack();
-    });
-
-    r.register("session.kill", async (ctx) => {
-      const sid = String(ctx.env.sessionId ?? "");
-      try {
-        await manager.killSession(sid);
-      } catch {
-        ctx.err(WireErrorCode.NoSuchSession, "no such session");
-        return;
-      }
-      broadcastSnapshots();
-      void broadcastReposSnapshot();
-      ctx.ack();
-    });
-
-    r.register("session.spawn", async (ctx) => {
-      const projectId = String(ctx.env.projectId ?? "");
-      const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
-      const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
-      // Optional: bind the draft to an EXISTING worktree so the first message
-      // starts the agent there instead of forking a new one.
-      const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
-      const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
-      // New sessions are DRAFTS: the worktree + agent are deferred until the
-      // first substantive message names the branch (see send.message). The
-      // worktree forks off `baseBranch` (default branch when unset).
-      const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch, worktreePath, branch);
-      // wireSession is invoked via the manager's "sessionCreated" listener
-      // registered above — don't call it explicitly or every event fans out
-      // twice.
-      broadcastSnapshots();
-      void broadcastReposSnapshot();
-      ctx.ack({ sessionId: newSession.id });
-    });
-
-    r.register("repo.refresh", async (ctx) => {
-      ctx.ack();
-      await broadcastReposSnapshot();
-    });
-
-    r.register("agents.list", async (ctx) => {
-      ctx.ack({ agents: manager.listAgents() });
-    });
-
-    r.register("session.setAgent", async (ctx) => {
-      const sessionId = String(ctx.env.sessionId ?? "");
-      const agent = String(ctx.env.agent ?? "");
-      if (!sessionId || !agent) {
-        ctx.err(WireErrorCode.BadRequest, "session.setAgent requires sessionId and agent");
-        return;
-      }
-      try {
-        manager.setPendingAgent(sessionId, agent);
-      } catch (e) {
-        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-        return;
-      }
-      broadcastSnapshots();
-      ctx.ack();
-    });
-
-    r.register("worktree.create", async (ctx) => {
-      const projectId = String(ctx.env.projectId ?? "");
-      const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
-      if (!projectId) {
-        ctx.err(WireErrorCode.BadRequest, "worktree.create requires a projectId");
-        return;
-      }
-      try {
-        const wt = await manager.createWorktree(projectId, baseBranch);
-        void broadcastReposSnapshot();
-        ctx.ack({ projectId, path: wt.path, branch: wt.branch });
-      } catch (e) {
-        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-      }
-    });
-
-    r.register("session.list", async (ctx) => {
-      const projectId = String(ctx.env.projectId ?? "");
-      if (!projectId) {
-        ctx.err(WireErrorCode.BadRequest, "session.list requires a projectId");
-        return;
-      }
-      try {
-        // Omit the server-internal filesystem `path` from the wire — the app
-        // attaches by piSessionId and never needs the transcript path.
-        const sessions = manager.listPiSessions(projectId).map(
-          ({ path: _path, ...meta }) => meta,
-        );
-        ctx.ack({ sessions });
-      } catch (e) {
-        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-      }
-    });
-
-    r.register("session.attach", async (ctx) => {
-      // Re-attach a rehydrated (cold) makit session to its live agent after a
-      // server restart. Back-compat: legacy clients send projectId+piSessionId
-      // to attach a prior on-disk pi transcript instead.
-      const sessionId = String(ctx.env.sessionId ?? "");
-      if (sessionId) {
-        try {
-          const session = await manager.reattachSession(sessionId);
-          broadcastSnapshots();
-          ctx.ack({ sessionId: session.id });
-        } catch (e) {
-          ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-        }
-        return;
-      }
-      const projectId = String(ctx.env.projectId ?? "");
-      const piSessionId = String(ctx.env.piSessionId ?? "");
-      if (!projectId || !piSessionId) {
-        ctx.err(WireErrorCode.BadRequest, "session.attach requires projectId and piSessionId");
-        return;
-      }
-      try {
-        const session = await manager.attachPiSession(projectId, piSessionId);
-        broadcastSnapshots();
-        ctx.ack({ sessionId: session.id });
-      } catch (e) {
-        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-      }
-    });
-
-    r.register("project.browse", async (ctx) => {
-      const raw = ctx.env.path;
-      const path = typeof raw === "string" && raw.length > 0 ? raw : homedir();
-      try {
-        ctx.ack({ ...browseDirectory(path) });
-      } catch (e) {
-        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-      }
-    });
-
-    r.register("project.add", async (ctx) => {
-      const path = typeof ctx.env.path === "string" ? ctx.env.path : "";
-      if (!path) {
-        ctx.err(WireErrorCode.BadRequest, "project.add requires a string `path`");
-        return;
-      }
-      const full = resolve(path);
-      if (!existsSync(full) || !statSync(full).isDirectory()) {
-        ctx.err(WireErrorCode.BadRequest, `not a directory: ${full}`);
-        return;
-      }
-      const project = manager.addProject(full);
-      broadcastSnapshots();
-      await broadcastReposSnapshot();
-      ctx.ack({ projectId: project.id });
-    });
-
-    r.register("project.remove", async (ctx) => {
-      const projectId = typeof ctx.env.projectId === "string" ? ctx.env.projectId : "";
-      if (!projectId) {
-        ctx.err(WireErrorCode.BadRequest, "project.remove requires a string `projectId`");
-        return;
-      }
-      try {
-        manager.removeProject(projectId);
-      } catch (e) {
-        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-        return;
-      }
-      broadcastSnapshots();
-      await broadcastReposSnapshot();
-      ctx.ack({});
-    });
+    registerSessionCommands(r, deps);
+    registerProjectCommands(r, deps);
+    registerWorktreeCommands(r, deps);
+    registerRepoCommands(r, deps);
 
     // SPEC-07: register the device's content-free wake push token.
     registerPushCommands(r, registry);
 
     // B9b: dev-only debug commands, registered only when MAKIT_DEV is set.
-    if (process.env.MAKIT_DEV) registerDebugCommands(r);
+    if (process.env.MAKIT_DEV) registerDebugCommands(r, deps);
 
     return r;
-  }
-
-  function registerDebugCommands(r: CommandRouter): void {
-    r.register("debug.ask", async (ctx) => {
-      ctx.ack();
-      const resp = await askDevice({
-        kind: "askUserQuestion",
-        questions: [
-          {
-            header: "Test",
-            question: String(ctx.env.question ?? "Pick one"),
-            options: [
-              { label: "Yes" },
-              { label: "No" },
-              { label: "Maybe", description: "If you must" },
-            ],
-          },
-        ],
-      });
-      log.info(`[makit] debug.ask answered: ${JSON.stringify(resp)}`);
-    });
-
-    r.register("debug.ask-multi", async (ctx) => {
-      const sid = String(ctx.env.sessionId ?? "");
-      const session = sid ? manager.getSession(sid) : undefined;
-      if (!session) {
-        ctx.err(WireErrorCode.NoSuchSession, "no such session");
-        return;
-      }
-      ctx.ack();
-      const resp = await askDevice(
-        {
-          kind: "askUserQuestion",
-          questions: [
-            {
-              header: "Language",
-              question: "Which language?",
-              options: [{ label: "Dart" }, { label: "TypeScript" }],
-              recommended: 0,
-            },
-            {
-              header: "Tools",
-              question: "Which tools?",
-              multi: true,
-              options: [{ label: "Simulator" }, { label: "Server" }, { label: "Logs" }],
-            },
-          ],
-        },
-        { sessionId: sid },
-      );
-      log.info(`[makit] debug.ask-multi answered: ${JSON.stringify(resp)}`);
-      session.adapter.emit("event", {
-        ts: Date.now(),
-        kind: "agent.message",
-        payload: { text: JSON.stringify(resp) },
-      });
-    });
   }
 
   // -------- session fan-out + snapshots -----------------------------------
