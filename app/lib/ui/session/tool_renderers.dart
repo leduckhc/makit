@@ -16,12 +16,16 @@
 /// [ToolRenderer] subclass and register it in [toolRenderers].
 library;
 
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 
 import '../../store/models.dart';
+import 'diff_view.dart';
 import 'line_diff.dart';
+import 'tool_result_text.dart';
+
+// Re-export the pure result-text helpers so existing importers of
+// `tool_renderers.dart` keep resolving them after the SPEC-19 split.
+export 'tool_result_text.dart' show extractToolResultText, valueString;
 
 /// Monospace font stack for tool views. iOS does not resolve the generic
 /// `monospace` family, so we fall back to Menlo (present on all Apple
@@ -70,7 +74,7 @@ Widget genericToolDetail(BuildContext context, ToolCallItem item) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final e in args.entries)
-                ParamRow(e.key, _valueString(e.value)),
+                ParamRow(e.key, valueString(e.value)),
             ],
           ),
         ),
@@ -86,86 +90,6 @@ Widget genericToolDetail(BuildContext context, ToolCallItem item) {
         ),
     ],
   );
-}
-
-/// Render a single arg value for display. Scalars show as-is; nested
-/// structures fall back to compact JSON so the row stays readable.
-String _valueString(dynamic value) {
-  if (value == null) return '';
-  if (value is String || value is num || value is bool) return value.toString();
-  try {
-    return jsonEncode(value);
-  } catch (_) {
-    return value.toString();
-  }
-}
-
-/// Tool results arrive as one or more concatenated MCP-style envelopes, e.g.
-/// `{"content":[{"type":"text","text":"..."}],"details":{}}`. Extract and
-/// concatenate the human-readable text. Falls back to the raw string when it
-/// isn't in that shape (plain stdout, file contents, etc.).
-String extractToolResultText(String raw) {
-  final trimmed = raw.trim();
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return raw;
-  final buf = StringBuffer();
-  var matched = false;
-  for (final chunk in _splitJsonValues(trimmed)) {
-    dynamic decoded;
-    try {
-      decoded = jsonDecode(chunk);
-    } catch (_) {
-      return raw; // Not the envelope shape — show it verbatim.
-    }
-    if (decoded is Map && decoded['content'] is List) {
-      matched = true;
-      for (final part in decoded['content'] as List) {
-        if (part is Map && part['type'] == 'text' && part['text'] is String) {
-          buf.write(part['text'] as String);
-        }
-      }
-    }
-  }
-  return matched ? buf.toString() : raw;
-}
-
-/// Split a string of back-to-back top-level JSON values (e.g. `{...}{...}`)
-/// into their individual source substrings, honouring braces/brackets inside
-/// strings and escapes.
-List<String> _splitJsonValues(String s) {
-  final out = <String>[];
-  var depth = 0;
-  var start = -1;
-  var inString = false;
-  var escaped = false;
-  for (var i = 0; i < s.length; i++) {
-    final ch = s[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch == r'\') {
-        escaped = true;
-      } else if (ch == '"') {
-        inString = false;
-      }
-      continue;
-    }
-    switch (ch) {
-      case '"':
-        inString = true;
-      case '{':
-      case '[':
-        if (depth == 0) start = i;
-        depth++;
-      case '}':
-      case ']':
-        depth--;
-        if (depth == 0 && start >= 0) {
-          out.add(s.substring(start, i + 1));
-          start = -1;
-        }
-    }
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -537,7 +461,7 @@ class _EditDiffView extends StatelessWidget {
             title: 'Changes',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [for (final line in lines) _DiffLineRow(line: line)],
+              children: [for (final line in lines) DiffLineRow(line: line)],
             ),
           ),
         // The edit tool's result is itself a diff (hashline `+`/`-`/context
@@ -553,106 +477,6 @@ class _EditDiffView extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-/// One diff line: a coloured full-width row with a gutter prefix. Removed lines
-/// use the error container, added lines a green wash, context stays muted.
-class _DiffLineRow extends StatelessWidget {
-  const _DiffLineRow({required this.line});
-  final DiffLine line;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
-    final (
-      Color? background,
-      Color textColor,
-      String prefix,
-    ) = switch (line.kind) {
-      DiffKind.removed => (
-        cs.errorContainer.withValues(alpha: 0.35),
-        cs.error,
-        '\u2212',
-      ),
-      DiffKind.added => (Colors.green.withValues(alpha: 0.15), addedText, '+'),
-      DiffKind.context => (null, cs.onSurfaceVariant, ' '),
-    };
-    final style = TextStyle(
-      fontFamily: 'monospace',
-      fontFamilyFallback: kMonoFallback,
-      fontSize: 12,
-      color: textColor,
-    );
-    return Container(
-      color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 14, child: Text(prefix, style: style)),
-          Expanded(child: SelectableText(line.text, style: style)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Renders diff text that already carries its own gutter markers — the `edit`
-/// tool's hashline result: a `[path#HASH]` header followed by `+`/`-`/context
-/// rows (`+316:…`, `-136:…`, ` 139:…`). Each line gets a full-width colour wash
-/// (green added, red removed, muted context, highlighted header) like a git
-/// diff. Line numbers stay visible.
-class DiffText extends StatelessWidget {
-  const DiffText(this.text, {super.key});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final lines = text.split('\n');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [for (final line in lines) _DiffTextLine(line: line)],
-    );
-  }
-}
-
-class _DiffTextLine extends StatelessWidget {
-  const _DiffTextLine({required this.line});
-  final String line;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
-    final isHeader =
-        line.startsWith('[') && line.contains('#') && line.endsWith(']');
-    final (Color? background, Color textColor) = isHeader
-        ? (cs.surfaceContainerHighest, cs.primary)
-        : line.startsWith('+')
-        ? (Colors.green.withValues(alpha: 0.15), addedText)
-        : line.startsWith('-')
-        ? (cs.errorContainer.withValues(alpha: 0.35), cs.error)
-        : (null, cs.onSurfaceVariant);
-    return Container(
-      color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: SelectableText(
-        line.isEmpty ? ' ' : line,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontFamilyFallback: kMonoFallback,
-          fontSize: 12,
-          color: textColor,
-          fontWeight: isHeader ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
     );
   }
 }
