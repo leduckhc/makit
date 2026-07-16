@@ -298,12 +298,23 @@ async function main() {
   // agent process) can talk back to makit.
   // The ws server's askDevice resolves with the srv.response envelope, which
   // is FLAT — the canonical UIResponse fields (kind, indices, answers, …) live
-  // at the top level alongside v/t/id, not under a `.body`. Return it as-is.
+  // at the top level alongside v/t/id, not under a `.body`. We validate it at
+  // this trust boundary (decodeUIResponse) and reject a malformed/hostile
+  // reply rather than blindly cast it into an agent reply.
+  const { decodeUIResponse } = await import("./protocol/codec.js");
+  const askDeviceValidated = async (
+    body: Record<string, unknown>,
+    sessionId: string | undefined,
+  ): Promise<import("./uicall.js").UIResponse> => {
+    const env = await ws.askDevice(body, { sessionId });
+    const resp = decodeUIResponse(env);
+    if (!resp) throw new Error("srv.response failed validation (malformed device reply)");
+    return resp;
+  };
   const bridge = await startBridge({
     askDevice: async (body) => {
       const { sessionId, ...rest } = body;
-      const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
-      return env as unknown as import("./uicall.js").UIResponse;
+      return askDeviceValidated(rest as Record<string, unknown>, sessionId);
     },
   });
 
@@ -335,8 +346,7 @@ async function main() {
     // Same flat-envelope askDevice, reused by the PiAdapter UI interceptor.
     askUser: async (call) => {
       const { sessionId, ...rest } = call;
-      const env = await ws.askDevice(rest as Record<string, unknown>, { sessionId });
-      return env as unknown as import("./uicall.js").UIResponse;
+      return askDeviceValidated(rest as Record<string, unknown>, sessionId);
     },
   });
 

@@ -314,26 +314,24 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     if (result == null) {
       // User cancelled — still send a canonical-shaped response so the
       // connector can dispatch back to the agent cleanly.
-      _respond(requestId, {
-        'kind': 'askUserQuestion',
-        'indices': <int>[],
-        'answers': <String>[],
-        'cancelled': true,
-      });
+      _respond(requestId, SrvResponse.cancelled('askUserQuestion'));
       return;
     }
-    // result is already canonical {indices, answers}; just add kind +
-    // a convenience `answer` for the single-question form.
-    final body = <String, dynamic>{
-      'kind': 'askUserQuestion',
-      'indices': result['indices'],
-      'answers': result['answers'],
-    };
-    if (questions.length == 1) {
-      final answers = result['answers'] as List;
-      if (answers.isNotEmpty) body['answer'] = answers.first;
-    }
-    _respond(requestId, body);
+    // result is already canonical {indices, answers}; the builder adds `kind`
+    // and (for the single-question form) a convenience `answer`.
+    final indices = (result['indices'] as List).cast<int>();
+    final answers = (result['answers'] as List).cast<String>();
+    final answer = (questions.length == 1 && answers.isNotEmpty)
+        ? answers.first
+        : null;
+    _respond(
+      requestId,
+      SrvResponse.askUserQuestion(
+        indices: indices,
+        answers: answers,
+        answer: answer,
+      ),
+    );
   }
 
   Future<void> _showConfirmAction(
@@ -380,10 +378,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
         ],
       ),
     );
-    _respond(requestId, {
-      'kind': 'confirmAction',
-      'approved': approved ?? false,
-    });
+    _respond(requestId, SrvResponse.confirmAction(approved: approved ?? false));
   }
 
   /// Free-text input (maps pi's ctx.ui.input / ctx.ui.editor via the PiAdapter
@@ -425,9 +420,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       ),
     );
     if (value == null) {
-      _respond(requestId, {'kind': 'input', 'cancelled': true});
+      _respond(requestId, SrvResponse.cancelled('input'));
     } else {
-      _respond(requestId, {'kind': 'input', 'value': value});
+      _respond(requestId, SrvResponse.input(value));
     }
   }
 
