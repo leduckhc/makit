@@ -8,6 +8,7 @@ import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 import 'coming_soon.dart';
+import 'settings_reset_button.dart';
 
 /// Lowest UI text scale offered by the slider.
 const double _kMinTextScale = 0.9;
@@ -72,18 +73,10 @@ class _ThemeRow extends ConsumerWidget {
                 controller.set(themeModePreference, selection.first),
           ),
           const SizedBox(width: 8),
-          if (modified)
-            IconButton(
-              tooltip: 'Reset to default',
-              icon: const Icon(
-                Symbols.settings_backup_restore,
-                weight: 200,
-                size: 18,
-              ),
-              onPressed: () => controller.reset(themeModePreference),
-            )
-          else
-            const SizedBox(width: 40),
+          SettingsResetButton(
+            visible: modified,
+            onPressed: () => controller.reset(themeModePreference),
+          ),
         ],
       ),
     );
@@ -111,7 +104,7 @@ class _SidebarWidthRow extends ConsumerWidget {
             '${clamped.round()} px. Also set by dragging the '
             'sidebar edge.',
           ),
-          trailing: _ResetButton(
+          trailing: SettingsResetButton(
             visible: modified,
             onPressed: () => ref.read(sidebarWidthProvider.notifier).state =
                 kSidebarDefaultWidth,
@@ -156,7 +149,7 @@ class _StartCollapsedRow extends ConsumerWidget {
                 ref.read(sidebarCollapsedProvider.notifier).state = value,
           ),
           const SizedBox(width: 8),
-          _ResetButton(
+          SettingsResetButton(
             visible: modified,
             onPressed: () =>
                 ref.read(sidebarCollapsedProvider.notifier).state = false,
@@ -188,7 +181,7 @@ class _TextScaleRow extends ConsumerWidget {
             '${(clamped * 100).round()}% of the default text '
             'size.',
           ),
-          trailing: _ResetButton(
+          trailing: SettingsResetButton(
             visible: modified,
             onPressed: () => controller.reset(textScalePreference),
           ),
@@ -210,24 +203,6 @@ class _TextScaleRow extends ConsumerWidget {
 }
 
 /// A per-row reset (↺) that occupies fixed width whether shown or hidden, so
-/// rows stay vertically aligned — mirrors the Theme row's idiom.
-class _ResetButton extends StatelessWidget {
-  const _ResetButton({required this.visible, required this.onPressed});
-
-  final bool visible;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!visible) return const SizedBox(width: 40);
-    return IconButton(
-      tooltip: 'Reset to default',
-      icon: const Icon(Symbols.settings_backup_restore, weight: 200, size: 18),
-      onPressed: onPressed,
-    );
-  }
-}
-
 /// Accent color — reserved `[future]` placeholder (SPEC-13 §2). The app uses a
 /// single fixed green accent today; a picker needs theme plumbing that does not
 /// exist yet.

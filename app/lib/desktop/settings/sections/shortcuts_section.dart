@@ -11,7 +11,6 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
 
 import '../../../shortcuts/key_chord.dart';
 import '../../../shortcuts/keymap.dart';
@@ -19,6 +18,7 @@ import '../../../shortcuts/keymap_controller.dart';
 import '../../../shortcuts/shortcut_action.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
+import 'settings_reset_button.dart';
 
 /// Shortcuts section body: every [ShortcutAction] grouped by scope, rebindable
 /// and resettable, backed by [keymapProvider].
@@ -113,18 +113,10 @@ class _ShortcutRow extends ConsumerWidget {
             ),
           _ChordChip(label: chord.label),
           const SizedBox(width: 8),
-          if (modified)
-            IconButton(
-              tooltip: 'Reset to default',
-              icon: const Icon(
-                Symbols.settings_backup_restore,
-                weight: 200,
-                size: 18,
-              ),
-              onPressed: () => ref.read(keymapProvider.notifier).reset(action),
-            )
-          else
-            const SizedBox(width: 40),
+          SettingsResetButton(
+            visible: modified,
+            onPressed: () => ref.read(keymapProvider.notifier).reset(action),
+          ),
         ],
       ),
       onTap: () => _rebind(context, ref),

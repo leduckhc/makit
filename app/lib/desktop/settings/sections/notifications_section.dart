@@ -16,6 +16,7 @@ import '../prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 import 'coming_soon.dart';
+import 'settings_reset_button.dart';
 
 /// The reminder-delay choices offered in the dropdown, in whole minutes.
 const List<int> kReminderDelayChoicesMinutes = [1, 2, 5, 10];
@@ -97,19 +98,11 @@ class _ReminderDelayRow extends ConsumerWidget {
             ],
           ),
           const SizedBox(width: 8),
-          if (modified)
-            IconButton(
-              tooltip: 'Reset to default',
-              icon: const Icon(
-                Symbols.settings_backup_restore,
-                weight: 200,
-                size: 18,
-              ),
-              onPressed: () =>
-                  controller.reset(notificationsReminderDelayPreference),
-            )
-          else
-            const SizedBox(width: 40),
+          SettingsResetButton(
+            visible: modified,
+            onPressed: () =>
+                controller.reset(notificationsReminderDelayPreference),
+          ),
         ],
       ),
     );
