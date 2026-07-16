@@ -45,6 +45,12 @@ export type EventKind =
   | "session.error"
   | "session.commands"
   | "session.meta"
+  // NOTE (SPEC-18 T5): `session.action_error` is KEPT, not deleted. Although
+  // the server does not yet EMIT it, it is a fully-wired app consumer (an
+  // `ActionError` model + store reducer surface it as a snackbar in
+  // session_screen.dart / desktop_chat_pane.dart). Deleting it would strand a
+  // live consumer; wiring the producer belongs in the `session.action`/`cancel`
+  // handlers (server.ts) / session.ts, which are out of this spec's scope.
   | "session.action_error";
 
 export interface SessionEvent {
@@ -144,8 +150,13 @@ let _seq = 0;
 export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${(_seq++).toString(36)}`;
 
 /**
- * `cmd` kinds. Documented here (mirror of `app/lib/transport/protocol.dart`
- * `CmdKind`). The router registers handlers by these string keys.
+ * `cmd` kinds. This union mirrors the handlers actually registered by
+ * `buildCommandRouter` in `server.ts` (+ `push.register` in
+ * `push/register_cmd.ts`) — it is documentation only (the router keys off raw
+ * strings), so it is kept in lockstep with the registry by hand and the test
+ * surface. Previously it had drifted: it listed `session.policy` (no handler)
+ * and omitted `session.action`, `session.setAgent`, `worktree.create`,
+ * `session.list`, `project.*`, and `debug.*`.
  *
  * SPEC-07: `push.register` — the phone registers its content-free wake push
  * token: `cmd {kind:'push.register', token, platform, env?}`. The server
@@ -153,13 +164,24 @@ export const newId = (prefix = "id") => `${prefix}-${Date.now().toString(36)}-${
  * wake a force-quit/suspended device. The payload NEVER carries session data.
  */
 export type CmdKind =
+  // session lifecycle + turns
   | "send.message"
+  | "session.action"
   | "cancel"
   | "session.spawn"
   | "session.list"
   | "session.attach"
   | "session.kill"
-  | "session.policy"
-  | "agents.list"
+  | "session.setAgent"
+  // repos / projects / worktrees
+  | "worktree.create"
   | "repo.refresh"
-  | "push.register";
+  | "project.browse"
+  | "project.add"
+  | "project.remove"
+  // misc
+  | "agents.list"
+  | "push.register"
+  // dev-only probes
+  | "debug.ask"
+  | "debug.ask-multi";
