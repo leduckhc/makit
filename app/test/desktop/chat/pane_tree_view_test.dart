@@ -186,7 +186,9 @@ void main() {
 
       expect(c.read(paneTreeControllerProvider).root, isA<PaneLeaf>());
     });
+  });
 
+  group('pane header interactions', () {
     testWidgets('tapping a pane header activates that pane', (tester) async {
       final c = _container();
       addTearDown(c.dispose);
@@ -252,10 +254,11 @@ void main() {
           findsOneWidget,
         );
         // Close button meets the 24px minimum interactive target.
-        final closeButtonFinder = find.byType(IconButton).last;
-        final closeSize = tester.getSize(closeButtonFinder);
-        expect(closeSize.height, greaterThanOrEqualTo(24.0));
-        expect(closeSize.width, greaterThanOrEqualTo(24.0));
+        final closeBtn = tester.widget<IconButton>(
+          find.widgetWithIcon(IconButton, Icons.close),
+        );
+        expect(closeBtn.constraints?.minHeight, greaterThanOrEqualTo(24.0));
+        expect(closeBtn.constraints?.minWidth, greaterThanOrEqualTo(24.0));
       },
     );
   });

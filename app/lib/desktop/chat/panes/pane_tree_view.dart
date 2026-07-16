@@ -200,6 +200,11 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
   final _key = GlobalKey();
   DropEdge? _hoverEdge;
 
+  /// The drop edge nearest the drag position. [global] is the drag's
+  /// [DragTargetDetails.offset] — the feedback widget's top-left, not the raw
+  /// pointer. Since the same offset drives both the hover highlight and the
+  /// accept, the highlight and the resulting dock are always consistent, so the
+  /// small feedback-origin bias is intentional and harmless.
   DropEdge _edgeFor(Offset global) {
     final box = _key.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) return DropEdge.left;
