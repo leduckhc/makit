@@ -14,6 +14,7 @@ import '../../ui/session/tool_call_card.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
+import 'panes/pane_tree_controller.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 import '../../ui/composer/composer_selectors.dart';
@@ -28,8 +29,28 @@ import '../../ui/composer/composer_selectors.dart';
 /// docked pane: a plain scroll transcript with the composer pinned at the
 /// bottom — the shape desktop chat apps use.
 class DesktopChatPane extends ConsumerStatefulWidget {
-  /// Creates the desktop chat pane.
-  const DesktopChatPane({super.key});
+  /// Creates the desktop chat pane. When [sessionId] is null the pane falls
+  /// back to the globally [selectedSessionProvider] (single-pane behaviour).
+  const DesktopChatPane({
+    super.key,
+    this.sessionId,
+    this.showHeader = true,
+    this.trackGlobalSelection = true,
+  });
+
+  /// The session this pane hosts, or null to defer to the global selection.
+  final String? sessionId;
+
+  /// Whether to render the in-pane session header (title + actions menu). The
+  /// split pane tree shows a single merged header in its tab strip, so it
+  /// passes false to avoid a second stacked bar.
+  final bool showHeader;
+
+  /// Whether a null [sessionId] should fall back to the global
+  /// [selectedSessionProvider]. The split pane tree resolves the fallback
+  /// itself (only the active pane tracks the global selection), so it passes
+  /// false to keep inactive empty panes truly empty.
+  final bool trackGlobalSelection;
 
   @override
   ConsumerState<DesktopChatPane> createState() => _DesktopChatPaneState();
@@ -84,11 +105,18 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   Widget build(BuildContext context) {
-    final sessionId = ref.watch(selectedSessionProvider);
+    final sessionId =
+        widget.sessionId ??
+        (widget.trackGlobalSelection
+            ? ref.watch(selectedSessionProvider)
+            : null);
     if (sessionId == null) {
       // A sessionless worktree selected in the sidebar → harness picker to
-      // start a session in that existing worktree.
-      final worktree = ref.watch(selectedWorktreeProvider);
+      // start a session in that existing worktree. Only the active pane tracks
+      // this global draft; inactive split panes stay empty.
+      final worktree = widget.trackGlobalSelection
+          ? ref.watch(selectedWorktreeProvider)
+          : null;
       if (worktree != null) {
         return _WorktreeStartView(
           key: ValueKey(worktree.path),
@@ -97,10 +125,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       }
       // No session yet, but the pane still owns the unfold affordance when the
       // sidebar is hidden — surface a minimal top strip above the placeholder.
-      return const Column(
+      return Column(
         children: [
-          _UnfoldStrip(),
-          Expanded(child: _NoSelection()),
+          if (widget.showHeader) const _UnfoldStrip(),
+          const Expanded(child: _NoSelection()),
         ],
       );
     }
@@ -137,7 +165,8 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     return Column(
       children: [
-        _PaneHeader(session: session, fallbackId: sessionId),
+        if (widget.showHeader)
+          _PaneHeader(session: session, fallbackId: sessionId),
         Expanded(
           child: (session?.pending == true && session?.branch == null)
               ? _HarnessPicker(session: session!)
@@ -242,11 +271,7 @@ class _PaneHeader extends ConsumerWidget {
     final collapsed = ref.watch(sidebarCollapsedProvider);
     // Same fallback order as the sidebar tiles (SPEC-12 decision 8):
     // title → agent name → raw session id.
-    final title = (session?.title.trim().isNotEmpty ?? false)
-        ? session!.title.trim()
-        : ((session?.agent.trim().isNotEmpty ?? false)
-              ? session!.agent
-              : fallbackId);
+    final title = sessionPaneTitle(session, fallbackId);
     final theme = Theme.of(context);
     final content = Padding(
       // When collapsed the pane starts at window x=0, so inset the leading
@@ -278,7 +303,7 @@ class _PaneHeader extends ConsumerWidget {
             ),
           ),
           const SizedBox(width: 4),
-          _actionsMenu(context, ref),
+          SessionActionsMenu(sessionId: fallbackId),
         ],
       ),
     );
@@ -294,10 +319,29 @@ class _PaneHeader extends ConsumerWidget {
       ],
     );
   }
+}
 
-  /// Session-level overflow menu (Rename / Quit). Model and thinking-effort
-  /// live inline in the composer footer now, so they are not repeated here.
-  Widget _actionsMenu(BuildContext context, WidgetRef ref) {
+/// The session name shown in a pane header: title, else agent name, else id.
+String sessionPaneTitle(Session? session, String fallbackId) {
+  if (session != null && session.title.trim().isNotEmpty) {
+    return session.title.trim();
+  }
+  if (session != null && session.agent.trim().isNotEmpty) return session.agent;
+  return fallbackId;
+}
+
+/// The session-level overflow menu (Rename / Quit) for a pane header. Model and
+/// thinking-effort live inline in the composer footer, so they are not repeated
+/// here. Shared by the docked [_PaneHeader] and the split pane tree's tab strip.
+class SessionActionsMenu extends ConsumerWidget {
+  /// Creates the actions menu acting on [sessionId].
+  const SessionActionsMenu({super.key, required this.sessionId});
+
+  /// The session the menu's actions target.
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<String>(
       tooltip: 'Session actions',
       padding: EdgeInsets.zero,
@@ -315,7 +359,7 @@ class _PaneHeader extends ConsumerWidget {
               '/name',
               context: context,
               ref: ref,
-              sessionId: fallbackId,
+              sessionId: sessionId,
             );
           case 'quit':
             _confirmQuit(context, ref);
@@ -366,16 +410,23 @@ class _PaneHeader extends ConsumerWidget {
     );
     if (ok != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
+    // Capture notifiers before the async gap so the model cleanup still runs if
+    // this menu's widget is disposed (e.g. its pane closed) while killing.
+    final store = ref.read(storeControllerProvider.notifier);
+    final panes = ref.read(paneTreeControllerProvider.notifier);
+    final selection = ref.read(selectedSessionProvider.notifier);
     try {
-      await ref.read(storeControllerProvider.notifier).killSession(fallbackId);
-      if (!context.mounted) return;
-      // Clear the selection so the pane returns to its empty state (desktop's
-      // analog of the mobile screen's pop-to-home after quit).
-      if (ref.read(selectedSessionProvider) == fallbackId) {
-        ref.read(selectedSessionProvider.notifier).state = null;
+      await store.killSession(sessionId);
+      // Drop any panes bound to the now-dead session back to their empty state
+      // and clear the selection — regardless of whether this widget survived.
+      panes.unbindSession(sessionId);
+      if (selection.state == sessionId) {
+        selection.state = null;
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      if (messenger.mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      }
     }
   }
 }

@@ -6,6 +6,7 @@ import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
 import 'composer_focus.dart';
 import 'new_session_dialog.dart';
+import 'panes/pane_tree_controller.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 import '../settings/settings_window.dart' show settingsOpenProvider;
@@ -168,10 +169,46 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleSession(ref, 1);
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
+      case ShortcutAction.splitPaneVertical:
+        _splitPane(context, ref, Axis.horizontal);
+      case ShortcutAction.splitPaneHorizontal:
+        _splitPane(context, ref, Axis.vertical);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:
         break;
+    }
+  }
+
+  /// Splits the active pane and opens the new-session flow in the fresh pane.
+  ///
+  /// The current pane is pinned to its resolved session (explicit id, else the
+  /// global selection) so it keeps its transcript, then the new-worktree dialog
+  /// starts a new session that lands in the new pane. If the dialog is
+  /// cancelled (no worktree started), the fresh pane is removed so a cancelled
+  /// split doesn't leave a duplicate pane mirroring the same session.
+  Future<void> _splitPane(
+    BuildContext context,
+    WidgetRef ref,
+    Axis axis,
+  ) async {
+    final controller = ref.read(paneTreeControllerProvider.notifier);
+    final pinned =
+        controller.activeLeafSessionId ?? ref.read(selectedSessionProvider);
+    controller.splitActive(axis, pinnedSessionId: pinned);
+    final freshId = ref.read(paneTreeControllerProvider).activeLeafId;
+    final worktreeBefore = ref.read(selectedWorktreeProvider);
+    await showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
+    // The scope may have unmounted while the dialog was open; bail before
+    // touching providers through a potentially disposed ref.
+    if (!mounted) return;
+    final cancelled = identical(
+      ref.read(selectedWorktreeProvider),
+      worktreeBefore,
+    );
+    if (cancelled &&
+        ref.read(paneTreeControllerProvider).activeLeafId == freshId) {
+      controller.closeActive();
     }
   }
 

@@ -68,6 +68,22 @@ enum ShortcutAction {
     label: 'Open settings',
     description: 'Open the Settings & Server page',
     scope: ShortcutScope.global,
+  ),
+
+  /// Split the active pane into a left/right layout.
+  splitPaneVertical(
+    id: 'splitPaneVertical',
+    label: 'Split pane vertically',
+    description: 'Split the active pane into a left/right layout',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Split the active pane into a top/bottom layout.
+  splitPaneHorizontal(
+    id: 'splitPaneHorizontal',
+    label: 'Split pane horizontally',
+    description: 'Split the active pane into a top/bottom layout',
+    scope: ShortcutScope.global,
   );
 
   const ShortcutAction({
