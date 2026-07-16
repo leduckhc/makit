@@ -277,23 +277,15 @@ export function startWsServer(opts: ServerOpts) {
       }
       ctx.ack();
       // A pending (draft) session materializes its worktree + agent on the
-      // first real request, which names the branch. Refresh the repo snapshot
-      // afterwards so the new worktree appears on the home screen.
+      // first real request, which names the branch. The manager routes any
+      // promotion failure through the session's own event pipeline (a real,
+      // persisted, monotonic `session.error`), so the handler just checks
+      // whether to proceed and refreshes the repo snapshot on success.
       if (session.pending) {
-        try {
-          await manager.startPendingSession(session.id, text);
-          broadcastSnapshots();
-          void broadcastReposSnapshot();
-        } catch (e) {
-          session.emit("event", {
-            seq: 0,
-            sessionId: session.id,
-            ts: Date.now(),
-            kind: "session.error",
-            payload: { message: `could not create worktree: ${(e as Error).message}` },
-          });
-          return;
-        }
+        const started = await manager.promotePendingSession(session, text);
+        if (!started) return;
+        broadcastSnapshots();
+        void broadcastReposSnapshot();
       }
       await session.sendUserMessage(text);
     });

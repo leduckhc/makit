@@ -154,6 +154,15 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Record and emit a `session.error` through the normal event pipeline, so it
+   * gets a real monotonic seq and is persisted (like any adapter event) rather
+   * than being hand-built by a caller. Used e.g. when draft promotion fails.
+   */
+  recordError(message: string): void {
+    this.emit("event", this.record({ ts: Date.now(), kind: "session.error", payload: { message } }));
+  }
+
+  /**
    * Seed the event log from a prior transcript BEFORE the adapter goes live.
    * Populates `this.events[]` (assigning seqs, sessionId, and bubbling up
    * status/preview) but does NOT emit — history is replayed to clients on

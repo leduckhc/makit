@@ -370,6 +370,25 @@ export class SessionManager extends EventEmitter {
     return session;
   }
 
+  /**
+   * Promote a draft session on its first message: create its worktree + agent.
+   * On failure, routes the error through the session's own event pipeline
+   * ({@link Session.recordError} → persisted, monotonic seq) instead of
+   * throwing a bare error the caller must hand-build an event for, and returns
+   * `false` so the caller skips delivering the turn. Returns `true` on success
+   * (or when the session was not pending).
+   */
+  async promotePendingSession(session: Session, firstMessage: string): Promise<boolean> {
+    if (!session.pending) return true;
+    try {
+      await this.startPendingSession(session.id, firstMessage);
+      return true;
+    } catch (e) {
+      session.recordError(`could not create worktree: ${(e as Error).message}`);
+      return false;
+    }
+  }
+
   /** Find an unused branch name, appending `-2`, `-3`, … on collision. */
   private async uniqueBranch(repoPath: string, base: string): Promise<string> {
     let candidate = base;
