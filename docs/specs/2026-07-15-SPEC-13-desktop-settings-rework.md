@@ -1,6 +1,6 @@
 # SPEC-13 — Desktop Settings rework (M3 two-pane, searchable, immediate-effect)
 
-**Status:** Draft (design — no code yet) · **Depends on:** SPEC-03 (desktop control app), SPEC-10 (desktop chat app), SPEC-12 (sidebar/topbar restructure)
+**Status:** Implemented (this PR) — the original design plan is retained below for reference · **Depends on:** SPEC-03 (desktop control app), SPEC-10 (desktop chat app), SPEC-12 (sidebar/topbar restructure)
 **Roadmap:** realizes milestone **M4** ("real settings window" + macOS control-app UX/UI polish) from `docs/specs/README.md`.
 **Scope:** **desktop / macOS only.** The mobile settings screen (`app/lib/ui/settings/settings_screen.dart`) and mobile notification section are **out of scope** for this spec and left untouched.
 
@@ -136,7 +136,7 @@ existing widgets/providers — they are *not* modeled as preferences.
 **defaults in code**, persist **only the diffs** as JSON in
 `SharedPreferences`, and derive reset/modified from the base. Generalize it.
 
-```
+```text
 lib/desktop/settings/prefs/
   preference.dart          // PreferenceEntry<T>: id, defaultValue, codec
   preferences_controller.dart  // reads/writes SharedPreferences, diff-only
@@ -152,7 +152,9 @@ lib/desktop/settings/prefs/
   immediately and updates the provider; no staging/Save.
 - Requirement **#9 (modified badge):** `isModified(entry) == store.contains(id)`
   — trivially derived because we only persist diffs.
-- Per-item **reset** removes the key; **Reset all** clears the map (Advanced §7).
+- Per-item **reset** removes the key; **Reset all** clears the user-facing
+  overrides while preserving internal bookkeeping entries such as
+  `settings.lastSection` (Advanced §7).
 - Keymap and server host/port keep their existing dedicated controllers but are
   surfaced through the same registry (they already store diffs / their own
   keys); we do **not** force-migrate their storage.
@@ -184,7 +186,7 @@ The registry is the single source of truth for both **rendering** and the
 
 ### C. Two-pane shell (requirements #4, #5)
 
-```
+```text
 lib/desktop/settings/
   settings_window.dart      // the 2-pane Scaffold (replaces _SettingsServerPage)
   settings_nav_pane.dart    // left: section list + search field
@@ -211,7 +213,8 @@ lib/desktop/settings/
   `isModified(entry)`, with an inline **Reset** (↺) affordance (mirrors the
   keymap row's per-action reset icon).
 - Each section header shows a count of modified items; **Advanced → Reset all**
-  clears everything after a confirm dialog.
+  clears every user-facing override (internal bookkeeping such as
+  `settings.lastSection` is preserved) after a confirm dialog.
 
 ---
 
@@ -249,7 +252,8 @@ Every existing surface gets a home; nothing is dropped.
 - **Regression:** existing keymap tests (`keymap_controller` / settings screen) and server-config tests keep passing; embedded Devices/Sessions/QR widgets still render.
 
 Gate (from `docs/specs/README.md`): `flutter analyze --fatal-infos` clean;
-`app/tool/audit.sh` passes. Flutter binary: `/Users/le/Work/Vibe/flutter/bin/flutter`.
+`app/tool/audit.sh` passes. (Use the repo/CI Flutter toolchain; do not hard-code
+a machine-specific Flutter path.)
 
 ## Suggested phasing (implementation, later)
 
