@@ -134,8 +134,12 @@ export class Session extends EventEmitter {
   private ensureHydrated(): void {
     if (!this.hydrateFrom) return;
     const load = this.hydrateFrom;
+    // Clear the loader only AFTER a successful read: if load() throws (e.g. a
+    // transient store error) the loader is retained so a later access/record()
+    // can retry, rather than permanently truncating this session's history.
+    const events = load();
     this.hydrateFrom = undefined;
-    this.hydrate(load());
+    this.hydrate(events);
   }
 
   /**
