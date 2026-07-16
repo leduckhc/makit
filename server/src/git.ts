@@ -142,12 +142,15 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeEntry[]> 
   flush();
 
   // Best-effort HEAD commit time per worktree (epoch ms). A git failure or
-  // unparseable value leaves committedAt null.
-  for (const e of out) {
-    const r2 = await git(["log", "-1", "--format=%ct"], e.path);
-    const secs = r2.code === 0 ? Number.parseInt(r2.stdout.trim(), 10) : NaN;
-    e.committedAt = Number.isFinite(secs) ? secs * 1000 : null;
-  }
+  // unparseable value leaves committedAt null. Independent per-worktree shells,
+  // so fan them out concurrently (SPEC-17 P3).
+  await Promise.all(
+    out.map(async (e) => {
+      const r2 = await git(["log", "-1", "--format=%ct"], e.path);
+      const secs = r2.code === 0 ? Number.parseInt(r2.stdout.trim(), 10) : NaN;
+      e.committedAt = Number.isFinite(secs) ? secs * 1000 : null;
+    }),
+  );
   return out;
 }
 

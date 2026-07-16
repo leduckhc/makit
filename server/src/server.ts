@@ -571,9 +571,11 @@ export function startWsServer(opts: ServerOpts) {
       log.debug(
         `[makit] session.event sid=${session.id.slice(0, 8)} kind=${event.kind} → ${sent} subscriber(s)`,
       );
-      broadcastSessionsSnapshot();
     });
-    session.on("titleChanged", () => {
+    // Re-broadcast the sessions snapshot ONLY when a DTO-visible field
+    // (title/status/preview/pending) changes — NOT per streaming delta
+    // (SPEC-17 P2). `metaChanged` subsumes the old `titleChanged` trigger.
+    session.on("metaChanged", () => {
       broadcastSessionsSnapshot();
     });
   }

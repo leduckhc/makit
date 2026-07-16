@@ -245,9 +245,7 @@ export class SessionManager extends EventEmitter {
       adapter: new DetachedAdapter(agentId),
       store: this.store,
     });
-    session.pending = true;
-    session.pendingAgent = agentId;
-    session.pendingBaseBranch = baseBranch;
+    session.beginDraft({ agent: agentId, baseBranch });
     // Bind to an existing worktree when provided (start-a-session-in-worktree):
     // first message launches the agent there instead of forking a new tree.
     // The path comes from the wire, so verify it is genuinely a worktree of
@@ -263,8 +261,12 @@ export class SessionManager extends EventEmitter {
           `worktree is not part of project ${projectId}: ${worktreePath}`,
         );
       }
-      session.pendingWorktreePath = match.path;
-      session.branch = match.branch ?? branch;
+      session.beginDraft({
+        agent: agentId,
+        baseBranch,
+        pendingWorktreePath: match.path,
+        branch: match.branch ?? branch,
+      });
     }
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
@@ -278,7 +280,7 @@ export class SessionManager extends EventEmitter {
   setPendingAgent(sessionId: string, agent: string): Session {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no such session: ${sessionId}`);
-    if (session.pending) session.pendingAgent = agent;
+    if (session.pending) session.setPendingAgent(agent);
     return session;
   }
 
@@ -327,12 +329,13 @@ export class SessionManager extends EventEmitter {
   async startPendingSession(sessionId: string, firstMessage: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no such session: ${sessionId}`);
-    if (!session.pending) return session;
+    const lc = session.lifecycle;
+    if (lc.phase !== "draft") return session;
 
     const project = this.projects.get(session.projectId);
     if (!project) throw new Error(`unknown project: ${session.projectId}`);
     const repoPath = project.dto.path;
-    const agentId = session.pendingAgent ?? this.defaultAgentId;
+    const agentId = lc.agent;
     // Preserve the harness the user actually chose: markStarted() clears
     // pendingAgent, so pin the authoritative agent field here (unless the
     // stub adapter factory is driving tests).
@@ -342,12 +345,12 @@ export class SessionManager extends EventEmitter {
     let branch = base;
     let worktreePath = repoPath;
 
-    if (session.pendingWorktreePath) {
+    if (lc.pendingWorktreePath) {
       // Start in the existing worktree the user picked — no new tree/branch.
-      worktreePath = session.pendingWorktreePath;
-      branch = session.branch ?? base;
+      worktreePath = lc.pendingWorktreePath;
+      branch = lc.branch ?? base;
     } else if (await isGitRepo(repoPath)) {
-      const requested = session.pendingBaseBranch;
+      const requested = lc.baseBranch;
       const baseBranch =
         requested && (await branchExists(repoPath, requested))
           ? requested
@@ -414,30 +417,47 @@ export class SessionManager extends EventEmitter {
    */
   async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    const repos: RepoDTO[] = [];
-    for (const p of this.projects.values()) {
-      const repoPath = p.dto.path;
-      const gitRepo = await isGitRepo(repoPath);
-      const defaultBranch = gitRepo ? await detectDefaultBranch(repoPath) : null;
-      const currentBranch = gitRepo ? await detectCurrentBranch(repoPath) : null;
-      const entries = gitRepo ? await listWorktrees(repoPath) : [];
+    // Independent read-only shells: fan out across projects (SPEC-17 P3).
+    return Promise.all(
+      [...this.projects.values()].map((p) => this.listRepo(p, includePrs)),
+    );
+  }
 
-      // Group this project's STARTED sessions by the worktree path they run
-      // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
-      const sessionsByPath = new Map<string, string[]>();
-      for (const s of this.sessions.values()) {
-        if (s.projectId !== p.dto.id || s.pending) continue;
-        const key = s.worktreePath ?? repoPath;
-        const list = sessionsByPath.get(key) ?? [];
-        list.push(s.id);
-        sessionsByPath.set(key, list);
-      }
+  /** Build the {@link RepoDTO} for one project, parallelizing per-worktree shells. */
+  private async listRepo(p: ProjectEntry, includePrs: boolean): Promise<RepoDTO> {
+    const repoPath = p.dto.path;
+    const gitRepo = await isGitRepo(repoPath);
+    // Branch detection + worktree enumeration are independent reads — run
+    // them concurrently rather than in a serial chain.
+    const [defaultBranch, currentBranch, entries] = gitRepo
+      ? await Promise.all([
+          detectDefaultBranch(repoPath),
+          detectCurrentBranch(repoPath),
+          listWorktrees(repoPath),
+        ])
+      : [null, null, [] as Awaited<ReturnType<typeof listWorktrees>>];
 
-      const worktrees: WorktreeDTO[] = [];
-      for (const e of entries) {
-        const stat = await diffStat(e.path, defaultBranch);
-        const pr = includePrs && e.branch && !e.isPrimary ? await findOpenPr(repoPath, e.branch) : null;
-        worktrees.push({
+    // Group this project's STARTED sessions by the worktree path they run
+    // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
+    const sessionsByPath = new Map<string, string[]>();
+    for (const s of this.sessions.values()) {
+      if (s.projectId !== p.dto.id || s.pending) continue;
+      const key = s.worktreePath ?? repoPath;
+      const list = sessionsByPath.get(key) ?? [];
+      list.push(s.id);
+      sessionsByPath.set(key, list);
+    }
+
+    // Per-worktree diff stat + PR lookup are independent shells — fan out.
+    const worktrees: WorktreeDTO[] = await Promise.all(
+      entries.map(async (e): Promise<WorktreeDTO> => {
+        const [stat, pr] = await Promise.all([
+          diffStat(e.path, defaultBranch),
+          includePrs && e.branch && !e.isPrimary
+            ? findOpenPr(repoPath, e.branch)
+            : Promise.resolve(null),
+        ]);
+        return {
           id: e.path,
           path: e.path,
           branch: e.branch,
@@ -448,22 +468,21 @@ export class SessionManager extends EventEmitter {
           committedAt: e.committedAt,
           pr,
           sessionIds: sessionsByPath.get(e.path) ?? [],
-        });
-      }
+        };
+      }),
+    );
 
-      repos.push({
-        id: p.dto.id,
-        name: p.dto.name,
-        path: repoPath,
-        pinned: p.dto.pinned,
-        lastActivityAt: p.dto.lastActivityAt,
-        isGitRepo: gitRepo,
-        defaultBranch,
-        currentBranch,
-        worktrees,
-      });
-    }
-    return repos;
+    return {
+      id: p.dto.id,
+      name: p.dto.name,
+      path: repoPath,
+      pinned: p.dto.pinned,
+      lastActivityAt: p.dto.lastActivityAt,
+      isGitRepo: gitRepo,
+      defaultBranch,
+      currentBranch,
+      worktrees,
+    };
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */
