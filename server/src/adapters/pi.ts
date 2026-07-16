@@ -153,6 +153,10 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
 
   private async ensureProcess(): Promise<void> {
     if (this.transport) return;
+    // Test seam: unit tests inject a fake `child` directly (no spawned
+    // transport) to drive writeCommand. A live seam must not trigger a real
+    // spawn — this mirrors the pre-transport guard `this.child && !killed`.
+    if (this.child && !this.child.killed) return;
 
     const args = this.resumeSessionPath
       ? ["--mode", "rpc", "--session", this.resumeSessionPath]

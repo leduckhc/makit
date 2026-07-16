@@ -127,7 +127,7 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
   return {
     send: (line: string) => {
       const stdin = child.stdin;
-      if (!stdin || stdin.destroyed || !stdin.writable) return;
+      if (!stdin || stdin.destroyed) return;
       try {
         stdin.write(line + "\n");
       } catch (e) {
