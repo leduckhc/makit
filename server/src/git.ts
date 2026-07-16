@@ -15,6 +15,14 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { log } from "./log.js";
+import { mapLimit } from "./concurrency.js";
+
+/**
+ * Cap on concurrent per-worktree git reads within a single repo (e.g. the
+ * HEAD-timestamp probe below). Bounds the child-process fan-out for a repo
+ * with many worktrees; nests under the manager's project-level cap.
+ */
+const WORKTREE_READ_CONCURRENCY = 8;
 
 /** Base directory under which managed worktrees are created. */
 export function worktreeBaseDir(): string {
@@ -151,16 +159,15 @@ export async function listWorktrees(repoPath: string): Promise<WorktreeEntry[]> 
   }
   flush();
 
-  // Best-effort HEAD commit time per worktree (epoch ms), in parallel — one
-  // wall-clock git latency instead of one per worktree. A git failure or
+  // Best-effort HEAD commit time per worktree (epoch ms), in parallel but
+  // bounded — one wall-clock git latency instead of one per worktree, without
+  // spawning a git process per worktree all at once. A git failure or
   // unparseable value leaves committedAt null.
-  await Promise.all(
-    out.map(async (e) => {
-      const r2 = await git(["log", "-1", "--format=%ct"], e.path);
-      const secs = r2.code === 0 ? Number.parseInt(r2.stdout.trim(), 10) : NaN;
-      e.committedAt = Number.isFinite(secs) ? secs * 1000 : null;
-    }),
-  );
+  await mapLimit(out, WORKTREE_READ_CONCURRENCY, async (e) => {
+    const r2 = await git(["log", "-1", "--format=%ct"], e.path);
+    const secs = r2.code === 0 ? Number.parseInt(r2.stdout.trim(), 10) : NaN;
+    e.committedAt = Number.isFinite(secs) ? secs * 1000 : null;
+  });
   return out;
 }
 

@@ -32,6 +32,19 @@ import {
 } from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
+import { mapLimit } from "./concurrency.js";
+
+/**
+ * Concurrency caps for the repo snapshot fan-out. These bound how many git/gh
+ * child processes run at once so a large install (many repos/worktrees) can't
+ * exhaust file-descriptor/process limits or storm GitHub with `gh` calls. The
+ * git caps nest (projects × worktrees), so keep their product modest; the PR
+ * lookups are flattened across all repos, so PR_CONCURRENCY is a true global
+ * bound on concurrent `gh` invocations.
+ */
+const PROJECT_CONCURRENCY = 4;
+const WORKTREE_CONCURRENCY = 6;
+const PR_CONCURRENCY = 6;
 
 export interface AdapterFactoryContext {
   projectPath: string;
@@ -403,8 +416,10 @@ export class SessionManager extends EventEmitter {
    */
   async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    const repos = await Promise.all(
-      [...this.projects.values()].map((p) => this.repoSnapshot(p)),
+    const repos = await mapLimit(
+      [...this.projects.values()],
+      PROJECT_CONCURRENCY,
+      (p) => this.repoSnapshot(p),
     );
     return includePrs ? this.enrichPrs(repos) : repos;
   }
@@ -432,23 +447,21 @@ export class SessionManager extends EventEmitter {
       sessionsByPath.set(key, list);
     }
 
-    const worktrees: WorktreeDTO[] = await Promise.all(
-      entries.map(async (e) => {
-        const stat = await diffStat(e.path, defaultBranch);
-        return {
-          id: e.path,
-          path: e.path,
-          branch: e.branch,
-          isPrimary: e.isPrimary,
-          insertions: stat.insertions,
-          deletions: stat.deletions,
-          filesChanged: stat.filesChanged,
-          committedAt: e.committedAt,
-          pr: null,
-          sessionIds: sessionsByPath.get(e.path) ?? [],
-        };
-      }),
-    );
+    const worktrees: WorktreeDTO[] = await mapLimit(entries, WORKTREE_CONCURRENCY, async (e) => {
+      const stat = await diffStat(e.path, defaultBranch);
+      return {
+        id: e.path,
+        path: e.path,
+        branch: e.branch,
+        isPrimary: e.isPrimary,
+        insertions: stat.insertions,
+        deletions: stat.deletions,
+        filesChanged: stat.filesChanged,
+        committedAt: e.committedAt,
+        pr: null,
+        sessionIds: sessionsByPath.get(e.path) ?? [],
+      };
+    });
 
     return {
       id: p.dto.id,
@@ -466,22 +479,30 @@ export class SessionManager extends EventEmitter {
   /**
    * Add open-PR info (via `gh`, network) to a git-only snapshot from
    * {@link listRepos}. Returns new objects — the input is not mutated — so the
-   * caller can keep the fast snapshot around while this one is in flight.
-   * Lookups run in parallel across all worktrees.
+   * caller can keep the fast snapshot around while this one is in flight. The
+   * `gh` lookups are flattened across all repos and run through a single
+   * bounded pool ({@link PR_CONCURRENCY}), so a many-worktree install can't
+   * launch hundreds of concurrent `gh` processes / network calls.
    */
   async enrichPrs(repos: RepoDTO[]): Promise<RepoDTO[]> {
-    return Promise.all(
-      repos.map(async (repo) => ({
-        ...repo,
-        worktrees: await Promise.all(
-          repo.worktrees.map(async (w) =>
-            w.branch && !w.isPrimary
-              ? { ...w, pr: await findOpenPr(repo.path, w.branch) }
-              : w,
-          ),
-        ),
-      })),
+    // Clone up front so the input snapshot is never mutated.
+    const out = repos.map((repo) => ({
+      ...repo,
+      worktrees: repo.worktrees.map((w) => ({ ...w })),
+    }));
+    // Flatten the eligible (secondary, branched) worktrees so concurrency is
+    // bounded globally rather than per-repo.
+    const tasks: Array<{ ri: number; wi: number; repoPath: string; branch: string }> = [];
+    out.forEach((repo, ri) =>
+      repo.worktrees.forEach((w, wi) => {
+        if (w.branch && !w.isPrimary) tasks.push({ ri, wi, repoPath: repo.path, branch: w.branch });
+      }),
     );
+    const prs = await mapLimit(tasks, PR_CONCURRENCY, (t) => findOpenPr(t.repoPath, t.branch));
+    tasks.forEach((t, i) => {
+      out[t.ri].worktrees[t.wi].pr = prs[i];
+    });
+    return out;
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */
