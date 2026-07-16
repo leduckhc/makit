@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { SessionManager } from "./manager.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
+import type { SessionEvent } from "./protocol.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
@@ -580,6 +581,63 @@ test("listRepos({ includePrs: false }) returns git-only diff numbers and skips t
     else process.env.GH_MARKER = prevMarker;
     execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd });
     rmSync(bin, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("promotePendingSession routes a draft-promotion failure through the session pipeline (persisted, monotonic seq)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    // A factory whose adapter fails to start, so promotion (worktree + agent)
+    // throws deterministically without touching git. Non-git project dir keeps
+    // the flow in the repo dir (no worktree add).
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a = stubAdapter([]);
+        (a as any).start = async () => {
+          throw new Error("boom");
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const session = await mgr.spawnPendingSession(projectId, "pi");
+
+    // Seed a prior durable event so the failure event must come strictly after
+    // it — proving a real monotonic seq rather than the old hand-built seq:0.
+    session.backfill([{ ts: 1, kind: "user.message", payload: { text: "hello" } }]);
+    const priorMaxSeq = store.read(session.id).at(-1)!.seq;
+    assert.ok(priorMaxSeq >= 1);
+
+    const errs: SessionEvent[] = [];
+    session.on("event", (e) => {
+      if (e.kind === "session.error") errs.push(e);
+    });
+
+    const started = await mgr.promotePendingSession(session, "do a thing");
+    assert.equal(started, false, "a failed promotion tells the caller not to send the turn");
+
+    // The failure surfaced as a normal, emitted event…
+    assert.equal(errs.length, 1);
+    const errEvent = errs[0];
+    assert.match(String((errEvent.payload as any).message), /could not create worktree/);
+    // …with a real, non-zero, monotonic seq (NOT the old seq:0)…
+    assert.ok(errEvent.seq > 0, `seq ${errEvent.seq} must be non-zero`);
+    assert.equal(errEvent.seq, priorMaxSeq + 1, "error seq follows the prior event monotonically");
+
+    // …that is PERSISTED and replays last, in seq order.
+    const persisted = store.read(session.id);
+    const seqs = persisted.map((e) => e.seq);
+    assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), "persisted events are in seq order");
+    const last = persisted.at(-1)!;
+    assert.equal(last.kind, "session.error");
+    assert.equal(last.seq, errEvent.seq, "the persisted error carries the emitted seq");
+  } finally {
+    store.close();
     rmSync(cwd, { recursive: true, force: true });
   }
 });
