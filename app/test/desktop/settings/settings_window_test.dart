@@ -26,30 +26,40 @@ class _RecordingObserver extends NavigatorObserver {
 
 late SharedPreferences _prefs;
 
-Widget _wrap(
-  Widget child, {
-  PreferencesController? controller,
-}) => ProviderScope(
-  // The Server & Devices section body reads these providers, so navigating to
-  // it (e.g. via a search deep-link) requires them to be overridden.
-  overrides: [
-    if (controller != null)
-      preferencesControllerProvider.overrideWith((ref) => controller),
-    serverConfigProvider.overrideWith(
-      (ref) => ServerConfigController(_prefs, const ServerConfig()),
-    ),
-    desktopControllerProvider.overrideWithValue(
-      DesktopController(
-        client: FakeControlClient(),
-        lifecycle: DaemonLifecycle(
-          resolver: MakitCliResolver(shellLookup: () async => null),
+/// A [ProviderContainer] overriding the providers the Server & Devices section
+/// body reads, so navigating to it (e.g. via a search deep-link) works. Shared
+/// by [_wrap] and the deep-link test. Disposed automatically at test teardown.
+///
+/// (The overrides are an inferred list literal rather than a `List<Override>`
+/// helper because Riverpod does not export the `Override` base type.)
+ProviderContainer _sectionContainer({PreferencesController? controller}) {
+  final container = ProviderContainer(
+    overrides: [
+      if (controller != null)
+        preferencesControllerProvider.overrideWith((ref) => controller),
+      serverConfigProvider.overrideWith(
+        (ref) => ServerConfigController(_prefs, const ServerConfig()),
+      ),
+      desktopControllerProvider.overrideWithValue(
+        DesktopController(
+          client: FakeControlClient(),
+          lifecycle: DaemonLifecycle(
+            resolver: MakitCliResolver(shellLookup: () async => null),
+          ),
         ),
       ),
-    ),
-    connectionProvider.overrideWithValue(MakitConnState()),
-  ],
-  child: MaterialApp(home: child),
-);
+      connectionProvider.overrideWithValue(MakitConnState()),
+    ],
+  );
+  addTearDown(container.dispose);
+  return container;
+}
+
+Widget _wrap(Widget child, {PreferencesController? controller}) =>
+    UncontrolledProviderScope(
+      container: _sectionContainer(controller: controller),
+      child: MaterialApp(home: child),
+    );
 
 void main() {
   setUp(() async {
@@ -122,24 +132,7 @@ void main() {
     tester,
   ) async {
     final controller = PreferencesController.ephemeral();
-    final container = ProviderContainer(
-      overrides: [
-        preferencesControllerProvider.overrideWith((ref) => controller),
-        serverConfigProvider.overrideWith(
-          (ref) => ServerConfigController(_prefs, const ServerConfig()),
-        ),
-        desktopControllerProvider.overrideWithValue(
-          DesktopController(
-            client: FakeControlClient(),
-            lifecycle: DaemonLifecycle(
-              resolver: MakitCliResolver(shellLookup: () async => null),
-            ),
-          ),
-        ),
-        connectionProvider.overrideWithValue(MakitConnState()),
-      ],
-    );
-    addTearDown(container.dispose);
+    final container = _sectionContainer(controller: controller);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,

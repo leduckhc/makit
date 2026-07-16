@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
@@ -134,11 +135,37 @@ void main() {
   testWidgets('shows the fingerprint with a copy action when connected', (
     tester,
   ) async {
+    // Tall viewport so the fingerprint row (in the Server group) is on-screen
+    // and its copy button is hit-testable.
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    // Capture what the copy button writes to the system clipboard.
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    const fingerprint = 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99';
     final connected = MakitConnState(
       server: PairedServer(
         host: 'h',
         port: 8787,
-        fingerprint: 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
+        fingerprint: fingerprint,
         bearer: 'b',
         label: 'Mac',
       ),
@@ -146,6 +173,12 @@ void main() {
     await _pump(tester, config: await makeConfig(), connection: connected);
 
     expect(find.byTooltip('Copy fingerprint'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Copy fingerprint'));
+    await tester.pump();
+
+    // The full fingerprint is copied (the subtitle only shows a shortened form).
+    expect(copied, fingerprint);
   });
 
   testWidgets('unpair shows a confirm dialog that can be cancelled', (
