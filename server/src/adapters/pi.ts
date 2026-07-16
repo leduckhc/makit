@@ -20,15 +20,16 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 // (no path/url imports needed — pi binary is resolved from PATH)
-import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import type { SpawnOpts, UserInput } from "./adapter.js";
+import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { spawnLineProcess, type ChildExitInfo, type ChildLineTransport } from "./child_transport.js";
+import { summarizeLine } from "./summarize.js";
 import { log } from "../log.js";
 import { newId } from "../protocol.js";
 
-export class PiAdapter extends EventEmitter implements AgentAdapter {
+export class PiAdapter extends SubprocessAdapter {
   readonly agent = "pi";
 
   private cwd = process.cwd();
@@ -592,11 +593,6 @@ export class PiAdapter extends EventEmitter implements AgentAdapter {
         return;
     }
   }
-
-  private emitEvent(e: AdapterEvent) {
-    log.debug(`[makit] pi.emitEvent kind=${e.kind}`);
-    this.emit("event", e);
-  }
 }
 
 // ---------- helpers ---------------------------------------------------------
@@ -663,9 +659,7 @@ function extractResultText(result: unknown): string {
 /** First non-empty line of [text], truncated for the collapsed card. */
 function summarizeText(toolName: unknown, text: string): string {
   const name = String(toolName ?? "tool");
-  const firstLine = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
-  if (!firstLine) return `${name} ok`;
-  return firstLine.length > 120 ? `${firstLine.slice(0, 117)}…` : firstLine;
+  return summarizeLine(text, `${name} ok`);
 }
 
 function classifyRisk(name: string): "safe" | "risky" | "destructive" {

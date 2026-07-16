@@ -14,8 +14,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { EventEmitter } from "node:events";
-import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import type { SpawnOpts, UserInput } from "./adapter.js";
+import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
 import type { AskUser } from "../uicall.js";
@@ -35,7 +35,7 @@ export interface CodexAdapterOpts {
   connect?: (cwd: string, env: Record<string, string>) => CodexTransport;
 }
 
-export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter {
+export class CodexAppServerAdapter extends SubprocessAdapter {
   readonly agent = "codex";
 
   private readonly command: string;
@@ -52,9 +52,6 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
   private threadId?: string;
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (v: any) => void; reject: (e: unknown) => void }>();
-  private readonly activeTurns = new Set<string>();
-  private pendingApprovals = 0;
-  private exited = false;
 
   constructor(opts: CodexAdapterOpts = {}) {
     super();
@@ -76,7 +73,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
     const env = { ...this.extraEnv, ...(opts.env ?? {}) };
     this.transport = this.connectFn(opts.cwd, env);
     this.transport.onLine((line) => this.handleLine(line));
-    this.transport.onExit((code) => this.handleExit(code));
+    this.transport.onExit((code) => this.handleExit(code, () => this.rejectPending()));
 
     await this.request("initialize", {
       clientInfo: { name: "makit", title: "makit", version: "0.1.0" },
@@ -105,27 +102,27 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
         input: [{ type: "text", text: input.text, text_elements: [] }],
       });
       const turnId = res?.turn?.id;
-      if (turnId) this.activeTurns.add(turnId);
+      if (turnId) this.turns.enterTurn(turnId);
     } catch (err) {
       this.emitEvent({
         ts: Date.now(),
         kind: "session.error",
         payload: { message: `turn/start failed: ${(err as Error)?.message ?? String(err)}` },
       });
-      if (this.activeTurns.size === 0 && !this.exited) this.emit("status", "idle");
+      this.turns.settleIdle();
     }
   }
 
   async cancel(): Promise<void> {
     if (!this.threadId) return;
-    for (const turnId of this.activeTurns) {
+    for (const turnId of this.turns.activeTurnIds) {
       await this.request("turn/interrupt", { threadId: this.threadId, turnId }).catch(() => {});
     }
   }
 
   async kill(): Promise<void> {
     this.transport?.dispose();
-    this.handleExit(null);
+    this.handleExit(null, () => this.rejectPending());
   }
 
   // ---- JSON-RPC plumbing ---------------------------------------------------
@@ -180,17 +177,15 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
   private handleNotification(method: string, params: any): void {
     if (method === "turn/started") {
       const id = params?.turn?.id;
-      if (id) this.activeTurns.add(id);
-      this.emit("status", "running");
+      if (id) this.turns.enterTurn(id);
+      else this.emit("status", "running");
       return;
     }
     if (method === "turn/completed") {
       const id = params?.turn?.id;
-      if (id) this.activeTurns.delete(id);
       this.mapper.endTurn();
-      if (this.activeTurns.size === 0 && this.pendingApprovals === 0 && !this.exited) {
-        this.emit("status", "idle");
-      }
+      if (id) this.turns.leaveTurn(id);
+      else this.turns.settleIdle();
       return;
     }
     this.mapper.handle(method, params);
@@ -252,7 +247,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
     const questions: any[] = Array.isArray(params?.questions) ? params.questions : [];
     if (!this.askUser || questions.length === 0) return { answers: {} };
 
-    this.enterInteractive("awaiting-input");
+    this.turns.enterApproval("awaiting-input");
     try {
       const resp = await this.askUser({
         kind: "askUserQuestion",
@@ -276,7 +271,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
       }
       return { answers };
     } finally {
-      this.leaveInteractive();
+      this.turns.leaveApproval();
     }
   }
 
@@ -287,7 +282,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
   private async handleElicitation(params: any): Promise<{ action: string; content: unknown; _meta: null }> {
     if (!this.askUser) return { action: "decline", content: null, _meta: null };
     const message = typeof params?.message === "string" ? params.message : "The agent needs input.";
-    this.enterInteractive("awaiting-input");
+    this.turns.enterApproval("awaiting-input");
     try {
       if (params?.mode === "url") {
         const ok = await this.confirm({ message, preview: typeof params?.url === "string" ? params.url : undefined }, "open-url");
@@ -310,7 +305,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
       }
       return { action: "decline", content: null, _meta: null };
     } finally {
-      this.leaveInteractive();
+      this.turns.leaveApproval();
     }
   }
 
@@ -319,7 +314,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
     action: string,
   ): Promise<boolean> {
     if (!this.askUser) return false; // fail safe: deny
-    this.enterInteractive("awaiting-approval");
+    this.turns.enterApproval("awaiting-approval");
     try {
       const resp = await this.askUser({
         kind: "confirmAction",
@@ -331,21 +326,7 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
       });
       return resp.kind === "confirmAction" && !(resp as any).cancelled && resp.approved === true;
     } finally {
-      this.leaveInteractive();
-    }
-  }
-
-  private enterInteractive(status: "awaiting-approval" | "awaiting-input"): void {
-    this.pendingApprovals += 1;
-    if (this.pendingApprovals === 1) {
-      this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status } });
-    }
-  }
-
-  private leaveInteractive(): void {
-    this.pendingApprovals = Math.max(0, this.pendingApprovals - 1);
-    if (this.pendingApprovals === 0 && !this.exited && this.activeTurns.size > 0) {
-      this.emit("status", "running");
+      this.turns.leaveApproval();
     }
   }
 
@@ -357,17 +338,9 @@ export class CodexAppServerAdapter extends EventEmitter implements AgentAdapter 
     this.write({ id, error: { code, message } });
   }
 
-  private handleExit(code: number | null): void {
-    if (this.exited) return;
-    this.exited = true;
+  private rejectPending(): void {
     for (const [, p] of this.pending) p.reject(new Error("codex app-server exited"));
     this.pending.clear();
-    this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status: "exited" } });
-    this.emit("exit", code);
-  }
-
-  private emitEvent(e: AdapterEvent): void {
-    this.emit("event", e);
   }
 }
 

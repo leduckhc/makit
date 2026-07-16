@@ -14,7 +14,6 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { EventEmitter } from "node:events";
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
@@ -31,7 +30,8 @@ import {
   type CreateElicitationResponse,
 } from "@agentclientprotocol/sdk";
 import type { AnyMessage } from "@agentclientprotocol/sdk";
-import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import type { SpawnOpts, UserInput } from "./adapter.js";
+import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
 import { spawnLineProcess } from "./child_transport.js";
 import type { AskUser } from "../uicall.js";
@@ -62,7 +62,7 @@ export interface AcpAdapterOpts {
   connect?: (cwd: string, env: Record<string, string>) => AcpTransport;
 }
 
-export class AcpAdapter extends EventEmitter implements AgentAdapter {
+export class AcpAdapter extends SubprocessAdapter {
   readonly agent: string;
 
   private readonly spec: AcpSpawnSpec;
@@ -75,12 +75,6 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
   private workspaceRoot = "";
   private askUser?: AskUser;
   private mapper: AcpEventMapper;
-
-  /** Number of prompt turns currently in flight (mid-turn sends queue at the agent). */
-  private inflight = 0;
-  /** Number of pending permission approvals (gates awaiting-approval status). */
-  private pendingApprovals = 0;
-  private exited = false;
 
   /**
    * ACP session modes (currentModeId + availableModes), when the agent supports
@@ -138,8 +132,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     // Echo the user message so transcripts are complete (mirrors PiAdapter).
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: { text: input.text } });
 
-    this.inflight += 1;
-    this.emit("status", "running");
+    const turnKey = this.turns.enterTurn();
 
     this.conn
       .prompt({
@@ -166,8 +159,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
         });
       })
       .finally(() => {
-        this.inflight = Math.max(0, this.inflight - 1);
-        if (this.inflight === 0 && !this.exited) this.emit("status", "idle");
+        this.turns.leaveTurn(turnKey);
       });
   }
 
@@ -282,7 +274,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     }
 
     const prompt = describePermission(params.toolCall);
-    this.enterApproval();
+    this.turns.enterApproval("awaiting-approval");
     try {
       const resp = await this.askUser({
         kind: "confirmAction",
@@ -299,25 +291,9 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     } catch (e) {
       log.warn(`[makit] AcpAdapter permission error: ${(e as Error).message}`);
     } finally {
-      this.leaveApproval();
+      this.turns.leaveApproval();
     }
     return { outcome: { outcome: "cancelled" } };
-  }
-
-  /** Enter the awaiting-approval state (first pending request flips the status). */
-  private enterApproval(): void {
-    this.pendingApprovals += 1;
-    if (this.pendingApprovals === 1) {
-      this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status: "awaiting-approval" } });
-    }
-  }
-
-  /** Leave awaiting-approval; restore running while the turn is still in flight. */
-  private leaveApproval(): void {
-    this.pendingApprovals = Math.max(0, this.pendingApprovals - 1);
-    if (this.pendingApprovals === 0 && !this.exited && this.inflight > 0) {
-      this.emit("status", "running");
-    }
   }
 
   /**
@@ -332,7 +308,7 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
     if (!this.askUser) return { action: "decline" };
 
     const message = typeof p.message === "string" ? p.message : "The agent needs input.";
-    this.enterApproval();
+    this.turns.enterApproval("awaiting-approval");
     try {
       if (p.mode === "url") {
         const resp = await this.askUser({
@@ -376,19 +352,8 @@ export class AcpAdapter extends EventEmitter implements AgentAdapter {
       log.warn(`[makit] AcpAdapter elicitation error: ${(e as Error).message}`);
       return { action: "cancel" };
     } finally {
-      this.leaveApproval();
+      this.turns.leaveApproval();
     }
-  }
-
-  private handleExit(code: number | null): void {
-    if (this.exited) return;
-    this.exited = true;
-    this.emitEvent({ ts: Date.now(), kind: "session.status", payload: { status: "exited" } });
-    this.emit("exit", code);
-  }
-
-  private emitEvent(e: AdapterEvent): void {
-    this.emit("event", e);
   }
 
   private async workspacePath(requestedPath: string, forWrite: boolean): Promise<string> {
