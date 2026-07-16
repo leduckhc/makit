@@ -17,6 +17,7 @@ import '../../chat/sidebar_layout.dart' show resetSidebarLayoutToDefaults;
 import '../../screens/providers.dart' show controlClientProvider;
 import '../../screens/time_format.dart' show formatUptime;
 import '../prefs/preferences_providers.dart';
+import 'coming_soon.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 
@@ -33,7 +34,16 @@ class AdvancedSection extends StatelessWidget {
         SettingsSectionHeader(title: 'Developer'),
         SettingsGroup(children: [_FakeServerRow()]),
         SettingsSectionHeader(title: 'Status'),
-        SettingsGroup(children: [_StatusRows(), _TelemetryRow()]),
+        SettingsGroup(
+          children: [
+            _StatusRows(),
+            ComingSoonRow(
+              icon: Symbols.analytics,
+              title: 'Telemetry',
+              subtitle: 'Anonymous usage telemetry.',
+            ),
+          ],
+        ),
         SettingsSectionHeader(title: 'Reset'),
         SettingsGroup(children: [_ResetAllRow()]),
       ],
@@ -140,32 +150,6 @@ class _FakeServerRow extends ConsumerWidget {
 }
 
 /// Telemetry — reserved `[future]` placeholder (SPEC-13 §7): no backend.
-class _TelemetryRow extends StatelessWidget {
-  const _TelemetryRow();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      enabled: false,
-      leading: Icon(Symbols.analytics, weight: 200, color: cs.outline),
-      title: const Text('Telemetry'),
-      subtitle: const Text('Anonymous usage telemetry.'),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
-          const SizedBox(width: 6),
-          Text(
-            'Coming soon',
-            style: TextStyle(color: cs.outline, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Reset all settings: clears every stored preference override after a confirm
 /// dialog. Shows the current count of changed settings when non-zero.
 class _ResetAllRow extends ConsumerWidget {

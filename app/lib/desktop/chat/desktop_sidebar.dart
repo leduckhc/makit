@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -9,9 +8,9 @@ import '../../store/connection.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
+import 'title_bar_strip.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
-import 'sidebar_layout.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
@@ -67,31 +66,7 @@ class _Header extends ConsumerWidget {
     // window's drag handle. Its height clears the macOS traffic-light buttons
     // that overlay the top-left corner. The fold button sits just to the right
     // of the traffic lights and hides the sidebar entirely.
-    return SizedBox(
-      height: kTitleBarStripHeight,
-      width: double.infinity,
-      child: Stack(
-        children: [
-          const Positioned.fill(
-            child: DragToMoveArea(child: SizedBox.expand()),
-          ),
-          Positioned(
-            left: kTrafficLightInset,
-            top: 7,
-            child: IconButton(
-              iconSize: 19,
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              tooltip: 'Hide sidebar',
-              icon: const Icon(Symbols.thumbnail_bar, weight: 300),
-              onPressed: () =>
-                  ref.read(sidebarCollapsedProvider.notifier).state = true,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const TitleBarStrip(leading: SidebarToggleButton(collapse: true));
   }
 }
 

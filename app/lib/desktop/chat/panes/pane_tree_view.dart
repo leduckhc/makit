@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
-import 'package:window_manager/window_manager.dart';
 
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
 import '../selected_session.dart';
-import '../sidebar_layout.dart'
-    show kTitleBarStripHeight, kTrafficLightInset, sidebarCollapsedProvider;
+import '../sidebar_layout.dart' show sidebarCollapsedProvider;
+import '../title_bar_strip.dart';
 import 'pane_node.dart';
 import 'pane_tree_controller.dart';
 
@@ -36,37 +34,13 @@ class PaneTreeView extends ConsumerWidget {
     final collapsed = ref.watch(sidebarCollapsedProvider);
     return Column(
       children: [
-        SizedBox(
-          height: kTitleBarStripHeight,
-          width: double.infinity,
-          child: Stack(
-            children: [
-              const Positioned.fill(
-                child: DragToMoveArea(child: SizedBox.expand()),
-              ),
-              // With the sidebar folded away the pane area owns the only
-              // "show sidebar" affordance, cleared past the traffic lights.
-              if (collapsed)
-                Positioned(
-                  left: kTrafficLightInset,
-                  top: 3,
-                  child: IconButton(
-                    iconSize: 19,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
-                    ),
-                    tooltip: 'Show sidebar',
-                    icon: const Icon(Symbols.thumbnail_bar, weight: 300),
-                    onPressed: () =>
-                        ref.read(sidebarCollapsedProvider.notifier).state =
-                            false,
-                  ),
-                ),
-            ],
-          ),
+        TitleBarStrip(
+          leadingTop: 3,
+          // With the sidebar folded away the pane area owns the only
+          // "show sidebar" affordance, cleared past the traffic lights.
+          leading: collapsed
+              ? const SidebarToggleButton(collapse: false)
+              : null,
         ),
         Expanded(
           child: _PaneNodeView(
