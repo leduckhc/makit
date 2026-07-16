@@ -36,6 +36,7 @@ class DesktopChatPane extends ConsumerStatefulWidget {
     this.sessionId,
     this.showHeader = true,
     this.trackGlobalSelection = true,
+    this.composerFocusId,
   });
 
   /// The session this pane hosts, or null to defer to the global selection.
@@ -51,6 +52,12 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   /// itself (only the active pane tracks the global selection), so it passes
   /// false to keep inactive empty panes truly empty.
   final bool trackGlobalSelection;
+
+  /// The hosting pane's leaf id, used to key this pane's composer
+  /// [FocusNode] via [desktopComposerFocusProvider] so each split pane owns a
+  /// distinct node (and the "focus composer" shortcut can target the active
+  /// leaf). Null (standalone use) lets the [Composer] own its own node.
+  final String? composerFocusId;
 
   @override
   ConsumerState<DesktopChatPane> createState() => _DesktopChatPaneState();
@@ -216,7 +223,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   ComposerThinkingSelector(sessionId: sessionId),
                   ComposerModeSelector(sessionId: sessionId),
                 ],
-                focusNode: ref.watch(desktopComposerFocusProvider),
+                focusNode: widget.composerFocusId == null
+                    ? null
+                    : ref.watch(
+                        desktopComposerFocusProvider(widget.composerFocusId!),
+                      ),
                 sendChord: ref
                     .watch(keymapProvider)
                     .chordFor(ShortcutAction.sendMessage),

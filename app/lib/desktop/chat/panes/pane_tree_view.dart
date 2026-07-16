@@ -270,6 +270,9 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
                           // Only the active pane tracks the global session /
                           // worktree selection; inactive panes stay empty.
                           trackGlobalSelection: widget.active,
+                          // Per-leaf composer focus node so two split panes
+                          // never bind their text fields to one shared node.
+                          composerFocusId: widget.leaf.id,
                         ),
                       ),
                     ],

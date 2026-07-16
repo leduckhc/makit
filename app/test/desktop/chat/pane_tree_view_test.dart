@@ -13,12 +13,24 @@ import 'package:makit/desktop/chat/panes/pane_tree_view.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/composer/composer.dart';
 
 Session _session() => Session(
   id: 's1',
   projectId: 'p1',
   agent: 'pi',
   title: 'Wire up pairing',
+  status: SessionStatus.idle,
+  policy: ApprovalPolicy.askOnRisky,
+  lastPreview: '',
+  lastActivityAt: 0,
+);
+
+Session _session2() => Session(
+  id: 's2',
+  projectId: 'p1',
+  agent: 'pi',
+  title: 'Second session',
   status: SessionStatus.idle,
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
@@ -40,6 +52,26 @@ ProviderContainer _container() {
   // Both leaves fall back to this global selection when their sessionId is
   // null, so every pane renders the fake session.
   c.read(selectedSessionProvider.notifier).state = 's1';
+  return c;
+}
+
+/// A container with two distinct fake sessions (s1, s2) so two split panes can
+/// each be bound to their own session.
+ProviderContainer _twoSessionContainer() {
+  final c = ProviderContainer(
+    overrides: [
+      sessionsProvider.overrideWithValue(
+        SessionsState([_session(), _session2()]),
+      ),
+      eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+      sessionMetaProvider('s1').overrideWithValue(
+        const SessionMeta(model: _model, thinking: 'medium', models: [_model]),
+      ),
+      sessionMetaProvider('s2').overrideWithValue(
+        const SessionMeta(model: _model, thinking: 'medium', models: [_model]),
+      ),
+    ],
+  );
   return c;
 }
 
@@ -117,6 +149,72 @@ void main() {
       expect(find.text('Wire up pairing'), findsNWidgets(2));
       expect(find.byType(SessionActionsMenu), findsNWidgets(2));
     });
+  });
+
+  group('multi-pane composer focus', () {
+    testWidgets(
+      'two panes bound to different sessions each mount an independently '
+      'focusable composer',
+      (tester) async {
+        final c = _twoSessionContainer();
+        addTearDown(c.dispose);
+        final ctrl = c.read(paneTreeControllerProvider.notifier);
+        // Bind the original pane to s1, split, then bind the fresh pane to s2 —
+        // two live sessions side-by-side, each with its own docked composer.
+        ctrl.bindActiveSession('s1');
+        ctrl.splitActive(Axis.horizontal, pinnedSessionId: 's1');
+        ctrl.bindActiveSession('s2');
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        // Both leaves render a Composer with its OWN text field bound to its
+        // OWN focus node. The defect is an app-lifetime singleton FocusNode
+        // shared by every pane: two live panes then bind two text fields to
+        // one node (illegal double-attach; focus becomes undefined).
+        final composers = find.byType(Composer);
+        expect(composers, findsNWidgets(2));
+        final fields = find.descendant(
+          of: composers,
+          matching: find.byType(EditableText),
+        );
+        expect(fields, findsNWidgets(2));
+
+        final firstNode = tester.widget<EditableText>(fields.first).focusNode;
+        final lastNode = tester.widget<EditableText>(fields.last).focusNode;
+        expect(
+          identical(firstNode, lastNode),
+          isFalse,
+          reason: 'each pane must own a distinct composer FocusNode',
+        );
+
+        // Each field is independently focusable: focusing one pane's composer
+        // does not steal or mirror focus in the other.
+        await tester.tap(fields.first);
+        await tester.pumpAndSettle();
+        expect(firstNode.hasPrimaryFocus, isTrue);
+        expect(lastNode.hasPrimaryFocus, isFalse);
+
+        await tester.tap(fields.last);
+        await tester.pumpAndSettle();
+        expect(lastNode.hasPrimaryFocus, isTrue);
+        expect(firstNode.hasPrimaryFocus, isFalse);
+
+        // And each is independently typable: text stays in the pane it was
+        // entered in.
+        await tester.enterText(fields.first, 'left pane text');
+        await tester.enterText(fields.last, 'right pane text');
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<EditableText>(fields.first).controller.text,
+          'left pane text',
+        );
+        expect(
+          tester.widget<EditableText>(fields.last).controller.text,
+          'right pane text',
+        );
+      },
+    );
   });
 
   group('divider', () {

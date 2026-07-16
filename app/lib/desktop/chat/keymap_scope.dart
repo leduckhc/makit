@@ -159,7 +159,10 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.toggleSidebar:
         ref.read(sidebarCollapsedProvider.notifier).update((v) => !v);
       case ShortcutAction.focusComposer:
-        ref.read(desktopComposerFocusProvider).requestFocus();
+        // Focus the composer of the currently active leaf pane (each leaf owns
+        // its own composer FocusNode, keyed by leaf id).
+        final activeLeafId = ref.read(paneTreeControllerProvider).activeLeafId;
+        ref.read(desktopComposerFocusProvider(activeLeafId)).requestFocus();
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
       case ShortcutAction.newSession:
