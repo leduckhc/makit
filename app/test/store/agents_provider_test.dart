@@ -122,9 +122,19 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      container.listen(agentsProvider, (_, _) {});
-      // Let boot + the (disconnected) provider evaluation settle.
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // Drive off real state transitions instead of fixed sleeps (which race on
+      // slow CI): resolve a completer the moment the provider yields agents.
+      final resolved = Completer<List<AgentDescriptor>>();
+      container.listen<AsyncValue<List<AgentDescriptor>>>(agentsProvider, (
+        _,
+        next,
+      ) {
+        if (next.hasValue && !resolved.isCompleted) {
+          resolved.complete(next.value);
+        }
+      }, fireImmediately: true);
+      // Let boot attach the (still-disconnected) transport.
+      await Future<void>.delayed(Duration.zero);
 
       // Disconnected: no eager fetch, still loading (never a cached empty list).
       expect(transport.agentsListRequests, 0);
@@ -132,15 +142,15 @@ void main() {
         container.read(agentsProvider),
         isA<AsyncLoading<List<AgentDescriptor>>>(),
       );
+      expect(resolved.isCompleted, isFalse);
 
-      // Socket comes up → the provider re-runs and fetches for real.
+      // Socket comes up → the provider re-runs and fetches for real. Await the
+      // resolved-agents transition rather than a fixed delay.
       transport.connectNow();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final agents = await resolved.future.timeout(const Duration(seconds: 5));
 
       expect(transport.agentsListRequests, 1);
-      final agents = container.read(agentsProvider).value;
-      expect(agents, isNotNull);
-      expect(agents!.single.id, 'pi');
+      expect(agents.single.id, 'pi');
     },
   );
 }

@@ -47,15 +47,25 @@ test("watchWorktrees fires when a worktree is added via git (external CLI)", asy
 
 test("watchWorktrees.sync drops watchers for removed repos and is idempotent", async () => {
   const repo = makeRepo();
-  const watcher = watchWorktrees(() => {}, { debounceMs: 10 });
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  let fired = 0;
+  const watcher = watchWorktrees(() => fired++, { debounceMs: 10 });
   try {
     watcher.sync([repo]);
-    watcher.sync([repo]); // idempotent — no duplicate watchers, no throw
+    watcher.sync([repo]); // idempotent — must not leave a duplicate watcher
     watcher.sync([]); // repo dropped — its watchers are closed
-    // A change after the repo was dropped must not throw or fire (best-effort).
-    assert.doesNotThrow(() => watcher.close());
+    await delay(80);
+    // A worktree added AFTER the repo was dropped must not fire the callback
+    // (proves both removal and that the duplicate sync left no orphan watcher).
+    execFileSync("git", ["worktree", "add", "-b", "dropped", join(wtBase, "dropped")], {
+      cwd: repo,
+    });
+    await delay(150);
+    assert.equal(fired, 0, "dropped repo must not fire after a worktree add");
   } finally {
+    watcher.close();
     rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
   }
 });
 
