@@ -107,4 +107,35 @@ void main() {
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byType(ShaderMask), findsOneWidget);
   });
+
+  testWidgets(
+    'WorkingIndicator survives a compact→shimmer toggle on the same State',
+    (tester) async {
+      // Same key = same State object across rebuilds. A State created with
+      // compact:true must still be able to render the shimmer (which needs the
+      // animation controller) when the widget is updated to compact:false.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: WorkingIndicator(key: ValueKey('wi-toggle'), compact: true),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('working…'), findsOneWidget);
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: WorkingIndicator(key: ValueKey('wi-toggle'), compact: false),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Reusing the State must not dereference a null controller.
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ShaderMask), findsOneWidget);
+    },
+  );
 }

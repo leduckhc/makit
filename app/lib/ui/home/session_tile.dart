@@ -38,8 +38,7 @@ class SessionTile extends ConsumerWidget {
           ],
         ),
       ),
-      confirmDismiss: (_) => _confirmQuit(context),
-      onDismissed: (_) => _quit(context, ref),
+      confirmDismiss: (_) => _confirmAndQuit(context, ref),
       child: ListTile(
         dense: true,
         contentPadding: EdgeInsets.only(left: indented ? 30 : 16, right: 12),
@@ -72,6 +71,23 @@ class SessionTile extends ConsumerWidget {
     );
   }
 
+  /// Confirms the quit, then requests the kill and only reports the row as
+  /// dismissed once the server acknowledges. Returning false on failure keeps
+  /// the row in place (the session is still in [sessionsProvider]), so a failed
+  /// kill never desyncs the list from server state.
+  Future<bool> _confirmAndQuit(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final confirmed = await _confirmQuit(context);
+    if (!confirmed) return false;
+    try {
+      await ref.read(storeControllerProvider.notifier).killSession(session.id);
+      return true;
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      return false;
+    }
+  }
+
   Future<bool> _confirmQuit(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -94,14 +110,5 @@ class SessionTile extends ConsumerWidget {
       ),
     );
     return ok == true;
-  }
-
-  Future<void> _quit(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await ref.read(storeControllerProvider.notifier).killSession(session.id);
-    } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
-    }
   }
 }

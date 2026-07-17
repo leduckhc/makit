@@ -4,13 +4,16 @@
 //
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/panes/pane_node.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_view.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
+import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/composer/composer.dart';
@@ -215,6 +218,119 @@ void main() {
         );
       },
     );
+  });
+
+  group('focus-composer shortcut targets the active leaf', () {
+    // A deterministic control-based keymap so the chord is Ctrl+L regardless of
+    // the host platform the test runs on.
+    final keymapOverride = keymapProvider.overrideWith(
+      (ref) => KeymapController.ephemeral(cmdIsPrimary: false),
+    );
+
+    Widget keymapTree(ProviderContainer c) => UncontrolledProviderScope(
+      container: c,
+      child: MaterialApp(
+        home: Scaffold(
+          body: DesktopKeymapScope(
+            onOpenSettings: () {},
+            child: const PaneTreeView(),
+          ),
+        ),
+      ),
+    );
+
+    // Sends the platform-independent Ctrl+L focus-composer chord.
+    Future<void> pressFocusComposer(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('focuses the active session pane composer', (tester) async {
+      final c = ProviderContainer(
+        overrides: [
+          keymapOverride,
+          sessionsProvider.overrideWithValue(SessionsState([_session()])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          sessionMetaProvider('s1').overrideWithValue(
+            const SessionMeta(
+              model: _model,
+              thinking: 'medium',
+              models: [_model],
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.read(selectedSessionProvider.notifier).state = 's1';
+
+      await tester.pumpWidget(keymapTree(c));
+      await tester.pumpAndSettle();
+
+      final field = find.descendant(
+        of: find.byType(Composer),
+        matching: find.byType(EditableText),
+      );
+      expect(field, findsOneWidget);
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isFalse,
+        reason: 'composer starts unfocused (the scope holds focus)',
+      );
+
+      await pressFocusComposer(tester);
+
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isTrue,
+        reason: 'the shortcut focuses the active leaf composer',
+      );
+    });
+
+    testWidgets('focuses a worktree-start pane composer', (tester) async {
+      // The active leaf hosts a sessionless worktree draft (WorktreeStartView),
+      // whose Composer must be bound to the leaf's desktopComposerFocusProvider
+      // node for the shortcut to reach it (SPEC-14 per-leaf focus fix).
+      final c = ProviderContainer(
+        overrides: [
+          keymapOverride,
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.read(selectedWorktreeProvider.notifier).state = const SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt',
+        branch: 'feature',
+      );
+
+      await tester.pumpWidget(keymapTree(c));
+      await tester.pumpAndSettle();
+
+      // The worktree-start view renders its own docked composer.
+      final field = find.descendant(
+        of: find.byType(Composer),
+        matching: find.byType(EditableText),
+      );
+      expect(field, findsOneWidget);
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isFalse,
+      );
+
+      await pressFocusComposer(tester);
+
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isTrue,
+        reason:
+            'the shortcut focuses the worktree-start pane composer via the '
+            'per-leaf focus node',
+      );
+    });
   });
 
   group('divider', () {
