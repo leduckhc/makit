@@ -162,8 +162,10 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         // Focus the composer of the currently active leaf pane (each leaf owns
         // its own composer FocusNode, keyed by leaf id). No-op when nothing is
         // selected (no current tree).
-        final activeLeafId =
-            ref.read(paneTreeControllerProvider).current?.activeLeafId;
+        final activeLeafId = ref
+            .read(paneTreeControllerProvider)
+            .current
+            ?.activeLeafId;
         if (activeLeafId != null) {
           ref.read(desktopComposerFocusProvider(activeLeafId)).requestFocus();
         }

@@ -116,9 +116,12 @@ class PaneWorkspaceState {
       mapEquals(other.trees, trees);
 
   @override
-  int get hashCode => Object.hash(currentKey, Object.hashAllUnordered(
-    [for (final e in trees.entries) Object.hash(e.key, e.value)],
-  ));
+  int get hashCode => Object.hash(
+    currentKey,
+    Object.hashAllUnordered([
+      for (final e in trees.entries) Object.hash(e.key, e.value),
+    ]),
+  );
 }
 
 /// Holds and mutates the desktop pane workspace. Each worktree owns its own
@@ -137,8 +140,10 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
 
   /// Builds a controller from the persisted workspace. Corrupt or absent JSON
   /// yields an empty workspace.
-  static PaneTreeController load(SharedPreferences prefs) =>
-      PaneTreeController(prefs, _decode(prefs.getString(kPaneWorkspacePrefsKey)));
+  static PaneTreeController load(SharedPreferences prefs) => PaneTreeController(
+    prefs,
+    _decode(prefs.getString(kPaneWorkspacePrefsKey)),
+  );
 
   static PaneWorkspaceState _decode(String? raw) {
     if (raw == null || raw.isEmpty) return const PaneWorkspaceState.empty();
@@ -272,11 +277,8 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
         ? sibling
         : firstLeafId(next);
     _updateCurrent(
-      (c) => PaneTreeState(
-        root: next,
-        activeLeafId: focus,
-        worktree: c.worktree,
-      ),
+      (c) =>
+          PaneTreeState(root: next, activeLeafId: focus, worktree: c.worktree),
     );
   }
 

@@ -54,8 +54,10 @@ final class PaneLeaf extends PaneNode {
   const PaneLeaf({required this.id, this.sessionId});
 
   /// Rebuilds a leaf from its [toJson] map.
-  factory PaneLeaf.fromJson(Map<String, Object?> json) =>
-      PaneLeaf(id: json['id'] as String, sessionId: json['sessionId'] as String?);
+  factory PaneLeaf.fromJson(Map<String, Object?> json) => PaneLeaf(
+    id: json['id'] as String,
+    sessionId: json['sessionId'] as String?,
+  );
 
   @override
   final String id;

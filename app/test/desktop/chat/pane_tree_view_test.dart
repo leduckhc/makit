@@ -134,24 +134,25 @@ void main() {
   });
 
   group('empty placeholder', () {
-    testWidgets('nothing selected shows the "Select or start a session" state', (
-      tester,
-    ) async {
-      final c = ProviderContainer(
-        overrides: [
-          sessionsProvider.overrideWithValue(SessionsState(const [])),
-          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
-        ],
-      );
-      addTearDown(c.dispose);
-      // No worktree selected → the controller has no current tree.
-      expect(c.read(paneTreeControllerProvider).current, isNull);
+    testWidgets(
+      'nothing selected shows the "Select or start a session" state',
+      (tester) async {
+        final c = ProviderContainer(
+          overrides: [
+            sessionsProvider.overrideWithValue(SessionsState(const [])),
+            eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          ],
+        );
+        addTearDown(c.dispose);
+        // No worktree selected → the controller has no current tree.
+        expect(c.read(paneTreeControllerProvider).current, isNull);
 
-      await tester.pumpWidget(_tree(c));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Select or start a session'), findsOneWidget);
-    });
+        expect(find.text('Select or start a session'), findsOneWidget);
+      },
+    );
   });
 
   group('worktree-scoped view swap', () {
@@ -359,8 +360,8 @@ void main() {
         // Resize the split. Keying the split view by object identity (rather
         // than its id) would remount the whole subtree here, dropping both
         // composers' text; keying by id keeps each pane's State intact.
-        final split = c.read(paneTreeControllerProvider).current!.root
-            as PaneSplit;
+        final split =
+            c.read(paneTreeControllerProvider).current!.root as PaneSplit;
         ctrl.adjustRatio(split.id, 0.1);
         await tester.pumpAndSettle();
 

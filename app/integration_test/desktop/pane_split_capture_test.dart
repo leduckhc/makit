@@ -37,7 +37,11 @@ Session _session() => Session(
   branch: _wt.branch,
 );
 
-const _wt = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-demo', branch: 'demo');
+const _wt = SelectedWorktree(
+  projectId: 'p1',
+  path: '/tmp/wt-demo',
+  branch: 'demo',
+);
 
 const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 

@@ -37,36 +37,42 @@ void main() {
       expect(c.current!.root, splitRoot, reason: 'layout preserved');
     });
 
-    test('switching worktrees preserves each layout, ratio and active leaf', () {
-      final c = PaneTreeController.ephemeral();
-      c.selectWorktree(_wtA);
-      c.splitActive(Axis.horizontal);
-      final aActive = c.current!.activeLeafId;
-      final aSplitId = (c.current!.root as PaneSplit).id;
-      c.setRatio(aSplitId, 0.3);
+    test(
+      'switching worktrees preserves each layout, ratio and active leaf',
+      () {
+        final c = PaneTreeController.ephemeral();
+        c.selectWorktree(_wtA);
+        c.splitActive(Axis.horizontal);
+        final aActive = c.current!.activeLeafId;
+        final aSplitId = (c.current!.root as PaneSplit).id;
+        c.setRatio(aSplitId, 0.3);
 
-      c.selectWorktree(_wtB); // B is a fresh single leaf
-      expect(c.current!.root, isA<PaneLeaf>());
+        c.selectWorktree(_wtB); // B is a fresh single leaf
+        expect(c.current!.root, isA<PaneLeaf>());
 
-      c.selectWorktree(_wtA);
-      expect(c.current!.root, isA<PaneSplit>());
-      expect((c.current!.root as PaneSplit).ratio, closeTo(0.3, 1e-9));
-      expect(c.current!.activeLeafId, aActive);
-    });
+        c.selectWorktree(_wtA);
+        expect(c.current!.root, isA<PaneSplit>());
+        expect((c.current!.root as PaneSplit).ratio, closeTo(0.3, 1e-9));
+        expect(c.current!.activeLeafId, aActive);
+      },
+    );
 
-    test('splitActive keeps the current pane session and adds an empty pane', () {
-      final c = PaneTreeController.ephemeral();
-      c.bindActiveSession('s-old', _wtA);
-      final original = c.current!.activeLeafId;
-      c.splitActive(Axis.vertical);
-      final split = c.current!.root as PaneSplit;
-      final byId = {
-        for (final l in [split.first, split.second].cast<PaneLeaf>()) l.id: l,
-      };
-      expect(byId[original]!.sessionId, 's-old');
-      expect(byId[c.current!.activeLeafId]!.sessionId, isNull);
-      expect(c.current!.activeLeafId, isNot(original));
-    });
+    test(
+      'splitActive keeps the current pane session and adds an empty pane',
+      () {
+        final c = PaneTreeController.ephemeral();
+        c.bindActiveSession('s-old', _wtA);
+        final original = c.current!.activeLeafId;
+        c.splitActive(Axis.vertical);
+        final split = c.current!.root as PaneSplit;
+        final byId = {
+          for (final l in [split.first, split.second].cast<PaneLeaf>()) l.id: l,
+        };
+        expect(byId[original]!.sessionId, 's-old');
+        expect(byId[c.current!.activeLeafId]!.sessionId, isNull);
+        expect(c.current!.activeLeafId, isNot(original));
+      },
+    );
 
     test('splitActive is a no-op when nothing is selected', () {
       final c = PaneTreeController.ephemeral();
