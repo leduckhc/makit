@@ -330,6 +330,41 @@ test("startPendingSession is idempotent for a live session", async () => {
   }
 });
 
+test("promotePendingSession collapses two concurrent first messages onto one worktree/adapter", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+    const draft = await manager.spawnPendingSession(projectId, "pi");
+
+    // Two first messages fired concurrently must NOT each fork a worktree +
+    // adapter — they collapse onto one in-flight promotion.
+    const [r1, r2] = await Promise.all([
+      manager.promotePendingSession(draft, "add a login form"),
+      manager.promotePendingSession(draft, "add a login form"),
+    ]);
+
+    assert.equal(r1, true);
+    assert.equal(r2, true);
+    assert.equal(started.length, 1, "exactly one adapter started for concurrent promotions");
+    assert.equal(draft.pending, false);
+
+    // Exactly one non-root worktree was created for this project.
+    const repos = await manager.listRepos();
+    const extraWorktrees = repos[0].worktrees.filter((w) => w.path !== realpathSync(cwd) && w.path !== cwd);
+    assert.equal(extraWorktrees.length, 1, "exactly one worktree created");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("attachPiSession backfills history, resumes via path, and dedups", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
