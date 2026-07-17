@@ -105,6 +105,26 @@ test("metaChanged fires on preview/status/title changes but NOT on streaming del
   assert.equal(meta, 3);
 });
 
+test("metaChanged fires for non-streaming error/tool events (lastActivityAt advances)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+
+  let meta = 0;
+  session.on("metaChanged", () => meta++);
+
+  // A tool-call start is a non-streaming event: it advances lastActivityAt, a
+  // DTO-visible field, so the sessions list must refresh once.
+  session.adapter.emit("event", { ts: 1000, kind: "tool.call.start", payload: { callId: "c1", name: "bash" } });
+  assert.equal(meta, 1, "a tool.call.start refreshes the session list");
+
+  // A session.error likewise advances lastActivityAt → one refresh.
+  session.adapter.emit("event", { ts: 1001, kind: "session.error", payload: { message: "boom" } });
+  assert.equal(meta, 2, "a session.error refreshes the session list");
+
+  // But a tool.call.delta is a streaming delta → NO refresh.
+  session.adapter.emit("event", { ts: 1002, kind: "tool.call.delta", payload: { callId: "c1", chunk: "x" } });
+  assert.equal(meta, 2, "streaming tool delta must not refresh the session list");
+});
+
 test("lifecycle models draft → started as a discriminated union (P4)", () => {
   const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
 
