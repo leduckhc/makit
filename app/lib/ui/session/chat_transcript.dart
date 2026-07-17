@@ -197,23 +197,39 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
 
   late final String _word = _words[Random().nextInt(_words.length)];
 
-  AnimationController? _c;
+  // One controller for the whole State lifetime, created eagerly in initState.
+  // The mobile shimmer drives it; the compact desktop spinner leaves it idle.
+  // Keeping it always-initialized (rather than lazily nulled for compact) means
+  // a widget update that flips `compact` on the SAME State never dereferences a
+  // null controller.
+  late final AnimationController _c;
 
   @override
   void initState() {
     super.initState();
-    // Only the mobile shimmer needs an animation controller.
-    if (!widget.compact) {
-      _c = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 1400),
-      )..repeat();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    if (!widget.compact) _c.repeat();
+  }
+
+  @override
+  void didUpdateWidget(WorkingIndicator oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Start/stop the shimmer as `compact` toggles on a reused State.
+    if (widget.compact != oldWidget.compact) {
+      if (widget.compact) {
+        _c.stop();
+      } else {
+        _c.repeat();
+      }
     }
   }
 
   @override
   void dispose() {
-    _c?.dispose();
+    _c.dispose();
     super.dispose();
   }
 
@@ -241,14 +257,14 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
       child: AnimatedBuilder(
-        animation: _c!,
+        animation: _c,
         builder: (context, child) {
           return ShaderMask(
             blendMode: BlendMode.srcIn,
             shaderCallback: (bounds) => LinearGradient(
               colors: [base, highlight, base],
               stops: const [0.35, 0.5, 0.65],
-              transform: _SlideGradient(_c!.value),
+              transform: _SlideGradient(_c.value),
             ).createShader(bounds),
             child: child,
           );
