@@ -20,8 +20,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       return;
     }
     const session = sid ? manager.getSession(sid) : undefined;
+    // Log metadata only — never the message text, which can carry PII or
+    // credentials.
     log.info(
-      `[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} text="${text.slice(0, 40)}"`,
+      `[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} textLen=${text.length}`,
     );
     if (!session) {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
