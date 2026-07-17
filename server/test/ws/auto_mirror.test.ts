@@ -96,6 +96,16 @@ function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
   ];
 }
 
+function withPr(repos: RepoDTO[], prNumber: number): RepoDTO[] {
+  return repos.map((repo) => ({
+    ...repo,
+    worktrees: repo.worktrees.map((w) => ({
+      ...w,
+      pr: { number: prNumber, url: `https://example.test/${prNumber}`, state: "OPEN", title: "PR", isDraft: false },
+    })),
+  }));
+}
+
 function snapshotValues(message: Record<string, unknown>) {
   const repo = (message.repos as RepoDTO[])[0]!;
   const worktree = repo.worktrees[0]!;
@@ -188,10 +198,17 @@ test("a fast repo snapshot preserves the last enriched PR fields", async () => {
   process.env.MAKIT_HOME = home;
   const manager = new SessionManager({ projects: [] });
   let call = 0;
-  manager.listRepos = async ({ includePrs } = {}) => {
+  let enrichCalls = 0;
+  let releaseEnrich!: () => void;
+  const enrichGate = new Promise<void>((resolve) => { releaseEnrich = resolve; });
+  manager.listRepos = async () => {
     call++;
-    if (call <= 2) return repoSnapshot(1, includePrs ? 44 : null);
-    return repoSnapshot(2, includePrs ? 44 : null);
+    return repoSnapshot(call === 1 ? 1 : 2, null);
+  };
+  manager.enrichPrs = async (repos) => {
+    enrichCalls++;
+    if (enrichCalls > 1) await enrichGate; // hold the refresh enrichment back
+    return withPr(repos, 44);
   };
   const cert = await loadOrCreateCert();
   const srv = startWsServer({
@@ -209,8 +226,11 @@ test("a fast repo snapshot preserves the last enriched PR fields", async () => {
     await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).prNumber === 44);
     client.msgs.length = 0;
     client.ws.send(JSON.stringify({ v: 1, t: "cmd", id: "refresh", kind: "repo.refresh" }));
+    // The fast (git-only) snapshot must already carry the last-known PR — the
+    // enrichment for this refresh is still gated.
     const fast = await waitFor(client, (m) => isReposSnapshot(m) && snapshotValues(m).insertions === 2);
     assert.deepEqual(snapshotValues(fast), { insertions: 2, prNumber: 44 });
+    releaseEnrich();
   } finally {
     client.ws.close();
     srv.wss.close();
@@ -228,17 +248,17 @@ test("a superseded PR enrichment cannot overwrite a newer repo snapshot", async 
   process.env.MAKIT_HOME = home;
   const manager = new SessionManager({ projects: [] });
   let call = 0;
+  let enrichCalls = 0;
   let releaseStale!: () => void;
   const stale = new Promise<void>((resolve) => { releaseStale = resolve; });
-  manager.listRepos = async ({ includePrs } = {}) => {
+  manager.listRepos = async () => {
     call++;
-    if (call <= 2) return repoSnapshot(1, includePrs ? 44 : null);
-    if (call === 3) return repoSnapshot(2, null);
-    if (call === 4) {
-      await stale;
-      return repoSnapshot(2, 44);
-    }
-    return repoSnapshot(3, includePrs ? 44 : null);
+    return repoSnapshot(call, null);
+  };
+  manager.enrichPrs = async (repos) => {
+    enrichCalls++;
+    if (enrichCalls === 2) await stale; // the refresh-a enrichment goes stale
+    return withPr(repos, 44);
   };
   const cert = await loadOrCreateCert();
   const srv = startWsServer({

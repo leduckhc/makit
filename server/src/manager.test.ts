@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -194,7 +194,7 @@ test("startPendingSession creates a worktree named from the first message and st
 
     assert.equal(s.pending, false);
     assert.equal(s.branch, "add-a-login-form-to-the");
-    assert.ok(s.worktreePath?.startsWith(base), `worktree ${s.worktreePath} under ${base}`);
+    assert.ok(s.worktreePath?.startsWith(realpathSync(base)), `worktree ${s.worktreePath} under ${base}`);
     assert.equal(started.length, 1, "agent should start once");
     assert.equal(started[0]?.cwd, s.worktreePath, "agent runs in the worktree");
 
@@ -253,7 +253,7 @@ test("startPendingSession falls back to the default branch for an unknown base",
     const draft = await manager.spawnPendingSession(projectId, "pi", "no-such-branch");
     const s = await manager.startPendingSession(draft.id, "work");
     // Falls back to `main`: the worktree exists and the agent started.
-    assert.ok(s.worktreePath?.startsWith(base));
+    assert.ok(s.worktreePath?.startsWith(realpathSync(base)));
     assert.equal(started.length, 1);
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
@@ -481,6 +481,71 @@ test("spawnPiSession without an explicit title uses the shared default", async (
   }
 });
 
+test("rehydration is lazy: events are not read from the store until first access", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  store.saveSession({
+    id: "sess-lazy",
+    projectId: "proj-x",
+    agent: "pi",
+    title: "big history",
+    status: "idle",
+    policy: "ask-on-risky",
+    createdAt: 1,
+    lastActivityAt: 2,
+    lastPreview: "old task",
+  });
+  store.append("sess-lazy", { ts: 2, kind: "user.message", payload: { text: "old task" } });
+  store.append("sess-lazy", { ts: 3, kind: "agent.message", payload: { text: "done" } });
+
+  let reads = 0;
+  const counting: typeof store = Object.create(store);
+  counting.read = (id: string, fromSeq?: number) => {
+    reads++;
+    return store.read(id, fromSeq);
+  };
+
+  const mgr = new SessionManager({ projects: [], store: counting });
+  const session = mgr.getSession("sess-lazy")!;
+  assert.equal(reads, 0, "boot must not read any event history");
+  // Meta-derived fields are intact without touching the log.
+  assert.equal(session.toDTO().lastPreview, "old task");
+
+  // First access loads the history exactly once.
+  assert.equal(session.events.length, 2);
+  assert.equal(session.events[0].payload.text, "old task");
+  assert.equal(reads, 1);
+  session.events;
+  assert.equal(reads, 1, "history is loaded once, then cached");
+  store.close();
+});
+
+test("a lazily-rehydrated session that records a new event keeps history + new event in order", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  store.saveSession({
+    id: "sess-lazy2",
+    projectId: "proj-x",
+    agent: "pi",
+    title: "t",
+    status: "idle",
+    policy: "ask-on-risky",
+    createdAt: 1,
+    lastActivityAt: 2,
+    lastPreview: "old",
+  });
+  store.append("sess-lazy2", { ts: 2, kind: "user.message", payload: { text: "old" } });
+
+  const mgr = new SessionManager({ projects: [], store });
+  const session = mgr.getSession("sess-lazy2")!;
+  // Recording without ever touching .events (cold session error path) must not
+  // drop or duplicate the persisted history.
+  session.adapter.emit("event", { ts: 5, kind: "agent.message", payload: { text: "new" } });
+  assert.deepEqual(session.events.map((e) => e.seq), [1, 2]);
+  assert.deepEqual(store.read("sess-lazy2").map((e) => e.payload.text), ["old", "new"]);
+  store.close();
+});
+
 test("rehydrates persisted sessions on boot as read-only history", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();
@@ -592,6 +657,46 @@ test("reattachSession refuses a cold session with no resume path; it stays histo
   await mgr.getSession("sess-noresume")!.sendUserMessage("hi");
   assert.match(errs[0] ?? "", /re-attach/);
   store.close();
+});
+
+test("enrichPrs fills PR info on a git-only snapshot without redoing diff work", async () => {
+  const cwd = makeGitRepo();
+  const worktree = mkdtempSync(join(tmpdir(), "makit-repo-wt-"));
+  const bin = mkdtempSync(join(tmpdir(), "makit-fake-gh-"));
+  const marker = join(bin, "called");
+  const prevPath = process.env.PATH;
+  const prevMarker = process.env.GH_MARKER;
+  try {
+    rmSync(worktree, { recursive: true, force: true });
+    execFileSync("git", ["worktree", "add", "-q", "-b", "feature2", worktree], { cwd });
+    const gh = join(bin, "gh");
+    writeFileSync(
+      gh,
+      '#!/bin/sh\nprintf "called\\n" >> "$GH_MARKER"\nprintf \'[{"number":7,"url":"https://x/7","state":"OPEN","title":"t","isDraft":false}]\\n\'\n',
+    );
+    chmodSync(gh, 0o755);
+    process.env.PATH = `${bin}:${prevPath ?? ""}`;
+    process.env.GH_MARKER = marker;
+
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const gitOnly = await manager.listRepos({ includePrs: false });
+    assert.equal(existsSync(marker), false, "git-only pass performs no PR lookup");
+
+    const enriched = await manager.enrichPrs(gitOnly);
+    const secondary = enriched[0].worktrees.find((w) => !w.isPrimary);
+    assert.equal(secondary?.pr?.number, 7);
+    assert.equal(existsSync(marker), true, "enrichPrs consulted gh");
+    // Input snapshot is not mutated (server keeps the git-only copy around).
+    assert.equal(gitOnly[0].worktrees.find((w) => !w.isPrimary)?.pr, null);
+  } finally {
+    if (prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = prevPath;
+    if (prevMarker === undefined) delete process.env.GH_MARKER;
+    else process.env.GH_MARKER = prevMarker;
+    execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd });
+    rmSync(bin, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test("listRepos({ includePrs: false }) returns git-only diff numbers and skips the PR lookup", async () => {

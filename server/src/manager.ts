@@ -17,7 +17,7 @@ import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO } from "./protocol
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter } from "./agent_factory.js";
-import { listRepos } from "./repo_service.js";
+import { listRepos, enrichPrs } from "./repo_service.js";
 import {
   isGitRepo,
   detectDefaultBranch,
@@ -119,10 +119,16 @@ export class SessionManager extends EventEmitter {
    * reconnecting client sees prior transcripts after a server restart. Cold
    * sessions use {@link DetachedAdapter} (no process); sending input to one
    * emits a `session.error` until it is re-attached. No-op without a store.
+   *
+   * Only session METADATA is loaded here — each session's event history is
+   * read lazily on first access (see {@link SessionInit.hydrateFrom}), so boot
+   * stays fast and memory stays proportional to the sessions actually opened,
+   * not the total size of the event log.
    */
   private rehydrate(): void {
-    if (!this.store) return;
-    for (const meta of this.store.loadSessions()) {
+    const store = this.store;
+    if (!store) return;
+    for (const meta of store.loadSessions()) {
       const session = new Session({
         id: meta.id,
         projectId: meta.projectId,
@@ -130,14 +136,14 @@ export class SessionManager extends EventEmitter {
         title: meta.title,
         policy: meta.policy,
         adapter: new DetachedAdapter(meta.agent),
-        store: this.store,
+        store,
         createdAt: meta.createdAt,
         status: "exited",
         lastActivityAt: meta.lastActivityAt,
         lastPreview: meta.lastPreview,
         resumeSessionPath: meta.resumeSessionPath,
+        hydrateFrom: () => store.read(meta.id),
       });
-      session.hydrate(this.store.read(meta.id));
       this.sessions.set(session.id, session);
     }
     if (this.sessions.size > 0) {
@@ -402,18 +408,32 @@ export class SessionManager extends EventEmitter {
   /**
    * Repo-centric snapshot for the home screen: each project enriched with its
    * default/current branch and worktrees (diff stats, open PR, running
-   * sessions). Shells out to git/gh per worktree, so callers should treat this
-   * as an occasional (connect / spawn / refresh) operation, not per-event.
+   * sessions). Shells out to git/gh per worktree — projects and worktrees are
+   * processed in parallel so the snapshot cost is roughly the slowest single
+   * repo, not the sum of all of them. Callers should still treat this as an
+   * occasional (connect / spawn / refresh) operation, not per-event.
    *
    * `includePrs` (default true) gates the open-PR lookup. The diff +/- numbers
    * are pure local git and instant; the PR lookup shells out to `gh` (network,
-   * seconds). Pass `false` to skip `gh` and emit the fast git-only snapshot,
-   * then call again with `true` to enrich PRs — so the numbers never wait on
-   * the network.
+   * seconds). Pass `false` to get the fast git-only snapshot, then call
+   * {@link enrichPrs} on the result to add PR info without redoing the git
+   * work — so the numbers never wait on the network.
    */
   async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
     return listRepos(this.listProjects(), this.allSessions(), includePrs);
+  }
+
+  /**
+   * Add open-PR info (via `gh`, network) to a git-only snapshot from
+   * {@link listRepos}. Returns new objects — the input is not mutated — so the
+   * caller can keep the fast snapshot around while this one is in flight. The
+   * `gh` lookups are flattened across all repos and run through a single
+   * bounded pool, so a many-worktree install can't launch hundreds of
+   * concurrent `gh` processes / network calls.
+   */
+  async enrichPrs(repos: RepoDTO[]): Promise<RepoDTO[]> {
+    return enrichPrs(repos);
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */

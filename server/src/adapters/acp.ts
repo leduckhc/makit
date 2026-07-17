@@ -97,10 +97,17 @@ export class AcpAdapter extends SubprocessAdapter {
   async start(opts: SpawnOpts): Promise<void> {
     this.makitSessionId = opts.sessionId ?? "";
     this.askUser = opts.askUser;
-    this.workspaceRoot = await realpath(opts.cwd);
+    // Canonicalize the workspace ONCE and use it everywhere: as the sandbox
+    // root, as the cwd handed to the agent process, and as the newSession cwd.
+    // The sandbox realpaths every requested path, so if we advertised a
+    // non-canonical cwd (e.g. macOS /var→/private/var, or any symlinked repo
+    // dir) the agent's in-workspace paths would resolve to the canonical form
+    // and be wrongly rejected as "outside the workspace".
+    const cwd = await realpath(opts.cwd);
+    this.workspaceRoot = cwd;
 
     const env = { ...(this.spec.env ?? {}), ...(opts.env ?? {}) };
-    this.transport = this.connectFn(opts.cwd, env);
+    this.transport = this.connectFn(cwd, env);
     this.transport.onExit((code) => this.handleExit(code));
 
     this.conn = new ClientSideConnection(() => this.buildClient(), this.transport.stream);
@@ -119,7 +126,7 @@ export class AcpAdapter extends SubprocessAdapter {
       log.warn("[makit] AcpAdapter: resumeSessionPath ignored (ACP resume not wired yet)");
     }
 
-    const res = await this.conn.newSession({ cwd: opts.cwd, mcpServers: [] });
+    const res = await this.conn.newSession({ cwd, mcpServers: [] });
     this.acpSessionId = res.sessionId;
     this.captureModes(res.modes);
     this.emit("status", "idle");
