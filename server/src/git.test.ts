@@ -13,6 +13,7 @@ import {
   slugify,
   addWorktree,
   removeWorktree,
+  renameBranch,
   isGitRepo,
 } from "./git.js";
 
@@ -28,6 +29,27 @@ function makeRepo(): string {
   g("commit", "-q", "-m", "initial");
   return dir;
 }
+
+test("renameBranch renames the worktree's checked-out branch", async () => {
+  const repo = makeRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    const wtPath = await addWorktree({
+      repoPath: repo,
+      name: "feature-x",
+      branch: "old-name",
+      baseBranch: "main",
+      baseDir: base,
+    });
+    await renameBranch(wtPath, "old-name", "new-name");
+    const after = await listWorktrees(repo);
+    const wt = after.find((w) => w.path === wtPath);
+    assert.equal(wt!.branch, "new-name");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
 
 test("isGitRepo distinguishes repos from plain dirs", async () => {
   const repo = makeRepo();

@@ -23,8 +23,14 @@ import {
   detectDefaultBranch,
   listWorktrees,
   addWorktree,
+  addWorktreeForPr,
+  removeWorktree,
+  renameBranch,
+  listOpenPrs,
+  findOpenPr,
   branchExists,
   slugify,
+  type OpenPr,
 } from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
@@ -370,6 +376,75 @@ export class SessionManager extends EventEmitter {
       baseBranch: base,
     });
     return { path, branch };
+  }
+
+  /** Open PRs for a project, for the "New worktree from PR" picker. */
+  async listOpenPrs(projectId: string): Promise<OpenPr[]> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    return listOpenPrs(project.dto.path);
+  }
+
+  /**
+   * Create a worktree that checks out the given PR's head branch. Throws if the
+   * project is unknown/non-git or the checkout fails.
+   */
+  async createWorktreeFromPr(
+    projectId: string,
+    prNumber: number,
+  ): Promise<{ path: string; branch: string }> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    if (!(await isGitRepo(repoPath))) throw new Error(`not a git repo: ${repoPath}`);
+    const prs = await listOpenPrs(repoPath);
+    const pr = prs.find((p) => p.number === prNumber);
+    if (!pr) throw new Error(`PR #${prNumber} is not an open PR of this repo`);
+    return addWorktreeForPr({ repoPath, prNumber, headRefName: pr.headRefName });
+  }
+
+  /**
+   * Rename a worktree's checked-out branch. Refuses when the branch has an
+   * open PR (renaming locally would diverge from the PR's remote head).
+   */
+  async renameWorktreeBranch(
+    projectId: string,
+    worktreePath: string,
+    newName: string,
+  ): Promise<void> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    const trees = await listWorktrees(repoPath);
+    const wt = trees.find((t) => resolve(t.path) === resolve(worktreePath));
+    if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
+    const oldName = wt.branch;
+    if (!oldName) throw new Error(`worktree has no branch to rename: ${worktreePath}`);
+    if (await findOpenPr(repoPath, oldName)) {
+      throw new Error(`cannot rename ${oldName}: it has an open pull request`);
+    }
+    await renameBranch(worktreePath, oldName, newName);
+  }
+
+  /**
+   * Remove a worktree. Kills any sessions bound to it first, then runs
+   * `git worktree remove` (with `--force` so a dirty tree still deletes).
+   */
+  async removeWorktree(projectId: string, worktreePath: string): Promise<void> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    const target = resolve(worktreePath);
+    for (const session of this.sessions.values()) {
+      if (
+        session.projectId === projectId &&
+        session.worktreePath &&
+        resolve(session.worktreePath) === target
+      ) {
+        await this.killSession(session.id);
+      }
+    }
+    await removeWorktree(repoPath, worktreePath, true);
   }
 
   /**
