@@ -482,7 +482,9 @@ class _WorktreeMenuButton extends ConsumerWidget {
 
   Future<void> _renameBranch(BuildContext context, WidgetRef ref) async {
     final controller = TextEditingController(text: worktree.branch ?? '');
-    final newName = await showDialog<String>(
+    final String? newName;
+    try {
+      newName = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Rename branch'),
@@ -503,7 +505,10 @@ class _WorktreeMenuButton extends ConsumerWidget {
           ),
         ],
       ),
-    );
+      );
+    } finally {
+      controller.dispose();
+    }
     if (newName == null || newName.isEmpty || newName == worktree.branch) {
       return;
     }
