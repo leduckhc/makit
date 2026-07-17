@@ -18,56 +18,54 @@
  *     so bursts collapse into a single `onChange`.
  */
 
-import { watch, existsSync, readFileSync, statSync, type FSWatcher } from "node:fs";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { execFileSync } from "node:child_process";
+import { watch, existsSync, realpathSync, statSync, type FSWatcher } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 /**
- * Resolve the git dir and the directory where git records this repo's linked
- * worktrees. For a PRIMARY checkout, `<repo>/.git` is a directory and worktrees
- * live under `<repo>/.git/worktrees`. For a *linked worktree* checkout, though,
- * `<repo>/.git` is a FILE (`gitdir: <common>/.git/worktrees/<name>`) and the
- * shared worktrees dir is that target's parent — `<repo>/.git/worktrees` does
- * NOT exist. Watching the wrong path means a `git worktree add` run from a
- * linked-worktree project never surfaces in the app until the next reconnect.
+ * Ask Git for the common directory where it records linked worktrees. This is
+ * `<repo>/.git` for a primary checkout, the primary repo's git dir for a linked
+ * worktree (regardless of the checkout's location), and the submodule's module
+ * git dir for a submodule checkout.
  */
 function resolveGitPaths(repoPath: string): { gitDir: string; worktreesDir: string } {
-  // Walk up to the nearest ancestor holding a `.git` entry — a registered
-  // project path may be a SUBDIRECTORY of the checkout (e.g. a monorepo
-  // package like `<repo>/server`), where `.git` lives higher up.
-  let dir = resolve(repoPath);
-  for (;;) {
-    const dotGit = join(dir, ".git");
-    try {
-      const st = statSync(dotGit);
-      if (st.isDirectory()) {
-        // Primary checkout: worktrees live under `<repo>/.git/worktrees`.
-        return { gitDir: dotGit, worktreesDir: join(dotGit, "worktrees") };
+  const unresolvedGitDir = join(repoPath, ".git");
+  const unresolved = {
+    gitDir: unresolvedGitDir,
+    worktreesDir: join(unresolvedGitDir, "worktrees"),
+  };
+
+  try {
+    const [topLevel, commonDir] = execFileSync(
+      "git",
+      ["-C", repoPath, "rev-parse", "--show-toplevel", "--git-common-dir"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .trim()
+      .split(/\r?\n/);
+    if (!topLevel || !commonDir) return unresolved;
+
+    // Git treats every descendant of a home/root-level checkout as belonging
+    // to it. Do not let an unrelated registered project inherit such a broad
+    // ancestor watcher; direct registration of that checkout remains valid.
+    if (realpathSync(repoPath) !== topLevel) {
+      const topParent = dirname(topLevel);
+      if (
+        topLevel === resolve(homedir()) ||
+        topParent === topLevel ||
+        statSync(topLevel).dev !== statSync(topParent).dev
+      ) {
+        return unresolved;
       }
-      if (st.isFile()) {
-        // Linked worktree: `.git` is a file `gitdir: <common>/.git/worktrees/<name>`,
-        // so the shared worktrees dir is that target's parent. (Submodule
-        // gitdirs are not under a `worktrees/` segment — fall back to
-        // `<target>/worktrees`.)
-        const m = /^gitdir:\s*(.+?)\s*$/m.exec(readFileSync(dotGit, "utf8"));
-        if (m) {
-          const target = isAbsolute(m[1]) ? m[1] : resolve(dir, m[1]);
-          if (basename(dirname(target)) === "worktrees") {
-            const worktreesDir = dirname(target);
-            return { gitDir: dirname(worktreesDir), worktreesDir };
-          }
-          return { gitDir: target, worktreesDir: join(target, "worktrees") };
-        }
-      }
-    } catch {
-      // No `.git` here (or unreadable) — keep walking up.
     }
-    const parent = dirname(dir);
-    if (parent === dir) break; // reached the filesystem root
-    dir = parent;
+
+    const gitDir = resolve(repoPath, commonDir);
+    return { gitDir, worktreesDir: join(gitDir, "worktrees") };
+  } catch {
+    // Missing/non-repo paths and git lookup failures remain best-effort no-ops.
+    return unresolved;
   }
-  // Not a git repo anywhere up the tree — default (the watch may never fire).
-  const dotGit = join(repoPath, ".git");
-  return { gitDir: dotGit, worktreesDir: join(dotGit, "worktrees") };
 }
 
 export interface WorktreeWatcher {

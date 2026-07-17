@@ -112,6 +112,36 @@ test("watchWorktrees fires when the watched path is a SUBDIRECTORY of the repo",
   }
 });
 
+test("watchWorktrees fires when the watched repo is a SUBMODULE checkout", async () => {
+  const repo = makeRepo();
+  const submoduleSource = makeRepo();
+  const submodule = join(repo, "modules", "child");
+  execFileSync(
+    "git",
+    ["-c", "protocol.file.allow=always", "submodule", "add", "-q", submoduleSource, "modules/child"],
+    { cwd: repo },
+  );
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+
+  let resolveFired: (() => void) | undefined;
+  const fired = new Promise<void>((res) => (resolveFired = res));
+  const watcher = watchWorktrees(() => resolveFired?.(), { debounceMs: 20 });
+  watcher.sync([submodule]);
+  try {
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "submodule-feat", join(wtBase, "submodule-feat")], {
+      cwd: submodule,
+    });
+    const won = await Promise.race([fired.then(() => true), delay(3000).then(() => false)]);
+    assert.equal(won, true, "expected onChange to fire for a worktree added from a submodule checkout");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(submoduleSource, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
 test("watchWorktrees.sync drops watchers for removed repos and is idempotent", async () => {
   const repo = makeRepo();
   const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
@@ -140,6 +170,27 @@ test("watchWorktrees tolerates a non-existent / non-repo path", async () => {
   const watcher = watchWorktrees(() => {}, { debounceMs: 10 });
   assert.doesNotThrow(() => watcher.sync(["/no/such/path/makit-nope"]));
   watcher.close();
+});
+
+test("watchWorktrees does not attach a missing project path to an ancestor repo", async () => {
+  const repo = makeRepo();
+  const missingProject = join(repo, "removed-project");
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  let fired = 0;
+  const watcher = watchWorktrees(() => fired++, { debounceMs: 10 });
+  watcher.sync([missingProject]);
+  try {
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "unrelated", join(wtBase, "unrelated")], {
+      cwd: repo,
+    });
+    await delay(150);
+    assert.equal(fired, 0, "a missing project path must not watch an ancestor repository");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
 });
 
 test("watchWorktrees keeps firing (and does not crash) when a worktree is removed", async () => {
