@@ -388,4 +388,38 @@ void main() {
       expect(listWidth, greaterThan(kReadableContentMaxWidth));
     },
   );
+
+  testWidgets('composer draft survives the pane being disposed and recreated', (
+    tester,
+  ) async {
+    final container = ProviderContainer(
+      overrides: [
+        sessionsProvider.overrideWithValue(SessionsState([_session()])),
+        eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(selectedSessionProvider.notifier).state = 's1';
+
+    Widget app(Widget child) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: Scaffold(body: child)),
+    );
+
+    await tester.pumpWidget(app(const DesktopChatPane(sessionId: 's1')));
+    await tester.pump();
+
+    await tester.enterText(find.byType(TextField), 'unsent draft');
+    await tester.pumpAndSettle();
+
+    // Dispose the pane (as a worktree switch or pane split would).
+    await tester.pumpWidget(app(const SizedBox.shrink()));
+    await tester.pump();
+
+    // Recreate it — the draft must come back.
+    await tester.pumpWidget(app(const DesktopChatPane(sessionId: 's1')));
+    await tester.pump();
+
+    expect(find.text('unsent draft'), findsOneWidget);
+  });
 }

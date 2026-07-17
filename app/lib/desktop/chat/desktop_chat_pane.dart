@@ -12,6 +12,7 @@ import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
+import 'composer_draft.dart';
 import 'harness_picker.dart';
 import 'panes/pane_header.dart';
 import 'selected_session.dart';
@@ -224,6 +225,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                 onCancel: () => _cancelTurn(sessionId),
                 running: running,
                 alwaysExpanded: true,
+                // Persist the draft per session so it survives worktree
+                // switches and pane splits (the composer is recreated on both).
+                initialText: ref.read(composerDraftsProvider)[sessionId],
+                onDraftChanged: (text) => ref
+                    .read(composerDraftsProvider.notifier)
+                    .set(sessionId, text),
                 footerActions: [
                   ComposerModelSelector(sessionId: sessionId),
                   ComposerThinkingSelector(sessionId: sessionId),

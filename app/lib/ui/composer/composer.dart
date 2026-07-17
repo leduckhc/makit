@@ -31,8 +31,21 @@ class Composer extends StatefulWidget {
     this.focusNode,
     this.footerActions = const <Widget>[],
     this.alwaysExpanded = false,
+    this.initialText,
+    this.onDraftChanged,
   });
   final void Function(String text) onSend;
+
+  /// Text to seed the field with when the composer first mounts — used to
+  /// restore a half-typed draft after the composer is disposed and recreated
+  /// (e.g. a desktop worktree switch or pane split). Null/empty starts blank.
+  final String? initialText;
+
+  /// Called with the field's full text on every change (typing, slash-pick,
+  /// newline insert, and the clear that follows a send). Callers persist this
+  /// to restore [initialText] on a later mount; the post-send empty string
+  /// lets them prune the stored draft.
+  final ValueChanged<String>? onDraftChanged;
 
   /// Leading controls placed on the left of the footer action row when the
   /// composer is in its full (expanded) form — e.g. the model + thinking
@@ -89,6 +102,14 @@ class _ComposerState extends State<Composer> {
   @override
   void initState() {
     super.initState();
+    // Restore any persisted draft, placing the caret at the end so the user
+    // resumes where they left off.
+    final seed = widget.initialText ?? '';
+    if (seed.isNotEmpty) {
+      _ctrl.text = seed;
+      _ctrl.selection = TextSelection.collapsed(offset: seed.length);
+      _hasText = seed.trim().isNotEmpty;
+    }
     _ctrl.addListener(_onControllerChanged);
     _focus.addListener(_onFocusChanged);
   }
@@ -96,6 +117,7 @@ class _ComposerState extends State<Composer> {
   void _onControllerChanged() {
     final hasText = _ctrl.text.trim().isNotEmpty;
     if (hasText != _hasText) setState(() => _hasText = hasText);
+    widget.onDraftChanged?.call(_ctrl.text);
   }
 
   void _onFocusChanged() {

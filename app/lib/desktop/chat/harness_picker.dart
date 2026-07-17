@@ -7,6 +7,7 @@ import '../../store/store.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
+import 'composer_draft.dart';
 import 'panes/pane_header.dart';
 import 'selected_session.dart';
 
@@ -323,6 +324,14 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                 onSend: _start,
                 running: _starting,
                 alwaysExpanded: true,
+                // A not-yet-started session has no id, so scope the draft to
+                // the worktree; it survives switching away and back.
+                initialText: ref.read(
+                  composerDraftsProvider,
+                )['wt:${widget.worktree.path}'],
+                onDraftChanged: (text) => ref
+                    .read(composerDraftsProvider.notifier)
+                    .set('wt:${widget.worktree.path}', text),
                 focusNode: widget.composerFocusId == null
                     ? null
                     : ref.watch(
