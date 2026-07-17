@@ -133,6 +133,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         return WorktreeStartView(
           key: ValueKey(worktree.path),
           worktree: worktree,
+          composerFocusId: widget.composerFocusId,
         );
       }
       // No session yet, but the pane still owns the unfold affordance when the

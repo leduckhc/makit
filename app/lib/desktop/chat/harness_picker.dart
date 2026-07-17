@@ -6,6 +6,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
+import 'composer_focus.dart';
 import 'panes/pane_header.dart';
 import 'selected_session.dart';
 
@@ -158,8 +159,18 @@ class _HarnessCard extends StatelessWidget {
 /// The session is spawned only on first send (no orphan drafts).
 /// (SPEC-19, moved from desktop_chat_pane.)
 class WorktreeStartView extends ConsumerStatefulWidget {
-  const WorktreeStartView({super.key, required this.worktree});
+  const WorktreeStartView({
+    super.key,
+    required this.worktree,
+    this.composerFocusId,
+  });
   final SelectedWorktree worktree;
+
+  /// The hosting pane's leaf id, used to key this view's composer [FocusNode]
+  /// via [desktopComposerFocusProvider] so each split pane owns a distinct node
+  /// (and the "focus composer" shortcut can target the active leaf). Null
+  /// (standalone use) lets the [Composer] own its own node.
+  final String? composerFocusId;
 
   @override
   ConsumerState<WorktreeStartView> createState() => _WorktreeStartViewState();
@@ -190,6 +201,9 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
         worktreePath: wt.path,
         branch: wt.branch,
       );
+      // The widget may have unmounted while spawnSession was in flight; bail
+      // before touching providers through a potentially disposed ref.
+      if (!mounted) return;
       selectSessionExclusive(ref, sid);
       store.appendOptimisticMessage(sid, text);
       store.sendMessage(sid, text);
@@ -309,6 +323,11 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                 onSend: _start,
                 running: _starting,
                 alwaysExpanded: true,
+                focusNode: widget.composerFocusId == null
+                    ? null
+                    : ref.watch(
+                        desktopComposerFocusProvider(widget.composerFocusId!),
+                      ),
               ),
             ),
           ),
