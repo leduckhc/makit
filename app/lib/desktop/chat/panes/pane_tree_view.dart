@@ -290,19 +290,6 @@ class _PaneHeaderStrip extends ConsumerWidget {
       child: Row(
         children: [
           const SizedBox(width: 8),
-          // A short grip pill is the drag affordance — softer than a row of
-          // dots and reads as "grab to move" without a hard control.
-          Container(
-            width: 16,
-            height: 4,
-            decoration: BoxDecoration(
-              color: active
-                  ? cs.primary.withValues(alpha: 0.45)
-                  : cs.onSurfaceVariant.withValues(alpha: 0.25),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 8),
           Expanded(
             child: Text(
               title,
@@ -330,7 +317,7 @@ class _PaneHeaderStrip extends ConsumerWidget {
               controller.closeActive();
             },
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 8),
         ],
       ),
     );
