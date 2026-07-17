@@ -11,40 +11,23 @@ import { randomUUID } from "node:crypto";
 import { basename, resolve } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
-import { PiAdapter } from "./adapters/pi.js";
-import { AcpAdapter, codexAcpSpec } from "./adapters/acp.js";
-import { CodexAppServerAdapter } from "./adapters/codex.js";
 import { listAgents, type AgentDescriptor } from "./adapters/catalog.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type WorktreeDTO } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
+import { buildAdapter } from "./agent_factory.js";
+import { listRepos, enrichPrs } from "./repo_service.js";
 import {
   isGitRepo,
   detectDefaultBranch,
-  detectCurrentBranch,
   listWorktrees,
-  diffStat,
-  findOpenPr,
   addWorktree,
   branchExists,
   slugify,
 } from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
-import { mapLimit } from "./concurrency.js";
-
-/**
- * Concurrency caps for the repo snapshot fan-out. These bound how many git/gh
- * child processes run at once so a large install (many repos/worktrees) can't
- * exhaust file-descriptor/process limits or storm GitHub with `gh` calls. The
- * git caps nest (projects × worktrees), so keep their product modest; the PR
- * lookups are flattened across all repos, so PR_CONCURRENCY is a true global
- * bound on concurrent `gh` invocations.
- */
-const PROJECT_CONCURRENCY = 4;
-const WORKTREE_CONCURRENCY = 6;
-const PR_CONCURRENCY = 6;
 
 export interface AdapterFactoryContext {
   projectPath: string;
@@ -102,6 +85,9 @@ export class SessionManager extends EventEmitter {
   private readonly attachedByPi = new Map<string, string>();
   /** In-flight attaches, so concurrent attach calls collapse onto one process. */
   private readonly attachInFlight = new Map<string, Promise<Session>>();
+  /** In-flight draft promotions, keyed by session id, so concurrent first
+   *  messages collapse onto one worktree/adapter instead of racing. */
+  private readonly promoteInFlight = new Map<string, Promise<boolean>>();
   private readonly adapterFactory?: AdapterFactory;
   private readonly onProjectsChanged?: (paths: string[]) => void;
   private readonly defaultModel?: string;
@@ -264,9 +250,7 @@ export class SessionManager extends EventEmitter {
       adapter: new DetachedAdapter(agentId),
       store: this.store,
     });
-    session.pending = true;
-    session.pendingAgent = agentId;
-    session.pendingBaseBranch = baseBranch;
+    session.beginDraft({ agent: agentId, baseBranch });
     // Bind to an existing worktree when provided (start-a-session-in-worktree):
     // first message launches the agent there instead of forking a new tree.
     // The path comes from the wire, so verify it is genuinely a worktree of
@@ -282,8 +266,12 @@ export class SessionManager extends EventEmitter {
           `worktree is not part of project ${projectId}: ${worktreePath}`,
         );
       }
-      session.pendingWorktreePath = match.path;
-      session.branch = match.branch ?? branch;
+      session.beginDraft({
+        agent: agentId,
+        baseBranch,
+        pendingWorktreePath: match.path,
+        branch: match.branch ?? branch,
+      });
     }
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
@@ -297,7 +285,7 @@ export class SessionManager extends EventEmitter {
   setPendingAgent(sessionId: string, agent: string): Session {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no such session: ${sessionId}`);
-    if (session.pending) session.pendingAgent = agent;
+    if (session.pending) session.setPendingAgent(agent);
     return session;
   }
 
@@ -346,12 +334,13 @@ export class SessionManager extends EventEmitter {
   async startPendingSession(sessionId: string, firstMessage: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no such session: ${sessionId}`);
-    if (!session.pending) return session;
+    const lc = session.lifecycle;
+    if (lc.phase !== "draft") return session;
 
     const project = this.projects.get(session.projectId);
     if (!project) throw new Error(`unknown project: ${session.projectId}`);
     const repoPath = project.dto.path;
-    const agentId = session.pendingAgent ?? this.defaultAgentId;
+    const agentId = lc.agent;
     // Preserve the harness the user actually chose: markStarted() clears
     // pendingAgent, so pin the authoritative agent field here (unless the
     // stub adapter factory is driving tests).
@@ -361,12 +350,12 @@ export class SessionManager extends EventEmitter {
     let branch = base;
     let worktreePath = repoPath;
 
-    if (session.pendingWorktreePath) {
+    if (lc.pendingWorktreePath) {
       // Start in the existing worktree the user picked — no new tree/branch.
-      worktreePath = session.pendingWorktreePath;
-      branch = session.branch ?? base;
+      worktreePath = lc.pendingWorktreePath;
+      branch = lc.branch ?? base;
     } else if (await isGitRepo(repoPath)) {
-      const requested = session.pendingBaseBranch;
+      const requested = lc.baseBranch;
       const baseBranch =
         requested && (await branchExists(repoPath, requested))
           ? requested
@@ -379,7 +368,7 @@ export class SessionManager extends EventEmitter {
       }
     }
 
-    const built = this.buildAdapter(agentId);
+    const built = buildAdapter(agentId);
     const adapter =
       this.adapterFactory?.({ projectPath: worktreePath, sessionId: session.id, agent: agentId }) ??
       built.adapter;
@@ -387,6 +376,39 @@ export class SessionManager extends EventEmitter {
     await adapter.start(this.startOpts(worktreePath, session.id));
     session.markStarted({ branch, worktreePath, title: humanizeSlug(base) });
     return session;
+  }
+
+  /**
+   * Promote a draft session on its first message: create its worktree + agent.
+   * On failure, routes the error through the session's own event pipeline
+   * ({@link Session.recordError} → persisted, monotonic seq) instead of
+   * throwing a bare error the caller must hand-build an event for, and returns
+   * `false` so the caller skips delivering the turn. Returns `true` on success
+   * (or when the session was not pending).
+   */
+  async promotePendingSession(session: Session, firstMessage: string): Promise<boolean> {
+    if (!session.pending) return true;
+    // Collapse concurrent first-message promotions onto one in-flight promise:
+    // two callers both seeing phase "draft" must NOT each create a worktree +
+    // adapter. The second caller awaits the same result the first produces.
+    const existing = this.promoteInFlight.get(session.id);
+    if (existing) return existing;
+
+    const task = (async () => {
+      try {
+        await this.startPendingSession(session.id, firstMessage);
+        return true;
+      } catch (e) {
+        session.recordError(`could not create worktree: ${(e as Error).message}`);
+        return false;
+      }
+    })();
+    this.promoteInFlight.set(session.id, task);
+    try {
+      return await task;
+    } finally {
+      this.promoteInFlight.delete(session.id);
+    }
   }
 
   /** Find an unused branch name, appending `-2`, `-3`, … on collision. */
@@ -416,64 +438,7 @@ export class SessionManager extends EventEmitter {
    */
   async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    const repos = await mapLimit(
-      [...this.projects.values()],
-      PROJECT_CONCURRENCY,
-      (p) => this.repoSnapshot(p),
-    );
-    return includePrs ? this.enrichPrs(repos) : repos;
-  }
-
-  /** Git-only snapshot of one project (no `gh`/network). */
-  private async repoSnapshot(p: ProjectEntry): Promise<RepoDTO> {
-    const repoPath = p.dto.path;
-    const gitRepo = await isGitRepo(repoPath);
-    const [defaultBranch, currentBranch, entries] = gitRepo
-      ? await Promise.all([
-          detectDefaultBranch(repoPath),
-          detectCurrentBranch(repoPath),
-          listWorktrees(repoPath),
-        ])
-      : [null, null, []];
-
-    // Group this project's STARTED sessions by the worktree path they run
-    // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
-    const sessionsByPath = new Map<string, string[]>();
-    for (const s of this.sessions.values()) {
-      if (s.projectId !== p.dto.id || s.pending) continue;
-      const key = s.worktreePath ?? repoPath;
-      const list = sessionsByPath.get(key) ?? [];
-      list.push(s.id);
-      sessionsByPath.set(key, list);
-    }
-
-    const worktrees: WorktreeDTO[] = await mapLimit(entries, WORKTREE_CONCURRENCY, async (e) => {
-      const stat = await diffStat(e.path, defaultBranch);
-      return {
-        id: e.path,
-        path: e.path,
-        branch: e.branch,
-        isPrimary: e.isPrimary,
-        insertions: stat.insertions,
-        deletions: stat.deletions,
-        filesChanged: stat.filesChanged,
-        committedAt: e.committedAt,
-        pr: null,
-        sessionIds: sessionsByPath.get(e.path) ?? [],
-      };
-    });
-
-    return {
-      id: p.dto.id,
-      name: p.dto.name,
-      path: repoPath,
-      pinned: p.dto.pinned,
-      lastActivityAt: p.dto.lastActivityAt,
-      isGitRepo: gitRepo,
-      defaultBranch,
-      currentBranch,
-      worktrees,
-    };
+    return listRepos(this.listProjects(), this.allSessions(), includePrs);
   }
 
   /**
@@ -481,28 +446,11 @@ export class SessionManager extends EventEmitter {
    * {@link listRepos}. Returns new objects — the input is not mutated — so the
    * caller can keep the fast snapshot around while this one is in flight. The
    * `gh` lookups are flattened across all repos and run through a single
-   * bounded pool ({@link PR_CONCURRENCY}), so a many-worktree install can't
-   * launch hundreds of concurrent `gh` processes / network calls.
+   * bounded pool, so a many-worktree install can't launch hundreds of
+   * concurrent `gh` processes / network calls.
    */
   async enrichPrs(repos: RepoDTO[]): Promise<RepoDTO[]> {
-    // Clone up front so the input snapshot is never mutated.
-    const out = repos.map((repo) => ({
-      ...repo,
-      worktrees: repo.worktrees.map((w) => ({ ...w })),
-    }));
-    // Flatten the eligible (secondary, branched) worktrees so concurrency is
-    // bounded globally rather than per-repo.
-    const tasks: Array<{ ri: number; wi: number; repoPath: string; branch: string }> = [];
-    out.forEach((repo, ri) =>
-      repo.worktrees.forEach((w, wi) => {
-        if (w.branch && !w.isPrimary) tasks.push({ ri, wi, repoPath: repo.path, branch: w.branch });
-      }),
-    );
-    const prs = await mapLimit(tasks, PR_CONCURRENCY, (t) => findOpenPr(t.repoPath, t.branch));
-    tasks.forEach((t, i) => {
-      out[t.ri].worktrees[t.wi].pr = prs[i];
-    });
-    return out;
+    return enrichPrs(repos);
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */
@@ -572,19 +520,6 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  /** Construct the adapter for an agent id. */
-  private buildAdapter(agentId: string): { agent: string; adapter: AgentAdapter } {
-    switch (agentId) {
-      case "codex":
-        return { agent: "codex", adapter: new AcpAdapter({ spec: codexAcpSpec() }) };
-      case "codex-native":
-        return { agent: "codex-native", adapter: new CodexAppServerAdapter() };
-      case "pi":
-      default:
-        return { agent: "pi", adapter: new PiAdapter() };
-    }
-  }
-
   /** Shared session construction for spawn + attach. */
   private async createSession(
     project: ProjectEntry,
@@ -595,7 +530,7 @@ export class SessionManager extends EventEmitter {
     // Create the session first so we have an id to thread into the bridge.
     // askUser is threaded through `start()` below (same as PiAdapter), not the
     // constructor — keeps the adapter construction uniform across agent types.
-    const built = this.buildAdapter(agentId);
+    const built = buildAdapter(agentId);
     const adapter = built.adapter;
     const session = new Session({
       projectId: project.dto.id,
@@ -677,7 +612,7 @@ export class SessionManager extends EventEmitter {
 
     const adapter = this.adapterFactory
       ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: "pi" })
-      : this.buildAdapter("pi").adapter;
+      : buildAdapter("pi").adapter;
     session.replaceAdapter(adapter);
     await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath));
     return session;

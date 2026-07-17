@@ -96,7 +96,6 @@ final List<SettingsSection> kSettingsSections = [
     title: 'Agents & Chat',
     icon: Symbols.smart_toy,
     builder: (_) => const AgentsChatSection(),
-    availability: SettingsAvailability.comingSoon,
     items: const [
       SettingsItem(
         id: 'agents_chat.default_agent',
@@ -287,40 +286,32 @@ class SettingsSearchResult {
   final SettingsItem item;
 }
 
-/// A reusable search index over an arbitrary list of sections. [searchSettings]
-/// is the app-wide instance over [kSettingsSections].
-class SettingsSearchIndex {
-  /// Creates an index over [sections].
-  const SettingsSearchIndex(this._sections);
-
-  final List<SettingsSection> _sections;
-
-  /// Returns items whose title, keywords, or help contain [query]
-  /// (case-insensitive). An empty/whitespace query returns no results.
-  List<SettingsSearchResult> search(String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return const [];
-    final results = <SettingsSearchResult>[];
-    for (final section in _sections) {
-      for (final item in section.items) {
-        if (_matches(item, q)) {
-          results.add(SettingsSearchResult(sectionId: section.id, item: item));
-        }
+/// A reusable search over an arbitrary list of sections. Defaults to the
+/// app-wide [kSettingsSections]. Returns items whose title, keywords, or help
+/// contain [query] (case-insensitive); an empty/whitespace query returns no
+/// results.
+List<SettingsSearchResult> searchSettings(
+  String query, {
+  List<SettingsSection>? sections,
+}) {
+  final q = query.trim().toLowerCase();
+  if (q.isEmpty) return const [];
+  final results = <SettingsSearchResult>[];
+  for (final section in sections ?? kSettingsSections) {
+    for (final item in section.items) {
+      if (_matches(item, q)) {
+        results.add(SettingsSearchResult(sectionId: section.id, item: item));
       }
     }
-    return results;
   }
-
-  static bool _matches(SettingsItem item, String q) {
-    if (item.title.toLowerCase().contains(q)) return true;
-    if (item.help.toLowerCase().contains(q)) return true;
-    for (final keyword in item.keywords) {
-      if (keyword.toLowerCase().contains(q)) return true;
-    }
-    return false;
-  }
+  return results;
 }
 
-/// Searches [kSettingsSections]; see [SettingsSearchIndex.search].
-List<SettingsSearchResult> searchSettings(String query) =>
-    SettingsSearchIndex(kSettingsSections).search(query);
+bool _matches(SettingsItem item, String q) {
+  if (item.title.toLowerCase().contains(q)) return true;
+  if (item.help.toLowerCase().contains(q)) return true;
+  for (final keyword in item.keywords) {
+    if (keyword.toLowerCase().contains(q)) return true;
+  }
+  return false;
+}

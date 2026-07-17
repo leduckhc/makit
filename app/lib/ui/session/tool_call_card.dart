@@ -14,15 +14,19 @@ class ToolCallCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final renderer = rendererFor(item);
-    final risk = item.risk;
-    final (riskColor, riskIcon) = switch (risk) {
-      'risky' => (Colors.orange, renderer?.icon ?? Icons.warning_amber_rounded),
-      'destructive' => (Colors.red, renderer?.icon ?? Icons.dangerous_outlined),
-      _ => (cs.outline, renderer?.icon ?? Icons.bolt_outlined),
+    final (riskColor, riskIcon) = switch (item.risk) {
+      ToolRisk.risky => (
+        Colors.orange,
+        renderer?.icon ?? Icons.warning_amber_rounded,
+      ),
+      ToolRisk.destructive => (
+        Colors.red,
+        renderer?.icon ?? Icons.dangerous_outlined,
+      ),
+      ToolRisk.safe => (cs.outline, renderer?.icon ?? Icons.bolt_outlined),
     };
 
-    final running = !item.ended;
-    final failed = item.ended && (item.exitCode ?? 0) != 0;
+    final status = item.status;
 
     return InkWell(
       onTap: onTap,
@@ -51,20 +55,23 @@ class ToolCallCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (running)
-                    const SizedBox(
+                  switch (status) {
+                    ToolStatus.running => const SizedBox(
                       width: 10,
                       height: 10,
                       child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else if (failed)
-                    Icon(Icons.error_outline, size: 14, color: cs.error)
-                  else
-                    Icon(
+                    ),
+                    ToolStatus.failed => Icon(
+                      Icons.error_outline,
+                      size: 14,
+                      color: cs.error,
+                    ),
+                    ToolStatus.ok => Icon(
                       Icons.check_circle_outline,
                       size: 14,
                       color: cs.primary,
                     ),
+                  },
                 ],
               ),
             ),

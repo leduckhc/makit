@@ -18,6 +18,11 @@ import '../../notifications/notification_request.dart';
 import '../../store/connection.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
+import 'srv_dialogs/ask_wizard.dart';
+
+// Re-export the wizard's test entrypoint so existing importers of
+// `srv_request_handler.dart` keep resolving it after the SPEC-19 split.
+export 'srv_dialogs/ask_wizard.dart' show debugAskWizardFor;
 
 class SrvRequestHandler extends ConsumerStatefulWidget {
   const SrvRequestHandler({
@@ -308,32 +313,30 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       requestId: requestId,
       context: ctx,
       barrierDismissible: false,
-      builder: (dctx) => _AskWizard(questions: questions),
+      builder: (dctx) => AskWizard(questions: questions),
     );
 
     if (result == null) {
       // User cancelled — still send a canonical-shaped response so the
       // connector can dispatch back to the agent cleanly.
-      _respond(requestId, {
-        'kind': 'askUserQuestion',
-        'indices': <int>[],
-        'answers': <String>[],
-        'cancelled': true,
-      });
+      _respond(requestId, SrvResponse.cancelled('askUserQuestion'));
       return;
     }
-    // result is already canonical {indices, answers}; just add kind +
-    // a convenience `answer` for the single-question form.
-    final body = <String, dynamic>{
-      'kind': 'askUserQuestion',
-      'indices': result['indices'],
-      'answers': result['answers'],
-    };
-    if (questions.length == 1) {
-      final answers = result['answers'] as List;
-      if (answers.isNotEmpty) body['answer'] = answers.first;
-    }
-    _respond(requestId, body);
+    // result is already canonical {indices, answers}; the builder adds `kind`
+    // and (for the single-question form) a convenience `answer`.
+    final indices = (result['indices'] as List).cast<int>();
+    final answers = (result['answers'] as List).cast<String>();
+    final answer = (questions.length == 1 && answers.isNotEmpty)
+        ? answers.first
+        : null;
+    _respond(
+      requestId,
+      SrvResponse.askUserQuestion(
+        indices: indices,
+        answers: answers,
+        answer: answer,
+      ),
+    );
   }
 
   Future<void> _showConfirmAction(
@@ -380,10 +383,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
         ],
       ),
     );
-    _respond(requestId, {
-      'kind': 'confirmAction',
-      'approved': approved ?? false,
-    });
+    _respond(requestId, SrvResponse.confirmAction(approved: approved ?? false));
   }
 
   /// Free-text input (maps pi's ctx.ui.input / ctx.ui.editor via the PiAdapter
@@ -425,9 +425,9 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       ),
     );
     if (value == null) {
-      _respond(requestId, {'kind': 'input', 'cancelled': true});
+      _respond(requestId, SrvResponse.cancelled('input'));
     } else {
-      _respond(requestId, {'kind': 'input', 'value': value});
+      _respond(requestId, SrvResponse.input(value));
     }
   }
 
@@ -508,230 +508,3 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   @override
   Widget build(BuildContext context) => widget.child;
 }
-
-/// A multi-question wizard. One question per page; Next/Submit advances.
-/// Returns a list of answers (each answer is either a `String` for
-/// single-select or a `List<String>` for multi-select).
-class _AskWizard extends StatefulWidget {
-  const _AskWizard({required this.questions});
-  final List<Map<String, dynamic>> questions;
-
-  @override
-  State<_AskWizard> createState() => _AskWizardState();
-}
-
-class _AskWizardState extends State<_AskWizard> {
-  int _i = 0;
-  late final List<Set<int>> _picks = List.generate(
-    widget.questions.length,
-    (_) => <int>{},
-  );
-
-  Map<String, dynamic> get _q => widget.questions[_i];
-
-  List<Map<String, dynamic>> _options() {
-    final raw = _q['options'];
-    if (raw is! List) return const [];
-    return raw
-        .whereType<Map<dynamic, dynamic>>()
-        .map(Map<String, dynamic>.from)
-        .toList();
-  }
-
-  bool get _multi => _q['multi'] == true;
-
-  bool get _isLast => _i == widget.questions.length - 1;
-
-  bool get _canAdvance => _picks[_i].isNotEmpty;
-
-  void _toggle(int idx) {
-    setState(() {
-      if (_multi) {
-        _picks[_i].contains(idx) ? _picks[_i].remove(idx) : _picks[_i].add(idx);
-      } else {
-        _picks[_i]
-          ..clear()
-          ..add(idx);
-      }
-    });
-  }
-
-  void _next() {
-    if (_isLast) {
-      // Canonical shape (mirrors AskUserQuestionResponse in uicall.ts):
-      //   indices: int[]  — first-picked index per question
-      //   answers: string[] — label per question; multi-select joined with " + "
-      final indices = <int>[];
-      final answers = <String>[];
-      for (var qi = 0; qi < widget.questions.length; qi++) {
-        final opts =
-            (widget.questions[qi]['options'] as List?)
-                ?.whereType<Map<dynamic, dynamic>>()
-                .map(Map<String, dynamic>.from)
-                .toList() ??
-            const [];
-        final pickedSorted = _picks[qi].toList()..sort();
-        final labels = pickedSorted
-            .map((i) => opts[i]['label']?.toString() ?? '')
-            .toList();
-        indices.add(pickedSorted.isEmpty ? -1 : pickedSorted.first);
-        answers.add(labels.join(' + '));
-      }
-      Navigator.of(context).pop({'indices': indices, 'answers': answers});
-      return;
-    }
-    setState(() => _i++);
-  }
-
-  void _back() {
-    if (_i == 0) return;
-    setState(() => _i--);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final header = _q['header']?.toString();
-    final question = _q['question']?.toString() ?? '?';
-    final recommended = (_q['recommended'] as num?)?.toInt();
-    final opts = _options();
-
-    return AlertDialog(
-      title: Row(
-        children: [
-          Expanded(child: Text(header ?? 'Question')),
-          if (widget.questions.length > 1)
-            Text(
-              '${_i + 1}/${widget.questions.length}',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-        ],
-      ),
-      content: SizedBox(
-        width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(question),
-              const SizedBox(height: 12),
-              for (var i = 0; i < opts.length; i++)
-                _OptionTile(
-                  label: opts[i]['label']?.toString() ?? '?',
-                  description: opts[i]['description']?.toString(),
-                  recommended: recommended == i,
-                  selected: _picks[_i].contains(i),
-                  onTap: () => _toggle(i),
-                ),
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        if (_i > 0) TextButton(onPressed: _back, child: const Text('Back')),
-        FilledButton(
-          onPressed: _canAdvance ? _next : null,
-          child: Text(_isLast ? 'Submit' : 'Next'),
-        ),
-      ],
-    );
-  }
-}
-
-class _OptionTile extends StatelessWidget {
-  const _OptionTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.description,
-    this.recommended = false,
-  });
-
-  final String label;
-  final String? description;
-  final bool recommended;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Material(
-        color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Row(
-              children: [
-                Icon(
-                  selected ? Icons.check_box : Icons.check_box_outline_blank,
-                  size: 18,
-                  color: selected ? cs.primary : cs.outline,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            label,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          if (recommended) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: cs.tertiary.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                'Recommended',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: cs.tertiary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      if (description != null && description!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            description!,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Test-only entrypoint to render the wizard with a given question list.
-/// Use in widget tests via `showDialog(builder: (_) => debugAskWizardFor(qs))`.
-@visibleForTesting
-Widget debugAskWizardFor(List<Map<String, dynamic>> questions) =>
-    _AskWizard(questions: questions);

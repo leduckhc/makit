@@ -10,17 +10,22 @@
 /// style as the output. Tool views use a monospace font since they mostly show
 /// arguments, CLI output and file contents.
 ///
-/// To add support for a new tool, write a [ToolRenderer] subclass and
-/// register it in [toolRenderers]. The card view is shown inline in the chat
-/// transcript; tapping it opens [detail] full-screen.
+/// The chat transcript renders the collapsed card itself (see `ToolCallCard`),
+/// reading only [ToolRenderer.icon] and [toolDisplayName]. Tapping a card opens
+/// [ToolRenderer.detail] full-screen. To add support for a new tool, write a
+/// [ToolRenderer] subclass and register it in [toolRenderers].
 library;
-
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
 import '../../store/models.dart';
+import 'diff_view.dart';
 import 'line_diff.dart';
+import 'tool_result_text.dart';
+
+// Re-export the pure result-text helpers so existing importers of
+// `tool_renderers.dart` keep resolving them after the SPEC-19 split.
+export 'tool_result_text.dart' show extractToolResultText, valueString;
 
 /// Monospace font stack for tool views. iOS does not resolve the generic
 /// `monospace` family, so we fall back to Menlo (present on all Apple
@@ -42,96 +47,12 @@ abstract class ToolRenderer {
   /// Defaults to the (lowercase) tool [name] — e.g. `read`, `bash`.
   String get displayName => name;
 
-  /// One-line description for the card subtitle.
-  String? subtitle(ToolCallItem item) => null;
-
   /// Material icon shown on the card.
   IconData get icon => Icons.terminal;
-
-  /// Whether this renderer should display approve/deny / input controls
-  /// inline (otherwise the user just taps through to [detail]).
-  bool get inlineInteractive => false;
-
-  /// Inline card. Default: generic title + subtitle. Override for richer
-  /// inline UIs (e.g. AskUserQuestion options).
-  Widget card(BuildContext context, ToolCallItem item, VoidCallback onTap) {
-    return _DefaultCard(renderer: this, item: item, onTap: onTap);
-  }
 
   /// Full-screen detail view. Default: readable args + result text.
   Widget detail(BuildContext context, ToolCallItem item) {
     return genericToolDetail(context, item);
-  }
-}
-
-class _DefaultCard extends StatelessWidget {
-  const _DefaultCard({
-    required this.renderer,
-    required this.item,
-    required this.onTap,
-  });
-  final ToolRenderer renderer;
-  final ToolCallItem item;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final sub = renderer.subtitle(item);
-    return Material(
-      color: cs.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              Icon(renderer.icon, size: 18, color: cs.primary),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      renderer.displayName,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontFamilyFallback: kMonoFallback,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (sub != null && sub.isNotEmpty)
-                      Text(
-                        sub,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                          fontFamilyFallback: kMonoFallback,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (!item.ended)
-                const Padding(
-                  padding: EdgeInsets.only(left: 8),
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              else if (item.exitCode != null && item.exitCode != 0)
-                Icon(Icons.error_outline, size: 18, color: cs.error),
-              const Icon(Icons.chevron_right, size: 18),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -140,9 +61,7 @@ class _DefaultCard extends StatelessWidget {
 /// wrapped in the same [ToolDetailScaffold] as every other tool.
 Widget genericToolDetail(BuildContext context, ToolCallItem item) {
   final args = item.args;
-  final text = extractToolResultText(
-    item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? ''),
-  );
+  final text = extractToolResultText(item.resultText);
   final failed = item.ended && (item.exitCode ?? 0) != 0;
   final title = rendererFor(item)?.displayName ?? item.name;
   return ToolDetailScaffold(
@@ -155,7 +74,7 @@ Widget genericToolDetail(BuildContext context, ToolCallItem item) {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final e in args.entries)
-                ParamRow(e.key, _valueString(e.value)),
+                ParamRow(e.key, valueString(e.value)),
             ],
           ),
         ),
@@ -171,86 +90,6 @@ Widget genericToolDetail(BuildContext context, ToolCallItem item) {
         ),
     ],
   );
-}
-
-/// Render a single arg value for display. Scalars show as-is; nested
-/// structures fall back to compact JSON so the row stays readable.
-String _valueString(dynamic value) {
-  if (value == null) return '';
-  if (value is String || value is num || value is bool) return value.toString();
-  try {
-    return jsonEncode(value);
-  } catch (_) {
-    return value.toString();
-  }
-}
-
-/// Tool results arrive as one or more concatenated MCP-style envelopes, e.g.
-/// `{"content":[{"type":"text","text":"..."}],"details":{}}`. Extract and
-/// concatenate the human-readable text. Falls back to the raw string when it
-/// isn't in that shape (plain stdout, file contents, etc.).
-String extractToolResultText(String raw) {
-  final trimmed = raw.trim();
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return raw;
-  final buf = StringBuffer();
-  var matched = false;
-  for (final chunk in _splitJsonValues(trimmed)) {
-    dynamic decoded;
-    try {
-      decoded = jsonDecode(chunk);
-    } catch (_) {
-      return raw; // Not the envelope shape — show it verbatim.
-    }
-    if (decoded is Map && decoded['content'] is List) {
-      matched = true;
-      for (final part in decoded['content'] as List) {
-        if (part is Map && part['type'] == 'text' && part['text'] is String) {
-          buf.write(part['text'] as String);
-        }
-      }
-    }
-  }
-  return matched ? buf.toString() : raw;
-}
-
-/// Split a string of back-to-back top-level JSON values (e.g. `{...}{...}`)
-/// into their individual source substrings, honouring braces/brackets inside
-/// strings and escapes.
-List<String> _splitJsonValues(String s) {
-  final out = <String>[];
-  var depth = 0;
-  var start = -1;
-  var inString = false;
-  var escaped = false;
-  for (var i = 0; i < s.length; i++) {
-    final ch = s[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch == r'\') {
-        escaped = true;
-      } else if (ch == '"') {
-        inString = false;
-      }
-      continue;
-    }
-    switch (ch) {
-      case '"':
-        inString = true;
-      case '{':
-      case '[':
-        if (depth == 0) start = i;
-        depth++;
-      case '}':
-      case ']':
-        depth--;
-        if (depth == 0 && start >= 0) {
-          out.add(s.substring(start, i + 1));
-          start = -1;
-        }
-    }
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -405,8 +244,6 @@ class _ReadRenderer extends ToolRenderer {
   String get name => 'read';
   @override
   IconData get icon => Icons.menu_book_outlined;
-  @override
-  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -443,8 +280,6 @@ class _WriteRenderer extends ToolRenderer {
   String get name => 'write';
   @override
   IconData get icon => Icons.edit_note_outlined;
-  @override
-  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -473,8 +308,6 @@ class _EditRenderer extends ToolRenderer {
   String get name => 'edit';
   @override
   IconData get icon => Icons.difference_outlined;
-  @override
-  String? subtitle(ToolCallItem item) => item.args['path']?.toString();
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -488,19 +321,11 @@ class _BashRenderer extends ToolRenderer {
   String get name => 'bash';
   @override
   IconData get icon => Icons.terminal;
-  @override
-  String? subtitle(ToolCallItem item) {
-    final cmd = item.args['command']?.toString();
-    if (cmd == null) return null;
-    return cmd.length > 80 ? '${cmd.substring(0, 80)}…' : cmd;
-  }
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
     final command = item.args['command']?.toString() ?? '';
-    final output = extractToolResultText(
-      item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? ''),
-    );
+    final output = extractToolResultText(item.resultText);
     final failed = item.ended && (item.exitCode ?? 0) != 0;
     return ToolDetailScaffold(
       title: displayName,
@@ -528,12 +353,6 @@ class _GrepRenderer extends ToolRenderer {
   String get name => 'grep';
   @override
   IconData get icon => Icons.search;
-  @override
-  String? subtitle(ToolCallItem item) {
-    final p = item.args['pattern']?.toString();
-    final g = item.args['glob']?.toString();
-    return [p, if (g != null) 'glob:$g'].whereType<String>().join(' · ');
-  }
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -575,7 +394,6 @@ const List<ToolRenderer> toolRenderers = [
   _BashRenderer(),
   _GrepRenderer(),
   _AskUserQuestionRenderer('askUserQuestion'),
-  _AskUserQuestionRenderer('AskUserQuestion'),
 ];
 
 /// Pick a renderer for [item] by name (case-insensitive so `Read`/`read` and
@@ -631,9 +449,7 @@ class _EditDiffView extends StatelessWidget {
     ]);
     final lines = computeLineDiff(oldText, newText);
     final hasDiff = oldText.isNotEmpty || newText.isNotEmpty;
-    final output = extractToolResultText(
-      item.deltas.isNotEmpty ? item.deltas.join() : (item.output ?? ''),
-    );
+    final output = extractToolResultText(item.resultText);
 
     return ToolDetailScaffold(
       title: 'edit',
@@ -645,7 +461,7 @@ class _EditDiffView extends StatelessWidget {
             title: 'Changes',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [for (final line in lines) _DiffLineRow(line: line)],
+              children: [for (final line in lines) DiffLineRow(line: line)],
             ),
           ),
         // The edit tool's result is itself a diff (hashline `+`/`-`/context
@@ -661,106 +477,6 @@ class _EditDiffView extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-/// One diff line: a coloured full-width row with a gutter prefix. Removed lines
-/// use the error container, added lines a green wash, context stays muted.
-class _DiffLineRow extends StatelessWidget {
-  const _DiffLineRow({required this.line});
-  final DiffLine line;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
-    final (
-      Color? background,
-      Color textColor,
-      String prefix,
-    ) = switch (line.kind) {
-      DiffKind.removed => (
-        cs.errorContainer.withValues(alpha: 0.35),
-        cs.error,
-        '\u2212',
-      ),
-      DiffKind.added => (Colors.green.withValues(alpha: 0.15), addedText, '+'),
-      DiffKind.context => (null, cs.onSurfaceVariant, ' '),
-    };
-    final style = TextStyle(
-      fontFamily: 'monospace',
-      fontFamilyFallback: kMonoFallback,
-      fontSize: 12,
-      color: textColor,
-    );
-    return Container(
-      color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 14, child: Text(prefix, style: style)),
-          Expanded(child: SelectableText(line.text, style: style)),
-        ],
-      ),
-    );
-  }
-}
-
-/// Renders diff text that already carries its own gutter markers — the `edit`
-/// tool's hashline result: a `[path#HASH]` header followed by `+`/`-`/context
-/// rows (`+316:…`, `-136:…`, ` 139:…`). Each line gets a full-width colour wash
-/// (green added, red removed, muted context, highlighted header) like a git
-/// diff. Line numbers stay visible.
-class DiffText extends StatelessWidget {
-  const DiffText(this.text, {super.key});
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final lines = text.split('\n');
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [for (final line in lines) _DiffTextLine(line: line)],
-    );
-  }
-}
-
-class _DiffTextLine extends StatelessWidget {
-  const _DiffTextLine({required this.line});
-  final String line;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
-    final isHeader =
-        line.startsWith('[') && line.contains('#') && line.endsWith(']');
-    final (Color? background, Color textColor) = isHeader
-        ? (cs.surfaceContainerHighest, cs.primary)
-        : line.startsWith('+')
-        ? (Colors.green.withValues(alpha: 0.15), addedText)
-        : line.startsWith('-')
-        ? (cs.errorContainer.withValues(alpha: 0.35), cs.error)
-        : (null, cs.onSurfaceVariant);
-    return Container(
-      color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-      child: SelectableText(
-        line.isEmpty ? ' ' : line,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontFamilyFallback: kMonoFallback,
-          fontSize: 12,
-          color: textColor,
-          fontWeight: isHeader ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
     );
   }
 }
@@ -796,16 +512,6 @@ class _AskUserQuestionRenderer extends ToolRenderer {
     final answers = (item.details?['answers'] as List?)?.cast<dynamic>();
     if (answers == null || i >= answers.length) return const [];
     return answers[i].toString().split(' + ').map((s) => s.trim()).toList();
-  }
-
-  @override
-  String? subtitle(ToolCallItem item) {
-    final answers = (item.details?['answers'] as List?)?.cast<dynamic>();
-    if (answers != null && answers.isNotEmpty) {
-      return answers.map((a) => a.toString()).join(' · ');
-    }
-    final qs = _questions(item);
-    return qs.isEmpty ? null : qs.first['question']?.toString();
   }
 
   @override

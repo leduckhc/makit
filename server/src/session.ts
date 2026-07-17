@@ -17,6 +17,40 @@ import type {
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./storage/event_store.js";
 
+/**
+ * Event kinds that are per-token streaming deltas. They advance lastActivityAt
+ * but must never fan out the sessions snapshot (SPEC-17 P2 hot path).
+ */
+const STREAMING_DELTA_KINDS: ReadonlySet<string> = new Set([
+  "agent.message.delta",
+  "agent.thinking.delta",
+  "tool.call.delta",
+]);
+
+/**
+ * The draft → started state machine as a discriminated union (SPEC-17 P4).
+ *
+ * - `draft`: worktree + agent creation is deferred until the first substantive
+ *   user message. `agent` is the harness to launch; `baseBranch` the branch to
+ *   fork off; `pendingWorktreePath` (start-a-session-in-worktree flow) binds
+ *   the draft to an EXISTING worktree, in which case `branch` is derived from
+ *   git up front.
+ * - `started`: the session is live in `worktreePath` on `branch`.
+ *
+ * `pendingWorktreePath` lives ONLY on the draft variant, so it is a compile
+ * error to read it on a started session — the invariant is enforced by the
+ * type, not by convention.
+ */
+export type SessionLifecycle =
+  | {
+      phase: "draft";
+      agent: string;
+      baseBranch?: string;
+      pendingWorktreePath?: string;
+      branch?: string;
+    }
+  | { phase: "started"; branch?: string; worktreePath?: string };
+
 export interface SessionInit {
   projectId: string;
   agent: string;
@@ -66,22 +100,12 @@ export class Session extends EventEmitter {
   private hydrateFrom?: () => SessionEvent[];
 
   /**
-   * Draft state: worktree + agent creation is deferred until the first
-   * substantive user message. Cleared by {@link markStarted}.
+   * Draft → started state machine (SPEC-17 P4). A fresh session is `started`
+   * (live); {@link beginDraft} enters the draft phase and {@link markStarted}
+   * transitions back out of it. The convention-enforced `pending*` fields are
+   * derived from this union via the getters below (DTO shape is unchanged).
    */
-  pending = false;
-  /** Agent id to launch once the pending session starts. */
-  pendingAgent?: string;
-  /** Base branch to fork the worktree off, chosen at spawn. Defaults to the
-   * repo's default branch when unset (see {@link Manager.startPendingSession}). */
-  pendingBaseBranch?: string;
-  /** When set, a pending session starts in this EXISTING worktree instead of
-   * creating a new one (start-a-session-in-worktree flow). */
-  pendingWorktreePath?: string;
-  /** Branch this session runs on, set when its worktree is created. */
-  branch?: string;
-  /** Absolute worktree path, set when its worktree is created. */
-  worktreePath?: string;
+  private _lifecycle: SessionLifecycle = { phase: "started" };
 
   private readonly _events: SessionEvent[] = [];
   adapter: AgentAdapter;
@@ -155,6 +179,20 @@ export class Session extends EventEmitter {
       ? this.store.append(this.id, e)
       : { seq: this._events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
     this._events.push(event);
+
+    // Snapshot the DTO-visible fields BEFORE mutating so we can emit
+    // `metaChanged` only on an actual change (and never pre-assign status
+    // ahead of the comparison).
+    const prevStatus = this.status;
+    const prevPreview = this.lastPreview;
+    const prevActivity = this.lastActivityAt;
+
+    // Per-token streaming deltas are high-frequency and must NOT fan out the
+    // sessions snapshot (SPEC-17 P2: no O(clients × sessions) per-token cost).
+    // They still advance lastActivityAt; the change is broadcast lazily on the
+    // next non-streaming event.
+    const isStreamingDelta = STREAMING_DELTA_KINDS.has(event.kind);
+
     this.lastActivityAt = event.ts;
     if (event.kind === "user.message" || event.kind === "agent.message") {
       const t = (event.payload as { text?: string }).text;
@@ -164,6 +202,16 @@ export class Session extends EventEmitter {
       if (s) this.status = s;
     }
     this.persistMeta();
+
+    // Fan out a sessions-snapshot trigger for a real, non-streaming DTO change
+    // (status/preview/lastActivityAt). Errors and tool events now refresh the
+    // list too (they advance lastActivityAt), while identical values on the
+    // same tick stay silent.
+    const changed =
+      this.status !== prevStatus ||
+      this.lastPreview !== prevPreview ||
+      this.lastActivityAt !== prevActivity;
+    if (!isStreamingDelta && changed) this.emit("metaChanged");
     return event;
   }
 
@@ -192,6 +240,15 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Record and emit a `session.error` through the normal event pipeline, so it
+   * gets a real monotonic seq and is persisted (like any adapter event) rather
+   * than being hand-built by a caller. Used e.g. when draft promotion fails.
+   */
+  recordError(message: string): void {
+    this.emit("event", this.record({ ts: Date.now(), kind: "session.error", payload: { message } }));
+  }
+
+  /**
    * Seed the event log from a prior transcript BEFORE the adapter goes live.
    * Populates `this.events[]` (assigning seqs, sessionId, and bubbling up
    * status/preview) but does NOT emit — history is replayed to clients on
@@ -208,11 +265,57 @@ export class Session extends EventEmitter {
 
     adapter.on("status", (s) => {
       const status = s === "running" ? "running" : "idle";
-      this.status = status;
+      // Don't pre-assign this.status here — record() owns the mutation + the
+      // before/after comparison that decides whether to fan out metaChanged.
       this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
     });
 
     adapter.on("title", (title) => this.setTitle(title));
+  }
+
+  /** Live lifecycle state (SPEC-17 P4). Read-only view for typed transitions. */
+  get lifecycle(): SessionLifecycle {
+    return this._lifecycle;
+  }
+
+  /** True while this session is a deferred draft (no worktree/agent yet). */
+  get pending(): boolean {
+    return this._lifecycle.phase === "draft";
+  }
+
+  /** Chosen harness for a still-pending draft; undefined once started. */
+  get pendingAgent(): string | undefined {
+    return this._lifecycle.phase === "draft" ? this._lifecycle.agent : undefined;
+  }
+
+  /** Branch this session runs on (draft-bound worktree, or set at start). */
+  get branch(): string | undefined {
+    return this._lifecycle.branch;
+  }
+
+  /** Absolute worktree path, set once the session has started. */
+  get worktreePath(): string | undefined {
+    return this._lifecycle.phase === "started" ? this._lifecycle.worktreePath : undefined;
+  }
+
+  /**
+   * Enter the draft phase: defer worktree + agent creation until the first
+   * substantive message (see {@link Manager.startPendingSession}).
+   */
+  beginDraft(opts: {
+    agent: string;
+    baseBranch?: string;
+    pendingWorktreePath?: string;
+    branch?: string;
+  }): void {
+    this._lifecycle = { phase: "draft", ...opts };
+  }
+
+  /** Change the harness a still-pending draft will start with. No-op once started. */
+  setPendingAgent(agent: string): void {
+    if (this._lifecycle.phase === "draft") {
+      this._lifecycle = { ...this._lifecycle, agent };
+    }
   }
 
   /**
@@ -220,12 +323,12 @@ export class Session extends EventEmitter {
    * Records the branch/worktree it now runs in and clears the pending flag.
    */
   markStarted(opts: { branch: string; worktreePath: string; title?: string }): void {
-    this.branch = opts.branch;
-    this.worktreePath = opts.worktreePath;
-    this.pending = false;
-    this.pendingAgent = undefined;
+    this._lifecycle = { phase: "started", branch: opts.branch, worktreePath: opts.worktreePath };
     if (opts.title) this.setTitle(opts.title);
     this.persistMeta();
+    // Draft → started flips DTO-visible fields (pending/branch/worktree), so
+    // trigger a sessions-snapshot re-broadcast (SPEC-17 P2).
+    this.emit("metaChanged");
   }
 
   toDTO(): SessionDTO {
@@ -271,11 +374,14 @@ export class Session extends EventEmitter {
     this.title = next;
     this.persistMeta();
     this.emit("titleChanged", next);
+    // Title is a session-list (DTO) field — trigger the snapshot re-broadcast.
+    this.emit("metaChanged");
     return true;
   }
 
   on(event: "event", listener: (e: SessionEvent) => void): this;
   on(event: "titleChanged", listener: (title: string) => void): this;
+  on(event: "metaChanged", listener: () => void): this;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   on(event: string, listener: (...args: any[]) => void): this {
     return super.on(event, listener);

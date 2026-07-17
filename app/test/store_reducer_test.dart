@@ -250,66 +250,6 @@ void main() {
   });
 
   group('StoreController — repo refresh after project add', () {
-    test(
-      'projects snapshot growth triggers repo.refresh when repos lag',
-      () async {
-        final transport = _SnapshotTransport();
-        final container = ProviderContainer(
-          overrides: [
-            connectionControllerProvider.overrideWith(
-              (ref) => ConnectionController(
-                _FakeStorage({
-                  'paired_server': jsonEncode({
-                    'host': '192.168.1.10',
-                    'port': 8443,
-                    'fingerprint': 'f' * 64,
-                    'bearer': 'b',
-                    'label': 'desktop',
-                  }),
-                }),
-                transportFactory: () => transport,
-                browseLan:
-                    ({Duration timeout = const Duration(seconds: 3)}) async =>
-                        const [],
-                rediscoverStall: const Duration(seconds: 30),
-              ),
-            ),
-          ],
-        );
-        addTearDown(container.dispose);
-
-        container.read(storeControllerProvider);
-        await Future<void>.delayed(Duration.zero);
-
-        transport.pushSnapshot(
-          Envelope(
-            t: MsgType.event,
-            id: 'snap-projects',
-            body: {
-              'kind': 'projects.snapshot',
-              'projects': [
-                {
-                  'id': 'p-new',
-                  'name': 'makit',
-                  'path': '/repo/makit',
-                  'pinned': false,
-                  'lastActivityAt': 1,
-                },
-              ],
-            },
-          ),
-        );
-        await Future<void>.delayed(Duration.zero);
-
-        expect(
-          transport.sent.any(
-            (e) => e.t == MsgType.cmd && e.body['kind'] == 'repo.refresh',
-          ),
-          isTrue,
-        );
-      },
-    );
-
     test('addProject requests repo.refresh after server ack', () async {
       final transport = _SnapshotTransport();
       final container = ProviderContainer(

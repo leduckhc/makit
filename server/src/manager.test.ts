@@ -2,13 +2,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionManager } from "./manager.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
+import type { SessionEvent } from "./protocol.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
@@ -47,6 +48,75 @@ function withAgentDir(cwd: string, run: (agentDir: string) => Promise<void>) {
     }
   })();
 }
+
+test("listRepos issues its per-worktree shells concurrently, not serially (P3)", async () => {
+  const cwd = makeGitRepo();
+  const bin = mkdtempSync(join(tmpdir(), "makit-fake-gh-"));
+  const sync = mkdtempSync(join(tmpdir(), "makit-gh-sync-"));
+  const worktrees: string[] = [];
+  const prevPath = process.env.PATH;
+  const WORKTREE_COUNT = 4; // 4 secondary branches → 4 gh lookups
+  try {
+    // Each secondary worktree is on its own branch, so listRepos does a
+    // findOpenPr (gh) lookup per worktree. The fake gh is a barrier: each
+    // invocation drops a marker file, then refuses to exit until all
+    // WORKTREE_COUNT markers exist. Concurrent lookups all start, the barrier
+    // opens, and everyone returns; a serial loop never gets past the first
+    // invocation, which times out and leaves a `timeout-*` marker.
+    for (let i = 0; i < WORKTREE_COUNT; i++) {
+      const wt = join(bin, `wt-${i}`);
+      execFileSync("git", ["worktree", "add", "-q", "-b", `feature-${i}`, wt], { cwd });
+      worktrees.push(wt);
+    }
+    const gh = join(bin, "gh");
+    writeFileSync(
+      gh,
+      [
+        `#!/bin/sh`,
+        `: > "${sync}/inflight-$$"`,
+        `n=0`,
+        `while [ "$(ls "${sync}"/inflight-* 2>/dev/null | wc -l)" -lt ${WORKTREE_COUNT} ]; do`,
+        `  n=$((n + 1))`,
+        `  if [ "$n" -gt 500 ]; then : > "${sync}/timeout-$$"; break; fi`, // ~5s: serial ⇒ fail, not hang
+        `  sleep 0.01`,
+        `done`,
+        `printf "[]\\n"`,
+        ``,
+      ].join("\n"),
+    );
+    chmodSync(gh, 0o755);
+    process.env.PATH = `${bin}:${prevPath ?? ""}`;
+
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const repos = await manager.listRepos({ includePrs: true });
+
+    // Results are unchanged: every worktree is present with its branch.
+    const branches = repos[0].worktrees.map((w) => w.branch).filter(Boolean).sort();
+    for (let i = 0; i < WORKTREE_COUNT; i++) {
+      assert.ok(branches.includes(`feature-${i}`), `feature-${i} listed`);
+    }
+    // Concurrent: all lookups were in flight together, so the barrier opened
+    // and no invocation timed out waiting for the others.
+    const markers = readdirSync(sync).sort();
+    assert.equal(
+      markers.filter((m) => m.startsWith("inflight-")).length,
+      WORKTREE_COUNT,
+      `expected ${WORKTREE_COUNT} gh invocations, saw: ${markers.join(", ")}`,
+    );
+    assert.deepEqual(
+      markers.filter((m) => m.startsWith("timeout-")),
+      [],
+      "a gh lookup timed out at the barrier — lookups did not overlap (serial?)",
+    );
+  } finally {
+    if (prevPath === undefined) delete process.env.PATH;
+    else process.env.PATH = prevPath;
+    for (const wt of worktrees) execFileSync("git", ["worktree", "remove", "--force", wt], { cwd });
+    rmSync(bin, { recursive: true, force: true });
+    rmSync(sync, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test("native pi fallback keeps agent=pi when no mux", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
@@ -274,6 +344,41 @@ test("startPendingSession is idempotent for a live session", async () => {
     const s2 = await manager.startPendingSession(draft.id, "fix bug again");
     assert.equal(s1.id, s2.id);
     assert.equal(started.length, 1, "second call must not start another agent");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("promotePendingSession collapses two concurrent first messages onto one worktree/adapter", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+    const draft = await manager.spawnPendingSession(projectId, "pi");
+
+    // Two first messages fired concurrently must NOT each fork a worktree +
+    // adapter — they collapse onto one in-flight promotion.
+    const [r1, r2] = await Promise.all([
+      manager.promotePendingSession(draft, "add a login form"),
+      manager.promotePendingSession(draft, "add a login form"),
+    ]);
+
+    assert.equal(r1, true);
+    assert.equal(r2, true);
+    assert.equal(started.length, 1, "exactly one adapter started for concurrent promotions");
+    assert.equal(draft.pending, false);
+
+    // Exactly one non-root worktree was created for this project.
+    const repos = await manager.listRepos();
+    const extraWorktrees = repos[0].worktrees.filter((w) => w.path !== realpathSync(cwd) && w.path !== cwd);
+    assert.equal(extraWorktrees.length, 1, "exactly one worktree created");
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
@@ -685,6 +790,63 @@ test("listRepos({ includePrs: false }) returns git-only diff numbers and skips t
     else process.env.GH_MARKER = prevMarker;
     execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd });
     rmSync(bin, { recursive: true, force: true });
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("promotePendingSession routes a draft-promotion failure through the session pipeline (persisted, monotonic seq)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    // A factory whose adapter fails to start, so promotion (worktree + agent)
+    // throws deterministically without touching git. Non-git project dir keeps
+    // the flow in the repo dir (no worktree add).
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => {
+        const a = stubAdapter([]);
+        (a as any).start = async () => {
+          throw new Error("boom");
+        };
+        return a;
+      },
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const session = await mgr.spawnPendingSession(projectId, "pi");
+
+    // Seed a prior durable event so the failure event must come strictly after
+    // it — proving a real monotonic seq rather than the old hand-built seq:0.
+    session.backfill([{ ts: 1, kind: "user.message", payload: { text: "hello" } }]);
+    const priorMaxSeq = store.read(session.id).at(-1)!.seq;
+    assert.ok(priorMaxSeq >= 1);
+
+    const errs: SessionEvent[] = [];
+    session.on("event", (e) => {
+      if (e.kind === "session.error") errs.push(e);
+    });
+
+    const started = await mgr.promotePendingSession(session, "do a thing");
+    assert.equal(started, false, "a failed promotion tells the caller not to send the turn");
+
+    // The failure surfaced as a normal, emitted event…
+    assert.equal(errs.length, 1);
+    const errEvent = errs[0];
+    assert.match(String((errEvent.payload as any).message), /could not create worktree/);
+    // …with a real, non-zero, monotonic seq (NOT the old seq:0)…
+    assert.ok(errEvent.seq > 0, `seq ${errEvent.seq} must be non-zero`);
+    assert.equal(errEvent.seq, priorMaxSeq + 1, "error seq follows the prior event monotonically");
+
+    // …that is PERSISTED and replays last, in seq order.
+    const persisted = store.read(session.id);
+    const seqs = persisted.map((e) => e.seq);
+    assert.deepEqual(seqs, [...seqs].sort((a, b) => a - b), "persisted events are in seq order");
+    const last = persisted.at(-1)!;
+    assert.equal(last.kind, "session.error");
+    assert.equal(last.seq, errEvent.seq, "the persisted error carries the emitted seq");
+  } finally {
+    store.close();
     rmSync(cwd, { recursive: true, force: true });
   }
 });

@@ -9,6 +9,7 @@
  */
 
 import type { AdapterEvent } from "./adapter.js";
+import { summarizeLine } from "./summarize.js";
 
 export interface CodexMapperHooks {
   emit: (e: AdapterEvent) => void;
@@ -107,7 +108,7 @@ export class CodexEventMapper {
         this.emit("tool.call.end", {
           callId: item.id,
           exitCode,
-          summary: summarize(output),
+          summary: summarizeLine(output),
           output,
         });
         return;
@@ -218,10 +219,4 @@ function dynamicToolText(items: unknown): string {
     .map((c) => (c && typeof c === "object" && typeof (c as any).text === "string" ? (c as any).text : ""))
     .filter(Boolean)
     .join("\n");
-}
-
-function summarize(text: string): string {
-  const first = text.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
-  if (!first) return "ok";
-  return first.length > 120 ? `${first.slice(0, 117)}…` : first;
 }

@@ -67,8 +67,7 @@ void main() {
           ),
         ],
       );
-      final matcher = SettingsSearchIndex([section]);
-      final results = matcher.search('special phrase');
+      final results = searchSettings('special phrase', sections: [section]);
       expect(results.single.item.id, 's.item');
     });
 
@@ -91,6 +90,49 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  group('settings-registry drift guard', () {
+    test('every SettingsItem.id is unique and resolves to its section', () {
+      final sectionIds = kSettingsSections.map((s) => s.id).toSet();
+      final seen = <String>{};
+      for (final section in kSettingsSections) {
+        for (final item in section.items) {
+          // Ids must be unique app-wide.
+          expect(
+            seen.add(item.id),
+            isTrue,
+            reason: 'duplicate SettingsItem id: ${item.id}',
+          );
+          // Convention: `<sectionId>.<leaf>` — the prefix must resolve to a
+          // real section, and it must be the section that owns the item.
+          final prefix = item.id.split('.').first;
+          expect(
+            sectionIds.contains(prefix),
+            isTrue,
+            reason: 'SettingsItem id ${item.id} has no resolvable section',
+          );
+          expect(
+            prefix,
+            section.id,
+            reason: 'SettingsItem ${item.id} is filed under ${section.id}',
+          );
+        }
+      }
+    });
+
+    test('every SettingsItem.id resolves via searchSettings by title', () {
+      for (final section in kSettingsSections) {
+        for (final item in section.items) {
+          final hits = searchSettings(item.title);
+          expect(
+            hits.any((r) => r.item.id == item.id),
+            isTrue,
+            reason: 'SettingsItem ${item.id} not found by its own title',
+          );
+        }
+      }
     });
   });
 }

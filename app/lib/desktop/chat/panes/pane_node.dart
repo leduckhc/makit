@@ -184,17 +184,26 @@ PaneNode closeLeaf(PaneNode root, String targetLeafId) {
 }
 
 /// Sets split [splitId]'s ratio, clamped to [kMinPaneRatio]–[kMaxPaneRatio].
+/// Returns [root] unchanged (same identity) when [splitId] is not found, and
+/// only rebuilds the ancestor chain of the matched split — the sibling subtree
+/// keeps its identity.
 PaneNode setRatio(PaneNode root, String splitId, double ratio) {
   switch (root) {
     case PaneLeaf():
       return root;
     case PaneSplit():
-      final clamped = ratio.clamp(kMinPaneRatio, kMaxPaneRatio);
-      if (root.id == splitId) return root.copyWith(ratio: clamped);
-      return root.copyWith(
-        first: setRatio(root.first, splitId, ratio),
-        second: setRatio(root.second, splitId, ratio),
-      );
+      if (root.id == splitId) {
+        return root.copyWith(ratio: ratio.clamp(kMinPaneRatio, kMaxPaneRatio));
+      }
+      final newFirst = setRatio(root.first, splitId, ratio);
+      if (!identical(newFirst, root.first)) {
+        return root.copyWith(first: newFirst);
+      }
+      final newSecond = setRatio(root.second, splitId, ratio);
+      if (!identical(newSecond, root.second)) {
+        return root.copyWith(second: newSecond);
+      }
+      return root;
   }
 }
 
@@ -209,7 +218,7 @@ PaneNode moveLeaf(
   String? splitId,
 }) {
   if (sourceLeafId == targetLeafId) return root;
-  final source = _findLeaf(root, sourceLeafId);
+  final source = firstLeafWhere(root, (l) => l.id == sourceLeafId ? l : null);
   if (source == null || !containsLeaf(root, targetLeafId)) return root;
 
   final pruned = closeLeaf(root, sourceLeafId);
@@ -228,21 +237,35 @@ PaneNode moveLeaf(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Leaf combinators — the two primitives every leaf-based walk is built on.
+// ---------------------------------------------------------------------------
+
+/// Rebuilds [root], replacing every [PaneLeaf] with [transform] applied to it.
+/// Splits are preserved unchanged (same id/axis/ratio); a pure structural map
+/// used to pin/clear sessions across the tree.
+PaneNode mapLeaves(PaneNode root, PaneLeaf Function(PaneLeaf) transform) =>
+    switch (root) {
+      PaneLeaf() => transform(root),
+      PaneSplit() => root.copyWith(
+        first: mapLeaves(root.first, transform),
+        second: mapLeaves(root.second, transform),
+      ),
+    };
+
+/// Returns [select] applied to the first leaf (left-most, depth-first) for
+/// which it returns a non-null value, or null when no leaf matches.
+T? firstLeafWhere<T>(PaneNode root, T? Function(PaneLeaf) select) =>
+    switch (root) {
+      PaneLeaf() => select(root),
+      PaneSplit() =>
+        firstLeafWhere(root.first, select) ??
+            firstLeafWhere(root.second, select),
+    };
+
 /// The id of the left-most (first-descended) leaf.
-String firstLeafId(PaneNode root) => switch (root) {
-  PaneLeaf() => root.id,
-  PaneSplit() => firstLeafId(root.first),
-};
+String firstLeafId(PaneNode root) => firstLeafWhere(root, (l) => l.id)!;
 
 /// Whether a leaf with [leafId] exists anywhere in [root].
 bool containsLeaf(PaneNode root, String leafId) =>
-    _findLeaf(root, leafId) != null;
-
-PaneLeaf? _findLeaf(PaneNode root, String leafId) {
-  switch (root) {
-    case PaneLeaf():
-      return root.id == leafId ? root : null;
-    case PaneSplit():
-      return _findLeaf(root.first, leafId) ?? _findLeaf(root.second, leafId);
-  }
-}
+    firstLeafWhere(root, (l) => l.id == leafId ? true : null) ?? false;

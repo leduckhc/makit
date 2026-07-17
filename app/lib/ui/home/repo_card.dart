@@ -1,0 +1,380 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../store/models.dart';
+import '../../store/store.dart';
+import '../../app/theme.dart' show kMakitAccent;
+import '../widgets/glass.dart';
+import '../widgets/searchable_list_sheet.dart';
+import 'new_session_sheet.dart';
+import 'repo_chips.dart';
+import 'session_tile.dart';
+import 'worktree_row.dart';
+
+/// Brand green accent used for running/active glass affordances (shared token).
+const _kBrandBlue = kMakitAccent;
+
+/// A repo card on the home screen: header, stat strip, its worktree rows,
+/// drafts, and a "new session" footer (SPEC-19, moved from home_screen).
+class RepoCard extends ConsumerWidget {
+  const RepoCard({super.key, required this.repo, required this.sessions});
+  final RepoInfo repo;
+  final List<Session> sessions;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final drafts = sessions.where((s) => s.pending).toList();
+    final byId = {for (final s in sessions) s.id: s};
+
+    // Show worktrees with running sessions or changes first; hide empty
+    // non-primary worktrees behind the primary + active ones.
+    final worktrees = sortWorktreesForDisplay(repo.worktrees);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GlassSurface(
+        borderRadius: 20,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _header(context, ref, theme),
+            _statStrip(context, theme),
+            const Divider(height: 1),
+            for (final wt in worktrees)
+              WorktreeRow(
+                repo: repo,
+                worktree: wt,
+                sessions: wt.sessionIds
+                    .map((id) => byId[id])
+                    .whereType<Session>()
+                    .toList(),
+              ),
+            if (drafts.isNotEmpty) _draftsSection(context, drafts),
+            _footer(context, ref),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context, WidgetRef ref, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 6, 6),
+      child: Row(
+        children: [
+          const Icon(Icons.folder_special_outlined, size: 20),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              repo.name,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const Spacer(),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, size: 20),
+            tooltip: 'Repo actions',
+            onSelected: (value) {
+              switch (value) {
+                case 'new':
+                  _newSession(context, ref);
+                case 'attach':
+                  _attachPast(context, ref);
+                case 'remove':
+                  _confirmRemove(context, ref);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'new',
+                child: ListTile(
+                  leading: Icon(Icons.add),
+                  title: Text('New session'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem(
+                value: 'attach',
+                child: ListTile(
+                  leading: Icon(Icons.replay),
+                  title: Text('Resume session'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'remove',
+                child: ListTile(
+                  leading: Icon(Icons.delete_outline),
+                  title: Text('Remove from makit'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statStrip(BuildContext context, ThemeData theme) {
+    final outline = theme.colorScheme.outline;
+    final items = <Widget>[];
+
+    if (repo.defaultBranch != null) {
+      items.add(_metaText(context, Icons.flag_outlined, repo.defaultBranch!));
+    }
+    final active = repo.activeWorktreeCount;
+    if (active > 0) {
+      items.add(
+        _metaText(context, Icons.account_tree_outlined, '$active active'),
+      );
+    }
+    if (repo.openPrCount > 0) {
+      items.add(
+        _metaText(
+          context,
+          Icons.merge_outlined,
+          '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
+          color: _kBrandBlue,
+        ),
+      );
+    }
+    if (items.isEmpty) {
+      items.add(
+        Text(
+          repo.isGitRepo ? 'clean' : 'not a git repo',
+          style: theme.textTheme.bodySmall?.copyWith(color: outline),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Wrap(spacing: 14, runSpacing: 6, children: items),
+    );
+  }
+
+  Widget _draftsSection(BuildContext context, List<Session> drafts) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 1),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+          child: Text(
+            'DRAFTS',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+              letterSpacing: 1,
+            ),
+          ),
+        ),
+        ...drafts.map((s) => SessionTile(session: s)),
+      ],
+    );
+  }
+
+  Widget _footer(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: () => _newSession(context, ref),
+          icon: const Icon(Icons.add, size: 18),
+          label: const Text('New session'),
+          style: TextButton.styleFrom(foregroundColor: _kBrandBlue),
+        ),
+      ),
+    );
+  }
+
+  Widget _metaText(
+    BuildContext context,
+    IconData icon,
+    String text, {
+    Color? color,
+  }) {
+    final c = color ?? Theme.of(context).colorScheme.outline;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: c),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
+        ),
+      ],
+    );
+  }
+
+  // ---- actions ------------------------------------------------------------
+
+  Future<void> _newSession(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
+    final branches = branchOptionsForRepo(repo);
+    try {
+      final agents = await store.fetchAgents();
+      final selectable = agents.where((a) => a.available).toList();
+      String? chosenAgent;
+      String? chosenBranch = branches.isEmpty ? null : branches.first;
+      // Only prompt when there's an actual choice to make.
+      if (selectable.length > 1 || branches.length > 1) {
+        if (!context.mounted) return;
+        final choice = await showModalBottomSheet<NewSessionChoice>(
+          context: context,
+          showDragHandle: true,
+          builder: (ctx) => NewSessionSheet(
+            agents: selectable.length > 1 ? selectable : const [],
+            branches: branches.length > 1 ? branches : const [],
+            initialBranch: chosenBranch,
+          ),
+        );
+        if (choice == null) return;
+        chosenAgent = choice.agent;
+        chosenBranch = choice.baseBranch ?? chosenBranch;
+      }
+      final newId = await store.spawnSession(
+        repo.id,
+        agent: chosenAgent,
+        baseBranch: chosenBranch,
+      );
+      if (!context.mounted) return;
+      context.go('/session/$newId');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not start session: $e')),
+      );
+    }
+  }
+
+  Future<void> _confirmRemove(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remove ${repo.name}?'),
+        content: const Text(
+          'This removes the repo from makit. Files on disk (and worktrees) are '
+          'not touched.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await store.removeProject(repo.id);
+      messenger.showSnackBar(SnackBar(content: Text('Removed ${repo.name}')));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not remove repo: $e')),
+      );
+    }
+  }
+
+  Future<void> _attachPast(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final store = ref.read(storeControllerProvider.notifier);
+    List<PiSessionMeta> metas;
+    try {
+      metas = await store.listPiSessions(repo.id);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not list past sessions: $e')),
+      );
+      return;
+    }
+    if (!context.mounted) return;
+
+    final chosen = await showSearchableListSheet<PiSessionMeta>(
+      context: context,
+      title: 'Resume session in ${repo.name}',
+      items: metas,
+      emptyState: const Padding(
+        padding: EdgeInsets.fromLTRB(24, 8, 24, 24),
+        child: Text('No past sessions.', textAlign: TextAlign.center),
+      ),
+      matches: (m, q) {
+        final ql = q.toLowerCase();
+        return m.name.toLowerCase().contains(ql) ||
+            m.preview.toLowerCase().contains(ql);
+      },
+      tileBuilder: (ctx, m) => ListTile(
+        leading: Icon(
+          m.attached ? Icons.bolt : Icons.replay,
+          color: m.attached ? Colors.green : null,
+        ),
+        title: Text(
+          m.name.isEmpty ? '(untitled)' : m.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${m.messageCount} msgs · ${_ago(m.lastActivityAt)}'
+          '${m.preview.isEmpty ? '' : ' · ${m.preview}'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: m.attached
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  'live',
+                  style: TextStyle(
+                    color: Colors.green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              )
+            : null,
+        onTap: () => Navigator.of(ctx).pop(m),
+      ),
+    );
+    if (chosen == null || !context.mounted) return;
+
+    try {
+      final sid = await store.attachSession(repo.id, chosen.piSessionId);
+      if (!context.mounted) return;
+      context.go('/session/$sid');
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Could not attach session: $e')),
+      );
+    }
+  }
+}
+
+/// Compact "x ago" from an epoch-ms timestamp.
+String _ago(int epochMs) {
+  if (epochMs <= 0) return 'unknown';
+  final d = DateTime.now().difference(
+    DateTime.fromMillisecondsSinceEpoch(epochMs),
+  );
+  if (d.inDays > 0) return '${d.inDays}d ago';
+  if (d.inHours > 0) return '${d.inHours}h ago';
+  if (d.inMinutes > 0) return '${d.inMinutes}m ago';
+  return 'just now';
+}

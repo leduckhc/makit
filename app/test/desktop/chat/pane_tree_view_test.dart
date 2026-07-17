@@ -4,21 +4,36 @@
 //
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/panes/pane_node.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_view.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
+import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/composer/composer.dart';
 
 Session _session() => Session(
   id: 's1',
   projectId: 'p1',
   agent: 'pi',
   title: 'Wire up pairing',
+  status: SessionStatus.idle,
+  policy: ApprovalPolicy.askOnRisky,
+  lastPreview: '',
+  lastActivityAt: 0,
+);
+
+Session _session2() => Session(
+  id: 's2',
+  projectId: 'p1',
+  agent: 'pi',
+  title: 'Second session',
   status: SessionStatus.idle,
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
@@ -40,6 +55,26 @@ ProviderContainer _container() {
   // Both leaves fall back to this global selection when their sessionId is
   // null, so every pane renders the fake session.
   c.read(selectedSessionProvider.notifier).state = 's1';
+  return c;
+}
+
+/// A container with two distinct fake sessions (s1, s2) so two split panes can
+/// each be bound to their own session.
+ProviderContainer _twoSessionContainer() {
+  final c = ProviderContainer(
+    overrides: [
+      sessionsProvider.overrideWithValue(
+        SessionsState([_session(), _session2()]),
+      ),
+      eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+      sessionMetaProvider('s1').overrideWithValue(
+        const SessionMeta(model: _model, thinking: 'medium', models: [_model]),
+      ),
+      sessionMetaProvider('s2').overrideWithValue(
+        const SessionMeta(model: _model, thinking: 'medium', models: [_model]),
+      ),
+    ],
+  );
   return c;
 }
 
@@ -116,6 +151,185 @@ void main() {
       // fresh pane falls back to the global selection, so it shows 's1' too.
       expect(find.text('Wire up pairing'), findsNWidgets(2));
       expect(find.byType(SessionActionsMenu), findsNWidgets(2));
+    });
+  });
+
+  group('multi-pane composer focus', () {
+    testWidgets(
+      'two panes bound to different sessions each mount an independently '
+      'focusable composer',
+      (tester) async {
+        final c = _twoSessionContainer();
+        addTearDown(c.dispose);
+        final ctrl = c.read(paneTreeControllerProvider.notifier);
+        // Bind the original pane to s1, split, then bind the fresh pane to s2 —
+        // two live sessions side-by-side, each with its own docked composer.
+        ctrl.bindActiveSession('s1');
+        ctrl.splitActive(Axis.horizontal, pinnedSessionId: 's1');
+        ctrl.bindActiveSession('s2');
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        // Both leaves render a Composer with its OWN text field bound to its
+        // OWN focus node. The defect is an app-lifetime singleton FocusNode
+        // shared by every pane: two live panes then bind two text fields to
+        // one node (illegal double-attach; focus becomes undefined).
+        final composers = find.byType(Composer);
+        expect(composers, findsNWidgets(2));
+        final fields = find.descendant(
+          of: composers,
+          matching: find.byType(EditableText),
+        );
+        expect(fields, findsNWidgets(2));
+
+        final firstNode = tester.widget<EditableText>(fields.first).focusNode;
+        final lastNode = tester.widget<EditableText>(fields.last).focusNode;
+        expect(
+          identical(firstNode, lastNode),
+          isFalse,
+          reason: 'each pane must own a distinct composer FocusNode',
+        );
+
+        // Each field is independently focusable: focusing one pane's composer
+        // does not steal or mirror focus in the other.
+        await tester.tap(fields.first);
+        await tester.pumpAndSettle();
+        expect(firstNode.hasPrimaryFocus, isTrue);
+        expect(lastNode.hasPrimaryFocus, isFalse);
+
+        await tester.tap(fields.last);
+        await tester.pumpAndSettle();
+        expect(lastNode.hasPrimaryFocus, isTrue);
+        expect(firstNode.hasPrimaryFocus, isFalse);
+
+        // And each is independently typable: text stays in the pane it was
+        // entered in.
+        await tester.enterText(fields.first, 'left pane text');
+        await tester.enterText(fields.last, 'right pane text');
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<EditableText>(fields.first).controller.text,
+          'left pane text',
+        );
+        expect(
+          tester.widget<EditableText>(fields.last).controller.text,
+          'right pane text',
+        );
+      },
+    );
+  });
+
+  group('focus-composer shortcut targets the active leaf', () {
+    // A deterministic control-based keymap so the chord is Ctrl+L regardless of
+    // the host platform the test runs on.
+    final keymapOverride = keymapProvider.overrideWith(
+      (ref) => KeymapController.ephemeral(cmdIsPrimary: false),
+    );
+
+    Widget keymapTree(ProviderContainer c) => UncontrolledProviderScope(
+      container: c,
+      child: MaterialApp(
+        home: Scaffold(
+          body: DesktopKeymapScope(
+            onOpenSettings: () {},
+            child: const PaneTreeView(),
+          ),
+        ),
+      ),
+    );
+
+    // Sends the platform-independent Ctrl+L focus-composer chord.
+    Future<void> pressFocusComposer(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('focuses the active session pane composer', (tester) async {
+      final c = ProviderContainer(
+        overrides: [
+          keymapOverride,
+          sessionsProvider.overrideWithValue(SessionsState([_session()])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          sessionMetaProvider('s1').overrideWithValue(
+            const SessionMeta(
+              model: _model,
+              thinking: 'medium',
+              models: [_model],
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.read(selectedSessionProvider.notifier).state = 's1';
+
+      await tester.pumpWidget(keymapTree(c));
+      await tester.pumpAndSettle();
+
+      final field = find.descendant(
+        of: find.byType(Composer),
+        matching: find.byType(EditableText),
+      );
+      expect(field, findsOneWidget);
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isFalse,
+        reason: 'composer starts unfocused (the scope holds focus)',
+      );
+
+      await pressFocusComposer(tester);
+
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isTrue,
+        reason: 'the shortcut focuses the active leaf composer',
+      );
+    });
+
+    testWidgets('focuses a worktree-start pane composer', (tester) async {
+      // The active leaf hosts a sessionless worktree draft (WorktreeStartView),
+      // whose Composer must be bound to the leaf's desktopComposerFocusProvider
+      // node for the shortcut to reach it (SPEC-14 per-leaf focus fix).
+      final c = ProviderContainer(
+        overrides: [
+          keymapOverride,
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.read(selectedWorktreeProvider.notifier).state = const SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt',
+        branch: 'feature',
+      );
+
+      await tester.pumpWidget(keymapTree(c));
+      await tester.pumpAndSettle();
+
+      // The worktree-start view renders its own docked composer.
+      final field = find.descendant(
+        of: find.byType(Composer),
+        matching: find.byType(EditableText),
+      );
+      expect(field, findsOneWidget);
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isFalse,
+      );
+
+      await pressFocusComposer(tester);
+
+      expect(
+        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
+        isTrue,
+        reason:
+            'the shortcut focuses the worktree-start pane composer via the '
+            'per-leaf focus node',
+      );
     });
   });
 

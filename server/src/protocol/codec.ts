@@ -14,6 +14,7 @@ import {
   type MsgType,
   type SessionEvent,
 } from "../protocol.js";
+import type { UIResponse } from "../uicall.js";
 
 /** Canonical error codes carried in `err` frames. */
 export enum WireErrorCode {
@@ -114,6 +115,53 @@ export function decodeSessionEvent(value: unknown): SessionEvent | null {
     kind: value.kind,
     payload: value.payload,
   };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === "string");
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((v) => typeof v === "number");
+}
+
+/**
+ * Parse + validate a device's `srv.response` envelope into a typed
+ * [UIResponse], or `null`. This is the trust boundary for an untrusted client
+ * reply: connectors read `resp.answers`/`resp.approved`/`resp.value` assuming a
+ * concrete shape, so a malformed/hostile response must be rejected here rather
+ * than blindly cast (mirrors {@link decodeSessionEvent}). The canonical fields
+ * live flat at the top level alongside `v`/`t`/`id`.
+ */
+export function decodeUIResponse(value: unknown): UIResponse | null {
+  if (!isRecord(value)) return null;
+  switch (value.kind) {
+    case "confirmAction":
+      if (typeof value.approved !== "boolean") return null;
+      return { kind: "confirmAction", approved: value.approved };
+    case "askUserQuestion": {
+      if (!isNumberArray(value.indices)) return null;
+      if (!isStringArray(value.answers)) return null;
+      if (value.answer !== undefined && typeof value.answer !== "string") return null;
+      const resp: UIResponse = {
+        kind: "askUserQuestion",
+        indices: value.indices,
+        answers: value.answers,
+      };
+      if (typeof value.answer === "string") resp.answer = value.answer;
+      return resp;
+    }
+    case "input": {
+      if (value.value !== undefined && typeof value.value !== "string") return null;
+      if (value.cancelled !== undefined && typeof value.cancelled !== "boolean") return null;
+      const resp: UIResponse = { kind: "input" };
+      if (typeof value.value === "string") resp.value = value.value;
+      if (typeof value.cancelled === "boolean") resp.cancelled = value.cancelled;
+      return resp;
+    }
+    default:
+      return null;
+  }
 }
 
 export { PROTOCOL_VERSION };

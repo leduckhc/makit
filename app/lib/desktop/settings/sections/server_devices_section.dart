@@ -25,6 +25,7 @@ import '../server_config.dart';
 import '../settings_item_anchor.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
+import 'settings_reset_button.dart';
 
 /// Lowest valid TCP port (inclusive).
 const int _kMinPort = 1;
@@ -190,15 +191,7 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
             '$kDefaultServerHost:$kDefaultServerPort.',
           ),
           trailing: modified
-              ? IconButton(
-                  tooltip: 'Reset to default',
-                  icon: const Icon(
-                    Symbols.settings_backup_restore,
-                    weight: 200,
-                    size: 18,
-                  ),
-                  onPressed: _reset,
-                )
+              ? SettingsResetButton(visible: true, onPressed: _reset)
               : null,
         ),
         Padding(

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
-import { Session } from "./session.js";
+import { Session, type SessionLifecycle } from "./session.js";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
 import type { SessionEvent } from "./protocol.js";
 
@@ -71,6 +71,109 @@ test("adapter 'title' events retitle the session", () => {
   session.adapter.emit("title", "auto-named from pi");
   assert.equal(session.title, "auto-named from pi");
   assert.deepEqual(changes, ["auto-named from pi"]);
+});
+
+test("metaChanged fires on preview/status/title changes but NOT on streaming deltas (P2)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+
+  let meta = 0;
+  session.on("metaChanged", () => meta++);
+
+  // A stream of N per-token deltas must NOT trigger the sessions-snapshot
+  // fan-out (that is the O(clients × sessions) hot-path cliff P2 removes).
+  for (let i = 0; i < 20; i++) {
+    session.adapter.emit("event", { ts: i, kind: "agent.message.delta", payload: { text: "x" } });
+  }
+  session.adapter.emit("event", { ts: 21, kind: "agent.thinking.delta", payload: { text: "t" } });
+  session.adapter.emit("event", { ts: 22, kind: "tool.call.delta", payload: {} });
+  assert.equal(meta, 0, "streaming deltas must not change session-list meta");
+
+  // A finalized agent.message changes the preview → one meta change.
+  session.adapter.emit("event", { ts: 23, kind: "agent.message", payload: { text: "done" } });
+  assert.equal(meta, 1);
+
+  // A status transition changes the DTO → one meta change.
+  session.adapter.emit("status", "running");
+  assert.equal(meta, 2);
+
+  // A title change is DTO-visible → one meta change.
+  session.setTitle("Renamed");
+  assert.equal(meta, 3);
+
+  // An unchanged title does NOT emit.
+  session.setTitle("Renamed");
+  assert.equal(meta, 3);
+});
+
+test("metaChanged fires for non-streaming error/tool events (lastActivityAt advances)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+
+  let meta = 0;
+  session.on("metaChanged", () => meta++);
+
+  // A tool-call start is a non-streaming event: it advances lastActivityAt, a
+  // DTO-visible field, so the sessions list must refresh once.
+  session.adapter.emit("event", { ts: 1000, kind: "tool.call.start", payload: { callId: "c1", name: "bash" } });
+  assert.equal(meta, 1, "a tool.call.start refreshes the session list");
+
+  // A session.error likewise advances lastActivityAt → one refresh.
+  session.adapter.emit("event", { ts: 1001, kind: "session.error", payload: { message: "boom" } });
+  assert.equal(meta, 2, "a session.error refreshes the session list");
+
+  // But a tool.call.delta is a streaming delta → NO refresh.
+  session.adapter.emit("event", { ts: 1002, kind: "tool.call.delta", payload: { callId: "c1", chunk: "x" } });
+  assert.equal(meta, 2, "streaming tool delta must not refresh the session list");
+});
+
+test("lifecycle models draft → started as a discriminated union (P4)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+
+  // A freshly-constructed session is live (started), not a draft.
+  const initial: SessionLifecycle = session.lifecycle;
+  assert.equal(initial.phase, "started");
+  assert.equal(session.pending, false);
+
+  // Entering the draft phase records the deferred agent/base branch.
+  session.beginDraft({ agent: "codex", baseBranch: "dev" });
+  assert.equal(session.pending, true);
+  assert.equal(session.pendingAgent, "codex");
+  const draft: SessionLifecycle = session.lifecycle;
+  if (draft.phase !== "draft") {
+    assert.fail("expected a draft lifecycle");
+  } else {
+    assert.equal(draft.agent, "codex");
+    assert.equal(draft.baseBranch, "dev");
+  }
+
+  // setPendingAgent only mutates a draft.
+  session.setPendingAgent("pi");
+  assert.equal(session.pendingAgent, "pi");
+
+  // markStarted is the transition: pending clears, branch/worktree are set.
+  session.markStarted({ branch: "feature-x", worktreePath: "/tmp/wt" });
+  assert.equal(session.pending, false);
+  assert.equal(session.pendingAgent, undefined);
+  assert.equal(session.branch, "feature-x");
+  assert.equal(session.worktreePath, "/tmp/wt");
+  const afterStart: SessionLifecycle = session.lifecycle;
+  assert.equal(afterStart.phase, "started");
+
+  // setPendingAgent is a no-op once started.
+  session.setPendingAgent("codex");
+  assert.equal(session.pendingAgent, undefined);
+});
+
+test("pendingWorktreePath is unreadable on a started lifecycle (P4 type-level guard)", () => {
+  const lc: SessionLifecycle = { phase: "started", branch: "b", worktreePath: "/tmp/wt" };
+  if (lc.phase === "started") {
+    // @ts-expect-error pendingWorktreePath exists only on the draft variant —
+    // reading it on a started session is a compile error (the P4 invariant).
+    void lc.pendingWorktreePath;
+  }
+  const draft: SessionLifecycle = { phase: "draft", agent: "pi", pendingWorktreePath: "/tmp/pending" };
+  if (draft.phase === "draft") {
+    assert.equal(draft.pendingWorktreePath, "/tmp/pending");
+  }
 });
 
 test("with a store, events persist durably and seq survives a session restart", async () => {
