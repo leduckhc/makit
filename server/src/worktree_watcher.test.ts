@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -50,6 +50,61 @@ test("watchWorktrees fires when a worktree is added via git (external CLI)", asy
     });
     const won = await Promise.race([fired.then(() => true), delay(3000).then(() => false)]);
     assert.equal(won, true, "expected onChange to fire after `git worktree add`");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees fires when the watched repo path is itself a LINKED worktree", async () => {
+  // Regression: a project registered at a linked-worktree path has `.git` as a
+  // FILE pointing at `<common>/.git/worktrees/<name>`. The shared worktrees dir
+  // lives under the common gitdir, not `<linked>/.git/worktrees` (absent), so a
+  // new `git worktree add` must still fire via the resolved common path.
+  const repo = makeRepo();
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  const linked = join(wtBase, "linked");
+  execFileSync("git", ["worktree", "add", "-b", "linked-branch", linked], { cwd: repo });
+
+  let resolveFired: (() => void) | undefined;
+  const fired = new Promise<void>((res) => (resolveFired = res));
+  const watcher = watchWorktrees(() => resolveFired?.(), { debounceMs: 20 });
+  watcher.sync([linked]); // watch the LINKED worktree path, not the primary
+  try {
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "another", join(wtBase, "another")], {
+      cwd: linked,
+    });
+    const won = await Promise.race([fired.then(() => true), delay(3000).then(() => false)]);
+    assert.equal(won, true, "expected onChange to fire for a worktree added from a linked checkout");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees fires when the watched path is a SUBDIRECTORY of the repo", async () => {
+  // Regression: the dev daemon registers e.g. `--project <repo>/server`, a
+  // subdir with no `.git` of its own. The watcher must walk up to the repo's
+  // `.git/worktrees` so worktree adds still surface.
+  const repo = makeRepo();
+  const sub = join(repo, "server");
+  mkdirSync(sub, { recursive: true });
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+
+  let resolveFired: (() => void) | undefined;
+  const fired = new Promise<void>((res) => (resolveFired = res));
+  const watcher = watchWorktrees(() => resolveFired?.(), { debounceMs: 20 });
+  watcher.sync([sub]); // watch the SUBDIR, not the repo root
+  try {
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "sub-feat", join(wtBase, "sub-feat")], {
+      cwd: repo,
+    });
+    const won = await Promise.race([fired.then(() => true), delay(3000).then(() => false)]);
+    assert.equal(won, true, "expected onChange to fire for a worktree added when watching a subdir");
   } finally {
     watcher.close();
     rmSync(repo, { recursive: true, force: true });
