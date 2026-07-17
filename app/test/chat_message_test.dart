@@ -4,7 +4,8 @@ import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/ui/session/chat_message.dart';
-import 'package:makit/ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
+import 'package:makit/ui/session/tool_renderers.dart'
+    show kReadableContentMaxWidth;
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(

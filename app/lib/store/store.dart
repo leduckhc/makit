@@ -350,12 +350,10 @@ class StoreController extends StateNotifier<StoreState> {
   /// new session binds to it; when the source is still an un-started draft both
   /// are linked to one virtual worktree that materializes on the first message.
   Future<String> spawnLinkedSession(String sourceSessionId) async {
-    final ack = await _ref
-        .read(connectionControllerProvider.notifier)
-        .request(MsgType.cmd, {
-          'kind': 'session.spawnLinked',
-          'sourceSessionId': sourceSessionId,
-        });
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.spawnLinked', 'sourceSessionId': sourceSessionId},
+    );
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
     return sid;
