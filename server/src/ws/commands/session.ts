@@ -117,6 +117,26 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack({ sessionId: newSession.id });
   });
 
+  r.register("session.spawnLinked", async (ctx) => {
+    const sourceSessionId = String(ctx.env.sourceSessionId ?? "");
+    if (!sourceSessionId) {
+      ctx.err(WireErrorCode.BadRequest, "session.spawnLinked requires sourceSessionId");
+      return;
+    }
+    // Split-pane flow: the new draft shares the source's worktree — its real
+    // tree if started, else a virtual worktree both drafts materialize into.
+    let newSession;
+    try {
+      newSession = await manager.spawnLinkedSession(sourceSessionId);
+    } catch (e) {
+      ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+      return;
+    }
+    broadcastSnapshots();
+    void broadcastReposSnapshot();
+    ctx.ack({ sessionId: newSession.id });
+  });
+
   r.register("agents.list", async (ctx) => {
     ctx.ack({ agents: manager.listAgents() });
   });

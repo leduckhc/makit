@@ -31,19 +31,46 @@ sealed class PaneNode {
 
   /// Stable identity for this node.
   String get id;
+
+  /// A JSON map for persistence. Tagged by kind (`k`) so [fromJson] can
+  /// dispatch to the right subtype: `'leaf'` → [PaneLeaf], `'split'` →
+  /// [PaneSplit].
+  Map<String, Object?> toJson();
+
+  /// Rebuilds a node (recursively, for splits) from a [toJson] map. Throws a
+  /// [FormatException] on an unknown or missing kind tag.
+  static PaneNode fromJson(Map<String, Object?> json) => switch (json['k']) {
+    'leaf' => PaneLeaf.fromJson(json),
+    'split' => PaneSplit.fromJson(json),
+    final other => throw FormatException('unknown pane node kind: $other'),
+  };
 }
 
-/// A single chat pane. [sessionId] is the session it hosts, or null to fall
-/// back to the globally selected session (preserving single-pane behaviour).
+/// A single chat pane. [sessionId] is the session it hosts, or null to mean
+/// "start a session in the enclosing tree's worktree" (renders that worktree's
+/// harness picker).
 final class PaneLeaf extends PaneNode {
   /// Creates a leaf pane.
   const PaneLeaf({required this.id, this.sessionId});
 
+  /// Rebuilds a leaf from its [toJson] map.
+  factory PaneLeaf.fromJson(Map<String, Object?> json) => PaneLeaf(
+    id: json['id'] as String,
+    sessionId: json['sessionId'] as String?,
+  );
+
   @override
   final String id;
 
-  /// The session this pane hosts, or null to defer to the global selection.
+  /// The session this pane hosts, or null to start one in the tree's worktree.
   final String? sessionId;
+
+  @override
+  Map<String, Object?> toJson() => {
+    'k': 'leaf',
+    'id': id,
+    'sessionId': sessionId,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -80,6 +107,25 @@ final class PaneSplit extends PaneNode {
 
   /// [first]'s fraction of the space, in `0.1`–`0.9`.
   final double ratio;
+
+  /// Rebuilds a split (and its children) from its [toJson] map.
+  factory PaneSplit.fromJson(Map<String, Object?> json) => PaneSplit(
+    id: json['id'] as String,
+    axis: json['axis'] == 'h' ? Axis.horizontal : Axis.vertical,
+    ratio: (json['ratio'] as num).toDouble(),
+    first: PaneNode.fromJson(json['first'] as Map<String, Object?>),
+    second: PaneNode.fromJson(json['second'] as Map<String, Object?>),
+  );
+
+  @override
+  Map<String, Object?> toJson() => {
+    'k': 'split',
+    'id': id,
+    'axis': axis == Axis.horizontal ? 'h' : 'v',
+    'ratio': ratio,
+    'first': first.toJson(),
+    'second': second.toJson(),
+  };
 
   /// Returns a copy with the given fields replaced.
   PaneSplit copyWith({PaneNode? first, PaneNode? second, double? ratio}) =>

@@ -3,10 +3,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
+import 'package:makit/desktop/chat/panes/pane_node.dart';
+import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
+import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/store/store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Widget-level proof that [DesktopKeymapScope] turns a persisted [Keymap] into
@@ -146,6 +151,83 @@ void main() {
 
     await pressCtrl(tester, LogicalKeyboardKey.comma);
     expect(opened, 1);
+  });
+
+  testWidgets(
+    "Ctrl+D splits the current worktree's tree into a fresh harness-picker pane",
+    (tester) async {
+      final keymap = await controller();
+      const wt = SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt-x',
+        branch: 'feature-x',
+      );
+      final session = Session(
+        id: 's1',
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Wire up pairing',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        branch: 'feature-x',
+        worktreePath: '/tmp/wt-x',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          sessionsProvider.overrideWithValue(SessionsState([session])),
+        ],
+      );
+      addTearDown(container.dispose);
+      // Selecting the session binds it into its worktree's tree (current).
+      container
+          .read(paneTreeControllerProvider.notifier)
+          .bindActiveSession('s1', wt);
+
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyD);
+
+      // No eager "New worktree" dialog: each tree already owns its worktree.
+      expect(find.text('New worktree'), findsNothing);
+      final cur = container.read(paneTreeControllerProvider).current!;
+      // The pane split within the SAME worktree, and the fresh active leaf is
+      // empty (a null-session leaf → that worktree's harness picker).
+      expect(cur.root, isA<PaneSplit>());
+      expect(cur.worktree, wt);
+      final controllerN = container.read(paneTreeControllerProvider.notifier);
+      expect(controllerN.activeLeafSessionId, isNull);
+    },
+  );
+
+  testWidgets('Ctrl+D is a no-op when nothing is selected', (tester) async {
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    final before = container.read(paneTreeControllerProvider);
+
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+    await pressCtrl(tester, LogicalKeyboardKey.keyD);
+
+    // No current tree → nothing to split, and no dialog.
+    expect(find.text('New worktree'), findsNothing);
+    expect(container.read(paneTreeControllerProvider), before);
+    expect(container.read(paneTreeControllerProvider).current, isNull);
   });
 
   testWidgets('rebinding is reflected live in the scope', (tester) async {

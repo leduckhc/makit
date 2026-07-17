@@ -66,7 +66,9 @@ Future<void> _pumpPane(
         sessionActionErrorProvider(sessionId).overrideWithValue(null),
         commandsProvider(sessionId).overrideWithValue(const []),
       ],
-      child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+      child: MaterialApp(
+        home: Scaffold(body: DesktopChatPane(sessionId: sessionId)),
+      ),
     ),
   );
   await tester.pump();

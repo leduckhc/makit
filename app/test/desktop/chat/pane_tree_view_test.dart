@@ -18,6 +18,9 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/composer/composer.dart';
 
+const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
+const _wtB = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-b', branch: 'b');
+
 Session _session() => Session(
   id: 's1',
   projectId: 'p1',
@@ -27,6 +30,8 @@ Session _session() => Session(
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
   lastActivityAt: 0,
+  worktreePath: _wtA.path,
+  branch: _wtA.branch,
 );
 
 Session _session2() => Session(
@@ -38,10 +43,14 @@ Session _session2() => Session(
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
   lastActivityAt: 0,
+  worktreePath: _wtA.path,
+  branch: _wtA.branch,
 );
 
 const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 
+/// A container whose current tree is worktree A with its active leaf bound to
+/// the fake session s1.
 ProviderContainer _container() {
   final c = ProviderContainer(
     overrides: [
@@ -52,9 +61,7 @@ ProviderContainer _container() {
       ),
     ],
   );
-  // Both leaves fall back to this global selection when their sessionId is
-  // null, so every pane renders the fake session.
-  c.read(selectedSessionProvider.notifier).state = 's1';
+  c.read(paneTreeControllerProvider.notifier).bindActiveSession('s1', _wtA);
   return c;
 }
 
@@ -94,7 +101,9 @@ void main() {
         UncontrolledProviderScope(
           container: c,
           child: const MaterialApp(
-            home: Scaffold(body: DesktopChatPane(showHeader: false)),
+            home: Scaffold(
+              body: DesktopChatPane(sessionId: 's1', showHeader: false),
+            ),
           ),
         ),
       );
@@ -114,12 +123,122 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: c,
-          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+          child: const MaterialApp(
+            home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+          ),
         ),
       );
       await tester.pumpAndSettle();
       expect(find.byType(SessionActionsMenu), findsOneWidget);
     });
+  });
+
+  group('empty placeholder', () {
+    testWidgets(
+      'nothing selected shows the "Select or start a session" state',
+      (tester) async {
+        final c = ProviderContainer(
+          overrides: [
+            sessionsProvider.overrideWithValue(SessionsState(const [])),
+            eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          ],
+        );
+        addTearDown(c.dispose);
+        // No worktree selected → the controller has no current tree.
+        expect(c.read(paneTreeControllerProvider).current, isNull);
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Select or start a session'), findsOneWidget);
+      },
+    );
+  });
+
+  group('worktree-scoped view swap', () {
+    testWidgets('selecting a worktree swaps the whole view to its tree', (
+      tester,
+    ) async {
+      final c = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+        ],
+      );
+      addTearDown(c.dispose);
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      expect(find.text('Select or start a session'), findsOneWidget);
+
+      // Select worktree A → its seeded starter pane shows the harness picker.
+      c.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
+      await tester.pumpAndSettle();
+      expect(find.text('Select or start a session'), findsNothing);
+      expect(find.byType(WorktreeStartView), findsOneWidget);
+    });
+
+    testWidgets('switching worktrees preserves each layout', (tester) async {
+      final c = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+        ],
+      );
+      addTearDown(c.dispose);
+      final ctrl = c.read(paneTreeControllerProvider.notifier);
+
+      // Worktree A: split into two panes.
+      ctrl.selectWorktree(_wtA);
+      ctrl.splitActive(Axis.horizontal);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      expect(find.byType(WorktreeStartView), findsNWidgets(2));
+
+      // Worktree B: a fresh single starter pane.
+      ctrl.selectWorktree(_wtB);
+      await tester.pumpAndSettle();
+      expect(find.byType(WorktreeStartView), findsOneWidget);
+      expect(c.read(paneTreeControllerProvider).current!.root, isA<PaneLeaf>());
+
+      // Back to A: its two-pane layout is intact.
+      ctrl.selectWorktree(_wtA);
+      await tester.pumpAndSettle();
+      expect(find.byType(WorktreeStartView), findsNWidgets(2));
+      expect(
+        c.read(paneTreeControllerProvider).current!.root,
+        isA<PaneSplit>(),
+      );
+    });
+
+    testWidgets(
+      'a persisted dead session (no matching session) falls back to the '
+      'worktree start view',
+      (tester) async {
+        final c = ProviderContainer(
+          overrides: [
+            // The store has no sessions, but the tree is bound to a stale id.
+            sessionsProvider.overrideWithValue(SessionsState(const [])),
+            eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+            agentsProvider.overrideWith(
+              (ref) async => const <AgentDescriptor>[],
+            ),
+          ],
+        );
+        addTearDown(c.dispose);
+        c
+            .read(paneTreeControllerProvider.notifier)
+            .bindActiveSession('dead-session', _wtA);
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        // No dead pane, no crash: the leaf resolves to its worktree picker.
+        expect(find.byType(WorktreeStartView), findsOneWidget);
+      },
+    );
   });
 
   group('PaneTreeView tab strip', () {
@@ -130,8 +249,6 @@ void main() {
       addTearDown(c.dispose);
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
-      // The merged header shows the session title and its actions menu, and
-      // there is no duplicate in-pane header (showHeader:false on the leaf).
       expect(find.text('Wire up pairing'), findsOneWidget);
       expect(find.byType(SessionActionsMenu), findsOneWidget);
     });
@@ -142,15 +259,14 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      c
-          .read(paneTreeControllerProvider.notifier)
-          .splitActive(Axis.horizontal, pinnedSessionId: 's1');
+      // Splitting keeps the session pane and adds a fresh empty (worktree
+      // picker) pane, so there are two merged headers: the session + an
+      // "Empty pane".
+      c.read(paneTreeControllerProvider.notifier).splitActive(Axis.horizontal);
       await tester.pumpAndSettle();
 
-      // Two panes, each with its own merged header (title + actions menu). The
-      // fresh pane falls back to the global selection, so it shows 's1' too.
-      expect(find.text('Wire up pairing'), findsNWidgets(2));
-      expect(find.byType(SessionActionsMenu), findsNWidgets(2));
+      expect(find.text('Wire up pairing'), findsOneWidget);
+      expect(find.text('Empty pane'), findsOneWidget);
     });
   });
 
@@ -164,9 +280,9 @@ void main() {
         final ctrl = c.read(paneTreeControllerProvider.notifier);
         // Bind the original pane to s1, split, then bind the fresh pane to s2 —
         // two live sessions side-by-side, each with its own docked composer.
-        ctrl.bindActiveSession('s1');
-        ctrl.splitActive(Axis.horizontal, pinnedSessionId: 's1');
-        ctrl.bindActiveSession('s2');
+        ctrl.bindActiveSession('s1', _wtA);
+        ctrl.splitActive(Axis.horizontal);
+        ctrl.bindActiveSession('s2', _wtA);
 
         await tester.pumpWidget(_tree(c));
         await tester.pumpAndSettle();
@@ -218,6 +334,51 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'per-pane composer text survives a divider resize (panes keyed by id, '
+      'not remounted)',
+      (tester) async {
+        final c = _twoSessionContainer();
+        addTearDown(c.dispose);
+        final ctrl = c.read(paneTreeControllerProvider.notifier);
+        ctrl.bindActiveSession('s1', _wtA);
+        ctrl.splitActive(Axis.horizontal);
+        ctrl.bindActiveSession('s2', _wtA);
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        final fields = find.descendant(
+          of: find.byType(Composer),
+          matching: find.byType(EditableText),
+        );
+        await tester.enterText(fields.first, 'left pane text');
+        await tester.enterText(fields.last, 'right pane text');
+        await tester.pumpAndSettle();
+
+        // Resize the split. Keying the split view by object identity (rather
+        // than its id) would remount the whole subtree here, dropping both
+        // composers' text; keying by id keeps each pane's State intact.
+        final split =
+            c.read(paneTreeControllerProvider).current!.root as PaneSplit;
+        ctrl.adjustRatio(split.id, 0.1);
+        await tester.pumpAndSettle();
+
+        final after = find.descendant(
+          of: find.byType(Composer),
+          matching: find.byType(EditableText),
+        );
+        expect(
+          tester.widget<EditableText>(after.first).controller.text,
+          'left pane text',
+        );
+        expect(
+          tester.widget<EditableText>(after.last).controller.text,
+          'right pane text',
+        );
+      },
+    );
   });
 
   group('focus-composer shortcut targets the active leaf', () {
@@ -263,7 +424,7 @@ void main() {
         ],
       );
       addTearDown(c.dispose);
-      c.read(selectedSessionProvider.notifier).state = 's1';
+      c.read(paneTreeControllerProvider.notifier).bindActiveSession('s1', _wtA);
 
       await tester.pumpWidget(keymapTree(c));
       await tester.pumpAndSettle();
@@ -289,9 +450,9 @@ void main() {
     });
 
     testWidgets('focuses a worktree-start pane composer', (tester) async {
-      // The active leaf hosts a sessionless worktree draft (WorktreeStartView),
-      // whose Composer must be bound to the leaf's desktopComposerFocusProvider
-      // node for the shortcut to reach it (SPEC-14 per-leaf focus fix).
+      // The active leaf is an empty starter leaf (WorktreeStartView), whose
+      // Composer must be bound to the leaf's desktopComposerFocusProvider node
+      // for the shortcut to reach it (SPEC-14 per-leaf focus fix).
       final c = ProviderContainer(
         overrides: [
           keymapOverride,
@@ -301,11 +462,7 @@ void main() {
         ],
       );
       addTearDown(c.dispose);
-      c.read(selectedWorktreeProvider.notifier).state = const SelectedWorktree(
-        projectId: 'p1',
-        path: '/tmp/wt',
-        branch: 'feature',
-      );
+      c.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
 
       await tester.pumpWidget(keymapTree(c));
       await tester.pumpAndSettle();
@@ -340,19 +497,20 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      c
-          .read(paneTreeControllerProvider.notifier)
-          .splitActive(Axis.horizontal, pinnedSessionId: 's1');
+      c.read(paneTreeControllerProvider.notifier).splitActive(Axis.horizontal);
       await tester.pumpAndSettle();
 
-      expect((c.read(paneTreeControllerProvider).root as PaneSplit).ratio, 0.5);
+      expect(
+        (c.read(paneTreeControllerProvider).current!.root as PaneSplit).ratio,
+        0.5,
+      );
 
       // A horizontal split lays out side-by-side with a VerticalDivider strip.
       await tester.drag(find.byType(VerticalDivider), const Offset(-120, 0));
       await tester.pumpAndSettle();
 
       final ratio =
-          (c.read(paneTreeControllerProvider).root as PaneSplit).ratio;
+          (c.read(paneTreeControllerProvider).current!.root as PaneSplit).ratio;
       expect(
         ratio,
         lessThan(0.5),
@@ -369,12 +527,12 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(c.read(paneTreeControllerProvider).root, isA<PaneLeaf>());
+      expect(c.read(paneTreeControllerProvider).current!.root, isA<PaneLeaf>());
       await tester.tap(find.byTooltip('Close pane'));
       await tester.pumpAndSettle();
 
       expect(
-        c.read(paneTreeControllerProvider).root,
+        c.read(paneTreeControllerProvider).current!.root,
         isA<PaneLeaf>(),
         reason: 'the sole pane cannot be closed',
       );
@@ -388,17 +546,18 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      c
-          .read(paneTreeControllerProvider.notifier)
-          .splitActive(Axis.horizontal, pinnedSessionId: 's1');
+      c.read(paneTreeControllerProvider.notifier).splitActive(Axis.horizontal);
       await tester.pumpAndSettle();
-      expect(c.read(paneTreeControllerProvider).root, isA<PaneSplit>());
+      expect(
+        c.read(paneTreeControllerProvider).current!.root,
+        isA<PaneSplit>(),
+      );
 
       // Two close buttons now; tapping either collapses the split.
       await tester.tap(find.byTooltip('Close pane').first);
       await tester.pumpAndSettle();
 
-      expect(c.read(paneTreeControllerProvider).root, isA<PaneLeaf>());
+      expect(c.read(paneTreeControllerProvider).current!.root, isA<PaneLeaf>());
     });
   });
 
@@ -406,9 +565,7 @@ void main() {
     testWidgets('tapping a pane header activates that pane', (tester) async {
       final c = _container();
       addTearDown(c.dispose);
-      c
-          .read(paneTreeControllerProvider.notifier)
-          .splitActive(Axis.horizontal, pinnedSessionId: 's1');
+      c.read(paneTreeControllerProvider.notifier).splitActive(Axis.horizontal);
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
@@ -416,42 +573,50 @@ void main() {
       // by clicking its header title. Guards the regression where the header's
       // opaque GestureDetector swallowed the tap and focus never moved.
       final firstLeaf =
-          (c.read(paneTreeControllerProvider).root as PaneSplit).first
+          (c.read(paneTreeControllerProvider).current!.root as PaneSplit).first
               as PaneLeaf;
       expect(
-        c.read(paneTreeControllerProvider).activeLeafId,
+        c.read(paneTreeControllerProvider).current!.activeLeafId,
         isNot(firstLeaf.id),
       );
       await tester.tap(find.text('Wire up pairing').first);
       await tester.pumpAndSettle();
-      expect(c.read(paneTreeControllerProvider).activeLeafId, firstLeaf.id);
+      expect(
+        c.read(paneTreeControllerProvider).current!.activeLeafId,
+        firstLeaf.id,
+      );
     });
 
-    testWidgets('only the active pane falls back to the global selection', (
+    testWidgets('clicking into a pane body (composer) activates that pane', (
       tester,
     ) async {
+      // Guards the misrouting bug: submitting bound the new session to the
+      // *active* leaf, but clicking into another pane's composer never made
+      // that pane active (the TextField won the gesture arena), so messages
+      // landed in a different pane than the one being typed in.
       final c = _container();
       addTearDown(c.dispose);
-      final ctrl = c.read(paneTreeControllerProvider.notifier);
-      // Fresh pane (null session) is active; the original is pinned to s1.
-      ctrl.splitActive(Axis.horizontal, pinnedSessionId: 's1');
+      c.read(paneTreeControllerProvider.notifier).splitActive(Axis.horizontal);
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      // Focus the pinned pane, leaving the fresh (null) pane inactive.
-      final split = c.read(paneTreeControllerProvider).root as PaneSplit;
-      final pinned = [
-        split.first,
-        split.second,
-      ].cast<PaneLeaf>().firstWhere((l) => l.sessionId == 's1');
-      ctrl.setActive(pinned.id);
+      final firstLeaf =
+          (c.read(paneTreeControllerProvider).current!.root as PaneSplit).first
+              as PaneLeaf;
+      expect(
+        c.read(paneTreeControllerProvider).current!.activeLeafId,
+        isNot(firstLeaf.id),
+      );
+      // Click into the first pane's composer text field (pane body, not the
+      // header) — that pane must become active so sends/binds route to it.
+      await tester.tap(find.byType(EditableText).first);
       await tester.pumpAndSettle();
-
-      // The inactive null pane no longer mirrors the global selection: it shows
-      // the empty-pane title, and only the pinned pane shows the session.
-      expect(find.text('Empty pane'), findsOneWidget);
-      expect(find.text('Wire up pairing'), findsOneWidget);
+      expect(
+        c.read(paneTreeControllerProvider).current!.activeLeafId,
+        firstLeaf.id,
+      );
     });
+
     testWidgets(
       'pane header exposes a11y: move semantics + 24px close target',
       (tester) async {
@@ -475,44 +640,5 @@ void main() {
         expect(closeBtn.constraints?.minWidth, greaterThanOrEqualTo(24.0));
       },
     );
-  });
-
-  group('global fallback gating', () {
-    testWidgets('a non-tracking pane ignores the global worktree draft', (
-      tester,
-    ) async {
-      final c = ProviderContainer(
-        overrides: [
-          sessionsProvider.overrideWithValue(SessionsState(const [])),
-          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
-        ],
-      );
-      addTearDown(c.dispose);
-      // A worktree draft is selected globally.
-      c.read(selectedWorktreeProvider.notifier).state = const SelectedWorktree(
-        projectId: 'p1',
-        path: '/tmp/wt',
-        branch: 'main',
-      );
-
-      await tester.pumpWidget(
-        UncontrolledProviderScope(
-          container: c,
-          child: const MaterialApp(
-            home: Scaffold(
-              body: DesktopChatPane(
-                showHeader: false,
-                trackGlobalSelection: false,
-              ),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Not tracking the global selection → no worktree start view; the pane
-      // stays empty rather than mirroring the global worktree draft.
-      expect(find.text('Select or start a session'), findsOneWidget);
-    });
   });
 }

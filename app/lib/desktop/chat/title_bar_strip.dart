@@ -65,7 +65,7 @@ class SidebarToggleButton extends ConsumerWidget {
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
       tooltip: collapse ? 'Hide sidebar' : 'Show sidebar',
-      icon: const Icon(Symbols.thumbnail_bar, weight: 300),
+      icon: const Icon(Symbols.dock_to_right, weight: 300),
       onPressed: () =>
           ref.read(sidebarCollapsedProvider.notifier).state = collapse,
     );

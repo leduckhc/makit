@@ -330,6 +330,73 @@ test("spawnPendingSession binds an existing worktree (branch from git) and rejec
   }
 });
 
+test("spawnLinkedSession shares one virtual worktree across two drafts", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    // A plain draft (no worktree yet), then split it into a sibling draft.
+    const d1 = await manager.spawnPendingSession(projectId, "pi");
+    const d2 = await manager.spawnLinkedSession(d1.id);
+    assert.notEqual(d1.id, d2.id);
+    assert.equal(d2.pending, true, "the linked session is itself a draft");
+
+    // The sibling (d2) sends first: it forks the shared worktree.
+    const s2 = await manager.startPendingSession(d2.id, "add login form");
+    assert.ok(s2.worktreePath?.startsWith(realpathSync(base)));
+    // The original (d1) sends later: it reuses the SAME tree, not a new one.
+    const s1 = await manager.startPendingSession(d1.id, "a totally different task");
+    assert.equal(s1.worktreePath, s2.worktreePath, "both drafts share one worktree");
+    assert.equal(s1.branch, s2.branch, "both drafts share one branch");
+
+    // Exactly one worktree was forked (one extra beyond the primary checkout).
+    const repos = await manager.listRepos();
+    const forked = repos[0].worktrees.filter((w) => w.branch === s2.branch);
+    assert.equal(forked.length, 1, "only one shared worktree exists");
+    assert.deepEqual(
+      [...(forked[0]!.sessionIds ?? [])].sort(),
+      [s1.id, s2.id].sort(),
+      "both sessions link to the shared worktree",
+    );
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("spawnLinkedSession mirrors a started session's real worktree", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    // Start a session so it has a real worktree, then split off it.
+    const d1 = await manager.spawnPendingSession(projectId, "pi");
+    const s1 = await manager.startPendingSession(d1.id, "first task");
+    const d2 = await manager.spawnLinkedSession(s1.id);
+    const s2 = await manager.startPendingSession(d2.id, "second task");
+
+    assert.equal(s2.worktreePath, s1.worktreePath, "linked session reuses the real worktree");
+    assert.equal(s2.branch, s1.branch);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("startPendingSession is idempotent for a live session", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

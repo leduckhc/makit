@@ -160,9 +160,15 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         ref.read(sidebarCollapsedProvider.notifier).update((v) => !v);
       case ShortcutAction.focusComposer:
         // Focus the composer of the currently active leaf pane (each leaf owns
-        // its own composer FocusNode, keyed by leaf id).
-        final activeLeafId = ref.read(paneTreeControllerProvider).activeLeafId;
-        ref.read(desktopComposerFocusProvider(activeLeafId)).requestFocus();
+        // its own composer FocusNode, keyed by leaf id). No-op when nothing is
+        // selected (no current tree).
+        final activeLeafId = ref
+            .read(paneTreeControllerProvider)
+            .current
+            ?.activeLeafId;
+        if (activeLeafId != null) {
+          ref.read(desktopComposerFocusProvider(activeLeafId)).requestFocus();
+        }
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
       case ShortcutAction.newSession:
@@ -173,9 +179,9 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
       case ShortcutAction.splitPaneVertical:
-        _splitPane(context, ref, Axis.horizontal);
+        _splitPane(ref, Axis.horizontal);
       case ShortcutAction.splitPaneHorizontal:
-        _splitPane(context, ref, Axis.vertical);
+        _splitPane(ref, Axis.vertical);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:
@@ -183,36 +189,16 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     }
   }
 
-  /// Splits the active pane and opens the new-session flow in the fresh pane.
+  /// Splits the active pane, landing a fresh empty pane in the SAME worktree.
   ///
-  /// The current pane is pinned to its resolved session (explicit id, else the
-  /// global selection) so it keeps its transcript, then the new-worktree dialog
-  /// starts a new session that lands in the new pane. If the dialog is
-  /// cancelled (no worktree started), the fresh pane is removed so a cancelled
-  /// split doesn't leave a duplicate pane mirroring the same session.
-  Future<void> _splitPane(
-    BuildContext context,
-    WidgetRef ref,
-    Axis axis,
-  ) async {
-    final controller = ref.read(paneTreeControllerProvider.notifier);
-    final pinned =
-        controller.activeLeafSessionId ?? ref.read(selectedSessionProvider);
-    controller.splitActive(axis, pinnedSessionId: pinned);
-    final freshId = ref.read(paneTreeControllerProvider).activeLeafId;
-    final worktreeBefore = ref.read(selectedWorktreeProvider);
-    await showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
-    // The scope may have unmounted while the dialog was open; bail before
-    // touching providers through a potentially disposed ref.
-    if (!mounted) return;
-    final cancelled = identical(
-      ref.read(selectedWorktreeProvider),
-      worktreeBefore,
-    );
-    if (cancelled &&
-        ref.read(paneTreeControllerProvider).activeLeafId == freshId) {
-      controller.closeActive();
-    }
+  /// Each tree owns its worktree, so the fresh leaf (a null-session leaf)
+  /// automatically renders that worktree's harness picker while the existing
+  /// pane keeps its own session. Splitting is therefore just `splitActive`,
+  /// a no-op when nothing is selected (no current tree). The old
+  /// new-worktree-dialog / linked-draft fallbacks are gone: a tree can only
+  /// exist for a concrete worktree, so there is no worktree-less pane to split.
+  void _splitPane(WidgetRef ref, Axis axis) {
+    ref.read(paneTreeControllerProvider.notifier).splitActive(axis);
   }
 
   /// Session ids in sidebar display order (repo order, then each repo's

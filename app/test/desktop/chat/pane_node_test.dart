@@ -382,4 +382,59 @@ void main() {
       expect(first, isNot(second));
     });
   });
+
+  group('toJson/fromJson', () {
+    test('round-trips a leaf with a session', () {
+      const leaf = PaneLeaf(id: 'a', sessionId: 's1');
+      expect(PaneNode.fromJson(leaf.toJson()), leaf);
+    });
+
+    test('round-trips a leaf with a null session', () {
+      const leaf = PaneLeaf(id: 'a');
+      final decoded = PaneNode.fromJson(leaf.toJson());
+      expect(decoded, leaf);
+      expect((decoded as PaneLeaf).sessionId, isNull);
+    });
+
+    test('round-trips a nested split preserving ids, axes and ratios', () {
+      const root = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        ratio: 0.3,
+        first: PaneLeaf(id: 'a', sessionId: 's1'),
+        second: PaneSplit(
+          id: 'sp2',
+          axis: Axis.vertical,
+          ratio: 0.7,
+          first: PaneLeaf(id: 'b'),
+          second: PaneLeaf(id: 'c', sessionId: 's3'),
+        ),
+      );
+      expect(PaneNode.fromJson(root.toJson()), root);
+    });
+
+    test('encodes the axis as h/v', () {
+      const horizontal = PaneSplit(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      expect(horizontal.toJson()['axis'], 'h');
+      const vertical = PaneSplit(
+        id: 'sp',
+        axis: Axis.vertical,
+        first: PaneLeaf(id: 'a'),
+        second: PaneLeaf(id: 'b'),
+      );
+      expect(vertical.toJson()['axis'], 'v');
+    });
+
+    test('throws on an unknown kind tag', () {
+      expect(
+        () => PaneNode.fromJson(const {'k': 'bogus'}),
+        throwsFormatException,
+      );
+    });
+  });
 }
