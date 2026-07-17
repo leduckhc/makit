@@ -28,4 +28,19 @@ class SelectedWorktree {
 
   @override
   int get hashCode => Object.hash(projectId, path, branch);
+
+  /// JSON for persistence (see [PaneTreeState]).
+  Map<String, Object?> toJson() => {
+    'projectId': projectId,
+    'path': path,
+    'branch': branch,
+  };
+
+  /// Rebuilds a worktree from its [toJson] map.
+  factory SelectedWorktree.fromJson(Map<String, Object?> json) =>
+      SelectedWorktree(
+        projectId: json['projectId'] as String,
+        path: json['path'] as String,
+        branch: json['branch'] as String?,
+      );
 }

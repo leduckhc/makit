@@ -34,37 +34,31 @@ export 'harness_picker.dart' show HarnessPicker, WorktreeStartView;
 /// transcript with the composer pinned at the bottom — the shape desktop chat
 /// apps use.
 class DesktopChatPane extends ConsumerStatefulWidget {
-  /// Creates the desktop chat pane. When [sessionId] is null the pane falls
-  /// back to the globally [selectedSessionProvider] (single-pane behaviour).
-  /// When [worktree] is set, the pane shows the harness picker for that
-  /// worktree instead of the global [selectedWorktreeProvider].
+  /// Creates the desktop chat pane. When [sessionId] resolves to an existing
+  /// session the pane shows its transcript; otherwise (no [sessionId], or a
+  /// persisted id that no longer resolves) it shows the harness picker for
+  /// [worktree] — the enclosing tree's worktree — or the empty placeholder
+  /// when [worktree] is also null.
   const DesktopChatPane({
     super.key,
     this.sessionId,
     this.worktree,
     this.showHeader = true,
-    this.trackGlobalSelection = true,
     this.composerFocusId,
   });
 
-  /// The session this pane hosts, or null to defer to the global selection.
+  /// The session this pane hosts, or null to start one in [worktree].
   final String? sessionId;
 
-  /// The sessionless worktree this pane hosts (a sessionless worktree draft),
-  /// or null to defer to the global [selectedWorktreeProvider]. Mutually
-  /// exclusive with [sessionId].
+  /// The enclosing tree's worktree; a null-session (or dead-session) leaf
+  /// renders this worktree's harness picker. Null only for the empty
+  /// placeholder.
   final SelectedWorktree? worktree;
 
   /// Whether to render the in-pane session header (title + actions menu). The
   /// split pane tree shows a single merged header in its tab strip, so it
   /// passes false to avoid a second stacked bar.
   final bool showHeader;
-
-  /// Whether a null [sessionId] should fall back to the global
-  /// [selectedSessionProvider]. The split pane tree resolves the fallback
-  /// itself (only the active pane tracks the global selection), so it passes
-  /// false to keep inactive empty panes truly empty.
-  final bool trackGlobalSelection;
 
   /// The hosting pane's leaf id, used to key this pane's composer
   /// [FocusNode] via [desktopComposerFocusProvider] so each split pane owns a
@@ -125,28 +119,15 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   Widget build(BuildContext context) {
-    // A pane bound to its own worktree draft always shows its harness picker —
-    // its explicit binding wins over any global session/worktree selection, so
-    // it never bleeds through to the master conversation (which desktop
-    // auto-select refills into selectedSession after a split).
-    if (widget.sessionId == null && widget.worktree != null) {
-      return WorktreeStartView(
-        key: ValueKey(widget.worktree!.path),
-        worktree: widget.worktree!,
-        composerFocusId: widget.composerFocusId,
-      );
-    }
-    final sessionId =
-        widget.sessionId ??
-        (widget.trackGlobalSelection
-            ? ref.watch(selectedSessionProvider)
-            : null);
-    if (sessionId == null) {
-      // No pane-bound session/worktree: an unbound pane that tracks the global
-      // selection may still surface the global worktree draft.
-      final worktree = widget.trackGlobalSelection
-          ? ref.watch(selectedWorktreeProvider)
-          : null;
+    final sessionId = widget.sessionId;
+    // A bound session that no longer exists (e.g. a persisted layout pointing
+    // at a quit session) resolves to null here and falls back to the tree's
+    // worktree harness picker — no dead pane, no crash.
+    final session = sessionId == null
+        ? null
+        : ref.watch(sessionsProvider).byId(sessionId);
+    if (session == null) {
+      final worktree = widget.worktree;
       if (worktree != null) {
         return WorktreeStartView(
           key: ValueKey(worktree.path),
@@ -154,8 +135,8 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
           composerFocusId: widget.composerFocusId,
         );
       }
-      // No session yet, but the pane still owns the unfold affordance when the
-      // sidebar is hidden — surface a minimal top strip above the placeholder.
+      // Nothing selected at all: the empty placeholder (still owns the unfold
+      // affordance when the sidebar is hidden).
       return Column(
         children: [
           if (widget.showHeader) const UnfoldStrip(),
@@ -179,7 +160,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       );
     });
 
-    final session = ref.watch(sessionsProvider).byId(sessionId);
     final items = ref.watch(chatItemsProvider(sessionId));
 
     // Keep the transcript pinned to the newest message as items stream in.

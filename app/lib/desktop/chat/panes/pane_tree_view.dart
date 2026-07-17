@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
-import '../selected_session.dart';
+import '../selected_worktree.dart';
 import '../sidebar_layout.dart' show sidebarCollapsedProvider;
 import '../title_bar_strip.dart';
 import 'pane_node.dart';
@@ -24,7 +24,7 @@ class PaneTreeView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tree = ref.watch(paneTreeControllerProvider);
+    final current = ref.watch(paneTreeControllerProvider).current;
     // The OS titlebar is hidden (TitleBarStyle.hidden), so macOS keeps the top
     // strip as its native window-drag zone. Reserve it as an explicit
     // DragToMoveArea — matching the sidebar's `_Header` — so the top-most
@@ -43,10 +43,15 @@ class PaneTreeView extends ConsumerWidget {
               : null,
         ),
         Expanded(
-          child: _PaneNodeView(
-            node: tree.root,
-            activeLeafId: tree.activeLeafId,
-          ),
+          // No worktree selected → the empty "Select or start a session"
+          // placeholder (there is no default/global tree).
+          child: current == null
+              ? const DesktopChatPane(showHeader: true)
+              : _PaneNodeView(
+                  node: current.root,
+                  activeLeafId: current.activeLeafId,
+                  worktree: current.worktree,
+                ),
         ),
       ],
     );
@@ -55,10 +60,15 @@ class PaneTreeView extends ConsumerWidget {
 
 /// Dispatches to a split or leaf view for [node].
 class _PaneNodeView extends StatelessWidget {
-  const _PaneNodeView({required this.node, required this.activeLeafId});
+  const _PaneNodeView({
+    required this.node,
+    required this.activeLeafId,
+    required this.worktree,
+  });
 
   final PaneNode node;
   final String activeLeafId;
+  final SelectedWorktree worktree;
 
   @override
   Widget build(BuildContext context) {
@@ -67,11 +77,13 @@ class _PaneNodeView extends StatelessWidget {
         key: ValueKey(leaf.id),
         leaf: leaf,
         active: leaf.id == activeLeafId,
+        worktree: worktree,
       ),
       final PaneSplit split => _PaneSplitView(
         key: ValueKey(split.id),
         split: split,
         activeLeafId: activeLeafId,
+        worktree: worktree,
       ),
     };
   }
@@ -80,10 +92,16 @@ class _PaneNodeView extends StatelessWidget {
 /// A [PaneSplit]: two children sized by [PaneSplit.ratio] with a draggable
 /// divider between them.
 class _PaneSplitView extends ConsumerWidget {
-  const _PaneSplitView({super.key, required this.split, required this.activeLeafId});
+  const _PaneSplitView({
+    super.key,
+    required this.split,
+    required this.activeLeafId,
+    required this.worktree,
+  });
 
   final PaneSplit split;
   final String activeLeafId;
+  final SelectedWorktree worktree;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -92,11 +110,19 @@ class _PaneSplitView extends ConsumerWidget {
     final secondFlex = 1000 - firstFlex;
     final first = Flexible(
       flex: firstFlex,
-      child: _PaneNodeView(node: split.first, activeLeafId: activeLeafId),
+      child: _PaneNodeView(
+        node: split.first,
+        activeLeafId: activeLeafId,
+        worktree: worktree,
+      ),
     );
     final second = Flexible(
       flex: secondFlex,
-      child: _PaneNodeView(node: split.second, activeLeafId: activeLeafId),
+      child: _PaneNodeView(
+        node: split.second,
+        activeLeafId: activeLeafId,
+        worktree: worktree,
+      ),
     );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -163,10 +189,16 @@ class _PaneDivider extends StatelessWidget {
 /// A [PaneLeaf]: a draggable header strip over a [DesktopChatPane], wrapped as a
 /// [DragTarget] that highlights the drop edge while a pane is dragged over it.
 class _PaneLeafView extends ConsumerStatefulWidget {
-  const _PaneLeafView({super.key, required this.leaf, required this.active});
+  const _PaneLeafView({
+    super.key,
+    required this.leaf,
+    required this.active,
+    required this.worktree,
+  });
 
   final PaneLeaf leaf;
   final bool active;
+  final SelectedWorktree worktree;
 
   @override
   ConsumerState<_PaneLeafView> createState() => _PaneLeafViewState();
@@ -248,11 +280,8 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
                       Expanded(
                         child: DesktopChatPane(
                           sessionId: widget.leaf.sessionId,
-                          worktree: widget.leaf.worktree,
+                          worktree: widget.worktree,
                           showHeader: false,
-                          // Only the active pane tracks the global session /
-                          // worktree selection; inactive panes stay empty.
-                          trackGlobalSelection: widget.active,
                           // Per-leaf composer focus node so two split panes
                           // never bind their text fields to one shared node.
                           composerFocusId: widget.leaf.id,
@@ -284,10 +313,10 @@ class _PaneHeaderStrip extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final controller = ref.read(paneTreeControllerProvider.notifier);
-    // Only the active pane tracks the global selection; an inactive null pane
-    // stays empty rather than mirroring whatever the sidebar last selected.
-    final sessionId =
-        leaf.sessionId ?? (active ? ref.watch(selectedSessionProvider) : null);
+    // The leaf's own bound session is the source of truth (no global fallback):
+    // an empty leaf shows the tree's worktree harness picker, so its header
+    // reads "Empty pane".
+    final sessionId = leaf.sessionId;
     final session = sessionId == null
         ? null
         : ref.watch(sessionsProvider).byId(sessionId);

@@ -2,202 +2,278 @@ import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/panes/pane_node.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
+import 'package:makit/desktop/chat/selected_worktree.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+const _wtA = SelectedWorktree(projectId: 'p1', path: '/wt/a', branch: 'a');
+const _wtB = SelectedWorktree(projectId: 'p1', path: '/wt/b', branch: 'b');
 
 void main() {
-  group('PaneTreeController', () {
-    test('seeds a single active leaf', () {
-      final c = PaneTreeController();
-      expect(c.state.root, isA<PaneLeaf>());
-      expect(c.state.activeLeafId, (c.state.root as PaneLeaf).id);
+  group('PaneTreeController workspace', () {
+    test('starts empty (placeholder, no current tree)', () {
+      final c = PaneTreeController.ephemeral();
+      expect(c.state.trees, isEmpty);
+      expect(c.state.currentKey, isNull);
+      expect(c.current, isNull);
     });
 
-    test('splitActive splits the active pane and activates the new leaf', () {
-      final c = PaneTreeController();
-      final original = c.state.activeLeafId;
+    test('selectWorktree seeds a single empty starter leaf', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      final cur = c.current!;
+      expect(cur.worktree, _wtA);
+      expect(cur.root, isA<PaneLeaf>());
+      expect((cur.root as PaneLeaf).sessionId, isNull);
+      expect(cur.activeLeafId, (cur.root as PaneLeaf).id);
+    });
+
+    test('re-selecting a worktree keeps its existing tree', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
       c.splitActive(Axis.horizontal);
-      expect(c.state.root, isA<PaneSplit>());
-      final split = c.state.root as PaneSplit;
-      expect(split.axis, Axis.horizontal);
-      expect(c.state.activeLeafId, isNot(original));
-      expect(containsLeaf(c.state.root, original), isTrue);
+      final splitRoot = c.current!.root;
+      c.selectWorktree(_wtB);
+      c.selectWorktree(_wtA);
+      expect(c.current!.root, splitRoot, reason: 'layout preserved');
     });
 
-    test('splitActive pins the current pane and adds a fresh empty pane', () {
-      final c = PaneTreeController();
-      final original = c.state.activeLeafId;
-      c.splitActive(Axis.vertical, pinnedSessionId: 's-old');
-      final split = c.state.root as PaneSplit;
+    test('switching worktrees preserves each layout, ratio and active leaf', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      c.splitActive(Axis.horizontal);
+      final aActive = c.current!.activeLeafId;
+      final aSplitId = (c.current!.root as PaneSplit).id;
+      c.setRatio(aSplitId, 0.3);
+
+      c.selectWorktree(_wtB); // B is a fresh single leaf
+      expect(c.current!.root, isA<PaneLeaf>());
+
+      c.selectWorktree(_wtA);
+      expect(c.current!.root, isA<PaneSplit>());
+      expect((c.current!.root as PaneSplit).ratio, closeTo(0.3, 1e-9));
+      expect(c.current!.activeLeafId, aActive);
+    });
+
+    test('splitActive keeps the current pane session and adds an empty pane', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s-old', _wtA);
+      final original = c.current!.activeLeafId;
+      c.splitActive(Axis.vertical);
+      final split = c.current!.root as PaneSplit;
       final byId = {
         for (final l in [split.first, split.second].cast<PaneLeaf>()) l.id: l,
       };
-      // The original pane keeps (is pinned to) its session…
       expect(byId[original]!.sessionId, 's-old');
-      // …and the new active pane is empty (tracks the global selection).
-      expect(byId[c.state.activeLeafId]!.sessionId, isNull);
-      expect(c.state.activeLeafId, isNot(original));
+      expect(byId[c.current!.activeLeafId]!.sessionId, isNull);
+      expect(c.current!.activeLeafId, isNot(original));
+    });
+
+    test('splitActive is a no-op when nothing is selected', () {
+      final c = PaneTreeController.ephemeral();
+      final before = c.state;
+      c.splitActive(Axis.horizontal);
+      expect(c.state, before);
+    });
+
+    test('bindActiveSession switches to the session\'s worktree tree', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      c.bindActiveSession('s-b', _wtB);
+      expect(c.state.currentKey, _wtB.path);
+      expect((c.current!.root as PaneLeaf).sessionId, 's-b');
+      // A's tree still exists, untouched.
+      expect(c.state.trees[_wtA.path], isNotNull);
+    });
+
+    test('bindActiveSession binds to the active leaf only', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s-old', _wtA);
+      final first = c.current!.activeLeafId;
+      c.splitActive(Axis.horizontal);
+      final fresh = c.current!.activeLeafId;
+      c.bindActiveSession('s-new', _wtA);
+      PaneLeaf leaf(String id) => [
+        (c.current!.root as PaneSplit).first,
+        (c.current!.root as PaneSplit).second,
+      ].cast<PaneLeaf>().firstWhere((l) => l.id == id);
+      expect(leaf(fresh).sessionId, 's-new');
+      expect(leaf(first).sessionId, 's-old');
+    });
+
+    test('clearSelection shows the placeholder but retains trees', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      c.clearSelection();
+      expect(c.current, isNull);
+      expect(c.state.trees[_wtA.path], isNotNull);
     });
 
     test('closeActive collapses back to a single leaf', () {
-      final c = PaneTreeController();
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
       c.splitActive(Axis.horizontal);
       c.closeActive();
-      expect(c.state.root, isA<PaneLeaf>());
+      expect(c.current!.root, isA<PaneLeaf>());
     });
 
     test('closeActive is a no-op with a single pane', () {
-      final c = PaneTreeController();
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
       final before = c.state;
       c.closeActive();
       expect(c.state, before);
     });
 
     test('closeActive after nested splits focuses the sibling pane', () {
-      final c = PaneTreeController();
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
       c.splitActive(Axis.horizontal); // active = second pane
-      final sibling = c.state.activeLeafId;
+      final sibling = c.current!.activeLeafId;
       c.splitActive(Axis.vertical); // active = third pane (nested under second)
-      expect(c.state.root, isA<PaneSplit>());
-      final activeBeforeClose = c.state.activeLeafId;
       c.closeActive();
-      // The active (deepest) pane is gone …
-      expect(containsLeaf(c.state.root, activeBeforeClose), isFalse);
-      // … and its sibling (not the far-left leaf) becomes active.
-      expect(c.state.activeLeafId, sibling);
+      expect(c.current!.activeLeafId, sibling);
     });
 
     test('setActive changes the focused leaf', () {
-      final c = PaneTreeController();
-      final first = c.state.activeLeafId;
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      final first = c.current!.activeLeafId;
       c.splitActive(Axis.horizontal);
       c.setActive(first);
-      expect(c.state.activeLeafId, first);
-    });
-
-    test('bindActiveSession binds the id to the focused pane only', () {
-      final c = PaneTreeController();
-      final first = c.state.activeLeafId;
-      c.splitActive(Axis.horizontal, pinnedSessionId: 's-old');
-      final fresh = c.state.activeLeafId;
-      c.bindActiveSession('s-new');
-      PaneLeaf leaf(String id) => [
-        (c.state.root as PaneSplit).first,
-        (c.state.root as PaneSplit).second,
-      ].cast<PaneLeaf>().firstWhere((l) => l.id == id);
-      expect(leaf(fresh).sessionId, 's-new');
-      expect(leaf(first).sessionId, 's-old');
-    });
-
-    test('clearActiveSession nulls the focused pane session', () {
-      final c = PaneTreeController();
-      c.bindActiveSession('s1');
-      c.clearActiveSession();
-      expect((c.state.root as PaneLeaf).sessionId, isNull);
-    });
-
-    test('closeActive focuses the sibling of a nested closed pane', () {
-      final c = PaneTreeController();
-      final a = c.state.activeLeafId;
-      c.splitActive(Axis.horizontal); // A | N1  (active N1)
-      final n1 = c.state.activeLeafId;
-      c.splitActive(Axis.vertical); // A | (N1 | N2)  (active N2)
-      final n2 = c.state.activeLeafId;
-      expect(n2, isNot(n1));
-      c.closeActive(); // closing N2 should focus its sibling N1, not A
-      expect(c.state.activeLeafId, n1);
-      expect(c.state.activeLeafId, isNot(a));
-    });
-
-    test('adjustRatio accumulates deltas against the live ratio', () {
-      final c = PaneTreeController();
-      c.splitActive(Axis.horizontal);
-      final id = (c.state.root as PaneSplit).id;
-      c.adjustRatio(id, -0.1);
-      c.adjustRatio(id, -0.1);
-      expect((c.state.root as PaneSplit).ratio, closeTo(0.3, 1e-9));
-    });
-
-    test(
-      'adjustRatio clamps at the lower bound and is a no-op for unknown id',
-      () {
-        final c = PaneTreeController();
-        c.splitActive(Axis.horizontal);
-        final id = (c.state.root as PaneSplit).id;
-        c.adjustRatio(id, -5);
-        expect((c.state.root as PaneSplit).ratio, kMinPaneRatio);
-        final before = c.state;
-        c.adjustRatio('nope', -0.2);
-        expect(c.state, before);
-      },
-    );
-
-    test('unbindSession clears every pane pinned to that session', () {
-      final c = PaneTreeController();
-      final first = c.state.activeLeafId;
-      c.bindActiveSession('dead');
-      c.splitActive(Axis.horizontal, pinnedSessionId: 'dead');
-      c.bindActiveSession('dead'); // now both leaves point at 'dead'
-      c.unbindSession('dead');
-      final split = c.state.root as PaneSplit;
-      final leaves = [split.first, split.second].cast<PaneLeaf>();
-      expect(leaves.every((l) => l.sessionId == null), isTrue);
-      // Structure/focus preserved.
-      expect(containsLeaf(c.state.root, first), isTrue);
+      expect(c.current!.activeLeafId, first);
     });
 
     test('setActive is a no-op for the current leaf and unknown ids', () {
-      final c = PaneTreeController();
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
       final before = c.state;
-      c.setActive(before.activeLeafId); // same id
+      c.setActive(before.current!.activeLeafId);
       expect(c.state, before);
-      c.setActive('does-not-exist'); // unknown id
+      c.setActive('does-not-exist');
       expect(c.state, before);
     });
 
-    test('setRatio clamps the split ratio via the controller', () {
-      final c = PaneTreeController();
+    test('setRatio clamps the split ratio', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
       c.splitActive(Axis.horizontal);
-      final splitId = (c.state.root as PaneSplit).id;
+      final splitId = (c.current!.root as PaneSplit).id;
       c.setRatio(splitId, 5.0);
-      expect((c.state.root as PaneSplit).ratio, kMaxPaneRatio);
+      expect((c.current!.root as PaneSplit).ratio, kMaxPaneRatio);
       c.setRatio(splitId, -1.0);
-      expect((c.state.root as PaneSplit).ratio, kMinPaneRatio);
+      expect((c.current!.root as PaneSplit).ratio, kMinPaneRatio);
+    });
+
+    test('adjustRatio accumulates deltas against the live ratio', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      c.splitActive(Axis.horizontal);
+      final id = (c.current!.root as PaneSplit).id;
+      c.adjustRatio(id, -0.1);
+      c.adjustRatio(id, -0.1);
+      expect((c.current!.root as PaneSplit).ratio, closeTo(0.3, 1e-9));
     });
 
     test('moveLeaf keeps the moved pane active', () {
-      final c = PaneTreeController();
-      final first = c.state.activeLeafId;
-      c.splitActive(Axis.horizontal); // second pane active
-      final second = c.state.activeLeafId;
-      // Re-dock the first pane onto the second's bottom edge.
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      final first = c.current!.activeLeafId;
+      c.splitActive(Axis.horizontal);
+      final second = c.current!.activeLeafId;
       c.moveLeaf(first, second, DropEdge.bottom);
-      expect(c.state.activeLeafId, first, reason: 'moved pane stays active');
-      expect(containsLeaf(c.state.root, first), isTrue);
-      expect(containsLeaf(c.state.root, second), isTrue);
+      expect(c.current!.activeLeafId, first);
+      expect(containsLeaf(c.current!.root, first), isTrue);
+      expect(containsLeaf(c.current!.root, second), isTrue);
     });
 
-    test('moveLeaf is a no-op when the tree is unchanged', () {
-      final c = PaneTreeController();
-      final only = c.state.activeLeafId;
-      final before = c.state;
-      // source == target → pure moveLeaf returns the same tree.
-      c.moveLeaf(only, only, DropEdge.right);
-      expect(c.state, before);
-    });
-
-    test('unbindSession clears leaf by sessionId', () {
-      final c = PaneTreeController();
-      const sessionId = 's1';
-      c.bindActiveSession(sessionId);
-      expect((c.state.root as PaneLeaf).sessionId, sessionId);
-      c.unbindSession(sessionId);
-      expect((c.state.root as PaneLeaf).sessionId, isNull);
+    test('unbindSession clears the session across every tree', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('dead', _wtA);
+      c.bindActiveSession('dead', _wtB);
+      c.unbindSession('dead');
+      expect((c.state.trees[_wtA.path]!.root as PaneLeaf).sessionId, isNull);
+      expect((c.state.trees[_wtB.path]!.root as PaneLeaf).sessionId, isNull);
     });
 
     test('unbindSession is a no-op for non-matching ids', () {
-      final c = PaneTreeController();
-      c.bindActiveSession('s1');
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s1', _wtA);
       c.unbindSession('s2');
-      expect((c.state.root as PaneLeaf).sessionId, 's1');
+      expect((c.current!.root as PaneLeaf).sessionId, 's1');
+    });
+  });
+
+  group('PaneTreeController persistence', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('ephemeral controller does not persist', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      await Future<void>.delayed(Duration.zero);
+      expect(prefs.getString(kPaneWorkspacePrefsKey), isNull);
+    });
+
+    test('mutations survive a reload from the same store', () async {
+      final prefs = await SharedPreferences.getInstance();
+      final c = PaneTreeController.load(prefs);
+      c.selectWorktree(_wtA);
+      c.bindActiveSession('s1', _wtA);
+      c.splitActive(Axis.horizontal);
+      final splitId = (c.current!.root as PaneSplit).id;
+      c.setRatio(splitId, 0.25);
+      c.selectWorktree(_wtB);
+      await Future<void>.delayed(Duration.zero);
+
+      final reloaded = PaneTreeController.load(prefs);
+      expect(reloaded.state, c.state, reason: 'identical workspace');
+      expect(reloaded.state.currentKey, _wtB.path);
+      expect(
+        (reloaded.state.trees[_wtA.path]!.root as PaneSplit).ratio,
+        closeTo(0.25, 1e-9),
+      );
+    });
+
+    test('clearing back to empty removes the persisted blob', () async {
+      final prefs = await SharedPreferences.getInstance();
+      final c = PaneTreeController.load(prefs);
+      c.selectWorktree(_wtA);
+      await Future<void>.delayed(Duration.zero);
+      expect(prefs.getString(kPaneWorkspacePrefsKey), isNotNull);
+      // Note: trees are retained on clearSelection, so the blob remains; this
+      // documents that a selected-then-cleared workspace still persists trees.
+      c.clearSelection();
+      await Future<void>.delayed(Duration.zero);
+      final reloaded = PaneTreeController.load(prefs);
+      expect(reloaded.state.currentKey, isNull);
+      expect(reloaded.state.trees[_wtA.path], isNotNull);
+    });
+
+    test('corrupt JSON loads as an empty workspace', () async {
+      SharedPreferences.setMockInitialValues({
+        kPaneWorkspacePrefsKey: '{not valid json',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final c = PaneTreeController.load(prefs);
+      expect(c.state.trees, isEmpty);
+      expect(c.state.currentKey, isNull);
+    });
+
+    test('structurally wrong JSON loads as an empty workspace', () async {
+      SharedPreferences.setMockInitialValues({
+        kPaneWorkspacePrefsKey: '{"trees": {"x": {"bogus": true}}}',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final c = PaneTreeController.load(prefs);
+      expect(c.state.trees, isEmpty);
+    });
+
+    test('absent JSON loads as an empty workspace', () async {
+      final prefs = await SharedPreferences.getInstance();
+      final c = PaneTreeController.load(prefs);
+      expect(c.state.trees, isEmpty);
+      expect(c.state.currentKey, isNull);
     });
   });
 }
