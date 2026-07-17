@@ -57,6 +57,34 @@ export function watchWorktrees(
     timer.unref?.();
   };
 
+  // `fs.watch` returns an EventEmitter that emits `'error'` ASYNCHRONOUSLY
+  // (e.g. the watched dir is deleted at runtime). An unhandled `'error'`
+  // crashes the whole process, so every watcher must attach a handler — a
+  // plain try/catch only covers synchronous setup failures.
+  const safeWatch = (
+    target: string,
+    onEvent: (filename: string | null) => void,
+    onError: () => void,
+  ): FSWatcher | undefined => {
+    try {
+      const w = watch(target, { persistent: false }, (_evt, filename) =>
+        onEvent(filename === null ? null : filename.toString()),
+      );
+      w.on("error", () => {
+        try {
+          w.close();
+        } catch {
+          /* already closed */
+        }
+        onError();
+      });
+      return w;
+    } catch {
+      // Target missing, or `.git` is a file (linked worktree / submodule).
+      return undefined;
+    }
+  };
+
   const arm = (repoPath: string): RepoWatch => {
     const gitDir = join(repoPath, ".git");
     const worktreesDir = join(gitDir, "worktrees");
@@ -64,31 +92,36 @@ export function watchWorktrees(
 
     const syncInner = (): void => {
       if (existsSync(worktreesDir)) {
-        if (!rw.inner) {
-          try {
-            rw.inner = watch(worktreesDir, { persistent: false }, () => fire());
-          } catch {
-            /* best-effort */
-          }
-        }
+        rw.inner ??= safeWatch(
+          worktreesDir,
+          () => fire(),
+          () => {
+            // Dir vanished (last worktree removed): drop the watch so the
+            // `.git` watcher can re-attach if it reappears, and re-scan.
+            rw.inner = undefined;
+            fire();
+          },
+        );
       } else if (rw.inner) {
         rw.inner.close();
         rw.inner = undefined;
       }
     };
 
-    try {
-      rw.git = watch(gitDir, { persistent: false }, (_evt, filename) => {
+    rw.git = safeWatch(
+      gitDir,
+      (filename) => {
         // Only the `worktrees` entry matters; ignore git's other churn
         // (index.lock, HEAD, refs, …). A null filename (some platforms) is
         // treated as "unknown" and re-evaluated.
-        if (filename !== null && filename.toString() !== "worktrees") return;
+        if (filename !== null && filename !== "worktrees") return;
         syncInner();
         fire();
-      });
-    } catch {
-      // `.git` missing or a file (linked worktree / submodule) — skip.
-    }
+      },
+      () => {
+        rw.git = undefined;
+      },
+    );
 
     syncInner();
     return rw;

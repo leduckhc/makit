@@ -74,3 +74,33 @@ test("watchWorktrees tolerates a non-existent / non-repo path", async () => {
   assert.doesNotThrow(() => watcher.sync(["/no/such/path/makit-nope"]));
   watcher.close();
 });
+
+test("watchWorktrees keeps firing (and does not crash) when a worktree is removed", async () => {
+  const repo = makeRepo();
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  let fired = 0;
+  const watcher = watchWorktrees(() => fired++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "gone", join(wtBase, "gone")], {
+      cwd: repo,
+    });
+    await delay(150);
+    const afterAdd = fired;
+    assert.ok(afterAdd > 0, "expected a fire on add");
+
+    // Removing the last worktree deletes `.git/worktrees`, which makes the
+    // inner FSWatcher emit an async `'error'`. With the error handler this is
+    // absorbed (process stays up) and still triggers a re-scan.
+    execFileSync("git", ["worktree", "remove", "--force", join(wtBase, "gone")], {
+      cwd: repo,
+    });
+    await delay(200);
+    assert.ok(fired > afterAdd, "expected a fire on removal");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
