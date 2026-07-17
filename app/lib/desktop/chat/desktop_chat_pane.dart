@@ -201,15 +201,13 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                             onOpenTool: _openToolDetail,
                             compact: true,
                           );
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: kReadableContentMaxWidth,
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: child,
-                        ),
+                    return ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: kReadableContentMaxWidth,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: child,
                       ),
                     );
                   },

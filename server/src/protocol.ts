@@ -169,6 +169,7 @@ export type CmdKind =
   | "session.action"
   | "cancel"
   | "session.spawn"
+  | "session.spawnLinked"
   | "session.list"
   | "session.attach"
   | "session.kill"

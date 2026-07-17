@@ -34,7 +34,9 @@ const STREAMING_DELTA_KINDS: ReadonlySet<string> = new Set([
  *   user message. `agent` is the harness to launch; `baseBranch` the branch to
  *   fork off; `pendingWorktreePath` (start-a-session-in-worktree flow) binds
  *   the draft to an EXISTING worktree, in which case `branch` is derived from
- *   git up front.
+ *   git up front. `virtualWorktreeId` (split-from-draft flow) links several
+ *   drafts to ONE not-yet-materialized worktree: whichever draft sends first
+ *   forks it, and the rest reuse that tree (see {@link SessionManager}).
  * - `started`: the session is live in `worktreePath` on `branch`.
  *
  * `pendingWorktreePath` lives ONLY on the draft variant, so it is a compile
@@ -48,6 +50,7 @@ export type SessionLifecycle =
       baseBranch?: string;
       pendingWorktreePath?: string;
       branch?: string;
+      virtualWorktreeId?: string;
     }
   | { phase: "started"; branch?: string; worktreePath?: string };
 
@@ -307,8 +310,20 @@ export class Session extends EventEmitter {
     baseBranch?: string;
     pendingWorktreePath?: string;
     branch?: string;
+    virtualWorktreeId?: string;
   }): void {
     this._lifecycle = { phase: "draft", ...opts };
+  }
+
+  /**
+   * Link this still-pending draft to a shared virtual worktree so a sibling
+   * draft (split off the same, not-yet-started session) materializes into the
+   * same tree on first message. No-op once started.
+   */
+  linkVirtualWorktree(virtualWorktreeId: string): void {
+    if (this._lifecycle.phase === "draft") {
+      this._lifecycle = { ...this._lifecycle, virtualWorktreeId };
+    }
   }
 
   /** Change the harness a still-pending draft will start with. No-op once started. */

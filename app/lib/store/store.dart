@@ -345,6 +345,22 @@ class StoreController extends StateNotifier<StoreState> {
     return sid;
   }
 
+  /// Spawn a new session that shares the SAME worktree as [sourceSessionId]
+  /// (the split-pane flow). When the source already runs in a real worktree the
+  /// new session binds to it; when the source is still an un-started draft both
+  /// are linked to one virtual worktree that materializes on the first message.
+  Future<String> spawnLinkedSession(String sourceSessionId) async {
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'session.spawnLinked',
+          'sourceSessionId': sourceSessionId,
+        });
+    final sid = ack['sessionId'] as String?;
+    if (sid == null) throw StateError('server did not return sessionId');
+    return sid;
+  }
+
   /// Fetch the agents this host can spawn (for the new-session picker).
   /// Returns an empty list on any failure so the caller falls back to default.
   Future<List<AgentDescriptor>> fetchAgents() async {

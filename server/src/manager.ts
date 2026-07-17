@@ -88,6 +88,12 @@ export class SessionManager extends EventEmitter {
   /** In-flight draft promotions, keyed by session id, so concurrent first
    *  messages collapse onto one worktree/adapter instead of racing. */
   private readonly promoteInFlight = new Map<string, Promise<boolean>>();
+  /** Materialized shared worktrees, keyed by virtual-worktree id. Populated by
+   *  the first draft in a split group to send a message; siblings reuse it. */
+  private readonly virtualWorktrees = new Map<string, { path: string; branch: string }>();
+  /** In-flight virtual-worktree materializations, keyed by virtual-worktree id,
+   *  so two sibling drafts racing to send first fork ONE tree, not two. */
+  private readonly vwInFlight = new Map<string, Promise<{ path: string; branch: string }>>();
   private readonly adapterFactory?: AdapterFactory;
   private readonly onProjectsChanged?: (paths: string[]) => void;
   private readonly defaultModel?: string;
@@ -279,6 +285,48 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Spawn a new session that shares the SAME worktree as [sourceSessionId]
+   * (the split-pane flow). Mirrors the source's worktree regardless of whether
+   * it exists yet:
+   * - source already started → bind the new draft to its real worktree/branch
+   *   (first message launches the agent there, no new tree).
+   * - source still a draft → link both drafts to one virtual worktree so
+   *   whichever sends first forks it and the other reuses that tree.
+   */
+  async spawnLinkedSession(sourceSessionId: string): Promise<Session> {
+    const source = this.sessions.get(sourceSessionId);
+    if (!source) throw new Error(`no such session: ${sourceSessionId}`);
+    const lc = source.lifecycle;
+    const agent = source.pendingAgent ?? source.agent;
+    if (lc.phase === "started") {
+      // Real worktree already on disk — reuse it via the existing bind path.
+      const worktreePath = lc.worktreePath;
+      if (!worktreePath) {
+        throw new Error(`session ${sourceSessionId} has no worktree to share`);
+      }
+      return this.spawnPendingSession(source.projectId, agent, undefined, worktreePath, lc.branch);
+    }
+    // Draft source: ensure it carries a virtual-worktree id, then hand the same
+    // id to the new draft so both materialize into one tree.
+    let virtualWorktreeId = lc.virtualWorktreeId;
+    if (!virtualWorktreeId) {
+      virtualWorktreeId = randomUUID();
+      source.linkVirtualWorktree(virtualWorktreeId);
+    }
+    const session = new Session({
+      projectId: source.projectId,
+      agent: this.adapterFactory ? "stub" : agent,
+      title: DEFAULT_SESSION_TITLE,
+      adapter: new DetachedAdapter(agent),
+      store: this.store,
+    });
+    session.beginDraft({ agent, baseBranch: lc.baseBranch, virtualWorktreeId });
+    this.sessions.set(session.id, session);
+    this.emit("sessionCreated", session);
+    return session;
+  }
+
+  /**
    * Change the harness a still-pending draft will start with. No-op once the
    * session has been promoted (its agent process already exists).
    */
@@ -354,6 +402,17 @@ export class SessionManager extends EventEmitter {
       // Start in the existing worktree the user picked — no new tree/branch.
       worktreePath = lc.pendingWorktreePath;
       branch = lc.branch ?? base;
+    } else if (lc.virtualWorktreeId) {
+      // Shared virtual worktree (split-from-draft): the first sibling to reach
+      // here forks the tree and records it; the rest reuse the same one.
+      const shared = await this.materializeVirtualWorktree(
+        lc.virtualWorktreeId,
+        repoPath,
+        lc.baseBranch,
+        base,
+      );
+      worktreePath = shared.path;
+      branch = shared.branch;
     } else if (await isGitRepo(repoPath)) {
       const requested = lc.baseBranch;
       const baseBranch =
@@ -408,6 +467,49 @@ export class SessionManager extends EventEmitter {
       return await task;
     } finally {
       this.promoteInFlight.delete(session.id);
+    }
+  }
+
+  /**
+   * Fork (once) or reuse the shared worktree for a virtual-worktree id. The
+   * first sibling draft to send a message forks the tree off its base branch
+   * and records `{ path, branch }`; later siblings get the same result. A
+   * per-id in-flight promise collapses two drafts racing to send first onto a
+   * single fork. For a non-git project (or unborn HEAD) both siblings simply
+   * share the repo dir.
+   */
+  private async materializeVirtualWorktree(
+    virtualWorktreeId: string,
+    repoPath: string,
+    requestedBase: string | undefined,
+    fallbackBranch: string,
+  ): Promise<{ path: string; branch: string }> {
+    const done = this.virtualWorktrees.get(virtualWorktreeId);
+    if (done) return done;
+    const inflight = this.vwInFlight.get(virtualWorktreeId);
+    if (inflight) return inflight;
+    const task = (async () => {
+      let path = repoPath;
+      let branch = fallbackBranch;
+      if (await isGitRepo(repoPath)) {
+        const baseBranch =
+          requestedBase && (await branchExists(repoPath, requestedBase))
+            ? requestedBase
+            : await detectDefaultBranch(repoPath);
+        if (baseBranch) {
+          branch = await this.uniqueBranch(repoPath, fallbackBranch);
+          path = await addWorktree({ repoPath, name: branch, branch, baseBranch });
+        }
+      }
+      const result = { path, branch };
+      this.virtualWorktrees.set(virtualWorktreeId, result);
+      return result;
+    })();
+    this.vwInFlight.set(virtualWorktreeId, task);
+    try {
+      return await task;
+    } finally {
+      this.vwInFlight.delete(virtualWorktreeId);
     }
   }
 

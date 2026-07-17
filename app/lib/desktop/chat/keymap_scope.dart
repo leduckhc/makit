@@ -183,13 +183,23 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     }
   }
 
-  /// Splits the active pane and opens the new-session flow in the fresh pane.
+  /// Splits the active pane and starts a new session in the SAME worktree as
+  /// the current pane, landing the fresh pane directly on the harness picker.
   ///
   /// The current pane is pinned to its resolved session (explicit id, else the
-  /// global selection) so it keeps its transcript, then the new-worktree dialog
-  /// starts a new session that lands in the new pane. If the dialog is
-  /// cancelled (no worktree started), the fresh pane is removed so a cancelled
-  /// split doesn't leave a duplicate pane mirroring the same session.
+  /// global selection) so it keeps its transcript. The fresh pane then shows
+  /// the "Choose a harness" view for the current worktree; picking a harness
+  /// and sending the first message spawns a new session in that worktree.
+  ///
+  /// Two cases share the same worktree:
+  /// - a started session (or a selected sessionless worktree) has a real tree,
+  ///   so the fresh pane binds to it directly;
+  /// - an un-started draft has only a virtual (not-yet-forked) worktree, so the
+  ///   split spawns a linked sibling draft; whichever sends first forks the
+  ///   tree and the other reuses it (see [StoreController.spawnLinkedSession]).
+  ///
+  /// When there is nothing to reuse (no selection at all), fall back to the
+  /// new-worktree dialog, removing the fresh pane if the dialog is cancelled.
   Future<void> _splitPane(
     BuildContext context,
     WidgetRef ref,
@@ -198,8 +208,42 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     final controller = ref.read(paneTreeControllerProvider.notifier);
     final pinned =
         controller.activeLeafSessionId ?? ref.read(selectedSessionProvider);
+    final worktree = _currentWorktree(ref, pinned);
+    // A pinned session that is still an un-started draft has only a virtual
+    // worktree — capture it before the split so we can link a sibling to it.
+    final draftId = (worktree == null && pinned != null &&
+            (ref.read(sessionsProvider).byId(pinned)?.pending ?? false))
+        ? pinned
+        : null;
     controller.splitActive(axis, pinnedSessionId: pinned);
+    if (worktree != null) {
+      // Land the fresh (active) pane on the harness picker for the same
+      // worktree; the new session spawns in it on the first message.
+      selectWorktree(ref, worktree);
+      return;
+    }
     final freshId = ref.read(paneTreeControllerProvider).activeLeafId;
+    if (draftId != null) {
+      final messenger = ScaffoldMessenger.of(context);
+      try {
+        final newId = await ref
+            .read(storeControllerProvider.notifier)
+            .spawnLinkedSession(draftId);
+        if (!mounted) return;
+        selectSessionExclusive(ref, newId);
+      } catch (e) {
+        if (!mounted) return;
+        // Spawn failed — drop the fresh pane so a failed split doesn't strand
+        // an empty duplicate.
+        if (ref.read(paneTreeControllerProvider).activeLeafId == freshId) {
+          controller.closeActive();
+        }
+        messenger.showSnackBar(
+          SnackBar(content: Text('Could not split session: $e')),
+        );
+      }
+      return;
+    }
     final worktreeBefore = ref.read(selectedWorktreeProvider);
     await showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
     // The scope may have unmounted while the dialog was open; bail before
@@ -213,6 +257,25 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         ref.read(paneTreeControllerProvider).activeLeafId == freshId) {
       controller.closeActive();
     }
+  }
+
+  /// The worktree the current pane sits in, derived from its resolved session
+  /// (a started session carries its [Session.worktreePath] + branch), else the
+  /// already-selected sessionless worktree. Null when nothing is selected or
+  /// the session is a still-pending draft without a worktree yet.
+  SelectedWorktree? _currentWorktree(WidgetRef ref, String? sessionId) {
+    if (sessionId != null) {
+      final session = ref.read(sessionsProvider).byId(sessionId);
+      final path = session?.worktreePath;
+      if (session != null && path != null) {
+        return SelectedWorktree(
+          projectId: session.projectId,
+          path: path,
+          branch: session.branch,
+        );
+      }
+    }
+    return ref.read(selectedWorktreeProvider);
   }
 
   /// Session ids in sidebar display order (repo order, then each repo's

@@ -124,23 +124,30 @@ class _AgentMessageState extends State<AgentMessage> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SelectionArea(
-            child: SelectionContainer(
-              delegate: _selectionDelegate,
-              child: MarkdownBody(
-                data: widget.text,
-                selectable: false,
-                styleSheet: _styleSheet(context),
-                onTapLink: _openLink,
-                builders: {'code': _CodeBlockBuilder(context)},
+      // Fill the available (readable-capped) width so the start-aligned content
+      // always hugs the left. Without this the Column shrink-wraps to its text,
+      // and the desktop pane's centering makes short replies look centered
+      // while only long/last replies (which fill the width) appear left-aligned.
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SelectionArea(
+              child: SelectionContainer(
+                delegate: _selectionDelegate,
+                child: MarkdownBody(
+                  data: widget.text,
+                  selectable: false,
+                  styleSheet: _styleSheet(context),
+                  onTapLink: _openLink,
+                  builders: {'code': _CodeBlockBuilder(context)},
+                ),
               ),
             ),
-          ),
-          _Timestamp(ts: widget.ts, alignRight: false),
-        ],
+            _Timestamp(ts: widget.ts, alignRight: false),
+          ],
+        ),
       ),
     );
   }

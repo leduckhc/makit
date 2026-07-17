@@ -3,11 +3,42 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
+import 'package:makit/desktop/chat/panes/pane_node.dart';
+import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
+import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/store/secure_store.dart';
+import 'package:makit/store/store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// In-memory secure storage so ConnectionController boots without platform
+/// channels (mirrors new_session_dialog_test).
+class _EmptyStorage implements SecureStore {
+  const _EmptyStorage();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
+
+/// A store whose [spawnLinkedSession] records the source id and returns a fixed
+/// id, so the split path can be driven without a live server.
+class _FakeStore extends StoreController {
+  _FakeStore(super.ref);
+  final List<String> linkedFrom = [];
+  @override
+  Future<String> spawnLinkedSession(String sourceSessionId) async {
+    linkedFrom.add(sourceSessionId);
+    return 'linked-1';
+  }
+}
 
 /// Widget-level proof that [DesktopKeymapScope] turns a persisted [Keymap] into
 /// live global shortcuts. Uses Ctrl-primary defaults (cmdIsPrimary: false) so
@@ -147,6 +178,104 @@ void main() {
     await pressCtrl(tester, LogicalKeyboardKey.comma);
     expect(opened, 1);
   });
+
+  testWidgets(
+    'Ctrl+D splits into the current session\'s worktree (no New worktree dialog)',
+    (tester) async {
+      final keymap = await controller();
+      final session = Session(
+        id: 's1',
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Wire up pairing',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        branch: 'feature-x',
+        worktreePath: '/tmp/wt-x',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          sessionsProvider.overrideWithValue(SessionsState([session])),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(selectedSessionProvider.notifier).state = 's1';
+
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyD);
+
+      // The split lands on the current session's worktree (its harness picker),
+      // not the eager "New worktree" dialog.
+      expect(find.text('New worktree'), findsNothing);
+      final wt = container.read(selectedWorktreeProvider);
+      expect(wt, isNotNull);
+      expect(wt!.projectId, 'p1');
+      expect(wt.path, '/tmp/wt-x');
+      expect(wt.branch, 'feature-x');
+      // Selecting the worktree clears the session selection so the fresh pane
+      // shows the worktree-start view instead of the old transcript.
+      expect(container.read(selectedSessionProvider), isNull);
+      // The pane actually split, and the old leaf stays pinned to s1 while the
+      // fresh active leaf tracks the new worktree draft.
+      final tree = container.read(paneTreeControllerProvider);
+      expect(tree.root, isA<PaneSplit>());
+      final controllerN = container.read(paneTreeControllerProvider.notifier);
+      expect(controllerN.activeLeafSessionId, isNull);
+    },
+  );
+
+  testWidgets(
+    'Ctrl+D from an un-started draft spawns a linked session sharing its worktree',
+    (tester) async {
+      final keymap = await controller();
+      final draft = Session(
+        id: 'd1',
+        projectId: 'p1',
+        agent: 'pi',
+        title: '',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        pending: true, // un-started draft: only a virtual worktree exists.
+      );
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(const _EmptyStorage()),
+          ),
+          sessionsProvider.overrideWithValue(SessionsState([draft])),
+          storeControllerProvider.overrideWith((ref) => _FakeStore(ref)),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(selectedSessionProvider.notifier).state = 'd1';
+
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyD);
+      await tester.pump(); // let spawnLinkedSession resolve.
+
+      // No dialog; the split linked a sibling draft off the current one and
+      // selected it, so the fresh pane shows its harness picker.
+      expect(find.text('New worktree'), findsNothing);
+      final store = container.read(storeControllerProvider.notifier) as _FakeStore;
+      expect(store.linkedFrom, ['d1']);
+      expect(container.read(selectedSessionProvider), 'linked-1');
+      expect(container.read(paneTreeControllerProvider).root, isA<PaneSplit>());
+    },
+  );
 
   testWidgets('rebinding is reflected live in the scope', (tester) async {
     final keymap = await controller();

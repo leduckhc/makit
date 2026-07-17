@@ -4,6 +4,7 @@ import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/ui/session/chat_message.dart';
+import 'package:makit/ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 
 void main() {
   Widget wrap(Widget child) => MaterialApp(
@@ -70,6 +71,36 @@ void main() {
     expect(find.byType(Align), findsNothing);
     expect(find.textContaining('Title'), findsWidgets);
   });
+
+  testWidgets(
+    'agent message fills the readable column so a short reply hugs the left '
+    '(not centered)',
+    (tester) async {
+      // Mimic the desktop pane: a Center wrapper loosens the width, which used
+      // to let the message shrink-wrap to its text and appear centered.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: kReadableContentMaxWidth,
+                ),
+                child: const AgentMessage(text: 'Done!', ts: 0),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      // The block fills the full readable column instead of shrink-wrapping to
+      // "Done!", so its start-aligned content sits at the column's left edge.
+      expect(
+        tester.getSize(find.byType(AgentMessage)).width,
+        kReadableContentMaxWidth,
+      );
+    },
+  );
 
   testWidgets('fenced code block gets syntax highlighting + a copy button', (
     tester,
