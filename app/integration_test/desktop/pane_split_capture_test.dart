@@ -33,7 +33,11 @@ Session _session() => Session(
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
   lastActivityAt: 0,
+  worktreePath: _wt.path,
+  branch: _wt.branch,
 );
+
+const _wt = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-demo', branch: 'demo');
 
 const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 
@@ -86,9 +90,9 @@ void main() {
       ],
     );
     addTearDown(c.dispose);
-    // Both leaves fall back to this global selection (leaf sessionId is null),
-    // so every pane renders the fake session's docked composer.
-    c.read(selectedSessionProvider.notifier).state = 's1';
+    // Bind the fake session into its worktree's tree so the pane renders its
+    // docked composer; each tree owns its worktree (SPEC-20).
+    c.read(paneTreeControllerProvider.notifier).bindActiveSession('s1', _wt);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -109,9 +113,7 @@ void main() {
     await shot(tester, 'single');
 
     // 1: vertical split (side-by-side).
-    c
-        .read(paneTreeControllerProvider.notifier)
-        .splitActive(Axis.horizontal, pinnedSessionId: 's1');
+    c.read(paneTreeControllerProvider.notifier).splitActive(Axis.horizontal);
     await tester.pumpAndSettle();
     expect(
       find.byType(PaneTreeView),
@@ -121,9 +123,7 @@ void main() {
     await shot(tester, 'vertical_split');
 
     // 2: horizontal split of the now-active right pane.
-    c
-        .read(paneTreeControllerProvider.notifier)
-        .splitActive(Axis.vertical, pinnedSessionId: 's1');
+    c.read(paneTreeControllerProvider.notifier).splitActive(Axis.vertical);
     await tester.pumpAndSettle();
     await shot(tester, 'horizontal_split');
 

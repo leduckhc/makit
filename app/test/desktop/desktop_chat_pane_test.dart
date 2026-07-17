@@ -47,7 +47,7 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+          child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
         ),
       );
       await tester.pump();
@@ -109,7 +109,7 @@ void main() {
   testWidgets('shows empty state when no session is selected', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(
-        child: MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        child: MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
       ),
     );
 
@@ -142,7 +142,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
       ),
     );
     await tester.pump();
@@ -177,7 +177,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
       ),
     );
     await tester.pump();
@@ -203,7 +203,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
       ),
     );
 
@@ -246,7 +246,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
       ),
     );
     await tester.pump();
@@ -283,7 +283,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
       ),
     );
     await tester.pump();
@@ -319,7 +319,7 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+          child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
         ),
       );
       await tester.pump();
@@ -360,7 +360,7 @@ void main() {
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+          child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
         ),
       );
       await tester.pump();

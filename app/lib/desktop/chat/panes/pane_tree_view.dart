@@ -46,7 +46,7 @@ class PaneTreeView extends ConsumerWidget {
           // No worktree selected → the empty "Select or start a session"
           // placeholder (there is no default/global tree).
           child: current == null
-              ? const DesktopChatPane(showHeader: true)
+              ? const DesktopChatPane(showHeader: false)
               : _PaneNodeView(
                   node: current.root,
                   activeLeafId: current.activeLeafId,

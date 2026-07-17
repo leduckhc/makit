@@ -126,7 +126,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     final session = sessionId == null
         ? null
         : ref.watch(sessionsProvider).byId(sessionId);
-    if (session == null) {
+    if (sessionId == null || session == null) {
       final worktree = widget.worktree;
       if (worktree != null) {
         return WorktreeStartView(
@@ -172,15 +172,15 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       });
     }
 
-    final running = session?.status == SessionStatus.running;
+    final running = session.status == SessionStatus.running;
 
     return Column(
       children: [
         if (widget.showHeader)
           PaneHeader(session: session, fallbackId: sessionId),
         Expanded(
-          child: (session?.pending == true && session?.branch == null)
-              ? HarnessPicker(session: session!)
+          child: (session.pending == true && session.branch == null)
+              ? HarnessPicker(session: session)
               : items.isEmpty
               ? const _EmptyTranscript()
               // The ListView fills the full pane width so the mouse wheel
