@@ -518,9 +518,17 @@ final storeControllerProvider =
       (ref) => StoreController(ref),
     );
 
-/// The harnesses this host can spawn. Fetched once; used by the harness picker
-/// cards shown for a pending draft.
+/// The harnesses this host can spawn, used by the harness picker cards.
+///
+/// Re-fetched on every socket-state change. A persisted worktree can build the
+/// picker at boot (SPEC-20) BEFORE the WS connects; fetching then sends into a
+/// dead socket and — since a [FutureProvider] caches its first result — would
+/// otherwise pin an empty list forever, leaving every worktree stuck on the
+/// "host default harness" fallback. Watching [WsState] makes the provider
+/// re-run (and fetch for real) as soon as the host is reachable, so the cards
+/// appear on connect / reconnect.
 final agentsProvider = FutureProvider<List<AgentDescriptor>>((ref) {
+  ref.watch(connectionProvider.select((c) => c.wsState));
   return ref.read(storeControllerProvider.notifier).fetchAgents();
 });
 

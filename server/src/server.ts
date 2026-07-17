@@ -55,6 +55,7 @@ import { register as registerWorktreeCommands } from "./ws/commands/worktree.js"
 import { register as registerRepoCommands } from "./ws/commands/repo.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
 import { throttleTrailing } from "./ws/throttle.js";
+import { watchWorktrees } from "./worktree_watcher.js";
 
 export interface ServerOpts {
   host: string;
@@ -157,6 +158,14 @@ export function startWsServer(opts: ServerOpts) {
   const clients = new Map<WebSocket, ClientState>();
   let reposSnapshotGeneration = 0;
   let lastEnrichedRepos: RepoDTO[] | undefined;
+
+  // Watch each project's git worktrees so a `git worktree add`/`remove` done
+  // outside makit pushes a fresh repos.snapshot instead of waiting for the
+  // next client reconnect. Kept in sync with the project set inside
+  // broadcastReposSnapshot; closed when the listeners shut down.
+  const worktreeWatcher = watchWorktrees(() => void broadcastReposSnapshot());
+  worktreeWatcher.sync(manager.listProjects().map((p) => p.path));
+  https.on("close", () => worktreeWatcher.close());
 
   // Device ids with a live authenticated WS connection — feeds the control
   // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
@@ -350,6 +359,9 @@ export function startWsServer(opts: ServerOpts) {
   }
 
   async function broadcastReposSnapshot() {
+    // Keep the fs watcher armed for the current project set, so a worktree
+    // created via the CLI (outside makit) pushes a fresh snapshot promptly.
+    worktreeWatcher.sync(manager.listProjects().map((p) => p.path));
     const generation = ++reposSnapshotGeneration;
     const emit = (repos: RepoDTO[]) => {
       const frame: OutgoingFrame = { t: "event", id: newId("snap"), kind: "repos.snapshot", repos };
