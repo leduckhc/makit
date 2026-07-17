@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/composer_draft.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
@@ -422,4 +423,47 @@ void main() {
 
     expect(find.text('unsent draft'), findsOneWidget);
   });
+
+  testWidgets(
+    'composer draft does not leak across an in-place session switch',
+    (tester) async {
+      final s2 = Session(
+        id: 's2',
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Second session',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        lastPreview: '',
+        lastActivityAt: 0,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState([_session(), s2])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      Widget app(Widget child) => UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(home: Scaffold(body: child)),
+      );
+
+      // Same pane state, rebind s1 -> s2 in place (as selecting another session
+      // in the active leaf does).
+      await tester.pumpWidget(app(const DesktopChatPane(sessionId: 's1')));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 's1 draft');
+      await tester.pumpAndSettle();
+
+      await tester.pumpWidget(app(const DesktopChatPane(sessionId: 's2')));
+      await tester.pump();
+
+      // s2 starts blank: s1's text must not bleed in, and s1's draft is intact.
+      expect(find.text('s1 draft'), findsNothing);
+      expect(container.read(composerDraftsProvider)['s1'], 's1 draft');
+      expect(container.read(composerDraftsProvider)['s2'], isNull);
+    },
+  );
 }

@@ -220,6 +220,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
               child: Composer(
+                // Key by session so switching the pane's bound session (same
+                // leaf id → same pane state) recreates the composer and
+                // re-seeds initialText, instead of leaking s1's text into s2.
+                key: ValueKey(sessionId),
                 commands: ref.watch(commandsProvider(sessionId)),
                 onSend: (text) => _handleSend(sessionId, text),
                 onCancel: () => _cancelTurn(sessionId),
