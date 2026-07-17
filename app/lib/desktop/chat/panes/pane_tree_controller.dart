@@ -6,6 +6,7 @@ import 'pane_node.dart';
 // Aliased so the controller's own `setRatio`/`moveLeaf` methods can still
 // reach the pure tree functions of the same name.
 import 'pane_node.dart' as tree;
+import '../selected_worktree.dart';
 
 /// The split-pane tree plus which leaf is currently active. Immutable; the
 /// [PaneTreeController] swaps in new instances.
@@ -54,19 +55,40 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
   /// fallback themselves since the controller cannot read providers.
   String? get activeLeafSessionId => _activeLeaf(state.root)?.sessionId;
 
-  PaneNode _pinLeaf(PaneNode node, String id, String? sessionId) => mapLeaves(
+  /// The worktree explicitly stored on the active leaf (null when it is a
+  /// fresh pane still tracking the global worktree selection).
+  SelectedWorktree? get activeLeafWorktree => _activeLeaf(state.root)?.worktree;
+
+  PaneNode _pinLeaf(
+    PaneNode node,
+    String id, {
+    String? sessionId,
+    SelectedWorktree? worktree,
+  }) => mapLeaves(
     node,
-    (l) => l.id == id ? PaneLeaf(id: l.id, sessionId: sessionId) : l,
+    (l) => l.id == id
+        ? PaneLeaf(id: l.id, sessionId: sessionId, worktree: worktree)
+        : l,
   );
 
   /// Splits the active pane along [axis]. The current pane is pinned to
   /// [pinnedSessionId] (its resolved session) so it keeps showing that session,
   /// and a fresh empty pane is added and activated — splitting opens a new
   /// session rather than duplicating the existing one.
-  void splitActive(Axis axis, {String? pinnedSessionId}) {
+  void splitActive(
+    Axis axis, {
+    String? pinnedSessionId,
+    SelectedWorktree? pinnedWorktree,
+  }) {
     final activeId = state.activeLeafId;
     final pinned = pinnedSessionId ?? _activeLeaf(state.root)?.sessionId;
-    final pinnedRoot = _pinLeaf(state.root, activeId, pinned);
+    final pinnedWt = pinnedWorktree ?? _activeLeaf(state.root)?.worktree;
+    final pinnedRoot = _pinLeaf(
+      state.root,
+      activeId,
+      sessionId: pinned,
+      worktree: pinnedWt,
+    );
     // A null session on the new leaf means "track the global selection", which
     // the following new-session flow (or a sidebar pick) fills in.
     final newLeaf = PaneLeaf(id: nextPaneId());
@@ -123,16 +145,25 @@ class PaneTreeController extends StateNotifier<PaneTreeState> {
   /// focused pane rather than a single global slot.
   void bindActiveSession(String sessionId) {
     state = PaneTreeState(
-      root: _pinLeaf(state.root, state.activeLeafId, sessionId),
+      root: _pinLeaf(state.root, state.activeLeafId, sessionId: sessionId),
       activeLeafId: state.activeLeafId,
     );
   }
 
-  /// Clears the active pane's bound session (e.g. when a sessionless worktree
-  /// is selected), so it falls back to the global selection / worktree draft.
+  /// Binds [worktree] to the active pane (a sessionless worktree draft),
+  /// clearing any bound session.
+  void bindActiveWorktree(SelectedWorktree worktree) {
+    state = PaneTreeState(
+      root: _pinLeaf(state.root, state.activeLeafId, worktree: worktree),
+      activeLeafId: state.activeLeafId,
+    );
+  }
+
+  /// Clears the active pane's bound session and worktree, so it falls back to
+  /// the global selection (single-pane behaviour).
   void clearActiveSession() {
     state = PaneTreeState(
-      root: _pinLeaf(state.root, state.activeLeafId, null),
+      root: _pinLeaf(state.root, state.activeLeafId),
       activeLeafId: state.activeLeafId,
     );
   }

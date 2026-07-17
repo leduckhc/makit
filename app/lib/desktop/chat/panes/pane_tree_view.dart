@@ -226,8 +226,14 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
         controller.moveLeaf(details.data, widget.leaf.id, edge);
       },
       builder: (context, candidate, rejected) {
-        return GestureDetector(
-          onTap: () => controller.setActive(widget.leaf.id),
+        // Listener, not GestureDetector: pointer-down must activate the pane
+        // even when the click lands on an inner tappable widget (composer
+        // text field, buttons…) that would win the gesture arena. Sends and
+        // sidebar/session binds route to the active leaf, so the pane being
+        // clicked into has to become active — standard multiplexer behavior.
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => controller.setActive(widget.leaf.id),
           child: Container(
             key: _key,
             child: Stack(
@@ -242,6 +248,7 @@ class _PaneLeafViewState extends ConsumerState<_PaneLeafView> {
                       Expanded(
                         child: DesktopChatPane(
                           sessionId: widget.leaf.sessionId,
+                          worktree: widget.leaf.worktree,
                           showHeader: false,
                           // Only the active pane tracks the global session /
                           // worktree selection; inactive panes stay empty.

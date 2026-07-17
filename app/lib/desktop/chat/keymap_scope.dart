@@ -208,6 +208,8 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     final controller = ref.read(paneTreeControllerProvider.notifier);
     final pinned =
         controller.activeLeafSessionId ?? ref.read(selectedSessionProvider);
+    final pinnedWorktree =
+        controller.activeLeafWorktree ?? ref.read(selectedWorktreeProvider);
     final worktree = _currentWorktree(ref, pinned);
     // A pinned session that is still an un-started draft has only a virtual
     // worktree — capture it before the split so we can link a sibling to it.
@@ -215,7 +217,11 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
             (ref.read(sessionsProvider).byId(pinned)?.pending ?? false))
         ? pinned
         : null;
-    controller.splitActive(axis, pinnedSessionId: pinned);
+    controller.splitActive(
+      axis,
+      pinnedSessionId: pinned,
+      pinnedWorktree: pinnedWorktree,
+    );
     if (worktree != null) {
       // Land the fresh (active) pane on the harness picker for the same
       // worktree; the new session spawns in it on the first message.

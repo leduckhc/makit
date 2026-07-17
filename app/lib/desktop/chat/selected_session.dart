@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
 import 'panes/pane_tree_controller.dart';
+import 'selected_worktree.dart';
+
+export 'selected_worktree.dart';
 
 /// The session currently shown in the desktop chat pane, or `null` when none
 /// is selected (empty state). Desktop is a two-pane master/detail layout, so —
@@ -15,34 +18,9 @@ final selectedSessionProvider = StateProvider<String?>((ref) => null);
 void selectSession(WidgetRef ref, String? sessionId) =>
     ref.read(selectedSessionProvider.notifier).state = sessionId;
 
-/// A sessionless worktree the user picked in the sidebar. Puts the pane in
-/// "start a session here" mode (harness cards); the session is spawned in this
-/// existing worktree on the first message. Mutually exclusive with
-/// [selectedSessionProvider].
-@immutable
-class SelectedWorktree {
-  const SelectedWorktree({
-    required this.projectId,
-    required this.path,
-    required this.branch,
-  });
-
-  final String projectId;
-  final String path;
-  final String? branch;
-
-  @override
-  bool operator ==(Object other) =>
-      other is SelectedWorktree &&
-      other.projectId == projectId &&
-      other.path == path &&
-      other.branch == branch;
-
-  @override
-  int get hashCode => Object.hash(projectId, path, branch);
-}
-
-/// The sessionless worktree currently shown in the pane, or null.
+/// The sessionless worktree currently shown in the active pane, or null. Used
+/// for the sidebar highlight; each pane also binds its own worktree (see
+/// [PaneLeaf.worktree]) so splits never rely on this single global slot.
 final selectedWorktreeProvider = StateProvider<SelectedWorktree?>(
   (ref) => null,
 );
@@ -57,10 +35,12 @@ void selectSessionExclusive(WidgetRef ref, String id) {
   ref.read(paneTreeControllerProvider.notifier).bindActiveSession(id);
 }
 
-/// Select a sessionless worktree, clearing any selected session. The active
-/// pane's bound session is cleared too so it falls back to the worktree draft.
+/// Select a sessionless worktree, clearing any selected session. Binds the
+/// worktree to the active split pane (so it persists through splits and never
+/// relies on the global fallback), and keeps the global provider in sync for
+/// the sidebar highlight.
 void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
   ref.read(selectedSessionProvider.notifier).state = null;
   ref.read(selectedWorktreeProvider.notifier).state = worktree;
-  ref.read(paneTreeControllerProvider.notifier).clearActiveSession();
+  ref.read(paneTreeControllerProvider.notifier).bindActiveWorktree(worktree);
 }

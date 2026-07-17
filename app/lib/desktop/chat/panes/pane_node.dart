@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show Axis;
 
+import '../selected_worktree.dart';
+
 /// The edge of a target pane a dragged pane is dropped onto.
 ///
 /// [left]/[right] re-dock side-by-side (a horizontal split); [top]/[bottom]
@@ -35,9 +37,11 @@ sealed class PaneNode {
 
 /// A single chat pane. [sessionId] is the session it hosts, or null to fall
 /// back to the globally selected session (preserving single-pane behaviour).
+/// [worktree] is a sessionless worktree the pane hosts (set when a worktree
+/// draft is shown), or null to defer to the global worktree selection.
 final class PaneLeaf extends PaneNode {
   /// Creates a leaf pane.
-  const PaneLeaf({required this.id, this.sessionId});
+  const PaneLeaf({required this.id, this.sessionId, this.worktree});
 
   @override
   final String id;
@@ -45,12 +49,19 @@ final class PaneLeaf extends PaneNode {
   /// The session this pane hosts, or null to defer to the global selection.
   final String? sessionId;
 
-  @override
-  bool operator ==(Object other) =>
-      other is PaneLeaf && other.id == id && other.sessionId == sessionId;
+  /// The sessionless worktree this pane hosts, or null to defer to the global
+  /// worktree selection. Mutually exclusive with [sessionId].
+  final SelectedWorktree? worktree;
 
   @override
-  int get hashCode => Object.hash(id, sessionId);
+  bool operator ==(Object other) =>
+      other is PaneLeaf &&
+      other.id == id &&
+      other.sessionId == sessionId &&
+      other.worktree == worktree;
+
+  @override
+  int get hashCode => Object.hash(id, sessionId, worktree);
 }
 
 /// Two child nodes divided along [axis]. [ratio] is the [first] child's

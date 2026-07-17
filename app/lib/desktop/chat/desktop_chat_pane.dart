@@ -36,9 +36,12 @@ export 'harness_picker.dart' show HarnessPicker, WorktreeStartView;
 class DesktopChatPane extends ConsumerStatefulWidget {
   /// Creates the desktop chat pane. When [sessionId] is null the pane falls
   /// back to the globally [selectedSessionProvider] (single-pane behaviour).
+  /// When [worktree] is set, the pane shows the harness picker for that
+  /// worktree instead of the global [selectedWorktreeProvider].
   const DesktopChatPane({
     super.key,
     this.sessionId,
+    this.worktree,
     this.showHeader = true,
     this.trackGlobalSelection = true,
     this.composerFocusId,
@@ -46,6 +49,11 @@ class DesktopChatPane extends ConsumerStatefulWidget {
 
   /// The session this pane hosts, or null to defer to the global selection.
   final String? sessionId;
+
+  /// The sessionless worktree this pane hosts (a sessionless worktree draft),
+  /// or null to defer to the global [selectedWorktreeProvider]. Mutually
+  /// exclusive with [sessionId].
+  final SelectedWorktree? worktree;
 
   /// Whether to render the in-pane session header (title + actions menu). The
   /// split pane tree shows a single merged header in its tab strip, so it
@@ -117,15 +125,25 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   Widget build(BuildContext context) {
+    // A pane bound to its own worktree draft always shows its harness picker —
+    // its explicit binding wins over any global session/worktree selection, so
+    // it never bleeds through to the master conversation (which desktop
+    // auto-select refills into selectedSession after a split).
+    if (widget.sessionId == null && widget.worktree != null) {
+      return WorktreeStartView(
+        key: ValueKey(widget.worktree!.path),
+        worktree: widget.worktree!,
+        composerFocusId: widget.composerFocusId,
+      );
+    }
     final sessionId =
         widget.sessionId ??
         (widget.trackGlobalSelection
             ? ref.watch(selectedSessionProvider)
             : null);
     if (sessionId == null) {
-      // A sessionless worktree selected in the sidebar → harness picker to
-      // start a session in that existing worktree. Only the active pane tracks
-      // this global draft; inactive split panes stay empty.
+      // No pane-bound session/worktree: an unbound pane that tracks the global
+      // selection may still surface the global worktree draft.
       final worktree = widget.trackGlobalSelection
           ? ref.watch(selectedWorktreeProvider)
           : null;

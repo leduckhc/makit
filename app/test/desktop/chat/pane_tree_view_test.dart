@@ -471,6 +471,35 @@ void main() {
       expect(c.read(paneTreeControllerProvider).activeLeafId, firstLeaf.id);
     });
 
+    testWidgets('clicking into a pane body (composer) activates that pane', (
+      tester,
+    ) async {
+      // Guards the misrouting bug: submitting bound the new session to the
+      // *active* leaf, but clicking into another pane's composer never made
+      // that pane active (the TextField won the gesture arena), so messages
+      // landed in a different pane than the one being typed in.
+      final c = _container();
+      addTearDown(c.dispose);
+      c
+          .read(paneTreeControllerProvider.notifier)
+          .splitActive(Axis.horizontal, pinnedSessionId: 's1');
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      final firstLeaf =
+          (c.read(paneTreeControllerProvider).root as PaneSplit).first
+              as PaneLeaf;
+      expect(
+        c.read(paneTreeControllerProvider).activeLeafId,
+        isNot(firstLeaf.id),
+      );
+      // Click into the first pane's composer text field (pane body, not the
+      // header) — that pane must become active so sends/binds route to it.
+      await tester.tap(find.byType(EditableText).first);
+      await tester.pumpAndSettle();
+      expect(c.read(paneTreeControllerProvider).activeLeafId, firstLeaf.id);
+    });
+
     testWidgets('only the active pane falls back to the global selection', (
       tester,
     ) async {
@@ -558,5 +587,106 @@ void main() {
       // stays empty rather than mirroring the global worktree draft.
       expect(find.text('Select or start a session'), findsOneWidget);
     });
+  });
+
+  group('sessionless-worktree split', () {
+    testWidgets(
+      'a worktree-bound pane shows its harness picker even when a session is '
+      'globally selected (no master-chat bleed-through)',
+      (tester) async {
+        // Reproduces the report: after a split, desktop auto-select refills the
+        // global selectedSession with the master; a worktree-bound pane must
+        // still show ITS harness picker, not the master conversation.
+        const wt = SelectedWorktree(
+          projectId: 'p1',
+          path: '/tmp/wt',
+          branch: 'b',
+        );
+        final c = ProviderContainer(
+          overrides: [
+            sessionsProvider.overrideWithValue(SessionsState([_session()])),
+            eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+            sessionMetaProvider('s1').overrideWithValue(
+              const SessionMeta(
+                model: _model,
+                thinking: 'medium',
+                models: [_model],
+              ),
+            ),
+            agentsProvider.overrideWith(
+              (ref) async => const <AgentDescriptor>[],
+            ),
+          ],
+        );
+        addTearDown(c.dispose);
+        c.read(selectedSessionProvider.notifier).state = 's1';
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: c,
+            child: const MaterialApp(
+              home: Scaffold(
+                body: DesktopChatPane(
+                  worktree: wt,
+                  showHeader: false,
+                  trackGlobalSelection: true,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // The pane's own worktree binding wins over the global session.
+        expect(find.byType(WorktreeStartView), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'double-split from a session keeps the session pane and makes every '
+      'worktree pane a harness picker (no dead pane, no mirroring)',
+      (tester) async {
+        const wt = SelectedWorktree(
+          projectId: 'p1',
+          path: '/tmp/wt',
+          branch: 'b',
+        );
+        final c = ProviderContainer(
+          overrides: [
+            sessionsProvider.overrideWithValue(SessionsState([_session()])),
+            eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+            sessionMetaProvider('s1').overrideWithValue(
+              const SessionMeta(
+                model: _model,
+                thinking: 'medium',
+                models: [_model],
+              ),
+            ),
+            agentsProvider.overrideWith(
+              (ref) async => const <AgentDescriptor>[],
+            ),
+          ],
+        );
+        addTearDown(c.dispose);
+        final ctrl = c.read(paneTreeControllerProvider.notifier);
+        // Reproduce the report: in session s1, ⌘D (→ s1 pane + worktree pane),
+        // then ⌘D again from the worktree pane (→ two worktree panes). Each
+        // step binds its pane explicitly, exactly as _splitPane does.
+        ctrl.bindActiveSession('s1');
+        ctrl.splitActive(Axis.horizontal, pinnedSessionId: 's1');
+        ctrl.bindActiveWorktree(wt);
+        c.read(selectedWorktreeProvider.notifier).state = wt;
+        ctrl.splitActive(Axis.horizontal, pinnedWorktree: wt);
+        ctrl.bindActiveWorktree(wt);
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        // Both worktree panes render a harness picker; neither falls into the
+        // dead "Select or start a session" state, and the session pane stays.
+        expect(find.byType(WorktreeStartView), findsNWidgets(2));
+        expect(find.text('Select or start a session'), findsNothing);
+      },
+    );
   });
 }
