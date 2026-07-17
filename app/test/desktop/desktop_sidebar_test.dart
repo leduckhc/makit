@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -285,6 +286,149 @@ void main() {
     await tester.tap(find.text('feat/login'));
     await tester.pumpAndSettle();
     expect(find.text('Fix login bug'), findsOneWidget);
+  });
+
+  testWidgets('tapping the repo header folds/unfolds its worktrees', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    // Worktree is visible by default (repo group starts expanded).
+    expect(find.text('feat/login'), findsOneWidget);
+
+    // Tapping the repo name row collapses the whole group.
+    await tester.tap(find.text('alpha'));
+    await tester.pumpAndSettle();
+    expect(find.text('feat/login'), findsNothing);
+
+    // Tapping again re-expands it.
+    await tester.tap(find.text('alpha'));
+    await tester.pumpAndSettle();
+    expect(find.text('feat/login'), findsOneWidget);
+  });
+
+  testWidgets('repo header overflow menu lists Hide + New worktree', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+        ),
+      ],
+      sessions: const [],
+    );
+
+    await tester.tap(find.byTooltip('Repo actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Hide the repo'), findsOneWidget);
+    expect(find.text('New worktree from…'), findsOneWidget);
+  });
+
+  testWidgets(
+    'hovering a worktree hides the diff pill and shows the actions menu',
+    (tester) async {
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [
+              _worktree(
+                'wt-feat',
+                branch: 'feat/login',
+                insertions: 12,
+                deletions: 3,
+                sessionIds: ['s1'],
+              ),
+            ],
+          ),
+        ],
+        sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+      );
+
+      // Off-hover: the diff pill is visible, no actions menu.
+      expect(find.text('+12'), findsOneWidget);
+      expect(find.byTooltip('Worktree actions'), findsNothing);
+
+      // Hover over the branch row.
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('feat/login')));
+      await tester.pumpAndSettle();
+
+      // On-hover: the diff pill is replaced by the actions menu.
+      expect(find.text('+12'), findsNothing);
+      expect(find.byTooltip('Worktree actions'), findsOneWidget);
+
+      // Opening the menu lists both actions.
+      await tester.tap(find.byTooltip('Worktree actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Rename branch'), findsOneWidget);
+      expect(find.text('Delete worktree'), findsOneWidget);
+    },
+  );
+
+  testWidgets('Rename branch is disabled on a worktree with an open PR', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree(
+              'wt-pr',
+              branch: 'feat/has-pr',
+              sessionIds: ['s1'],
+              pr: const PullRequest(
+                number: 7,
+                url: '',
+                state: 'OPEN',
+                title: 'x',
+                isDraft: false,
+              ),
+            ),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'work', 'pi')],
+    );
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('feat/has-pr')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Worktree actions'));
+    await tester.pumpAndSettle();
+
+    // The disabled 'Rename branch' item renders but its PopupMenuItem is
+    // disabled (onTap null).
+    final item = tester.widget<PopupMenuItem<String>>(
+      find.widgetWithText(PopupMenuItem<String>, 'Rename branch'),
+    );
+    expect(item.enabled, isFalse);
   });
 
   testWidgets('fold button collapses the sidebar via the provider', (

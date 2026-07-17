@@ -120,6 +120,10 @@ void main() {
       await tester.tap(find.text('beta · develop').last);
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
+      // Switching repos also refetches the repo's open PRs; let that request
+      // time out (no server) so no Timer is left pending, mirroring the
+      // agents.list drain above.
+      await tester.pump(const Duration(seconds: 11));
 
       // No "exactly one item" assertion, and the branch field adopted beta's
       // default rather than the now-invalid 'main'.

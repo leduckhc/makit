@@ -222,6 +222,32 @@ class PullRequest {
   }
 }
 
+/// An open pull request as returned by the `pr.list` command, used to populate
+/// the "New worktree from PR" picker.
+class OpenPr {
+  const OpenPr({
+    required this.number,
+    required this.title,
+    required this.headRefName,
+    required this.isDraft,
+    required this.url,
+  });
+
+  final int number;
+  final String title;
+  final String headRefName;
+  final bool isDraft;
+  final String url;
+
+  static OpenPr fromJson(Map<String, dynamic> j) => OpenPr(
+    number: (j['number'] as num?)?.toInt() ?? 0,
+    title: j['title'] is String ? j['title'] as String : '',
+    headRefName: j['headRefName'] is String ? j['headRefName'] as String : '',
+    isDraft: j['isDraft'] == true,
+    url: j['url'] is String ? j['url'] as String : '',
+  );
+}
+
 /// One git worktree of a repo. `isPrimary` marks the repo's main checkout;
 /// other worktrees are feature branches created for sessions. Diff stats are
 /// measured against the repo's default branch.

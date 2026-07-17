@@ -94,6 +94,10 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   static const int _maxCollapsed = 5;
   bool _showAll = false;
 
+  /// Whether the repo group is expanded. Clicking the header row toggles it;
+  /// when collapsed the worktrees, "show more" pill, and drafts are hidden.
+  bool _expanded = true;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -116,24 +120,47 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 2),
           child: Row(
             children: [
-              Icon(
-                Symbols.folder_special,
-                size: 16,
-                weight: 200,
-                color: theme.colorScheme.outline,
-              ),
-              const SizedBox(width: 6),
               Expanded(
-                child: Text(
-                  repo.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall?.copyWith(
-                    letterSpacing: 0.6,
-                    fontWeight: FontWeight.w400,
+                child: InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _expanded
+                              ? Symbols.keyboard_arrow_down
+                              : Symbols.keyboard_arrow_right,
+                          size: 16,
+                          weight: 200,
+                          color: theme.colorScheme.outline,
+                        ),
+                        const SizedBox(width: 2),
+                        Icon(
+                          Symbols.folder_special,
+                          size: 16,
+                          weight: 200,
+                          color: theme.colorScheme.outline,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            repo.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              letterSpacing: 0.6,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
+              _RepoMenuButton(repo: repo),
               IconButton(
                 tooltip: 'New worktree',
                 visualDensity: VisualDensity.compact,
@@ -144,50 +171,81 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
             ],
           ),
         ),
-        for (final wt in visible)
-          _WorktreeGroup(
-            key: ValueKey(wt.id),
-            repo: repo,
-            worktree: wt,
-            sessions: wt.sessionIds
-                .map((id) => byId[id])
-                .whereType<Session>()
-                .toList(),
-            selectedId: selectedId,
-            onSelect: onSelect,
-          ),
-        if (showMore)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(38, 2, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: InkWell(
-                onTap: () => setState(() => _showAll = !_showAll),
-                borderRadius: BorderRadius.circular(10),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  child: Text(
-                    _showAll
-                        ? 'Show less'
-                        : 'Show ${worktrees.length - _maxCollapsed} more',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.primary,
-                      fontWeight: FontWeight.w500,
+        if (_expanded) ...[
+          for (final wt in visible)
+            _WorktreeGroup(
+              key: ValueKey(wt.id),
+              repo: repo,
+              worktree: wt,
+              sessions: wt.sessionIds
+                  .map((id) => byId[id])
+                  .whereType<Session>()
+                  .toList(),
+              selectedId: selectedId,
+              onSelect: onSelect,
+            ),
+          if (showMore)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(38, 2, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: InkWell(
+                  onTap: () => setState(() => _showAll = !_showAll),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    child: Text(
+                      _showAll
+                          ? 'Show less'
+                          : 'Show ${worktrees.length - _maxCollapsed} more',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        for (final s in drafts)
-          _DraftWorktreeTile(
-            session: s,
-            selected: s.id == selectedId,
-            onTap: () => onSelect(s.id),
-          ),
+          for (final s in drafts)
+            _DraftWorktreeTile(
+              session: s,
+              selected: s.id == selectedId,
+              onTap: () => onSelect(s.id),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The repo header's overflow menu (the triple-dots left of +). Hosts repo-
+/// scoped actions: hide the repo (untrack it) and open the richer
+/// "New worktree from…" dialog. More items land here later.
+class _RepoMenuButton extends ConsumerWidget {
+  const _RepoMenuButton({required this.repo});
+
+  final RepoInfo repo;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<String>(
+      tooltip: 'Repo actions',
+      icon: const Icon(Symbols.more_horiz, size: 16, weight: 200),
+      onSelected: (value) {
+        switch (value) {
+          case 'hide':
+            ref.read(storeControllerProvider.notifier).removeProject(repo.id);
+          case 'new-worktree':
+            showNewSessionDialog(context, ref, projectId: repo.id);
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(value: 'hide', child: Text('Hide the repo')),
+        PopupMenuItem(value: 'new-worktree', child: Text('New worktree from…')),
       ],
     );
   }
@@ -217,6 +275,7 @@ class _WorktreeGroup extends ConsumerStatefulWidget {
 
 class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   bool _expanded = true;
+  bool _hovering = false;
 
   @override
   Widget build(BuildContext context) {
@@ -236,126 +295,135 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        InkWell(
-          onTap: () {
-            if (selectable) {
-              selectWorktree(
-                ref,
-                SelectedWorktree(
-                  projectId: repo.id,
-                  path: worktree.path,
-                  branch: worktree.branch,
-                ),
-              );
-            } else {
-              setState(() => _expanded = !_expanded);
-            }
-          },
-          child: Container(
-            color: worktreeSelected
-                ? theme.colorScheme.surfaceContainerHighest
-                : null,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 4),
-                      // Open PR → the merge symbol; otherwise the plain
-                      // worktree/branch icon that predated the PR-centric
-                      // redesign (still used by the draft-worktree tile and
-                      // any non-open PR).
-                      if (worktree.pr?.state.toUpperCase() == 'OPEN')
-                        const Icon(
-                          Symbols.call_merge,
-                          size: 24,
-                          weight: 200,
-                          color: kRepoAccent,
-                        )
-                      else
-                        Icon(
-                          Symbols.fork_right,
-                          size: 24,
-                          weight: 200,
-                          color: theme.colorScheme.outline,
-                        ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                branch,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall,
-                              ),
-                            ),
-                            if (isCurrent) ...[
-                              const SizedBox(width: 5),
-                              Icon(
-                                Symbols.star,
-                                size: 13,
-                                weight: 200,
-                                color: theme.colorScheme.outline,
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (worktree.hasChanges)
-                        DiffChip(
-                          insertions: worktree.insertions,
-                          deletions: worktree.deletions,
-                        ),
-                    ],
+        MouseRegion(
+          onEnter: (_) => setState(() => _hovering = true),
+          onExit: (_) => setState(() => _hovering = false),
+          child: InkWell(
+            onTap: () {
+              if (selectable) {
+                selectWorktree(
+                  ref,
+                  SelectedWorktree(
+                    projectId: repo.id,
+                    path: worktree.path,
+                    branch: worktree.branch,
                   ),
-                ),
-                // Sub-row below the branch, inside the same hover/tap group: the
-                // PR number label (when present) followed by the low-emphasis
-                // branch age. Fixed height so the row always reserves its place.
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(52, 0, 16, 4),
-                  child: SizedBox(
-                    height: 16,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (worktree.pr != null) ...[
-                            Text(
-                              'PR #${worktree.pr!.number}',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.outline,
-                                fontWeight: FontWeight.w300,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '•',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.outline,
-                                fontWeight: FontWeight.w300,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          Text(
-                            _branchAgeLabel(worktree.committedAt),
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.outline,
-                              fontWeight: FontWeight.w300,
-                            ),
+                );
+              } else {
+                setState(() => _expanded = !_expanded);
+              }
+            },
+            child: Container(
+              color: worktreeSelected
+                  ? theme.colorScheme.surfaceContainerHighest
+                  : null,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 4),
+                        // Open PR → the merge symbol; otherwise the plain
+                        // worktree/branch icon that predated the PR-centric
+                        // redesign (still used by the draft-worktree tile and
+                        // any non-open PR).
+                        if (worktree.pr?.state.toUpperCase() == 'OPEN')
+                          const Icon(
+                            Symbols.call_merge,
+                            size: 24,
+                            weight: 200,
+                            color: kRepoAccent,
+                          )
+                        else
+                          Icon(
+                            Symbols.fork_right,
+                            size: 24,
+                            weight: 200,
+                            color: theme.colorScheme.outline,
                           ),
-                        ],
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  branch,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                              ),
+                              if (isCurrent) ...[
+                                const SizedBox(width: 5),
+                                Icon(
+                                  Symbols.star,
+                                  size: 13,
+                                  weight: 200,
+                                  color: theme.colorScheme.outline,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // On hover the diff pill is replaced by the worktree
+                        // overflow menu (rename / delete). Off-hover it shows
+                        // the diff stats (when the tree has changes).
+                        if (_hovering)
+                          _WorktreeMenuButton(repo: repo, worktree: worktree)
+                        else if (worktree.hasChanges)
+                          DiffChip(
+                            insertions: worktree.insertions,
+                            deletions: worktree.deletions,
+                          ),
+                      ],
+                    ),
+                  ),
+                  // Sub-row below the branch, inside the same hover/tap group: the
+                  // PR number label (when present) followed by the low-emphasis
+                  // branch age. Fixed height so the row always reserves its place.
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(52, 0, 16, 4),
+                    child: SizedBox(
+                      height: 16,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (worktree.pr != null) ...[
+                              Text(
+                                'PR #${worktree.pr!.number}',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.outline,
+                                  fontWeight: FontWeight.w300,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '•',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.outline,
+                                  fontWeight: FontWeight.w300,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              _branchAgeLabel(worktree.committedAt),
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: theme.colorScheme.outline,
+                                fontWeight: FontWeight.w300,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -369,6 +437,123 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
             ),
       ],
     );
+  }
+}
+
+/// The worktree row's hover overflow menu (triple dots that replace the diff
+/// pill on hover). Hosts "Rename branch" (disabled while the branch has an
+/// open PR) and "Delete worktree" (confirm, then force-remove).
+class _WorktreeMenuButton extends ConsumerWidget {
+  const _WorktreeMenuButton({required this.repo, required this.worktree});
+
+  final RepoInfo repo;
+  final Worktree worktree;
+
+  bool get _hasOpenPr => worktree.pr?.state.toUpperCase() == 'OPEN';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<String>(
+      tooltip: 'Worktree actions',
+      icon: const Icon(Symbols.more_vert, size: 16, weight: 200),
+      onSelected: (value) {
+        switch (value) {
+          case 'rename':
+            _renameBranch(context, ref);
+          case 'delete':
+            _deleteWorktree(context, ref);
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'rename',
+          enabled: !_hasOpenPr,
+          child: Tooltip(
+            message: _hasOpenPr
+                ? "Can't rename a branch with an open pull request"
+                : '',
+            child: const Text('Rename branch'),
+          ),
+        ),
+        const PopupMenuItem(value: 'delete', child: Text('Delete worktree')),
+      ],
+    );
+  }
+
+  Future<void> _renameBranch(BuildContext context, WidgetRef ref) async {
+    final controller = TextEditingController(text: worktree.branch ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename branch'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'New branch name'),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || newName == worktree.branch) {
+      return;
+    }
+    try {
+      await ref
+          .read(storeControllerProvider.notifier)
+          .renameBranch(repo.id, worktree.path, newName);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Rename failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _deleteWorktree(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete worktree'),
+        content: Text(
+          'Delete the worktree for "${worktree.branch ?? worktree.path}"? '
+          'Uncommitted changes will be lost and any running sessions in it '
+          'will be stopped.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref
+          .read(storeControllerProvider.notifier)
+          .removeWorktree(repo.id, worktree.path);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
+    }
   }
 }
 

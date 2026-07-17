@@ -30,20 +30,40 @@ class _NewSessionDialog extends ConsumerStatefulWidget {
   ConsumerState<_NewSessionDialog> createState() => _NewSessionDialogState();
 }
 
-class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
+class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
+    with SingleTickerProviderStateMixin {
   String? _projectId;
   String? _baseBranch;
   bool _spawning = false;
   String? _error;
+  late final TabController _tabs;
+  Future<List<OpenPr>>? _prsFuture;
 
   @override
   void initState() {
     super.initState();
+    _tabs = TabController(length: 3, initialIndex: 1, vsync: this);
     // Preselect the caller's repo, else the first one.
     final repos = ref.read(reposProvider).repos;
     _projectId =
         widget.initialProjectId ?? (repos.isNotEmpty ? repos.first.id : null);
     _baseBranch = _defaultBranchFor(_projectId);
+    _loadPrs();
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  /// (Re)fetch the open-PR list for the selected repo. Called on open and
+  /// whenever the repo changes so the PR tab reflects the current repo.
+  void _loadPrs() {
+    final projectId = _projectId;
+    _prsFuture = projectId == null
+        ? Future.value(const <OpenPr>[])
+        : ref.read(storeControllerProvider.notifier).listOpenPrs(projectId);
   }
 
   /// The repo's default fork point: its default branch, else current, else the
@@ -146,15 +166,48 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     }
   }
 
+  /// Create a worktree that checks out the selected PR's head branch, then land
+  /// on it (same as the branch flow).
+  Future<void> _createFromPr(int prNumber) async {
+    final projectId = _projectId;
+    if (projectId == null) return;
+    setState(() {
+      _spawning = true;
+      _error = null;
+    });
+    try {
+      final result = await ref
+          .read(storeControllerProvider.notifier)
+          .createWorktreeFromPr(projectId, prNumber);
+      if (!mounted) return;
+      selectWorktree(
+        ref,
+        SelectedWorktree(
+          projectId: projectId,
+          path: result.path,
+          branch: result.branch,
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _spawning = false;
+        _error = '$e';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final repos = ref.watch(reposProvider).repos;
-    final canStart = _projectId != null && !_spawning;
+    final theme = Theme.of(context);
 
     return AlertDialog(
-      title: const Text('New worktree'),
+      title: const Text('New worktree from…'),
       content: SizedBox(
-        width: 420,
+        width: 460,
+        height: 380,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -186,15 +239,27 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                 onChanged: (v) => setState(() {
                   _projectId = v;
                   _baseBranch = _defaultBranchFor(v);
+                  _loadPrs();
                 }),
               ),
-            _branchField(repos),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+            const SizedBox(height: 12),
+            TabBar(
+              controller: _tabs,
+              tabs: const [
+                Tab(text: 'PR'),
+                Tab(text: 'Branch'),
+                Tab(text: 'Issue'),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabs,
+                children: [_prTab(theme), _branchTab(repos), _issueTab(theme)],
               ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
             ],
           ],
         ),
@@ -202,8 +267,67 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       actions: [
         TextButton(
           onPressed: _spawning ? null : () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: const Text('Close'),
         ),
+      ],
+    );
+  }
+
+  /// PR tab: the open-PR list; tapping one forks a worktree on its head branch.
+  Widget _prTab(ThemeData theme) {
+    return FutureBuilder<List<OpenPr>>(
+      future: _prsFuture,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final prs = snap.data ?? const <OpenPr>[];
+        if (prs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No open pull requests\n(or GitHub CLI is unavailable).',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: theme.colorScheme.outline),
+              ),
+            ),
+          );
+        }
+        return ListView.builder(
+          itemCount: prs.length,
+          itemBuilder: (context, i) {
+            final pr = prs[i];
+            return ListTile(
+              dense: true,
+              enabled: !_spawning,
+              leading: Text('#${pr.number}'),
+              title: Text(
+                pr.title.isEmpty ? pr.headRefName : pr.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                pr.headRefName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              onTap: () => _createFromPr(pr.number),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Branch tab: pick a base branch and fork a fresh worktree off it.
+  Widget _branchTab(List<RepoInfo> repos) {
+    final canStart = _projectId != null && !_spawning;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _branchField(repos),
+        const SizedBox(height: 16),
         FilledButton(
           onPressed: canStart ? _start : null,
           child: _spawning
@@ -212,9 +336,23 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text('Create'),
+              : const Text('Create worktree'),
         ),
       ],
+    );
+  }
+
+  /// Issue tab: placeholder for the future "start working on an issue" flow.
+  Widget _issueTab(ThemeData theme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(
+          'Starting a worktree from a GitHub issue\nis coming soon.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: theme.colorScheme.outline),
+        ),
+      ),
     );
   }
 }
