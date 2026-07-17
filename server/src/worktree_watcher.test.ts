@@ -222,3 +222,106 @@ test("watchWorktrees keeps firing (and does not crash) when a worktree is remove
     rmSync(wtBase, { recursive: true, force: true });
   }
 });
+
+test("watchWorktrees tracks multiple repos independently, including a LINKED worktree", async () => {
+  // Regression: resolveGitPaths is computed per-repo. Watching a primary repo
+  // and a linked worktree of a *different* repo at the same time must not let
+  // either resolution bleed into the other, and dropping one must not disturb
+  // the other's still-active watcher.
+  const repoA = makeRepo();
+  const repoB = makeRepo();
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  const linkedB = join(wtBase, "linkedB");
+  execFileSync("git", ["worktree", "add", "-b", "linkedB-branch", linkedB], { cwd: repoB });
+
+  let fired = 0;
+  const watcher = watchWorktrees(() => fired++, { debounceMs: 20 });
+  watcher.sync([repoA, linkedB]);
+  try {
+    await delay(80);
+
+    execFileSync("git", ["worktree", "add", "-b", "a-feat", join(wtBase, "a-feat")], {
+      cwd: repoA,
+    });
+    await waitFor(() => fired > 0);
+    const afterA = fired;
+
+    // A worktree add from the linked checkout of repoB must also fire, via
+    // its own resolved common gitdir (distinct from repoA's).
+    execFileSync("git", ["worktree", "add", "-b", "b-feat", join(wtBase, "b-feat")], {
+      cwd: linkedB,
+    });
+    await waitFor(() => fired > afterA);
+
+    // Dropping repoA must not disturb the still-registered linkedB watcher.
+    watcher.sync([linkedB]);
+    await delay(80);
+    const beforeDrop = fired;
+    execFileSync("git", ["worktree", "add", "-b", "a-feat-2", join(wtBase, "a-feat-2")], {
+      cwd: repoA,
+    });
+    await delay(150);
+    assert.equal(fired, beforeDrop, "dropped repoA must not fire anymore");
+
+    execFileSync("git", ["worktree", "add", "-b", "b-feat-2", join(wtBase, "b-feat-2")], {
+      cwd: linkedB,
+    });
+    await waitFor(() => fired > beforeDrop);
+  } finally {
+    watcher.close();
+    rmSync(repoA, { recursive: true, force: true });
+    rmSync(repoB, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees.sync idempotently drops a watcher on a LINKED worktree path", async () => {
+  const repo = makeRepo();
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  const linked = join(wtBase, "linked");
+  execFileSync("git", ["worktree", "add", "-b", "linked-branch", linked], { cwd: repo });
+
+  let fired = 0;
+  const watcher = watchWorktrees(() => fired++, { debounceMs: 10 });
+  try {
+    watcher.sync([linked]);
+    watcher.sync([linked]); // idempotent — must not leave a duplicate watcher
+    watcher.sync([]); // dropped — watchers on the resolved common gitdir are closed
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "after-drop", join(wtBase, "after-drop")], {
+      cwd: linked,
+    });
+    await delay(150);
+    assert.equal(fired, 0, "dropped linked-worktree watcher must not fire after a worktree add");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees does not fire for an existing directory that is not part of any git repo", async () => {
+  // Boundary case distinct from the non-existent-path test: the directory
+  // exists (so `realpathSync` succeeds), but `git rev-parse` fails because it
+  // isn't inside any repo at all, so resolution must fall back to a no-op
+  // rather than throwing or wandering into an unrelated repo.
+  const plainDir = mkdtempSync(join(tmpdir(), "makit-plain-"));
+  const repo = makeRepo(); // unrelated repo, to prove nothing bleeds across
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  let fired = 0;
+  const watcher = watchWorktrees(() => fired++, { debounceMs: 10 });
+  assert.doesNotThrow(() => watcher.sync([plainDir]));
+  try {
+    await delay(80);
+    execFileSync("git", ["worktree", "add", "-b", "unrelated", join(wtBase, "unrelated")], {
+      cwd: repo,
+    });
+    await delay(150);
+    assert.equal(fired, 0, "a plain non-repo directory must not fire on unrelated git activity");
+  } finally {
+    watcher.close();
+    rmSync(plainDir, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
