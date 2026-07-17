@@ -278,7 +278,7 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Choose a harness',
+                          'Select your harness',
                           style: theme.textTheme.titleMedium,
                         ),
                         const SizedBox(height: 4),

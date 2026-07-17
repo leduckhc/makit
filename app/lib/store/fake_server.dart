@@ -288,6 +288,24 @@ class FakeServer {
         _emit(Envelope(t: MsgType.ack, id: env.id));
         _pushRepos();
         return;
+      case 'agents.list':
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: const {
+              'agents': [
+                {
+                  'id': 'pi',
+                  'label': 'Pi (native)',
+                  'transport': 'native',
+                  'available': true,
+                },
+              ],
+            },
+          ),
+        );
+        return;
     }
 
     final sid = env.body['sessionId'] as String? ?? '';
