@@ -92,6 +92,16 @@ export interface ChildLineTransport {
    * adapters that surface richer diagnostics.
    */
   onExit(cb: (code: number | null, info: ChildExitInfo) => void): void;
+  /**
+   * Register a stdout-end listener. Fires exactly once, after every buffered
+   * stdout line (including a final unterminated one) has been delivered to
+   * `onLine` listeners. This is the correct "no more lines will ever arrive"
+   * signal: the child `'exit'` event can fire while stdio is still open, so
+   * closing a consumer on `onExit` can drop the tail of the agent's output.
+   * A spawn fault (child `'error'`) or stdout close also settles it, so it
+   * always fires eventually. Late registrants are replayed.
+   */
+  onStreamEnd(cb: () => void): void;
   /** Terminate the child (SIGTERM); safe to call repeatedly. */
   dispose(): void;
 }
@@ -172,6 +182,21 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
     if (buf.length > 0 && !dropUntilNewline) safeInvoke(opts.label, "line", lineCbs, buf);
   });
 
+  // ---- stream end: settle once, after the final-line flush above ----------
+  const streamEndCbs: Array<() => void> = [];
+  let streamEnded = false;
+  const settleStreamEnd = () => {
+    if (streamEnded) return;
+    streamEnded = true;
+    safeInvoke(opts.label, "stream-end", streamEndCbs);
+  };
+  // 'end' is the primary signal (all buffered data delivered); 'close' and the
+  // child 'error' fault are backstops for streams that are destroyed without
+  // ever ending (e.g. a failed spawn), so consumers are never left hanging.
+  child.stdout?.on("end", settleStreamEnd);
+  child.stdout?.on("close", settleStreamEnd);
+  child.on("error", settleStreamEnd);
+
   return {
     send: (line: string) => {
       const stdin = child.stdin;
@@ -190,6 +215,10 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
     onExit: (cb) => {
       exitCbs.push(cb);
       if (settled && bufferedInfo) safeInvoke(opts.label, "exit", [cb], bufferedInfo.code, bufferedInfo); // replay
+    },
+    onStreamEnd: (cb) => {
+      streamEndCbs.push(cb);
+      if (streamEnded) safeInvoke(opts.label, "stream-end", [cb]); // replay
     },
     dispose: () => {
       try {

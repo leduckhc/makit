@@ -131,6 +131,48 @@ test("send after the stream is destroyed is a no-op (never throws)", () => {
   assert.doesNotThrow(() => t.send("late"));
 });
 
+test("onStreamEnd fires after the final unterminated line is flushed", () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  const order: string[] = [];
+  t.onLine((l) => order.push(`line:${l}`));
+  t.onStreamEnd(() => order.push("end"));
+
+  const child = children[0]!;
+  // 'exit' before stdout drains — must NOT end the stream.
+  child.emit("exit", 0, null);
+  child.stdout.emit("data", '{"late":1}\n{"tail":2}');
+  child.stdout.emit("end");
+  assert.deepEqual(order, ['line:{"late":1}', 'line:{"tail":2}', "end"]);
+});
+
+test("onStreamEnd settles once, replays to late registrants, and fires on stdout 'close'", () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  let fired = 0;
+  t.onStreamEnd(() => fired++);
+
+  const child = children[0]!;
+  // A destroyed-without-end stream (e.g. failed spawn) still settles via 'close'.
+  child.stdout.emit("close");
+  child.stdout.emit("end"); // second signal must not re-fire
+  assert.equal(fired, 1);
+
+  let late = 0;
+  t.onStreamEnd(() => late++); // registered after settle → replayed
+  assert.equal(late, 1);
+});
+
+test("a spawn fault (child 'error') settles onStreamEnd", () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  let ended = false;
+  t.onStreamEnd(() => (ended = true));
+
+  children[0]!.emit("error", Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
+  assert.equal(ended, true);
+});
+
 test("dispose kills the child", () => {
   const { spawn, children } = fakeSpawn();
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });

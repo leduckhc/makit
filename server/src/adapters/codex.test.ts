@@ -28,6 +28,7 @@ function fakeAppServer() {
       lineCb = cb;
     },
     onExit: () => {},
+    onStreamEnd: () => {},
     dispose: () => {},
   };
 

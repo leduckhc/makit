@@ -388,7 +388,7 @@ export function defaultConnect(spec: AcpSpawnSpec) {
 function lineTransportToStream(proc: {
   send: (line: string) => void;
   onLine: (cb: (line: string) => void) => void;
-  onExit: (cb: (code: number | null) => void) => void;
+  onStreamEnd: (cb: () => void) => void;
 }): Stream {
   const readable = new ReadableStream<AnyMessage>({
     start(controller) {
@@ -400,7 +400,10 @@ function lineTransportToStream(proc: {
           /* skip a malformed line rather than tear down the connection */
         }
       });
-      proc.onExit(() => {
+      // Close on stdout end, NOT process exit: 'exit' can fire while stdout
+      // still holds the agent's final frames, and enqueueing into a closed
+      // controller silently drops them (the catch above swallows the throw).
+      proc.onStreamEnd(() => {
         try {
           controller.close();
         } catch {
