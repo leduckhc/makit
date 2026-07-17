@@ -435,6 +435,34 @@ test("spawnPendingSession binds an existing worktree (branch from git) and rejec
   }
 });
 
+test("removeWorktree kills drafts still bound to the tree (pendingWorktreePath)", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+    // A draft bound to the worktree: its path lives on lifecycle.pendingWorktreePath
+    // (session.worktreePath is undefined until the draft is started).
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    assert.ok(manager.getSession(draft.id));
+    assert.equal(draft.worktreePath, undefined);
+
+    await manager.removeWorktree(projectId, wt.path);
+
+    // The draft is gone (would otherwise later start an agent in a deleted dir).
+    assert.equal(manager.getSession(draft.id), undefined);
+    assert.equal(existsSync(wt.path), false);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("spawnLinkedSession shares one virtual worktree across two drafts", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

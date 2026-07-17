@@ -307,7 +307,10 @@ export async function addWorktreeForPr(opts: {
 }): Promise<{ path: string; branch: string }> {
   const base = opts.baseDir ?? worktreeBaseDir();
   const repoName = basename(resolve(opts.repoPath));
-  const name = slugify(opts.headRefName) || `pr-${opts.prNumber}`;
+  // Include the PR number so two PRs whose head refs slugify to the same string
+  // (e.g. `feature/foo` and `feature-foo`) can't collide on the same directory.
+  const slug = slugify(opts.headRefName);
+  const name = slug ? `pr-${opts.prNumber}-${slug}` : `pr-${opts.prNumber}`;
   const target = join(base, repoName, name);
   // Detached checkout of HEAD so the worktree dir exists; gh then moves it to
   // the PR head. No timeout: populating a worktree can take a while.
