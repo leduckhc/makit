@@ -218,6 +218,50 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'per-pane composer text survives a divider resize (panes keyed by id, '
+      'not remounted)',
+      (tester) async {
+        final c = _twoSessionContainer();
+        addTearDown(c.dispose);
+        final ctrl = c.read(paneTreeControllerProvider.notifier);
+        ctrl.bindActiveSession('s1');
+        ctrl.splitActive(Axis.horizontal, pinnedSessionId: 's1');
+        ctrl.bindActiveSession('s2');
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        final fields = find.descendant(
+          of: find.byType(Composer),
+          matching: find.byType(EditableText),
+        );
+        await tester.enterText(fields.first, 'left pane text');
+        await tester.enterText(fields.last, 'right pane text');
+        await tester.pumpAndSettle();
+
+        // Resize the split. Keying the split view by object identity (rather
+        // than its id) would remount the whole subtree here, dropping both
+        // composers' text; keying by id keeps each pane's State intact.
+        final split = c.read(paneTreeControllerProvider).root as PaneSplit;
+        ctrl.adjustRatio(split.id, 0.1);
+        await tester.pumpAndSettle();
+
+        final after = find.descendant(
+          of: find.byType(Composer),
+          matching: find.byType(EditableText),
+        );
+        expect(
+          tester.widget<EditableText>(after.first).controller.text,
+          'left pane text',
+        );
+        expect(
+          tester.widget<EditableText>(after.last).controller.text,
+          'right pane text',
+        );
+      },
+    );
   });
 
   group('focus-composer shortcut targets the active leaf', () {

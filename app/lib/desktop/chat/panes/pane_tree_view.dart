@@ -64,10 +64,12 @@ class _PaneNodeView extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (node) {
       final PaneLeaf leaf => _PaneLeafView(
+        key: ValueKey(leaf.id),
         leaf: leaf,
         active: leaf.id == activeLeafId,
       ),
       final PaneSplit split => _PaneSplitView(
+        key: ValueKey(split.id),
         split: split,
         activeLeafId: activeLeafId,
       ),
@@ -78,7 +80,7 @@ class _PaneNodeView extends StatelessWidget {
 /// A [PaneSplit]: two children sized by [PaneSplit.ratio] with a draggable
 /// divider between them.
 class _PaneSplitView extends ConsumerWidget {
-  const _PaneSplitView({required this.split, required this.activeLeafId});
+  const _PaneSplitView({super.key, required this.split, required this.activeLeafId});
 
   final PaneSplit split;
   final String activeLeafId;
@@ -161,7 +163,7 @@ class _PaneDivider extends StatelessWidget {
 /// A [PaneLeaf]: a draggable header strip over a [DesktopChatPane], wrapped as a
 /// [DragTarget] that highlights the drop edge while a pane is dragged over it.
 class _PaneLeafView extends ConsumerStatefulWidget {
-  const _PaneLeafView({required this.leaf, required this.active});
+  const _PaneLeafView({super.key, required this.leaf, required this.active});
 
   final PaneLeaf leaf;
   final bool active;
@@ -341,12 +343,10 @@ class _PaneHeaderStrip extends ConsumerWidget {
             behavior: HitTestBehavior.opaque,
             onTap: () => controller.setActive(leaf.id),
             child: ColoredBox(
-              // Borderless tabs: transparent when idle, a faint accent wash on the
-              // active pane's header so the focused pane reads softly rather than
-              // with a hard outline.
-              color: active
-                  ? cs.primary.withValues(alpha: 0.06)
-                  : Colors.transparent,
+              // Borderless, tint-free tabs: the active pane already reads via
+              // its brighter title text, so the header stays transparent
+              // instead of carrying a coloured wash.
+              color: Colors.transparent,
               child: bar,
             ),
           ),

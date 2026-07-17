@@ -245,6 +245,12 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       return;
     }
     final worktreeBefore = ref.read(selectedWorktreeProvider);
+    if (worktreeBefore != null) {
+      // A sessionless worktree is already selected — split pane into the same
+      // worktree (same harness picker for both leaves).
+      selectWorktree(ref, worktreeBefore);
+      return;
+    }
     await showNewSessionDialog(context, ref, projectId: _currentProjectId(ref));
     // The scope may have unmounted while the dialog was open; bail before
     // touching providers through a potentially disposed ref.
@@ -259,7 +265,8 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     }
   }
 
-  /// The worktree the current pane sits in, derived from its resolved session
+  /// Attempt to derive the current pane's worktree from its session. Returns
+  /// null if the pane has no session or the session has no associated worktree.
   /// (a started session carries its [Session.worktreePath] + branch), else the
   /// already-selected sessionless worktree. Null when nothing is selected or
   /// the session is a still-pending draft without a worktree yet.
