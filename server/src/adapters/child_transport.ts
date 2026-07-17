@@ -23,6 +23,31 @@ import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 /** Max bytes of stderr kept for the exit diagnostic tail. */
 const STDERR_TAIL_BYTES = 8192;
 
+/**
+ * Default cap on a single unterminated stdout frame. A misbehaving agent that
+ * never emits an LF must not grow `buf` unbounded and OOM the daemon. Past this
+ * cap the in-progress frame is dropped and we resync at the next LF. A few MB
+ * is far larger than any legitimate JSON-RPC line.
+ */
+const DEFAULT_MAX_FRAME_BYTES = 4 * 1024 * 1024;
+
+/** Invoke each listener defensively — a throwing consumer must never escape
+ *  into a stream/exit event handler and take the whole daemon down. */
+function safeInvoke<T extends unknown[]>(
+  label: string,
+  what: string,
+  cbs: Array<(...args: T) => void>,
+  ...args: T
+): void {
+  for (const cb of cbs) {
+    try {
+      cb(...args);
+    } catch (e) {
+      process.stderr.write(`[${label}] ${what} listener threw: ${(e as Error).message}\n`);
+    }
+  }
+}
+
 export interface SpawnLineOptions {
   command: string;
   args?: string[];
@@ -33,6 +58,12 @@ export interface SpawnLineOptions {
   label: string;
   /** Injectable spawn (tests provide a fake); defaults to node's child_process. */
   spawn?: typeof nodeSpawn;
+  /**
+   * Cap on a single unterminated stdout frame (bytes). Defaults to
+   * {@link DEFAULT_MAX_FRAME_BYTES}. An in-progress frame that exceeds this is
+   * dropped (resync at the next LF) so a runaway child can't OOM the daemon.
+   */
+  maxFrameBytes?: number;
 }
 
 /** Extra context handed to `onExit` listeners (adapters may ignore it). */
@@ -90,14 +121,13 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
     if (settled) return;
     settled = true;
     bufferedInfo = info;
-    for (const cb of exitCbs) cb(info.code, info);
+    safeInvoke(opts.label, "exit", exitCbs, info.code, info);
   };
   child.on("exit", (code, signal) => settle({ code, signal, stderrTail }));
   child.on("error", (err: Error) => {
     process.stderr.write(`[${opts.label}] process error: ${err.message}\n`);
     settle({ code: null, signal: null, error: err, stderrTail });
   });
-
   // Writing to a dead child's stdin surfaces as an async 'error' (EPIPE); a
   // read fault on stdout/stderr likewise. None of these must become an
   // unlistened 'error' — the child 'error'/'exit' handlers own the real state
@@ -108,7 +138,11 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
 
   // ---- stdout: LF-only line splitting -------------------------------------
   const lineCbs: Array<(line: string) => void> = [];
+  const maxFrameBytes = opts.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES;
   let buf = "";
+  // Set once an oversized frame is seen: swallow bytes until the next LF so we
+  // resync on a fresh frame rather than delivering a truncated one.
+  let dropUntilNewline = false;
   child.stdout?.setEncoding?.("utf8");
   child.stdout?.on("data", (chunk: string | Buffer) => {
     buf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
@@ -116,12 +150,26 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
     while ((i = buf.indexOf("\n")) !== -1) {
       let line = buf.slice(0, i);
       buf = buf.slice(i + 1);
+      if (dropUntilNewline) {
+        // We were mid-drop; this LF ends the oversized frame — resync.
+        dropUntilNewline = false;
+        continue;
+      }
       if (line.endsWith("\r")) line = line.slice(0, -1);
-      for (const cb of lineCbs) cb(line);
+      safeInvoke(opts.label, "line", lineCbs, line);
+    }
+    // No LF yet and the pending frame is over the cap: drop it (and keep
+    // dropping until the next LF) so `buf` can't grow without bound.
+    if (buf.length > maxFrameBytes) {
+      process.stderr.write(
+        `[${opts.label}] dropping oversized stdout frame (> ${maxFrameBytes} bytes, no newline)\n`,
+      );
+      buf = "";
+      dropUntilNewline = true;
     }
   });
   child.stdout?.on("end", () => {
-    if (buf.length > 0) for (const cb of lineCbs) cb(buf);
+    if (buf.length > 0 && !dropUntilNewline) safeInvoke(opts.label, "line", lineCbs, buf);
   });
 
   return {
@@ -141,7 +189,7 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
     },
     onExit: (cb) => {
       exitCbs.push(cb);
-      if (settled && bufferedInfo) cb(bufferedInfo.code, bufferedInfo); // replay
+      if (settled && bufferedInfo) safeInvoke(opts.label, "exit", [cb], bufferedInfo.code, bufferedInfo); // replay
     },
     dispose: () => {
       try {

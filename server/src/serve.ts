@@ -57,14 +57,26 @@ export function parseArgs(argv: string[]) {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--port") args.port = Number(argv[++i]);
-    else if (a === "--host") args.host = String(argv[++i]);
+    // Reject a flag whose required value is missing (end of argv or another
+    // flag) rather than persisting `undefined`/`NaN` into startup state.
+    const requireValue = (): string => {
+      const v = argv[++i];
+      if (v === undefined) throw new Error(`missing value for ${a}`);
+      return v;
+    };
+    if (a === "--port") {
+      const port = Number(requireValue());
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error(`invalid --port (must be an integer in 1..65535): ${port}`);
+      }
+      args.port = port;
+    } else if (a === "--host") args.host = requireValue();
     else if (a === "--lan") args.lan = true;
-    else if (a === "--project" || a === "-C") args.projects.push(resolve(String(argv[++i])));
+    else if (a === "--project" || a === "-C") args.projects.push(resolve(requireValue()));
     else if (a === "--no-auth") args.noAuth = true;
     else if (a === "--no-persist") args.persist = false;
     else if (a === "--no-pair-qr") args.printPair = false;
-    else if (a === "--advertise") args.advertise = String(argv[++i]);
+    else if (a === "--advertise") args.advertise = requireValue();
   }
   if (args.host) {
     // Explicit --host overrides the secure-by-default decision (escape hatch,

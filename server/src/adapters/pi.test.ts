@@ -185,8 +185,9 @@ test("a spawn failure surfaces session.error+exited instead of crashing the daem
   const events: AdapterEvent[] = [];
   adapter.on("event", (e) => events.push(e));
 
-  // Must not throw / must not emit an unhandled 'error' that aborts the process.
-  await adapter.start({ cwd: "/tmp", sessionId: "s1" });
+  // Must not crash the daemon (no unhandled 'error'); start() rejects because
+  // pi terminated during bootstrap, but the events still surface.
+  await assert.rejects(adapter.start({ cwd: "/tmp", sessionId: "s1" }));
   await delay(50);
 
   const kinds = events.map((e) => e.kind);
@@ -199,6 +200,24 @@ test("a spawn failure surfaces session.error+exited instead of crashing the daem
   );
   // The dead child is dropped so the next send() can re-spawn.
   assert.equal((adapter as any).child, undefined);
+});
+
+test("start() rejects (no phantom idle) when pi exits during bootstrap", async () => {
+  const { spawn, children } = fakeSpawn((child) => {
+    // pi terminates mid-bootstrap (during the ~100ms settle wait).
+    setTimeout(() => child.emit("exit", 1, null), 10);
+  });
+  const adapter = new PiAdapter({ spawn });
+  const statuses: string[] = [];
+  adapter.on("status", (s) => statuses.push(s));
+
+  await assert.rejects(
+    adapter.start({ cwd: "/tmp", sessionId: "s1" }),
+    /pi exited during bootstrap/,
+  );
+  // A dead process must NOT be reported idle.
+  assert.ok(!statuses.includes("idle"), `must not emit idle on a dead process, got ${statuses.join(",")}`);
+  assert.equal(children.length, 1);
 });
 
 test("an EPIPE on pi's stdin does not crash the daemon", async () => {

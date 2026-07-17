@@ -18,6 +18,16 @@ import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./storage/event_store.js";
 
 /**
+ * Event kinds that are per-token streaming deltas. They advance lastActivityAt
+ * but must never fan out the sessions snapshot (SPEC-17 P2 hot path).
+ */
+const STREAMING_DELTA_KINDS: ReadonlySet<string> = new Set([
+  "agent.message.delta",
+  "agent.thinking.delta",
+  "tool.call.delta",
+]);
+
+/**
  * The draft → started state machine as a discriminated union (SPEC-17 P4).
  *
  * - `draft`: worktree + agent creation is deferred until the first substantive
@@ -169,26 +179,39 @@ export class Session extends EventEmitter {
       ? this.store.append(this.id, e)
       : { seq: this._events.length + 1, sessionId: this.id, ts: e.ts, kind: e.kind, payload: e.payload };
     this._events.push(event);
+
+    // Snapshot the DTO-visible fields BEFORE mutating so we can emit
+    // `metaChanged` only on an actual change (and never pre-assign status
+    // ahead of the comparison).
+    const prevStatus = this.status;
+    const prevPreview = this.lastPreview;
+    const prevActivity = this.lastActivityAt;
+
+    // Per-token streaming deltas are high-frequency and must NOT fan out the
+    // sessions snapshot (SPEC-17 P2: no O(clients × sessions) per-token cost).
+    // They still advance lastActivityAt; the change is broadcast lazily on the
+    // next non-streaming event.
+    const isStreamingDelta = STREAMING_DELTA_KINDS.has(event.kind);
+
     this.lastActivityAt = event.ts;
-    let metaChanged = false;
     if (event.kind === "user.message" || event.kind === "agent.message") {
       const t = (event.payload as { text?: string }).text;
-      if (typeof t === "string") {
-        this.lastPreview = t.slice(0, 200);
-        metaChanged = true;
-      }
+      if (typeof t === "string") this.lastPreview = t.slice(0, 200);
     } else if (event.kind === "session.status") {
       const s = (event.payload as { status?: SessionStatus }).status;
-      if (s) {
-        this.status = s;
-        metaChanged = true;
-      }
+      if (s) this.status = s;
     }
     this.persistMeta();
-    // Fan out a sessions-snapshot trigger ONLY when a DTO-visible field
-    // (preview/status) actually changed — per-token deltas leave it untouched
-    // (SPEC-17 P2: no O(clients × sessions) fan-out per streaming token).
-    if (metaChanged) this.emit("metaChanged");
+
+    // Fan out a sessions-snapshot trigger for a real, non-streaming DTO change
+    // (status/preview/lastActivityAt). Errors and tool events now refresh the
+    // list too (they advance lastActivityAt), while identical values on the
+    // same tick stay silent.
+    const changed =
+      this.status !== prevStatus ||
+      this.lastPreview !== prevPreview ||
+      this.lastActivityAt !== prevActivity;
+    if (!isStreamingDelta && changed) this.emit("metaChanged");
     return event;
   }
 
@@ -242,7 +265,8 @@ export class Session extends EventEmitter {
 
     adapter.on("status", (s) => {
       const status = s === "running" ? "running" : "idle";
-      this.status = status;
+      // Don't pre-assign this.status here — record() owns the mutation + the
+      // before/after comparison that decides whether to fan out metaChanged.
       this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
     });
 

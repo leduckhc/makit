@@ -85,6 +85,9 @@ export class SessionManager extends EventEmitter {
   private readonly attachedByPi = new Map<string, string>();
   /** In-flight attaches, so concurrent attach calls collapse onto one process. */
   private readonly attachInFlight = new Map<string, Promise<Session>>();
+  /** In-flight draft promotions, keyed by session id, so concurrent first
+   *  messages collapse onto one worktree/adapter instead of racing. */
+  private readonly promoteInFlight = new Map<string, Promise<boolean>>();
   private readonly adapterFactory?: AdapterFactory;
   private readonly onProjectsChanged?: (paths: string[]) => void;
   private readonly defaultModel?: string;
@@ -385,12 +388,26 @@ export class SessionManager extends EventEmitter {
    */
   async promotePendingSession(session: Session, firstMessage: string): Promise<boolean> {
     if (!session.pending) return true;
+    // Collapse concurrent first-message promotions onto one in-flight promise:
+    // two callers both seeing phase "draft" must NOT each create a worktree +
+    // adapter. The second caller awaits the same result the first produces.
+    const existing = this.promoteInFlight.get(session.id);
+    if (existing) return existing;
+
+    const task = (async () => {
+      try {
+        await this.startPendingSession(session.id, firstMessage);
+        return true;
+      } catch (e) {
+        session.recordError(`could not create worktree: ${(e as Error).message}`);
+        return false;
+      }
+    })();
+    this.promoteInFlight.set(session.id, task);
     try {
-      await this.startPendingSession(session.id, firstMessage);
-      return true;
-    } catch (e) {
-      session.recordError(`could not create worktree: ${(e as Error).message}`);
-      return false;
+      return await task;
+    } finally {
+      this.promoteInFlight.delete(session.id);
     }
   }
 

@@ -100,7 +100,12 @@ export async function mapElicitation(
     multiline: false,
   });
   if (resp.kind === "input" && !resp.cancelled && typeof resp.value === "string") {
-    return { action: "accept", content: { [name]: coerceFieldValue(resp.value, field.type) } };
+    const parsed = parseFieldValue(resp.value, field.type);
+    // A value that doesn't cleanly satisfy the declared schema type is
+    // declined rather than silently coerced (blank≠0, "abc"≠string number,
+    // 1.5≠integer, arbitrary text≠false).
+    if (!parsed.ok) return { action: "decline" };
+    return { action: "accept", content: { [name]: parsed.value } };
   }
   return { action: "decline" };
 }
@@ -113,12 +118,32 @@ interface ElicitationField {
   default?: unknown;
 }
 
-/** Coerce a free-text input value to the field's declared JSON-schema type. */
-export function coerceFieldValue(value: string, type: unknown): string | number | boolean {
+/**
+ * Validate a free-text input value against the field's declared JSON-schema
+ * type. Returns `{ ok:false }` for a value that doesn't cleanly satisfy the
+ * type so the caller can decline rather than silently coerce:
+ *   - number  → must parse to a finite number (blank/"abc" reject)
+ *   - integer → must parse to a finite integer (1.5 rejects)
+ *   - boolean → must be an exact truthy/falsy token (arbitrary text rejects)
+ *   - anything else (string / untyped) → accepted verbatim
+ */
+export function parseFieldValue(
+  value: string,
+  type: unknown,
+): { ok: true; value: string | number | boolean } | { ok: false } {
   if (type === "number" || type === "integer") {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : value;
+    const trimmed = value.trim();
+    if (trimmed === "") return { ok: false };
+    const n = Number(trimmed);
+    if (!Number.isFinite(n)) return { ok: false };
+    if (type === "integer" && !Number.isInteger(n)) return { ok: false };
+    return { ok: true, value: n };
   }
-  if (type === "boolean") return /^(true|yes|1|y)$/i.test(value.trim());
-  return value;
+  if (type === "boolean") {
+    const t = value.trim().toLowerCase();
+    if (/^(true|yes|1|y)$/.test(t)) return { ok: true, value: true };
+    if (/^(false|no|0|n)$/.test(t)) return { ok: true, value: false };
+    return { ok: false };
+  }
+  return { ok: true, value };
 }

@@ -59,14 +59,21 @@ test("streaming deltas do not re-broadcast the sessions snapshot; a status chang
   });
 
   const ping = (id: string) =>
-    new Promise<void>((resolve) => {
+    new Promise<void>((resolve, reject) => {
       const before = pongs.length;
       const timer = setInterval(() => {
         if (pongs.length > before && pongs.includes(id)) {
           clearInterval(timer);
+          clearTimeout(timeout);
           resolve();
         }
       }, 5);
+      // A missing pong must not leave the promise + interval alive forever
+      // (hanging the whole test run). Bound the barrier and fail loudly.
+      const timeout = setTimeout(() => {
+        clearInterval(timer);
+        reject(new Error(`ping ${id} timed out waiting for pong`));
+      }, 5000);
       ws.send(JSON.stringify({ v: PROTOCOL_VERSION, t: "ping", id, ts: Date.now() }));
     });
 
