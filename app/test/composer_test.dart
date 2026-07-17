@@ -37,6 +37,44 @@ void main() {
     },
   );
 
+  testWidgets(
+    'seeds the field from initialText and shows the send affordance',
+    (tester) async {
+      await tester.pumpWidget(
+        wrap(const Composer(onSend: _noop, initialText: 'half typed')),
+      );
+
+      // The restored draft is visible immediately, even before focus.
+      expect(find.text('half typed'), findsOneWidget);
+      // Non-empty seed → send affordance shows without any typing.
+      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'reports draft text via onDraftChanged while editing and clears on send',
+    (tester) async {
+      final drafts = <String>[];
+      final sent = <String>[];
+      await tester.pumpWidget(
+        wrap(Composer(onSend: sent.add, onDraftChanged: drafts.add)),
+      );
+
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'hi');
+      await tester.pumpAndSettle();
+      expect(drafts.last, 'hi');
+
+      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.pumpAndSettle();
+      expect(sent, ['hi']);
+      // Sending clears the field, so the last reported draft is empty — the
+      // caller uses this to prune the persisted draft.
+      expect(drafts.last, '');
+    },
+  );
+
   testWidgets('field starts compact (1 line) and grows to 10 lines on focus', (
     tester,
   ) async {
