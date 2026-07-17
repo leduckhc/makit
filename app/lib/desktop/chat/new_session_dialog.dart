@@ -42,7 +42,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, initialIndex: 1, vsync: this);
+    _tabs = TabController(length: 2, initialIndex: 1, vsync: this);
     // Preselect the caller's repo, else the first one.
     final repos = ref.read(reposProvider).repos;
     _projectId =
@@ -61,9 +61,15 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
   /// whenever the repo changes so the PR tab reflects the current repo.
   void _loadPrs() {
     final projectId = _projectId;
-    _prsFuture = projectId == null
+    final future = projectId == null
         ? Future.value(const <OpenPr>[])
         : ref.read(storeControllerProvider.notifier).listOpenPrs(projectId);
+    // TabBarView builds the PR tab lazily, so if the request fails before that
+    // tab is ever shown its rejection would surface as an unhandled async
+    // error. `ignore()` marks it handled; the tab's FutureBuilder still
+    // receives the error (and renders it) when it eventually attaches.
+    future.ignore();
+    _prsFuture = future;
   }
 
   /// The repo's default fork point: its default branch, else current, else the
@@ -248,13 +254,12 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
               tabs: const [
                 Tab(text: 'PR'),
                 Tab(text: 'Branch'),
-                Tab(text: 'Issue'),
               ],
             ),
             Expanded(
               child: TabBarView(
                 controller: _tabs,
-                children: [_prTab(theme), _branchTab(repos), _issueTab(theme)],
+                children: [_prTab(theme), _branchTab(repos)],
               ),
             ),
             if (_error != null) ...[
@@ -281,6 +286,21 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
         if (snap.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
+        // A real transport failure (dropped connection, timeout) is distinct
+        // from the server returning an empty list; surface it rather than
+        // masquerading as "no open PRs".
+        if (snap.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                "Couldn't load pull requests:\n${snap.error}",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+          );
+        }
         final prs = snap.data ?? const <OpenPr>[];
         if (prs.isEmpty) {
           return Center(
@@ -294,7 +314,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
             ),
           );
         }
-        return ListView.builder(
+        final list = ListView.builder(
           itemCount: prs.length,
           itemBuilder: (context, i) {
             final pr = prs[i];
@@ -315,6 +335,20 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
               onTap: () => _createFromPr(pr.number),
             );
           },
+        );
+        // While the worktree is being created, dim the list and show a spinner
+        // so the (unbounded) git/gh work is visibly in progress.
+        if (!_spawning) return list;
+        return Stack(
+          children: [
+            list,
+            Positioned.fill(
+              child: ColoredBox(
+                color: theme.colorScheme.surface.withValues(alpha: 0.6),
+                child: const Center(child: CircularProgressIndicator()),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -339,20 +373,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
               : const Text('Create worktree'),
         ),
       ],
-    );
-  }
-
-  /// Issue tab: placeholder for the future "start working on an issue" flow.
-  Widget _issueTab(ThemeData theme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(
-          'Starting a worktree from a GitHub issue\nis coming soon.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: theme.colorScheme.outline),
-        ),
-      ),
     );
   }
 }

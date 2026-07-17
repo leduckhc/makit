@@ -276,6 +276,7 @@ class _WorktreeGroup extends ConsumerStatefulWidget {
 class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   bool _expanded = true;
   bool _hovering = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -299,6 +300,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
           onEnter: (_) => setState(() => _hovering = true),
           onExit: (_) => setState(() => _hovering = false),
           child: InkWell(
+            onFocusChange: (f) => setState(() => _focused = f),
             onTap: () {
               if (selectable) {
                 selectWorktree(
@@ -367,10 +369,11 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // On hover the diff pill is replaced by the worktree
-                        // overflow menu (rename / delete). Off-hover it shows
-                        // the diff stats (when the tree has changes).
-                        if (_hovering)
+                        // On hover or keyboard focus the diff pill is replaced
+                        // by the worktree overflow menu (rename / delete), so
+                        // the actions are reachable without a pointer. Otherwise
+                        // it shows the diff stats (when the tree has changes).
+                        if (_hovering || _focused)
                           _WorktreeMenuButton(repo: repo, worktree: worktree)
                         else if (worktree.hasChanges)
                           DiffChip(
@@ -441,8 +444,9 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
 }
 
 /// The worktree row's hover overflow menu (triple dots that replace the diff
-/// pill on hover). Hosts "Rename branch" (disabled while the branch has an
-/// open PR) and "Delete worktree" (confirm, then force-remove).
+/// pill on hover). Hosts "Rename branch" and "Delete worktree", both disabled
+/// for the primary worktree; "Rename branch" is also disabled while the branch
+/// has an open PR.
 class _WorktreeMenuButton extends ConsumerWidget {
   const _WorktreeMenuButton({required this.repo, required this.worktree});
 
@@ -453,6 +457,8 @@ class _WorktreeMenuButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isPrimary = worktree.isPrimary;
+    final canRename = !_hasOpenPr && !isPrimary;
     return PopupMenuButton<String>(
       tooltip: 'Worktree actions',
       icon: const Icon(Symbols.more_vert, size: 16, weight: 200),
@@ -467,15 +473,24 @@ class _WorktreeMenuButton extends ConsumerWidget {
       itemBuilder: (context) => [
         PopupMenuItem(
           value: 'rename',
-          enabled: !_hasOpenPr,
+          enabled: canRename,
           child: Tooltip(
-            message: _hasOpenPr
+            message: isPrimary
+                ? "Can't rename the primary worktree's branch"
+                : _hasOpenPr
                 ? "Can't rename a branch with an open pull request"
                 : '',
             child: const Text('Rename branch'),
           ),
         ),
-        const PopupMenuItem(value: 'delete', child: Text('Delete worktree')),
+        PopupMenuItem(
+          value: 'delete',
+          enabled: !isPrimary,
+          child: Tooltip(
+            message: isPrimary ? "Can't delete the primary worktree" : '',
+            child: const Text('Delete worktree'),
+          ),
+        ),
       ],
     );
   }
@@ -485,26 +500,26 @@ class _WorktreeMenuButton extends ConsumerWidget {
     final String? newName;
     try {
       newName = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename branch'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'New branch name'),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Rename branch'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'New branch name'),
+            onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+              child: const Text('Rename'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Rename'),
-          ),
-        ],
-      ),
       );
     } finally {
       controller.dispose();

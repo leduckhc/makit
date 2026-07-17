@@ -431,6 +431,40 @@ void main() {
     expect(item.enabled, isFalse);
   });
 
+  testWidgets('primary worktree disables both Rename and Delete', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+        ),
+      ],
+      sessions: const [],
+    );
+
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('main')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Worktree actions'));
+    await tester.pumpAndSettle();
+
+    final rename = tester.widget<PopupMenuItem<String>>(
+      find.widgetWithText(PopupMenuItem<String>, 'Rename branch'),
+    );
+    final delete = tester.widget<PopupMenuItem<String>>(
+      find.widgetWithText(PopupMenuItem<String>, 'Delete worktree'),
+    );
+    expect(rename.enabled, isFalse);
+    expect(delete.enabled, isFalse);
+  });
+
   testWidgets('fold button collapses the sidebar via the provider', (
     tester,
   ) async {

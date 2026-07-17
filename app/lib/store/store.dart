@@ -421,22 +421,20 @@ class StoreController extends StateNotifier<StoreState> {
     return (path: path, branch: ack['branch'] as String?);
   }
 
-  /// List the open PRs for a repo (the "New worktree from PR" picker). Returns
-  /// [] when `gh` is unavailable/unauthenticated server-side, or the request
-  /// fails/times out — the picker just shows an empty list rather than erroring.
+  /// List the open PRs for a repo (the "New worktree from PR" picker). The
+  /// server already returns [] when `gh` is unavailable/unauthenticated, so an
+  /// empty result means "no open PRs"; a thrown error means the request itself
+  /// failed (dropped connection, timeout) and the caller surfaces it distinctly.
   Future<List<OpenPr>> listOpenPrs(String projectId) async {
-    try {
-      final ack = await _ref
-          .read(connectionControllerProvider.notifier)
-          .request(MsgType.cmd, {'kind': 'pr.list', 'projectId': projectId});
-      final raw = (ack['prs'] as List?) ?? const [];
-      return raw
-          .whereType<Map<dynamic, dynamic>>()
-          .map((m) => OpenPr.fromJson(Map<String, dynamic>.from(m)))
-          .toList();
-    } catch (_) {
-      return const [];
-    }
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'pr.list', 'projectId': projectId},
+    );
+    final raw = (ack['prs'] as List?) ?? const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => OpenPr.fromJson(Map<String, dynamic>.from(m)))
+        .toList();
   }
 
   /// Create a worktree that checks out an existing PR's head branch. Returns
