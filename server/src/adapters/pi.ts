@@ -199,6 +199,12 @@ export class PiAdapter extends SubprocessAdapter {
     // app can populate its slash palette with real extensions/skills/prompts,
     // plus the model/thinking state that drives the composer selectors.
     await new Promise((r) => setTimeout(r, 100));
+    // If pi died during the bootstrap wait, onChildExit already cleared
+    // `this.transport`. Fail startup rather than emitting a phantom `idle` on a
+    // dead process (the next send() would then re-spawn cleanly).
+    if (this.transport !== transport) {
+      throw new Error("pi exited during bootstrap");
+    }
     this.writeCommand({ id: "boot-commands", type: "get_commands" });
     this.requestMeta();
   }
