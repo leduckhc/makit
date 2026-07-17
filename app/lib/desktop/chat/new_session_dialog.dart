@@ -72,6 +72,17 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
     _prsFuture = future;
   }
 
+  /// Switch the selected repo, refreshing the base branch and PR list together.
+  /// All `_projectId` changes route through here so no path can change the repo
+  /// without also reloading its open PRs.
+  void _selectProject(String? id) {
+    setState(() {
+      _projectId = id;
+      _baseBranch = _defaultBranchFor(id);
+      _loadPrs();
+    });
+  }
+
   /// The repo's default fork point: its default branch, else current, else the
   /// first known branch. Null when the repo has no branches (fresh repo).
   String? _defaultBranchFor(String? projectId) {
@@ -137,7 +148,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
   Future<void> _addProject() async {
     final id = await showFolderBrowser(context);
     if (!mounted || id == null) return;
-    setState(() => _projectId = id);
+    _selectProject(id);
   }
 
   Future<void> _start() async {
@@ -242,11 +253,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
                       ),
                     ),
                 ],
-                onChanged: (v) => setState(() {
-                  _projectId = v;
-                  _baseBranch = _defaultBranchFor(v);
-                  _loadPrs();
-                }),
+                onChanged: (v) => _selectProject(v),
               ),
             const SizedBox(height: 12),
             TabBar(
