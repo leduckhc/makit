@@ -18,8 +18,55 @@
  *     so bursts collapse into a single `onChange`.
  */
 
-import { watch, existsSync, type FSWatcher } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { watch, existsSync, realpathSync, statSync, type FSWatcher } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+
+/**
+ * Ask Git for the common directory where it records linked worktrees. This is
+ * `<repo>/.git` for a primary checkout, the primary repo's git dir for a linked
+ * worktree (regardless of the checkout's location), and the submodule's module
+ * git dir for a submodule checkout.
+ */
+function resolveGitPaths(repoPath: string): { gitDir: string; worktreesDir: string } {
+  const unresolvedGitDir = join(repoPath, ".git");
+  const unresolved = {
+    gitDir: unresolvedGitDir,
+    worktreesDir: join(unresolvedGitDir, "worktrees"),
+  };
+
+  try {
+    const [topLevel, commonDir] = execFileSync(
+      "git",
+      ["-C", repoPath, "rev-parse", "--show-toplevel", "--git-common-dir"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .trim()
+      .split(/\r?\n/);
+    if (!topLevel || !commonDir) return unresolved;
+
+    // Git treats every descendant of a home/root-level checkout as belonging
+    // to it. Do not let an unrelated registered project inherit such a broad
+    // ancestor watcher; direct registration of that checkout remains valid.
+    if (realpathSync(repoPath) !== topLevel) {
+      const topParent = dirname(topLevel);
+      if (
+        topLevel === resolve(homedir()) ||
+        topParent === topLevel ||
+        statSync(topLevel).dev !== statSync(topParent).dev
+      ) {
+        return unresolved;
+      }
+    }
+
+    const gitDir = resolve(repoPath, commonDir);
+    return { gitDir, worktreesDir: join(gitDir, "worktrees") };
+  } catch {
+    // Missing/non-repo paths and git lookup failures remain best-effort no-ops.
+    return unresolved;
+  }
+}
 
 export interface WorktreeWatcher {
   /** Re-arm to watch exactly [repoPaths], diffed against the current set. */
@@ -86,8 +133,7 @@ export function watchWorktrees(
   };
 
   const arm = (repoPath: string): RepoWatch => {
-    const gitDir = join(repoPath, ".git");
-    const worktreesDir = join(gitDir, "worktrees");
+    const { gitDir, worktreesDir } = resolveGitPaths(repoPath);
     const rw: RepoWatch = {};
 
     const syncInner = (): void => {
