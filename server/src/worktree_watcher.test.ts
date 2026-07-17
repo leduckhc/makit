@@ -22,6 +22,18 @@ function makeRepo(): string {
 
 const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Poll [pred] until true or the timeout elapses (state-driven, not a fixed sleep). */
+async function waitFor(
+  pred: () => boolean,
+  { timeoutMs = 3000, stepMs = 20 } = {},
+): Promise<void> {
+  const start = Date.now();
+  while (!pred()) {
+    if (Date.now() - start > timeoutMs) throw new Error("waitFor: condition not met in time");
+    await delay(stepMs);
+  }
+}
+
 test("watchWorktrees fires when a worktree is added via git (external CLI)", async () => {
   const repo = makeRepo();
   const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
@@ -82,11 +94,11 @@ test("watchWorktrees keeps firing (and does not crash) when a worktree is remove
   const watcher = watchWorktrees(() => fired++, { debounceMs: 20 });
   watcher.sync([repo]);
   try {
-    await delay(80);
+    await delay(80); // let the fs watchers arm (no callback to await on setup)
     execFileSync("git", ["worktree", "add", "-b", "gone", join(wtBase, "gone")], {
       cwd: repo,
     });
-    await delay(150);
+    await waitFor(() => fired > 0);
     const afterAdd = fired;
     assert.ok(afterAdd > 0, "expected a fire on add");
 
@@ -96,7 +108,7 @@ test("watchWorktrees keeps firing (and does not crash) when a worktree is remove
     execFileSync("git", ["worktree", "remove", "--force", join(wtBase, "gone")], {
       cwd: repo,
     });
-    await delay(200);
+    await waitFor(() => fired > afterAdd);
     assert.ok(fired > afterAdd, "expected a fire on removal");
   } finally {
     watcher.close();
