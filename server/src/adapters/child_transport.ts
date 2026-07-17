@@ -178,21 +178,29 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
       dropUntilNewline = true;
     }
   });
-  child.stdout?.on("end", () => {
-    if (buf.length > 0 && !dropUntilNewline) safeInvoke(opts.label, "line", lineCbs, buf);
-  });
+  // Deliver a final unterminated line. Idempotent (clears `buf`), so it can
+  // run from every completion path without double-delivering.
+  const flushPendingLine = () => {
+    if (buf.length > 0 && !dropUntilNewline) {
+      const line = buf;
+      buf = "";
+      safeInvoke(opts.label, "line", lineCbs, line);
+    }
+  };
 
-  // ---- stream end: settle once, after the final-line flush above ----------
+  // ---- stream end: flush the pending line, then settle once ---------------
   const streamEndCbs: Array<() => void> = [];
   let streamEnded = false;
   const settleStreamEnd = () => {
     if (streamEnded) return;
     streamEnded = true;
+    flushPendingLine();
     safeInvoke(opts.label, "stream-end", streamEndCbs);
   };
   // 'end' is the primary signal (all buffered data delivered); 'close' and the
   // child 'error' fault are backstops for streams that are destroyed without
   // ever ending (e.g. a failed spawn), so consumers are never left hanging.
+  // Every path flushes before settling.
   child.stdout?.on("end", settleStreamEnd);
   child.stdout?.on("close", settleStreamEnd);
   child.on("error", settleStreamEnd);

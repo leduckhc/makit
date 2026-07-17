@@ -149,14 +149,17 @@ test("onStreamEnd fires after the final unterminated line is flushed", () => {
 test("onStreamEnd settles once, replays to late registrants, and fires on stdout 'close'", () => {
   const { spawn, children } = fakeSpawn();
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
-  let fired = 0;
-  t.onStreamEnd(() => fired++);
+  const order: string[] = [];
+  t.onLine((l) => order.push(`line:${l}`));
+  t.onStreamEnd(() => order.push("end"));
 
   const child = children[0]!;
-  // A destroyed-without-end stream (e.g. failed spawn) still settles via 'close'.
+  // A destroyed-without-'end' stream (e.g. failed spawn) still settles via
+  // 'close' — and the pending partial line is flushed BEFORE settlement.
+  child.stdout.emit("data", '{"partial":1}');
   child.stdout.emit("close");
-  child.stdout.emit("end"); // second signal must not re-fire
-  assert.equal(fired, 1);
+  child.stdout.emit("end"); // second signal must not re-fire or re-flush
+  assert.deepEqual(order, ['line:{"partial":1}', "end"]);
 
   let late = 0;
   t.onStreamEnd(() => late++); // registered after settle → replayed

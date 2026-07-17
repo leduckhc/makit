@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, realpathSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,46 +52,68 @@ function withAgentDir(cwd: string, run: (agentDir: string) => Promise<void>) {
 test("listRepos issues its per-worktree shells concurrently, not serially (P3)", async () => {
   const cwd = makeGitRepo();
   const bin = mkdtempSync(join(tmpdir(), "makit-fake-gh-"));
+  const sync = mkdtempSync(join(tmpdir(), "makit-gh-sync-"));
   const worktrees: string[] = [];
   const prevPath = process.env.PATH;
-  const SLEEP_MS = 300;
   const WORKTREE_COUNT = 4; // 4 secondary branches → 4 gh lookups
   try {
     // Each secondary worktree is on its own branch, so listRepos does a
-    // findOpenPr (gh) lookup per worktree. A serial loop would take
-    // WORKTREE_COUNT * SLEEP_MS; a concurrent one ~SLEEP_MS.
+    // findOpenPr (gh) lookup per worktree. The fake gh is a barrier: each
+    // invocation drops a marker file, then refuses to exit until all
+    // WORKTREE_COUNT markers exist. Concurrent lookups all start, the barrier
+    // opens, and everyone returns; a serial loop never gets past the first
+    // invocation, which times out and leaves a `timeout-*` marker.
     for (let i = 0; i < WORKTREE_COUNT; i++) {
       const wt = join(bin, `wt-${i}`);
       execFileSync("git", ["worktree", "add", "-q", "-b", `feature-${i}`, wt], { cwd });
       worktrees.push(wt);
     }
     const gh = join(bin, "gh");
-    writeFileSync(gh, `#!/bin/sh\nsleep ${(SLEEP_MS / 1000).toFixed(3)}\nprintf "[]\\n"\n`);
+    writeFileSync(
+      gh,
+      [
+        `#!/bin/sh`,
+        `: > "${sync}/inflight-$$"`,
+        `n=0`,
+        `while [ "$(ls "${sync}"/inflight-* 2>/dev/null | wc -l)" -lt ${WORKTREE_COUNT} ]; do`,
+        `  n=$((n + 1))`,
+        `  if [ "$n" -gt 500 ]; then : > "${sync}/timeout-$$"; break; fi`, // ~5s: serial ⇒ fail, not hang
+        `  sleep 0.01`,
+        `done`,
+        `printf "[]\\n"`,
+        ``,
+      ].join("\n"),
+    );
     chmodSync(gh, 0o755);
     process.env.PATH = `${bin}:${prevPath ?? ""}`;
 
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
-    const t0 = Date.now();
     const repos = await manager.listRepos({ includePrs: true });
-    const elapsed = Date.now() - t0;
 
     // Results are unchanged: every worktree is present with its branch.
     const branches = repos[0].worktrees.map((w) => w.branch).filter(Boolean).sort();
     for (let i = 0; i < WORKTREE_COUNT; i++) {
       assert.ok(branches.includes(`feature-${i}`), `feature-${i} listed`);
     }
-    // Concurrent: comfortably under the serial worst case
-    // (WORKTREE_COUNT * SLEEP_MS = 1200ms). Generous margin for CI jitter.
-    const serialFloor = WORKTREE_COUNT * SLEEP_MS;
-    assert.ok(
-      elapsed < serialFloor - SLEEP_MS,
-      `listRepos took ${elapsed}ms; serial floor ~${serialFloor}ms — expected concurrent`,
+    // Concurrent: all lookups were in flight together, so the barrier opened
+    // and no invocation timed out waiting for the others.
+    const markers = readdirSync(sync).sort();
+    assert.equal(
+      markers.filter((m) => m.startsWith("inflight-")).length,
+      WORKTREE_COUNT,
+      `expected ${WORKTREE_COUNT} gh invocations, saw: ${markers.join(", ")}`,
+    );
+    assert.deepEqual(
+      markers.filter((m) => m.startsWith("timeout-")),
+      [],
+      "a gh lookup timed out at the barrier — lookups did not overlap (serial?)",
     );
   } finally {
     if (prevPath === undefined) delete process.env.PATH;
     else process.env.PATH = prevPath;
     for (const wt of worktrees) execFileSync("git", ["worktree", "remove", "--force", wt], { cwd });
     rmSync(bin, { recursive: true, force: true });
+    rmSync(sync, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   }
 });
