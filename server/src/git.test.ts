@@ -51,6 +51,20 @@ test("renameBranch renames the worktree's checked-out branch", async () => {
   }
 });
 
+test("removeWorktree throws when git cannot remove the path", async () => {
+  const repo = makeRepo();
+  try {
+    // Not a registered worktree of this repo: git refuses, and the failure must
+    // surface rather than resolve as a false success.
+    await assert.rejects(
+      () => removeWorktree(repo, join(tmpdir(), "makit-not-a-worktree-xyz"), true),
+      /git worktree remove .* failed/,
+    );
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 test("isGitRepo distinguishes repos from plain dirs", async () => {
   const repo = makeRepo();
   const plain = mkdtempSync(join(tmpdir(), "makit-plain-"));

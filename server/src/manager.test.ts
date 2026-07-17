@@ -227,6 +227,68 @@ test("removeWorktree deletes the worktree from disk", async () => {
   }
 });
 
+test("renameWorktreeBranch refuses the repo's primary worktree", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    await assert.rejects(
+      () => manager.renameWorktreeBranch(projectId, realpathSync(cwd), "renamed"),
+      /primary worktree/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree refuses the repo's primary worktree", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    await assert.rejects(
+      () => manager.removeWorktree(projectId, realpathSync(cwd)),
+      /primary worktree/,
+    );
+    // The primary checkout is untouched.
+    assert.equal(existsSync(cwd), true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree refuses a path that is not one of the project's worktrees", async () => {
+  const cwd = makeGitRepo();
+  const stranger = mkdtempSync(join(tmpdir(), "makit-stranger-"));
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    await assert.rejects(
+      () => manager.removeWorktree(projectId, stranger),
+      /not part of project/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stranger, { recursive: true, force: true });
+  }
+});
+
+test("createWorktreeFromPr rejects a PR that is not open on this repo", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    // The throwaway repo has no GitHub remote, so listOpenPrs yields [] and the
+    // lookup for any PR number fails rather than silently creating a worktree.
+    await assert.rejects(
+      () => manager.createWorktreeFromPr(projectId, 999999),
+      /not an open PR/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("spawnPendingSession is a draft: no worktree, no agent started", async () => {
   const cwd = makeGitRepo();
   try {

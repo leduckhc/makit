@@ -322,7 +322,13 @@ export async function addWorktreeForPr(opts: {
     await removeWorktree(opts.repoPath, target, true).catch(() => {});
     throw new Error(`gh pr checkout ${opts.prNumber} failed: ${checkout.stderr.trim() || `exit ${checkout.code}`}`);
   }
-  return { path: realpathSync(target), branch: opts.headRefName };
+  // Report the branch `gh` actually checked out rather than assuming it matches
+  // headRefName: for fork PRs (or a local-name collision) gh may create a
+  // differently-named local branch, and callers use this to highlight the row.
+  const head = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], target);
+  const actual = head.code === 0 ? head.stdout.trim() : "";
+  const branch = actual && actual !== "HEAD" ? actual : opts.headRefName;
+  return { path: realpathSync(target), branch };
 }
 
 /**
@@ -330,7 +336,9 @@ export async function addWorktreeForPr(opts: {
  * so the currently checked-out branch is the one renamed. Throws on failure.
  */
 export async function renameBranch(worktreePath: string, oldName: string, newName: string): Promise<void> {
-  const r = await run("git", ["branch", "-m", oldName, newName], worktreePath);
+  // `--` terminates option parsing so a name beginning with `-` is treated as a
+  // ref rather than a git flag.
+  const r = await run("git", ["branch", "-m", "--", oldName, newName], worktreePath);
   if (r.code !== 0) {
     throw new Error(`git branch -m failed: ${r.stderr.trim() || `exit ${r.code}`}`);
   }
@@ -387,9 +395,9 @@ export async function addWorktree(opts: {
 }
 
 /**
- * Remove a managed worktree. Best-effort: logs and swallows failures so
- * teardown never blocks session cleanup. Pass `force` to drop even with
- * uncommitted changes.
+ * Remove a managed worktree. Throws on non-zero git exit (after logging) so
+ * callers — and the UI — see the failure instead of a false success. Pass
+ * `force` to drop even with uncommitted changes.
  */
 export async function removeWorktree(repoPath: string, worktreePath: string, force = false): Promise<void> {
   const args = ["worktree", "remove", worktreePath];

@@ -420,6 +420,9 @@ export class SessionManager extends EventEmitter {
     if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
     const oldName = wt.branch;
     if (!oldName) throw new Error(`worktree has no branch to rename: ${worktreePath}`);
+    if (wt.isPrimary) {
+      throw new Error(`cannot rename the primary worktree's branch: ${oldName}`);
+    }
     if (await findOpenPr(repoPath, oldName)) {
       throw new Error(`cannot rename ${oldName}: it has an open pull request`);
     }
@@ -427,14 +430,22 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Remove a worktree. Kills any sessions bound to it first, then runs
-   * `git worktree remove` (with `--force` so a dirty tree still deletes).
+   * Remove a worktree. Validates the path belongs to the project and is not the
+   * primary checkout *before* touching anything, then kills any sessions bound
+   * to it and runs `git worktree remove --force` (so a dirty tree still
+   * deletes). Throws if validation or the git removal fails.
    */
   async removeWorktree(projectId: string, worktreePath: string): Promise<void> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const repoPath = project.dto.path;
     const target = resolve(worktreePath);
+    const trees = await listWorktrees(repoPath);
+    const wt = trees.find((t) => resolve(t.path) === target);
+    if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
+    if (wt.isPrimary) throw new Error(`cannot remove the repo's primary worktree: ${worktreePath}`);
+    // Validated: only now is it safe to kill sessions (destructive) before the
+    // git removal.
     for (const session of this.sessions.values()) {
       if (
         session.projectId === projectId &&
