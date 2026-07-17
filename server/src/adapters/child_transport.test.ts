@@ -137,3 +137,52 @@ test("dispose kills the child", () => {
   t.dispose();
   assert.equal(children[0]!.killed, true);
 });
+
+test("an oversized unterminated frame is dropped instead of growing buf unbounded", () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({
+    command: "x",
+    cwd: "/tmp",
+    label: "t",
+    spawn,
+    maxFrameBytes: 1024,
+  });
+  const lines: string[] = [];
+  t.onLine((l) => lines.push(l));
+
+  const child = children[0]!;
+  // A frame far larger than the cap, with no LF, must NOT be buffered forever.
+  child.stdout.emit("data", "a".repeat(4096));
+  child.stdout.emit("data", "a".repeat(4096) + "\n");
+  // A well-formed line AFTER the oversized frame is dropped must still parse.
+  child.stdout.emit("data", '{"ok":1}\n');
+  assert.deepEqual(lines, ['{"ok":1}'], "oversized frame dropped; subsequent line delivered");
+});
+
+test("a throwing onLine listener cannot escape and crash the process", () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  const seen: string[] = [];
+  t.onLine(() => {
+    throw new Error("consumer blew up");
+  });
+  t.onLine((l) => seen.push(l)); // a well-behaved second listener still runs
+
+  const child = children[0]!;
+  assert.doesNotThrow(() => child.stdout.emit("data", '{"a":1}\n'));
+  assert.deepEqual(seen, ['{"a":1}']);
+});
+
+test("a throwing onExit listener cannot escape and crash the process", () => {
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  let reached = false;
+  t.onExit(() => {
+    throw new Error("exit consumer blew up");
+  });
+  t.onExit(() => {
+    reached = true;
+  });
+  assert.doesNotThrow(() => children[0]!.emit("exit", 0, null));
+  assert.equal(reached, true, "a later exit listener still fires after an earlier one throws");
+});
