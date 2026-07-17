@@ -318,7 +318,8 @@ export async function addWorktreeForPr(opts: {
   const checkout = await run("gh", ["pr", "checkout", String(opts.prNumber)], target);
   if (checkout.code !== 0) {
     // Roll back the empty detached worktree so we don't leave litter behind.
-    await removeWorktree(opts.repoPath, target, true);
+    // Best-effort: don't let a rollback failure mask the real checkout error.
+    await removeWorktree(opts.repoPath, target, true).catch(() => {});
     throw new Error(`gh pr checkout ${opts.prNumber} failed: ${checkout.stderr.trim() || `exit ${checkout.code}`}`);
   }
   return { path: realpathSync(target), branch: opts.headRefName };
@@ -395,6 +396,8 @@ export async function removeWorktree(repoPath: string, worktreePath: string, for
   if (force) args.push("--force");
   const r = await git(args, repoPath);
   if (r.code !== 0) {
-    log.warn(`[makit] git worktree remove ${worktreePath} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+    const detail = r.stderr.trim() || `exit ${r.code}`;
+    log.warn(`[makit] git worktree remove ${worktreePath} failed: ${detail}`);
+    throw new Error(`git worktree remove ${worktreePath} failed: ${detail}`);
   }
 }
