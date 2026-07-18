@@ -139,6 +139,18 @@ void main() {
     expect(indicatorY, greaterThan(newestY));
   });
 
+  testWidgets('working indicator disappears when the session goes idle', (
+    tester,
+  ) async {
+    final items = [AgentMessageItem(seq: 1, ts: 0, text: 'newest')];
+    await pumpScreen(tester, status: SessionStatus.running, items: items);
+    expect(find.byType(WorkingIndicator), findsOneWidget);
+
+    // The same screen transitions to idle: the trailing indicator must clear.
+    await pumpScreen(tester, status: SessionStatus.idle, items: items);
+    expect(find.byType(WorkingIndicator), findsNothing);
+  });
+
   // A tall transcript so the reversed list actually overflows the viewport and
   // can be scrolled up into history (pixels > 0 on a reverse:true list).
   List<ChatItem> longTranscript() => [
