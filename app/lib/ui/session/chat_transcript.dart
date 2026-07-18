@@ -17,6 +17,26 @@ import '../../store/models.dart';
 import 'chat_message.dart';
 import 'tool_call_card.dart';
 
+/// Distance (logical px) from the newest message within which an incoming item
+/// re-pins the transcript to the bottom. Beyond it, the user is treated as
+/// reading history and is left untouched.
+const double kAnchorNearBottomPx = 120.0;
+
+/// Pins a reversed (`reverse: true`) transcript back to the newest message
+/// (scroll offset `0`) after a new item arrives — but only when the user is
+/// already near the bottom, so scrolling up to read history is never yanked
+/// away. Shared by the mobile [SessionScreen] and desktop `DesktopChatPane` so
+/// both surfaces anchor identically. Uses `jumpTo` (not `animateTo`) for a
+/// deterministic snap that never stacks animations during fast token streams.
+void anchorToNewestIfNearBottom(ScrollController scroll) {
+  final nearBottom =
+      !scroll.hasClients || scroll.position.pixels <= kAnchorNearBottomPx;
+  if (!nearBottom) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (scroll.hasClients) scroll.jumpTo(0);
+  });
+}
+
 /// Maps a folded [ChatItem] to its transcript widget. [onOpenTool] is invoked
 /// when a tool card is tapped (mobile routes via `go_router`; desktop pushes a
 /// full-screen route). [compact] selects the desktop (docked pane) cosmetics.

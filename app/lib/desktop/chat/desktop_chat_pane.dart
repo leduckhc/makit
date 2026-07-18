@@ -168,14 +168,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     // history is never yanked away. Reversed list: newest is at offset 0.
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
-      const nearBottomPx = 120.0;
-      final atBottom =
-          !_scroll.hasClients || _scroll.position.pixels <= nearBottomPx;
-      if (atBottom) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_scroll.hasClients) _scroll.jumpTo(0);
-        });
-      }
+      anchorToNewestIfNearBottom(_scroll);
     }
 
     final running = session.status == SessionStatus.running;

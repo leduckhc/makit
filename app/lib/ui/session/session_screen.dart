@@ -57,19 +57,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       // Reversed list: the newest message lives at offset 0. Only pull to it if
       // the user is already near the bottom, so scrolling up to read history is
       // never yanked away by an incoming message.
-      const nearBottomPx = 120.0;
-      final atBottom =
-          !_scroll.hasClients || _scroll.position.pixels <= nearBottomPx;
-      if (atBottom) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!_scroll.hasClients) return;
-          _scroll.animateTo(
-            0,
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-          );
-        });
-      }
+      anchorToNewestIfNearBottom(_scroll);
     }
 
     final cs = Theme.of(context).colorScheme;
