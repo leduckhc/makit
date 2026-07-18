@@ -98,15 +98,26 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   /// when collapsed the worktrees, "show more" pill, and drafts are hidden.
   bool _expanded = true;
 
-  /// Whether the pointer is over the repo header row. Gates the (hover-only)
-  /// repo actions menu, mirroring the worktree row's overflow menu.
+  /// Whether the pointer is over the repo header row. Gates the repo actions
+  /// menu, mirroring the worktree row's overflow menu.
   bool _repoHovering = false;
+
+  /// Whether the repo header's expand toggle holds keyboard focus. Also gates
+  /// the repo actions menu so it stays reachable without a pointer (keyboard /
+  /// non-hover input), mirroring the worktree row's `_focused` handling.
+  bool _repoFocused = false;
+
+  /// True while a draft spawn is in flight, so rapid clicks on the + button
+  /// can't issue concurrent `spawnSession` calls (duplicate pending worktrees).
+  bool _spawningDraft = false;
 
   /// The sidebar + button: spawn a pending draft (no worktree on disk yet) and
   /// open it in its own virtual pane tree, landing on the harness picker. The
   /// real worktree materializes on the draft's first message. No dialog — the
   /// richer "New worktree from…" picker lives in the repo overflow menu.
   Future<void> _startDraftWorktree(String projectId) async {
+    if (_spawningDraft) return;
+    setState(() => _spawningDraft = true);
     final store = ref.read(storeControllerProvider.notifier);
     try {
       final sid = await store.spawnSession(projectId);
@@ -117,6 +128,8 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('New worktree failed: $e')));
+    } finally {
+      if (mounted) setState(() => _spawningDraft = false);
     }
   }
 
@@ -148,6 +161,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                 Expanded(
                   child: InkWell(
                     onTap: () => setState(() => _expanded = !_expanded),
+                    onFocusChange: (f) => setState(() => _repoFocused = f),
                     borderRadius: BorderRadius.circular(6),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 2),
@@ -185,12 +199,13 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                     ),
                   ),
                 ),
-                // Repo actions only surface on hover (keeping its slot reserved
-                // so the + button never shifts). maintainState keeps it mounted
+                // Repo actions surface on hover or keyboard focus (keeping its
+                // slot reserved so the + button never shifts), so they stay
+                // reachable without a pointer. maintainState keeps it mounted
                 // while its popup is open even though the modal barrier drops
                 // the row's hover.
                 Visibility(
-                  visible: _repoHovering,
+                  visible: _repoHovering || _repoFocused,
                   maintainSize: true,
                   maintainAnimation: true,
                   maintainState: true,
@@ -200,7 +215,9 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                   tooltip: 'New worktree',
                   visualDensity: VisualDensity.compact,
                   icon: const Icon(Symbols.add, size: 16, weight: 200),
-                  onPressed: () => _startDraftWorktree(repo.id),
+                  onPressed: _spawningDraft
+                      ? null
+                      : () => _startDraftWorktree(repo.id),
                 ),
               ],
             ),
