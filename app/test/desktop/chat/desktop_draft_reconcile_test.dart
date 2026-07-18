@@ -66,30 +66,13 @@ void main() {
   );
 
   test('prunes a draft tree whose session no longer exists', () async {
-    // An authoritative (non-empty) snapshot that simply doesn't contain s1 is
-    // the "the draft's session is gone" signal — distinct from the empty
-    // startup snapshot, which means "not loaded yet".
-    final h = _harness('s1', [_session('other', worktreePath: '/wt/other')]);
+    final h = _harness('s1', const []);
     h.container.read(desktopDraftReconcileProvider);
     await Future<void>.microtask(() {});
 
-    expect(h.panes.state.trees.containsKey('draft:s1'), isFalse);
+    expect(h.panes.state.trees, isEmpty);
     expect(h.panes.state.currentKey, isNull);
   });
-
-  test(
-    'leaves restored drafts untouched on the empty startup snapshot',
-    () async {
-      // The shell activates the provider before the first sessions.snapshot
-      // arrives, so the initial empty list is "not loaded", not "no sessions".
-      // Pruning here would permanently drop a restored draft's layout.
-      final h = _harness('s1', const []);
-      h.container.read(desktopDraftReconcileProvider);
-      await Future<void>.microtask(() {});
-
-      expect(h.panes.state.trees.containsKey('draft:s1'), isTrue);
-    },
-  );
 
   test('leaves an un-materialized pending draft untouched', () async {
     final h = _harness('s1', [_session('s1')]); // no worktreePath yet
@@ -116,4 +99,41 @@ void main() {
     expect(h.panes.state.trees.containsKey('draft:s1'), isFalse);
     expect(h.panes.state.trees.containsKey('/wt/feat'), isTrue);
   });
+
+  test(
+    'reconciles multiple drafts independently: one materializes, one is '
+    'pruned, one is left alone',
+    () async {
+      final panes = PaneTreeController.ephemeral()
+        ..bindActiveSession('materializes', draftWorktreeFor('p1', 'materializes'))
+        ..bindActiveSession('pruned', draftWorktreeFor('p1', 'pruned'))
+        ..bindActiveSession('pending', draftWorktreeFor('p1', 'pending'));
+      final container = ProviderContainer(
+        overrides: [
+          paneTreeControllerProvider.overrideWith((ref) => panes),
+          sessionsProvider.overrideWith((ref) => ref.watch(_sessionsSource)),
+          _sessionsSource.overrideWith(
+            (ref) => SessionsState([
+              _session(
+                'materializes',
+                worktreePath: '/wt/feat',
+                branch: 'feat/x',
+              ),
+              _session('pending'),
+              // 'pruned' has no session at all.
+            ]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.read(desktopDraftReconcileProvider);
+      await Future<void>.microtask(() {});
+
+      expect(panes.state.trees.containsKey('draft:materializes'), isFalse);
+      expect(panes.state.trees.containsKey('/wt/feat'), isTrue);
+      expect(panes.state.trees.containsKey('draft:pruned'), isFalse);
+      expect(panes.state.trees.containsKey('draft:pending'), isTrue);
+    },
+  );
 }

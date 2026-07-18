@@ -492,6 +492,60 @@ void main() {
   });
 
   testWidgets(
+    'a failed + spawn shows an error snackbar (no worktree materializes)',
+    (tester) async {
+      final store = await _pumpWithStore(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+          ),
+        ],
+        sessions: const [],
+        fail: true,
+      );
+
+      await tester.tap(find.byTooltip('New worktree'));
+      await tester.pumpAndSettle();
+
+      expect(store.spawned, ['p1']);
+      expect(find.textContaining('New worktree failed'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the repo actions button is present but inert (ignores taps) until '
+    'the header row is hovered',
+    (tester) async {
+      await _pump(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'alpha',
+            worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+          ),
+        ],
+        sessions: const [],
+      );
+
+      // maintainState keeps the button mounted (findable) even while hidden,
+      // but it must not be interactive: tapping it without hovering first
+      // must not open the menu.
+      expect(find.byTooltip('Repo actions'), findsOneWidget);
+      await tester.tap(find.byTooltip('Repo actions'), warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Hide the repo'), findsNothing);
+
+      // Hovering first makes it interactive.
+      await _openRepoMenu(tester, 'alpha');
+      expect(find.text('Hide the repo'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'hovering a worktree hides the diff pill and shows the actions menu',
     (tester) async {
       await _pump(
