@@ -163,14 +163,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     final items = ref.watch(chatItemsProvider(sessionId));
 
-    // Keep the transcript pinned to the newest message as items stream in.
+    // Keep the transcript pinned to the newest message as items stream in,
+    // but only when the user is already near the bottom so scrolling up to read
+    // history is never yanked away. Reversed list: newest is at offset 0.
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scroll.hasClients) {
-          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-        }
-      });
+      anchorToNewestIfNearBottom(_scroll);
     }
 
     final running = session.status == SessionStatus.running;
@@ -190,13 +188,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               // via its own centered ConstrainedBox, so the layout is unchanged.
               : ListView.builder(
                   controller: _scroll,
+                  // Reversed so the resting position (offset 0) is the newest
+                  // message: opens pinned to the latest, older rows build
+                  // lazily as the user scrolls up.
+                  reverse: true,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   itemCount: items.length + (running ? 1 : 0),
                   itemBuilder: (context, i) {
-                    final Widget child = i >= items.length
+                    // Reversed: i counts up from the bottom. When running,
+                    // i == 0 is the trailing "working…" indicator.
+                    final Widget child = (running && i == 0)
                         ? const WorkingIndicator(compact: true)
                         : chatItemWidget(
-                            items[i],
+                            items[items.length - 1 - (running ? i - 1 : i)],
                             onOpenTool: _openToolDetail,
                             compact: true,
                           );
