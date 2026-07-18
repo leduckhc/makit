@@ -91,6 +91,7 @@ Future<_FakeStore> _openDialog(
   WidgetTester tester, {
   required List<RepoInfo> repos,
   Map<String, List<OpenPr>> prs = const {},
+  String? projectId,
 }) async {
   late _FakeStore store;
   final container = ProviderContainer(
@@ -114,7 +115,8 @@ Future<_FakeStore> _openDialog(
         home: Scaffold(
           body: Consumer(
             builder: (ctx, ref, _) => TextButton(
-              onPressed: () => showNewSessionDialog(ctx, ref),
+              onPressed: () =>
+                  showNewSessionDialog(ctx, ref, projectId: projectId),
               child: const Text('open'),
             ),
           ),
@@ -130,11 +132,13 @@ Future<_FakeStore> _openDialog(
 
 void main() {
   testWidgets(
-    'branch dropdown resets when switching to a repo with a disjoint branch set',
+    'branch tab shows the dialog repo default branch (no repo selector)',
     (tester) async {
-      // alpha=[main], beta=[develop,foo] — non-overlapping branch sets.
+      // alpha=[main], beta=[develop,foo]. Opening for beta must show beta's
+      // branches with no repo dropdown to switch away from it.
       await _openDialog(
         tester,
+        projectId: 'b',
         repos: [
           _repo(
             'a',
@@ -154,17 +158,10 @@ void main() {
         ],
       );
 
-      // Branch-from starts on alpha's default branch.
-      expect(find.text('main'), findsWidgets);
-
-      // Switch the repo dropdown (the first DropdownButtonFormField) to beta.
-      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('beta · develop').last);
-      await tester.pumpAndSettle();
-
-      // The branch field adopted beta's default rather than the now-invalid
-      // 'main', and nothing threw.
+      // The repo selector is gone (the repo is fixed from the caller).
+      expect(find.text('Repo'), findsNothing);
+      expect(find.text('alpha · main'), findsNothing);
+      // The branch tab adopted beta's default branch, and nothing threw.
       expect(tester.takeException(), isNull);
       expect(find.text('develop'), findsWidgets);
     },
@@ -175,6 +172,7 @@ void main() {
   ) async {
     final store = await _openDialog(
       tester,
+      projectId: 'a',
       repos: [
         _repo(
           'a',
@@ -202,43 +200,5 @@ void main() {
     await tester.tap(find.text('Add login'));
     await tester.pumpAndSettle();
     expect(store.createdFromPr, [11]);
-  });
-
-  testWidgets('switching repos replaces the PR list', (tester) async {
-    await _openDialog(
-      tester,
-      repos: [
-        _repo(
-          'a',
-          'alpha',
-          branch: 'main',
-          worktrees: [_wt('a-main', branch: 'main', isPrimary: true)],
-        ),
-        _repo(
-          'b',
-          'beta',
-          branch: 'develop',
-          worktrees: [_wt('b-dev', branch: 'develop', isPrimary: true)],
-        ),
-      ],
-      prs: {
-        'a': [_pr(11, 'Alpha PR', 'feat/alpha')],
-        'b': [_pr(22, 'Beta PR', 'feat/beta')],
-      },
-    );
-
-    await tester.tap(find.text('PR'));
-    await tester.pumpAndSettle();
-    expect(find.text('Alpha PR'), findsOneWidget);
-    expect(find.text('Beta PR'), findsNothing);
-
-    // Switch to beta: its PRs replace alpha's.
-    await tester.tap(find.byType(DropdownButtonFormField<String>).first);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('beta · develop').last);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Alpha PR'), findsNothing);
-    expect(find.text('Beta PR'), findsOneWidget);
   });
 }

@@ -14,6 +14,8 @@ import 'package:makit/ui/home/repo_chips.dart';
 import 'package:makit/ui/session/tool_renderers.dart'
     show kReadableContentMaxWidth;
 
+const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
+
 Session _session() => Session(
   id: 's1',
   projectId: 'p1',
@@ -467,6 +469,75 @@ void main() {
       expect(container.read(composerDraftsProvider)['s2'], isNull);
     },
   );
+
+  group('null/dead-session worktree fallback', () {
+    Future<ProviderContainer> pumpPane(
+      WidgetTester tester, {
+      String? sessionId,
+      SelectedWorktree? worktree,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: DesktopChatPane(sessionId: sessionId, worktree: worktree),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return container;
+    }
+
+    testWidgets('a real worktree with no session renders its harness picker', (
+      tester,
+    ) async {
+      await pumpPane(tester, worktree: _wtA);
+
+      expect(find.byType(WorktreeStartView), findsOneWidget);
+      expect(find.text('Select or start a session'), findsNothing);
+    });
+
+    testWidgets(
+      'a real worktree with a dead (persisted, now-missing) session id '
+      'still falls back to the harness picker',
+      (tester) async {
+        await pumpPane(tester, sessionId: 'dead-session', worktree: _wtA);
+
+        expect(find.byType(WorktreeStartView), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      "a draft's virtual worktree with no (or a dead) session falls through "
+      'to the empty placeholder instead of the harness picker',
+      (tester) async {
+        final draft = draftWorktreeFor('p1', 's1');
+        await pumpPane(tester, sessionId: 'dead-session', worktree: draft);
+
+        expect(find.byType(WorktreeStartView), findsNothing);
+        expect(find.text('Select or start a session'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a draft worktree with no session id also shows the empty '
+        'placeholder', (tester) async {
+      final draft = draftWorktreeFor('p1', 's1');
+      await pumpPane(tester, worktree: draft);
+
+      expect(find.byType(WorktreeStartView), findsNothing);
+      expect(find.text('Select or start a session'), findsOneWidget);
+    });
+  });
 
   group('reversed transcript auto-scroll', () {
     // A tall transcript so the reversed list overflows and can be scrolled up.

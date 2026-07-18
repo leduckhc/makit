@@ -28,6 +28,7 @@ import '../store/connection.dart';
 import '../store/store.dart';
 import '../ui/widgets/srv_request_handler.dart';
 import 'chat/desktop_auto_select.dart';
+import 'chat/desktop_draft_reconcile.dart';
 import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
 import 'chat/keymap_scope.dart';
@@ -221,6 +222,8 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
   Widget build(BuildContext context) {
     // SPEC-10: auto-select the most recent session when none is picked.
     ref.watch(desktopAutoSelectSessionProvider);
+    // Migrate/prune virtual draft trees as their sessions materialize or vanish.
+    ref.watch(desktopDraftReconcileProvider);
     // Read reactively here (not inside `builder`, which builds in a descendant
     // context) so changing the pref rebuilds and re-wires the reminder delay.
     final reminderDelay = Duration(

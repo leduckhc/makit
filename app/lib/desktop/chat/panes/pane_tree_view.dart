@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
 import '../selected_worktree.dart';
-import '../sidebar_layout.dart' show sidebarCollapsedProvider;
+import '../sidebar_layout.dart'
+    show sidebarCollapsedProvider, kTrafficLightInset;
 import '../title_bar_strip.dart';
 import 'pane_node.dart';
 import 'pane_tree_controller.dart';
@@ -32,6 +34,7 @@ class PaneTreeView extends ConsumerWidget {
     // titlebar swallows the drag and moves the whole window instead of the
     // pane.
     final collapsed = ref.watch(sidebarCollapsedProvider);
+    final worktree = current?.worktree;
     return Column(
       children: [
         TitleBarStrip(
@@ -41,6 +44,12 @@ class PaneTreeView extends ConsumerWidget {
           leading: collapsed
               ? const SidebarToggleButton(collapse: false)
               : null,
+          // The current tree's worktree/branch, shown on the traffic-light row
+          // above the pane tabs. When the sidebar is folded the strip overlaps
+          // the traffic lights (and the unfold button), so inset past them;
+          // otherwise the pane strip is clear and only needs a small gutter.
+          title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
+          titleInset: collapsed ? kTrafficLightInset + 34 : 12,
         ),
         Expanded(
           // No worktree selected → the empty "Select or start a session"
@@ -52,6 +61,45 @@ class PaneTreeView extends ConsumerWidget {
                   activeLeafId: current.activeLeafId,
                   worktree: current.worktree,
                 ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The current tree's worktree/branch label shown on the window title strip: a
+/// fork icon + branch name (or "New worktree" while the worktree is still a
+/// virtual draft that hasn't materialised on disk).
+class _WorktreeTitle extends StatelessWidget {
+  const _WorktreeTitle({required this.worktree});
+
+  final SelectedWorktree worktree;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = worktree.path.startsWith(kDraftWorktreePrefix)
+        ? 'New worktree'
+        : (worktree.branch ?? worktree.path);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Symbols.fork_right,
+          size: 16,
+          weight: 200,
+          color: theme.colorScheme.outline,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w400,
+            ),
+          ),
         ),
       ],
     );

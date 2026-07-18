@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/panes/pane_node.dart';
@@ -239,6 +240,76 @@ void main() {
         expect(find.byType(WorktreeStartView), findsOneWidget);
       },
     );
+  });
+
+  group('PaneTreeView title strip', () {
+    ProviderContainer noSessionsContainer() => ProviderContainer(
+      overrides: [
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+        agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+      ],
+    );
+
+    testWidgets('shows the current worktree branch with a fork icon', (
+      tester,
+    ) async {
+      final c = noSessionsContainer();
+      addTearDown(c.dispose);
+      c.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.text(_wtA.branch!), findsOneWidget);
+      expect(find.byIcon(Symbols.fork_right), findsOneWidget);
+    });
+
+    testWidgets('falls back to the worktree path when it has no branch', (
+      tester,
+    ) async {
+      const detached = SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt-detached',
+        branch: null,
+      );
+      final c = noSessionsContainer();
+      addTearDown(c.dispose);
+      c.read(paneTreeControllerProvider.notifier).selectWorktree(detached);
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.text('/tmp/wt-detached'), findsOneWidget);
+    });
+
+    testWidgets(
+      'reads "New worktree" while the tree is still a virtual draft',
+      (tester) async {
+        final c = noSessionsContainer();
+        addTearDown(c.dispose);
+        c
+            .read(paneTreeControllerProvider.notifier)
+            .bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
+
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        expect(find.text('New worktree'), findsOneWidget);
+        // Never the raw `draft:<id>` key.
+        expect(find.text('draft:s1'), findsNothing);
+      },
+    );
+
+    testWidgets('renders no title when no tree is current', (tester) async {
+      final c = noSessionsContainer();
+      addTearDown(c.dispose);
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Symbols.fork_right), findsNothing);
+    });
   });
 
   group('PaneTreeView tab strip', () {

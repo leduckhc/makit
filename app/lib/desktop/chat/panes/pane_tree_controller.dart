@@ -249,6 +249,57 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
     _commit(PaneWorkspaceState(trees: state.trees, currentKey: null));
   }
 
+  /// The session ids that currently own a virtual draft tree (keyed
+  /// `draft:<sessionId>`). Used to reconcile drafts against the live session
+  /// list once it arrives (materialize or prune).
+  Iterable<String> draftTreeSessionIds() => state.trees.keys
+      .where((k) => k.startsWith(kDraftWorktreePrefix))
+      .map((k) => k.substring(kDraftWorktreePrefix.length))
+      .toList(growable: false);
+
+  /// Migrate a still-pending draft's virtual tree (`draft:<sessionId>`) onto the
+  /// real [worktree] once it materializes on disk, preserving the tree's pane
+  /// layout + active leaf so the pane the user is already looking at keeps its
+  /// splits and stops reporting the stale "New worktree" title. No-op when the
+  /// session has no draft tree. If a tree already exists at the real path (rare
+  /// — the same worktree reached another way), that one wins and the draft is
+  /// just dropped.
+  void materializeDraft(String sessionId, SelectedWorktree worktree) {
+    final draftKey = '$kDraftWorktreePrefix$sessionId';
+    final draftTree = state.trees[draftKey];
+    if (draftTree == null) return;
+    final trees = {...state.trees}..remove(draftKey);
+    trees[worktree.path] ??= PaneTreeState(
+      root: draftTree.root,
+      activeLeafId: draftTree.activeLeafId,
+      worktree: worktree,
+    );
+    _commit(
+      PaneWorkspaceState(
+        trees: trees,
+        currentKey: state.currentKey == draftKey
+            ? worktree.path
+            : state.currentKey,
+      ),
+    );
+  }
+
+  /// Drop a draft's virtual tree whose pending session no longer exists (e.g. a
+  /// draft abandoned before its first message, or a persisted draft tree whose
+  /// session is gone after a restart) so stale `draft:` keys can't accumulate
+  /// in the persisted workspace. No-op when no such tree exists.
+  void dropDraftTree(String sessionId) {
+    final draftKey = '$kDraftWorktreePrefix$sessionId';
+    if (!state.trees.containsKey(draftKey)) return;
+    final trees = {...state.trees}..remove(draftKey);
+    _commit(
+      PaneWorkspaceState(
+        trees: trees,
+        currentKey: state.currentKey == draftKey ? null : state.currentKey,
+      ),
+    );
+  }
+
   /// Splits the current tree's active pane along [axis]. The current pane keeps
   /// its own session; the fresh leaf is empty (a null-session leaf renders the
   /// tree's worktree harness picker) and becomes active.

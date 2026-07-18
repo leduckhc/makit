@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
-import '../../ui/project/folder_browser.dart';
 import 'selected_session.dart';
 
 /// Opens the "New worktree" dialog: pick a repo + base branch, then spawn a
@@ -57,8 +56,8 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
     super.dispose();
   }
 
-  /// (Re)fetch the open-PR list for the selected repo. Called on open and
-  /// whenever the repo changes so the PR tab reflects the current repo.
+  /// (Re)fetch the open-PR list for the selected repo. Called on open so the
+  /// PR tab reflects the dialog's repo.
   void _loadPrs() {
     final projectId = _projectId;
     final future = projectId == null
@@ -70,17 +69,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
     // receives the error (and renders it) when it eventually attaches.
     future.ignore();
     _prsFuture = future;
-  }
-
-  /// Switch the selected repo, refreshing the base branch and PR list together.
-  /// All `_projectId` changes route through here so no path can change the repo
-  /// without also reloading its open PRs.
-  void _selectProject(String? id) {
-    setState(() {
-      _projectId = id;
-      _baseBranch = _defaultBranchFor(id);
-      _loadPrs();
-    });
   }
 
   /// The repo's default fork point: its default branch, else current, else the
@@ -145,12 +133,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
     );
   }
 
-  Future<void> _addProject() async {
-    final id = await showFolderBrowser(context);
-    if (!mounted || id == null) return;
-    _selectProject(id);
-  }
-
   Future<void> _start() => _spawnWorktree(
     (projectId) => ref
         .read(storeControllerProvider.notifier)
@@ -213,33 +195,6 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Repo'),
-            const SizedBox(height: 6),
-            if (repos.isEmpty)
-              OutlinedButton.icon(
-                onPressed: _addProject,
-                icon: const Icon(Icons.create_new_folder_outlined),
-                label: const Text('Add a repo'),
-              )
-            else
-              DropdownButtonFormField<String>(
-                initialValue: _projectId,
-                isExpanded: true,
-                items: [
-                  for (final r in repos)
-                    DropdownMenuItem(
-                      value: r.id,
-                      child: Text(
-                        r.currentBranch == null
-                            ? r.name
-                            : '${r.name} · ${r.currentBranch}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (v) => _selectProject(v),
-              ),
-            const SizedBox(height: 12),
             TabBar(
               controller: _tabs,
               tabs: const [

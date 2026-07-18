@@ -47,11 +47,30 @@ void selectSessionExclusive(WidgetRef ref, String id) {
     );
     return;
   }
-  // The session has no worktree yet (a still-pending draft) or is not in the
-  // store yet: bind it into the current tree when one is selected, otherwise
-  // leave the highlight set with no pane binding (mobile has no pane tree).
+  if (session != null) {
+    // A still-pending draft has no real worktree on disk yet: bind it into its
+    // own virtual, session-scoped tree so the pane shows the harness picker.
+    // The real worktree materializes — and the pane switches to the transcript
+    // — on the first message.
+    controller.bindActiveSession(id, draftWorktreeFor(session.projectId, id));
+    return;
+  }
+  // The session is not in the store yet: bind it into the current tree when one
+  // is selected, otherwise leave the highlight set with no pane binding (mobile
+  // has no pane tree).
   final current = controller.current;
   if (current != null) controller.bindActiveSession(id, current.worktree);
+}
+
+/// Open a freshly spawned pending draft ([sessionId]) in its own virtual pane
+/// tree and select it (the sidebar + button). Unlike [selectSessionExclusive]
+/// this does not read the session from the store, so it works immediately after
+/// `spawnSession` returns — before the server's sessions.snapshot arrives.
+void openDraftSession(WidgetRef ref, String projectId, String sessionId) {
+  ref.read(selectedSessionProvider.notifier).state = sessionId;
+  ref
+      .read(paneTreeControllerProvider.notifier)
+      .bindActiveSession(sessionId, draftWorktreeFor(projectId, sessionId));
 }
 
 /// Select a sessionless worktree: swap the pane view to that worktree's tree
