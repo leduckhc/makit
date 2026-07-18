@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/composer_draft.dart';
@@ -536,5 +537,82 @@ void main() {
       expect(find.byType(WorktreeStartView), findsNothing);
       expect(find.text('Select or start a session'), findsOneWidget);
     });
+  });
+
+  group('reversed transcript auto-scroll', () {
+    // A tall transcript so the reversed list overflows and can be scrolled up.
+    List<ChatItem> longTranscript() => [
+      for (var i = 1; i <= 40; i++)
+        UserMessageItem(seq: i, ts: 0, text: 'message #$i'),
+    ];
+
+    Future<(ScrollController, void Function(List<ChatItem>))> pumpStreaming(
+      WidgetTester tester, {
+      required List<ChatItem> initial,
+    }) async {
+      final itemsController = StateProvider<List<ChatItem>>((ref) => initial);
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState([_session()])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          chatItemsProvider(
+            's1',
+          ).overrideWith((ref) => ref.watch(itemsController)),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(selectedSessionProvider.notifier).state = 's1';
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+          ),
+        ),
+      );
+      await tester.pump();
+      final controller = tester
+          .widget<ListView>(find.byType(ListView))
+          .controller!;
+      void push(List<ChatItem> next) =>
+          container.read(itemsController.notifier).state = next;
+      return (controller, push);
+    }
+
+    testWidgets(
+      'a streamed message while scrolled up does not yank to newest',
+      (tester) async {
+        final items = longTranscript();
+        final (controller, push) = await pumpStreaming(tester, initial: items);
+
+        expect(controller.position.maxScrollExtent, greaterThan(120));
+        controller.jumpTo(300);
+        await tester.pump();
+
+        push([...items, AgentMessageItem(seq: 999, ts: 0, text: 'incoming')]);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(controller.position.pixels, greaterThan(120));
+      },
+    );
+
+    testWidgets(
+      'a streamed message while near the bottom pulls to the newest',
+      (tester) async {
+        final items = longTranscript();
+        final (controller, push) = await pumpStreaming(tester, initial: items);
+
+        controller.jumpTo(50);
+        await tester.pump();
+
+        push([...items, AgentMessageItem(seq: 999, ts: 0, text: 'incoming')]);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(controller.position.pixels, lessThanOrEqualTo(1.0));
+      },
+    );
   });
 }
