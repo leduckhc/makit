@@ -18,18 +18,18 @@ void main() {
     testWidgets('renders the given title label wrapped in IgnorePointer', (
       tester,
     ) async {
-      await _pump(
-        tester,
-        const TitleBarStrip(title: Text('main')),
-      );
+      await _pump(tester, const TitleBarStrip(title: Text('main')));
 
       expect(find.text('main'), findsOneWidget);
       // IgnorePointer keeps the passive label from swallowing window-drag
-      // gestures underneath it.
+      // gestures underneath it. (Match the active one specifically: the
+      // framework inserts other `ignoring: false` IgnorePointers around it.)
       expect(
         find.ancestor(
           of: find.text('main'),
-          matching: find.byType(IgnorePointer),
+          matching: find.byWidgetPredicate(
+            (w) => w is IgnorePointer && w.ignoring,
+          ),
         ),
         findsOneWidget,
       );
@@ -39,10 +39,7 @@ void main() {
       await _pump(tester, const TitleBarStrip(title: Text('main')));
 
       final positioned = tester.widget<Positioned>(
-        find.ancestor(
-          of: find.text('main'),
-          matching: find.byType(Positioned),
-        ),
+        find.ancestor(of: find.text('main'), matching: find.byType(Positioned)),
       );
       expect(positioned.left, kTrafficLightInset);
     });
@@ -54,10 +51,7 @@ void main() {
       );
 
       final positioned = tester.widget<Positioned>(
-        find.ancestor(
-          of: find.text('main'),
-          matching: find.byType(Positioned),
-        ),
+        find.ancestor(of: find.text('main'), matching: find.byType(Positioned)),
       );
       expect(positioned.left, 12);
     });
