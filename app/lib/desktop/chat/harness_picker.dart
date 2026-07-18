@@ -221,32 +221,9 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final agentsAsync = ref.watch(agentsProvider);
-    final wt = widget.worktree;
     return Column(
       children: [
         const UnfoldStrip(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              Icon(
-                Symbols.fork_right,
-                size: 18,
-                weight: 200,
-                color: theme.colorScheme.outline,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  wt.branch ?? wt.path,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleSmall,
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: Center(
             child: ConstrainedBox(

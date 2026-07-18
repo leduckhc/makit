@@ -35,7 +35,22 @@ class _FakeStore extends StoreController {
   final List<String> hidden = [];
   final List<String> removedWorktrees = [];
   final List<({String path, String name})> renames = [];
+  final List<String> spawned = [];
   bool fail = false;
+
+  @override
+  Future<String> spawnSession(
+    String projectId, {
+    String? title,
+    String? agent,
+    String? baseBranch,
+    String? worktreePath,
+    String? branch,
+  }) async {
+    spawned.add(projectId);
+    if (fail) throw Exception('nope');
+    return 'draft-$projectId';
+  }
 
   @override
   Future<void> removeProject(String id) async {
@@ -185,6 +200,20 @@ Future<void> _openWorktreeMenu(WidgetTester tester, String branchLabel) async {
   await gesture.moveTo(tester.getCenter(find.text(branchLabel)));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('Worktree actions'));
+  await tester.pumpAndSettle();
+  await gesture.removePointer();
+  await tester.pumpAndSettle();
+}
+
+/// Hover the repo header row and open its (hover-only) actions menu. Removes
+/// its pointer before returning so the [Visibility]-gated button state is
+/// clean for later interactions in the same test.
+Future<void> _openRepoMenu(WidgetTester tester, String repoName) async {
+  final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await gesture.addPointer(location: Offset.zero);
+  await gesture.moveTo(tester.getCenter(find.text(repoName)));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byTooltip('Repo actions'));
   await tester.pumpAndSettle();
   await gesture.removePointer();
   await tester.pumpAndSettle();
@@ -432,10 +461,34 @@ void main() {
       sessions: const [],
     );
 
-    await tester.tap(find.byTooltip('Repo actions'));
-    await tester.pumpAndSettle();
+    // Repo actions surface only on hover, so move the pointer over the header.
+    await _openRepoMenu(tester, 'alpha');
     expect(find.text('Hide the repo'), findsOneWidget);
     expect(find.text('New worktree from…'), findsOneWidget);
+  });
+
+  testWidgets('the + button spawns a pending draft without a dialog', (
+    tester,
+  ) async {
+    final store = await _pumpWithStore(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+        ),
+      ],
+      sessions: const [],
+    );
+
+    await tester.tap(find.byTooltip('New worktree'));
+    await tester.pumpAndSettle();
+
+    // A bare spawn (pending draft, no worktree on disk) is issued for the repo.
+    expect(store.spawned, ['p1']);
+    // No dialog opens: the richer picker only lives in the repo overflow menu.
+    expect(find.text('New worktree from…'), findsNothing);
   });
 
   testWidgets(
@@ -576,8 +629,7 @@ void main() {
       sessions: const [],
     );
 
-    await tester.tap(find.byTooltip('Repo actions'));
-    await tester.pumpAndSettle();
+    await _openRepoMenu(tester, 'alpha');
     await tester.tap(find.text('Hide the repo'));
     await tester.pumpAndSettle();
 
@@ -598,8 +650,7 @@ void main() {
       fail: true,
     );
 
-    await tester.tap(find.byTooltip('Repo actions'));
-    await tester.pumpAndSettle();
+    await _openRepoMenu(tester, 'alpha');
     await tester.tap(find.text('Hide the repo'));
     await tester.pumpAndSettle();
 

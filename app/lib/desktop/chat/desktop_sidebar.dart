@@ -98,6 +98,28 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   /// when collapsed the worktrees, "show more" pill, and drafts are hidden.
   bool _expanded = true;
 
+  /// Whether the pointer is over the repo header row. Gates the (hover-only)
+  /// repo actions menu, mirroring the worktree row's overflow menu.
+  bool _repoHovering = false;
+
+  /// The sidebar + button: spawn a pending draft (no worktree on disk yet) and
+  /// open it in its own virtual pane tree, landing on the harness picker. The
+  /// real worktree materializes on the draft's first message. No dialog — the
+  /// richer "New worktree from…" picker lives in the repo overflow menu.
+  Future<void> _startDraftWorktree(String projectId) async {
+    final store = ref.read(storeControllerProvider.notifier);
+    try {
+      final sid = await store.spawnSession(projectId);
+      if (!mounted) return;
+      openDraftSession(ref, projectId, sid);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('New worktree failed: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -118,57 +140,70 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 8, 2),
-          child: Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () => setState(() => _expanded = !_expanded),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      children: [
-                        Icon(
-                          _expanded
-                              ? Symbols.keyboard_arrow_down
-                              : Symbols.keyboard_arrow_right,
-                          size: 16,
-                          weight: 200,
-                          color: theme.colorScheme.outline,
-                        ),
-                        const SizedBox(width: 2),
-                        Icon(
-                          Symbols.folder_special,
-                          size: 16,
-                          weight: 200,
-                          color: theme.colorScheme.outline,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            repo.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              letterSpacing: 0.6,
-                              fontWeight: FontWeight.w400,
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _repoHovering = true),
+            onExit: (_) => setState(() => _repoHovering = false),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            _expanded
+                                ? Symbols.keyboard_arrow_down
+                                : Symbols.keyboard_arrow_right,
+                            size: 16,
+                            weight: 200,
+                            color: theme.colorScheme.outline,
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            Symbols.folder_special,
+                            size: 16,
+                            weight: 200,
+                            color: theme.colorScheme.outline,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              repo.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                letterSpacing: 0.6,
+                                fontWeight: FontWeight.w400,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-              _RepoMenuButton(repo: repo),
-              IconButton(
-                tooltip: 'New worktree',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Symbols.add, size: 16, weight: 200),
-                onPressed: () =>
-                    showNewSessionDialog(context, ref, projectId: repo.id),
-              ),
-            ],
+                // Repo actions only surface on hover (keeping its slot reserved
+                // so the + button never shifts). maintainState keeps it mounted
+                // while its popup is open even though the modal barrier drops
+                // the row's hover.
+                Visibility(
+                  visible: _repoHovering,
+                  maintainSize: true,
+                  maintainAnimation: true,
+                  maintainState: true,
+                  child: _RepoMenuButton(repo: repo),
+                ),
+                IconButton(
+                  tooltip: 'New worktree',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Symbols.add, size: 16, weight: 200),
+                  onPressed: () => _startDraftWorktree(repo.id),
+                ),
+              ],
+            ),
           ),
         ),
         if (_expanded) ...[
@@ -222,6 +257,71 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   }
 }
 
+/// A compact overflow-menu trigger sized to match the sidebar's + button: a
+/// [VisualDensity.compact] [IconButton] (so its hover state layer is the small
+/// circle the + uses) that opens a popup via [showMenu]. PopupMenuButton's own
+/// `icon` can't be shrunk to this size — it wraps the icon in a default 48px
+/// IconButton and Material 3 fills that whole box with the hover state layer.
+class _CompactMenuButton extends StatelessWidget {
+  const _CompactMenuButton({
+    required this.icon,
+    required this.tooltip,
+    required this.itemBuilder,
+    required this.onSelected,
+    this.onOpened,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final List<PopupMenuEntry<String>> Function(BuildContext) itemBuilder;
+
+  /// Invoked with the chosen value, or the empty string when the menu is
+  /// dismissed without a selection (so callers can clear open-state flags).
+  final void Function(String value) onSelected;
+
+  /// Invoked just before the menu opens (parity with PopupMenuButton.onOpened).
+  final VoidCallback? onOpened;
+
+  Future<void> _open(BuildContext context) async {
+    final button = context.findRenderObject() as RenderBox;
+    final overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    onOpened?.call();
+    final selected = await showMenu<String>(
+      context: context,
+      position: position,
+      items: itemBuilder(context),
+    );
+    onSelected(selected ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      // Tightly bounded so hovering never grows the worktree row (which would
+      // shift the branch name): the box matches the 16px glyph plus a hair,
+      // staying within the row's leading-icon height.
+      padding: EdgeInsets.zero,
+      iconSize: 16,
+      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+      icon: Icon(icon, size: 16, weight: 200),
+      onPressed: () => _open(context),
+    );
+  }
+}
+
 /// The repo header's overflow menu (the triple-dots left of +). Hosts repo-
 /// scoped actions: hide the repo (untrack it) and open the richer
 /// "New worktree from…" dialog. More items land here later.
@@ -232,9 +332,9 @@ class _RepoMenuButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<String>(
+    return _CompactMenuButton(
       tooltip: 'Repo actions',
-      icon: const Icon(Symbols.more_horiz, size: 16, weight: 200),
+      icon: Symbols.more_horiz,
       onSelected: (value) {
         switch (value) {
           case 'hide':
@@ -559,11 +659,12 @@ class _WorktreeMenuButton extends StatelessWidget {
     final isPrimary = worktree.isPrimary;
     final isDetached = worktree.branch == null;
     final canRename = !_hasOpenPr && !isPrimary && !isDetached;
-    return PopupMenuButton<String>(
+    return _CompactMenuButton(
       tooltip: 'Worktree actions',
-      icon: const Icon(Symbols.more_vert, size: 16, weight: 200),
+      icon: Symbols.more_horiz,
       onOpened: onMenuOpened,
-      onCanceled: () => onSelected(''),
+      // A cancelled menu resolves to null → forward '' so the parent's
+      // "keep mounted while open" flag is cleared just like a real selection.
       onSelected: onSelected,
       itemBuilder: (context) => [
         PopupMenuItem(

@@ -17,13 +17,28 @@ import 'sidebar_layout.dart';
 /// vertical offset — the cosmetic top:3-vs-top:7 normalisation is intentionally
 /// deferred to avoid a behaviour change in this pure-move spec.
 class TitleBarStrip extends StatelessWidget {
-  const TitleBarStrip({super.key, this.leading, this.leadingTop = 7});
+  const TitleBarStrip({
+    super.key,
+    this.leading,
+    this.leadingTop = 7,
+    this.title,
+    this.titleInset = kTrafficLightInset,
+  });
 
   /// Optional control pinned past the traffic lights (null → drag strip only).
   final Widget? leading;
 
   /// Top inset of [leading] within the strip.
   final double leadingTop;
+
+  /// Optional label shown on the traffic-light row (e.g. the current worktree /
+  /// branch), vertically centred and left-aligned at [titleInset].
+  final Widget? title;
+
+  /// Left inset of [title]. Defaults past the traffic lights; callers pass a
+  /// smaller gutter when the strip does not overlap them (e.g. the pane area
+  /// while the sidebar is shown).
+  final double titleInset;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +50,14 @@ class TitleBarStrip extends StatelessWidget {
           const Positioned.fill(
             child: DragToMoveArea(child: SizedBox.expand()),
           ),
+          if (title != null)
+            Positioned(
+              left: titleInset,
+              top: 0,
+              bottom: 0,
+              right: 8,
+              child: Align(alignment: Alignment.centerLeft, child: title!),
+            ),
           if (leading != null)
             Positioned(
               left: kTrafficLightInset,
