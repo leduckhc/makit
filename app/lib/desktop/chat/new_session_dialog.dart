@@ -151,41 +151,27 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
     _selectProject(id);
   }
 
-  Future<void> _start() async {
-    final projectId = _projectId;
-    if (projectId == null) return;
-    setState(() {
-      _spawning = true;
-      _error = null;
-    });
-    try {
-      final result = await ref
-          .read(storeControllerProvider.notifier)
-          .createWorktree(projectId, baseBranch: _baseBranch);
-      if (!mounted) return;
-      // Land on the new (sessionless) worktree — the pane shows the harness
-      // cards; the session starts in it on the first message.
-      selectWorktree(
-        ref,
-        SelectedWorktree(
-          projectId: projectId,
-          path: result.path,
-          branch: result.branch,
-        ),
-      );
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _spawning = false;
-        _error = '$e';
-      });
-    }
-  }
+  Future<void> _start() => _spawnWorktree(
+    (projectId) => ref
+        .read(storeControllerProvider.notifier)
+        .createWorktree(projectId, baseBranch: _baseBranch),
+  );
 
   /// Create a worktree that checks out the selected PR's head branch, then land
   /// on it (same as the branch flow).
-  Future<void> _createFromPr(int prNumber) async {
+  Future<void> _createFromPr(int prNumber) => _spawnWorktree(
+    (projectId) => ref
+        .read(storeControllerProvider.notifier)
+        .createWorktreeFromPr(projectId, prNumber),
+  );
+
+  /// Shared flow for both tabs: flip into the spawning state, create the
+  /// worktree via [create], land on it (the pane shows the harness cards; the
+  /// session starts on the first message), and close the dialog — or surface
+  /// the error inline.
+  Future<void> _spawnWorktree(
+    Future<({String path, String? branch})> Function(String projectId) create,
+  ) async {
     final projectId = _projectId;
     if (projectId == null) return;
     setState(() {
@@ -193,9 +179,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog>
       _error = null;
     });
     try {
-      final result = await ref
-          .read(storeControllerProvider.notifier)
-          .createWorktreeFromPr(projectId, prNumber);
+      final result = await create(projectId);
       if (!mounted) return;
       selectWorktree(
         ref,
