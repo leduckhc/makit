@@ -444,10 +444,13 @@ export class SessionManager extends EventEmitter {
     const wt = trees.find((t) => resolve(t.path) === target);
     if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
     if (wt.isPrimary) throw new Error(`cannot remove the repo's primary worktree: ${worktreePath}`);
-    // Validated: only now is it safe to kill sessions (destructive) before the
-    // git removal. Match both started sessions (worktreePath) and drafts still
-    // bound to this tree (pendingWorktreePath) — a surviving draft would later
-    // launch its agent in a deleted directory.
+    // Remove the worktree first; only tear its sessions down once git actually
+    // succeeds. Killing first would orphan sessions (unrecoverably) if the
+    // removal then failed, leaving the worktree on disk without its sessions.
+    await removeWorktree(repoPath, worktreePath, true);
+    // Match both started sessions (worktreePath) and drafts still bound via
+    // pendingWorktreePath — a surviving draft would later launch its agent in
+    // the now-deleted directory.
     for (const session of this.sessions.values()) {
       if (session.projectId !== projectId) continue;
       const lc = session.lifecycle;
@@ -458,7 +461,6 @@ export class SessionManager extends EventEmitter {
         await this.killSession(session.id);
       }
     }
-    await removeWorktree(repoPath, worktreePath, true);
   }
 
   /**

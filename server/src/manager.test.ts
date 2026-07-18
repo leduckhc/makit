@@ -463,6 +463,36 @@ test("removeWorktree kills drafts still bound to the tree (pendingWorktreePath)"
   }
 });
 
+test("removeWorktree keeps sessions alive when the git removal fails", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    assert.ok(manager.getSession(draft.id));
+    // Lock the worktree so a single `--force` removal fails (git requires
+    // `-f -f` for locked trees) — a deterministic stand-in for any git
+    // administrative failure.
+    execFileSync("git", ["worktree", "lock", wt.path], { cwd });
+
+    await assert.rejects(() => manager.removeWorktree(projectId, wt.path));
+
+    // Removal failed, so the session must NOT have been killed and the worktree
+    // must still exist.
+    assert.ok(manager.getSession(draft.id), "session survives a failed removal");
+    assert.equal(existsSync(wt.path), true);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("spawnLinkedSession shares one virtual worktree across two drafts", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

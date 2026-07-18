@@ -318,7 +318,17 @@ export async function addWorktreeForPr(opts: {
   if (add.code !== 0) {
     throw new Error(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim() || `exit ${add.code}`}`);
   }
-  const checkout = await run("gh", ["pr", "checkout", String(opts.prNumber)], target);
+  // `gh pr checkout` defaults to a local branch named after the PR head ref.
+  // If that branch is already checked out in another worktree of this repo
+  // (commonly the primary checkout sits on it), git refuses the checkout and
+  // the whole flow fails. Detect that and fall back to a PR-unique local branch
+  // so the review worktree can still be created; otherwise keep gh's natural
+  // (head-ref) name.
+  const trees = await listWorktrees(opts.repoPath);
+  const headTaken = trees.some((w) => w.branch === opts.headRefName);
+  const checkoutArgs = ["pr", "checkout", String(opts.prNumber)];
+  if (headTaken) checkoutArgs.push("--branch", name);
+  const checkout = await run("gh", checkoutArgs, target);
   if (checkout.code !== 0) {
     // Roll back the empty detached worktree so we don't leave litter behind.
     // Best-effort: don't let a rollback failure mask the real checkout error.
