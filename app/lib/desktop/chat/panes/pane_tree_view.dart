@@ -4,7 +4,6 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
-import '../selected_session.dart' show kDraftWorktreePrefix;
 import '../selected_worktree.dart';
 import '../sidebar_layout.dart'
     show sidebarCollapsedProvider, kTrafficLightInset;
@@ -49,9 +48,7 @@ class PaneTreeView extends ConsumerWidget {
           // above the pane tabs. When the sidebar is folded the strip overlaps
           // the traffic lights (and the unfold button), so inset past them;
           // otherwise the pane strip is clear and only needs a small gutter.
-          title: worktree == null
-              ? null
-              : _WorktreeTitle(worktree: worktree),
+          title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
           titleInset: collapsed ? kTrafficLightInset + 34 : 12,
         ),
         Expanded(

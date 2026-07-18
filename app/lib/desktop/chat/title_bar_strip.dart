@@ -56,7 +56,11 @@ class TitleBarStrip extends StatelessWidget {
               top: 0,
               bottom: 0,
               right: 8,
-              child: Align(alignment: Alignment.centerLeft, child: title!),
+              // IgnorePointer so the label doesn't steal the window-drag zone
+              // beneath it (it is a passive title, not an interactive control).
+              child: IgnorePointer(
+                child: Align(alignment: Alignment.centerLeft, child: title!),
+              ),
             ),
           if (leading != null)
             Positioned(

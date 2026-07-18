@@ -62,22 +62,6 @@ void selectSessionExclusive(WidgetRef ref, String id) {
   if (current != null) controller.bindActiveSession(id, current.worktree);
 }
 
-/// The pane-tree key prefix for a still-pending draft's virtual worktree.
-/// Distinguishes a session-scoped virtual key from every real worktree path so
-/// the pane can host a draft's harness picker before anything exists on disk.
-const String kDraftWorktreePrefix = 'draft:';
-
-/// The virtual worktree for a still-pending draft [sessionId], keyed by
-/// `draft:<sessionId>` so the pane tree can host the draft's harness picker
-/// before any real worktree exists on disk. The key is distinct from every real
-/// worktree path; the worktree materializes on the draft's first message.
-SelectedWorktree draftWorktreeFor(String projectId, String sessionId) =>
-    SelectedWorktree(
-      projectId: projectId,
-      path: '$kDraftWorktreePrefix$sessionId',
-      branch: null,
-    );
-
 /// Open a freshly spawned pending draft ([sessionId]) in its own virtual pane
 /// tree and select it (the sidebar + button). Unlike [selectSessionExclusive]
 /// this does not read the session from the store, so it works immediately after

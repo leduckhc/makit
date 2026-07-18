@@ -134,8 +134,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       // its pending session is gone (e.g. a persisted draft pane after a server
       // restart) fall through to the empty placeholder instead of a start view
       // that would try to launch an agent in a path that isn't a worktree.
-      if (worktree != null &&
-          !worktree.path.startsWith(kDraftWorktreePrefix)) {
+      if (worktree != null && !worktree.path.startsWith(kDraftWorktreePrefix)) {
         return WorktreeStartView(
           key: ValueKey(worktree.path),
           worktree: worktree,

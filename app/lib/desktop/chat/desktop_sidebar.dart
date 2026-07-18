@@ -302,6 +302,9 @@ class _CompactMenuButton extends StatelessWidget {
       position: position,
       items: itemBuilder(context),
     );
+    // The trigger can unmount while the menu is open (its row/worktree removed);
+    // its callbacks touch parent state, so bail if we're gone.
+    if (!context.mounted) return;
     onSelected(selected ?? '');
   }
 

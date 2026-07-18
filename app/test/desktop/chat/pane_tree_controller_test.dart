@@ -282,4 +282,62 @@ void main() {
       expect(c.state.currentKey, isNull);
     });
   });
+
+  group('PaneTreeController draft trees', () {
+    test('draftTreeSessionIds reports sessions with a virtual draft tree', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
+      c.bindActiveSession('s2', _wtA); // a real worktree, not a draft
+      expect(c.draftTreeSessionIds(), ['s1']);
+    });
+
+    test('materializeDraft migrates the tree onto the real worktree', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
+      c.splitActive(Axis.horizontal);
+      final draftRoot = c.current!.root;
+      final draftActive = c.current!.activeLeafId;
+
+      const real = SelectedWorktree(
+        projectId: 'p1',
+        path: '/wt/feat',
+        branch: 'feat/x',
+      );
+      c.materializeDraft('s1', real);
+
+      // The draft key is gone; the tree now lives under the real path with its
+      // layout + active leaf intact and the real worktree as its title source.
+      expect(c.state.trees.containsKey('draft:s1'), isFalse);
+      expect(c.state.currentKey, '/wt/feat');
+      expect(c.current!.worktree, real);
+      expect(c.current!.root, draftRoot, reason: 'layout preserved');
+      expect(c.current!.activeLeafId, draftActive);
+    });
+
+    test('materializeDraft is a no-op when the session has no draft tree', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      final before = c.state;
+      c.materializeDraft('sX', _wtB);
+      expect(c.state, before);
+    });
+
+    test('dropDraftTree removes an abandoned draft and clears currentKey', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
+      expect(c.state.currentKey, 'draft:s1');
+      c.dropDraftTree('s1');
+      expect(c.state.trees, isEmpty);
+      expect(c.state.currentKey, isNull);
+    });
+
+    test('dropDraftTree keeps a different current tree selected', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
+      c.selectWorktree(_wtA); // current is now the real tree
+      c.dropDraftTree('s1');
+      expect(c.state.trees.containsKey('draft:s1'), isFalse);
+      expect(c.state.currentKey, _wtA.path);
+    });
+  });
 }
