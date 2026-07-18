@@ -40,18 +40,17 @@ Future<void> _pump(
 }
 
 void main() {
-  testWidgets(
-    'does not render a branch header row above the harness content',
-    (tester) async {
-      await _pump(tester);
+  testWidgets('does not render a branch header row above the harness content', (
+    tester,
+  ) async {
+    await _pump(tester);
 
-      // The fork icon + branch label header was removed; the pane no longer
-      // shows the branch anywhere in its own body (it now lives on the
-      // window title strip, owned by PaneTreeView).
-      expect(find.byIcon(Symbols.fork_right), findsNothing);
-      expect(find.text('feat/login'), findsNothing);
-    },
-  );
+    // The fork icon + branch label header was removed; the pane no longer
+    // shows the branch anywhere in its own body (it now lives on the
+    // window title strip, owned by PaneTreeView).
+    expect(find.byIcon(Symbols.fork_right), findsNothing);
+    expect(find.text('feat/login'), findsNothing);
+  });
 
   testWidgets('falls back to no path label either, for a detached worktree', (
     tester,

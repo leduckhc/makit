@@ -39,8 +39,10 @@ Future<void> _invoke(
       child: MaterialApp(
         home: Scaffold(
           body: Consumer(
-            builder: (ctx, ref, _) =>
-                TextButton(onPressed: () => action(ref), child: const Text('go')),
+            builder: (ctx, ref, _) => TextButton(
+              onPressed: () => action(ref),
+              child: const Text('go'),
+            ),
           ),
         ),
       ),
@@ -52,96 +54,77 @@ Future<void> _invoke(
 
 void main() {
   group('selectSessionExclusive', () {
-    testWidgets(
-      'a still-pending session (no worktreePath) binds into its own '
-      'virtual draft tree, not the currently-open tree',
-      (tester) async {
-        final container = ProviderContainer(
-          overrides: [
-            sessionsProvider.overrideWithValue(
-              SessionsState([_pendingSession('s1')]),
-            ),
-          ],
-        );
-        addTearDown(container.dispose);
-        // A real worktree tree is already open — the pre-fix behavior would
-        // have bound the pending session into this tree instead.
-        container
-            .read(paneTreeControllerProvider.notifier)
-            .selectWorktree(_wtA);
-
-        await _invoke(tester, container, (ref) {
-          selectSessionExclusive(ref, 's1');
-        });
-
-        expect(container.read(selectedSessionProvider), 's1');
-        final current = container.read(paneTreeControllerProvider).current!;
-        expect(current.worktree.path, 'draft:s1');
-        // The previously-open real tree survives untouched, just no longer
-        // current.
-        expect(
-          container.read(paneTreeControllerProvider).trees.containsKey(
-            _wtA.path,
+    testWidgets('a still-pending session (no worktreePath) binds into its own '
+        'virtual draft tree, not the currently-open tree', (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(
+            SessionsState([_pendingSession('s1')]),
           ),
-          isTrue,
-        );
-      },
-    );
+        ],
+      );
+      addTearDown(container.dispose);
+      // A real worktree tree is already open — the pre-fix behavior would
+      // have bound the pending session into this tree instead.
+      container.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
 
-    testWidgets(
-      'a session with a real worktreePath binds directly into that '
-      'worktree (not a draft tree)',
-      (tester) async {
-        final container = ProviderContainer(
-          overrides: [
-            sessionsProvider.overrideWithValue(
-              SessionsState([
-                _pendingSession(
-                  's1',
-                  worktreePath: '/wt/feat',
-                  branch: 'feat/x',
-                ),
-              ]),
-            ),
-          ],
-        );
-        addTearDown(container.dispose);
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 's1');
+      });
 
-        await _invoke(tester, container, (ref) {
-          selectSessionExclusive(ref, 's1');
-        });
+      expect(container.read(selectedSessionProvider), 's1');
+      final current = container.read(paneTreeControllerProvider).current!;
+      expect(current.worktree.path, 'draft:s1');
+      // The previously-open real tree survives untouched, just no longer
+      // current.
+      expect(
+        container.read(paneTreeControllerProvider).trees.containsKey(_wtA.path),
+        isTrue,
+      );
+    });
 
-        final current = container.read(paneTreeControllerProvider).current!;
-        expect(current.worktree.path, '/wt/feat');
-        expect(current.worktree.branch, 'feat/x');
-      },
-    );
+    testWidgets('a session with a real worktreePath binds directly into that '
+        'worktree (not a draft tree)', (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(
+            SessionsState([
+              _pendingSession('s1', worktreePath: '/wt/feat', branch: 'feat/x'),
+            ]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
 
-    testWidgets(
-      'an unknown session id (not yet in the store) binds into the '
-      'currently-open tree rather than opening a draft tree',
-      (tester) async {
-        final container = ProviderContainer(
-          overrides: [
-            sessionsProvider.overrideWithValue(SessionsState(const [])),
-          ],
-        );
-        addTearDown(container.dispose);
-        container
-            .read(paneTreeControllerProvider.notifier)
-            .selectWorktree(_wtA);
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 's1');
+      });
 
-        await _invoke(tester, container, (ref) {
-          selectSessionExclusive(ref, 'not-yet-known');
-        });
+      final current = container.read(paneTreeControllerProvider).current!;
+      expect(current.worktree.path, '/wt/feat');
+      expect(current.worktree.branch, 'feat/x');
+    });
 
-        expect(container.read(selectedSessionProvider), 'not-yet-known');
-        expect(
-          container.read(paneTreeControllerProvider).current!.worktree.path,
-          _wtA.path,
-        );
-      },
-    );
+    testWidgets('an unknown session id (not yet in the store) binds into the '
+        'currently-open tree rather than opening a draft tree', (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
+
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 'not-yet-known');
+      });
+
+      expect(container.read(selectedSessionProvider), 'not-yet-known');
+      expect(
+        container.read(paneTreeControllerProvider).current!.worktree.path,
+        _wtA.path,
+      );
+    });
   });
 
   group('openDraftSession', () {
@@ -170,7 +153,9 @@ void main() {
 
     testWidgets('opens a distinct draft tree per session id', (tester) async {
       final container = ProviderContainer(
-        overrides: [sessionsProvider.overrideWithValue(SessionsState(const []))],
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+        ],
       );
       addTearDown(container.dispose);
 

@@ -38,8 +38,10 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   /// Creates the desktop chat pane. When [sessionId] resolves to an existing
   /// session the pane shows its transcript; otherwise (no [sessionId], or a
   /// persisted id that no longer resolves) it shows the harness picker for
-  /// [worktree] — the enclosing tree's worktree — or the empty placeholder
-  /// when [worktree] is also null.
+  /// [worktree] — the enclosing tree's worktree — but only when that is a
+  /// *real* worktree. A draft's virtual worktree (`draft:<id>`) has nothing on
+  /// disk, so a missing/dead session there falls back to the empty placeholder
+  /// (as does a null [worktree]).
   const DesktopChatPane({
     super.key,
     this.sessionId,
@@ -52,8 +54,8 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   final String? sessionId;
 
   /// The enclosing tree's worktree; a null-session (or dead-session) leaf
-  /// renders this worktree's harness picker. Null only for the empty
-  /// placeholder.
+  /// renders this worktree's harness picker when it is a real worktree. A draft
+  /// virtual worktree (or null) falls back to the empty placeholder instead.
   final SelectedWorktree? worktree;
 
   /// Whether to render the in-pane session header (title + actions menu). The

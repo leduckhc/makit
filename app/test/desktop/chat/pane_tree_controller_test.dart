@@ -340,27 +340,27 @@ void main() {
       expect(c.state.currentKey, _wtA.path);
     });
 
-    test('dropDraftTree is a no-op when no draft tree exists for the session', () {
-      final c = PaneTreeController.ephemeral();
-      c.selectWorktree(_wtA);
-      final before = c.state;
-      c.dropDraftTree('never-drafted');
-      expect(c.state, before);
-    });
-
     test(
-      'draftTreeSessionIds reports every draft when multiple are open, and '
-      'is empty when there are none',
+      'dropDraftTree is a no-op when no draft tree exists for the session',
       () {
         final c = PaneTreeController.ephemeral();
-        expect(c.draftTreeSessionIds(), isEmpty);
-
-        c.bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
-        c.bindActiveSession('s2', draftWorktreeFor('p1', 's2'));
-        c.bindActiveSession('s3', _wtA); // a real worktree, not a draft
-        expect(c.draftTreeSessionIds().toSet(), {'s1', 's2'});
+        c.selectWorktree(_wtA);
+        final before = c.state;
+        c.dropDraftTree('never-drafted');
+        expect(c.state, before);
       },
     );
+
+    test('draftTreeSessionIds reports every draft when multiple are open, and '
+        'is empty when there are none', () {
+      final c = PaneTreeController.ephemeral();
+      expect(c.draftTreeSessionIds(), isEmpty);
+
+      c.bindActiveSession('s1', draftWorktreeFor('p1', 's1'));
+      c.bindActiveSession('s2', draftWorktreeFor('p1', 's2'));
+      c.bindActiveSession('s3', _wtA); // a real worktree, not a draft
+      expect(c.draftTreeSessionIds().toSet(), {'s1', 's2'});
+    });
 
     test(
       'materializeDraft drops the draft in favor of an already-existing real '
@@ -377,8 +377,11 @@ void main() {
         c.materializeDraft('s1', _wtA);
 
         // The draft is gone; the pre-existing real tree's layout wins rather
-        // than being clobbered by the draft's single starter leaf.
+        // than being clobbered by the draft's single starter leaf. The current
+        // draft selection follows onto the real tree so no empty pane is left.
         expect(c.state.trees.containsKey('draft:s1'), isFalse);
+        expect(c.state.currentKey, _wtA.path);
+        expect(c.current?.worktree, _wtA);
         expect(c.state.trees[_wtA.path]!.root, realRoot);
       },
     );
