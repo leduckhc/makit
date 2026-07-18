@@ -262,6 +262,101 @@ export async function findOpenPr(repoPath: string, branch: string): Promise<Pull
   }
 }
 
+/** A single open pull request, as listed for the "New worktree from PR" flow. */
+export interface OpenPr {
+  number: number;
+  title: string;
+  headRefName: string;
+  isDraft: boolean;
+  url: string;
+}
+
+/**
+ * All open PRs for the repo, newest first, via `gh`. Returns [] when `gh` is
+ * missing/unauthenticated or the repo has no GitHub remote — the picker just
+ * shows an empty list rather than erroring.
+ */
+export async function listOpenPrs(repoPath: string, limit = 50): Promise<OpenPr[]> {
+  const r = await run(
+    "gh",
+    ["pr", "list", "--state", "open", "--json", "number,title,headRefName,isDraft,url", "--limit", String(limit)],
+    repoPath,
+    8000,
+  );
+  if (r.code !== 0) return [];
+  try {
+    const parsed = JSON.parse(r.stdout.trim() || "[]") as OpenPr[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Create a worktree that checks out an existing PR's head branch. A fresh
+ * detached worktree is added first, then `gh pr checkout` fetches the PR head
+ * (handling same-repo and fork PRs) and switches the worktree to it. Returns
+ * the canonical worktree path + the checked-out branch name. Throws on
+ * failure — this is a user-initiated mutation whose error must surface.
+ */
+export async function addWorktreeForPr(opts: {
+  repoPath: string;
+  prNumber: number;
+  headRefName: string;
+  baseDir?: string;
+}): Promise<{ path: string; branch: string }> {
+  const base = opts.baseDir ?? worktreeBaseDir();
+  const repoName = basename(resolve(opts.repoPath));
+  // Include the PR number so two PRs whose head refs slugify to the same string
+  // (e.g. `feature/foo` and `feature-foo`) can't collide on the same directory.
+  const slug = slugify(opts.headRefName);
+  const name = slug ? `pr-${opts.prNumber}-${slug}` : `pr-${opts.prNumber}`;
+  const target = join(base, repoName, name);
+  // Detached checkout of HEAD so the worktree dir exists; gh then moves it to
+  // the PR head. No timeout: populating a worktree can take a while.
+  const add = await run("git", ["worktree", "add", "--detach", target], opts.repoPath);
+  if (add.code !== 0) {
+    throw new Error(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim() || `exit ${add.code}`}`);
+  }
+  // Always check out onto a PR-unique local branch (`name`). gh's default
+  // reuses the PR head-ref as the branch name, which git rejects when that
+  // branch is already checked out in another worktree of this repo (commonly
+  // the primary checkout sits on it), breaking the flow. A dedicated per-PR
+  // branch avoids the collision entirely; `--branch` still tracks the PR head,
+  // so pushes update the PR.
+  const checkout = await run(
+    "gh",
+    ["pr", "checkout", String(opts.prNumber), "--branch", name],
+    target,
+  );
+  if (checkout.code !== 0) {
+    // Roll back the empty detached worktree so we don't leave litter behind.
+    // Best-effort: don't let a rollback failure mask the real checkout error.
+    await removeWorktree(opts.repoPath, target, true).catch(() => {});
+    throw new Error(`gh pr checkout ${opts.prNumber} failed: ${checkout.stderr.trim() || `exit ${checkout.code}`}`);
+  }
+  // Report the actual checked-out branch (`name`, from --branch above) by
+  // reading HEAD, falling back to headRefName only if the read fails. Callers
+  // use this to highlight the worktree's row.
+  const head = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], target);
+  const actual = head.code === 0 ? head.stdout.trim() : "";
+  const branch = actual && actual !== "HEAD" ? actual : name;
+  return { path: realpathSync(target), branch };
+}
+
+/**
+ * Rename a worktree's local branch via `git branch -m`. Runs in the worktree
+ * so the currently checked-out branch is the one renamed. Throws on failure.
+ */
+export async function renameBranch(worktreePath: string, oldName: string, newName: string): Promise<void> {
+  // `--` terminates option parsing so a name beginning with `-` is treated as a
+  // ref rather than a git flag.
+  const r = await run("git", ["branch", "-m", "--", oldName, newName], worktreePath);
+  if (r.code !== 0) {
+    throw new Error(`git branch -m failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+  }
+}
+
 /**
  * Turn free-form text into a git-safe, kebab-case slug capped at ~6 words.
  * Empty / punctuation-only input yields "" so the caller can fall back to a
@@ -313,15 +408,17 @@ export async function addWorktree(opts: {
 }
 
 /**
- * Remove a managed worktree. Best-effort: logs and swallows failures so
- * teardown never blocks session cleanup. Pass `force` to drop even with
- * uncommitted changes.
+ * Remove a managed worktree. Throws on non-zero git exit (after logging) so
+ * callers — and the UI — see the failure instead of a false success. Pass
+ * `force` to drop even with uncommitted changes.
  */
 export async function removeWorktree(repoPath: string, worktreePath: string, force = false): Promise<void> {
   const args = ["worktree", "remove", worktreePath];
   if (force) args.push("--force");
   const r = await git(args, repoPath);
   if (r.code !== 0) {
-    log.warn(`[makit] git worktree remove ${worktreePath} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
+    const detail = r.stderr.trim() || `exit ${r.code}`;
+    log.warn(`[makit] git worktree remove ${worktreePath} failed: ${detail}`);
+    throw new Error(`git worktree remove ${worktreePath} failed: ${detail}`);
   }
 }

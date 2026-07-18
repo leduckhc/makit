@@ -421,7 +421,70 @@ class StoreController extends StateNotifier<StoreState> {
     return (path: path, branch: ack['branch'] as String?);
   }
 
-  /// List a project's prior on-disk pi sessions (newest first).
+  /// List the open PRs for a repo (the "New worktree from PR" picker). The
+  /// server already returns [] when `gh` is unavailable/unauthenticated, so an
+  /// empty result means "no open PRs"; a thrown error means the request itself
+  /// failed (dropped connection, timeout) and the caller surfaces it distinctly.
+  Future<List<OpenPr>> listOpenPrs(String projectId) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'pr.list', 'projectId': projectId},
+    );
+    final raw = (ack['prs'] as List?) ?? const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => OpenPr.fromJson(Map<String, dynamic>.from(m)))
+        .toList();
+  }
+
+  /// Create a worktree that checks out an existing PR's head branch. Returns
+  /// the new worktree's path + branch.
+  Future<({String path, String? branch})> createWorktreeFromPr(
+    String projectId,
+    int prNumber,
+  ) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.createFromPr',
+        'projectId': projectId,
+        'prNumber': prNumber,
+      },
+    );
+    final path = ack['path'] as String?;
+    if (path == null) throw StateError('server did not return a worktree path');
+    return (path: path, branch: ack['branch'] as String?);
+  }
+
+  /// Rename a worktree's checked-out branch. The server refuses when the branch
+  /// has an open PR; that surfaces as a thrown error the caller can show.
+  Future<void> renameBranch(
+    String projectId,
+    String worktreePath,
+    String newName,
+  ) async {
+    await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'branch.rename',
+          'projectId': projectId,
+          'worktreePath': worktreePath,
+          'newName': newName,
+        });
+  }
+
+  /// Remove a worktree (kills its sessions, then `git worktree remove --force`).
+  Future<void> removeWorktree(String projectId, String worktreePath) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.remove',
+        'projectId': projectId,
+        'worktreePath': worktreePath,
+      },
+    );
+  }
+
   Future<List<PiSessionMeta>> listPiSessions(String projectId) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,

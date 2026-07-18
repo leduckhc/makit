@@ -184,6 +184,111 @@ function makeGitRepo(): string {
   return dir;
 }
 
+test("createWorktree then renameWorktreeBranch renames the branch", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+    assert.ok(wt.branch);
+    await manager.renameWorktreeBranch(projectId, wt.path, "renamed-branch");
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt.path })
+      .toString()
+      .trim();
+    assert.equal(branch, "renamed-branch");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree deletes the worktree from disk", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+    assert.ok(existsSync(wt.path));
+    await manager.removeWorktree(projectId, wt.path);
+    assert.equal(existsSync(wt.path), false);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("renameWorktreeBranch refuses the repo's primary worktree", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    await assert.rejects(
+      () => manager.renameWorktreeBranch(projectId, realpathSync(cwd), "renamed"),
+      /primary worktree/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree refuses the repo's primary worktree", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    await assert.rejects(
+      () => manager.removeWorktree(projectId, realpathSync(cwd)),
+      /primary worktree/,
+    );
+    // The primary checkout is untouched.
+    assert.equal(existsSync(cwd), true);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree refuses a path that is not one of the project's worktrees", async () => {
+  const cwd = makeGitRepo();
+  const stranger = mkdtempSync(join(tmpdir(), "makit-stranger-"));
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    await assert.rejects(
+      () => manager.removeWorktree(projectId, stranger),
+      /not part of project/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(stranger, { recursive: true, force: true });
+  }
+});
+
+test("createWorktreeFromPr rejects a PR that is not open on this repo", async () => {
+  const cwd = makeGitRepo();
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    // The throwaway repo has no GitHub remote, so listOpenPrs yields [] and the
+    // lookup for any PR number fails rather than silently creating a worktree.
+    await assert.rejects(
+      () => manager.createWorktreeFromPr(projectId, 999999),
+      /not an open PR/,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("spawnPendingSession is a draft: no worktree, no agent started", async () => {
   const cwd = makeGitRepo();
   try {
@@ -322,6 +427,64 @@ test("spawnPendingSession binds an existing worktree (branch from git) and rejec
     assert.equal(s.worktreePath, wt.path);
     assert.equal(s.branch, gitBranch);
     assert.equal(started[0]?.cwd, wt.path, "agent runs in the bound worktree");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree kills drafts still bound to the tree (pendingWorktreePath)", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+    // A draft bound to the worktree: its path lives on lifecycle.pendingWorktreePath
+    // (session.worktreePath is undefined until the draft is started).
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    assert.ok(manager.getSession(draft.id));
+    assert.equal(draft.worktreePath, undefined);
+
+    await manager.removeWorktree(projectId, wt.path);
+
+    // The draft is gone (would otherwise later start an agent in a deleted dir).
+    assert.equal(manager.getSession(draft.id), undefined);
+    assert.equal(existsSync(wt.path), false);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree keeps sessions alive when the git removal fails", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    assert.ok(manager.getSession(draft.id));
+    // Lock the worktree so a single `--force` removal fails (git requires
+    // `-f -f` for locked trees) — a deterministic stand-in for any git
+    // administrative failure.
+    execFileSync("git", ["worktree", "lock", wt.path], { cwd });
+
+    await assert.rejects(() => manager.removeWorktree(projectId, wt.path));
+
+    // Removal failed, so the session must NOT have been killed and the worktree
+    // must still exist.
+    assert.ok(manager.getSession(draft.id), "session survives a failed removal");
+    assert.equal(existsSync(wt.path), true);
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
