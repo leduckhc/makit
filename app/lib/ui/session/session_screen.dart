@@ -53,25 +53,23 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     });
 
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
-      final firstLoad = _lastSeq == 0;
       _lastSeq = items.last.seq;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scroll.hasClients) return;
-        if (firstLoad) {
-          // Opening the session: land on the newest message. Markdown / code /
-          // images settle over several frames, so re-jump a few times.
-          _jumpToBottom();
-          for (final ms in const [60, 180, 360, 600]) {
-            Future<void>.delayed(Duration(milliseconds: ms), _jumpToBottom);
-          }
-        } else {
+      // Reversed list: the newest message lives at offset 0. Only pull to it if
+      // the user is already near the bottom, so scrolling up to read history is
+      // never yanked away by an incoming message.
+      const nearBottomPx = 120.0;
+      final atBottom =
+          !_scroll.hasClients || _scroll.position.pixels <= nearBottomPx;
+      if (atBottom) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scroll.hasClients) return;
           _scroll.animateTo(
-            _scroll.position.maxScrollExtent,
+            0,
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeOut,
           );
-        }
-      });
+        });
+      }
     }
 
     final cs = Theme.of(context).colorScheme;
@@ -102,6 +100,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             behavior: HitTestBehavior.translucent,
             child: ListView.builder(
               controller: _scroll,
+              // Reversed so the resting position (offset 0) is the newest
+              // message at the bottom: the session opens pinned to the latest
+              // with no measuring pass, and older items build lazily only as
+              // the user scrolls up.
+              reverse: true,
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
@@ -113,10 +116,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   items.length +
                   (session?.status == SessionStatus.running ? 1 : 0),
               itemBuilder: (context, i) {
-                // Trailing "working…" indicator while the agent is running.
-                if (i >= items.length) return const WorkingIndicator();
+                // Reversed: i counts up from the visual bottom. When running,
+                // i == 0 is the trailing "working…" indicator sitting just
+                // below the newest message.
+                final running = session?.status == SessionStatus.running;
+                if (running && i == 0) return const WorkingIndicator();
+                final index = items.length - 1 - (running ? i - 1 : i);
                 return chatItemWidget(
-                  items[i],
+                  items[index],
                   onOpenTool: (tool) => context.go(
                     '/session/${widget.sessionId}/tool/${tool.callId}',
                   ),
@@ -262,12 +269,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         ],
       ),
     );
-  }
-
-  void _jumpToBottom() {
-    if (_scroll.hasClients) {
-      _scroll.jumpTo(_scroll.position.maxScrollExtent);
-    }
   }
 
   /// Glass overflow menu for the top bar — session-level actions (rename,
