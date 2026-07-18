@@ -318,29 +318,29 @@ export async function addWorktreeForPr(opts: {
   if (add.code !== 0) {
     throw new Error(`git worktree add failed: ${add.stderr.trim() || add.stdout.trim() || `exit ${add.code}`}`);
   }
-  // `gh pr checkout` defaults to a local branch named after the PR head ref.
-  // If that branch is already checked out in another worktree of this repo
-  // (commonly the primary checkout sits on it), git refuses the checkout and
-  // the whole flow fails. Detect that and fall back to a PR-unique local branch
-  // so the review worktree can still be created; otherwise keep gh's natural
-  // (head-ref) name.
-  const trees = await listWorktrees(opts.repoPath);
-  const headTaken = trees.some((w) => w.branch === opts.headRefName);
-  const checkoutArgs = ["pr", "checkout", String(opts.prNumber)];
-  if (headTaken) checkoutArgs.push("--branch", name);
-  const checkout = await run("gh", checkoutArgs, target);
+  // Always check out onto a PR-unique local branch (`name`). gh's default
+  // reuses the PR head-ref as the branch name, which git rejects when that
+  // branch is already checked out in another worktree of this repo (commonly
+  // the primary checkout sits on it), breaking the flow. A dedicated per-PR
+  // branch avoids the collision entirely; `--branch` still tracks the PR head,
+  // so pushes update the PR.
+  const checkout = await run(
+    "gh",
+    ["pr", "checkout", String(opts.prNumber), "--branch", name],
+    target,
+  );
   if (checkout.code !== 0) {
     // Roll back the empty detached worktree so we don't leave litter behind.
     // Best-effort: don't let a rollback failure mask the real checkout error.
     await removeWorktree(opts.repoPath, target, true).catch(() => {});
     throw new Error(`gh pr checkout ${opts.prNumber} failed: ${checkout.stderr.trim() || `exit ${checkout.code}`}`);
   }
-  // Report the branch `gh` actually checked out rather than assuming it matches
-  // headRefName: for fork PRs (or a local-name collision) gh may create a
-  // differently-named local branch, and callers use this to highlight the row.
+  // Report the actual checked-out branch (`name`, from --branch above) by
+  // reading HEAD, falling back to headRefName only if the read fails. Callers
+  // use this to highlight the worktree's row.
   const head = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], target);
   const actual = head.code === 0 ? head.stdout.trim() : "";
-  const branch = actual && actual !== "HEAD" ? actual : opts.headRefName;
+  const branch = actual && actual !== "HEAD" ? actual : name;
   return { path: realpathSync(target), branch };
 }
 
