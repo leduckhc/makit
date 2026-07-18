@@ -176,6 +176,10 @@ export type CmdKind =
   | "session.setAgent"
   // repos / projects / worktrees
   | "worktree.create"
+  | "worktree.createFromPr"
+  | "worktree.remove"
+  | "branch.rename"
+  | "pr.list"
   | "repo.refresh"
   | "project.browse"
   | "project.add"
