@@ -66,13 +66,30 @@ void main() {
   );
 
   test('prunes a draft tree whose session no longer exists', () async {
-    final h = _harness('s1', const []);
+    // An authoritative (non-empty) snapshot that simply doesn't contain s1 is
+    // the "the draft's session is gone" signal — distinct from the empty
+    // startup snapshot, which means "not loaded yet".
+    final h = _harness('s1', [_session('other', worktreePath: '/wt/other')]);
     h.container.read(desktopDraftReconcileProvider);
     await Future<void>.microtask(() {});
 
-    expect(h.panes.state.trees, isEmpty);
+    expect(h.panes.state.trees.containsKey('draft:s1'), isFalse);
     expect(h.panes.state.currentKey, isNull);
   });
+
+  test(
+    'leaves restored drafts untouched on the empty startup snapshot',
+    () async {
+      // The shell activates the provider before the first sessions.snapshot
+      // arrives, so the initial empty list is "not loaded", not "no sessions".
+      // Pruning here would permanently drop a restored draft's layout.
+      final h = _harness('s1', const []);
+      h.container.read(desktopDraftReconcileProvider);
+      await Future<void>.microtask(() {});
+
+      expect(h.panes.state.trees.containsKey('draft:s1'), isTrue);
+    },
+  );
 
   test('leaves an un-materialized pending draft untouched', () async {
     final h = _harness('s1', [_session('s1')]); // no worktreePath yet

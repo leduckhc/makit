@@ -19,6 +19,13 @@ import 'selected_worktree.dart';
 /// [desktopAutoSelectSessionProvider].
 final desktopDraftReconcileProvider = Provider<void>((ref) {
   void reconcile(SessionsState sessions) {
+    // Skip the empty startup snapshot: the shell activates this provider before
+    // the connection delivers the first sessions.snapshot, so an empty list
+    // here is "not loaded yet", not "no sessions". Pruning against it would
+    // permanently drop restored draft trees whose sessions haven't arrived.
+    // The listen below re-runs once the authoritative (non-empty) snapshot
+    // lands. Mirrors desktopAutoSelectSessionProvider's empty-list guard.
+    if (sessions.sessions.isEmpty) return;
     final controller = ref.read(paneTreeControllerProvider.notifier);
     for (final sid in controller.draftTreeSessionIds()) {
       final session = sessions.byId(sid);
