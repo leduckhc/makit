@@ -106,11 +106,7 @@ class PrPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            PhosphorIconsLight.gitPullRequest,
-            size: 12,
-            color: color,
-          ),
+          Icon(PhosphorIconsLight.gitPullRequest, size: 12, color: color),
           const SizedBox(width: 3),
           Text(
             'PR #${pr.number}',

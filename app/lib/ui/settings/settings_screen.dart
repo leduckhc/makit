@@ -33,7 +33,11 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           const _SectionHeader('Connection'),
           ListTile(
-            leading: _leadingIcon(PhosphorIconsFill.circle, size: 14, color: statusColor),
+            leading: _leadingIcon(
+              PhosphorIconsFill.circle,
+              size: 14,
+              color: statusColor,
+            ),
             title: const Text('Status'),
             subtitle: Text(
               conn.lastError == null

@@ -205,58 +205,57 @@ void main() {
     },
   );
 
-  testWidgets(
-    'Ctrl+T resets the active pane to an empty harness-picker pane',
-    (tester) async {
-      final keymap = await controller();
-      const wt = SelectedWorktree(
-        projectId: 'p1',
-        path: '/tmp/wt-t',
-        branch: 'feature-t',
-      );
-      final session = Session(
-        id: 's1',
-        projectId: 'p1',
-        agent: 'pi',
-        title: 'Wire up pairing',
-        status: SessionStatus.idle,
-        policy: ApprovalPolicy.askOnRisky,
-        branch: 'feature-t',
-        worktreePath: '/tmp/wt-t',
-      );
-      final container = ProviderContainer(
-        overrides: [
-          keymapProvider.overrideWith((_) => keymap),
-          sessionsProvider.overrideWithValue(SessionsState([session])),
-        ],
-      );
-      addTearDown(container.dispose);
-      container
-          .read(paneTreeControllerProvider.notifier)
-          .bindActiveSession('s1', wt);
-      container.read(selectedSessionProvider.notifier).state = 's1';
+  testWidgets('Ctrl+T resets the active pane to an empty harness-picker pane', (
+    tester,
+  ) async {
+    final keymap = await controller();
+    const wt = SelectedWorktree(
+      projectId: 'p1',
+      path: '/tmp/wt-t',
+      branch: 'feature-t',
+    );
+    final session = Session(
+      id: 's1',
+      projectId: 'p1',
+      agent: 'pi',
+      title: 'Wire up pairing',
+      status: SessionStatus.idle,
+      policy: ApprovalPolicy.askOnRisky,
+      branch: 'feature-t',
+      worktreePath: '/tmp/wt-t',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        sessionsProvider.overrideWithValue(SessionsState([session])),
+      ],
+    );
+    addTearDown(container.dispose);
+    container
+        .read(paneTreeControllerProvider.notifier)
+        .bindActiveSession('s1', wt);
+    container.read(selectedSessionProvider.notifier).state = 's1';
 
-      await pumpScope(
-        tester,
-        keymap: keymap,
-        onOpenSettings: () {},
-        container: container,
-      );
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
 
-      await pressCtrl(tester, LogicalKeyboardKey.keyT);
+    await pressCtrl(tester, LogicalKeyboardKey.keyT);
 
-      final cur = container.read(paneTreeControllerProvider).current!;
-      // No split: still a single leaf, now empty (harness picker), same
-      // worktree. The session keeps running but the sidebar highlight clears.
-      expect(cur.root, isA<PaneLeaf>());
-      expect(cur.worktree, wt);
-      expect(
-        container.read(paneTreeControllerProvider.notifier).activeLeafSessionId,
-        isNull,
-      );
-      expect(container.read(selectedSessionProvider), isNull);
-    },
-  );
+    final cur = container.read(paneTreeControllerProvider).current!;
+    // No split: still a single leaf, now empty (harness picker), same
+    // worktree. The session keeps running but the sidebar highlight clears.
+    expect(cur.root, isA<PaneLeaf>());
+    expect(cur.worktree, wt);
+    expect(
+      container.read(paneTreeControllerProvider.notifier).activeLeafSessionId,
+      isNull,
+    );
+    expect(container.read(selectedSessionProvider), isNull);
+  });
 
   testWidgets('Ctrl+W closes the active pane but keeps the session', (
     tester,

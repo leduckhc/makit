@@ -105,16 +105,17 @@ void main() {
       final second = c.current!.activeLeafId;
       c.resetActiveToEmpty();
       final split = c.current!.root as PaneSplit;
-      PaneLeaf leaf(String id) =>
-          [split.first, split.second].cast<PaneLeaf>().firstWhere(
-            (l) => l.id == id,
-          );
+      PaneLeaf leaf(String id) => [
+        split.first,
+        split.second,
+      ].cast<PaneLeaf>().firstWhere((l) => l.id == id);
       // The untouched pane keeps its session; the active pane is now empty.
       expect(leaf(first).sessionId, 's-a');
       final active = c.current!.root as PaneSplit;
-      final activeLeaf = [active.first, active.second]
-          .cast<PaneLeaf>()
-          .firstWhere((l) => l.id == c.current!.activeLeafId);
+      final activeLeaf = [
+        active.first,
+        active.second,
+      ].cast<PaneLeaf>().firstWhere((l) => l.id == c.current!.activeLeafId);
       expect(activeLeaf.sessionId, isNull);
       expect(c.current!.activeLeafId, isNot(first));
       expect(c.current!.activeLeafId, isNot(second));

@@ -31,24 +31,27 @@ const _hairlineDark = Color(0xFF333333);
 
 ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final scheme = ColorScheme.fromSeed(
-    seedColor: kMakitAccent,
-    brightness: brightness,
-  ).copyWith(
-    // Neutral (C=0) surface ramp — keeps M3 elevation stepping, drops the tint.
-    surface: dark ? _surfaceDark : _surfaceLight,
-    onSurface: dark ? _onSurfaceDark : _onSurfaceLight,
-    onSurfaceVariant: dark ? _mutedDark : _mutedLight,
-    outline: dark ? _mutedDark : _mutedLight,
-    outlineVariant: dark ? _hairlineDark : _hairlineLight,
-    surfaceContainerLowest: dark ? _containerLowestDark : _containerLowestLight,
-    surfaceContainerLow: dark ? _containerLowDark : _containerLowLight,
-    surfaceContainer: dark ? _containerDark : _containerLight,
-    surfaceContainerHigh: dark ? _containerHighDark : _containerHighLight,
-    surfaceContainerHighest: dark
-        ? _containerHighestDark
-        : _containerHighestLight,
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: kMakitAccent,
+        brightness: brightness,
+      ).copyWith(
+        // Neutral (C=0) surface ramp — keeps M3 elevation stepping, drops the tint.
+        surface: dark ? _surfaceDark : _surfaceLight,
+        onSurface: dark ? _onSurfaceDark : _onSurfaceLight,
+        onSurfaceVariant: dark ? _mutedDark : _mutedLight,
+        outline: dark ? _mutedDark : _mutedLight,
+        outlineVariant: dark ? _hairlineDark : _hairlineLight,
+        surfaceContainerLowest: dark
+            ? _containerLowestDark
+            : _containerLowestLight,
+        surfaceContainerLow: dark ? _containerLowDark : _containerLowLight,
+        surfaceContainer: dark ? _containerDark : _containerLight,
+        surfaceContainerHigh: dark ? _containerHighDark : _containerHighLight,
+        surfaceContainerHighest: dark
+            ? _containerHighestDark
+            : _containerHighestLight,
+      );
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,

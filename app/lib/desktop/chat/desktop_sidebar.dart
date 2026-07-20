@@ -458,145 +458,145 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                 borderRadius: BorderRadius.circular(10),
                 onFocusChange: (f) => setState(() => _focused = f),
                 onTap: () {
-              if (selectable) {
-                selectWorktree(
-                  ref,
-                  SelectedWorktree(
-                    projectId: repo.id,
-                    path: worktree.path,
-                    branch: worktree.branch,
+                  if (selectable) {
+                    selectWorktree(
+                      ref,
+                      SelectedWorktree(
+                        projectId: repo.id,
+                        path: worktree.path,
+                        branch: worktree.branch,
+                      ),
+                    );
+                  } else {
+                    setState(() => _expanded = !_expanded);
+                  }
+                },
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: worktreeSelected
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : null,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                );
-              } else {
-                setState(() => _expanded = !_expanded);
-              }
-            },
-            child: Ink(
-              decoration: BoxDecoration(
-                color: worktreeSelected
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : null,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
-                    child: Row(
-                      children: [
-                        // Open PR → the merge symbol; otherwise the plain
-                        // worktree/branch icon that predated the PR-centric
-                        // redesign (still used by the draft-worktree tile and
-                        // any non-open PR).
-                        if (worktree.pr?.state.toUpperCase() == 'OPEN')
-                          Icon(
-                            PhosphorIconsLight.gitPullRequest,
-                            size: 16,
-                            color: theme.colorScheme.primary,
-                          )
-                        else
-                          Icon(
-                            PhosphorIconsLight.gitBranch,
-                            size: 16,
-                            color: theme.colorScheme.outline,
-                          ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  branch,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ),
-                              if (isCurrent) ...[
-                                const SizedBox(width: 5),
-                                Icon(
-                                  PhosphorIconsFill.star,
-                                  size: 8,
-                                  color: theme.colorScheme.outline,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // On hover or keyboard focus the diff pill is replaced
-                        // by the worktree overflow menu (rename / delete), so
-                        // the actions are reachable without a pointer. Otherwise
-                        // it shows the diff stats (when the tree has changes).
-                        if (_hovering || _focused || _menuOpen)
-                          _WorktreeMenuButton(
-                            worktree: worktree,
-                            onMenuOpened: () =>
-                                setState(() => _menuOpen = true),
-                            onSelected: (action) {
-                              setState(() => _menuOpen = false);
-                              switch (action) {
-                                case 'rename':
-                                  _renameBranch();
-                                case 'delete':
-                                  _deleteWorktree();
-                              }
-                            },
-                          )
-                        else if (worktree.hasChanges)
-                          DiffChip(
-                            insertions: worktree.insertions,
-                            deletions: worktree.deletions,
-                          ),
-                      ],
-                    ),
-                  ),
-                  // Sub-row below the branch, inside the same hover/tap group: the
-                  // PR number label (when present) followed by the low-emphasis
-                  // branch age. Fixed height so the row always reserves its place.
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
-                    child: SizedBox(
-                      height: 16,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (worktree.pr != null) ...[
-                              Text(
-                                'PR #${worktree.pr!.number}',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.outline,
-                                  fontWeight: FontWeight.w300,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '•',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.outline,
-                                  fontWeight: FontWeight.w300,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                            ],
-                            Text(
-                              _branchAgeLabel(worktree.committedAt),
-                              style: theme.textTheme.labelSmall?.copyWith(
+                            // Open PR → the merge symbol; otherwise the plain
+                            // worktree/branch icon that predated the PR-centric
+                            // redesign (still used by the draft-worktree tile and
+                            // any non-open PR).
+                            if (worktree.pr?.state.toUpperCase() == 'OPEN')
+                              Icon(
+                                PhosphorIconsLight.gitPullRequest,
+                                size: 16,
+                                color: theme.colorScheme.primary,
+                              )
+                            else
+                              Icon(
+                                PhosphorIconsLight.gitBranch,
+                                size: 16,
                                 color: theme.colorScheme.outline,
-                                fontWeight: FontWeight.w300,
+                              ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      branch,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  if (isCurrent) ...[
+                                    const SizedBox(width: 5),
+                                    Icon(
+                                      PhosphorIconsFill.star,
+                                      size: 8,
+                                      color: theme.colorScheme.outline,
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            // On hover or keyboard focus the diff pill is replaced
+                            // by the worktree overflow menu (rename / delete), so
+                            // the actions are reachable without a pointer. Otherwise
+                            // it shows the diff stats (when the tree has changes).
+                            if (_hovering || _focused || _menuOpen)
+                              _WorktreeMenuButton(
+                                worktree: worktree,
+                                onMenuOpened: () =>
+                                    setState(() => _menuOpen = true),
+                                onSelected: (action) {
+                                  setState(() => _menuOpen = false);
+                                  switch (action) {
+                                    case 'rename':
+                                      _renameBranch();
+                                    case 'delete':
+                                      _deleteWorktree();
+                                  }
+                                },
+                              )
+                            else if (worktree.hasChanges)
+                              DiffChip(
+                                insertions: worktree.insertions,
+                                deletions: worktree.deletions,
+                              ),
                           ],
                         ),
                       ),
-                    ),
+                      // Sub-row below the branch, inside the same hover/tap group: the
+                      // PR number label (when present) followed by the low-emphasis
+                      // branch age. Fixed height so the row always reserves its place.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
+                        child: SizedBox(
+                          height: 16,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (worktree.pr != null) ...[
+                                  Text(
+                                    'PR #${worktree.pr!.number}',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.outline,
+                                      fontWeight: FontWeight.w300,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '•',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.outline,
+                                      fontWeight: FontWeight.w300,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                Text(
+                                  _branchAgeLabel(worktree.committedAt),
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.outline,
+                                    fontWeight: FontWeight.w300,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
             ),
           ),
         ),
@@ -810,7 +810,9 @@ class _DraftWorktreeTile extends StatelessWidget {
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
-              color: selected ? theme.colorScheme.surfaceContainerHighest : null,
+              color: selected
+                  ? theme.colorScheme.surfaceContainerHighest
+                  : null,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(

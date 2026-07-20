@@ -163,7 +163,9 @@ class _ComposerState extends State<Composer> {
     // raised input panel against the scaffold surface, painted by a plain
     // Container so it never shifts on hover. Glass surfaces supply their own
     // backdrop, so stay transparent there.
-    final boxColor = widget.glass ? Colors.transparent : cs.surfaceContainerHigh;
+    final boxColor = widget.glass
+        ? Colors.transparent
+        : cs.surfaceContainerHigh;
     return SafeArea(
       top: false,
       child: Column(

@@ -340,10 +340,7 @@ void main() {
       // After the ack, streaming tokens must fold in one-by-one (no buffering).
       transport.pushEvent(seq: 1, sessionId: _sid);
       await Future<void>.delayed(Duration.zero);
-      expect(
-        container.read(storeControllerProvider).events[_sid]!.length,
-        1,
-      );
+      expect(container.read(storeControllerProvider).events[_sid]!.length, 1);
     });
   });
 

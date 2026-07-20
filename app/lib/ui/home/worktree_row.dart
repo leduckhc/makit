@@ -57,7 +57,11 @@ class WorktreeRow extends StatelessWidget {
               ),
               if (isCurrent) ...[
                 const SizedBox(width: 5),
-                const Icon(PhosphorIconsFill.star, size: 15, color: Colors.amber),
+                const Icon(
+                  PhosphorIconsFill.star,
+                  size: 15,
+                  color: Colors.amber,
+                ),
               ],
               if (isDefault) ...[
                 const SizedBox(width: 6),

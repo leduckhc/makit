@@ -25,7 +25,10 @@ class ToolCallCard extends StatelessWidget {
         kToolDestructiveColor,
         renderer?.icon ?? PhosphorIconsLight.warningOctagon,
       ),
-      ToolRisk.safe => (cs.outline, renderer?.icon ?? PhosphorIconsLight.lightning),
+      ToolRisk.safe => (
+        cs.outline,
+        renderer?.icon ?? PhosphorIconsLight.lightning,
+      ),
     };
 
     final status = item.status;

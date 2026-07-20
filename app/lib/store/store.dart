@@ -252,8 +252,9 @@ class StoreController extends StateNotifier<StoreState> {
     // rather than folding each one (which would churn the reversed transcript).
     if (decoded is SessionEventFrame &&
         _awaitingReplay.contains(decoded.event.sessionId)) {
-      (_replayBuffer[decoded.event.sessionId] ??= <SessionEvent>[])
-          .add(decoded.event);
+      (_replayBuffer[decoded.event.sessionId] ??= <SessionEvent>[]).add(
+        decoded.event,
+      );
       return;
     }
     state = reduce(state, decoded);

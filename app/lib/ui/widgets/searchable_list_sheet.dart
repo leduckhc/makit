@@ -118,7 +118,11 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
             SheetHeader(
               title: widget.title,
               actions: IconButton(
-                icon: Icon(_searching ? PhosphorIconsLight.magnifyingGlassMinus : PhosphorIconsLight.magnifyingGlass),
+                icon: Icon(
+                  _searching
+                      ? PhosphorIconsLight.magnifyingGlassMinus
+                      : PhosphorIconsLight.magnifyingGlass,
+                ),
                 tooltip: _searching ? 'Hide search' : 'Search',
                 onPressed: _toggleSearch,
               ),
@@ -132,7 +136,10 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     isDense: true,
-                    prefixIcon: const Icon(PhosphorIconsLight.magnifyingGlass, size: 20),
+                    prefixIcon: const Icon(
+                      PhosphorIconsLight.magnifyingGlass,
+                      size: 20,
+                    ),
                     hintText: 'Filter…',
                     suffixIcon: _query.isEmpty
                         ? null

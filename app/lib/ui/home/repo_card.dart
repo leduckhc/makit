@@ -124,7 +124,9 @@ class RepoCard extends ConsumerWidget {
     final items = <Widget>[];
 
     if (repo.defaultBranch != null) {
-      items.add(_metaText(context, PhosphorIconsLight.flag, repo.defaultBranch!));
+      items.add(
+        _metaText(context, PhosphorIconsLight.flag, repo.defaultBranch!),
+      );
     }
     final active = repo.activeWorktreeCount;
     if (active > 0) {
@@ -318,7 +320,9 @@ class RepoCard extends ConsumerWidget {
       },
       tileBuilder: (ctx, m) => ListTile(
         leading: Icon(
-          m.attached ? PhosphorIconsLight.lightning : PhosphorIconsLight.arrowCounterClockwise,
+          m.attached
+              ? PhosphorIconsLight.lightning
+              : PhosphorIconsLight.arrowCounterClockwise,
           color: m.attached ? Colors.green : null,
         ),
         title: Text(

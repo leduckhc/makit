@@ -105,7 +105,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       appBar: AppBar(
         title: const Text('Pair with desktop'),
         actions: [
-          IconButton(onPressed: _refresh, icon: const Icon(PhosphorIconsLight.arrowClockwise)),
+          IconButton(
+            onPressed: _refresh,
+            icon: const Icon(PhosphorIconsLight.arrowClockwise),
+          ),
         ],
       ),
       body: ListView(

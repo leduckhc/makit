@@ -169,7 +169,9 @@ class _OptionTile extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  selected ? PhosphorIconsLight.checkSquare : PhosphorIconsLight.square,
+                  selected
+                      ? PhosphorIconsLight.checkSquare
+                      : PhosphorIconsLight.square,
                   size: 18,
                   color: selected ? cs.primary : cs.outline,
                 ),

@@ -82,8 +82,8 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 | `go_router` | 17.3.0 | BSD-3-Clause |
 | `liquid_glass_renderer` | 0.2.0-dev.4 | MIT |
 | `markdown` | 7.3.1 | BSD-3-Clause |
-| `material_symbols_icons` | 4.2951.0 | Apache-2.0 |
 | `multicast_dns` | 0.3.3+1 | BSD-3-Clause |
+| `phosphoricons_flutter` | 1.0.0 | MIT |
 | `qr_flutter` | 4.1.0 | BSD-3-Clause |
 | `shared_preferences` | 2.5.3 | BSD-3-Clause |
 | `tray_manager` | 0.5.3 | MIT |

@@ -197,7 +197,9 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         final entry = entries[i];
         return ListTile(
           leading: Icon(
-            entry.isRepo ? PhosphorIconsLight.gitBranch : PhosphorIconsLight.folder,
+            entry.isRepo
+                ? PhosphorIconsLight.gitBranch
+                : PhosphorIconsLight.folder,
             color: entry.isRepo ? theme.colorScheme.primary : null,
           ),
           title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
