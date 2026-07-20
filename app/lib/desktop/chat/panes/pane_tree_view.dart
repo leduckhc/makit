@@ -37,21 +37,28 @@ class PaneTreeView extends ConsumerWidget {
     // pane.
     final collapsed = ref.watch(sidebarCollapsedProvider);
     final worktree = current?.worktree;
+    final cs = Theme.of(context).colorScheme;
     return Column(
       children: [
-        TitleBarStrip(
-          leadingTop: 3,
-          // With the sidebar folded away the pane area owns the only
-          // "show sidebar" affordance, cleared past the traffic lights.
-          leading: collapsed
-              ? const SidebarToggleButton(collapse: false)
-              : null,
-          // The current tree's worktree/branch, shown on the traffic-light row
-          // above the pane tabs. When the sidebar is folded the strip overlaps
-          // the traffic lights (and the unfold button), so inset past them;
-          // otherwise the pane strip is clear and only needs a small gutter.
-          title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
-          titleInset: collapsed ? kTrafficLightInset + 34 : 12,
+        // Window title strip on a sidebar-matching surface (surfaceContainer)
+        // so it reads as one continuous top band across sidebar + pane area.
+        ColoredBox(
+          color: cs.surfaceContainer,
+          child: TitleBarStrip(
+            leadingTop: 3,
+            // With the sidebar folded away the pane area owns the only
+            // "show sidebar" affordance, cleared past the traffic lights.
+            leading: collapsed
+                ? const SidebarToggleButton(collapse: false)
+                : null,
+            // The current tree's worktree/branch, shown on the traffic-light
+            // row above the pane tabs. When the sidebar is folded the strip
+            // overlaps the traffic lights (and the unfold button), so inset
+            // past them; otherwise the pane strip is clear and only needs a
+            // small gutter.
+            title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
+            titleInset: collapsed ? kTrafficLightInset + 34 : 12,
+          ),
         ),
         // Hairline separating the window-title zone (which worktree) from the
         // pane header + transcript below (which session). outlineVariant, 1px.
