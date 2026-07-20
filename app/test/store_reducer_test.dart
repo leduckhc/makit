@@ -249,6 +249,104 @@ void main() {
     });
   });
 
+  group('StoreController — initial replay is applied in one batch', () {
+    test(
+      'replay events are buffered until the sub ack, then applied together',
+      () async {
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        store.subscribeSession(_sid);
+        await Future<void>.delayed(Duration.zero);
+
+        // Replay events stream in one at a time — they must NOT be visible in
+        // the store yet (no churn: the transcript stays empty until the batch).
+        transport.pushEvent(seq: 1, sessionId: _sid);
+        transport.pushEvent(seq: 2, sessionId: _sid);
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          container.read(storeControllerProvider).events[_sid] ?? const [],
+          isEmpty,
+        );
+
+        // The sub ack (id 's-<sid>') closes replay → the buffer flushes in a
+        // single state update, landing at the newest message.
+        transport.pushAck(id: 's-$_sid');
+        await Future<void>.delayed(Duration.zero);
+        final state = container.read(storeControllerProvider);
+        expect(state.events[_sid]!.length, 2);
+        expect(state.cursors[_sid], 2);
+      },
+    );
+
+    test('live events after the ack are applied immediately', () async {
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      store.subscribeSession(_sid);
+      transport.pushAck(id: 's-$_sid');
+      await Future<void>.delayed(Duration.zero);
+
+      // After the ack, streaming tokens must fold in one-by-one (no buffering).
+      transport.pushEvent(seq: 1, sessionId: _sid);
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(storeControllerProvider).events[_sid]!.length,
+        1,
+      );
+    });
+  });
+
   group('StoreController — repo refresh after project add', () {
     test('addProject requests repo.refresh after server ack', () async {
       final transport = _SnapshotTransport();
@@ -398,6 +496,10 @@ class _CapturingTransport implements Transport {
         },
       ),
     );
+  }
+
+  void pushAck({required String id}) {
+    _frames.add(Envelope(t: MsgType.ack, id: id));
   }
 
   @override

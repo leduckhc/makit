@@ -225,14 +225,51 @@ class StoreController extends StateNotifier<StoreState> {
   final Ref _ref;
   StreamSubscription<Envelope>? _sub;
 
+  /// Sessions whose initial `sub` replay is still streaming in (between the
+  /// `sub` send and its matching `ack`). Their events are buffered in
+  /// [_replayBuffer] and applied as a single batch on the ack, so the reversed
+  /// transcript lands directly at the newest message instead of visibly racing
+  /// through history top->bottom as each replayed event arrives.
+  final Set<String> _awaitingReplay = <String>{};
+  final Map<String, List<SessionEvent>> _replayBuffer =
+      <String, List<SessionEvent>>{};
+
   /// Decode the frame through [WireCodec], then fold it via the pure [reduce].
   /// Unrecognized / malformed frames decode to null (WireCodec logs a warning)
   /// and are dropped — never throw.
   void _onFrame(Envelope env) {
+    // A `sub` ack (id `s-<sessionId>`) marks the end of that session's history
+    // replay: flush its buffered events in one state update.
+    if (env.t == MsgType.ack && env.id.startsWith('s-')) {
+      final sid = env.id.substring(2);
+      if (_awaitingReplay.contains(sid)) _flushReplay(sid);
+      return;
+    }
     if (env.t != MsgType.event) return;
     final decoded = WireCodec.decode(env);
     if (decoded == null) return;
+    // While a session's initial replay is still streaming, buffer its events
+    // rather than folding each one (which would churn the reversed transcript).
+    if (decoded is SessionEventFrame &&
+        _awaitingReplay.contains(decoded.event.sessionId)) {
+      (_replayBuffer[decoded.event.sessionId] ??= <SessionEvent>[])
+          .add(decoded.event);
+      return;
+    }
     state = reduce(state, decoded);
+  }
+
+  /// Apply the buffered replay for [sessionId] in a single state assignment,
+  /// then resume immediate folding for its live events.
+  void _flushReplay(String sessionId) {
+    _awaitingReplay.remove(sessionId);
+    final buffered = _replayBuffer.remove(sessionId);
+    if (buffered == null || buffered.isEmpty) return;
+    var next = state;
+    for (final e in buffered) {
+      next = reduceEvent(next, e);
+    }
+    state = next;
   }
 
   /// Currently-subscribed sessionIds. We replay these on every reconnect.
@@ -248,6 +285,11 @@ class StoreController extends StateNotifier<StoreState> {
     // reconnect instead of the whole history. `reduceEvent` still dedups, so
     // fromSeq=0 (fresh sub) stays correct.
     final fromSeq = state.cursors[sessionId] ?? 0;
+    // Arm replay buffering so the events the server is about to stream back are
+    // applied as one batch on the ack (see [_onFrame]). Re-arming resets any
+    // in-flight buffer; the server re-replays from `fromSeq` so nothing is lost.
+    _awaitingReplay.add(sessionId);
+    _replayBuffer[sessionId] = <SessionEvent>[];
     _ref
         .read(connectionControllerProvider.notifier)
         .send(

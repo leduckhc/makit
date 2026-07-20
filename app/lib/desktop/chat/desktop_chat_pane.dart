@@ -83,7 +83,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     if (sessionId == null || sessionId == _subscribed) return;
     _subscribed = sessionId;
     _lastSeq = 0;
-    ref.read(storeControllerProvider.notifier).subscribeSession(sessionId);
+    // Defer the subscribe (and its history replay) to after the first frame so
+    // the sidebar paints first — the conversation fills in immediately after.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(storeControllerProvider.notifier).subscribeSession(sessionId);
+    });
   }
 
   Future<void> _handleSend(String sessionId, String text) async {
