@@ -44,6 +44,7 @@ class _SidebarResizeHandle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
       child: GestureDetector(
@@ -58,14 +59,25 @@ class _SidebarResizeHandle extends ConsumerWidget {
                 ),
               );
         },
-        child: const SizedBox(
+        child: SizedBox(
           width: 8,
           height: double.infinity,
-          // Divider flush against the sidebar's edge; the rest of the grab
-          // strip extends into the chat side, so no gap shows on the sidebar.
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: VerticalDivider(width: 1),
+          child: Column(
+            children: [
+              // Fill the title-bar row so the top band is continuous with the
+              // sidebar header and the pane title (all surfaceContainer) — no
+              // gap between the two coloured bands.
+              Container(height: kTitleBarStripHeight, color: cs.surfaceContainer),
+              // Below the band: hairline flush against the sidebar's edge; the
+              // rest of the grab strip stays transparent (chat bg) so no gap
+              // shows on the sidebar.
+              const Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: VerticalDivider(width: 1),
+                ),
+              ),
+            ],
           ),
         ),
       ),
