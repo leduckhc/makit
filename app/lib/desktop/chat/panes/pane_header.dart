@@ -191,11 +191,11 @@ class SessionActionsMenu extends ConsumerWidget {
       panes.closeActive();
     }
     // Drop any *other* panes still bound to the session so it never lingers in
-    // another worktree's layout, and clear the sidebar highlight if it still
-    // points here (never stomp a selection the user has since moved elsewhere).
+    // another worktree's layout. If the sidebar still points here, move it to
+    // the surviving active pane (never stomp a newer user selection).
     panes.unbindSession(sessionId);
     if (selection.state == sessionId) {
-      selection.state = null;
+      selection.state = panes.activeLeafSessionId;
     }
 
     // Fire the kill in the background. The sidebar reconciles from server

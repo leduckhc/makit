@@ -100,9 +100,11 @@ ProviderContainer _container() {
 
 /// A container with two distinct fake sessions (s1, s2) so two split panes can
 /// each be bound to their own session.
-ProviderContainer _twoSessionContainer() {
+ProviderContainer _twoSessionContainer({ConnectionController? connection}) {
   final c = ProviderContainer(
     overrides: [
+      if (connection != null)
+        connectionControllerProvider.overrideWith((ref) => connection),
       sessionsProvider.overrideWithValue(
         SessionsState([_session(), _session2()]),
       ),
@@ -714,6 +716,35 @@ void main() {
       conn.killCompleted.complete(const {});
       await tester.pumpAndSettle();
       expect(c.read(paneTreeControllerProvider).current, isNull);
+    });
+
+    testWidgets('Quit session selects the surviving split-pane session', (
+      tester,
+    ) async {
+      final conn = _KillConnection();
+      final c = _twoSessionContainer(connection: conn);
+      addTearDown(c.dispose);
+      final panes = c.read(paneTreeControllerProvider.notifier);
+      panes.bindActiveSession('s1', _wtA);
+      panes.splitActive(Axis.horizontal);
+      panes.bindActiveSession('s2', _wtA);
+      c.read(selectedSessionProvider.notifier).state = 's1';
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Session actions').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Quit session'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
+      await tester.pumpAndSettle();
+
+      expect(panes.activeLeafSessionId, 's2');
+      expect(c.read(selectedSessionProvider), 's2');
+
+      conn.killCompleted.complete(const {});
+      await tester.pumpAndSettle();
     });
   });
 

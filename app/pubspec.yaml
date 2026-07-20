@@ -54,7 +54,6 @@ dependencies:
   tray_manager: 0.5.3                # publisher: leanflutter.dev — macOS menubar system tray
   window_manager: 0.5.2              # publisher: leanflutter.dev — macOS window sizing/position
   qr_flutter: ^4.1.0                 # publisher: theyakka.com — pure-Dart QR code rendering
-  material_symbols_icons: ^4.2951.0
   phosphoricons_flutter: ^1.0.0      # publisher: lucaszafret.com.br — Phosphor icons (Dart 3.x compatible)
 
 dev_dependencies:

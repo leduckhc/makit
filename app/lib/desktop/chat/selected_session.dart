@@ -28,16 +28,15 @@ final selectedWorktreeProvider = Provider<SelectedWorktree?>(
 );
 
 /// Close the pane hosting [leafId] without touching its session: the session
-/// keeps running and stays in the sidebar, only the pane is removed. When it
-/// was the last pane in the tree the view drops to the empty placeholder and
-/// the sidebar highlight is reset so it matches the empty pane area.
+/// keeps running and stays in the sidebar, only the pane is removed. The
+/// sidebar selection follows the surviving active pane, or clears when the
+/// last pane closes.
 void closePane(WidgetRef ref, String leafId) {
   final controller = ref.read(paneTreeControllerProvider.notifier);
   controller.setActive(leafId);
   controller.closeActive();
-  if (controller.current == null) {
-    ref.read(selectedSessionProvider.notifier).state = null;
-  }
+  ref.read(selectedSessionProvider.notifier).state =
+      controller.activeLeafSessionId;
 }
 
 /// Close the currently active pane (keyboard "Close pane"), delegating to
