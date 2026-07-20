@@ -11,6 +11,7 @@ import 'connection_endpoint.dart';
 import 'title_bar_strip.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
+import '../../ui/project/folder_browser.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
@@ -1053,6 +1054,11 @@ class _Footer extends ConsumerWidget {
             )
           else
             const Spacer(),
+          IconButton(
+            tooltip: 'Add repo',
+            icon: const Icon(PhosphorIconsLight.folderPlus, size: 18),
+            onPressed: () => showFolderBrowser(context),
+          ),
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',
@@ -1075,7 +1081,7 @@ class _EmptySidebar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          'No repos yet.\nUse + to start a session\nin a git repo.',
+          'No repos yet.\nUse the + button below\nto add a git repo.',
           textAlign: TextAlign.center,
           style: TextStyle(color: cs.outline),
         ),
