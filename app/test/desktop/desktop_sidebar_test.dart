@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
@@ -376,10 +376,10 @@ void main() {
       ],
     );
 
-    // Exactly one worktree has an *open* PR → one merge symbol. Both the
-    // PR-less and the merged-PR worktrees keep the plain fork/branch icon.
-    expect(find.byIcon(Symbols.call_merge), findsOneWidget);
-    expect(find.byIcon(Symbols.fork_right), findsNWidgets(2));
+    // Exactly one worktree has an *open* PR → one PR symbol. Both the
+    // PR-less and the merged-PR worktrees keep the plain branch icon.
+    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.gitBranch), findsNWidgets(2));
   });
 
   testWidgets('empty state prompts to start a session', (tester) async {

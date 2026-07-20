@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'sidebar_layout.dart';
@@ -76,7 +76,7 @@ class TitleBarStrip extends StatelessWidget {
 
 /// The sidebar fold/unfold button (SPEC-19 shared widget). [collapse] true hides
 /// the sidebar ("Hide sidebar"); false restores it ("Show sidebar"). The single
-/// widget behind the three hand-rolled `Symbols.thumbnail_bar` buttons in
+/// widget behind the three hand-rolled `PhosphorIconsLight.sidebarSimple` buttons in
 /// `desktop_sidebar`, `pane_tree_view`, and `desktop_chat_pane`.
 class SidebarToggleButton extends ConsumerWidget {
   const SidebarToggleButton({super.key, required this.collapse});
@@ -92,7 +92,7 @@ class SidebarToggleButton extends ConsumerWidget {
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
       tooltip: collapse ? 'Hide sidebar' : 'Show sidebar',
-      icon: const Icon(Symbols.dock_to_right, weight: 300),
+      icon: const Icon(PhosphorIconsLight.sidebarSimple),
       onPressed: () =>
           ref.read(sidebarCollapsedProvider.notifier).state = collapse,
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../app/theme.dart' show kMakitAccent;
@@ -41,7 +42,7 @@ class WorktreeRow extends StatelessWidget {
           child: Row(
             children: [
               Icon(
-                Icons.account_tree_outlined,
+                PhosphorIconsLight.treeStructure,
                 size: 15,
                 color: worktree.isPrimary
                     ? theme.colorScheme.outline
@@ -60,7 +61,7 @@ class WorktreeRow extends StatelessWidget {
               ),
               if (isCurrent) ...[
                 const SizedBox(width: 5),
-                const Icon(Icons.star, size: 15, color: Colors.amber),
+                const Icon(PhosphorIconsFill.star, size: 15, color: Colors.amber),
               ],
               if (isDefault) ...[
                 const SizedBox(width: 6),

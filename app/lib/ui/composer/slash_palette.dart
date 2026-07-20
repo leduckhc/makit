@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import 'client_commands.dart';
@@ -129,11 +130,11 @@ class _SourceBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (source) {
-      'skill' => ('skill', Colors.purple, Icons.auto_awesome),
-      'prompt' => ('prompt', Colors.teal, Icons.description_outlined),
-      'extension' => ('ext', Colors.blue, Icons.extension_outlined),
-      'builtin' => ('app', Colors.grey, Icons.bolt_outlined),
-      _ => (source, Colors.grey, Icons.terminal),
+      'skill' => ('skill', Colors.purple, PhosphorIconsLight.sparkle),
+      'prompt' => ('prompt', Colors.teal, PhosphorIconsLight.fileText),
+      'extension' => ('ext', Colors.blue, PhosphorIconsLight.puzzlePiece),
+      'builtin' => ('app', Colors.grey, PhosphorIconsLight.lightning),
+      _ => (source, Colors.grey, PhosphorIconsLight.terminalWindow),
     };
     return Tooltip(
       message: label,

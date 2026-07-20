@@ -11,7 +11,7 @@ library;
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import 'chat_message.dart';
@@ -107,8 +107,7 @@ class _ThinkingLineState extends State<ThinkingLine> {
   Widget _buildRow(Widget textWidget, {VoidCallback? onLeadingTap}) {
     final cs = Theme.of(context).colorScheme;
     Widget leading = Icon(
-      widget.compact ? Symbols.psychology : Icons.psychology_outlined,
-      weight: 200,
+      PhosphorIconsLight.brain,
       size: 15,
       color: cs.onSurfaceVariant.withValues(alpha: 0.55),
     );
@@ -171,7 +170,7 @@ class ErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, size: 18),
+          const Icon(PhosphorIconsLight.warningCircle, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ],

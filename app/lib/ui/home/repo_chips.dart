@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart' show kMakitAccent;
 import '../../store/models.dart';
@@ -30,7 +31,7 @@ class BranchChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.commit_outlined, size: 12, color: color),
+          Icon(PhosphorIconsLight.gitCommit, size: 12, color: color),
           const SizedBox(width: 4),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),
@@ -109,7 +110,7 @@ class PrPill extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            pr.isDraft ? Icons.merge_type : Icons.merge_outlined,
+            PhosphorIconsLight.gitPullRequest,
             size: 12,
             color: color,
           ),

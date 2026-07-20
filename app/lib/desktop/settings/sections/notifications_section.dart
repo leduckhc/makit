@@ -9,7 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
@@ -36,7 +36,7 @@ class NotificationsSection extends StatelessWidget {
           children: [
             _ReminderDelayRow(),
             ComingSoonRow(
-              icon: Symbols.notifications_off,
+              icon: PhosphorIconsLight.bellSlash,
               title: 'Per-type mute & approval reminders',
               subtitle:
                   'Mute specific notification types; approval '
@@ -68,7 +68,7 @@ class _ReminderDelayRow extends ConsumerWidget {
     final choices = {...kReminderDelayChoicesMinutes, minutes}.toList()..sort();
 
     return ListTile(
-      leading: Icon(Symbols.schedule, weight: 200, color: cs.outline),
+      leading: Icon(PhosphorIconsLight.clock, color: cs.outline),
       title: const Text('Reminder delay'),
       subtitle: const Text(
         'How long an unanswered request stays on screen before a system '

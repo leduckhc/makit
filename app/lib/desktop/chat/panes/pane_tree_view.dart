@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
@@ -85,9 +85,8 @@ class _WorktreeTitle extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          Symbols.fork_right,
+          PhosphorIconsLight.gitBranch,
           size: 16,
-          weight: 200,
           color: theme.colorScheme.outline,
         ),
         const SizedBox(width: 6),
@@ -397,7 +396,7 @@ class _PaneHeaderStrip extends ConsumerWidget {
             constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
             tooltip: 'Close pane',
             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-            icon: const Icon(Icons.close),
+            icon: const Icon(PhosphorIconsLight.x),
             onPressed: () {
               controller.setActive(leaf.id);
               controller.closeActive();

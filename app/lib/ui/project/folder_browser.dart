@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -133,7 +134,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
                       height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.add),
+                  : const Icon(PhosphorIconsLight.plus),
               label: Text(
                 currentPath.isEmpty
                     ? 'Add this folder'
@@ -163,7 +164,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.error_outline,
+                PhosphorIconsLight.warningCircle,
                 size: 40,
                 color: theme.colorScheme.error,
               ),
@@ -196,7 +197,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
         final entry = entries[i];
         return ListTile(
           leading: Icon(
-            entry.isRepo ? Icons.source : Icons.folder_outlined,
+            entry.isRepo ? PhosphorIconsLight.gitBranch : PhosphorIconsLight.folder,
             color: entry.isRepo ? theme.colorScheme.primary : null,
           ),
           title: Text(entry.name, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -212,7 +213,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
                     alpha: 0.08,
                   ),
                 )
-              : const Icon(Icons.chevron_right),
+              : const Icon(PhosphorIconsLight.caretRight),
           onTap: () => _browse(entry.path),
         );
       },
@@ -239,7 +240,7 @@ class _Header extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            icon: const Icon(Icons.arrow_upward),
+            icon: const Icon(PhosphorIconsLight.arrowUp),
             tooltip: 'Up',
             onPressed: canGoUp ? onUp : null,
           ),
@@ -285,10 +286,10 @@ class _ManualEntry extends StatelessWidget {
         decoration: InputDecoration(
           isDense: true,
           border: const OutlineInputBorder(),
-          prefixIcon: const Icon(Icons.keyboard),
+          prefixIcon: const Icon(PhosphorIconsLight.keyboard),
           hintText: '…or enter a path',
           suffixIcon: IconButton(
-            icon: const Icon(Icons.arrow_forward),
+            icon: const Icon(PhosphorIconsLight.arrowRight),
             tooltip: 'Go',
             onPressed: onSubmit,
           ),

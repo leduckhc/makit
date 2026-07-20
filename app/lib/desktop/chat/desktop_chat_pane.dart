@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
@@ -302,7 +302,7 @@ class _NoSelection extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Symbols.forum, size: 40, weight: 200, color: cs.outline),
+          Icon(PhosphorIconsLight.chats, size: 40, color: cs.outline),
           const SizedBox(height: 12),
           Text(
             'Select or start a session',

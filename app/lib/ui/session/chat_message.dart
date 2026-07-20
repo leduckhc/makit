@@ -6,6 +6,7 @@ import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Flutter's `'monospace'` logical family only resolves on Android; on Apple
@@ -324,7 +325,7 @@ class _CopyButtonState extends State<_CopyButton> {
       padding: const EdgeInsets.all(4),
       constraints: const BoxConstraints(),
       icon: Icon(
-        _copied ? Icons.check : Icons.copy,
+        _copied ? PhosphorIconsLight.check : PhosphorIconsLight.copy,
         color: _copied ? Colors.green : cs.onSurfaceVariant,
       ),
       onPressed: _copy,

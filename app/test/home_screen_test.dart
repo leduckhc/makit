@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:makit/store/models.dart';
@@ -101,7 +102,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byIcon(Icons.star), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsFill.star), findsOneWidget);
   });
 
   testWidgets('a worktree with no live session is hidden', (tester) async {
@@ -265,7 +266,7 @@ void main() {
 
     expect(find.text('Resume session'), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.tap(find.byIcon(PhosphorIconsLight.dotsThreeVertical));
     await tester.pumpAndSettle();
 
     expect(find.text('New session'), findsWidgets);

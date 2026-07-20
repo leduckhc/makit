@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -178,7 +179,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 child: Row(
                   children: [
                     GlassCircleButton(
-                      icon: Icons.arrow_back,
+                      icon: PhosphorIconsLight.arrowLeft,
                       onTap: () => context.go('/'),
                     ),
                     const SizedBox(width: 12),
@@ -270,7 +271,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         child: PopupMenuButton<String>(
           tooltip: 'Session actions',
           padding: EdgeInsets.zero,
-          icon: const Icon(Icons.more_horiz, size: 20),
+          icon: const Icon(PhosphorIconsLight.dotsThree, size: 20),
           onSelected: (value) {
             switch (value) {
               case 'rename':
@@ -302,7 +303,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             PopupMenuItem(
               value: 'rename',
               child: ListTile(
-                leading: Icon(Icons.drive_file_rename_outline),
+                leading: Icon(PhosphorIconsLight.pencilSimple),
                 title: Text('Rename session'),
                 contentPadding: EdgeInsets.zero,
               ),
@@ -310,7 +311,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             PopupMenuItem(
               value: 'model',
               child: ListTile(
-                leading: Icon(Icons.smart_toy_outlined),
+                leading: Icon(PhosphorIconsLight.robot),
                 title: Text('Model'),
                 contentPadding: EdgeInsets.zero,
               ),
@@ -318,7 +319,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             PopupMenuItem(
               value: 'thinking',
               child: ListTile(
-                leading: Icon(Icons.psychology_outlined),
+                leading: Icon(PhosphorIconsLight.brain),
                 title: Text('Thinking'),
                 contentPadding: EdgeInsets.zero,
               ),
@@ -327,7 +328,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             PopupMenuItem(
               value: 'quit',
               child: ListTile(
-                leading: Icon(Icons.power_settings_new),
+                leading: Icon(PhosphorIconsLight.power),
                 title: Text('Quit session'),
                 contentPadding: EdgeInsets.zero,
               ),

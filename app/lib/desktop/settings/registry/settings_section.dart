@@ -23,7 +23,7 @@ class SettingsSection {
   /// Title shown in the nav pane and section header.
   final String title;
 
-  /// Leading icon (a `Symbols.*` glyph from `material_symbols_icons`).
+  /// Leading icon (a `PhosphorIcons.*` glyph from `phosphoricons_flutter`).
   final IconData icon;
 
   /// Builds the section body widget.

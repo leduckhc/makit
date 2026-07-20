@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../store/models.dart';
@@ -111,7 +111,7 @@ class SessionActionsMenu extends ConsumerWidget {
       // pushes the centered row content below the traffic-light line.
       child: const Padding(
         padding: EdgeInsets.all(3),
-        child: Icon(Symbols.more_horiz, size: 18, weight: 200),
+        child: Icon(PhosphorIconsLight.dotsThree, size: 18),
       ),
       onSelected: (value) {
         switch (value) {
@@ -130,7 +130,7 @@ class SessionActionsMenu extends ConsumerWidget {
         PopupMenuItem(
           value: 'rename',
           child: ListTile(
-            leading: Icon(Symbols.drive_file_rename_outline, weight: 200),
+            leading: Icon(PhosphorIconsLight.pencilSimple),
             title: Text('Rename session'),
             contentPadding: EdgeInsets.zero,
           ),
@@ -139,7 +139,7 @@ class SessionActionsMenu extends ConsumerWidget {
         PopupMenuItem(
           value: 'quit',
           child: ListTile(
-            leading: Icon(Symbols.power_settings_new, weight: 200),
+            leading: Icon(PhosphorIconsLight.power),
             title: Text('Quit session'),
             contentPadding: EdgeInsets.zero,
           ),

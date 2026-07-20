@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import 'tool_renderers.dart';
@@ -17,13 +18,13 @@ class ToolCallCard extends StatelessWidget {
     final (riskColor, riskIcon) = switch (item.risk) {
       ToolRisk.risky => (
         Colors.orange,
-        renderer?.icon ?? Icons.warning_amber_rounded,
+        renderer?.icon ?? PhosphorIconsLight.warning,
       ),
       ToolRisk.destructive => (
         Colors.red,
-        renderer?.icon ?? Icons.dangerous_outlined,
+        renderer?.icon ?? PhosphorIconsLight.warningOctagon,
       ),
-      ToolRisk.safe => (cs.outline, renderer?.icon ?? Icons.bolt_outlined),
+      ToolRisk.safe => (cs.outline, renderer?.icon ?? PhosphorIconsLight.lightning),
     };
 
     final status = item.status;
@@ -62,12 +63,12 @@ class ToolCallCard extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     ToolStatus.failed => Icon(
-                      Icons.error_outline,
+                      PhosphorIconsLight.warningCircle,
                       size: 14,
                       color: cs.error,
                     ),
                     ToolStatus.ok => Icon(
-                      Icons.check_circle_outline,
+                      PhosphorIconsLight.checkCircle,
                       size: 14,
                       color: cs.primary,
                     ),
@@ -75,7 +76,7 @@ class ToolCallCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right),
+            const Icon(PhosphorIconsLight.caretRight),
           ],
         ),
       ),

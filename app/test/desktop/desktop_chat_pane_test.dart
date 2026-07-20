@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/composer_draft.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/models.dart';
@@ -105,7 +105,7 @@ void main() {
       await tester.pump();
       expect(find.byType(SelectableText), findsOneWidget);
 
-      await tester.tap(find.byIcon(Symbols.psychology));
+      await tester.tap(find.byIcon(PhosphorIconsLight.brain));
       await tester.pump();
 
       expect(find.byType(SelectableText), findsNothing);

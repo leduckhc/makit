@@ -9,6 +9,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/connection.dart';
 import '../../store/models.dart';
@@ -264,7 +265,7 @@ Future<String?> _promptSessionName(
             suffixIcon: controller.text.isEmpty
                 ? null
                 : IconButton(
-                    icon: const Icon(Icons.clear),
+                    icon: const Icon(PhosphorIconsLight.x),
                     tooltip: 'Clear',
                     onPressed: () {
                       controller.clear();
@@ -343,7 +344,7 @@ Future<ModelInfo?> _pickModel(
           (current != null &&
               current.provider == m.provider &&
               current.id == m.id)
-          ? const Icon(Icons.check)
+          ? const Icon(PhosphorIconsLight.check)
           : null,
       onTap: () => Navigator.of(ctx).pop(m),
     ),

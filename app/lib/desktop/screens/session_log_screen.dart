@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../control/control_contract.dart';
 import 'providers.dart';
@@ -82,7 +83,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
       appBar: AppBar(
         leading: IconButton(
           tooltip: 'Back',
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(PhosphorIconsLight.arrowLeft),
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: const Text('Daemon Log'),
@@ -98,7 +99,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off, color: cs.error, size: 40),
+            Icon(PhosphorIconsLight.cloudSlash, color: cs.error, size: 40),
             const SizedBox(height: 12),
             const Text('Connection lost'),
           ],

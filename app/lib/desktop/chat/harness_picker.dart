@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -119,16 +119,14 @@ class _HarnessCard extends StatelessWidget {
                 Row(
                   children: [
                     Icon(
-                      Symbols.smart_toy,
-                      weight: 200,
+                      PhosphorIconsLight.robot,
                       size: 20,
                       color: agent.available ? cs.onSurface : cs.outline,
                     ),
                     const Spacer(),
                     if (selected)
                       Icon(
-                        Symbols.check_circle,
-                        weight: 300,
+                        PhosphorIconsFill.checkCircle,
                         size: 18,
                         color: cs.primary,
                       ),

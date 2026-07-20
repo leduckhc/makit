@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/panes/pane_node.dart';
@@ -262,7 +262,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(_wtA.branch!), findsOneWidget);
-      expect(find.byIcon(Symbols.fork_right), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.gitBranch), findsOneWidget);
     });
 
     testWidgets('falls back to the worktree path when it has no branch', (
@@ -308,7 +308,7 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Symbols.fork_right), findsNothing);
+      expect(find.byIcon(PhosphorIconsLight.gitBranch), findsNothing);
     });
   });
 
@@ -705,7 +705,7 @@ void main() {
         );
         // Close button meets the 24px minimum interactive target.
         final closeBtn = tester.widget<IconButton>(
-          find.widgetWithIcon(IconButton, Icons.close),
+          find.widgetWithIcon(IconButton, PhosphorIconsLight.x),
         );
         expect(closeBtn.constraints?.minHeight, greaterThanOrEqualTo(24.0));
         expect(closeBtn.constraints?.minWidth, greaterThanOrEqualTo(24.0));

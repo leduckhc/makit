@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -104,9 +104,8 @@ class ComposerThinkingSelector extends ConsumerWidget {
     if (meta == null || meta.thinking.isEmpty) return const SizedBox.shrink();
     return _ComposerPill(
       leading: Icon(
-        Symbols.signal_cellular_alt,
+        PhosphorIconsLight.cellSignalFull,
         size: 16,
-        weight: 400,
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       label: meta.thinking,
@@ -145,9 +144,8 @@ class ComposerModeSelector extends ConsumerWidget {
     );
     return _ComposerPill(
       leading: Icon(
-        Symbols.tune,
+        PhosphorIconsLight.slidersHorizontal,
         size: 16,
-        weight: 400,
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
       label: current.name,
@@ -174,7 +172,7 @@ class ComposerModeSelector extends ConsumerWidget {
                 ListTile(
                   title: Text(m.name),
                   trailing: m.id == modes.current
-                      ? const Icon(Icons.check)
+                      ? const Icon(PhosphorIconsLight.check)
                       : null,
                   onTap: () => Navigator.pop(sheetContext, m.id),
                 ),

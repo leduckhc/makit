@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/ui/composer/composer.dart';
 
@@ -10,30 +11,46 @@ void main() {
   Widget wrap(Widget child) => MaterialApp(
     home: Scaffold(body: Center(child: child)),
   );
+
+  // Whether the send button is currently tappable. The send arrow is always
+  // present when idle; it's disabled (onPressed == null) while the field is
+  // empty and enabled once there's text.
+  bool sendEnabled(WidgetTester tester) {
+    final btn = tester.widget<IconButton>(
+      find.ancestor(
+        of: find.byIcon(PhosphorIconsLight.arrowUp),
+        matching: find.byType(IconButton),
+      ),
+    );
+    return btn.onPressed != null;
+  }
+
   testWidgets(
-    'send button is hidden when empty and fades in once text is entered',
+    'send button is visible but disabled when empty and enables once text is entered',
     (tester) async {
       final sent = <String>[];
       await tester.pumpWidget(wrap(Composer(onSend: sent.add)));
 
-      // No text yet → no send affordance.
-      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      // No text yet → send button visible but disabled.
+      expect(find.byIcon(PhosphorIconsLight.arrowUp), findsOneWidget);
+      expect(sendEnabled(tester), isFalse);
 
       // Focus the field (realistic: you tap to type), then enter text.
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
-      // Focusing alone must not surface the send button.
-      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      // Focusing alone must not enable the send button.
+      expect(sendEnabled(tester), isFalse);
 
       await tester.enterText(find.byType(TextField), 'hello');
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+      expect(sendEnabled(tester), isTrue);
 
-      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp));
       await tester.pumpAndSettle();
       expect(sent, ['hello']);
-      // After sending, the field clears and send hides again.
-      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      // After sending, the field clears and send disables again (still visible).
+      expect(find.byIcon(PhosphorIconsLight.arrowUp), findsOneWidget);
+      expect(sendEnabled(tester), isFalse);
     },
   );
 
@@ -47,7 +64,7 @@ void main() {
       // The restored draft is visible immediately, even before focus.
       expect(find.text('half typed'), findsOneWidget);
       // Non-empty seed → send affordance shows without any typing.
-      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.arrowUp), findsOneWidget);
     },
   );
 
@@ -66,7 +83,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(drafts.last, 'hi');
 
-      await tester.tap(find.byIcon(Icons.arrow_upward));
+      await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp));
       await tester.pumpAndSettle();
       expect(sent, ['hi']);
       // Sending clears the field, so the last reported draft is empty — the
@@ -113,7 +130,7 @@ void main() {
       expect(find.text('MODEL'), findsOneWidget);
       expect(find.text('THINK'), findsOneWidget);
       // The add affordance is present (disabled placeholder).
-      expect(find.byIcon(Icons.add_circle_outline), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.plusCircle), findsOneWidget);
     },
   );
 
@@ -157,7 +174,7 @@ void main() {
     expect(field.maxLines, 1);
     expect(find.text('draft'), findsOneWidget);
     // Draft is non-empty → send stays visible even in compact form.
-    expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.arrowUp), findsOneWidget);
   });
 
   testWidgets('IME return key is the standard newline key', (tester) async {
@@ -184,7 +201,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'hello');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.arrow_upward));
+    await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp));
     await tester.pumpAndSettle();
 
     expect(sent, ['hello']);
@@ -205,23 +222,23 @@ void main() {
       );
 
       // Running + empty → stop button (no send arrow).
-      expect(find.byIcon(Icons.stop), findsOneWidget);
-      expect(find.byIcon(Icons.arrow_upward), findsNothing);
+      expect(find.byIcon(PhosphorIconsLight.stop), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.arrowUp), findsNothing);
 
       // Typing flips the trailing slot to the green send arrow.
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'hi');
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
-      expect(find.byIcon(Icons.stop), findsNothing);
+      expect(find.byIcon(PhosphorIconsLight.arrowUp), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.stop), findsNothing);
 
       // Clearing the text (turn still running) flips back to cancel.
       await tester.enterText(find.byType(TextField), '');
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.stop), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.stop), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.stop));
+      await tester.tap(find.byIcon(PhosphorIconsLight.stop));
       await tester.pumpAndSettle();
       expect(cancelled, 1);
     },
@@ -233,8 +250,10 @@ void main() {
     await tester.pumpWidget(
       wrap(Composer(onSend: (_) {}, running: false, onCancel: () {})),
     );
-    expect(find.byIcon(Icons.stop), findsNothing);
-    expect(find.byIcon(Icons.arrow_upward), findsNothing);
+    expect(find.byIcon(PhosphorIconsLight.stop), findsNothing);
+    // Idle + empty shows the disabled send button, not the cancel affordance.
+    expect(find.byIcon(PhosphorIconsLight.arrowUp), findsOneWidget);
+    expect(sendEnabled(tester), isFalse);
   });
 
   group('configurable send/newline chords', () {

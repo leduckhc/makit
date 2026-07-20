@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -169,17 +169,15 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                         children: [
                           Icon(
                             _expanded
-                                ? Symbols.keyboard_arrow_down
-                                : Symbols.keyboard_arrow_right,
+                                ? PhosphorIconsLight.caretDown
+                                : PhosphorIconsLight.caretRight,
                             size: 16,
-                            weight: 200,
                             color: theme.colorScheme.outline,
                           ),
                           const SizedBox(width: 2),
                           Icon(
-                            Symbols.folder_special,
+                            PhosphorIconsLight.folderStar,
                             size: 16,
-                            weight: 200,
                             color: theme.colorScheme.outline,
                           ),
                           const SizedBox(width: 6),
@@ -214,7 +212,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                 IconButton(
                   tooltip: 'New worktree',
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Symbols.add, size: 16, weight: 200),
+                  icon: const Icon(PhosphorIconsLight.plus, size: 16),
                   onPressed: _spawningDraft
                       ? null
                       : () => _startDraftWorktree(repo.id),
@@ -354,7 +352,7 @@ class _RepoMenuButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return _CompactMenuButton(
       tooltip: 'Repo actions',
-      icon: Symbols.more_horiz,
+      icon: PhosphorIconsLight.dotsThree,
       onSelected: (value) {
         switch (value) {
           case 'hide':
@@ -465,23 +463,21 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
                     child: Row(
                       children: [
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 8),
                         // Open PR → the merge symbol; otherwise the plain
                         // worktree/branch icon that predated the PR-centric
                         // redesign (still used by the draft-worktree tile and
                         // any non-open PR).
                         if (worktree.pr?.state.toUpperCase() == 'OPEN')
                           const Icon(
-                            Symbols.call_merge,
-                            size: 24,
-                            weight: 200,
+                            PhosphorIconsLight.gitPullRequest,
+                            size: 16,
                             color: kRepoAccent,
                           )
                         else
                           Icon(
-                            Symbols.fork_right,
-                            size: 24,
-                            weight: 200,
+                            PhosphorIconsLight.gitBranch,
+                            size: 16,
                             color: theme.colorScheme.outline,
                           ),
                         const SizedBox(width: 6),
@@ -498,9 +494,8 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                               if (isCurrent) ...[
                                 const SizedBox(width: 5),
                                 Icon(
-                                  Symbols.star,
-                                  size: 13,
-                                  weight: 200,
+                                  PhosphorIconsFill.star,
+                                  size: 8,
                                   color: theme.colorScheme.outline,
                                 ),
                               ],
@@ -539,7 +534,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                   // PR number label (when present) followed by the low-emphasis
                   // branch age. Fixed height so the row always reserves its place.
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(52, 0, 16, 4),
+                    padding: const EdgeInsets.fromLTRB(46, 0, 16, 4),
                     child: SizedBox(
                       height: 16,
                       child: Align(
@@ -681,7 +676,7 @@ class _WorktreeMenuButton extends StatelessWidget {
     final canRename = !_hasOpenPr && !isPrimary && !isDetached;
     return _CompactMenuButton(
       tooltip: 'Worktree actions',
-      icon: Symbols.more_horiz,
+      icon: PhosphorIconsLight.dotsThree,
       onOpened: onMenuOpened,
       // A cancelled menu resolves to null → forward '' so the parent's
       // "keep mounted while open" flag is cleared just like a real selection.
@@ -796,9 +791,8 @@ class _DraftWorktreeTile extends StatelessWidget {
                 children: [
                   const SizedBox(width: 4),
                   Icon(
-                    Symbols.fork_right,
-                    size: 24,
-                    weight: 200,
+                    PhosphorIconsLight.gitBranch,
+                    size: 16,
                     color: theme.colorScheme.outline,
                   ),
                   const SizedBox(width: 6),
@@ -1014,7 +1008,7 @@ class _Footer extends ConsumerWidget {
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',
-              icon: const Icon(Symbols.settings, weight: 200),
+              icon: const Icon(PhosphorIconsLight.gearSix),
               onPressed: onOpenSettings,
             ),
         ],

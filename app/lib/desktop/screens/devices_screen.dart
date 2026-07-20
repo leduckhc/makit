@@ -5,6 +5,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../control/control_contract.dart';
 import 'providers.dart';
@@ -83,7 +84,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
           alignment: Alignment.centerRight,
           child: IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
             onPressed: _load,
           ),
         ),
@@ -134,7 +135,7 @@ class _DeviceTile extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
       leading: Icon(
-        Icons.circle,
+        PhosphorIconsFill.circle,
         size: 12,
         color: device.connected ? Colors.green : cs.outline,
       ),
@@ -164,7 +165,7 @@ class _DevicesError extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.error_outline, color: cs.error, size: 40),
+          Icon(PhosphorIconsLight.warningCircle, color: cs.error, size: 40),
           const SizedBox(height: 12),
           Text(
             'Could not load devices',

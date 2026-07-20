@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../notifications/notification_observer.dart';
@@ -26,7 +27,7 @@ class NotificationSettingsSection extends ConsumerWidget {
       data: (permission) => Column(
         children: [
           ListTile(
-            leading: _leadingIcon(Icons.notifications_active_outlined),
+            leading: _leadingIcon(PhosphorIconsLight.bell),
             title: const Text('Local notifications'),
             subtitle: Text(_permissionLabel(permission)),
             trailing: permission == NotificationPermission.denied
@@ -42,20 +43,20 @@ class NotificationSettingsSection extends ConsumerWidget {
                 : null,
           ),
           ListTile(
-            leading: _leadingIcon(Icons.cloud_upload_outlined),
+            leading: _leadingIcon(PhosphorIconsLight.cloudArrowUp),
             title: const Text('Background wake'),
             subtitle: Text(_wakeLabel(conn, permission)),
             trailing: IconButton(
               tooltip: 'Setup guide',
-              icon: const Icon(Icons.help_outline, size: 20),
+              icon: const Icon(PhosphorIconsLight.question, size: 20),
               onPressed: () => _openUrl(kPushSetupDocsUrl),
             ),
           ),
           ListTile(
-            leading: _leadingIcon(Icons.menu_book_outlined),
+            leading: _leadingIcon(PhosphorIconsLight.bookOpen),
             title: const Text('Notification guide'),
             subtitle: const Text('On-device checklists & troubleshooting'),
-            trailing: const Icon(Icons.open_in_new, size: 18),
+            trailing: const Icon(PhosphorIconsLight.arrowSquareOut, size: 18),
             onTap: () => _openUrl(kNotificationsDocsUrl),
           ),
         ],
@@ -69,7 +70,7 @@ class NotificationSettingsSection extends ConsumerWidget {
         title: Text('Loading notification status…'),
       ),
       error: (_, _) => ListTile(
-        leading: _leadingIcon(Icons.notifications_off_outlined),
+        leading: _leadingIcon(PhosphorIconsLight.bellSlash),
         title: const Text('Notifications'),
         subtitle: const Text('Status unavailable'),
       ),

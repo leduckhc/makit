@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 /// A consistent header for list-style modal bottom sheets: a bold title plus
 /// an explicit close (✕) button that dismisses the sheet. Pair with
@@ -27,7 +28,7 @@ class SheetHeader extends StatelessWidget {
           ),
           ?actions,
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(PhosphorIconsLight.x),
             tooltip: 'Close',
             onPressed: () => Navigator.of(context).pop(),
           ),

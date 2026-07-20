@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/connection.dart';
 import '../../transport/ws_client.dart';
@@ -27,7 +28,7 @@ class ConnectionChip extends ConsumerWidget {
       return _chip(
         context,
         color: cs.tertiary,
-        icon: Icons.science_outlined,
+        icon: PhosphorIconsLight.flask,
         label: 'Demo',
       );
     }
@@ -48,7 +49,7 @@ class ConnectionChip extends ConsumerWidget {
         return _chip(
           context,
           color: Colors.orange,
-          icon: Icons.sync_problem_outlined,
+          icon: PhosphorIconsLight.cloudWarning,
           label: 'Reconnecting',
           onTap: () => ref.read(connectionControllerProvider.notifier).retry(),
         );
@@ -57,7 +58,7 @@ class ConnectionChip extends ConsumerWidget {
         return _chip(
           context,
           color: cs.error,
-          icon: Icons.cloud_off_outlined,
+          icon: PhosphorIconsLight.cloudSlash,
           label: 'Offline',
           onTap: () => ref.read(connectionControllerProvider.notifier).retry(),
         );
@@ -67,7 +68,7 @@ class ConnectionChip extends ConsumerWidget {
         return _chip(
           context,
           color: Colors.orange,
-          icon: Icons.warning_amber_outlined,
+          icon: PhosphorIconsLight.warning,
           label: 'Issue',
           onTap: () => _showError(context, conn.lastError ?? 'Unknown error'),
         );

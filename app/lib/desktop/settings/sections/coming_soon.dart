@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'section_header.dart';
 import 'settings_group.dart';
@@ -24,13 +24,13 @@ class ComingSoonRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
       enabled: false,
-      leading: Icon(icon, weight: 200, color: cs.outline),
+      leading: Icon(icon, color: cs.outline),
       title: Text(title),
       subtitle: Text(subtitle),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Symbols.schedule, weight: 200, size: 16, color: cs.outline),
+          Icon(PhosphorIconsLight.clock, size: 16, color: cs.outline),
           const SizedBox(width: 6),
           Text(
             'Coming soon',
@@ -68,8 +68,7 @@ class ComingSoon extends StatelessWidget {
           children: [
             ListTile(
               leading: Icon(
-                Symbols.schedule,
-                weight: 200,
+                PhosphorIconsLight.clock,
                 size: 18,
                 color: cs.outline,
               ),

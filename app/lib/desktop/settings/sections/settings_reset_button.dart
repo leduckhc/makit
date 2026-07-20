@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 /// A "reset to default" icon button for a settings row (SPEC-19 shared widget).
 ///
@@ -22,7 +22,7 @@ class SettingsResetButton extends StatelessWidget {
     if (!visible) return const SizedBox(width: 40);
     return IconButton(
       tooltip: 'Reset to default',
-      icon: const Icon(Symbols.settings_backup_restore, weight: 200, size: 18),
+      icon: const Icon(PhosphorIconsLight.clockCounterClockwise, size: 18),
       onPressed: onPressed,
     );
   }
