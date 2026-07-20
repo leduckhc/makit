@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Chat pane consistency mockups</title>
+<style>
+  :root{
+    /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
+    --bg:#171717;              /* scaffold surface (chat pane bg) */
+    --container-lowest:#121212;
+    --container-low:#1E1E1E;
+    --container:#242424;       /* surfaceContainer */
+    --container-high:#2E2E2E;  /* user bubble, composer box */
+    --container-highest:#383838;
+    --text:#F5F5F5;
+    --muted:#9E9E9E;           /* onSurfaceVariant / outline */
+    --hairline:#333333;        /* outlineVariant */
+    --primary:#7EE8A6;         /* M3 dark primary (seed-derived green) */
+    --accent:#4ADE80;          /* brand green */
+    --orange:#E8A33D;          /* tuned status (was Colors.orange) */
+    --red:#E5544B;             /* tuned status (was Colors.red) */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px;
+  }
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:820px}
+  .sub code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .issue{margin:0 0 40px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .issue > header{padding:16px 20px;border-bottom:1px solid var(--hairline)}
+  .issue h2{font-size:15px;margin:0 0 4px;font-weight:600}
+  .issue h2 .tag{font-size:11px;color:#0e0e0e;background:var(--accent);border-radius:6px;padding:2px 7px;margin-right:8px;font-weight:700;vertical-align:middle}
+  .issue p{margin:0;color:var(--muted);font-size:13px;max-width:900px}
+  .issue p code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .pair{display:flex;gap:0}
+  .col{flex:1;padding:20px;min-width:0}
+  .col:first-child{border-right:1px dashed var(--hairline)}
+  .col > .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .col.before > .lbl{color:#c98b8b}
+  .col.after  > .lbl{color:#7fca9a}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px;padding-left:2px}
+  .note strong{color:var(--text);font-weight:600}
+
+  /* ---- Chat pane canvas ---- */
+  .pane{background:var(--bg);border-radius:10px;border:1px solid #000;overflow:hidden;position:relative}
+  /* the readable-width content column (760px in app; scaled here) */
+  .col-inner{position:relative;padding:14px 0}
+
+  /* alignment guides */
+  .guide{position:absolute;top:0;bottom:0;width:1px;z-index:5;pointer-events:none}
+  .g-bad{background:rgba(229,84,75,.6)}
+  .g-ok{background:rgba(127,202,154,.55)}
+
+  /* Transcript rows */
+  .row{position:relative}
+  .ts{font-size:11px;color:var(--muted);margin-top:2px}
+
+  /* agent message (plain markdown, left aligned) */
+  .agent{color:var(--text);line-height:1.55}
+  .agent b{font-weight:700}
+  .agent .inline-code{background:#33363E;border-radius:4px;padding:1px 5px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px}
+
+  /* user bubble (right aligned grey) */
+  .user-wrap{display:flex;justify-content:flex-end}
+  .bubble{background:var(--container-high);color:var(--text);padding:10px 14px;max-width:78%;
+    border-radius:14px 14px 4px 14px}
+  .bubble-ts{display:flex;justify-content:flex-end}
+
+  /* tool card */
+  .tool{background:var(--container);border:1px solid var(--hairline);border-radius:12px;
+    padding:12px;display:flex;align-items:center;gap:10px}
+  .tool .name{flex:1;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:13px;font-weight:600}
+  .tool .caret{color:var(--muted)}
+  .tico{width:18px;height:18px;flex:0 0 auto;display:inline-flex;color:var(--muted)}
+  .tico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5}
+  .tico.safe{color:var(--muted)}
+  .tico.risky-bad{color:#FF9800}   /* raw Colors.orange */
+  .tico.destr-bad{color:#F44336}   /* raw Colors.red */
+  .tico.risky-ok{color:var(--orange)}
+  .tico.destr-ok{color:var(--red)}
+  .chk{width:14px;height:14px}
+  .chk svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+  .chk.bad{color:#4CAF50}          /* raw Colors.green */
+  .chk.ok{color:var(--primary)}
+
+  /* thinking line */
+  .think{display:flex;gap:6px;align-items:flex-start;color:var(--muted);font-style:italic;font-size:13px}
+  .think .bico{width:15px;height:15px;flex:0 0 auto;opacity:.75}
+  .think .bico svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.5}
+  .think span{opacity:.72}
+
+  /* error banner */
+  .err{background:#4A2420;color:#FFD9D4;border-radius:10px;padding:12px;display:flex;gap:8px;align-items:center}
+  .err .eico{width:18px;height:18px;flex:0 0 auto}
+  .err .eico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6}
+
+  /* working indicators */
+  .work-spin{display:flex;gap:10px;align-items:center;color:var(--muted)}
+  .spinner{width:14px;height:14px;border:2px solid var(--hairline);border-top-color:var(--muted);
+    border-radius:50%;animation:spin 0.9s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .shimmer{font-size:14px;font-weight:500;font-style:italic;
+    background:linear-gradient(90deg,#5a5a5a 35%,#f5f5f5 50%,#5a5a5a 65%);
+    background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:sh 1.6s linear infinite}
+  @keyframes sh{0%{background-position:120% 0}100%{background-position:-20% 0}}
+
+  /* composer */
+  .composer{background:var(--container-high);border-radius:16px;padding:8px 8px 6px}
+  .composer .field{color:var(--muted);padding:6px 8px}
+  .composer .foot{display:flex;align-items:center;gap:8px;margin-top:4px}
+  .chip{font-size:12px;color:var(--muted);background:var(--container);border:1px solid var(--hairline);
+    border-radius:8px;padding:3px 9px}
+  .composer .spacer{flex:1}
+  .cbtn{width:22px;height:22px;color:var(--muted)}
+  .cbtn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.6}
+  .send{width:34px;height:34px;border-radius:50%;background:var(--container);color:var(--muted);
+    display:inline-flex;align-items:center;justify-content:center}
+  .send.on{background:var(--primary);color:#06210F}
+  .send svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+
+  /* speaker gutter (after, issue 6) */
+  .with-gutter{display:flex;gap:10px}
+  .with-gutter .avatar{width:22px;height:22px;border-radius:50%;flex:0 0 auto;
+    background:var(--container-high);display:inline-flex;align-items:center;justify-content:center;color:var(--primary);margin-top:1px}
+  .with-gutter .avatar svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.7}
+  .with-gutter .body{flex:1;min-width:0}
+</style>
+</head>
+<body>
+  <h1>Chat pane — Before / After</h1>
+  <p class="sub">Rendered with the app's real M3 neutral palette (dark), inside the desktop chat pane's readable-width column. Thin vertical guides mark content left-edges (<span style="color:#e5544b">red&nbsp;=&nbsp;current, jitters</span> / <span style="color:#7fca9a">green&nbsp;=&nbsp;proposed single gutter</span>). Sources: <code>desktop_chat_pane.dart</code>, <code>chat_message.dart</code>, <code>chat_transcript.dart</code>, <code>tool_call_card.dart</code>.</p>
+
+  <!-- ISSUE 1: alignment jitter -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#1</span>Left-edge alignment jitter</h2>
+      <p>The pane wraps every row in <code>Padding(horizontal:16)</code>, and each item type <em>also</em> adds its own horizontal inset — the two stack, so content left-edges land at <strong>32 / 28 / 16px</strong> depending on type. Proposed: the pane owns a single gutter; item widgets carry <strong>zero</strong> horizontal padding, so every left-edge aligns by construction.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — edges at 16 / 28 / 32</div>
+        <div class="pane"><div class="col-inner" style="padding-left:0;padding-right:0">
+          <span class="guide g-bad" style="left:16px"></span>
+          <span class="guide g-bad" style="left:28px"></span>
+          <span class="guide g-bad" style="left:32px"></span>
+          <!-- agent: pane16 + widget16 = 32 -->
+          <div class="row" style="padding:6px 32px 2px"><div class="agent">Here's the plan. I'll start with the <span class="inline-code">theme.dart</span> tokens.</div><div class="ts">14:02</div></div>
+          <!-- tool: pane16 + margin12 = 28 -->
+          <div class="row" style="padding:4px 28px"><div class="tool"><span class="tico safe">__LIGHTNING__</span><span class="name">read_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div></div>
+          <!-- thinking: pane16 + 0 = 16 -->
+          <div class="row" style="padding:6px 16px"><div class="think"><span class="bico">__BRAIN__</span><span>Considering the readable width cap and how each row centers…</span></div></div>
+          <!-- error: pane16 + 0 = 16 -->
+          <div class="row" style="padding:6px 16px"><div class="err"><span class="eico">__WARN__</span><span>Model request failed: rate limited.</span></div></div>
+        </div></div>
+        <div class="note">Agent text (32) sits well right of the tool card (28), which sits right of the thinking / error rows (16). The eye can't find a single margin.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — one gutter, everything at 20</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <span class="guide g-ok" style="left:20px"></span>
+          <div class="row" style="padding:6px 0 2px"><div class="agent">Here's the plan. I'll start with the <span class="inline-code">theme.dart</span> tokens.</div><div class="ts">14:02</div></div>
+          <div class="row" style="padding:8px 0"><div class="tool"><span class="tico safe">__LIGHTNING__</span><span class="name">read_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div></div>
+          <div class="row" style="padding:8px 0"><div class="think"><span class="bico">__BRAIN__</span><span>Considering the readable width cap and how each row centers…</span></div></div>
+          <div class="row" style="padding:8px 0"><div class="err"><span class="eico">__WARN__</span><span>Model request failed: rate limited.</span></div></div>
+        </div></div>
+        <div class="note">Single gutter (<strong>20px</strong>) owned by the pane; item widgets have no horizontal padding. Every row shares one left-edge.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 2: vertical rhythm + radius scale -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#2</span>Vertical rhythm &amp; radius scale</h2>
+      <p>Row gaps are per-widget (agent 6/2, bubble 4/0, tool 4, thinking 6, error 6, working 12) so the space between two rows depends on <em>which types</em> meet. Radii are hand-picked (bubble 14, tool 12, error 10, code 8, inline 4, composer 16) with no scale. Proposed tokens: gap&nbsp;<strong>10</strong> · radius scale <strong>s8 / m12 / l16</strong>.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — uneven gaps</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="user-wrap" style="margin-bottom:0"><div class="bubble" style="border-radius:14px 14px 4px 14px">Migrate the tool card colors too.</div></div>
+          <div class="bubble-ts"><div class="ts" style="margin-bottom:16px">14:01</div></div>
+          <div class="row" style="padding-bottom:6px"><div class="agent">On it.</div></div>
+          <div class="tool" style="border-radius:12px;margin-bottom:4px"><span class="tico safe">__LIGHTNING__</span><span class="name">edit_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+          <div class="err" style="border-radius:10px">__WARN_INLINE__ Patch did not apply cleanly.</div>
+        </div></div>
+        <div class="note">Big gap after the bubble timestamp, tight gap before the tool card — density lurches. Four different corner radii stacked vertically.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — 10px rhythm, radius scale</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="user-wrap" style="margin-bottom:10px"><div class="bubble" style="border-radius:16px 16px 4px 16px">Migrate the tool card colors too.</div></div>
+          <div class="row" style="margin-bottom:10px"><div class="agent">On it.</div></div>
+          <div class="tool" style="border-radius:12px;margin-bottom:10px"><span class="tico safe">__LIGHTNING__</span><span class="name">edit_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+          <div class="err" style="border-radius:12px"><span class="eico">__WARN__</span><span>Patch did not apply cleanly.</span></div>
+        </div></div>
+        <div class="note">Uniform 10px gap between rows. Cards + banners share the <strong>m12</strong> radius; bubble uses <strong>l16</strong>. Timestamps move to hover (issue #3) so they don't add vertical noise.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 3: timestamps -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#3</span>Timestamps: half-applied</h2>
+      <p>Only user + agent messages show a timestamp; tool / thinking / error rows don't — so the transcript alternates timestamped and un-timestamped rows with no rule. Proposed: drop the always-on per-message stamp; show a subtle time only on hover (or a day/gap separator).</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — inconsistent</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="user-wrap"><div class="bubble">Where are the tokens?</div></div>
+          <div class="bubble-ts"><div class="ts" style="margin-bottom:8px">14:00</div></div>
+          <div class="row" style="margin-bottom:8px"><div class="agent">In <span class="inline-code">theme.dart</span>.</div><div class="ts">14:00</div></div>
+          <div class="tool"><span class="tico safe">__LIGHTNING__</span><span class="name">read_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+        </div></div>
+        <div class="note">Bubble + agent stamped; the tool row that fired in the same second is not. Reads as accidental.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — quiet, on hover</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="user-wrap" style="margin-bottom:10px"><div class="bubble">Where are the tokens?</div></div>
+          <div class="row" style="margin-bottom:10px"><div class="agent">In <span class="inline-code">theme.dart</span>.<span class="ts" style="margin-left:8px;opacity:.5">14:00</span></div></div>
+          <div class="tool"><span class="tico safe">__LIGHTNING__</span><span class="name">read_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+        </div></div>
+        <div class="note">No per-row stamp block; a faint time reveals on row hover. The transcript reads as one continuous stream.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 4: palette drift -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#4</span>Tool-card colors: raw Material vs tuned palette</h2>
+      <p><code>tool_call_card.dart</code> uses raw <code>Colors.orange / Colors.red</code> for risk, and the copy-check uses <code>Colors.green</code> — while your sidebar <code>_StatusDot</code> and <code>sidebar-cleanup.html</code> already tuned these to <code>#E8A33D / #E5544B</code> and use <code>cs.primary</code> green. Same semantics, two different palettes.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — raw Colors.*</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="tool" style="margin-bottom:10px"><span class="tico risky-bad">__WARNTRI__</span><span class="name">run_shell (rm)</span><span class="chk bad">__CHECK__</span><span class="caret">__CARET__</span></div>
+          <div class="tool"><span class="tico destr-bad">__OCTAGON__</span><span class="name">delete_branch</span><span class="chk bad">__CHECK__</span><span class="caret">__CARET__</span></div>
+        </div></div>
+        <div class="note">Saturated M2 orange/red/green shout against the neutral greys — foreign to the panel.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — tuned + cs.primary</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="tool" style="margin-bottom:10px"><span class="tico risky-ok">__WARNTRI__</span><span class="name">run_shell (rm)</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+          <div class="tool"><span class="tico destr-ok">__OCTAGON__</span><span class="name">delete_branch</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+        </div></div>
+        <div class="note">Same tuned status hues as the sidebar dots; the ok-check uses the seed-derived green. One palette across the whole app.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 5: busy indicator -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#5</span>Busy indicator: two different designs</h2>
+      <p>Mobile shows a shimmering random word ("Cooking", "Pondering"…); desktop shows a plain spinner + "working…". Same shared transcript, two brand voices. Proposed: use the shimmer word on both — it's the more distinctive treatment and matches the italic thinking line.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — desktop compact</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="think" style="margin-bottom:12px"><span class="bico">__BRAIN__</span><span>Deciding which files to touch first…</span></div>
+          <div class="work-spin"><span class="spinner"></span><span>working…</span></div>
+        </div></div>
+        <div class="note">Flat spinner + lowercase label; discards the playful shimmer the mobile surface uses.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — shared shimmer</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="think" style="margin-bottom:12px"><span class="bico">__BRAIN__</span><span>Deciding which files to touch first…</span></div>
+          <div class="shimmer">Percolating</div>
+        </div></div>
+        <div class="note">Shimmer word on both surfaces; visually rhymes with the italic thinking line above it.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 6: speaker anchor (optional) -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#6</span>Optional: speaker anchor</h2>
+      <p>Agent output is plain left-aligned text and LLM headers render as plain bold body text — so a bold first line can read as a heading for the block above it. A tiny leading avatar/gutter gives the eye a fixed "the agent is speaking" anchor. This is an opinion, not a defect — shown so you can decide.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — no anchor</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="row" style="margin-bottom:10px"><div class="agent"><b>Plan</b><br>1. Add layout tokens.<br>2. Make rows gutter-agnostic.</div></div>
+          <div class="tool"><span class="tico safe">__LIGHTNING__</span><span class="name">edit_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+        </div></div>
+        <div class="note">"Plan" bold line floats; ambiguous whether it heads the tool card below or is its own reply.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — leading gutter</div>
+        <div class="pane"><div class="col-inner" style="padding:14px 20px">
+          <div class="with-gutter" style="margin-bottom:10px"><span class="avatar">__SPARK__</span><div class="body"><div class="agent"><b>Plan</b><br>1. Add layout tokens.<br>2. Make rows gutter-agnostic.</div></div></div>
+          <div class="with-gutter"><span style="width:22px;flex:0 0 auto"></span><div class="body"><div class="tool"><span class="tico safe">__LIGHTNING__</span><span class="name">edit_file</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div></div></div>
+        </div></div>
+        <div class="note">A subtle 22px avatar marks the agent turn; its tool calls align under the body, visually grouped as one turn.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMBINED -->
+  <section class="issue">
+    <header>
+      <h2>Everything together</h2>
+      <p>A full transcript with #1–#5 applied (speaker anchor from #6 omitted — it's optional).</p>
+    </header>
+    <div class="col after" style="border:none">
+      <div class="lbl">Proposed</div>
+      <div class="pane" style="max-width:560px"><div class="col-inner" style="padding:16px 20px">
+        <span class="guide g-ok" style="left:20px"></span>
+        <div class="user-wrap" style="margin-bottom:10px"><div class="bubble" style="border-radius:16px 16px 4px 16px">Add the design tokens and fix the tool card colors.</div></div>
+
+        <div class="row" style="margin-bottom:10px"><div class="agent"><b>Plan</b><br>I'll add a token file, then make the transcript rows gutter-agnostic.</div></div>
+
+        <div class="think" style="margin-bottom:10px"><span class="bico">__BRAIN__</span><span>The pane already caps width at 760 — the gutter should live there…</span></div>
+
+        <div class="tool" style="margin-bottom:10px"><span class="tico safe">__LIGHTNING__</span><span class="name">read_file · theme.dart</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+        <div class="tool" style="margin-bottom:10px"><span class="tico risky-ok">__WARNTRI__</span><span class="name">edit_file · tool_call_card.dart</span><span class="chk ok">__CHECK__</span><span class="caret">__CARET__</span></div>
+
+        <div class="row" style="margin-bottom:10px"><div class="agent">Tokens added and the card now uses the tuned palette.<span class="ts" style="margin-left:8px;opacity:.5">14:06</span></div></div>
+
+        <div class="shimmer" style="margin-bottom:14px">Verifying</div>
+
+        <div class="composer">
+          <div class="field">Message …</div>
+          <div class="foot">
+            <span class="chip">sonnet</span>
+            <span class="chip">think: med</span>
+            <span class="spacer"></span>
+            <span class="cbtn">__PLUS_C__</span>
+            <span class="send on">__ARROW__</span>
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </section>
+
+<script>
+// Inline SVG glyphs (approximate Phosphor Light) injected into placeholders.
+const G = {
+  __LIGHTNING__:'<svg viewBox="0 0 24 24"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg>',
+  __CHECK__:'<svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>',
+  __CARET__:'<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6"><path d="M9 6l6 6-6 6"/></svg>',
+  __BRAIN__:'<svg viewBox="0 0 24 24"><path d="M9 4a3 3 0 00-3 3 3 3 0 00-1 5 3 3 0 001 5 3 3 0 003 3V4zM15 4a3 3 0 013 3 3 3 0 011 5 3 3 0 01-1 5 3 3 0 01-3 3V4z"/></svg>',
+  __WARN__:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>',
+  __WARN_INLINE__:'<span class="eico" style="margin-right:8px;display:inline-flex;vertical-align:middle"><svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg></span>',
+  __WARNTRI__:'<svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  __OCTAGON__:'<svg viewBox="0 0 24 24"><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8z"/><path d="M12 8v4M12 15h.01"/></svg>',
+  __PLUS_C__:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+  __ARROW__:'<svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+  __SPARK__:'<svg viewBox="0 0 24 24"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>',
+};
+document.body.innerHTML = document.body.innerHTML.replace(/__[A-Z0-9_]+__/g, m => G[m] || m);
+</script>
+</body>
+</html>

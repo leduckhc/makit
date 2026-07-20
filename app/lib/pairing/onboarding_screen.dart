@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'onboarding_controller.dart';
 import 'pairing_screen.dart';
@@ -40,7 +41,7 @@ class _NotificationsStep extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.notifications_active_outlined, size: 64),
+            const Icon(PhosphorIconsLight.bell, size: 64),
             const SizedBox(height: 24),
             Text(
               'Get notified when an agent needs you',
@@ -57,7 +58,7 @@ class _NotificationsStep extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
             FilledButton.icon(
-              icon: const Icon(Icons.notifications),
+              icon: const Icon(PhosphorIconsLight.bell),
               label: const Text('Enable notifications'),
               onPressed: controller.enableNotifications,
             ),

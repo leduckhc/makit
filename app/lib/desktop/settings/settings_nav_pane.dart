@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../chat/sidebar_layout.dart' show kTitleBarStripHeight;
 import 'registry/settings_item.dart';
@@ -67,7 +67,7 @@ class SettingsNavPane extends StatelessWidget {
             decoration: const InputDecoration(
               isDense: true,
               hintText: 'Search settings',
-              prefixIcon: Icon(Symbols.search, weight: 200, size: 18),
+              prefixIcon: Icon(PhosphorIconsLight.magnifyingGlass, size: 18),
               border: OutlineInputBorder(),
             ),
           ),
@@ -98,7 +98,7 @@ class _Header extends StatelessWidget {
         children: [
           IconButton(
             tooltip: 'Close settings',
-            icon: const Icon(Symbols.close, weight: 200),
+            icon: const Icon(PhosphorIconsLight.x),
             onPressed: onClose,
           ),
           const SizedBox(width: 4),
@@ -133,7 +133,7 @@ class _SectionList extends StatelessWidget {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
-            leading: Icon(section.icon, weight: 200),
+            leading: Icon(section.icon),
             title: Text(section.title),
             onTap: () => onSelect(section.id),
           ),

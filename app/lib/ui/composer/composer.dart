@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../shortcuts/key_chord.dart';
-import '../../app/theme.dart' show kComposerBoxDark, kComposerBoxLight;
 import '../../store/models.dart';
 import 'slash_palette.dart';
 
@@ -17,7 +17,8 @@ import 'slash_palette.dart';
 /// On mobile the field is compact until focused, then expands to the full
 /// form; losing focus collapses it back to the 1-line compact form (text is
 /// preserved). On desktop [alwaysExpanded] keeps the full form up permanently.
-/// The send button fades in only while the field is non-empty.
+/// The send button is always shown; it's disabled (grayish) while the field is
+/// empty and enabled once there's text.
 class Composer extends StatefulWidget {
   const Composer({
     super.key,
@@ -158,14 +159,13 @@ class _ComposerState extends State<Composer> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     // One coherent, static box behind the whole composer (field + footer
-    // controls). Deliberately darker than the transcript background and
-    // painted by a plain Container so it never shifts on hover. Glass surfaces
-    // supply their own backdrop, so stay transparent there.
+    // controls). Uses the M3 `surfaceContainerHigh` tonal step so it reads as a
+    // raised input panel against the scaffold surface, painted by a plain
+    // Container so it never shifts on hover. Glass surfaces supply their own
+    // backdrop, so stay transparent there.
     final boxColor = widget.glass
         ? Colors.transparent
-        : (Theme.of(context).brightness == Brightness.dark
-              ? kComposerBoxDark
-              : kComposerBoxLight);
+        : cs.surfaceContainerHigh;
     return SafeArea(
       top: false,
       child: Column(
@@ -254,33 +254,41 @@ class _ComposerState extends State<Composer> {
 
   Widget _buildPlus() {
     return const IconButton(
-      icon: Icon(Icons.add_circle_outline),
+      icon: Icon(PhosphorIconsLight.plusCircle),
       tooltip: 'Add attachment',
       // Disabled until M6 (@-mention picker); avoids misleading enabled no-op.
       onPressed: null,
     );
   }
 
-  /// Trailing slot. Priority: non-empty text → green send arrow; else if a
-  /// turn is running → stop/cancel button; else nothing. Fades between states.
+  /// Trailing slot. Priority: non-empty text → filled send arrow; else if a
+  /// turn is running → stop/cancel button; else a disabled (grayish) send
+  /// arrow. Fades between states.
   Widget _buildSendSlot() {
     final Widget child;
     if (_hasText) {
       child = IconButton.filled(
         key: const ValueKey('send'),
-        icon: const Icon(Icons.arrow_upward),
+        icon: const Icon(PhosphorIconsLight.arrowUp),
         tooltip: 'Send',
         onPressed: _send,
       );
     } else if (widget.running && widget.onCancel != null) {
       child = IconButton.filled(
         key: const ValueKey('cancel'),
-        icon: const Icon(Icons.stop),
+        icon: const Icon(PhosphorIconsLight.stop),
         tooltip: 'Cancel turn',
         onPressed: widget.onCancel,
       );
     } else {
-      child = const SizedBox.shrink(key: ValueKey('empty'));
+      // Empty input, not running: show a disabled (grayish) send button so the
+      // affordance stays visible. onPressed: null gives the disabled styling.
+      child = const IconButton.filled(
+        key: ValueKey('send-disabled'),
+        icon: Icon(PhosphorIconsLight.arrowUp),
+        tooltip: 'Send',
+        onPressed: null,
+      );
     }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Title bars consistency mockups</title>
+<style>
+  :root{
+    --bg:#171717;              /* scaffold surface (chat pane bg) */
+    --container:#242424;       /* sidebar bg (surfaceContainer) */
+    --container-high:#2E2E2E;
+    --container-highest:#383838;
+    --text:#F5F5F5;
+    --muted:#9E9E9E;           /* onSurfaceVariant / outline */
+    --hairline:#333333;        /* outlineVariant */
+    --primary:#7EE8A6;         /* M3 dark primary */
+    --tl-red:#FF5F57;--tl-yellow:#FEBC2E;--tl-green:#28C840; /* traffic lights */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:860px}
+  .sub code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .issue{margin:0 0 40px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .issue > header{padding:16px 20px;border-bottom:1px solid var(--hairline)}
+  .issue h2{font-size:15px;margin:0 0 4px;font-weight:600}
+  .issue h2 .tag{font-size:11px;color:#0e0e0e;background:var(--primary);border-radius:6px;padding:2px 7px;margin-right:8px;font-weight:700;vertical-align:middle}
+  .issue p{margin:0;color:var(--muted);font-size:13px;max-width:900px}
+  .issue p code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .pair{display:flex;gap:0}
+  .col{flex:1;padding:20px;min-width:0}
+  .col:first-child{border-right:1px dashed var(--hairline)}
+  .col > .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .col.before > .lbl{color:#c98b8b}
+  .col.after  > .lbl{color:#7fca9a}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px}
+  .note strong{color:var(--text);font-weight:600}
+
+  /* window canvas */
+  .win{background:var(--bg);border-radius:10px 10px 8px 8px;border:1px solid #000;overflow:hidden;position:relative}
+  /* title strip (stands in for hidden OS titlebar), height 28 */
+  .strip{height:28px;display:flex;align-items:center;position:relative;background:var(--container)}
+  .strip.paneBg{background:var(--bg)}
+  .tl{position:absolute;left:12px;top:50%;transform:translateY(-50%);display:flex;gap:8px}
+  .tl i{width:11px;height:11px;border-radius:50%;display:block}
+  .tl .r{background:var(--tl-red)}.tl .y{background:var(--tl-yellow)}.tl .g{background:var(--tl-green)}
+  .wtitle{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden}
+  .ico{width:16px;height:16px;flex:0 0 auto;color:var(--muted);display:inline-flex}
+  .ico svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--primary);flex:0 0 auto}
+  .t-title{font-size:14px;font-weight:400}         /* titleSmall w400 */
+  .t-ctx{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .t-primary{font-size:14px;font-weight:500;color:var(--text)}
+  .muted{color:var(--muted)}
+
+  /* pane header, height 28 */
+  .phead{height:28px;display:flex;align-items:center;background:var(--bg);position:relative}
+  .phead .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mini{width:22px;height:22px;flex:0 0 auto;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+  .mini svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6}
+  .sep{height:1px;background:var(--hairline)}
+  .transcript{padding:14px 20px;color:var(--muted);font-size:13px}
+  .transcript .a{color:var(--text);margin-bottom:8px}
+
+  /* alignment guides */
+  .win{position:relative}
+  .g{position:absolute;top:0;height:56px;width:1px;z-index:6;pointer-events:none}
+  .g-bad{background:rgba(229,84,75,.65)}
+  .g-ok{background:rgba(127,202,154,.6)}
+  .legend{font-size:11.5px;color:var(--muted);margin:0 0 18px}
+</style>
+</head>
+<body>
+  <h1>Title bars — window title vs pane title</h1>
+  <p class="sub">Two title rows stack in the pane column: the <strong>window title strip</strong> (worktree/branch, on the traffic-light row — <code>_WorktreeTitle</code>) and the <strong>pane title</strong> (session name + actions — <code>_PaneHeaderStrip</code> / <code>PaneHeader</code>). Both currently render at <code>titleSmall w400</code>, so they read as two identical bars with no hierarchy or separation.</p>
+  <p class="legend">Guides mark title left-edges: <span style="color:#e5544b">red = current (12 / 8 / 16px, misaligned)</span> · <span style="color:#7fca9a">green = proposed shared edge</span>.</p>
+
+  <!-- ISSUE 1: hierarchy + icon -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#1</span>No hierarchy between the two titles</h2>
+      <p>Worktree and session titles are the same size/weight; the worktree row has a branch icon, the session row has none. The eye can't tell which is context and which is the active thing.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before</div>
+        <div class="win">
+          <span class="g g-bad" style="left:110px"></span>
+          <div class="strip"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-title">feature/ux-ui</span></div>
+          </div>
+          <div class="phead"><span class="grow t-title" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span><span class="mini">__X__</span></div>
+          <div class="transcript"><div class="a">Two same-weight titles — which one is the session?</div></div>
+        </div>
+        <div class="note">Both <code>titleSmall w400</code>; branch icon on one row only. Reads as a duplicated bar.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After</div>
+        <div class="win">
+          <span class="g g-ok" style="left:110px"></span>
+          <div class="strip"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-ctx">feature/ux-ui</span></div>
+          </div>
+          <div class="phead"><span class="dot" style="margin-left:8px"></span><span class="grow t-primary" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span><span class="mini">__X__</span></div>
+          <div class="transcript"><div class="a">Worktree = quiet uppercase context; session = primary title.</div></div>
+        </div>
+        <div class="note">Worktree becomes a small <strong>uppercase muted context label</strong> (like the sidebar repo header); session title is <strong>w500 onSurface</strong> with a leading <strong>status dot</strong> for icon parity.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 2: left-edge alignment -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#2</span>Title left-edges don't line up</h2>
+      <p>Insets differ by call site: window title <code>12</code> (sidebar shown), split pane header <code>8</code>, single-pane <code>PaneHeader</code> <code>16</code>. Stacked titles step left/right.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before — 12 / 8 edges</div>
+        <div class="win">
+          <span class="g g-bad" style="left:110px"></span>
+          <span class="g g-bad" style="left:8px;top:28px;height:28px"></span>
+          <div class="strip"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-title">feature/ux-ui</span></div>
+          </div>
+          <div class="phead"><span class="grow t-title" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span></div>
+          <div class="transcript"><div class="a">Session title starts 4px left of the worktree label above it.</div></div>
+        </div>
+        <div class="note">Branch label at 110 (past traffic lights, +icon), session at 8 — a visible step.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After — shared edge</div>
+        <div class="win">
+          <span class="g g-ok" style="left:110px"></span>
+          <div class="strip"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-ctx">feature/ux-ui</span></div>
+          </div>
+          <div class="phead"><span class="dot" style="margin-left:110px"></span><span class="grow t-primary" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span></div>
+          <div class="transcript"><div class="a">Session dot/title share the worktree label's left edge.</div></div>
+        </div>
+        <div class="note">One gutter for both titles (here aligned past the traffic lights). When the sidebar is shown and the strip is clear, both align at a single small inset instead.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 3: thin separator OPTION -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#3</span>Option: thin separator under the window title</h2>
+      <p>You asked for a separator option. A 1px hairline (<code>outlineVariant #333</code>) under the window title strip splits "which worktree" from "which session + transcript" without adding weight. Shown with the separator off vs on so you can pick.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">A — none (current)</div>
+        <div class="win">
+          <div class="strip paneBg"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-ctx">feature/ux-ui</span></div>
+          </div>
+          <div class="phead"><span class="dot" style="margin-left:110px"></span><span class="grow t-primary" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span></div>
+          <div class="transcript"><div class="a">Titles + transcript blend into one field.</div></div>
+        </div>
+        <div class="note">No divider — relies only on the hierarchy from #1.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">B — hairline separator</div>
+        <div class="win">
+          <div class="strip paneBg"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+            <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-ctx">feature/ux-ui</span></div>
+          </div>
+          <div class="sep"></div>
+          <div class="phead"><span class="dot" style="margin-left:110px"></span><span class="grow t-primary" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span></div>
+          <div class="transcript"><div class="a">A 1px line pins the window title as a distinct zone.</div></div>
+        </div>
+        <div class="note">Full-bleed <code>Divider(height:1)</code> at <code>outlineVariant</code> directly under the strip. Recommended default.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMBINED -->
+  <section class="issue">
+    <header>
+      <h2>Everything together</h2>
+      <p>Hierarchy (#1) + aligned edges (#2) + the hairline separator (#3, as an option).</p>
+    </header>
+    <div class="col after" style="border:none">
+      <div class="lbl">Proposed (separator on)</div>
+      <div class="win" style="max-width:560px">
+        <div class="strip paneBg"><span class="tl"><i class="r"></i><i class="y"></i><i class="g"></i></span>
+          <div class="wtitle" style="margin-left:110px"><span class="ico">__BRANCH__</span><span class="t-ctx">feature/ux-ui</span></div>
+        </div>
+        <div class="sep"></div>
+        <div class="phead"><span class="dot" style="margin-left:110px"></span><span class="grow t-primary" style="margin-left:8px">design tokens</span><span class="mini">__DOTS__</span><span class="mini">__X__</span></div>
+        <div class="transcript"><div class="a">Agent reply sits below a clear two-level header: worktree context, then the active session.</div>Message …</div>
+      </div>
+    </div>
+  </section>
+
+<script>
+const G = {
+  __BRANCH__:'<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M8 8q10 0 10 2"/></svg>',
+  __DOTS__:'<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
+  __X__:'<svg viewBox="0 0 24 24" style="width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+document.body.innerHTML = document.body.innerHTML.replace(/__[A-Z0-9_]+__/g, m => G[m] || m);
+</script>
+</body>
+</html>

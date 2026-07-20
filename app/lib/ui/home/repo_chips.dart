@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../app/theme.dart' show kMakitAccent;
 import '../../store/models.dart';
-
-/// Brand accent used for running/active affordances (shared token).
-const kRepoAccent = kMakitAccent;
 
 /// Git additions (green) / deletions (red).
 const kDiffAdd = Color(0xFF3FB950);
@@ -20,7 +17,7 @@ class BranchChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = subtle ? cs.outline : kRepoAccent;
+    final color = subtle ? cs.outline : cs.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -30,7 +27,7 @@ class BranchChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.commit_outlined, size: 12, color: color),
+          Icon(PhosphorIconsLight.gitCommit, size: 12, color: color),
           const SizedBox(width: 4),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),
@@ -98,7 +95,8 @@ class PrPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = pr.isDraft ? Colors.grey : kRepoAccent;
+    final cs = Theme.of(context).colorScheme;
+    final color = pr.isDraft ? Colors.grey : cs.primary;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
@@ -108,11 +106,7 @@ class PrPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            pr.isDraft ? Icons.merge_type : Icons.merge_outlined,
-            size: 12,
-            color: color,
-          ),
+          Icon(PhosphorIconsLight.gitPullRequest, size: 12, color: color),
           const SizedBox(width: 3),
           Text(
             'PR #${pr.number}',
@@ -161,8 +155,9 @@ class SessionStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final (label, color) = switch (status) {
-      SessionStatus.running => ('running', kRepoAccent),
+      SessionStatus.running => ('running', cs.primary),
       SessionStatus.awaitingInput => ('you', Colors.orange),
       SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
       SessionStatus.error => ('error', Colors.red),

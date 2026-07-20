@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
 import '../selected_worktree.dart';
+import '../selected_session.dart' show closePane;
+import '../session_status_dot.dart';
 import '../sidebar_layout.dart'
     show sidebarCollapsedProvider, kTrafficLightInset;
 import '../title_bar_strip.dart';
@@ -35,22 +37,31 @@ class PaneTreeView extends ConsumerWidget {
     // pane.
     final collapsed = ref.watch(sidebarCollapsedProvider);
     final worktree = current?.worktree;
+    final cs = Theme.of(context).colorScheme;
     return Column(
       children: [
-        TitleBarStrip(
-          leadingTop: 3,
-          // With the sidebar folded away the pane area owns the only
-          // "show sidebar" affordance, cleared past the traffic lights.
-          leading: collapsed
-              ? const SidebarToggleButton(collapse: false)
-              : null,
-          // The current tree's worktree/branch, shown on the traffic-light row
-          // above the pane tabs. When the sidebar is folded the strip overlaps
-          // the traffic lights (and the unfold button), so inset past them;
-          // otherwise the pane strip is clear and only needs a small gutter.
-          title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
-          titleInset: collapsed ? kTrafficLightInset + 34 : 12,
+        // Window title strip on a sidebar-matching surface (surfaceContainer)
+        // so it reads as one continuous top band across sidebar + pane area.
+        ColoredBox(
+          color: cs.surfaceContainer,
+          child: TitleBarStrip(
+            // With the sidebar folded away the pane area owns the only
+            // "show sidebar" affordance, cleared past the traffic lights.
+            leading: collapsed
+                ? const SidebarToggleButton(collapse: false)
+                : null,
+            // The current tree's worktree/branch, shown on the traffic-light
+            // row above the pane tabs. When the sidebar is folded the strip
+            // overlaps the traffic lights (and the unfold button), so inset
+            // past them; otherwise the pane strip is clear and only needs a
+            // small gutter.
+            title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
+            titleInset: collapsed ? kTrafficLightInset + 34 : 12,
+          ),
         ),
+        // Hairline separating the window-title zone (which worktree) from the
+        // pane header + transcript below (which session). outlineVariant, 1px.
+        const Divider(height: 1),
         Expanded(
           // No worktree selected → the empty "Select or start a session"
           // placeholder (there is no default/global tree).
@@ -85,9 +96,8 @@ class _WorktreeTitle extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(
-          Symbols.fork_right,
+          PhosphorIconsLight.gitBranch,
           size: 16,
-          weight: 200,
           color: theme.colorScheme.outline,
         ),
         const SizedBox(width: 6),
@@ -96,8 +106,13 @@ class _WorktreeTitle extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w400,
+            // Quiet muted context label (matches the sidebar repo-header
+            // treatment, minus the uppercasing) so the worktree reads as
+            // context beneath which the session title is the primary line.
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.outline,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
             ),
           ),
         ),
@@ -375,21 +390,30 @@ class _PaneHeaderStrip extends ConsumerWidget {
       height: _kPaneHeaderHeight,
       child: Row(
         children: [
-          const SizedBox(width: 8),
+          // Align the leading edge with the window-title fork icon above (both
+          // at the 12px pane gutter); the status dot gives the session title a
+          // leading marker matching the worktree row's icon.
+          const SizedBox(width: 12),
+          if (session != null) ...[
+            SessionStatusDot(status: session.status),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              // Primary line: heavier than the worktree context label above.
               style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w400,
+                fontWeight: FontWeight.w500,
                 color: active
                     ? cs.onSurface
                     : cs.onSurfaceVariant.withValues(alpha: 0.85),
               ),
             ),
           ),
-          if (sessionId != null) SessionActionsMenu(sessionId: sessionId),
+          if (sessionId != null)
+            SessionActionsMenu(sessionId: sessionId, leafId: leaf.id),
           IconButton(
             iconSize: 13,
             visualDensity: VisualDensity.compact,
@@ -397,11 +421,8 @@ class _PaneHeaderStrip extends ConsumerWidget {
             constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
             tooltip: 'Close pane',
             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
-            icon: const Icon(Icons.close),
-            onPressed: () {
-              controller.setActive(leaf.id);
-              controller.closeActive();
-            },
+            icon: const Icon(PhosphorIconsLight.x),
+            onPressed: () => closePane(ref, leaf.id),
           ),
           const SizedBox(width: 8),
         ],

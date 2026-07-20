@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../../store/models.dart';
@@ -95,11 +95,17 @@ String sessionPaneTitle(Session? session, String fallbackId) {
 /// thinking-effort live inline in the composer footer, so they are not repeated
 /// here. Shared by the docked [PaneHeader] and the split pane tree's tab strip.
 class SessionActionsMenu extends ConsumerWidget {
-  /// Creates the actions menu acting on [sessionId].
-  const SessionActionsMenu({super.key, required this.sessionId});
+  /// Creates the actions menu acting on [sessionId]. [leafId] is the pane leaf
+  /// hosting the menu; when provided, "Quit session" also closes that pane
+  /// (Quit = kill the session **and** close its pane). Null keeps the plain
+  /// unbind behaviour (the standalone [PaneHeader], not used in the pane tree).
+  const SessionActionsMenu({super.key, required this.sessionId, this.leafId});
 
   /// The session the menu's actions target.
   final String sessionId;
+
+  /// The pane leaf hosting this menu, closed on Quit when non-null.
+  final String? leafId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -111,7 +117,7 @@ class SessionActionsMenu extends ConsumerWidget {
       // pushes the centered row content below the traffic-light line.
       child: const Padding(
         padding: EdgeInsets.all(3),
-        child: Icon(Symbols.more_horiz, size: 18, weight: 200),
+        child: Icon(PhosphorIconsLight.dotsThree, size: 18),
       ),
       onSelected: (value) {
         switch (value) {
@@ -130,7 +136,7 @@ class SessionActionsMenu extends ConsumerWidget {
         PopupMenuItem(
           value: 'rename',
           child: ListTile(
-            leading: Icon(Symbols.drive_file_rename_outline, weight: 200),
+            leading: Icon(PhosphorIconsLight.pencilSimple),
             title: Text('Rename session'),
             contentPadding: EdgeInsets.zero,
           ),
@@ -139,7 +145,7 @@ class SessionActionsMenu extends ConsumerWidget {
         PopupMenuItem(
           value: 'quit',
           child: ListTile(
-            leading: Icon(Symbols.power_settings_new, weight: 200),
+            leading: Icon(PhosphorIconsLight.power),
             title: Text('Quit session'),
             contentPadding: EdgeInsets.zero,
           ),
@@ -171,19 +177,32 @@ class SessionActionsMenu extends ConsumerWidget {
     );
     if (ok != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    // Capture notifiers before the async gap so the model cleanup still runs if
-    // this menu's widget is disposed (e.g. its pane closed) while killing.
+    // Capture notifiers before the async gap: the optimistic close disposes
+    // this menu's widget, so nothing below may touch `ref`/`context`.
     final store = ref.read(storeControllerProvider.notifier);
     final panes = ref.read(paneTreeControllerProvider.notifier);
     final selection = ref.read(selectedSessionProvider.notifier);
+
+    // Optimistic: close the pane now, don't wait on the server. Quit = close
+    // this pane + kill the session. Closing the last pane clears the tree to
+    // the empty placeholder; a split collapses into its sibling.
+    if (leafId != null) {
+      panes.setActive(leafId!);
+      panes.closeActive();
+    }
+    // Drop any *other* panes still bound to the session so it never lingers in
+    // another worktree's layout. If the sidebar still points here, move it to
+    // the surviving active pane (never stomp a newer user selection).
+    panes.unbindSession(sessionId);
+    if (selection.state == sessionId) {
+      selection.state = panes.activeLeafSessionId;
+    }
+
+    // Fire the kill in the background. The sidebar reconciles from server
+    // snapshots, so on failure the session simply stays/reappears there; just
+    // surface the error.
     try {
       await store.killSession(sessionId);
-      // Drop any panes bound to the now-dead session back to their empty state
-      // and clear the selection — regardless of whether this widget survived.
-      panes.unbindSession(sessionId);
-      if (selection.state == sessionId) {
-        selection.state = null;
-      }
     } catch (e) {
       if (messenger.mounted) {
         messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));

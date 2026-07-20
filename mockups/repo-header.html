@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Repo header redesign</title>
+<style>
+  :root{
+    --bg:#171717;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#333;--primary:#7EE8A6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:820px}
+  .issue{margin:0 0 34px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .issue > header{padding:14px 20px;border-bottom:1px solid var(--hairline)}
+  .issue h2{font-size:15px;margin:0;font-weight:600}
+  .issue h2 .tag{font-size:11px;color:#0e0e0e;border-radius:6px;padding:2px 8px;margin-right:8px;font-weight:700;vertical-align:middle}
+  .tag.b{background:#c98b8b}.tag.a{background:#7fca9a}
+  .row2{display:flex;gap:0;flex-wrap:wrap}
+  .col{flex:1;min-width:280px;padding:20px}
+  .col + .col{border-left:1px dashed var(--hairline)}
+  .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .lbl.state{color:#8aa9c9}
+
+  .canvas{display:flex;background:var(--bg);border-radius:10px;overflow:hidden;border:1px solid #000}
+  .sb{width:270px;background:var(--container);padding:8px 0;flex:0 0 auto}
+  .chat{flex:1}
+  .icon{flex:0 0 auto;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+  .icon svg{stroke:currentColor;fill:none;stroke-width:1.4}
+  .icon.p{color:var(--primary)}
+
+  /* ---- BEFORE repo header ---- */
+  .repoB{display:flex;align-items:center;gap:6px;padding:12px 8px 2px 16px}
+  .repoB.hover{background:rgba(255,255,255,.05);border-radius:6px;margin:0 0 0 0}
+  .repoB .nm{flex:1;font-size:13px;letter-spacing:.6px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .b-dots{width:22px;height:22px}.b-plus{width:34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center}
+  .b-plus.hl{background:rgba(255,255,255,.06)}
+
+  /* ---- AFTER repo header (section header) ---- */
+  .repoA{display:flex;align-items:center;gap:8px;padding:14px 12px 6px 16px}
+  .repoA .nm{flex:1;font-size:11px;letter-spacing:.11em;text-transform:uppercase;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .btn{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
+  .btn.show{background:rgba(255,255,255,.06)}
+  .caret{width:16px;height:16px;color:var(--muted);opacity:0;transition:opacity .12s}
+  .repoA.hover .caret,.repoA.collapsed .caret{opacity:1}
+
+  /* worktrees below (matches shipped sidebar: inset pill grid) */
+  .wt{padding:5px 16px 5px 32px}
+  .wt .line{display:flex;align-items:center;gap:6px}
+  .wt .br{font-size:13px}
+  .wt .sub{font-size:11px;color:var(--muted);font-weight:300;padding-left:22px}
+  .star{width:8px;height:8px;color:var(--muted)}.star svg{fill:currentColor;stroke:none;width:8px;height:8px}
+  .sess{display:flex;align-items:center;gap:6px;font-size:13px;padding:5px 12px 5px 32px}
+  .sess .dot{width:8px;height:8px;border-radius:50%;background:var(--primary);margin-left:4px}
+  .sess .t{flex:1}
+  .divider{height:1px;background:var(--hairline);margin:6px 0}
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px}
+  .kbd{font-family:ui-monospace,monospace;font-size:11px;color:var(--text);background:#000;border:1px solid var(--hairline);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+  <h1>Repo header — redesign</h1>
+  <p class="sub">The worktree/session rows are already cleaned up; the repo header is the one row that didn't get the treatment. Below: today (left) vs a proper <strong>section-header</strong> (right), shown at rest, on hover, and collapsed. Same dark M3 palette as the app.</p>
+
+  <!-- BEFORE -->
+  <section class="issue">
+    <header><h2><span class="tag b">BEFORE</span>Today</h2></header>
+    <div class="row2">
+      <div class="col">
+        <div class="lbl state">At rest</div>
+        <div class="canvas"><div class="sb">
+          <div class="repoB"><span class="icon">__FOLDERSTAR__</span><span class="nm">makit</span><span class="b-plus"><span class="icon">__PLUS__</span></span></div>
+          <div class="wt"><div class="line">__BRANCH_P__<span class="br">feature/ux-ui</span></div><div class="sub">PR #42 • 3d ago</div></div>
+          <div class="sess"><span class="dot"></span><span class="t">design tokens</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">No caret → nothing says it collapses. <code>folderStar</code> reads as “favorite”. Name uses letter-spacing on mixed-case (odd).</div>
+      </div>
+      <div class="col">
+        <div class="lbl state">On hover</div>
+        <div class="canvas"><div class="sb">
+          <div class="repoB hover"><span class="icon">__FOLDERSTAR__</span><span class="nm">makit</span><span class="b-dots"><span class="icon">__DOTS__</span></span><span class="b-plus hl"><span class="icon">__PLUS__</span></span></div>
+          <div class="wt"><div class="line">__BRANCH_P__<span class="br">feature/ux-ui</span></div><div class="sub">PR #42 • 3d ago</div></div>
+          <div class="sess"><span class="dot"></span><span class="t">design tokens</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Full-width radius-6 hover splash (clashes with the inset pills). Trailing cluster uneven: 22px <code>…</code> next to a 34px <code>+</code>.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- AFTER -->
+  <section class="issue">
+    <header><h2><span class="tag a">AFTER</span>Section header</h2></header>
+    <div class="row2">
+      <div class="col">
+        <div class="lbl state">At rest (expanded)</div>
+        <div class="canvas"><div class="sb">
+          <div class="repoA"><span class="icon">__FOLDER__</span><span class="nm">makit</span></div>
+          <div class="wt"><div class="line">__BRANCH_P__<span class="br">feature/ux-ui</span></div><div class="sub">PR #42 • 3d ago</div></div>
+          <div class="sess"><span class="dot"></span><span class="t">design tokens</span></div>
+          <div class="wt"><div class="line">__BRANCH__<span class="br">main</span> <span class="star">__STAR__</span></div></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Plain <code>folder</code>, uppercase muted label (tracking now justified). Clean, obviously a group label — worktrees are the focus.</div>
+      </div>
+      <div class="col">
+        <div class="lbl state">On hover (expanded)</div>
+        <div class="canvas"><div class="sb">
+          <div class="repoA hover"><span class="icon">__FOLDER__</span><span class="nm">makit</span><span class="caret icon">__CARETDOWN__</span><span class="btn show">__DOTS__</span><span class="btn show">__PLUS__</span></div>
+          <div class="wt"><div class="line">__BRANCH_P__<span class="br">feature/ux-ui</span></div><div class="sub">PR #42 • 3d ago</div></div>
+          <div class="sess"><span class="dot"></span><span class="t">design tokens</span></div>
+          <div class="wt"><div class="line">__BRANCH__<span class="br">main</span> <span class="star">__STAR__</span></div></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Caret fades in (trailing, per your earlier preference). <code>…</code> and <code>+</code> now the same 22px size — even cluster.</div>
+      </div>
+      <div class="col">
+        <div class="lbl state">Collapsed</div>
+        <div class="canvas"><div class="sb">
+          <div class="repoA collapsed"><span class="icon">__FOLDER__</span><span class="nm">makit</span><span class="caret icon">__CARETRIGHT__</span></div>
+          <div class="repoA"><span class="icon">__FOLDER__</span><span class="nm">other-repo</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">When collapsed the caret stays visible (points ▸) so a folded group never looks like a dead label.</div>
+      </div>
+    </div>
+  </section>
+
+<script>
+const G={
+ __FOLDER__:'<span class="icon">__x_FOLDER__</span>',
+};
+const SVG={
+ FOLDER:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 6h6l2 2h10v10H3z"/></svg>',
+ FOLDERSTAR:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 6h6l2 2h10v10H3z"/><path d="M14 10l1 2 2 .2-1.5 1.4.5 2L14 14.6 12.5 15.6l.5-2L11.5 12.2 13.5 12z" fill="currentColor" stroke="none"/></svg>',
+ PLUS:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>',
+ DOTS:'<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
+ CARETDOWN:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 9l6 6 6-6"/></svg>',
+ CARETRIGHT:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 6l6 6-6 6"/></svg>',
+ BRANCH:'<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M8 8q10 0 10 2"/></svg>',
+ BRANCH_P:'<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M6 8.2v3q0 4.8 9.8 6.6M18 8.2v7.6"/></svg>',
+ STAR:'<svg viewBox="0 0 24 24" width="8" height="8"><path d="M12 2l3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9z" fill="currentColor" stroke="none"/></svg>',
+};
+document.body.innerHTML = document.body.innerHTML
+ .replace(/__FOLDERSTAR__/g,SVG.FOLDERSTAR)
+ .replace(/__FOLDER__/g,SVG.FOLDER)
+ .replace(/__PLUS__/g,SVG.PLUS)
+ .replace(/__DOTS__/g,SVG.DOTS)
+ .replace(/__CARETDOWN__/g,SVG.CARETDOWN)
+ .replace(/__CARETRIGHT__/g,SVG.CARETRIGHT)
+ .replace(/__BRANCH_P__/g,'<span class="icon p">'+SVG.BRANCH_P+'</span>')
+ .replace(/__BRANCH__/g,'<span class="icon">'+SVG.BRANCH+'</span>')
+ .replace(/__STAR__/g,SVG.STAR);
+</script>
+</body>
+</html>

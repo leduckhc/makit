@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'sheet_header.dart';
 
@@ -117,7 +118,11 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
             SheetHeader(
               title: widget.title,
               actions: IconButton(
-                icon: Icon(_searching ? Icons.search_off : Icons.search),
+                icon: Icon(
+                  _searching
+                      ? PhosphorIconsLight.magnifyingGlassMinus
+                      : PhosphorIconsLight.magnifyingGlass,
+                ),
                 tooltip: _searching ? 'Hide search' : 'Search',
                 onPressed: _toggleSearch,
               ),
@@ -131,12 +136,15 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
                     isDense: true,
-                    prefixIcon: const Icon(Icons.search, size: 20),
+                    prefixIcon: const Icon(
+                      PhosphorIconsLight.magnifyingGlass,
+                      size: 20,
+                    ),
                     hintText: 'Filter…',
                     suffixIcon: _query.isEmpty
                         ? null
                         : IconButton(
-                            icon: const Icon(Icons.clear, size: 20),
+                            icon: const Icon(PhosphorIconsLight.x, size: 20),
                             tooltip: 'Clear',
                             onPressed: () {
                               _controller.clear();

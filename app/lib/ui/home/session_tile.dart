@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -26,7 +27,7 @@ class SessionTile extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.power_settings_new, color: cs.onErrorContainer),
+            Icon(PhosphorIconsLight.power, color: cs.onErrorContainer),
             const SizedBox(width: 8),
             Text(
               'Quit',

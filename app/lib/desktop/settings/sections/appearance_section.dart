@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../chat/sidebar_layout.dart';
 import '../prefs/preference_entries.dart';
@@ -211,7 +211,7 @@ class _AccentColorRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const ComingSoonRow(
-    icon: Symbols.palette,
+    icon: PhosphorIconsLight.palette,
     title: 'Accent color',
     subtitle: 'The single accent hue used for active and selected states.',
   );
@@ -224,7 +224,7 @@ class _MonospaceFontRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const ComingSoonRow(
-    icon: Symbols.code,
+    icon: PhosphorIconsLight.code,
     title: 'Monospace code font',
     subtitle: 'The font used for code blocks and inline code.',
   );
@@ -237,7 +237,7 @@ class _ChatRenderingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const ComingSoonRow(
-    icon: Symbols.chat,
+    icon: PhosphorIconsLight.chatCircle,
     title: 'Chat rendering',
     subtitle: 'Markdown, code highlight theme, and timestamps.',
   );

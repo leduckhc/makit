@@ -1,13 +1,23 @@
 # makit — Design System (MASTER)
 
-**Status:** locked 2026-07-07 · Source of truth for colors, glass, and component styling.
+**Status:** updated 2026-07 · Source of truth for glass and component styling.
 Playground: [`mockups/makit-design-lab.html`](../../mockups/makit-design-lab.html)
 
-makit is a mobile companion for coding agents: a **terminal-neutral** aesthetic —
-pure-grey neutrals (zero hue) + a single **green** accent, over a floating
-**Liquid-Glass** top bar and composer.
+> **2026-07 — Color model migrated to stock Material 3.** The app now derives
+> its entire palette from a single green seed via `ColorScheme.fromSeed`
+> (`kMakitAccent = #4ADE80`), with **no neutral overrides**. This intentionally
+> supersedes the earlier "terminal-neutral / chroma-0" color model documented
+> below: M3 surfaces now carry a subtle seed-derived tonal tint and elevation
+> reads through the `surfaceContainer*` hierarchy. `primary` and all on-colors
+> are M3-derived (contrast handled by the tonal system, so the old per-mode
+> WCAG accent pin is gone). Brand-accent affordances use `colorScheme.primary`.
+> The **glass** and **component** guidance below still applies; the palette
+> table is retained only as historical reference.
 
-## Color model
+makit is a mobile companion for coding agents: a floating **Liquid-Glass** top
+bar and composer over a Material 3 surface palette seeded from the brand green.
+
+## Color model (historical — superseded by stock M3, see note above)
 
 Neutrals are defined in **OKLCH with chroma = 0** (mathematically hueless) so
 light and dark share identical character — no blue/slate drift. The accent is a
@@ -65,9 +75,52 @@ fallback.
 System font (SF Pro Text / Inter). Monospace (`ui-monospace`) for tool cards, diffs,
 and code. Body ≥ 15px, line-height ~1.5.
 
+## Chat transcript layout tokens
+
+The transcript is **gutter-agnostic**: item widgets carry no horizontal padding;
+the surface (mobile `SessionScreen`, desktop `DesktopChatPane`) applies one
+gutter + inter-row gap via `transcriptRow` so every row — messages, tool cards,
+thinking/error lines, working indicator — shares one left/right edge and a
+uniform vertical rhythm. Tokens live in `app/lib/ui/session/chat_metrics.dart`.
+
+| Token | Value | Role |
+|-------|-------|------|
+| `kChatGutter` | 20 | horizontal inset, applied once by the surface |
+| `kChatRowGap` | 10 | space between adjacent rows |
+| `kChatRadiusSmall` | 8 | code blocks |
+| `kChatRadiusMedium` | 12 | tool cards, error banners |
+| `kChatRadiusLarge` | 16 | message bubbles |
+| `kToolRiskyColor` | `#E8A33D` | tool-call *risky* icon (was `Colors.orange`) |
+| `kToolDestructiveColor` | `#E5544B` | tool-call *destructive* icon (was `Colors.red`) |
+
+Tuned tool-risk hues match the sidebar `_StatusDot` palette so risk affordances
+sit with the neutral surfaces instead of shouting. The tool-call *ok* check and
+the code-block *copied* check use `colorScheme.primary` (seed green).
+
+## Desktop title bars
+
+The desktop pane column stacks two title rows; they carry a deliberate
+hierarchy so one reads as context and the other as the active thing:
+
+- **Window title strip** (`_WorktreeTitle`) — the worktree/branch as a quiet
+  **muted, letter-spaced context label** (`labelMedium`, `outline`, `w600`,
+  `letterSpacing 0.8`) with a leading `gitBranch` icon. Matches the sidebar
+  repo-header treatment (case preserved — branch names are not uppercased).
+- **Pane title** (`_PaneHeaderStrip`) — the session name as the **primary**
+  line (`titleSmall`, `w500`, `onSurface`) with a leading [SessionStatusDot]
+  for icon parity, then Session-actions + Close-pane controls.
+- A **1px hairline** (`Divider(height: 1)`, `outlineVariant`) separates the
+  window-title zone from the pane header + transcript below.
+- Leading edges align at the 12px pane gutter (the status dot sits under the
+  worktree fork icon) when the sidebar is shown.
+
+`SessionStatusDot` (`desktop/chat/session_status_dot.dart`) is shared by the
+sidebar tiles and the pane header so a session's status reads identically
+everywhere.
+
 ## Components (see Design Lab)
 - **Composer** — floating glass; 1-line at rest → 3 lines on focus; send fades in only when non-empty (SPEC-06).
-- **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs.
+- **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs. Busy indicator = a shimmering work-flavoured word, shared by mobile + desktop.
 - **Top bar** — glass, circular back/quit buttons, title + `model · thinking`, green connection dot.
 - **Logo** — green `makit` mark (`makit_mark.dart`, `#4ADE80`).
 

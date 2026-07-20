@@ -11,7 +11,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../store/connection.dart'
     show connectionControllerProvider, connectionProvider;
@@ -72,7 +72,7 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
         SettingsGroup(
           children: [
             _ExpandableRow(
-              icon: Symbols.devices,
+              icon: PhosphorIconsLight.devices,
               title: 'Paired devices',
               help: 'List and revoke the devices paired with this server.',
               expanded: _openRow == 'paired',
@@ -80,7 +80,7 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
               child: const DevicesScreen(),
             ),
             _ExpandableRow(
-              icon: Symbols.qr_code_2,
+              icon: PhosphorIconsLight.qrCode,
               title: 'Pair new device',
               help: 'Show a QR code to pair a new device.',
               expanded: _openRow == 'pair',
@@ -93,7 +93,7 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
         SettingsGroup(
           children: [
             _ExpandableRow(
-              icon: Symbols.list_alt,
+              icon: PhosphorIconsLight.listBullets,
               title: 'Running sessions',
               help: 'Live agent sessions known to the daemon.',
               expanded: _openRow == 'sessions',
@@ -234,7 +234,7 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
           child: OutlinedButton.icon(
             onPressed: _restart,
-            icon: const Icon(Symbols.restart_alt, weight: 200, size: 18),
+            icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
             label: const Text('Save & restart server'),
           ),
         ),
@@ -274,7 +274,7 @@ class _LifecycleRow extends ConsumerWidget {
           DaemonState.stopped => (cs.outline, 'Stopped'),
         };
         return ListTile(
-          leading: Icon(Symbols.circle, fill: 1, size: 12, color: dot),
+          leading: Icon(PhosphorIconsFill.circle, size: 12, color: dot),
           title: const Text('Lifecycle'),
           subtitle: Text(label),
           trailing: Row(
@@ -283,19 +283,19 @@ class _LifecycleRow extends ConsumerWidget {
               if (!running)
                 FilledButton.icon(
                   onPressed: starting ? null : () => controller.start(),
-                  icon: const Icon(Symbols.play_arrow, weight: 200, size: 18),
+                  icon: const Icon(PhosphorIconsLight.play, size: 18),
                   label: const Text('Start'),
                 ),
               if (running) ...[
                 OutlinedButton.icon(
                   onPressed: () => controller.restart(),
-                  icon: const Icon(Symbols.restart_alt, weight: 200, size: 18),
+                  icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
                   label: const Text('Restart'),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: () => controller.stop(),
-                  icon: const Icon(Symbols.stop, weight: 200, size: 18),
+                  icon: const Icon(PhosphorIconsLight.stop, size: 18),
                   label: const Text('Stop'),
                 ),
               ],
@@ -352,12 +352,12 @@ class _CliRowState extends ConsumerState<_CliRow> {
                   'The makit CLI was not found. Install it to control '
                       'the server from here.');
         return ListTile(
-          leading: Icon(Symbols.terminal, weight: 200, color: cs.outline),
+          leading: Icon(PhosphorIconsLight.terminalWindow, color: cs.outline),
           title: const Text('CLI'),
           subtitle: Text(subtitle),
           trailing: IconButton(
             tooltip: 'Copy install command',
-            icon: const Icon(Symbols.content_copy, weight: 200, size: 18),
+            icon: const Icon(PhosphorIconsLight.copy, size: 18),
             onPressed: _copyInstallCommand,
           ),
         );
@@ -378,7 +378,7 @@ class _FingerprintRow extends ConsumerWidget {
     final fingerprint = server?.fingerprint;
 
     return ListTile(
-      leading: Icon(Symbols.fingerprint, weight: 200, color: cs.outline),
+      leading: Icon(PhosphorIconsLight.fingerprint, color: cs.outline),
       title: const Text('Fingerprint / TLS trust'),
       subtitle: Text(
         fingerprint == null
@@ -392,7 +392,7 @@ class _FingerprintRow extends ConsumerWidget {
           ? null
           : IconButton(
               tooltip: 'Copy fingerprint',
-              icon: const Icon(Symbols.content_copy, weight: 200, size: 18),
+              icon: const Icon(PhosphorIconsLight.copy, size: 18),
               onPressed: () {
                 final messenger = ScaffoldMessenger.of(context);
                 unawaited(Clipboard.setData(ClipboardData(text: fingerprint)));
@@ -439,12 +439,13 @@ class _ExpandableRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ListTile(
-          leading: Icon(icon, weight: 200, color: cs.outline),
+          leading: Icon(icon, color: cs.outline),
           title: Text(title),
           subtitle: Text(help),
           trailing: Icon(
-            expanded ? Symbols.expand_less : Symbols.expand_more,
-            weight: 200,
+            expanded
+                ? PhosphorIconsLight.caretUp
+                : PhosphorIconsLight.caretDown,
           ),
           onTap: onToggle,
         ),
@@ -503,7 +504,7 @@ class _UnpairRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(Symbols.link_off, weight: 200, color: cs.error),
+      leading: Icon(PhosphorIconsLight.linkBreak, color: cs.error),
       title: Text('Unpair this device', style: TextStyle(color: cs.error)),
       subtitle: const Text('Remove this device\'s pairing and disconnect.'),
       trailing: OutlinedButton(

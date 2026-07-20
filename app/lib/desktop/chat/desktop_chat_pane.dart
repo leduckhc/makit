@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
@@ -9,6 +9,7 @@ import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/session/chat_transcript.dart';
+import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
@@ -82,7 +83,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     if (sessionId == null || sessionId == _subscribed) return;
     _subscribed = sessionId;
     _lastSeq = 0;
-    ref.read(storeControllerProvider.notifier).subscribeSession(sessionId);
+    // Defer the subscribe (and its history replay) to after the first frame so
+    // the sidebar paints first — the conversation fills in immediately after.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(storeControllerProvider.notifier).subscribeSession(sessionId);
+    });
   }
 
   Future<void> _handleSend(String sessionId, String text) async {
@@ -205,19 +211,22 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     // Reversed: i counts up from the bottom. When running,
                     // i == 0 is the trailing "working…" indicator.
                     final Widget child = (running && i == 0)
-                        ? const WorkingIndicator(compact: true)
+                        ? const WorkingIndicator()
                         : chatItemWidget(
                             items[items.length - 1 - (running ? i - 1 : i)],
                             onOpenTool: _openToolDetail,
-                            compact: true,
                           );
-                    return ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: kReadableContentMaxWidth,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: child,
+                    // Center each row within the same readable-width cap as
+                    // the composer, so the transcript column lines up with the
+                    // input instead of stretching edge-to-edge. The ListView
+                    // itself stays full width so the mouse wheel scrolls
+                    // anywhere in the pane; only the row *content* is capped.
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: kReadableContentMaxWidth,
+                        ),
+                        child: transcriptRow(child),
                       ),
                     );
                   },
@@ -302,7 +311,7 @@ class _NoSelection extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Symbols.forum, size: 40, weight: 200, color: cs.outline),
+          Icon(PhosphorIconsLight.chats, size: 40, color: cs.outline),
           const SizedBox(height: 12),
           Text(
             'Select or start a session',

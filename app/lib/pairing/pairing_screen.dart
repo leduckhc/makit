@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../store/connection.dart';
 import 'device_name.dart';
@@ -104,7 +105,10 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       appBar: AppBar(
         title: const Text('Pair with desktop'),
         actions: [
-          IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh)),
+          IconButton(
+            onPressed: _refresh,
+            icon: const Icon(PhosphorIconsLight.arrowClockwise),
+          ),
         ],
       ),
       body: ListView(
@@ -120,13 +124,13 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            icon: const Icon(Icons.qr_code_scanner),
+            icon: const Icon(PhosphorIconsLight.qrCode),
             label: const Text('Scan QR'),
             onPressed: _scanQr,
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            icon: const Icon(Icons.content_paste),
+            icon: const Icon(PhosphorIconsLight.clipboard),
             label: const Text('Paste pairing URL'),
             onPressed: _pasteUrl,
           ),
@@ -162,13 +166,13 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                     .map(
                       (s) => Card(
                         child: ListTile(
-                          leading: const Icon(Icons.dns_outlined),
+                          leading: const Icon(PhosphorIconsLight.hardDrives),
                           title: Text(s.name),
                           subtitle: Text(
                             '${s.host}:${s.port}\nfp ${_short(s.fingerprint)}',
                           ),
                           isThreeLine: true,
-                          trailing: const Icon(Icons.qr_code_scanner),
+                          trailing: const Icon(PhosphorIconsLight.qrCode),
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(

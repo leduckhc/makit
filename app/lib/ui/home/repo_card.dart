@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../app/theme.dart' show kMakitAccent;
 import '../widgets/glass.dart';
 import '../widgets/searchable_list_sheet.dart';
 import 'new_session_sheet.dart';
 import 'repo_chips.dart';
 import 'session_tile.dart';
 import 'worktree_row.dart';
-
-/// Brand green accent used for running/active glass affordances (shared token).
-const _kBrandBlue = kMakitAccent;
 
 /// A repo card on the home screen: header, stat strip, its worktree rows,
 /// drafts, and a "new session" footer (SPEC-19, moved from home_screen).
@@ -64,7 +61,7 @@ class RepoCard extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 14, 6, 6),
       child: Row(
         children: [
-          const Icon(Icons.folder_special_outlined, size: 20),
+          const Icon(PhosphorIconsLight.folderStar, size: 20),
           const SizedBox(width: 10),
           Flexible(
             child: Text(
@@ -77,7 +74,7 @@ class RepoCard extends ConsumerWidget {
           ),
           const Spacer(),
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, size: 20),
+            icon: const Icon(PhosphorIconsLight.dotsThreeVertical, size: 20),
             tooltip: 'Repo actions',
             onSelected: (value) {
               switch (value) {
@@ -93,7 +90,7 @@ class RepoCard extends ConsumerWidget {
               PopupMenuItem(
                 value: 'new',
                 child: ListTile(
-                  leading: Icon(Icons.add),
+                  leading: Icon(PhosphorIconsLight.plus),
                   title: Text('New session'),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -101,7 +98,7 @@ class RepoCard extends ConsumerWidget {
               PopupMenuItem(
                 value: 'attach',
                 child: ListTile(
-                  leading: Icon(Icons.replay),
+                  leading: Icon(PhosphorIconsLight.arrowCounterClockwise),
                   title: Text('Resume session'),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -110,7 +107,7 @@ class RepoCard extends ConsumerWidget {
               PopupMenuItem(
                 value: 'remove',
                 child: ListTile(
-                  leading: Icon(Icons.delete_outline),
+                  leading: Icon(PhosphorIconsLight.trash),
                   title: Text('Remove from makit'),
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -127,21 +124,23 @@ class RepoCard extends ConsumerWidget {
     final items = <Widget>[];
 
     if (repo.defaultBranch != null) {
-      items.add(_metaText(context, Icons.flag_outlined, repo.defaultBranch!));
+      items.add(
+        _metaText(context, PhosphorIconsLight.flag, repo.defaultBranch!),
+      );
     }
     final active = repo.activeWorktreeCount;
     if (active > 0) {
       items.add(
-        _metaText(context, Icons.account_tree_outlined, '$active active'),
+        _metaText(context, PhosphorIconsLight.treeStructure, '$active active'),
       );
     }
     if (repo.openPrCount > 0) {
       items.add(
         _metaText(
           context,
-          Icons.merge_outlined,
+          PhosphorIconsLight.gitMerge,
           '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
-          color: _kBrandBlue,
+          color: theme.colorScheme.primary,
         ),
       );
     }
@@ -187,9 +186,11 @@ class RepoCard extends ConsumerWidget {
         alignment: Alignment.centerRight,
         child: TextButton.icon(
           onPressed: () => _newSession(context, ref),
-          icon: const Icon(Icons.add, size: 18),
+          icon: const Icon(PhosphorIconsLight.plus, size: 18),
           label: const Text('New session'),
-          style: TextButton.styleFrom(foregroundColor: _kBrandBlue),
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.primary,
+          ),
         ),
       ),
     );
@@ -319,7 +320,9 @@ class RepoCard extends ConsumerWidget {
       },
       tileBuilder: (ctx, m) => ListTile(
         leading: Icon(
-          m.attached ? Icons.bolt : Icons.replay,
+          m.attached
+              ? PhosphorIconsLight.lightning
+              : PhosphorIconsLight.arrowCounterClockwise,
           color: m.attached ? Colors.green : null,
         ),
         title: Text(

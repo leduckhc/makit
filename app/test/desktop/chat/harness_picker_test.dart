@@ -6,7 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/harness_picker.dart';
 import 'package:makit/desktop/chat/panes/pane_header.dart' show UnfoldStrip;
 import 'package:makit/desktop/chat/selected_worktree.dart';
@@ -48,7 +48,7 @@ void main() {
     // The fork icon + branch label header was removed; the pane no longer
     // shows the branch anywhere in its own body (it now lives on the
     // window title strip, owned by PaneTreeView).
-    expect(find.byIcon(Symbols.fork_right), findsNothing);
+    expect(find.byIcon(PhosphorIconsLight.gitBranch), findsNothing);
     expect(find.text('feat/login'), findsNothing);
   });
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/ui/widgets/searchable_list_sheet.dart';
 
 const _items = ['Apple', 'Banana', 'Cherry', 'Avocado'];
@@ -74,8 +75,8 @@ void main() {
     await _openSheet(tester);
 
     // Search button is present next to close.
-    expect(find.byIcon(Icons.search), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.search));
+    expect(find.byIcon(PhosphorIconsLight.magnifyingGlass), findsOneWidget);
+    await tester.tap(find.byIcon(PhosphorIconsLight.magnifyingGlass));
     await tester.pumpAndSettle();
 
     // "ch" only matches Cherry.
@@ -90,7 +91,7 @@ void main() {
 
   testWidgets('no-match query shows the empty hint', (tester) async {
     await _openSheet(tester);
-    await tester.tap(find.byIcon(Icons.search));
+    await tester.tap(find.byIcon(PhosphorIconsLight.magnifyingGlass));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), 'zzz');
     await tester.pumpAndSettle();
@@ -129,7 +130,7 @@ void main() {
     expect(find.text('Nothing here'), findsOneWidget);
     expect(find.text('No past sessions.'), findsOneWidget);
     // No search toggle when there is nothing to search.
-    expect(find.byIcon(Icons.search), findsNothing);
+    expect(find.byIcon(PhosphorIconsLight.magnifyingGlass), findsNothing);
   });
 
   testWidgets('sheet does not exceed the height cap', (tester) async {

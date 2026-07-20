@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/connection.dart';
 import '../../store/store.dart';
@@ -24,7 +25,7 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Settings'),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(PhosphorIconsLight.arrowLeft),
           onPressed: () => context.go('/'),
         ),
       ),
@@ -32,7 +33,11 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           const _SectionHeader('Connection'),
           ListTile(
-            leading: _leadingIcon(Icons.circle, size: 14, color: statusColor),
+            leading: _leadingIcon(
+              PhosphorIconsFill.circle,
+              size: 14,
+              color: statusColor,
+            ),
             title: const Text('Status'),
             subtitle: Text(
               conn.lastError == null
@@ -41,7 +46,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           ListTile(
-            leading: _leadingIcon(Icons.dns_outlined),
+            leading: _leadingIcon(PhosphorIconsLight.hardDrives),
             title: const Text('Server'),
             subtitle: Text(
               conn.useFake
@@ -54,7 +59,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           if (server != null)
             ListTile(
-              leading: _leadingIcon(Icons.fingerprint),
+              leading: _leadingIcon(PhosphorIconsLight.fingerprint),
               title: const Text('Fingerprint'),
               subtitle: Text(
                 '${server.fingerprint.substring(0, 24)}…',
@@ -62,7 +67,7 @@ class SettingsScreen extends ConsumerWidget {
                   fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
-              trailing: const Icon(Icons.copy, size: 18),
+              trailing: const Icon(PhosphorIconsLight.copy, size: 18),
               onTap: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 await Clipboard.setData(
@@ -75,7 +80,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           if (server != null && !conn.useFake)
             ListTile(
-              leading: _leadingIcon(Icons.refresh),
+              leading: _leadingIcon(PhosphorIconsLight.arrowClockwise),
               title: const Text('Reconnect'),
               subtitle: const Text('Re-establish the connection'),
               onTap: () async {
@@ -92,13 +97,13 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('Workspace'),
           ListTile(
-            leading: _leadingIcon(Icons.folder_outlined),
+            leading: _leadingIcon(PhosphorIconsLight.folder),
             title: const Text('Projects & sessions'),
             subtitle: Text(
               '${projects.length} project${projects.length == 1 ? '' : 's'} · '
               '${sessions.length} session${sessions.length == 1 ? '' : 's'}',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            trailing: const Icon(PhosphorIconsLight.caretRight),
             onTap: () => context.go('/'),
           ),
 
@@ -110,7 +115,7 @@ class SettingsScreen extends ConsumerWidget {
           const _SectionHeader('Coming soon'),
           ListTile(
             enabled: false,
-            leading: _leadingIcon(Icons.tune_outlined),
+            leading: _leadingIcon(PhosphorIconsLight.slidersHorizontal),
             title: const Text('Notification preferences'),
             subtitle: const Text('Per-type mute · default approval policy'),
           ),
@@ -118,7 +123,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('About'),
           ListTile(
-            leading: _leadingIcon(Icons.info_outline),
+            leading: _leadingIcon(PhosphorIconsLight.info),
             title: const Text('makit'),
             subtitle: const Text('Mobile client · Protocol v$protocolVersion'),
           ),
@@ -126,7 +131,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           ListTile(
             leading: _leadingIcon(
-              conn.useFake ? Icons.close : Icons.logout,
+              conn.useFake ? PhosphorIconsLight.x : PhosphorIconsLight.signOut,
               color: Colors.red,
             ),
             title: Text(

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/ui/session/chat_message.dart';
 import 'package:makit/ui/session/tool_renderers.dart'
     show kReadableContentMaxWidth;
@@ -110,7 +111,7 @@ void main() {
       wrap(const AgentMessage(text: '```dart\nvoid main() {}\n```', ts: 0)),
     );
     expect(find.byType(HighlightView), findsOneWidget);
-    expect(find.byIcon(Icons.copy), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.copy), findsOneWidget);
   });
 
   testWidgets(

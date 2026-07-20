@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/connection.dart';
 import '../../store/store.dart';
@@ -94,7 +95,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     if (useFake) ...[
                       GlassCircleButton(
-                        icon: Icons.close,
+                        icon: PhosphorIconsLight.x,
                         tooltip: 'Exit demo',
                         onTap: () async {
                           await ref
@@ -106,13 +107,13 @@ class HomeScreen extends ConsumerWidget {
                       const SizedBox(width: 6),
                     ],
                     GlassCircleButton(
-                      icon: Icons.create_new_folder_outlined,
+                      icon: PhosphorIconsLight.folderPlus,
                       tooltip: 'Add repo',
                       onTap: () => showFolderBrowser(context),
                     ),
                     const SizedBox(width: 6),
                     GlassCircleButton(
-                      icon: Icons.settings_outlined,
+                      icon: PhosphorIconsLight.gearSix,
                       tooltip: 'Settings',
                       onTap: () => context.go('/settings'),
                     ),
@@ -151,7 +152,7 @@ class _EmptyState extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.hub_outlined, size: 64),
+                    const Icon(PhosphorIconsLight.graph, size: 64),
                     const SizedBox(height: 12),
                     const Text(
                       'No repos yet.\nAdd a git repo to get started.',
@@ -160,7 +161,7 @@ class _EmptyState extends StatelessWidget {
                     const SizedBox(height: 20),
                     FilledButton.icon(
                       onPressed: onAdd,
-                      icon: const Icon(Icons.create_new_folder_outlined),
+                      icon: const Icon(PhosphorIconsLight.folderPlus),
                       label: const Text('Add repo'),
                     ),
                   ],

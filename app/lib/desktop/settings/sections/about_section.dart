@@ -6,7 +6,7 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../transport/protocol.dart' show protocolVersion;
@@ -40,7 +40,7 @@ class _AppInfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(Symbols.info, weight: 200, color: cs.primary),
+      leading: Icon(PhosphorIconsLight.info, color: cs.primary),
       title: const Text('makit'),
       subtitle: const Text('Desktop control app for the makit daemon.'),
     );
@@ -55,7 +55,7 @@ class _ProtocolRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(Symbols.lan, weight: 200, color: cs.outline),
+      leading: Icon(PhosphorIconsLight.network, color: cs.outline),
       title: const Text('Protocol version'),
       subtitle: const Text('v$protocolVersion'),
     );
@@ -87,10 +87,10 @@ class _DocsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
-      leading: Icon(Symbols.link, weight: 200, color: cs.outline),
+      leading: Icon(PhosphorIconsLight.link, color: cs.outline),
       title: const Text('Documentation & source'),
       subtitle: Text('$_kDocsUri'),
-      trailing: const Icon(Symbols.open_in_new, weight: 200, size: 18),
+      trailing: const Icon(PhosphorIconsLight.arrowSquareOut, size: 18),
       onTap: () => _open(context),
     );
   }

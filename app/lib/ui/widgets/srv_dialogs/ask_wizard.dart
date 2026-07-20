@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 /// A multi-question wizard. One question per page; Next/Submit advances.
 /// Returns a canonical `{indices, answers}` map (see AskUserQuestionResponse
@@ -168,7 +169,9 @@ class _OptionTile extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  selected ? Icons.check_box : Icons.check_box_outline_blank,
+                  selected
+                      ? PhosphorIconsLight.checkSquare
+                      : PhosphorIconsLight.square,
                   size: 18,
                   color: selected ? cs.primary : cs.outline,
                 ),

@@ -3,11 +3,13 @@
 // recipe so each leaf's DesktopChatPane resolves a real fake session.
 //
 // ignore_for_file: depend_on_referenced_packages
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/panes/pane_node.dart';
@@ -15,9 +17,39 @@ import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_view.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
+import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/composer/composer.dart';
+
+/// A connection whose `session.kill` request completes only when the test says
+/// so, letting us assert the pane closes after the kill resolves.
+class _KillConnection extends ConnectionController {
+  _KillConnection() : super(const _NoStore());
+
+  final killCompleted = Completer<Map<String, dynamic>>();
+
+  @override
+  Future<Map<String, dynamic>> request(
+    MsgType type,
+    Map<String, dynamic> body,
+  ) {
+    if (body['kind'] == 'session.kill') return killCompleted.future;
+    return Future.value(const {});
+  }
+}
+
+class _NoStore implements SecureStore {
+  const _NoStore();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
 const _wtB = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-b', branch: 'b');
@@ -68,9 +100,11 @@ ProviderContainer _container() {
 
 /// A container with two distinct fake sessions (s1, s2) so two split panes can
 /// each be bound to their own session.
-ProviderContainer _twoSessionContainer() {
+ProviderContainer _twoSessionContainer({ConnectionController? connection}) {
   final c = ProviderContainer(
     overrides: [
+      if (connection != null)
+        connectionControllerProvider.overrideWith((ref) => connection),
       sessionsProvider.overrideWithValue(
         SessionsState([_session(), _session2()]),
       ),
@@ -262,7 +296,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(_wtA.branch!), findsOneWidget);
-      expect(find.byIcon(Symbols.fork_right), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.gitBranch), findsOneWidget);
     });
 
     testWidgets('falls back to the worktree path when it has no branch', (
@@ -308,7 +342,7 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(Symbols.fork_right), findsNothing);
+      expect(find.byIcon(PhosphorIconsLight.gitBranch), findsNothing);
     });
   });
 
@@ -592,7 +626,9 @@ void main() {
   });
 
   group('close button', () {
-    testWidgets('closing the last pane is a no-op', (tester) async {
+    testWidgets('closing the last pane clears to the empty placeholder', (
+      tester,
+    ) async {
       final c = _container();
       addTearDown(c.dispose);
       await tester.pumpWidget(_tree(c));
@@ -602,11 +638,15 @@ void main() {
       await tester.tap(find.byTooltip('Close pane'));
       await tester.pumpAndSettle();
 
+      // Close pane on the sole pane removes the tree entirely; the session is
+      // NOT killed (still in the store), the view just drops to empty.
       expect(
-        c.read(paneTreeControllerProvider).current!.root,
-        isA<PaneLeaf>(),
-        reason: 'the sole pane cannot be closed',
+        c.read(paneTreeControllerProvider).current,
+        isNull,
+        reason: 'the last pane closes to the empty placeholder',
       );
+      expect(find.text('Select or start a session'), findsOneWidget);
+      expect(c.read(sessionsProvider).byId('s1'), isNotNull);
     });
 
     testWidgets('closing one of two panes collapses back to a single pane', (
@@ -629,6 +669,82 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(c.read(paneTreeControllerProvider).current!.root, isA<PaneLeaf>());
+    });
+
+    testWidgets('Quit session closes the pane and kills the session', (
+      tester,
+    ) async {
+      final conn = _KillConnection();
+      final c = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith((ref) => conn),
+          sessionsProvider.overrideWithValue(SessionsState([_session()])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          sessionMetaProvider('s1').overrideWithValue(
+            const SessionMeta(
+              model: _model,
+              thinking: 'medium',
+              models: [_model],
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      c.read(paneTreeControllerProvider.notifier).bindActiveSession('s1', _wtA);
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Session actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Quit session'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
+      await tester.pumpAndSettle();
+
+      // Optimistic: the pane is already closed even though the kill request is
+      // still in flight (not yet completed).
+      expect(conn.killCompleted.isCompleted, isFalse);
+      expect(
+        c.read(paneTreeControllerProvider).current,
+        isNull,
+        reason: 'Quit closes the pane immediately, before the server replies',
+      );
+      expect(find.text('Select or start a session'), findsOneWidget);
+
+      // Let the background kill resolve so no pending future outlives the test.
+      conn.killCompleted.complete(const {});
+      await tester.pumpAndSettle();
+      expect(c.read(paneTreeControllerProvider).current, isNull);
+    });
+
+    testWidgets('Quit session selects the surviving split-pane session', (
+      tester,
+    ) async {
+      final conn = _KillConnection();
+      final c = _twoSessionContainer(connection: conn);
+      addTearDown(c.dispose);
+      final panes = c.read(paneTreeControllerProvider.notifier);
+      panes.bindActiveSession('s1', _wtA);
+      panes.splitActive(Axis.horizontal);
+      panes.bindActiveSession('s2', _wtA);
+      c.read(selectedSessionProvider.notifier).state = 's1';
+
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Session actions').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Quit session'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
+      await tester.pumpAndSettle();
+
+      expect(panes.activeLeafSessionId, 's2');
+      expect(c.read(selectedSessionProvider), 's2');
+
+      conn.killCompleted.complete(const {});
+      await tester.pumpAndSettle();
     });
   });
 
@@ -705,7 +821,7 @@ void main() {
         );
         // Close button meets the 24px minimum interactive target.
         final closeBtn = tester.widget<IconButton>(
-          find.widgetWithIcon(IconButton, Icons.close),
+          find.widgetWithIcon(IconButton, PhosphorIconsLight.x),
         );
         expect(closeBtn.constraints?.minHeight, greaterThanOrEqualTo(24.0));
         expect(closeBtn.constraints?.minWidth, greaterThanOrEqualTo(24.0));

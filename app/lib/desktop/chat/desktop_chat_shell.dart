@@ -44,6 +44,7 @@ class _SidebarResizeHandle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
       child: GestureDetector(
@@ -58,10 +59,43 @@ class _SidebarResizeHandle extends ConsumerWidget {
                 ),
               );
         },
-        child: const SizedBox(
+        child: SizedBox(
           width: 8,
           height: double.infinity,
-          child: Center(child: VerticalDivider(width: 1)),
+          child: Stack(
+            children: [
+              // Title-band fill, right of the sidebar divider, so the top band
+              // stays continuous with the sidebar + pane title
+              // (surfaceContainer) with no gap.
+              Positioned(
+                left: 1,
+                right: 0,
+                top: 0,
+                height: kTitleBarStripHeight,
+                child: ColoredBox(color: cs.surfaceContainer),
+              ),
+              // Titlebar bottom hairline — right of the sidebar divider only,
+              // so it meets but never crosses the sidebar; it continues into
+              // the pane title strip's own divider.
+              Positioned(
+                left: 1,
+                right: 0,
+                top: kTitleBarStripHeight,
+                height: 1,
+                child: ColoredBox(color: cs.outlineVariant),
+              ),
+              // The sidebar divider: a full-height hairline flush against the
+              // sidebar's edge, separating it from the title band and the chat
+              // body below.
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 1,
+                child: ColoredBox(color: cs.outlineVariant),
+              ),
+            ],
+          ),
         ),
       ),
     );

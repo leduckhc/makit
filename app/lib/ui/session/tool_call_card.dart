@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
+import 'chat_metrics.dart';
 import 'tool_renderers.dart';
 
 /// Collapsed tool-call card. Tap → fullscreen drilldown (handled by caller).
@@ -16,14 +18,17 @@ class ToolCallCard extends StatelessWidget {
     final renderer = rendererFor(item);
     final (riskColor, riskIcon) = switch (item.risk) {
       ToolRisk.risky => (
-        Colors.orange,
-        renderer?.icon ?? Icons.warning_amber_rounded,
+        kToolRiskyColor,
+        renderer?.icon ?? PhosphorIconsLight.warning,
       ),
       ToolRisk.destructive => (
-        Colors.red,
-        renderer?.icon ?? Icons.dangerous_outlined,
+        kToolDestructiveColor,
+        renderer?.icon ?? PhosphorIconsLight.warningOctagon,
       ),
-      ToolRisk.safe => (cs.outline, renderer?.icon ?? Icons.bolt_outlined),
+      ToolRisk.safe => (
+        cs.outline,
+        renderer?.icon ?? PhosphorIconsLight.lightning,
+      ),
     };
 
     final status = item.status;
@@ -31,11 +36,10 @@ class ToolCallCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: cs.surfaceContainer,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(kChatRadiusMedium),
           border: Border.all(color: cs.outlineVariant),
         ),
         child: Row(
@@ -62,12 +66,12 @@ class ToolCallCard extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     ToolStatus.failed => Icon(
-                      Icons.error_outline,
+                      PhosphorIconsLight.warningCircle,
                       size: 14,
                       color: cs.error,
                     ),
                     ToolStatus.ok => Icon(
-                      Icons.check_circle_outline,
+                      PhosphorIconsLight.checkCircle,
                       size: 14,
                       color: cs.primary,
                     ),
@@ -75,7 +79,7 @@ class ToolCallCard extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right),
+            const Icon(PhosphorIconsLight.caretRight),
           ],
         ),
       ),

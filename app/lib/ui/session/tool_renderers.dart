@@ -17,6 +17,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import 'diff_view.dart';
@@ -48,7 +49,7 @@ abstract class ToolRenderer {
   String get displayName => name;
 
   /// Material icon shown on the card.
-  IconData get icon => Icons.terminal;
+  IconData get icon => PhosphorIconsLight.terminalWindow;
 
   /// Full-screen detail view. Default: readable args + result text.
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -243,7 +244,7 @@ class _ReadRenderer extends ToolRenderer {
   @override
   String get name => 'read';
   @override
-  IconData get icon => Icons.menu_book_outlined;
+  IconData get icon => PhosphorIconsLight.bookOpen;
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -279,7 +280,7 @@ class _WriteRenderer extends ToolRenderer {
   @override
   String get name => 'write';
   @override
-  IconData get icon => Icons.edit_note_outlined;
+  IconData get icon => PhosphorIconsLight.notePencil;
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -307,7 +308,7 @@ class _EditRenderer extends ToolRenderer {
   @override
   String get name => 'edit';
   @override
-  IconData get icon => Icons.difference_outlined;
+  IconData get icon => PhosphorIconsLight.gitDiff;
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -320,7 +321,7 @@ class _BashRenderer extends ToolRenderer {
   @override
   String get name => 'bash';
   @override
-  IconData get icon => Icons.terminal;
+  IconData get icon => PhosphorIconsLight.terminalWindow;
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -352,7 +353,7 @@ class _GrepRenderer extends ToolRenderer {
   @override
   String get name => 'grep';
   @override
-  IconData get icon => Icons.search;
+  IconData get icon => PhosphorIconsLight.magnifyingGlass;
 
   @override
   Widget detail(BuildContext context, ToolCallItem item) {
@@ -495,7 +496,7 @@ class _AskUserQuestionRenderer extends ToolRenderer {
   @override
   String get displayName => 'Ask the user';
   @override
-  IconData get icon => Icons.quiz_outlined;
+  IconData get icon => PhosphorIconsLight.question;
 
   List<Map<String, dynamic>> _questions(ToolCallItem item) {
     final raw = item.args['questions'];
@@ -595,7 +596,7 @@ class _AnswerOption extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(
-            chosen ? Icons.check_circle : Icons.circle_outlined,
+            chosen ? PhosphorIconsFill.checkCircle : PhosphorIconsLight.circle,
             size: 18,
             color: chosen ? cs.primary : cs.outline,
           ),

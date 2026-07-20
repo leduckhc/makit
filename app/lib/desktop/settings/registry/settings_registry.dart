@@ -7,7 +7,7 @@
 /// the [kSettingsSections] list.
 library;
 
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../sections/about_section.dart';
 import '../sections/advanced_section.dart';
@@ -25,7 +25,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'general',
     title: 'General',
-    icon: Symbols.tune,
+    icon: PhosphorIconsLight.slidersHorizontal,
     builder: (_) => const GeneralSection(),
     items: const [
       SettingsItem(
@@ -54,7 +54,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'appearance',
     title: 'Appearance',
-    icon: Symbols.palette,
+    icon: PhosphorIconsLight.palette,
     builder: (_) => const AppearanceSection(),
     items: const [
       SettingsItem(
@@ -94,7 +94,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'agents_chat',
     title: 'Agents & Chat',
-    icon: Symbols.smart_toy,
+    icon: PhosphorIconsLight.robot,
     builder: (_) => const AgentsChatSection(),
     items: const [
       SettingsItem(
@@ -130,7 +130,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'server_devices',
     title: 'Server & Devices',
-    icon: Symbols.dns,
+    icon: PhosphorIconsLight.hardDrives,
     builder: (_) => const ServerDevicesSection(),
     items: const [
       SettingsItem(
@@ -186,7 +186,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'notifications',
     title: 'Notifications',
-    icon: Symbols.notifications,
+    icon: PhosphorIconsLight.bell,
     builder: (_) => const NotificationsSection(),
     items: const [
       SettingsItem(
@@ -207,7 +207,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'shortcuts',
     title: 'Shortcuts',
-    icon: Symbols.keyboard,
+    icon: PhosphorIconsLight.keyboard,
     builder: (_) => const ShortcutsSection(),
     items: const [
       SettingsItem(
@@ -227,7 +227,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'advanced',
     title: 'Advanced',
-    icon: Symbols.build,
+    icon: PhosphorIconsLight.wrench,
     builder: (_) => const AdvancedSection(),
     items: const [
       SettingsItem(
@@ -260,7 +260,7 @@ final List<SettingsSection> kSettingsSections = [
   SettingsSection(
     id: 'about',
     title: 'About',
-    icon: Symbols.info,
+    icon: PhosphorIconsLight.info,
     builder: (_) => const AboutSection(),
     items: const [
       SettingsItem(

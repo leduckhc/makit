@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -8,9 +8,11 @@ import '../../store/connection.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
+import 'session_status_dot.dart';
 import 'title_bar_strip.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
+import '../../ui/project/folder_browser.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
@@ -30,29 +32,33 @@ class DesktopSidebar extends ConsumerWidget {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
     final selected = ref.watch(selectedSessionProvider);
+    final cs = Theme.of(context).colorScheme;
 
-    return Column(
-      children: [
-        const _Header(),
-        Expanded(
-          child: repos.isEmpty
-              ? const _EmptySidebar()
-              : ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: [
-                    for (final repo in repos)
-                      _RepoGroup(
-                        repo: repo,
-                        sessions: sessions.forProject(repo.id),
-                        selectedId: selected,
-                        onSelect: (id) => selectSessionExclusive(ref, id),
-                      ),
-                  ],
-                ),
-        ),
-        const Divider(height: 1),
-        _Footer(onOpenSettings: onOpenSettings),
-      ],
+    return Material(
+      color: cs.surfaceContainer,
+      child: Column(
+        children: [
+          const _Header(),
+          Expanded(
+            child: repos.isEmpty
+                ? const _EmptySidebar()
+                : ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      for (final repo in repos)
+                        _RepoGroup(
+                          repo: repo,
+                          sessions: sessions.forProject(repo.id),
+                          selectedId: selected,
+                          onSelect: (id) => selectSessionExclusive(ref, id),
+                        ),
+                    ],
+                  ),
+          ),
+          const Divider(height: 1),
+          _Footer(onOpenSettings: onOpenSettings),
+        ],
+      ),
     );
   }
 }
@@ -152,74 +158,80 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 2),
+          padding: const EdgeInsets.fromLTRB(8, 10, 8, 1),
           child: MouseRegion(
             onEnter: (_) => setState(() => _repoHovering = true),
             onExit: (_) => setState(() => _repoHovering = false),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _expanded = !_expanded),
-                    onFocusChange: (f) => setState(() => _repoFocused = f),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _expanded
-                                ? Symbols.keyboard_arrow_down
-                                : Symbols.keyboard_arrow_right,
-                            size: 16,
-                            weight: 200,
-                            color: theme.colorScheme.outline,
-                          ),
-                          const SizedBox(width: 2),
-                          Icon(
-                            Symbols.folder_special,
-                            size: 16,
-                            weight: 200,
-                            color: theme.colorScheme.outline,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              repo.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                letterSpacing: 0.6,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                        ],
+            child: Material(
+              type: MaterialType.transparency,
+              // Whole row is one inset pill (matches the worktree/session rows):
+              // the hover background spans folder + name + caret + the actions,
+              // instead of covering only the name.
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(() => _expanded = !_expanded),
+                onFocusChange: (f) => setState(() => _repoFocused = f),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        PhosphorIconsLight.folder,
+                        size: 16,
+                        color: theme.colorScheme.outline,
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          repo.name.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.outline,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      // Repo actions (overflow menu + new worktree) reveal
+                      // together on hover or keyboard focus, nested inside the
+                      // pill; their slot stays reserved so the header text never
+                      // reflows. maintainState keeps the menu button mounted
+                      // while its popup is open (the modal barrier drops hover).
+                      Visibility(
+                        visible: _repoHovering || _repoFocused,
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(width: 2),
+                            _RepoMenuButton(repo: repo),
+                            IconButton(
+                              tooltip: 'New worktree',
+                              padding: EdgeInsets.zero,
+                              iconSize: 16,
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 22,
+                                minHeight: 22,
+                              ),
+                              icon: const Icon(
+                                PhosphorIconsLight.plus,
+                                size: 16,
+                              ),
+                              onPressed: _spawningDraft
+                                  ? null
+                                  : () => _startDraftWorktree(repo.id),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                // Repo actions surface on hover or keyboard focus (keeping its
-                // slot reserved so the + button never shifts), so they stay
-                // reachable without a pointer. maintainState keeps it mounted
-                // while its popup is open even though the modal barrier drops
-                // the row's hover.
-                Visibility(
-                  visible: _repoHovering || _repoFocused,
-                  maintainSize: true,
-                  maintainAnimation: true,
-                  maintainState: true,
-                  child: _RepoMenuButton(repo: repo),
-                ),
-                IconButton(
-                  tooltip: 'New worktree',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Symbols.add, size: 16, weight: 200),
-                  onPressed: _spawningDraft
-                      ? null
-                      : () => _startDraftWorktree(repo.id),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -238,7 +250,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
             ),
           if (showMore)
             Padding(
-              padding: const EdgeInsets.fromLTRB(38, 2, 16, 4),
+              padding: const EdgeInsets.fromLTRB(32, 2, 16, 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: InkWell(
@@ -336,7 +348,7 @@ class _CompactMenuButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       iconSize: 16,
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-      icon: Icon(icon, size: 16, weight: 200),
+      icon: Icon(icon, size: 16),
       onPressed: () => _open(context),
     );
   }
@@ -354,7 +366,7 @@ class _RepoMenuButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return _CompactMenuButton(
       tooltip: 'Repo actions',
-      icon: Symbols.more_horiz,
+      icon: PhosphorIconsLight.dotsThree,
       onSelected: (value) {
         switch (value) {
           case 'hide':
@@ -438,146 +450,152 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
         MouseRegion(
           onEnter: (_) => setState(() => _hovering = true),
           onExit: (_) => setState(() => _hovering = false),
-          child: InkWell(
-            onFocusChange: (f) => setState(() => _focused = f),
-            onTap: () {
-              if (selectable) {
-                selectWorktree(
-                  ref,
-                  SelectedWorktree(
-                    projectId: repo.id,
-                    path: worktree.path,
-                    branch: worktree.branch,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onFocusChange: (f) => setState(() => _focused = f),
+                onTap: () {
+                  if (selectable) {
+                    selectWorktree(
+                      ref,
+                      SelectedWorktree(
+                        projectId: repo.id,
+                        path: worktree.path,
+                        branch: worktree.branch,
+                      ),
+                    );
+                  } else {
+                    setState(() => _expanded = !_expanded);
+                  }
+                },
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: worktreeSelected
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : null,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                );
-              } else {
-                setState(() => _expanded = !_expanded);
-              }
-            },
-            child: Container(
-              color: worktreeSelected
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : null,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 4),
-                        // Open PR → the merge symbol; otherwise the plain
-                        // worktree/branch icon that predated the PR-centric
-                        // redesign (still used by the draft-worktree tile and
-                        // any non-open PR).
-                        if (worktree.pr?.state.toUpperCase() == 'OPEN')
-                          const Icon(
-                            Symbols.call_merge,
-                            size: 24,
-                            weight: 200,
-                            color: kRepoAccent,
-                          )
-                        else
-                          Icon(
-                            Symbols.fork_right,
-                            size: 24,
-                            weight: 200,
-                            color: theme.colorScheme.outline,
-                          ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  branch,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                              ),
-                              if (isCurrent) ...[
-                                const SizedBox(width: 5),
-                                Icon(
-                                  Symbols.star,
-                                  size: 13,
-                                  weight: 200,
-                                  color: theme.colorScheme.outline,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // On hover or keyboard focus the diff pill is replaced
-                        // by the worktree overflow menu (rename / delete), so
-                        // the actions are reachable without a pointer. Otherwise
-                        // it shows the diff stats (when the tree has changes).
-                        if (_hovering || _focused || _menuOpen)
-                          _WorktreeMenuButton(
-                            worktree: worktree,
-                            onMenuOpened: () =>
-                                setState(() => _menuOpen = true),
-                            onSelected: (action) {
-                              setState(() => _menuOpen = false);
-                              switch (action) {
-                                case 'rename':
-                                  _renameBranch();
-                                case 'delete':
-                                  _deleteWorktree();
-                              }
-                            },
-                          )
-                        else if (worktree.hasChanges)
-                          DiffChip(
-                            insertions: worktree.insertions,
-                            deletions: worktree.deletions,
-                          ),
-                      ],
-                    ),
-                  ),
-                  // Sub-row below the branch, inside the same hover/tap group: the
-                  // PR number label (when present) followed by the low-emphasis
-                  // branch age. Fixed height so the row always reserves its place.
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(52, 0, 16, 4),
-                    child: SizedBox(
-                      height: 16,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (worktree.pr != null) ...[
-                              Text(
-                                'PR #${worktree.pr!.number}',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.outline,
-                                  fontWeight: FontWeight.w300,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '•',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  color: theme.colorScheme.outline,
-                                  fontWeight: FontWeight.w300,
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                            ],
-                            Text(
-                              _branchAgeLabel(worktree.committedAt),
-                              style: theme.textTheme.labelSmall?.copyWith(
+                            // Open PR → the merge symbol; otherwise the plain
+                            // worktree/branch icon that predated the PR-centric
+                            // redesign (still used by the draft-worktree tile and
+                            // any non-open PR).
+                            if (worktree.pr?.state.toUpperCase() == 'OPEN')
+                              Icon(
+                                PhosphorIconsLight.gitPullRequest,
+                                size: 16,
+                                color: theme.colorScheme.primary,
+                              )
+                            else
+                              Icon(
+                                PhosphorIconsLight.gitBranch,
+                                size: 16,
                                 color: theme.colorScheme.outline,
-                                fontWeight: FontWeight.w300,
+                              ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      branch,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall,
+                                    ),
+                                  ),
+                                  if (isCurrent) ...[
+                                    const SizedBox(width: 5),
+                                    Icon(
+                                      PhosphorIconsFill.star,
+                                      size: 8,
+                                      color: theme.colorScheme.outline,
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            // On hover or keyboard focus the diff pill is replaced
+                            // by the worktree overflow menu (rename / delete), so
+                            // the actions are reachable without a pointer. Otherwise
+                            // it shows the diff stats (when the tree has changes).
+                            if (_hovering || _focused || _menuOpen)
+                              _WorktreeMenuButton(
+                                worktree: worktree,
+                                onMenuOpened: () =>
+                                    setState(() => _menuOpen = true),
+                                onSelected: (action) {
+                                  setState(() => _menuOpen = false);
+                                  switch (action) {
+                                    case 'rename':
+                                      _renameBranch();
+                                    case 'delete':
+                                      _deleteWorktree();
+                                  }
+                                },
+                              )
+                            else if (worktree.hasChanges)
+                              DiffChip(
+                                insertions: worktree.insertions,
+                                deletions: worktree.deletions,
+                              ),
                           ],
                         ),
                       ),
-                    ),
+                      // Sub-row below the branch, inside the same hover/tap group: the
+                      // PR number label (when present) followed by the low-emphasis
+                      // branch age. Fixed height so the row always reserves its place.
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
+                        child: SizedBox(
+                          height: 16,
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (worktree.pr != null) ...[
+                                  Text(
+                                    'PR #${worktree.pr!.number}',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.outline,
+                                      fontWeight: FontWeight.w300,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '•',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: theme.colorScheme.outline,
+                                      fontWeight: FontWeight.w300,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                ],
+                                Text(
+                                  _branchAgeLabel(worktree.committedAt),
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: theme.colorScheme.outline,
+                                    fontWeight: FontWeight.w300,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -681,7 +699,7 @@ class _WorktreeMenuButton extends StatelessWidget {
     final canRename = !_hasOpenPr && !isPrimary && !isDetached;
     return _CompactMenuButton(
       tooltip: 'Worktree actions',
-      icon: Symbols.more_horiz,
+      icon: PhosphorIconsLight.dotsThree,
       onOpened: onMenuOpened,
       // A cancelled menu resolves to null → forward '' so the parent's
       // "keep mounted while open" flag is cleared just like a real selection.
@@ -783,52 +801,62 @@ class _DraftWorktreeTile extends StatelessWidget {
     final createdAt = session.lastActivityAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(session.lastActivityAt)
         : null;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        color: selected ? theme.colorScheme.surfaceContainerHighest : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-              child: Row(
-                children: [
-                  const SizedBox(width: 4),
-                  Icon(
-                    Symbols.fork_right,
-                    size: 24,
-                    weight: 200,
-                    color: theme.colorScheme.outline,
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'new worktree',
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              color: selected
+                  ? theme.colorScheme.surfaceContainerHighest
+                  : null,
+              borderRadius: BorderRadius.circular(10),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(38, 0, 16, 4),
-              child: SizedBox(
-                height: 16,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _branchAgeLabel(createdAt),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                      fontWeight: FontWeight.w300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        PhosphorIconsLight.gitBranch,
+                        size: 16,
+                        color: theme.colorScheme.outline,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'new worktree',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
+                  child: SizedBox(
+                    height: 16,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _branchAgeLabel(createdAt),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -869,116 +897,36 @@ class _SessionTile extends StatelessWidget {
         : (session.title.trim().isNotEmpty
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      selected: selected,
-      selectedTileColor: theme.colorScheme.surfaceContainerHighest,
-      contentPadding: EdgeInsets.only(left: indented ? 38 : 16, right: 12),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-          if (session.status != SessionStatus.idle)
-            _StatusDot(status: session.status),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        selected: selected,
+        selectedTileColor: theme.colorScheme.surfaceContainerHighest,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding: EdgeInsets.only(left: indented ? 24 : 8, right: 12),
+        title: Row(
+          children: [
+            // Leading status dot sized to the branch-icon column, so a session
+            // lines up under its worktree's icon and the title sits under the
+            // branch name. Idle sessions reserve the slot but show no dot.
+            SizedBox(
+              width: 16,
+              child: Center(
+                child: session.status == SessionStatus.idle
+                    ? const SizedBox.shrink()
+                    : SessionStatusDot(status: session.status),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
-    );
-  }
-}
-
-/// A tiny status indicator dot. Active states (running / awaiting) pulse; the
-/// rest render as a solid dot. Replaces the old text status chip on the compact
-/// single-line session tiles.
-class _StatusDot extends StatefulWidget {
-  const _StatusDot({required this.status});
-  final SessionStatus status;
-
-  @override
-  State<_StatusDot> createState() => _StatusDotState();
-}
-
-class _StatusDotState extends State<_StatusDot> with TickerProviderStateMixin {
-  AnimationController? _controller;
-
-  bool get _pulses =>
-      widget.status == SessionStatus.running ||
-      widget.status == SessionStatus.awaitingInput ||
-      widget.status == SessionStatus.awaitingApproval;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncController();
-  }
-
-  @override
-  void didUpdateWidget(_StatusDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Sessions transition status in place (running → exited, idle → running…)
-    // and this State object is reused, so the controller must track the
-    // current status — not the one we mounted with.
-    if (oldWidget.status != widget.status) _syncController();
-  }
-
-  /// Only active states animate — solid states must not leave a repeating
-  /// controller running (it would also make pumpAndSettle hang in tests).
-  void _syncController() {
-    if (_pulses && _controller == null) {
-      _controller = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 900),
-      )..repeat(reverse: true);
-    } else if (!_pulses && _controller != null) {
-      _controller!.dispose();
-      _controller = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  /// Human-readable status, used for the tooltip + screen-reader semantics so
-  /// the dot is not a color-only signal.
-  String get _label => switch (widget.status) {
-    SessionStatus.running => 'running',
-    SessionStatus.awaitingInput => 'awaiting input',
-    SessionStatus.awaitingApproval => 'awaiting approval',
-    SessionStatus.error => 'error',
-    SessionStatus.exited => 'exited',
-    SessionStatus.idle => 'idle',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (widget.status) {
-      SessionStatus.running => kRepoAccent,
-      SessionStatus.awaitingInput => Colors.orange,
-      SessionStatus.awaitingApproval => Colors.deepOrange,
-      SessionStatus.error => Colors.red,
-      SessionStatus.exited => Colors.grey,
-      SessionStatus.idle => Colors.grey,
-    };
-    Widget dot = Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-    final controller = _controller;
-    if (controller != null) {
-      dot = FadeTransition(
-        opacity: Tween<double>(begin: 0.3, end: 1).animate(controller),
-        child: dot,
-      );
-    }
-    return Tooltip(
-      message: _label,
-      child: Semantics(label: 'status: $_label', child: dot),
     );
   }
 }
@@ -1011,10 +959,15 @@ class _Footer extends ConsumerWidget {
             )
           else
             const Spacer(),
+          IconButton(
+            tooltip: 'Add repo',
+            icon: const Icon(PhosphorIconsLight.folderPlus, size: 18),
+            onPressed: () => showFolderBrowser(context),
+          ),
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',
-              icon: const Icon(Symbols.settings, weight: 200),
+              icon: const Icon(PhosphorIconsLight.gearSix, size: 18),
               onPressed: onOpenSettings,
             ),
         ],
@@ -1033,7 +986,7 @@ class _EmptySidebar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Text(
-          'No repos yet.\nUse + to start a session\nin a git repo.',
+          'No repos yet.\nUse the + button below\nto add a git repo.',
           textAlign: TextAlign.center,
           style: TextStyle(color: cs.outline),
         ),

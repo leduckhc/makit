@@ -127,6 +127,25 @@ void main() {
     });
   });
 
+  group('closeActivePane', () {
+    testWidgets('selects the surviving session after closing a split pane', (
+      tester,
+    ) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final panes = container.read(paneTreeControllerProvider.notifier);
+      panes.bindActiveSession('s1', _wtA);
+      panes.splitActive(Axis.horizontal);
+      panes.bindActiveSession('s2', _wtA);
+      container.read(selectedSessionProvider.notifier).state = 's2';
+
+      await _invoke(tester, container, closeActivePane);
+
+      expect(panes.activeLeafSessionId, 's1');
+      expect(container.read(selectedSessionProvider), 's1');
+    });
+  });
+
   group('openDraftSession', () {
     testWidgets(
       'selects the session and binds a virtual draft tree immediately, '

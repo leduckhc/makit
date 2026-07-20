@@ -8,7 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../control/control_types.dart' show StatusData;
 import '../../../store/connection.dart' show connectionProvider;
@@ -38,7 +38,7 @@ class AdvancedSection extends StatelessWidget {
           children: [
             _StatusRows(),
             ComingSoonRow(
-              icon: Symbols.analytics,
+              icon: PhosphorIconsLight.chartLine,
               title: 'Telemetry',
               subtitle: 'Anonymous usage telemetry.',
             ),
@@ -87,7 +87,7 @@ class _StatusRowsState extends ConsumerState<_StatusRows> {
         return Column(
           children: [
             ListTile(
-              leading: Icon(Symbols.memory, weight: 200, color: cs.outline),
+              leading: Icon(PhosphorIconsLight.memory, color: cs.outline),
               title: const Text('Process id'),
               subtitle: Text(switch ((waiting, status)) {
                 (true, _) => 'Loading…',
@@ -96,19 +96,19 @@ class _StatusRowsState extends ConsumerState<_StatusRows> {
               }),
               trailing: IconButton(
                 tooltip: 'Refresh',
-                icon: const Icon(Symbols.refresh, weight: 200, size: 18),
+                icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
                 onPressed: _refresh,
               ),
             ),
             ListTile(
-              leading: Icon(Symbols.schedule, weight: 200, color: cs.outline),
+              leading: Icon(PhosphorIconsLight.clock, color: cs.outline),
               title: const Text('Uptime'),
               subtitle: Text(
                 status == null ? '—' : formatUptime(status.uptimeMs),
               ),
             ),
             ListTile(
-              leading: Icon(Symbols.lan, weight: 200, color: cs.outline),
+              leading: Icon(PhosphorIconsLight.network, color: cs.outline),
               title: const Text('Protocol version'),
               subtitle: const Text('v$protocolVersion'),
             ),
@@ -131,7 +131,7 @@ class _FakeServerRow extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final useFake = ref.watch(connectionProvider).useFake;
     return ListTile(
-      leading: Icon(Symbols.dns, weight: 200, color: cs.outline),
+      leading: Icon(PhosphorIconsLight.hardDrives, color: cs.outline),
       title: const Text('Fake server'),
       subtitle: Text(
         useFake
@@ -198,8 +198,7 @@ class _ResetAllRow extends ConsumerWidget {
         .modifiedUserFacingCount;
     return ListTile(
       leading: Icon(
-        Symbols.settings_backup_restore,
-        weight: 200,
+        PhosphorIconsLight.clockCounterClockwise,
         color: cs.outline,
       ),
       title: const Text('Reset all settings'),

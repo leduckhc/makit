@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/ui/widgets/sheet_header.dart';
 
 void main() {
@@ -11,7 +12,7 @@ void main() {
     );
 
     expect(find.text('Model'), findsOneWidget);
-    expect(find.byIcon(Icons.close), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.x), findsOneWidget);
   });
 
   testWidgets('close button pops the sheet without a selection', (
@@ -44,7 +45,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Pick one'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(PhosphorIconsLight.x));
     await tester.pumpAndSettle();
 
     expect(find.text('Pick one'), findsNothing); // sheet dismissed

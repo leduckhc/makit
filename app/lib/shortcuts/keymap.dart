@@ -42,6 +42,8 @@ class Keymap {
         LogicalKeyboardKey.keyD,
         shift: true,
       ),
+      ShortcutAction.newPane: primary(LogicalKeyboardKey.keyT),
+      ShortcutAction.closePane: primary(LogicalKeyboardKey.keyW),
     });
   }
 

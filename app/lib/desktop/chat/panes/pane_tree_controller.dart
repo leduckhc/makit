@@ -314,16 +314,45 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
     });
   }
 
+  /// Replaces the current tree's active pane with a fresh empty (null-session)
+  /// pane in the SAME worktree, without splitting. The empty leaf renders the
+  /// worktree's harness picker so the user can start a new session; any session
+  /// that was bound to the pane keeps running (only the pane's view is reset).
+  /// No-op when nothing is selected.
+  void resetActiveToEmpty() {
+    _updateCurrent((cur) {
+      final newLeaf = PaneLeaf(id: nextPaneId());
+      return PaneTreeState(
+        root: mapLeaves(
+          cur.root,
+          (l) => l.id == cur.activeLeafId ? newLeaf : l,
+        ),
+        activeLeafId: newLeaf.id,
+        worktree: cur.worktree,
+      );
+    });
+  }
+
   /// Closes the current tree's active pane, collapsing its parent split into
-  /// the sibling and focusing the sibling's left-most leaf. No-op when one pane
-  /// remains.
+  /// the sibling and focusing the sibling's left-most leaf. When the active
+  /// pane is the only one left, the whole tree is removed and the view drops to
+  /// the empty placeholder (`current == null`).
   void closeActive() {
     final cur = state.current;
     if (cur == null) return;
     final target = cur.activeLeafId;
     final sibling = _siblingFirstLeafId(cur.root, target);
     final next = closeLeaf(cur.root, target);
-    if (identical(next, cur.root) || next == cur.root) return;
+    if (identical(next, cur.root) || next == cur.root) {
+      // The active leaf is the only pane (closeLeaf can't remove the root
+      // leaf): closing it removes this worktree's tree entirely so the pane
+      // area shows the empty "Select or start a session" placeholder.
+      final key = state.currentKey;
+      if (key == null) return;
+      final trees = Map<String, PaneTreeState>.from(state.trees)..remove(key);
+      _commit(PaneWorkspaceState(trees: trees, currentKey: null));
+      return;
+    }
     final focus = (sibling != null && containsLeaf(next, sibling))
         ? sibling
         : firstLeafId(next);

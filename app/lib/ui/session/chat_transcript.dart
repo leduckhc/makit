@@ -2,19 +2,21 @@
 /// and the desktop `DesktopChatPane`, so the two surfaces render an identical
 /// item set by construction rather than by two hand-kept-in-sync switches.
 ///
-/// [chatItemWidget] maps a [ChatItem] to its widget; the item widgets
-/// ([ThinkingLine], [ErrorBanner], [WorkingIndicator]) take a [compact] flag
-/// that toggles the cosmetic mobile/desktop padding (and, for the reasoning
-/// line, the icon set) — not a redesign.
+/// [chatItemWidget] maps a [ChatItem] to its widget. All rows are
+/// gutter-agnostic: horizontal insets + inter-row spacing are owned by the
+/// surface via [transcriptRow] (see chat_metrics.dart), so the mobile
+/// [SessionScreen] and desktop `DesktopChatPane` align identically by
+/// construction.
 library;
 
 import 'dart:math';
 
 import 'package:flutter/material.dart';
-import 'package:material_symbols_icons/symbols.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import 'chat_message.dart';
+import 'chat_metrics.dart';
 import 'tool_call_card.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
@@ -39,33 +41,28 @@ void anchorToNewestIfNearBottom(ScrollController scroll) {
 
 /// Maps a folded [ChatItem] to its transcript widget. [onOpenTool] is invoked
 /// when a tool card is tapped (mobile routes via `go_router`; desktop pushes a
-/// full-screen route). [compact] selects the desktop (docked pane) cosmetics.
+/// full-screen route). Horizontal gutter + inter-row spacing are applied by the
+/// caller via [transcriptRow], so the item widgets carry none themselves.
 Widget chatItemWidget(
   ChatItem item, {
   required void Function(ToolCallItem) onOpenTool,
-  bool compact = false,
 }) => switch (item) {
   UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
-  ThinkingItem() => ThinkingLine(text: item.text, compact: compact),
+  ThinkingItem() => ThinkingLine(text: item.text),
   ToolCallItem() => ToolCallCard(item: item, onTap: () => onOpenTool(item)),
-  ErrorItem() => ErrorBanner(message: item.message, compact: compact),
+  ErrorItem() => ErrorBanner(message: item.message),
 };
 
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the
 /// one-liner. When expanded, tapping the leading icon collapses it again.
 class ThinkingLine extends StatefulWidget {
-  /// Creates a reasoning line showing [text]. [compact] uses the tighter
-  /// desktop padding + the `material_symbols` icon; otherwise the mobile
-  /// padding + the outlined material icon.
-  const ThinkingLine({super.key, required this.text, this.compact = false});
+  /// Creates a reasoning line showing [text].
+  const ThinkingLine({super.key, required this.text});
 
   /// The reasoning text (trimmed for display).
   final String text;
-
-  /// Desktop (docked pane) cosmetics when true; mobile otherwise.
-  final bool compact;
 
   @override
   State<ThinkingLine> createState() => _ThinkingLineState();
@@ -107,8 +104,7 @@ class _ThinkingLineState extends State<ThinkingLine> {
   Widget _buildRow(Widget textWidget, {VoidCallback? onLeadingTap}) {
     final cs = Theme.of(context).colorScheme;
     Widget leading = Icon(
-      widget.compact ? Symbols.psychology : Icons.psychology_outlined,
-      weight: 200,
+      PhosphorIconsLight.brain,
       size: 15,
       color: cs.onSurfaceVariant.withValues(alpha: 0.55),
     );
@@ -119,61 +115,47 @@ class _ThinkingLineState extends State<ThinkingLine> {
         child: leading,
       );
     }
-    return Padding(
-      padding: widget.compact
-          ? const EdgeInsets.symmetric(vertical: 6)
-          : const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          leading,
-          const SizedBox(width: 6),
-          Expanded(child: textWidget),
-        ],
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        leading,
+        const SizedBox(width: 6),
+        Expanded(child: textWidget),
+      ],
     );
   }
 }
 
-/// Inline error banner shown for an [ErrorItem]. Mobile shows a leading icon +
-/// message on a horizontal-inset card; desktop (compact) shows a plain padded
-/// message that matches the docked pane's rhythm.
+/// Inline error banner shown for an [ErrorItem]: a leading warning icon +
+/// message on a rounded error-container card. Gutter + spacing come from the
+/// surface ([transcriptRow]).
 class ErrorBanner extends StatelessWidget {
   /// Creates an error banner for [message].
-  const ErrorBanner({super.key, required this.message, this.compact = false});
+  const ErrorBanner({super.key, required this.message});
 
   /// The error text.
   final String message;
 
-  /// Desktop (docked pane) cosmetics when true; mobile otherwise.
-  final bool compact;
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    if (compact) {
-      return Container(
-        margin: const EdgeInsets.symmetric(vertical: 6),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: cs.errorContainer,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(message, style: TextStyle(color: cs.onErrorContainer)),
-      );
-    }
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: cs.errorContainer,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(kChatRadiusMedium),
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, size: 18),
+          Icon(
+            PhosphorIconsLight.warningCircle,
+            size: 18,
+            color: cs.onErrorContainer,
+          ),
           const SizedBox(width: 8),
-          Expanded(child: Text(message)),
+          Expanded(
+            child: Text(message, style: TextStyle(color: cs.onErrorContainer)),
+          ),
         ],
       ),
     );
@@ -181,14 +163,12 @@ class ErrorBanner extends StatelessWidget {
 }
 
 /// Trailing "working" indicator shown at the tail of the transcript while the
-/// session is running. Mobile shows a shimmering work-flavoured word; desktop
-/// (compact) shows a plain spinner + label suited to the docked pane.
+/// session is running: a shimmering work-flavoured word. Shared by mobile and
+/// desktop so both surfaces show the same treatment. Gutter + spacing come from
+/// the surface ([transcriptRow]).
 class WorkingIndicator extends StatefulWidget {
-  /// Creates the indicator. [compact] renders the plain desktop spinner.
-  const WorkingIndicator({super.key, this.compact = false});
-
-  /// Desktop (docked pane) cosmetics when true; mobile shimmer otherwise.
-  final bool compact;
+  /// Creates the indicator.
+  const WorkingIndicator({super.key});
 
   @override
   State<WorkingIndicator> createState() => _WorkingIndicatorState();
@@ -217,11 +197,7 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
 
   late final String _word = _words[Random().nextInt(_words.length)];
 
-  // One controller for the whole State lifetime, created eagerly in initState.
-  // The mobile shimmer drives it; the compact desktop spinner leaves it idle.
-  // Keeping it always-initialized (rather than lazily nulled for compact) means
-  // a widget update that flips `compact` on the SAME State never dereferences a
-  // null controller.
+  // One controller for the whole State lifetime, driving the shimmer sweep.
   late final AnimationController _c;
 
   @override
@@ -230,21 +206,7 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
     _c = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
-    );
-    if (!widget.compact) _c.repeat();
-  }
-
-  @override
-  void didUpdateWidget(WorkingIndicator oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Start/stop the shimmer as `compact` toggles on a reused State.
-    if (widget.compact != oldWidget.compact) {
-      if (widget.compact) {
-        _c.stop();
-      } else {
-        _c.repeat();
-      }
-    }
+    )..repeat();
   }
 
   @override
@@ -255,47 +217,28 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.compact) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            SizedBox(width: 10),
-            Text('working…'),
-          ],
-        ),
-      );
-    }
     final cs = Theme.of(context).colorScheme;
     final base = cs.onSurfaceVariant.withValues(alpha: 0.18);
     final highlight = cs.onSurface;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (context, child) {
-          return ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: (bounds) => LinearGradient(
-              colors: [base, highlight, base],
-              stops: const [0.35, 0.5, 0.65],
-              transform: _SlideGradient(_c.value),
-            ).createShader(bounds),
-            child: child,
-          );
-        },
-        child: Text(
-          _word,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            fontStyle: FontStyle.italic,
-          ),
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [base, highlight, base],
+            stops: const [0.35, 0.5, 0.65],
+            transform: _SlideGradient(_c.value),
+          ).createShader(bounds),
+          child: child,
+        );
+      },
+      child: Text(
+        _word,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontStyle: FontStyle.italic,
         ),
       ),
     );
