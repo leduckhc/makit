@@ -122,12 +122,14 @@ void main() {
       expect(c.current!.root, isA<PaneLeaf>());
     });
 
-    test('closeActive is a no-op with a single pane', () {
+    test('closeActive on the only pane clears the tree to the empty state', () {
       final c = PaneTreeController.ephemeral();
       c.selectWorktree(_wtA);
-      final before = c.state;
       c.closeActive();
-      expect(c.state, before);
+      // Last pane closed: the view drops to the empty placeholder and the
+      // worktree's tree is removed entirely (not left as an empty pane).
+      expect(c.current, isNull);
+      expect(c.state.trees[_wtA.path], isNull);
     });
 
     test('closeActive after nested splits focuses the sibling pane', () {

@@ -5,6 +5,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../store/store.dart';
 import '../desktop_chat_pane.dart';
 import '../selected_worktree.dart';
+import '../selected_session.dart' show closePane;
 import '../sidebar_layout.dart'
     show sidebarCollapsedProvider, kTrafficLightInset;
 import '../title_bar_strip.dart';
@@ -388,7 +389,8 @@ class _PaneHeaderStrip extends ConsumerWidget {
               ),
             ),
           ),
-          if (sessionId != null) SessionActionsMenu(sessionId: sessionId),
+          if (sessionId != null)
+            SessionActionsMenu(sessionId: sessionId, leafId: leaf.id),
           IconButton(
             iconSize: 13,
             visualDensity: VisualDensity.compact,
@@ -397,10 +399,7 @@ class _PaneHeaderStrip extends ConsumerWidget {
             tooltip: 'Close pane',
             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
             icon: const Icon(PhosphorIconsLight.x),
-            onPressed: () {
-              controller.setActive(leaf.id);
-              controller.closeActive();
-            },
+            onPressed: () => closePane(ref, leaf.id),
           ),
           const SizedBox(width: 8),
         ],

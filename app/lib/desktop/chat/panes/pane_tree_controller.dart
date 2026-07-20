@@ -315,15 +315,25 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
   }
 
   /// Closes the current tree's active pane, collapsing its parent split into
-  /// the sibling and focusing the sibling's left-most leaf. No-op when one pane
-  /// remains.
+  /// the sibling and focusing the sibling's left-most leaf. When the active
+  /// pane is the only one left, the whole tree is removed and the view drops to
+  /// the empty placeholder (`current == null`).
   void closeActive() {
     final cur = state.current;
     if (cur == null) return;
     final target = cur.activeLeafId;
     final sibling = _siblingFirstLeafId(cur.root, target);
     final next = closeLeaf(cur.root, target);
-    if (identical(next, cur.root) || next == cur.root) return;
+    if (identical(next, cur.root) || next == cur.root) {
+      // The active leaf is the only pane (closeLeaf can't remove the root
+      // leaf): closing it removes this worktree's tree entirely so the pane
+      // area shows the empty "Select or start a session" placeholder.
+      final key = state.currentKey;
+      if (key == null) return;
+      final trees = Map<String, PaneTreeState>.from(state.trees)..remove(key);
+      _commit(PaneWorkspaceState(trees: trees, currentKey: null));
+      return;
+    }
     final focus = (sibling != null && containsLeaf(next, sibling))
         ? sibling
         : firstLeafId(next);

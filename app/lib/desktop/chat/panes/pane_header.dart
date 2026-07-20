@@ -95,11 +95,17 @@ String sessionPaneTitle(Session? session, String fallbackId) {
 /// thinking-effort live inline in the composer footer, so they are not repeated
 /// here. Shared by the docked [PaneHeader] and the split pane tree's tab strip.
 class SessionActionsMenu extends ConsumerWidget {
-  /// Creates the actions menu acting on [sessionId].
-  const SessionActionsMenu({super.key, required this.sessionId});
+  /// Creates the actions menu acting on [sessionId]. [leafId] is the pane leaf
+  /// hosting the menu; when provided, "Quit session" also closes that pane
+  /// (Quit = kill the session **and** close its pane). Null keeps the plain
+  /// unbind behaviour (the standalone [PaneHeader], not used in the pane tree).
+  const SessionActionsMenu({super.key, required this.sessionId, this.leafId});
 
   /// The session the menu's actions target.
   final String sessionId;
+
+  /// The pane leaf hosting this menu, closed on Quit when non-null.
+  final String? leafId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -171,16 +177,25 @@ class SessionActionsMenu extends ConsumerWidget {
     );
     if (ok != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    // Capture notifiers before the async gap so the model cleanup still runs if
-    // this menu's widget is disposed (e.g. its pane closed) while killing.
+    // Capture notifiers before the async gap so the pane/selection cleanup
+    // still runs if this menu's widget is disposed (e.g. its pane closed)
+    // while killing.
     final store = ref.read(storeControllerProvider.notifier);
     final panes = ref.read(paneTreeControllerProvider.notifier);
     final selection = ref.read(selectedSessionProvider.notifier);
     try {
       await store.killSession(sessionId);
-      // Drop any panes bound to the now-dead session back to their empty state
-      // and clear the selection — regardless of whether this widget survived.
+      // Quit = close this pane too. Closing the last pane clears the tree to
+      // the empty placeholder; in a split it collapses into the sibling.
+      if (leafId != null) {
+        panes.setActive(leafId!);
+        panes.closeActive();
+      }
+      // Drop any *other* panes still bound to the now-dead session back to
+      // their empty state so it never lingers in another worktree's layout.
       panes.unbindSession(sessionId);
+      // Clear the sidebar highlight only if it still points at this session —
+      // never stomp a selection the user has since moved elsewhere.
       if (selection.state == sessionId) {
         selection.state = null;
       }
