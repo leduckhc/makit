@@ -84,6 +84,23 @@ enum ShortcutAction {
     label: 'Split pane horizontally',
     description: 'Split the active pane into a top/bottom layout',
     scope: ShortcutScope.global,
+  ),
+
+  /// Start a new session in the active pane (same worktree, harness picker).
+  newPane(
+    id: 'newPane',
+    label: 'New session in pane',
+    description:
+        'Reset the active pane to a new session in the current worktree',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Close the active pane's view without ending its session.
+  closePane(
+    id: 'closePane',
+    label: 'Close pane',
+    description: 'Close the active pane (the session keeps running)',
+    scope: ShortcutScope.global,
   );
 
   const ShortcutAction({

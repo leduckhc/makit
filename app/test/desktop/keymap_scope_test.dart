@@ -205,6 +205,108 @@ void main() {
     },
   );
 
+  testWidgets(
+    'Ctrl+T resets the active pane to an empty harness-picker pane',
+    (tester) async {
+      final keymap = await controller();
+      const wt = SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt-t',
+        branch: 'feature-t',
+      );
+      final session = Session(
+        id: 's1',
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Wire up pairing',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        branch: 'feature-t',
+        worktreePath: '/tmp/wt-t',
+      );
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          sessionsProvider.overrideWithValue(SessionsState([session])),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(paneTreeControllerProvider.notifier)
+          .bindActiveSession('s1', wt);
+      container.read(selectedSessionProvider.notifier).state = 's1';
+
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+
+      await pressCtrl(tester, LogicalKeyboardKey.keyT);
+
+      final cur = container.read(paneTreeControllerProvider).current!;
+      // No split: still a single leaf, now empty (harness picker), same
+      // worktree. The session keeps running but the sidebar highlight clears.
+      expect(cur.root, isA<PaneLeaf>());
+      expect(cur.worktree, wt);
+      expect(
+        container.read(paneTreeControllerProvider.notifier).activeLeafSessionId,
+        isNull,
+      );
+      expect(container.read(selectedSessionProvider), isNull);
+    },
+  );
+
+  testWidgets('Ctrl+W closes the active pane but keeps the session', (
+    tester,
+  ) async {
+    final keymap = await controller();
+    const wt = SelectedWorktree(
+      projectId: 'p1',
+      path: '/tmp/wt-w',
+      branch: 'feature-w',
+    );
+    final session = Session(
+      id: 's1',
+      projectId: 'p1',
+      agent: 'pi',
+      title: 'Wire up pairing',
+      status: SessionStatus.idle,
+      policy: ApprovalPolicy.askOnRisky,
+      branch: 'feature-w',
+      worktreePath: '/tmp/wt-w',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        sessionsProvider.overrideWithValue(SessionsState([session])),
+      ],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(paneTreeControllerProvider.notifier);
+    notifier.bindActiveSession('s1', wt);
+    container.read(selectedSessionProvider.notifier).state = 's1';
+    // Split so there are two panes; closing one leaves the sibling.
+    notifier.splitActive(Axis.horizontal);
+
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    await pressCtrl(tester, LogicalKeyboardKey.keyW);
+
+    // The active (empty) pane is gone; the sibling with the session remains.
+    final cur = container.read(paneTreeControllerProvider).current!;
+    expect(cur.root, isA<PaneLeaf>());
+    expect((cur.root as PaneLeaf).sessionId, 's1');
+    // The session was never deleted from the store.
+    expect(container.read(sessionsProvider).byId('s1'), isNotNull);
+  });
+
   testWidgets('Ctrl+D is a no-op when nothing is selected', (tester) async {
     final keymap = await controller();
     final container = ProviderContainer(

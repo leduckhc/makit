@@ -81,6 +81,52 @@ void main() {
       expect(c.state, before);
     });
 
+    test('resetActiveToEmpty clears the active pane without splitting', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s-old', _wtA);
+      final original = c.current!.activeLeafId;
+      c.resetActiveToEmpty();
+      // Still a single leaf (no split), the old session is gone, and the
+      // fresh empty leaf is a new, active, null-session pane.
+      expect(c.current!.root, isA<PaneLeaf>());
+      final leaf = c.current!.root as PaneLeaf;
+      expect(leaf.sessionId, isNull);
+      expect(c.current!.activeLeafId, leaf.id);
+      expect(leaf.id, isNot(original));
+      expect(c.current!.worktree, _wtA);
+    });
+
+    test('resetActiveToEmpty only resets the active pane in a split', () {
+      final c = PaneTreeController.ephemeral();
+      c.bindActiveSession('s-a', _wtA);
+      final first = c.current!.activeLeafId;
+      c.splitActive(Axis.horizontal);
+      c.bindActiveSession('s-b', _wtA); // binds the fresh (active) leaf
+      final second = c.current!.activeLeafId;
+      c.resetActiveToEmpty();
+      final split = c.current!.root as PaneSplit;
+      PaneLeaf leaf(String id) =>
+          [split.first, split.second].cast<PaneLeaf>().firstWhere(
+            (l) => l.id == id,
+          );
+      // The untouched pane keeps its session; the active pane is now empty.
+      expect(leaf(first).sessionId, 's-a');
+      final active = c.current!.root as PaneSplit;
+      final activeLeaf = [active.first, active.second]
+          .cast<PaneLeaf>()
+          .firstWhere((l) => l.id == c.current!.activeLeafId);
+      expect(activeLeaf.sessionId, isNull);
+      expect(c.current!.activeLeafId, isNot(first));
+      expect(c.current!.activeLeafId, isNot(second));
+    });
+
+    test('resetActiveToEmpty is a no-op when nothing is selected', () {
+      final c = PaneTreeController.ephemeral();
+      final before = c.state;
+      c.resetActiveToEmpty();
+      expect(c.state, before);
+    });
+
     test('bindActiveSession switches to the session\'s worktree tree', () {
       final c = PaneTreeController.ephemeral();
       c.selectWorktree(_wtA);

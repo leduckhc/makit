@@ -182,6 +182,10 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _splitPane(ref, Axis.horizontal);
       case ShortcutAction.splitPaneHorizontal:
         _splitPane(ref, Axis.vertical);
+      case ShortcutAction.newPane:
+        newPaneInActiveWorktree(ref);
+      case ShortcutAction.closePane:
+        closeActivePane(ref);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:

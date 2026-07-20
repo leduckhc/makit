@@ -314,6 +314,25 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
     });
   }
 
+  /// Replaces the current tree's active pane with a fresh empty (null-session)
+  /// pane in the SAME worktree, without splitting. The empty leaf renders the
+  /// worktree's harness picker so the user can start a new session; any session
+  /// that was bound to the pane keeps running (only the pane's view is reset).
+  /// No-op when nothing is selected.
+  void resetActiveToEmpty() {
+    _updateCurrent((cur) {
+      final newLeaf = PaneLeaf(id: nextPaneId());
+      return PaneTreeState(
+        root: mapLeaves(
+          cur.root,
+          (l) => l.id == cur.activeLeafId ? newLeaf : l,
+        ),
+        activeLeafId: newLeaf.id,
+        worktree: cur.worktree,
+      );
+    });
+  }
+
   /// Closes the current tree's active pane, collapsing its parent split into
   /// the sibling and focusing the sibling's left-most leaf. When the active
   /// pane is the only one left, the whole tree is removed and the view drops to
