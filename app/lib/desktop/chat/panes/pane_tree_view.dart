@@ -45,7 +45,6 @@ class PaneTreeView extends ConsumerWidget {
         ColoredBox(
           color: cs.surfaceContainer,
           child: TitleBarStrip(
-            leadingTop: 3,
             // With the sidebar folded away the pane area owns the only
             // "show sidebar" affordance, cleared past the traffic lights.
             leading: collapsed
