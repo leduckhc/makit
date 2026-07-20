@@ -315,10 +315,13 @@ test("Verification section covers server unit tests, typecheck/test commands, ap
   assert.match(verificationSection, /Manual:/);
 });
 
-test("Verification section requires the media route to return 206/416 and a placeholder instead of 500", () => {
+test("Verification section requires the media route to return 206/416 and a media_not_found placeholder on GC'd id", () => {
   const content = readSpec();
   const verificationSection = content.split("## Verification")[1] ?? "";
   assert.match(verificationSection, /206.*Content-Range/);
   assert.match(verificationSection, /416.*bad range/);
-  assert.match(verificationSection, /placeholder \(not `500`\)/);
+  // The route returns 404 {"error":"media_not_found"} on missing/GC'd id,
+  // which the app renders as a placeholder (never handed to a decoder).
+  assert.match(content, /404.*media_not_found/);
+  assert.match(content, /placeholder.*widget/);
 });
