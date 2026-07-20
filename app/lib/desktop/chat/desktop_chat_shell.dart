@@ -62,23 +62,37 @@ class _SidebarResizeHandle extends ConsumerWidget {
         child: SizedBox(
           width: 8,
           height: double.infinity,
-          child: Column(
+          child: Stack(
             children: [
-              // Fill the title-bar row so the top band is continuous with the
-              // sidebar header and the pane title (all surfaceContainer) — no
-              // gap between the two coloured bands.
-              Container(height: kTitleBarStripHeight, color: cs.surfaceContainer),
-              // Titlebar bottom border across the handle, connecting the
-              // sidebar header's hairline to the pane title strip's (no gap).
-              const Divider(height: 1),
-              // Below the band: hairline flush against the sidebar's edge; the
-              // rest of the grab strip stays transparent (chat bg) so no gap
-              // shows on the sidebar.
-              const Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: VerticalDivider(width: 1),
-                ),
+              // Title-band fill, right of the sidebar divider, so the top band
+              // stays continuous with the sidebar + pane title
+              // (surfaceContainer) with no gap.
+              Positioned(
+                left: 1,
+                right: 0,
+                top: 0,
+                height: kTitleBarStripHeight,
+                child: ColoredBox(color: cs.surfaceContainer),
+              ),
+              // Titlebar bottom hairline — right of the sidebar divider only,
+              // so it meets but never crosses the sidebar; it continues into
+              // the pane title strip's own divider.
+              Positioned(
+                left: 1,
+                right: 0,
+                top: kTitleBarStripHeight,
+                height: 1,
+                child: ColoredBox(color: cs.outlineVariant),
+              ),
+              // The sidebar divider: a full-height hairline flush against the
+              // sidebar's edge, separating it from the title band and the chat
+              // body below.
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 1,
+                child: ColoredBox(color: cs.outlineVariant),
               ),
             ],
           ),
