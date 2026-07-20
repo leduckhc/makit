@@ -342,6 +342,81 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(container.read(storeControllerProvider).events[_sid]!.length, 1);
     });
+
+    test(
+      'send during replay waits for the real echo instead of reusing its seq',
+      () async {
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        store.subscribeSession(_sid);
+        transport.pushEvent(seq: 1, sessionId: _sid);
+        await Future<void>.delayed(Duration.zero);
+
+        store.appendOptimisticMessage(_sid, 'new message');
+        store.sendMessage(_sid, 'new message');
+
+        // The replay cursor is still zero, so an optimistic event would steal
+        // seq 1 from the buffered historical event. The command must still be
+        // sent, but no optimistic bubble is safe until replay finishes.
+        expect(
+          container.read(storeControllerProvider).events[_sid] ?? const [],
+          isEmpty,
+        );
+        expect(
+          transport.sent.where(
+            (e) =>
+                e.t == MsgType.cmd &&
+                e.body['kind'] == 'send.message' &&
+                e.body['text'] == 'new message',
+          ),
+          hasLength(1),
+        );
+
+        transport.pushAck(id: 's-$_sid');
+        await Future<void>.delayed(Duration.zero);
+        transport.pushEvent(
+          seq: 2,
+          sessionId: _sid,
+          kind: 'user.message',
+          text: 'new message',
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final state = container.read(storeControllerProvider);
+        expect(state.cursors[_sid], 2);
+        expect(state.events[_sid], hasLength(2));
+        final items = foldEvents(
+          state.events[_sid]!,
+        ).whereType<UserMessageItem>().toList();
+        expect(items.map((item) => item.text), ['new message']);
+      },
+    );
   });
 
   group('StoreController — repo refresh after project add', () {
@@ -476,7 +551,12 @@ class _CapturingTransport implements Transport {
   final _frames = StreamController<Envelope>.broadcast();
   final _state = StreamController<WsState>.broadcast();
 
-  void pushEvent({required int seq, required String sessionId}) {
+  void pushEvent({
+    required int seq,
+    required String sessionId,
+    String kind = 'agent.message',
+    String? text,
+  }) {
     _frames.add(
       Envelope(
         t: MsgType.event,
@@ -487,8 +567,8 @@ class _CapturingTransport implements Transport {
             'seq': seq,
             'sessionId': sessionId,
             'ts': seq * 1000,
-            'kind': 'agent.message',
-            'payload': {'text': 'm$seq'},
+            'kind': kind,
+            'payload': {'text': text ?? 'm$seq'},
           },
         },
       ),

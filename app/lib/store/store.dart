@@ -303,6 +303,11 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   void appendOptimisticMessage(String sessionId, String text) {
+    // Replay events have not advanced the public cursor yet, so assigning the
+    // next seq here could collide with buffered history. The command still goes
+    // to the server; its real user.message echo is ordered after the sub ack and
+    // appears once [_flushReplay] has installed the replay cursor.
+    if (_awaitingReplay.contains(sessionId)) return;
     // Inject a local user bubble immediately so the input doesn't feel hung.
     // The optimistic event takes the next seq after the cursor; the server's
     // user.message echo arrives with the SAME seq (the server assigns seqs in
