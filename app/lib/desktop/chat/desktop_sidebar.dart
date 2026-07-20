@@ -191,22 +191,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                           ),
                         ),
                       ),
-                      // Collapse caret: hidden at rest when expanded, fading in
-                      // on hover/focus; always shown when collapsed so a folded
-                      // group isn't a dead label.
-                      AnimatedOpacity(
-                        opacity: (!_expanded || _repoHovering || _repoFocused)
-                            ? 1
-                            : 0,
-                        duration: const Duration(milliseconds: 120),
-                        child: Icon(
-                          _expanded
-                              ? PhosphorIconsLight.caretDown
-                              : PhosphorIconsLight.caretRight,
-                          size: 16,
-                          color: theme.colorScheme.outline,
-                        ),
-                      ),
                       // Repo actions (overflow menu + new worktree) reveal
                       // together on hover or keyboard focus, nested inside the
                       // pill; their slot stays reserved so the header text never
