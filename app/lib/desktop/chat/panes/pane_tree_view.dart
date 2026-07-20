@@ -10,6 +10,7 @@ import '../session_status_dot.dart';
 import '../sidebar_layout.dart'
     show sidebarCollapsedProvider, kTrafficLightInset;
 import '../title_bar_strip.dart';
+import '../open_in_ide.dart';
 import 'pane_node.dart';
 import 'pane_tree_controller.dart';
 
@@ -57,6 +58,13 @@ class PaneTreeView extends ConsumerWidget {
             // small gutter.
             title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
             titleInset: collapsed ? kTrafficLightInset + 34 : 12,
+            // "Open in editor" affordance, only for a real on-disk worktree
+            // (a still-virtual draft has no path to open yet).
+            trailing:
+                worktree == null ||
+                    worktree.path.startsWith(kDraftWorktreePrefix)
+                ? null
+                : OpenInIdeButton(path: worktree.path),
           ),
         ),
         // Hairline separating the window-title zone (which worktree) from the
