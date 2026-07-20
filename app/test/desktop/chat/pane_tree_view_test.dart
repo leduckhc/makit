@@ -293,7 +293,7 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(find.text(_wtA.branch!), findsOneWidget);
+      expect(find.text(_wtA.branch!.toUpperCase()), findsOneWidget);
       expect(find.byIcon(PhosphorIconsLight.gitBranch), findsOneWidget);
     });
 
@@ -312,7 +312,7 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(find.text('/tmp/wt-detached'), findsOneWidget);
+      expect(find.text('/tmp/wt-detached'.toUpperCase()), findsOneWidget);
     });
 
     testWidgets(
@@ -327,7 +327,7 @@ void main() {
         await tester.pumpWidget(_tree(c));
         await tester.pumpAndSettle();
 
-        expect(find.text('New worktree'), findsOneWidget);
+        expect(find.text('New worktree'.toUpperCase()), findsOneWidget);
         // Never the raw `draft:<id>` key.
         expect(find.text('draft:s1'), findsNothing);
       },

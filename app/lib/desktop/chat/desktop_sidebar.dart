@@ -8,6 +8,7 @@ import '../../store/connection.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
+import 'session_status_dot.dart';
 import 'title_bar_strip.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
@@ -913,7 +914,7 @@ class _SessionTile extends StatelessWidget {
               child: Center(
                 child: session.status == SessionStatus.idle
                     ? const SizedBox.shrink()
-                    : _StatusDot(status: session.status),
+                    : SessionStatusDot(status: session.status),
               ),
             ),
             const SizedBox(width: 6),
@@ -924,104 +925,6 @@ class _SessionTile extends StatelessWidget {
         ),
         onTap: onTap,
       ),
-    );
-  }
-}
-
-/// A tiny status indicator dot. Active states (running / awaiting) pulse; the
-/// rest render as a solid dot. Replaces the old text status chip on the compact
-/// single-line session tiles.
-class _StatusDot extends StatefulWidget {
-  const _StatusDot({required this.status});
-  final SessionStatus status;
-
-  @override
-  State<_StatusDot> createState() => _StatusDotState();
-}
-
-class _StatusDotState extends State<_StatusDot> with TickerProviderStateMixin {
-  AnimationController? _controller;
-
-  bool get _pulses =>
-      widget.status == SessionStatus.running ||
-      widget.status == SessionStatus.awaitingInput ||
-      widget.status == SessionStatus.awaitingApproval;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncController();
-  }
-
-  @override
-  void didUpdateWidget(_StatusDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // Sessions transition status in place (running → exited, idle → running…)
-    // and this State object is reused, so the controller must track the
-    // current status — not the one we mounted with.
-    if (oldWidget.status != widget.status) _syncController();
-  }
-
-  /// Only active states animate — solid states must not leave a repeating
-  /// controller running (it would also make pumpAndSettle hang in tests).
-  void _syncController() {
-    if (_pulses && _controller == null) {
-      _controller = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 900),
-      )..repeat(reverse: true);
-    } else if (!_pulses && _controller != null) {
-      _controller!.dispose();
-      _controller = null;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  /// Human-readable status, used for the tooltip + screen-reader semantics so
-  /// the dot is not a color-only signal.
-  String get _label => switch (widget.status) {
-    SessionStatus.running => 'running',
-    SessionStatus.awaitingInput => 'awaiting input',
-    SessionStatus.awaitingApproval => 'awaiting approval',
-    SessionStatus.error => 'error',
-    SessionStatus.exited => 'exited',
-    SessionStatus.idle => 'idle',
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    // Palette-tuned status hues: theme roles where they exist (green primary,
-    // M3 error red, neutral outline), and softened ambers for the awaiting
-    // states so they sit with the neutral panel instead of shouting.
-    final color = switch (widget.status) {
-      SessionStatus.running => cs.primary,
-      SessionStatus.awaitingInput => const Color(0xFFE0A72E),
-      SessionStatus.awaitingApproval => const Color(0xFFE07B39),
-      SessionStatus.error => cs.error,
-      SessionStatus.exited => cs.outline,
-      SessionStatus.idle => cs.outline,
-    };
-    Widget dot = Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-    );
-    final controller = _controller;
-    if (controller != null) {
-      dot = FadeTransition(
-        opacity: Tween<double>(begin: 0.3, end: 1).animate(controller),
-        child: dot,
-      );
-    }
-    return Tooltip(
-      message: _label,
-      child: Semantics(label: 'status: $_label', child: dot),
     );
   }
 }

@@ -97,6 +97,27 @@ Tuned tool-risk hues match the sidebar `_StatusDot` palette so risk affordances
 sit with the neutral surfaces instead of shouting. The tool-call *ok* check and
 the code-block *copied* check use `colorScheme.primary` (seed green).
 
+## Desktop title bars
+
+The desktop pane column stacks two title rows; they carry a deliberate
+hierarchy so one reads as context and the other as the active thing:
+
+- **Window title strip** (`_WorktreeTitle`) — the worktree/branch as a quiet
+  **uppercase, letter-spaced, muted context label** (`labelMedium`, `outline`,
+  `w600`, `letterSpacing 0.8`) with a leading `gitBranch` icon. Matches the
+  sidebar repo-header treatment.
+- **Pane title** (`_PaneHeaderStrip`) — the session name as the **primary**
+  line (`titleSmall`, `w500`, `onSurface`) with a leading [SessionStatusDot]
+  for icon parity, then Session-actions + Close-pane controls.
+- A **1px hairline** (`Divider(height: 1)`, `outlineVariant`) separates the
+  window-title zone from the pane header + transcript below.
+- Leading edges align at the 12px pane gutter (the status dot sits under the
+  worktree fork icon) when the sidebar is shown.
+
+`SessionStatusDot` (`desktop/chat/session_status_dot.dart`) is shared by the
+sidebar tiles and the pane header so a session's status reads identically
+everywhere.
+
 ## Components (see Design Lab)
 - **Composer** — floating glass; 1-line at rest → 3 lines on focus; send fades in only when non-empty (SPEC-06).
 - **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs. Busy indicator = a shimmering work-flavoured word, shared by mobile + desktop.
