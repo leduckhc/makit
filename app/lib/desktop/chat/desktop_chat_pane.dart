@@ -211,14 +211,18 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                             items[items.length - 1 - (running ? i - 1 : i)],
                             onOpenTool: _openToolDetail,
                           );
-                    // The pane owns the readable-width cap and the single
-                    // gutter/row-gap ([transcriptRow]); item widgets carry no
-                    // horizontal padding, so every row shares one left edge.
-                    return ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: kReadableContentMaxWidth,
+                    // Center each row within the same readable-width cap as
+                    // the composer, so the transcript column lines up with the
+                    // input instead of stretching edge-to-edge. The ListView
+                    // itself stays full width so the mouse wheel scrolls
+                    // anywhere in the pane; only the row *content* is capped.
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: kReadableContentMaxWidth,
+                        ),
+                        child: transcriptRow(child),
                       ),
-                      child: transcriptRow(child),
                     );
                   },
                 ),
