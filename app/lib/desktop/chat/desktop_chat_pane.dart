@@ -9,6 +9,7 @@ import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/session/chat_transcript.dart';
+import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
@@ -205,20 +206,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     // Reversed: i counts up from the bottom. When running,
                     // i == 0 is the trailing "working…" indicator.
                     final Widget child = (running && i == 0)
-                        ? const WorkingIndicator(compact: true)
+                        ? const WorkingIndicator()
                         : chatItemWidget(
                             items[items.length - 1 - (running ? i - 1 : i)],
                             onOpenTool: _openToolDetail,
-                            compact: true,
                           );
+                    // The pane owns the readable-width cap and the single
+                    // gutter/row-gap ([transcriptRow]); item widgets carry no
+                    // horizontal padding, so every row shares one left edge.
                     return ConstrainedBox(
                       constraints: const BoxConstraints(
                         maxWidth: kReadableContentMaxWidth,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: child,
-                      ),
+                      child: transcriptRow(child),
                     );
                   },
                 ),

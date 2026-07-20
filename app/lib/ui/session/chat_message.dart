@@ -9,6 +9,8 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'chat_metrics.dart';
+
 /// Flutter's `'monospace'` logical family only resolves on Android; on Apple
 /// platforms it silently falls back to the default proportional font. Provide
 /// real monospace faces so code renders monospaced everywhere.
@@ -71,23 +73,19 @@ class ChatBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Container(
-              margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: bubble,
                 borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(14),
-                  topRight: Radius.circular(14),
-                  bottomLeft: Radius.circular(14),
+                  topLeft: Radius.circular(kChatRadiusLarge),
+                  topRight: Radius.circular(kChatRadiusLarge),
+                  bottomLeft: Radius.circular(kChatRadiusLarge),
                   bottomRight: Radius.circular(4),
                 ),
               ),
               child: SelectableText(text, style: TextStyle(color: onBubble)),
             ),
-            Padding(
-              padding: const EdgeInsets.only(right: 12, bottom: 4),
-              child: _Timestamp(ts: ts, alignRight: true),
-            ),
+            _Timestamp(ts: ts, alignRight: true),
           ],
         ),
       ),
@@ -123,32 +121,31 @@ class _AgentMessageState extends State<AgentMessage> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-      // Fill the available (readable-capped) width so the start-aligned content
-      // always hugs the left. Without this the Column shrink-wraps to its text,
-      // and the desktop pane's centering makes short replies look centered
-      // while only long/last replies (which fill the width) appear left-aligned.
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SelectionArea(
-              child: SelectionContainer(
-                delegate: _selectionDelegate,
-                child: MarkdownBody(
-                  data: widget.text,
-                  selectable: false,
-                  styleSheet: _styleSheet(context),
-                  onTapLink: _openLink,
-                  builders: {'code': _CodeBlockBuilder(context)},
-                ),
+    // Fill the available (readable-capped) width so the start-aligned content
+    // always hugs the left. Without this the Column shrink-wraps to its text,
+    // and the desktop pane's centering makes short replies look centered
+    // while only long/last replies (which fill the width) appear left-aligned.
+    // No horizontal padding here: the surface owns the gutter (see
+    // [transcriptRow] / chat_metrics.dart).
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SelectionArea(
+            child: SelectionContainer(
+              delegate: _selectionDelegate,
+              child: MarkdownBody(
+                data: widget.text,
+                selectable: false,
+                styleSheet: _styleSheet(context),
+                onTapLink: _openLink,
+                builders: {'code': _CodeBlockBuilder(context)},
               ),
             ),
-            _Timestamp(ts: widget.ts, alignRight: false),
-          ],
-        ),
+          ),
+          _Timestamp(ts: widget.ts, alignRight: false),
+        ],
       ),
     );
   }
@@ -269,7 +266,7 @@ class _CodeBlock extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         color: dark ? const Color(0xFF282C34) : const Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kChatRadiusSmall),
         border: Border.all(color: cs.outlineVariant),
       ),
       clipBehavior: Clip.antiAlias,
@@ -326,7 +323,7 @@ class _CopyButtonState extends State<_CopyButton> {
       constraints: const BoxConstraints(),
       icon: Icon(
         _copied ? PhosphorIconsLight.check : PhosphorIconsLight.copy,
-        color: _copied ? Colors.green : cs.onSurfaceVariant,
+        color: _copied ? cs.primary : cs.onSurfaceVariant,
       ),
       onPressed: _copy,
     );

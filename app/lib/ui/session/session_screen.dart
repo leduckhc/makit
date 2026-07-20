@@ -10,6 +10,7 @@ import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
 import 'chat_transcript.dart';
+import 'chat_metrics.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 
@@ -109,12 +110,16 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 // i == 0 is the trailing "working…" indicator sitting just
                 // below the newest message.
                 final running = session?.status == SessionStatus.running;
-                if (running && i == 0) return const WorkingIndicator();
+                if (running && i == 0) {
+                  return transcriptRow(const WorkingIndicator());
+                }
                 final index = items.length - 1 - (running ? i - 1 : i);
-                return chatItemWidget(
-                  items[index],
-                  onOpenTool: (tool) => context.go(
-                    '/session/${widget.sessionId}/tool/${tool.callId}',
+                return transcriptRow(
+                  chatItemWidget(
+                    items[index],
+                    onOpenTool: (tool) => context.go(
+                      '/session/${widget.sessionId}/tool/${tool.callId}',
+                    ),
                   ),
                 );
               },

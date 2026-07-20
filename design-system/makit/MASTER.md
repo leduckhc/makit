@@ -75,9 +75,31 @@ fallback.
 System font (SF Pro Text / Inter). Monospace (`ui-monospace`) for tool cards, diffs,
 and code. Body ≥ 15px, line-height ~1.5.
 
+## Chat transcript layout tokens
+
+The transcript is **gutter-agnostic**: item widgets carry no horizontal padding;
+the surface (mobile `SessionScreen`, desktop `DesktopChatPane`) applies one
+gutter + inter-row gap via `transcriptRow` so every row — messages, tool cards,
+thinking/error lines, working indicator — shares one left/right edge and a
+uniform vertical rhythm. Tokens live in `app/lib/ui/session/chat_metrics.dart`.
+
+| Token | Value | Role |
+|-------|-------|------|
+| `kChatGutter` | 20 | horizontal inset, applied once by the surface |
+| `kChatRowGap` | 10 | space between adjacent rows |
+| `kChatRadiusSmall` | 8 | code blocks |
+| `kChatRadiusMedium` | 12 | tool cards, error banners |
+| `kChatRadiusLarge` | 16 | message bubbles |
+| `kToolRiskyColor` | `#E8A33D` | tool-call *risky* icon (was `Colors.orange`) |
+| `kToolDestructiveColor` | `#E5544B` | tool-call *destructive* icon (was `Colors.red`) |
+
+Tuned tool-risk hues match the sidebar `_StatusDot` palette so risk affordances
+sit with the neutral surfaces instead of shouting. The tool-call *ok* check and
+the code-block *copied* check use `colorScheme.primary` (seed green).
+
 ## Components (see Design Lab)
 - **Composer** — floating glass; 1-line at rest → 3 lines on focus; send fades in only when non-empty (SPEC-06).
-- **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs.
+- **Chat** — user = grey bubble (right); agent = plain text (left); thinking = muted italic; tool call = monospace card with green `+` / red `−` diffs. Busy indicator = a shimmering work-flavoured word, shared by mobile + desktop.
 - **Top bar** — glass, circular back/quit buttons, title + `model · thinking`, green connection dot.
 - **Logo** — green `makit` mark (`makit_mark.dart`, `#4ADE80`).
 
