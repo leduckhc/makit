@@ -103,9 +103,9 @@ The desktop pane column stacks two title rows; they carry a deliberate
 hierarchy so one reads as context and the other as the active thing:
 
 - **Window title strip** (`_WorktreeTitle`) — the worktree/branch as a quiet
-  **uppercase, letter-spaced, muted context label** (`labelMedium`, `outline`,
-  `w600`, `letterSpacing 0.8`) with a leading `gitBranch` icon. Matches the
-  sidebar repo-header treatment.
+  **muted, letter-spaced context label** (`labelMedium`, `outline`, `w600`,
+  `letterSpacing 0.8`) with a leading `gitBranch` icon. Matches the sidebar
+  repo-header treatment (case preserved — branch names are not uppercased).
 - **Pane title** (`_PaneHeaderStrip`) — the session name as the **primary**
   line (`titleSmall`, `w500`, `onSurface`) with a leading [SessionStatusDot]
   for icon parity, then Session-actions + Close-pane controls.

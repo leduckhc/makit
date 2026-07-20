@@ -97,12 +97,12 @@ class _WorktreeTitle extends StatelessWidget {
         const SizedBox(width: 6),
         Flexible(
           child: Text(
-            label.toUpperCase(),
+            label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            // Quiet uppercase context label (matches the sidebar repo header),
-            // so the worktree reads as context beneath which the session title
-            // is the primary line.
+            // Quiet muted context label (matches the sidebar repo-header
+            // treatment, minus the uppercasing) so the worktree reads as
+            // context beneath which the session title is the primary line.
             style: theme.textTheme.labelMedium?.copyWith(
               color: theme.colorScheme.outline,
               fontWeight: FontWeight.w600,
