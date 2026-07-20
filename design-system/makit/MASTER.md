@@ -1,13 +1,23 @@
 # makit — Design System (MASTER)
 
-**Status:** locked 2026-07-07 · Source of truth for colors, glass, and component styling.
+**Status:** updated 2026-07 · Source of truth for glass and component styling.
 Playground: [`mockups/makit-design-lab.html`](../../mockups/makit-design-lab.html)
 
-makit is a mobile companion for coding agents: a **terminal-neutral** aesthetic —
-pure-grey neutrals (zero hue) + a single **green** accent, over a floating
-**Liquid-Glass** top bar and composer.
+> **2026-07 — Color model migrated to stock Material 3.** The app now derives
+> its entire palette from a single green seed via `ColorScheme.fromSeed`
+> (`kMakitAccent = #4ADE80`), with **no neutral overrides**. This intentionally
+> supersedes the earlier "terminal-neutral / chroma-0" color model documented
+> below: M3 surfaces now carry a subtle seed-derived tonal tint and elevation
+> reads through the `surfaceContainer*` hierarchy. `primary` and all on-colors
+> are M3-derived (contrast handled by the tonal system, so the old per-mode
+> WCAG accent pin is gone). Brand-accent affordances use `colorScheme.primary`.
+> The **glass** and **component** guidance below still applies; the palette
+> table is retained only as historical reference.
 
-## Color model
+makit is a mobile companion for coding agents: a floating **Liquid-Glass** top
+bar and composer over a Material 3 surface palette seeded from the brand green.
+
+## Color model (historical — superseded by stock M3, see note above)
 
 Neutrals are defined in **OKLCH with chroma = 0** (mathematically hueless) so
 light and dark share identical character — no blue/slate drift. The accent is a

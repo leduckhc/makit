@@ -61,7 +61,12 @@ class _SidebarResizeHandle extends ConsumerWidget {
         child: const SizedBox(
           width: 8,
           height: double.infinity,
-          child: Center(child: VerticalDivider(width: 1)),
+          // Divider flush against the sidebar's edge; the rest of the grab
+          // strip extends into the chat side, so no gap shows on the sidebar.
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: VerticalDivider(width: 1),
+          ),
         ),
       ),
     );

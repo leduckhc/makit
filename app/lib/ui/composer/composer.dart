@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../shortcuts/key_chord.dart';
-import '../../app/theme.dart' show kComposerBoxDark, kComposerBoxLight;
 import '../../store/models.dart';
 import 'slash_palette.dart';
 
@@ -160,14 +159,11 @@ class _ComposerState extends State<Composer> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     // One coherent, static box behind the whole composer (field + footer
-    // controls). Deliberately darker than the transcript background and
-    // painted by a plain Container so it never shifts on hover. Glass surfaces
-    // supply their own backdrop, so stay transparent there.
-    final boxColor = widget.glass
-        ? Colors.transparent
-        : (Theme.of(context).brightness == Brightness.dark
-              ? kComposerBoxDark
-              : kComposerBoxLight);
+    // controls). Uses the M3 `surfaceContainerHigh` tonal step so it reads as a
+    // raised input panel against the scaffold surface, painted by a plain
+    // Container so it never shifts on hover. Glass surfaces supply their own
+    // backdrop, so stay transparent there.
+    final boxColor = widget.glass ? Colors.transparent : cs.surfaceContainerHigh;
     return SafeArea(
       top: false,
       child: Column(

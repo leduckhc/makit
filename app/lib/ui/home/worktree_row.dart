@@ -2,12 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
-import '../../app/theme.dart' show kMakitAccent;
 import 'repo_chips.dart';
 import 'session_tile.dart';
-
-/// Brand green accent used for running/active glass affordances (shared token).
-const _kBrandBlue = kMakitAccent;
 
 /// One worktree (branch) row inside a repo card, listing the sessions running
 /// in it (SPEC-19, moved from home_screen). Renders nothing when it has no
@@ -46,7 +42,7 @@ class WorktreeRow extends StatelessWidget {
                 size: 15,
                 color: worktree.isPrimary
                     ? theme.colorScheme.outline
-                    : _kBrandBlue,
+                    : theme.colorScheme.primary,
               ),
               const SizedBox(width: 6),
               Flexible(

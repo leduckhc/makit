@@ -5,16 +5,12 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../app/theme.dart' show kMakitAccent;
 import '../widgets/glass.dart';
 import '../widgets/searchable_list_sheet.dart';
 import 'new_session_sheet.dart';
 import 'repo_chips.dart';
 import 'session_tile.dart';
 import 'worktree_row.dart';
-
-/// Brand green accent used for running/active glass affordances (shared token).
-const _kBrandBlue = kMakitAccent;
 
 /// A repo card on the home screen: header, stat strip, its worktree rows,
 /// drafts, and a "new session" footer (SPEC-19, moved from home_screen).
@@ -142,7 +138,7 @@ class RepoCard extends ConsumerWidget {
           context,
           PhosphorIconsLight.gitMerge,
           '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
-          color: _kBrandBlue,
+          color: theme.colorScheme.primary,
         ),
       );
     }
@@ -190,7 +186,9 @@ class RepoCard extends ConsumerWidget {
           onPressed: () => _newSession(context, ref),
           icon: const Icon(PhosphorIconsLight.plus, size: 18),
           label: const Text('New session'),
-          style: TextButton.styleFrom(foregroundColor: _kBrandBlue),
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.primary,
+          ),
         ),
       ),
     );

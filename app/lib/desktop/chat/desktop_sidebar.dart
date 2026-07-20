@@ -30,29 +30,33 @@ class DesktopSidebar extends ConsumerWidget {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
     final selected = ref.watch(selectedSessionProvider);
+    final cs = Theme.of(context).colorScheme;
 
-    return Column(
-      children: [
-        const _Header(),
-        Expanded(
-          child: repos.isEmpty
-              ? const _EmptySidebar()
-              : ListView(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  children: [
-                    for (final repo in repos)
-                      _RepoGroup(
-                        repo: repo,
-                        sessions: sessions.forProject(repo.id),
-                        selectedId: selected,
-                        onSelect: (id) => selectSessionExclusive(ref, id),
-                      ),
-                  ],
-                ),
-        ),
-        const Divider(height: 1),
-        _Footer(onOpenSettings: onOpenSettings),
-      ],
+    return Material(
+      color: cs.surfaceContainer,
+      child: Column(
+        children: [
+          const _Header(),
+          Expanded(
+            child: repos.isEmpty
+                ? const _EmptySidebar()
+                : ListView(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    children: [
+                      for (final repo in repos)
+                        _RepoGroup(
+                          repo: repo,
+                          sessions: sessions.forProject(repo.id),
+                          selectedId: selected,
+                          onSelect: (id) => selectSessionExclusive(ref, id),
+                        ),
+                    ],
+                  ),
+          ),
+          const Divider(height: 1),
+          _Footer(onOpenSettings: onOpenSettings),
+        ],
+      ),
     );
   }
 }
@@ -168,14 +172,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                       child: Row(
                         children: [
                           Icon(
-                            _expanded
-                                ? PhosphorIconsLight.caretDown
-                                : PhosphorIconsLight.caretRight,
-                            size: 16,
-                            color: theme.colorScheme.outline,
-                          ),
-                          const SizedBox(width: 2),
-                          Icon(
                             PhosphorIconsLight.folderStar,
                             size: 16,
                             color: theme.colorScheme.outline,
@@ -236,7 +232,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
             ),
           if (showMore)
             Padding(
-              padding: const EdgeInsets.fromLTRB(38, 2, 16, 4),
+              padding: const EdgeInsets.fromLTRB(32, 2, 16, 4),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: InkWell(
@@ -334,7 +330,7 @@ class _CompactMenuButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       iconSize: 16,
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-      icon: Icon(icon, size: 16, weight: 200),
+      icon: Icon(icon, size: 16),
       onPressed: () => _open(context),
     );
   }
@@ -436,9 +432,14 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
         MouseRegion(
           onEnter: (_) => setState(() => _hovering = true),
           onExit: (_) => setState(() => _hovering = false),
-          child: InkWell(
-            onFocusChange: (f) => setState(() => _focused = f),
-            onTap: () {
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onFocusChange: (f) => setState(() => _focused = f),
+                onTap: () {
               if (selectable) {
                 selectWorktree(
                   ref,
@@ -452,27 +453,29 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                 setState(() => _expanded = !_expanded);
               }
             },
-            child: Container(
-              color: worktreeSelected
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : null,
+            child: Ink(
+              decoration: BoxDecoration(
+                color: worktreeSelected
+                    ? theme.colorScheme.surfaceContainerHighest
+                    : null,
+                borderRadius: BorderRadius.circular(10),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
+                    padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
                     child: Row(
                       children: [
-                        const SizedBox(width: 8),
                         // Open PR → the merge symbol; otherwise the plain
                         // worktree/branch icon that predated the PR-centric
                         // redesign (still used by the draft-worktree tile and
                         // any non-open PR).
                         if (worktree.pr?.state.toUpperCase() == 'OPEN')
-                          const Icon(
+                          Icon(
                             PhosphorIconsLight.gitPullRequest,
                             size: 16,
-                            color: kRepoAccent,
+                            color: theme.colorScheme.primary,
                           )
                         else
                           Icon(
@@ -534,7 +537,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                   // PR number label (when present) followed by the low-emphasis
                   // branch age. Fixed height so the row always reserves its place.
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(46, 0, 16, 4),
+                    padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
                     child: SizedBox(
                       height: 16,
                       child: Align(
@@ -574,6 +577,8 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                   ),
                 ],
               ),
+            ),
+          ),
             ),
           ),
         ),
@@ -778,51 +783,60 @@ class _DraftWorktreeTile extends StatelessWidget {
     final createdAt = session.lastActivityAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(session.lastActivityAt)
         : null;
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        color: selected ? theme.colorScheme.surfaceContainerHighest : null,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 6, 16, 2),
-              child: Row(
-                children: [
-                  const SizedBox(width: 4),
-                  Icon(
-                    PhosphorIconsLight.gitBranch,
-                    size: 16,
-                    color: theme.colorScheme.outline,
-                  ),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'new worktree',
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              color: selected ? theme.colorScheme.surfaceContainerHighest : null,
+              borderRadius: BorderRadius.circular(10),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(38, 0, 16, 4),
-              child: SizedBox(
-                height: 16,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _branchAgeLabel(createdAt),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                      fontWeight: FontWeight.w300,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
+                  child: Row(
+                    children: [
+                      Icon(
+                        PhosphorIconsLight.gitBranch,
+                        size: 16,
+                        color: theme.colorScheme.outline,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'new worktree',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
+                  child: SizedBox(
+                    height: 16,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _branchAgeLabel(createdAt),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.outline,
+                          fontWeight: FontWeight.w300,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -863,22 +877,36 @@ class _SessionTile extends StatelessWidget {
         : (session.title.trim().isNotEmpty
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      selected: selected,
-      selectedTileColor: theme.colorScheme.surfaceContainerHighest,
-      contentPadding: EdgeInsets.only(left: indented ? 38 : 16, right: 12),
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-          if (session.status != SessionStatus.idle)
-            _StatusDot(status: session.status),
-        ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: ListTile(
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        selected: selected,
+        selectedTileColor: theme.colorScheme.surfaceContainerHighest,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        contentPadding: EdgeInsets.only(left: indented ? 24 : 8, right: 12),
+        title: Row(
+          children: [
+            // Leading status dot sized to the branch-icon column, so a session
+            // lines up under its worktree's icon and the title sits under the
+            // branch name. Idle sessions reserve the slot but show no dot.
+            SizedBox(
+              width: 16,
+              child: Center(
+                child: session.status == SessionStatus.idle
+                    ? const SizedBox.shrink()
+                    : _StatusDot(status: session.status),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+        onTap: onTap,
       ),
-      onTap: onTap,
     );
   }
 }
@@ -950,13 +978,17 @@ class _StatusDotState extends State<_StatusDot> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    // Palette-tuned status hues: theme roles where they exist (green primary,
+    // M3 error red, neutral outline), and softened ambers for the awaiting
+    // states so they sit with the neutral panel instead of shouting.
     final color = switch (widget.status) {
-      SessionStatus.running => kRepoAccent,
-      SessionStatus.awaitingInput => Colors.orange,
-      SessionStatus.awaitingApproval => Colors.deepOrange,
-      SessionStatus.error => Colors.red,
-      SessionStatus.exited => Colors.grey,
-      SessionStatus.idle => Colors.grey,
+      SessionStatus.running => cs.primary,
+      SessionStatus.awaitingInput => const Color(0xFFE0A72E),
+      SessionStatus.awaitingApproval => const Color(0xFFE07B39),
+      SessionStatus.error => cs.error,
+      SessionStatus.exited => cs.outline,
+      SessionStatus.idle => cs.outline,
     };
     Widget dot = Container(
       width: 8,
@@ -1008,7 +1040,7 @@ class _Footer extends ConsumerWidget {
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',
-              icon: const Icon(PhosphorIconsLight.gearSix),
+              icon: const Icon(PhosphorIconsLight.gearSix, size: 18),
               onPressed: onOpenSettings,
             ),
         ],

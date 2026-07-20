@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Sidebar cleanup mockups</title>
+<style>
+  :root{
+    /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
+    --bg:#171717;              /* scaffold surface (chat pane bg) */
+    --container:#242424;       /* sidebar bg (surfaceContainer) */
+    --container-high:#2E2E2E;
+    --container-highest:#383838;
+    --text:#F5F5F5;
+    --muted:#9E9E9E;           /* onSurfaceVariant / outline */
+    --hairline:#333333;        /* outlineVariant */
+    --primary:#7EE8A6;         /* M3 dark primary (seed-derived green) */
+    --accent:#4ADE80;          /* brand green */
+    --orange:#E8A33D;          /* tuned (was Colors.orange) */
+    --red:#E5544B;             /* tuned (was Colors.red) */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px;
+  }
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:760px}
+  .issue{margin:0 0 40px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .issue > header{padding:16px 20px;border-bottom:1px solid var(--hairline)}
+  .issue h2{font-size:15px;margin:0 0 4px;font-weight:600}
+  .issue h2 .tag{font-size:11px;color:#0e0e0e;background:var(--accent);border-radius:6px;padding:2px 7px;margin-right:8px;font-weight:700;vertical-align:middle}
+  .issue p{margin:0;color:var(--muted);font-size:13px}
+  .pair{display:flex;gap:0}
+  .col{flex:1;padding:20px;min-width:0}
+  .col:first-child{border-right:1px dashed var(--hairline)}
+  .col > .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .col.before > .lbl{color:#c98b8b}
+  .col.after  > .lbl{color:#7fca9a}
+
+  /* The sidebar canvas: chat bg on the right so the sidebar edge shows */
+  .canvas{display:flex;background:var(--bg);border-radius:10px;overflow:hidden;border:1px solid #000}
+  .sb{width:270px;background:var(--container);padding:8px 0;flex:0 0 auto}
+  .chat{flex:1;min-height:0}
+
+  .repo{display:flex;align-items:center;gap:6px;padding:10px 8px 4px 16px}
+  .repo .name{font-size:13px;letter-spacing:.04em;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .icon{width:16px;height:16px;flex:0 0 auto;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
+  .icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.4}
+  .icon.accent{color:var(--primary)}
+  .plus,.dots,.gear{color:var(--muted);cursor:default}
+  .muted{color:var(--muted)}
+
+  .wt{padding:6px 16px 2px}
+  .wt .line{display:flex;align-items:center;gap:6px}
+  .wt .branch{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wt .sub{font-size:11px;color:var(--muted);font-weight:300;margin-top:1px}
+  .star{width:8px;height:8px;color:var(--muted)}
+  .star svg{width:8px;height:8px;fill:currentColor;stroke:none}
+
+  .sess{display:flex;align-items:center;gap:8px;font-size:13px;padding:5px 12px 5px 0}
+  .sess .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dot.run{background:var(--primary)}
+  .dot.wait{background:var(--orange)}
+  .dot.err{background:var(--red)}
+  .pulse{animation:p 1.2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* selection styles */
+  .sel-square{background:var(--container-highest)}
+  .sel-pill{background:var(--container-highest);border-radius:9px}
+  .diff{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .diff .add{color:#3FB950}.diff .del{color:#F85149}
+
+  .footer{display:flex;align-items:center;gap:8px;padding:8px 8px 4px 12px;border-top:1px solid var(--hairline);margin-top:8px}
+  .footer .ep{flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .conn{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+  .conn .d{width:7px;height:7px;border-radius:50%;background:var(--primary)}
+
+  .note{font-size:11.5px;color:var(--muted);margin-top:10px;padding-left:2px}
+  .ruler{position:relative}
+  /* thin red guides to expose misalignment in BEFORE */
+  .guide{position:absolute;top:0;bottom:0;width:1px;background:rgba(229,84,75,.55)}
+  .g16{left:16px}.g20{left:20px}.g24{left:24px}.g32{left:32px}.g38{left:38px}.g46{left:46px}.g48{left:48px}.g54{left:54px}
+  .gok{background:rgba(127,202,154,.5)}
+  .combined{max-width:300px}
+</style>
+</head>
+<body>
+  <h1>Sidebar cleanup — Before / After</h1>
+  <p class="sub">Rendered with the app's real M3 neutral palette (dark). Each block isolates one issue. Thin vertical guides mark left-edge alignment (<span style="color:#e5544b">red&nbsp;=&nbsp;current, misaligned</span> / <span style="color:#7fca9a">green&nbsp;=&nbsp;proposed grid</span>).</p>
+
+  <!-- ISSUE 1 -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#1</span>Indentation ladder</h2>
+      <p>Today the icon/label left edges don't line up: worktree icon at 24px, draft at 20px, sub-labels at 46 vs 38px. Proposed: one grid — repo&nbsp;16 · worktree&nbsp;32 · session/sub‑text&nbsp;48.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before</div>
+        <div class="canvas"><div class="sb ruler">
+          <span class="guide g16"></span><span class="guide g20"></span><span class="guide g24"></span><span class="guide g46"></span><span class="guide g38"></span>
+          <div class="repo"><span class="icon" style="margin-left:0">__FOLDER__</span><span class="name">makit</span></div>
+          <div class="wt"><div class="line" style="padding-left:8px">__BRANCH_ACCENT__<span class="branch">feature/ux-ui</span></div><div class="sub" style="padding-left:30px">PR #42 • 3d ago</div></div>
+          <div class="sess" style="padding-left:38px"><span class="t">design tokens</span><span class="dot run"></span></div>
+          <div class="wt"><div class="line" style="padding-left:4px">__BRANCH__<span class="branch">fix/login (draft)</span></div><div class="sub" style="padding-left:22px">just now</div></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Icons at 24 / 20px, sub-labels at 46 / 38px — nothing shares an edge.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After</div>
+        <div class="canvas"><div class="sb ruler">
+          <span class="guide gok g16"></span><span class="guide gok g32"></span><span class="guide gok g54"></span>
+          <div class="repo"><span class="icon">__FOLDER__</span><span class="name">makit</span></div>
+          <div class="wt" style="padding-left:32px;padding-right:16px"><div class="line">__BRANCH_ACCENT__<span class="branch">feature/ux-ui</span></div><div class="sub" style="padding-left:22px">PR #42 • 3d ago</div></div>
+          <div class="sess" style="padding-left:54px"><span class="t">design tokens</span><span class="dot run"></span></div>
+          <div class="wt" style="padding-left:32px;padding-right:16px"><div class="line">__BRANCH__<span class="branch">fix/login (draft)</span></div><div class="sub" style="padding-left:22px">just now</div></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Sub-label &amp; nested sessions align under the <strong>branch name</strong> (54px), not the icon. Grid: repo&nbsp;16 · worktree&nbsp;icon&nbsp;32 · branch/sub/session&nbsp;54.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 2 -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#2</span>Selection highlight</h2>
+      <p>Selected rows use a full-bleed, square block that runs edge-to-edge into the divider. Proposed: an inset, rounded M3 “pill”.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before</div>
+        <div class="canvas"><div class="sb">
+          <div class="repo"><span class="icon">__FOLDER__</span><span class="name">makit</span></div>
+          <div class="wt sel-square"><div class="line" style="padding-left:8px">__BRANCH_ACCENT__<span class="branch">feature/ux-ui</span></div><div class="sub" style="padding-left:30px">PR #42 • 3d ago</div></div>
+          <div class="sess sel-square" style="padding-left:38px"><span class="t">design tokens</span><span class="dot run"></span></div>
+          <div class="sess" style="padding-left:38px"><span class="t muted">idle session</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Square, edge-to-edge; visually heavy, bleeds to the panel edge.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After</div>
+        <div class="canvas"><div class="sb">
+          <div class="repo"><span class="icon">__FOLDER__</span><span class="name">makit</span></div>
+          <div style="padding:0 8px"><div class="sel-pill" style="padding:6px 16px 6px 24px"><div class="line">__BRANCH_ACCENT__<span class="branch">feature/ux-ui</span></div><div class="sub" style="padding-left:22px">PR #42 • 3d ago</div></div></div>
+          <div style="padding:0 8px"><div class="sess sel-pill" style="padding-left:46px;padding-right:12px"><span class="t">design tokens</span><span class="dot run"></span></div></div>
+          <div class="sess" style="padding-left:54px"><span class="t muted">idle session</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Inset (8px side margin) rounded pill; the row text stays put, sub-label sits under the branch name.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 3 -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#3</span>Row rhythm &amp; empty sub-row</h2>
+      <p>Worktrees are 2-line rows with an <em>always-reserved</em> sub-row (blank when there's no PR/age); sessions are 1-line. Proposed: only render the sub-row when it has content, and keep a consistent line height.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before</div>
+        <div class="canvas"><div class="sb">
+          <div class="repo"><span class="icon">__FOLDER__</span><span class="name">makit</span></div>
+          <div class="wt"><div class="line" style="padding-left:8px">__BRANCH__<span class="branch">main</span> <span class="star">__STAR__</span></div><div class="sub" style="padding-left:30px;min-height:16px">&nbsp;</div></div>
+          <div class="wt"><div class="line" style="padding-left:8px">__BRANCH__<span class="branch">chore/deps</span></div><div class="sub" style="padding-left:30px;min-height:16px">&nbsp;</div></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Every worktree reserves a blank 16px line → dead space, uneven density.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After</div>
+        <div class="canvas"><div class="sb">
+          <div class="repo"><span class="icon">__FOLDER__</span><span class="name">makit</span></div>
+          <div class="wt" style="padding-left:32px;padding-right:16px;padding-bottom:6px"><div class="line">__BRANCH__<span class="branch">main</span> <span class="star">__STAR__</span></div></div>
+          <div class="wt" style="padding-left:32px;padding-right:16px;padding-bottom:6px"><div class="line">__BRANCH__<span class="branch">chore/deps</span></div></div>
+        </div><div class="chat"></div></div>
+        <div class="note">No PR/age → single tight line. Sub-row appears only when it carries info.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 4 -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#4</span>Status-dot colors</h2>
+      <p>Dots use raw <code>Colors.orange / red / grey</code> (saturated Material-2 colors) that clash on the neutral panel. Proposed: theme-tuned status hues that sit with the palette.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before</div>
+        <div class="canvas"><div class="sb">
+          <div class="sess" style="padding-left:38px"><span class="t">running task</span><span class="dot" style="background:#4ADE80"></span></div>
+          <div class="sess" style="padding-left:38px"><span class="t">awaiting input</span><span class="dot" style="background:#FF9800"></span></div>
+          <div class="sess" style="padding-left:38px"><span class="t">crashed</span><span class="dot" style="background:#F44336"></span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Loud primary-color dots; orange/red feel foreign to the greys.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After</div>
+        <div class="canvas"><div class="sb">
+          <div class="sess" style="padding-left:48px"><span class="t">running task</span><span class="dot run pulse"></span></div>
+          <div class="sess" style="padding-left:48px"><span class="t">awaiting input</span><span class="dot wait"></span></div>
+          <div class="sess" style="padding-left:48px"><span class="t">crashed</span><span class="dot err"></span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Slightly desaturated, palette-tuned; running keeps a gentle pulse.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ISSUE 5 -->
+  <section class="issue">
+    <header>
+      <h2><span class="tag">#5</span>Icon sizing (footer)</h2>
+      <p>Most sidebar icons are 16px, but the footer settings gear renders at the default 24px — it visually pops out. Proposed: normalize to the 16–18px sidebar scale.</p>
+    </header>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Before</div>
+        <div class="canvas"><div class="sb" style="display:flex;flex-direction:column;justify-content:flex-end">
+          <div class="footer"><span class="conn"><span class="d"></span>connected</span><span class="ep">127.0.0.1:9787</span><span class="gear" style="width:24px;height:24px">__GEAR24__</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">24px gear dwarfs the 16px icons above it.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">After</div>
+        <div class="canvas"><div class="sb" style="display:flex;flex-direction:column;justify-content:flex-end">
+          <div class="footer"><span class="conn"><span class="d"></span>connected</span><span class="ep">127.0.0.1:9787</span><span class="gear">__GEAR__</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">18px gear — consistent with the rest of the sidebar.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMBINED -->
+  <section class="issue">
+    <header>
+      <h2>Everything together</h2>
+      <p>The proposed sidebar with all five fixes applied.</p>
+    </header>
+    <div class="col after" style="border:none">
+      <div class="lbl">Proposed</div>
+      <div class="canvas" style="max-width:320px">
+        <div class="sb">
+          <div class="repo"><span class="icon">__FOLDER__</span><span class="name">makit</span><span class="dots">__DOTS__</span><span class="plus">__PLUS__</span></div>
+
+          <div style="padding:0 8px"><div class="sel-pill" style="padding:6px 16px 6px 24px"><div class="line">__BRANCH_ACCENT__<span class="branch">feature/ux-ui</span></div><div class="sub" style="padding-left:22px">PR #42 • 3d ago</div></div></div>
+          <div class="sess" style="padding-left:54px"><span class="t">design tokens</span><span class="dot run pulse"></span></div>
+
+          <div class="wt" style="padding-left:32px;padding-right:16px;padding-bottom:6px"><div class="line">__BRANCH__<span class="branch">main</span> <span class="star">__STAR__</span></div></div>
+
+          <div class="wt" style="padding-left:32px;padding-right:16px"><div class="line">__BRANCH__<span class="branch">fix/login</span></div><div class="sub" style="padding-left:22px">yesterday</div></div>
+          <div class="sess" style="padding-left:54px"><span class="t">auth flow</span><span class="dot wait"></span></div>
+          <div class="sess" style="padding-left:54px"><span class="t muted">stopped run</span><span class="dot err"></span></div>
+
+          <div class="footer"><span class="conn"><span class="d"></span>connected</span><span class="ep">127.0.0.1:9787</span><span class="gear">__GEAR__</span></div>
+        </div>
+        <div class="chat"></div>
+      </div>
+    </div>
+  </section>
+
+<script>
+// Inline SVG glyphs (approximate Phosphor Light) injected into placeholders.
+const G = {
+  __FOLDER__:'<svg viewBox="0 0 24 24"><path d="M3 6h6l2 2h10v10H3z"/></svg>',
+  __BRANCH__:'<span class="icon"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 8.2v7.6M8 8q10 0 10 2"/></svg></span>',
+  __BRANCH_ACCENT__:'<span class="icon accent"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M6 8.2v3q0 4.8 9.8 6.6M18 8.2v7.6"/></svg></span>',
+  __STAR__:'<svg viewBox="0 0 24 24"><path d="M12 2l3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9z"/></svg>',
+  __DOTS__:'<span class="icon"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg></span>',
+  __PLUS__:'<span class="icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>',
+  __GEAR__:'<span class="icon" style="width:18px;height:18px"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></svg></span>',
+  __GEAR24__:'<span class="icon" style="width:24px;height:24px;color:var(--muted)"><svg viewBox="0 0 24 24" style="width:24px;height:24px"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></svg></span>',
+};
+document.body.innerHTML = document.body.innerHTML.replace(/__[A-Z0-9_]+__/g, m => G[m] || m);
+</script>
+</body>
+</html>

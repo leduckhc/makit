@@ -1,63 +1,57 @@
 import 'package:flutter/material.dart';
 
-/// makit brand accent — logo green. The single hue in an otherwise neutral
-/// (chroma-0) palette. See design-system/makit/MASTER.md.
+/// makit brand seed — logo green (≈150° hue). Material 3's
+/// [ColorScheme.fromSeed] derives the palette (primary/secondary/tertiary and
+/// their containers, error, on-colors) from this single seed.
 const kMakitAccent = Color(0xFF4ADE80);
-const _onAccent = Color(0xFF06210F);
 
-/// Neutral (zero-hue) palette — identical character in light & dark; no blue.
-const _bgLight = Color(0xFFFAFAFA);
-const _surfaceLight = Color(0xFFFFFFFF);
-const _textLight = Color(0xFF1B1B1B);
+// Neutral (chroma-0) surface ramp. Stock M3 tints the neutral surfaces toward
+// the seed (a faint green); we override just the surface tones back to pure
+// grey so the background reads neutral, while keeping M3's *stepped* elevation
+// hierarchy (Lowest → Highest) and the seed-derived primary/accent colors.
+const _surfaceLight = Color(0xFFFAFAFA); // scaffold background
+const _containerLowestLight = Color(0xFFFFFFFF);
+const _containerLowLight = Color(0xFFF3F3F3);
+const _containerLight = Color(0xFFEDEDED);
+const _containerHighLight = Color(0xFFE7E7E7);
+const _containerHighestLight = Color(0xFFE1E1E1);
+const _onSurfaceLight = Color(0xFF1B1B1B);
 const _mutedLight = Color(0xFF636363);
 const _hairlineLight = Color(0xFFDEDEDE);
 
-const _bgDark = Color(0xFF171717);
-const _surfaceDark = Color(0xFF242424);
-const _textDark = Color(0xFFF5F5F5);
+const _surfaceDark = Color(0xFF171717); // scaffold background
+const _containerLowestDark = Color(0xFF121212);
+const _containerLowDark = Color(0xFF1E1E1E);
+const _containerDark = Color(0xFF242424);
+const _containerHighDark = Color(0xFF2E2E2E);
+const _containerHighestDark = Color(0xFF383838);
+const _onSurfaceDark = Color(0xFFF5F5F5);
 const _mutedDark = Color(0xFF9E9E9E);
 const _hairlineDark = Color(0xFF333333);
 
-/// Composer box surface — deliberately a touch darker than the transcript
-/// background so the input group reads as one coherent, static panel. The
-/// theme's `surfaceContainer*` tokens all collapse onto `surface` (which is
-/// *lighter* than the scaffold bg here), so there is no existing token for this
-/// darker-than-content tone; these live alongside the palette instead of as
-/// magic literals in the composer.
-const kComposerBoxLight = Color(0xFFEFEFEF);
-const kComposerBoxDark = Color(0xFF0E0E0E);
-
 ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final bg = dark ? _bgDark : _bgLight;
-  final surface = dark ? _surfaceDark : _surfaceLight;
-  // Accent is per-mode: bright logo green on dark (≈9:1), a darker green on
-  // light so accent-as-text/icon clears WCAG 4.5:1 on #FAFAFA (#15803D = 4.8:1).
-  final accent = dark ? kMakitAccent : const Color(0xFF15803D);
-  final onAccent = dark ? _onAccent : Colors.white;
-  final scheme =
-      ColorScheme.fromSeed(
-        seedColor: kMakitAccent,
-        brightness: brightness,
-      ).copyWith(
-        primary: accent,
-        onPrimary: onAccent,
-        // Neutral surfaces (override the seed's green-tinted greys).
-        surface: bg,
-        onSurface: dark ? _textDark : _textLight,
-        onSurfaceVariant: dark ? _mutedDark : _mutedLight,
-        outline: dark ? _mutedDark : _mutedLight,
-        outlineVariant: dark ? _hairlineDark : _hairlineLight,
-        surfaceContainerLowest: bg,
-        surfaceContainerLow: surface,
-        surfaceContainer: surface,
-        surfaceContainerHigh: surface,
-        surfaceContainerHighest: surface,
-      );
+  final scheme = ColorScheme.fromSeed(
+    seedColor: kMakitAccent,
+    brightness: brightness,
+  ).copyWith(
+    // Neutral (C=0) surface ramp — keeps M3 elevation stepping, drops the tint.
+    surface: dark ? _surfaceDark : _surfaceLight,
+    onSurface: dark ? _onSurfaceDark : _onSurfaceLight,
+    onSurfaceVariant: dark ? _mutedDark : _mutedLight,
+    outline: dark ? _mutedDark : _mutedLight,
+    outlineVariant: dark ? _hairlineDark : _hairlineLight,
+    surfaceContainerLowest: dark ? _containerLowestDark : _containerLowestLight,
+    surfaceContainerLow: dark ? _containerLowDark : _containerLowLight,
+    surfaceContainer: dark ? _containerDark : _containerLight,
+    surfaceContainerHigh: dark ? _containerHighDark : _containerHighLight,
+    surfaceContainerHighest: dark
+        ? _containerHighestDark
+        : _containerHighestLight,
+  );
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    scaffoldBackgroundColor: bg,
     textTheme: const TextTheme().apply(fontFamily: 'SF Pro Text'),
   );
 }
