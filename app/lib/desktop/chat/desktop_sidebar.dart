@@ -39,6 +39,9 @@ class DesktopSidebar extends ConsumerWidget {
       child: Column(
         children: [
           const _Header(),
+          // Titlebar bottom border, continued across the resize handle and the
+          // pane title strip so the whole top band has one hairline.
+          const Divider(height: 1),
           Expanded(
             child: repos.isEmpty
                 ? const _EmptySidebar()

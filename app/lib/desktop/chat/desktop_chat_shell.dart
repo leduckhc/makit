@@ -68,6 +68,9 @@ class _SidebarResizeHandle extends ConsumerWidget {
               // sidebar header and the pane title (all surfaceContainer) — no
               // gap between the two coloured bands.
               Container(height: kTitleBarStripHeight, color: cs.surfaceContainer),
+              // Titlebar bottom border across the handle, connecting the
+              // sidebar header's hairline to the pane title strip's (no gap).
+              const Divider(height: 1),
               // Below the band: hairline flush against the sidebar's edge; the
               // rest of the grab strip stays transparent (chat bg) so no gap
               // shows on the sidebar.
