@@ -23,7 +23,7 @@ const double kSidebarDefaultWidth = 320;
 
 /// Height of the top drag strip that stands in for the hidden OS titlebar
 /// (matches the standard macOS titlebar height, clearing the traffic lights).
-const double kTitleBarStripHeight = 28;
+const double kTitleBarStripHeight = 32;
 
 /// Left inset that clears the macOS traffic-light buttons overlaying the
 /// window's top-left corner — used by the sidebar fold button and, when the
