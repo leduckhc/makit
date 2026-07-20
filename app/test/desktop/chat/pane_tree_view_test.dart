@@ -698,18 +698,22 @@ void main() {
       await tester.tap(find.text('Quit session'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
-      await tester.pump(); // begin awaiting the kill request
-
-      // Pane closes only after the kill resolves (Quit = kill + close pane).
-      conn.killCompleted.complete(const {});
       await tester.pumpAndSettle();
 
+      // Optimistic: the pane is already closed even though the kill request is
+      // still in flight (not yet completed).
+      expect(conn.killCompleted.isCompleted, isFalse);
       expect(
         c.read(paneTreeControllerProvider).current,
         isNull,
-        reason: 'Quit closes the pane; the sole pane drops to empty',
+        reason: 'Quit closes the pane immediately, before the server replies',
       );
       expect(find.text('Select or start a session'), findsOneWidget);
+
+      // Let the background kill resolve so no pending future outlives the test.
+      conn.killCompleted.complete(const {});
+      await tester.pumpAndSettle();
+      expect(c.read(paneTreeControllerProvider).current, isNull);
     });
   });
 

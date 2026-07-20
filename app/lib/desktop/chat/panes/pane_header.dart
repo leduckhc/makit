@@ -177,28 +177,32 @@ class SessionActionsMenu extends ConsumerWidget {
     );
     if (ok != true || !context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    // Capture notifiers before the async gap so the pane/selection cleanup
-    // still runs if this menu's widget is disposed (e.g. its pane closed)
-    // while killing.
+    // Capture notifiers before the async gap: the optimistic close disposes
+    // this menu's widget, so nothing below may touch `ref`/`context`.
     final store = ref.read(storeControllerProvider.notifier);
     final panes = ref.read(paneTreeControllerProvider.notifier);
     final selection = ref.read(selectedSessionProvider.notifier);
+
+    // Optimistic: close the pane now, don't wait on the server. Quit = close
+    // this pane + kill the session. Closing the last pane clears the tree to
+    // the empty placeholder; a split collapses into its sibling.
+    if (leafId != null) {
+      panes.setActive(leafId!);
+      panes.closeActive();
+    }
+    // Drop any *other* panes still bound to the session so it never lingers in
+    // another worktree's layout, and clear the sidebar highlight if it still
+    // points here (never stomp a selection the user has since moved elsewhere).
+    panes.unbindSession(sessionId);
+    if (selection.state == sessionId) {
+      selection.state = null;
+    }
+
+    // Fire the kill in the background. The sidebar reconciles from server
+    // snapshots, so on failure the session simply stays/reappears there; just
+    // surface the error.
     try {
       await store.killSession(sessionId);
-      // Quit = close this pane too. Closing the last pane clears the tree to
-      // the empty placeholder; in a split it collapses into the sibling.
-      if (leafId != null) {
-        panes.setActive(leafId!);
-        panes.closeActive();
-      }
-      // Drop any *other* panes still bound to the now-dead session back to
-      // their empty state so it never lingers in another worktree's layout.
-      panes.unbindSession(sessionId);
-      // Clear the sidebar highlight only if it still points at this session —
-      // never stomp a selection the user has since moved elsewhere.
-      if (selection.state == sessionId) {
-        selection.state = null;
-      }
     } catch (e) {
       if (messenger.mounted) {
         messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
