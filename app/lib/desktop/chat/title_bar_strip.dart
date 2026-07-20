@@ -57,8 +57,10 @@ class TitleBarStrip extends StatelessWidget {
               top: 0,
               bottom: 0,
               // Reserve room for the trailing control so a long branch label
-              // ellipsises before it instead of sliding under the button.
-              right: trailing != null ? 40 : 8,
+              // ellipsises before it instead of sliding under the button. The
+              // OpenInIdeButton footprint is ~66px (Positioned right:4 + right
+              // padding:8 + two 26px segments + 2px gap); 72 adds a small gap.
+              right: trailing != null ? 72 : 8,
               // IgnorePointer so the label doesn't steal the window-drag zone
               // beneath it (it is a passive title, not an interactive control).
               child: IgnorePointer(
