@@ -70,5 +70,30 @@ void main() {
       expect(find.byIcon(Icons.menu), findsOneWidget);
       expect(find.text('feat/login'), findsOneWidget);
     });
+
+    testWidgets('renders a trailing control, tappable (not IgnorePointer)', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        const TitleBarStrip(
+          title: Text('feat/login'),
+          trailing: Icon(Icons.open_in_new),
+        ),
+      );
+
+      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      // The trailing control stays interactive (no active IgnorePointer
+      // wrapping it), unlike the passive title label.
+      expect(
+        find.ancestor(
+          of: find.byIcon(Icons.open_in_new),
+          matching: find.byWidgetPredicate(
+            (w) => w is IgnorePointer && w.ignoring,
+          ),
+        ),
+        findsNothing,
+      );
+    });
   });
 }

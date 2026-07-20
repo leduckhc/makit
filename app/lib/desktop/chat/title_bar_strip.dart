@@ -20,11 +20,17 @@ class TitleBarStrip extends StatelessWidget {
     super.key,
     this.leading,
     this.title,
+    this.trailing,
     this.titleInset = kTrafficLightInset,
   });
 
   /// Optional control pinned past the traffic lights (null → drag strip only).
   final Widget? leading;
+
+  /// Optional interactive control pinned to the right edge of the strip (e.g.
+  /// the "open in editor" button). Vertically centred; unlike [title] it stays
+  /// tappable rather than being wrapped in an [IgnorePointer].
+  final Widget? trailing;
 
   /// Optional label shown on the traffic-light row (e.g. the current worktree /
   /// branch), vertically centred and left-aligned at [titleInset].
@@ -50,7 +56,11 @@ class TitleBarStrip extends StatelessWidget {
               left: titleInset,
               top: 0,
               bottom: 0,
-              right: 8,
+              // Reserve room for the trailing control so a long branch label
+              // ellipsises before it instead of sliding under the button. The
+              // OpenInIdeButton footprint is ~66px (Positioned right:4 + right
+              // padding:8 + two 26px segments + 2px gap); 72 adds a small gap.
+              right: trailing != null ? 72 : 8,
               // IgnorePointer so the label doesn't steal the window-drag zone
               // beneath it (it is a passive title, not an interactive control).
               child: IgnorePointer(
@@ -65,6 +75,13 @@ class TitleBarStrip extends StatelessWidget {
               // Centre the control vertically so it stays put regardless of the
               // strip height or call site (sidebar shown vs hidden).
               child: Align(alignment: Alignment.centerLeft, child: leading!),
+            ),
+          if (trailing != null)
+            Positioned(
+              right: 4,
+              top: 0,
+              bottom: 0,
+              child: Align(alignment: Alignment.centerRight, child: trailing!),
             ),
         ],
       ),

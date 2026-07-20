@@ -67,6 +67,18 @@ const PreferenceEntry<double> textScalePreference = PreferenceEntry(
   decode: _decodeDouble,
 );
 
+/// The editor the title-bar "Open in…" split button opens by default — the last
+/// one the user picked from its dropdown. Stored as an [IdeTarget] name; the
+/// button falls back to VS Code for an unknown/legacy value. Internal
+/// bookkeeping (a remembered choice, not a user-facing setting).
+const PreferenceEntry<String> preferredIdePreference = PreferenceEntry(
+  id: 'chat.preferredIde',
+  defaultValue: 'vscode',
+  encode: _encodeString,
+  decode: _decodeString,
+  internal: true,
+);
+
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
@@ -76,6 +88,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   sidebarWidthPreference,
   sidebarStartCollapsedPreference,
   textScalePreference,
+  preferredIdePreference,
 ];
 
 Object? _encodeThemeMode(ThemeMode value) => value.name;
