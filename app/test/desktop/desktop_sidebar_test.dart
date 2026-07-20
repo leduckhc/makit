@@ -211,9 +211,21 @@ Future<void> _openWorktreeMenu(WidgetTester tester, String branchLabel) async {
 Future<void> _openRepoMenu(WidgetTester tester, String repoName) async {
   final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
   await gesture.addPointer(location: Offset.zero);
-  await gesture.moveTo(tester.getCenter(find.text(repoName)));
+  await gesture.moveTo(tester.getCenter(find.text(repoName.toUpperCase())));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('Repo actions'));
+  await tester.pumpAndSettle();
+  await gesture.removePointer();
+  await tester.pumpAndSettle();
+}
+
+/// Hover the repo header row and tap its (hover-only) `+` new-worktree button.
+Future<void> _tapNewWorktree(WidgetTester tester, String repoName) async {
+  final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+  await gesture.addPointer(location: Offset.zero);
+  await gesture.moveTo(tester.getCenter(find.text(repoName.toUpperCase())));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byTooltip('New worktree'));
   await tester.pumpAndSettle();
   await gesture.removePointer();
   await tester.pumpAndSettle();
@@ -242,7 +254,7 @@ void main() {
       sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
     );
 
-    expect(find.text('alpha'), findsOneWidget);
+    expect(find.text('ALPHA'), findsOneWidget);
     expect(find.text('feat/login'), findsOneWidget);
     expect(find.text('Fix login bug'), findsOneWidget);
     // Only the worktree diff chip now (the repo-rollup aggregate was removed).
@@ -436,12 +448,12 @@ void main() {
     expect(find.text('feat/login'), findsOneWidget);
 
     // Tapping the repo name row collapses the whole group.
-    await tester.tap(find.text('alpha'));
+    await tester.tap(find.text('ALPHA'));
     await tester.pumpAndSettle();
     expect(find.text('feat/login'), findsNothing);
 
     // Tapping again re-expands it.
-    await tester.tap(find.text('alpha'));
+    await tester.tap(find.text('ALPHA'));
     await tester.pumpAndSettle();
     expect(find.text('feat/login'), findsOneWidget);
   });
@@ -482,8 +494,7 @@ void main() {
       sessions: const [],
     );
 
-    await tester.tap(find.byTooltip('New worktree'));
-    await tester.pumpAndSettle();
+    await _tapNewWorktree(tester, 'alpha');
 
     // A bare spawn (pending draft, no worktree on disk) is issued for the repo.
     expect(store.spawned, ['p1']);
@@ -507,8 +518,7 @@ void main() {
         fail: true,
       );
 
-      await tester.tap(find.byTooltip('New worktree'));
-      await tester.pumpAndSettle();
+      await _tapNewWorktree(tester, 'alpha');
 
       expect(store.spawned, ['p1']);
       expect(find.textContaining('New worktree failed'), findsOneWidget);

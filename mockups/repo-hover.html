@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Repo/worktree hover consistency</title>
+<style>
+  :root{--bg:#171717;--container:#242424;--container-highest:#383838;--text:#F5F5F5;--muted:#9E9E9E;--hairline:#333;--primary:#7EE8A6}
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;font-size:14px;padding:32px 24px 80px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 26px;max-width:820px}
+  .issue{margin:0 0 32px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .issue > header{padding:14px 20px;border-bottom:1px solid var(--hairline)}
+  .issue h2{font-size:15px;margin:0;font-weight:600}
+  .tag{font-size:11px;color:#0e0e0e;border-radius:6px;padding:2px 8px;margin-right:8px;font-weight:700}
+  .tag.b{background:#c98b8b}.tag.a{background:#7fca9a}
+  .row2{display:flex;flex-wrap:wrap}
+  .col{flex:1;min-width:300px;padding:22px}
+  .col + .col{border-left:1px dashed var(--hairline)}
+  .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .canvas{display:flex;background:var(--bg);border-radius:10px;overflow:hidden;border:1px solid #000}
+  .sb{width:270px;background:var(--container);padding:8px 0;flex:0 0 auto}
+  .chat{flex:1}
+  .icon{flex:0 0 auto;color:var(--muted);display:inline-flex;align-items:center}
+  .icon svg{stroke:currentColor;fill:none;stroke-width:1.4}
+  .icon.p{color:var(--primary)}
+  .hoverfill{background:rgba(255,255,255,.06)}
+
+  /* guides to expose the left/right edges of each hover shape */
+  .sb{position:relative}
+  .g{position:absolute;top:0;bottom:0;width:1px}
+  .g.l8{left:8px;background:rgba(127,202,154,.5)}
+  .g.r8{right:8px;background:rgba(127,202,154,.5)}
+  .g.l16{left:16px;background:rgba(229,84,75,.55)}
+
+  /* BEFORE repo header: full width-ish, radius 6, not inset */
+  .repoB{display:flex;align-items:center;gap:6px;margin:12px 8px 2px 0;padding:4px 8px 4px 16px;border-radius:6px}
+  .repoB .nm{flex:1;font-size:13px;letter-spacing:.6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  /* AFTER repo header: inset 8, radius 10 (matches worktree pill) */
+  .repoA{display:flex;align-items:center;gap:8px;margin:10px 8px 2px 8px;padding:5px 8px;border-radius:10px}
+  .repoA .nm{flex:1;font-size:11px;letter-spacing:.11em;text-transform:uppercase;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .caret{color:var(--muted)}
+  .rbtn{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;color:var(--muted)}
+  .rbtn.hot{background:rgba(255,255,255,.10)}
+
+  /* worktree pill: inset 8, radius 10 */
+  .wt{margin:1px 8px;padding:6px 8px 6px 24px;border-radius:10px}
+  .wt .line{display:flex;align-items:center;gap:6px}
+  .wt .br{font-size:13px}
+  .wt .sub{font-size:11px;color:var(--muted);font-weight:300;padding-left:22px}
+  .sess{display:flex;align-items:center;gap:6px;font-size:13px;margin:0 8px;padding:5px 12px 5px 24px;border-radius:10px}
+  .sess .dot{width:8px;height:8px;border-radius:50%;background:var(--primary)}
+  .sess .t{flex:1}
+  .note{font-size:11.5px;color:var(--muted);margin-top:12px}
+  .key{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:5px}
+</style>
+</head>
+<body>
+  <h1>Repo header hover — match the worktree pills</h1>
+  <p class="sub">Today the repo header's hover is a wider, less-rounded, non-inset splash; worktree/session rows are inset rounded pills. Guides: <span style="color:#e5544b">red = repo hover left edge (16px)</span>, <span style="color:#7fca9a">green = the pill inset (8px both sides)</span>. Everything is shown in its hover state.</p>
+
+  <section class="issue">
+    <header><h2><span class="tag b">BEFORE</span>Inconsistent</h2></header>
+    <div class="row2">
+      <div class="col">
+        <div class="lbl">Repo header + rows, all hovered</div>
+        <div class="canvas"><div class="sb">
+          <span class="g l16"></span><span class="g l8"></span><span class="g r8"></span>
+          <div class="repoB hoverfill"><span class="icon">__FOLDERSTAR__</span><span class="nm">makit</span></div>
+          <div class="wt hoverfill"><div class="line">__BRANCH_P__<span class="br">feature/ux-ui</span></div><div class="sub">PR #42 • 3d ago</div></div>
+          <div class="sess hoverfill"><span class="dot"></span><span class="t">design tokens</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Repo hover: starts at <strong>16px</strong>, runs to the right edge, radius <strong>6</strong>.<br>Worktree/session hover: inset <strong>8px</strong> both sides, radius <strong>10</strong>. → mismatched width, inset &amp; corner.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="issue">
+    <header><h2><span class="tag a">AFTER</span>Consistent</h2></header>
+    <div class="row2">
+      <div class="col">
+        <div class="lbl">All hovers share the same pill geometry</div>
+        <div class="canvas"><div class="sb">
+          <span class="g l8"></span><span class="g r8"></span>
+          <div class="repoA hoverfill"><span class="icon">__FOLDER__</span><span class="nm">makit</span><span class="caret icon">__CARETDOWN__</span><span class="rbtn icon hot">__DOTS__</span><span class="rbtn icon">__PLUS__</span></div>
+          <div class="wt hoverfill"><div class="line">__BRANCH_P__<span class="br">feature/ux-ui</span></div><div class="sub">PR #42 • 3d ago</div></div>
+          <div class="sess hoverfill"><span class="dot"></span><span class="t">design tokens</span></div>
+        </div><div class="chat"></div></div>
+        <div class="note">Repo header now uses the same <strong>inset-8 / radius-10</strong> pill as the rows — identical left/right edges (green guides) and corner rounding. Crucially the pill is <strong>one InkWell</strong> spanning the whole row, so the hover background covers the <strong>… (Repo actions)</strong> and <strong>+ (New worktree)</strong> too; they appear inside it as nested buttons (each with its own small hover circle, shown on the …). The folder icon still sits at 16px.</div>
+        <p class="key"><span class="sw" style="background:rgba(255,255,255,.06)"></span>hover overlay · same on every row</p>
+      </div>
+    </div>
+  </section>
+
+<script>
+const SVG={
+ FOLDER:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 6h6l2 2h10v10H3z"/></svg>',
+ FOLDERSTAR:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M3 6h6l2 2h10v10H3z"/><path d="M14 10l1 2 2 .2-1.5 1.4.5 2L14 14.6 12.5 15.6l.5-2L11.5 12.2 13.5 12z" fill="currentColor" stroke="none"/></svg>',
+ CARETDOWN:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M6 9l6 6 6-6"/></svg>',
+ DOTS:'<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
+ PLUS:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14"/></svg>',
+ BRANCH_P:'<svg viewBox="0 0 24 24" width="16" height="16"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M6 8.2v3q0 4.8 9.8 6.6M18 8.2v7.6"/></svg>',
+};
+document.body.innerHTML=document.body.innerHTML
+ .replace(/__FOLDERSTAR__/g,SVG.FOLDERSTAR)
+ .replace(/__FOLDER__/g,SVG.FOLDER)
+ .replace(/__CARETDOWN__/g,SVG.CARETDOWN)
+ .replace(/__DOTS__/g,SVG.DOTS)
+ .replace(/__PLUS__/g,SVG.PLUS)
+ .replace(/__BRANCH_P__/g,'<span class="icon p">'+SVG.BRANCH_P+'</span>');
+</script>
+</body>
+</html>

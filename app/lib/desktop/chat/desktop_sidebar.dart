@@ -156,64 +156,96 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 8, 2),
+          padding: const EdgeInsets.fromLTRB(8, 10, 8, 1),
           child: MouseRegion(
             onEnter: (_) => setState(() => _repoHovering = true),
             onExit: (_) => setState(() => _repoHovering = false),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _expanded = !_expanded),
-                    onFocusChange: (f) => setState(() => _repoFocused = f),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Row(
-                        children: [
-                          Icon(
-                            PhosphorIconsLight.folderStar,
-                            size: 16,
-                            color: theme.colorScheme.outline,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              repo.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleSmall?.copyWith(
-                                letterSpacing: 0.6,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                        ],
+            child: Material(
+              type: MaterialType.transparency,
+              // Whole row is one inset pill (matches the worktree/session rows):
+              // the hover background spans folder + name + caret + the actions,
+              // instead of covering only the name.
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(() => _expanded = !_expanded),
+                onFocusChange: (f) => setState(() => _repoFocused = f),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        PhosphorIconsLight.folder,
+                        size: 16,
+                        color: theme.colorScheme.outline,
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          repo.name.toUpperCase(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.outline,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                      // Collapse caret: hidden at rest when expanded, fading in
+                      // on hover/focus; always shown when collapsed so a folded
+                      // group isn't a dead label.
+                      AnimatedOpacity(
+                        opacity: (!_expanded || _repoHovering || _repoFocused)
+                            ? 1
+                            : 0,
+                        duration: const Duration(milliseconds: 120),
+                        child: Icon(
+                          _expanded
+                              ? PhosphorIconsLight.caretDown
+                              : PhosphorIconsLight.caretRight,
+                          size: 16,
+                          color: theme.colorScheme.outline,
+                        ),
+                      ),
+                      // Repo actions (overflow menu + new worktree) reveal
+                      // together on hover or keyboard focus, nested inside the
+                      // pill; their slot stays reserved so the header text never
+                      // reflows. maintainState keeps the menu button mounted
+                      // while its popup is open (the modal barrier drops hover).
+                      Visibility(
+                        visible: _repoHovering || _repoFocused,
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(width: 2),
+                            _RepoMenuButton(repo: repo),
+                            IconButton(
+                              tooltip: 'New worktree',
+                              padding: EdgeInsets.zero,
+                              iconSize: 16,
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints(
+                                minWidth: 22,
+                                minHeight: 22,
+                              ),
+                              icon: const Icon(
+                                PhosphorIconsLight.plus,
+                                size: 16,
+                              ),
+                              onPressed: _spawningDraft
+                                  ? null
+                                  : () => _startDraftWorktree(repo.id),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                // Repo actions surface on hover or keyboard focus (keeping its
-                // slot reserved so the + button never shifts), so they stay
-                // reachable without a pointer. maintainState keeps it mounted
-                // while its popup is open even though the modal barrier drops
-                // the row's hover.
-                Visibility(
-                  visible: _repoHovering || _repoFocused,
-                  maintainSize: true,
-                  maintainAnimation: true,
-                  maintainState: true,
-                  child: _RepoMenuButton(repo: repo),
-                ),
-                IconButton(
-                  tooltip: 'New worktree',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(PhosphorIconsLight.plus, size: 16),
-                  onPressed: _spawningDraft
-                      ? null
-                      : () => _startDraftWorktree(repo.id),
-                ),
-              ],
+              ),
             ),
           ),
         ),
