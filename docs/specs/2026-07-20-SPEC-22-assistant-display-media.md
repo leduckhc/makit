@@ -67,9 +67,28 @@ fingerprint check). `Image.network`, `cached_network_image`, and
 `video_player`/native players use their **own** HTTP stacks and will **reject
 the self-signed cert** → every media fetch fails. Therefore this spec requires a
 **shared pinned HTTP client** (the same fingerprint-verification callback the WS
-client uses, extracted into a reusable `HttpClient`) that every media loader
-(image, gif, thumbnail, video) is wired to. This is a prerequisite of phase 1,
-not an afterthought.
+client uses, extracted into a reusable `HttpClient`) that the image, GIF, and
+thumbnail loaders are wired to. This is a prerequisite of phase 1, not an
+afterthought.
+
+**Video is a special case — a Dart `HttpClient` does not reach it.**
+`video_player` delegates the network fetch to the native platform player
+(AVFoundation on iOS/macOS, ExoPlayer on Android). It exposes only
+`httpHeaders` on `VideoPlayerController.networkUrl`; it does **not** accept a
+custom Dart `HttpClient`, so the shared pinned client cannot verify the cert
+for video playback. Passing the capability token via `httpHeaders` still leaves
+the self-signed cert to be validated by the native stack, which rejects it.
+Phase 4 must therefore pick one of:
+- **Prefetch-to-file (preferred, no native work):** download the media through
+  the shared pinned `HttpClient` into a local temp file, then play the
+  `file://` URI (`VideoPlayerController.file`). Reuses the phase-1 pinning path
+  and range support; costs local disk + a first-byte delay.
+- **Platform-side pinning:** configure certificate pinning natively
+  (`NSAppTransportSecurity` / a custom `AVAssetResourceLoaderDelegate` on Apple,
+  a pinning `OkHttp`/`TrustManager` on Android). More native surface, per-
+  platform, and easy to get wrong — only if streaming/seek without a full
+  prefetch is required.
+Do not rely on request headers alone for video TLS.
 
 ## Scope
 
@@ -79,6 +98,19 @@ not an afterthought.
 - **Media store** `~/.makit/media/<sha256>` (content-addressed → free dedupe +
   immutable caching). Metadata sidecar or SQLite row: `{mime, bytes, width,
   height, durationMs?}`. Size-capped LRU GC.
+- **Durable-before-event write ordering** (applies to both the pi adapter and
+  the ACP mapper). Events are authoritative and replayed, so a committed
+  `agent.media` must never outlive its blob. Ingestion order is strict:
+  1. write bytes to a temp file in the media dir, `fsync` the file, `rename`
+     into `~/.makit/media/<sha256>` (atomic same-filesystem publish), then
+     `fsync` the directory;
+  2. commit the metadata row/sidecar;
+  3. only then append the `agent.media` event.
+  If the event append fails after the blob is written, **clean up the orphaned
+  blob + metadata** (a dedup refcount, if the sha256 is already referenced,
+  means "decrement" rather than delete). A crash between steps 2 and 3 leaves an
+  unreferenced blob that GC reclaims; a crash before step 3 never produces a
+  dangling event.
 - **Media route** as a **shared request handler attached to BOTH HTTPS
   listeners** — `server.ts:128` creates `https` (external) and, for a specific
   non-loopback host, `localHttps` (loopback); today each only gets an `upgrade`
@@ -89,6 +121,12 @@ not an afterthought.
   `GET` + `HEAD`; `Range` parsing → `206` + `Content-Range` + `Accept-Ranges`
   (and `416` on unsatisfiable range); `Content-Length`; strict `mediaId`
   validation (`^[a-f0-9]{64}$`, no path traversal); and stream backpressure.
+  **Missing/GC'd id contract:** return `404` (never `500`) with
+  `Content-Type: application/json` and body `{"error":"media_not_found"}`. The
+  route **never** hands an error body to an image/video decoder — the app
+  detects the non-image status and renders its own placeholder. (A `200` with a
+  fallback image is explicitly rejected: it would poison content-addressed
+  caches keyed by `mediaId`.)
 - **Auth = capability token, not "unguessable URL."** A bearer-in-query is a
   capability that leaks via persisted event payloads, device logs, screenshots,
   and proxies — do **not** rely on secrecy. The token must be an HMAC scoped to
@@ -96,6 +134,26 @@ not an afterthought.
   and a revocation **generation** counter, verified with **constant-time**
   comparison and strict expiry. Because tokens expire, **do not persist a signed
   `url` in the event** (see below) — the app mints/refreshes it at render time.
+- **Token mint/refresh API.** The event carries no signed URL, so the app must
+  obtain a fresh token before each fetch. Mint over the **existing authenticated
+  WS connection** (not a new HTTP endpoint) with a request/response RPC:
+  - Request `media.token.mint` `{ mediaId, sessionId, method: "GET"|"HEAD" }`.
+    The caller identity (`deviceId`) and auth are taken from the already-
+    authenticated socket (`auth_gate.ts`), never from the request body.
+  - Response `{ token, expiresAt }` where `token = HMAC(signingKey, "v1|" +
+    mediaId + "|" + sessionId + "|" + deviceId + "|" + method + "|" + exp + "|" +
+    generation)`. **TTL is short (~60 s)** — long enough to start a fetch/range
+    session, short enough to bound leaked-capability exposure.
+  - The route recomputes the HMAC from the URL's `mediaId`+`t` and the socket-
+    or query-bound `{sessionId, deviceId, method, exp, generation}`, compares in
+    constant time, and enforces `exp` and the current `generation`. Bumping the
+    server-side revocation `generation` invalidates every outstanding token.
+  - On **replay** of an old event the app simply calls `media.token.mint` again;
+    nothing signed is stored, so expiry never breaks history.
+  - **Failure responses (route):** `401` missing/malformed token, `403`
+    wrong-scope/revoked (stale generation)/tampered, `410` expired, `400`
+    malformed `mediaId`. Mint RPC returns an error result for an unknown
+    `mediaId` or a session/device not entitled to it.
 - **New event kind `agent.media`.** Registration is more than one list — all of
   these must be updated or the event is dropped / unrendered:
   - server `EventKind` union (`server/src/protocol.ts`)
@@ -146,8 +204,10 @@ not an afterthought.
   loader (GIF animates natively), video via `video_player`, tap → fullscreen.
   **New deps** (`app/pubspec.yaml`) — `cached_network_image` / `video_player` /
   `chewie` are **not present today**; each carries native iOS/macOS/Android
-  integration + its own TLS behavior, so they must be wired to the pinned
-  client. Treat adding them as real work, not a config line.
+  integration + its own TLS behavior. Image/GIF/thumbnail loaders wire to the
+  pinned Dart `HttpClient`; `video_player` cannot (see the TLS section) and uses
+  the prefetch-to-file path in phase 4. Treat adding them as real work, not a
+  config line.
 
 **Capability negotiation** — **does not exist yet.** `docs/CAPABILITIES.md`
 marks it M4/future; real `hello`/ack messages (`server/src/ws/auth_gate.ts`,
@@ -174,8 +234,10 @@ rendering on a fixed protocol-version bump instead. Phase 1 assumes (b).
 3. **Markdown image policy** — images already render, so this phase *secures*
    them: route markdown images through the pinned loader, apply an allowed-scheme
    policy, and decide external-host privacy behavior. (Not "enable images.")
-4. **Video / audio** — `video_player` on the pinned client; range requests
-   already supported by the phase-1 route.
+4. **Video / audio** — fetch through the shared pinned `HttpClient` to a local
+   temp file, then `video_player` plays the `file://` URI (native players can't
+   use the Dart pinned client; see the TLS section). Range requests are already
+   supported by the phase-1 route for the prefetch.
 5. **`file://` / `resource_link`** — only after path-containment + symlink/TOCTOU
    + sandbox policy are specified.
 
@@ -189,9 +251,10 @@ independent of each other but both depend on 1.
   to `{mediaId, session, device, method, exp}`, uses a revocation generation,
   and is checked in constant time. The app re-mints on replay.
 - **GC vs. resume:** deleting a session must clean up its media refs; GC needs
-  durable metadata/refcounts, not just files. A GC'd id must resolve to a
-  defined **app-side placeholder state** (or a valid tiny image) — never an
-  arbitrary non-image HTTP body handed to an image decoder.
+  durable metadata/refcounts, not just files. A GC'd id resolves to the route's
+  `404 {"error":"media_not_found"}` contract (above), which the app maps to a
+  **placeholder widget** — never an arbitrary non-image HTTP body handed to an
+  image decoder, and never a `200` fallback image that would pollute the cache.
 - **Decompression bombs:** cap decoded size + dimensions before allocate/write
   at ingestion.
 - **Model without vision:** pi already annotates `[Current model does not
@@ -206,7 +269,8 @@ independent of each other but both depend on 1.
   validation** rejects bad MIME / bad sha256 / oversized / unknown fields;
   token verify passes valid + rejects expired/wrong-scope/tampered (constant
   time); route serves bytes, honours `Range` (`206`/`Content-Range`), returns
-  `416` on bad range and a defined placeholder (not `500`) on GC'd/missing id;
+  `416` on bad range and a `404 {"error":"media_not_found"}` (not `500`, not a
+  `200` fallback image) on GC'd/missing id;
   handler is reachable on **both** listeners; `cli/render.ts` renders a media
   fallback; session delete cleans up media refs.
 - `pnpm typecheck` + `pnpm test` clean.
