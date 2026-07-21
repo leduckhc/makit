@@ -52,10 +52,21 @@ export function loadProjects(file: string): PersistedProject[] {
     const raw = (parsed as { projects?: unknown }).projects;
     if (!Array.isArray(raw)) return [];
     const out: PersistedProject[] = [];
+    // Validate each path in isolation: a stat failure (path vanished, EACCES)
+    // must skip only that entry, never abort the whole load — otherwise the
+    // outer catch returns [] and serve.ts overwrites the store, losing every
+    // other project's persisted id.
+    const isDirectory = (path: string): boolean => {
+      try {
+        return existsSync(path) && statSync(path).isDirectory();
+      } catch {
+        return false;
+      }
+    };
     for (const entry of raw) {
       // Legacy: a bare path string. Mint a stable id now (persisted next save).
       if (typeof entry === "string") {
-        if (existsSync(entry) && statSync(entry).isDirectory()) {
+        if (isDirectory(entry)) {
           out.push({ id: randomUUID(), path: entry });
         }
         continue;
@@ -68,7 +79,7 @@ export function loadProjects(file: string): PersistedProject[] {
         typeof (entry as { path?: unknown }).path === "string"
       ) {
         const { id, path } = entry as PersistedProject;
-        if (existsSync(path) && statSync(path).isDirectory()) out.push({ id, path });
+        if (isDirectory(path)) out.push({ id, path });
       }
     }
     return out;

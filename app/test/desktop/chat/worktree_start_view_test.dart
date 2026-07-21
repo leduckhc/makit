@@ -130,6 +130,11 @@ void main() {
       final current = container.read(paneTreeControllerProvider).current!;
       expect(current.worktree.path, _wt.path);
       expect(
+        container.read(paneTreeControllerProvider.notifier).activeLeafSessionId,
+        's-new',
+        reason: 'session pinned to the real tree active leaf',
+      );
+      expect(
         container
             .read(paneTreeControllerProvider)
             .trees

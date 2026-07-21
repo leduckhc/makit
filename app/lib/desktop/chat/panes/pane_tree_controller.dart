@@ -220,8 +220,8 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
   void selectWorktree(SelectedWorktree worktree) {
     final existing = state.trees[worktree.path];
     // Key trees by the stable worktree path, but always adopt the freshly
-    // selected descriptor: project ids are regenerated each server boot (and
-    // never persisted), so a tree restored from prefs can carry a stale
+    // selected descriptor. The current selection carries the authoritative
+    // projectId + branch, whereas a tree restored from prefs can hold a stale
     // projectId that would fail `session.spawn` ("unknown project"). Preserve
     // the persisted layout (splits/leaves/bound sessions) while refreshing the
     // worktree's projectId + branch from the current selection.
