@@ -181,6 +181,35 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
   String? _chosenAgent;
   bool _starting = false;
 
+  /// Owns the composer's text so the PR-actions split button (a sibling) can
+  /// inject a canned prompt into the field before any session exists.
+  final TextEditingController _composerCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _composerCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Insert a canned PR-action [prompt] without sending: set the field (or
+  /// append below existing text so a half-typed message survives), persist the
+  /// worktree-scoped draft, and focus the composer for review.
+  void _insertPrompt(String prompt) {
+    final existing = _composerCtrl.text;
+    final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
+    _composerCtrl.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    ref
+        .read(composerDraftsProvider.notifier)
+        .set('wt:${widget.worktree.path}', next);
+    final focusId = widget.composerFocusId;
+    if (focusId != null) {
+      ref.read(desktopComposerFocusProvider(focusId)).requestFocus();
+    }
+  }
+
   String? _defaultAgent(List<AgentDescriptor> agents) {
     for (final a in agents) {
       if (a.available) return a.id;
@@ -313,12 +342,12 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (pr != null)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4, bottom: 6),
-                      child: PrStatusPill(pr: pr),
-                    ),
+                  // PR status pill (when the worktree heads a PR) + the
+                  // canned-prompt actions split button (always shown — its
+                  // "Create PR" action is the path to getting a PR).
+                  PrComposerBar(pr: pr, onInsertPrompt: _insertPrompt),
                   Composer(
+                    controller: _composerCtrl,
                     onSend: _start,
                     running: _starting,
                     alwaysExpanded: true,

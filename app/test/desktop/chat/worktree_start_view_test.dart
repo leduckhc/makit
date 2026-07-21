@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/harness_picker.dart';
 import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
+import 'package:makit/desktop/chat/pr_actions.dart';
 import 'package:makit/desktop/chat/pr_bar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/connection.dart';
@@ -229,6 +230,51 @@ void main() {
 
       expect(find.byType(PrStatusPill), findsOneWidget);
       expect(find.text('PR #88'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'the PR actions button inserts the Create PR prompt into the composer',
+    (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          agentsProvider.overrideWith(
+            (ref) async => const [
+              AgentDescriptor(
+                id: 'codex',
+                label: 'Codex',
+                transport: 'stdio',
+                available: true,
+              ),
+            ],
+          ),
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(const _EmptyStorage()),
+          ),
+          storeControllerProvider.overrideWith((ref) => _FakeStore(ref)),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: WorktreeStartView(worktree: _wt)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The actions button shows even with no PR (it's the path to getting one).
+      expect(find.text('Create PR'), findsOneWidget);
+      await tester.tap(find.text('Create PR'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.widgetWithText(TextField, PrPromptAction.createPr.defaultPrompt),
+        findsOneWidget,
+      );
     },
   );
 }
