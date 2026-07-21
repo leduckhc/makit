@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Thinking-effort signal indicator</title>
+<style>
+  :root{
+    --bg:#171717;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#333333;
+    --on-surface-variant:#C9C9C9;
+    --accent:#7EE8A6;                     /* strong / current */
+    --faded:rgba(158,158,158,.32);        /* levels above current */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 8px;max-width:900px}
+  .sub code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .warn{max-width:900px;margin:12px 0 28px;padding:12px 14px;border:1px solid #6b5d2a;background:#241f10;border-radius:10px;font-size:13px;color:#e8d9a8}
+  .warn strong{color:#fff}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;margin-bottom:28px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px}
+  .card h2{font-size:15px;margin:0;font-weight:600}
+  .card .rec{font-size:10px;color:#0e0e0e;background:var(--accent);border-radius:5px;padding:2px 6px;font-weight:700}
+  .card p{margin:0;color:var(--muted);font-size:12.5px}
+  .body{padding:18px 16px}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid #222;vertical-align:middle}
+  th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td .scale{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  td .cur{color:var(--accent);font-weight:600}
+
+  /* icon wrappers, 18px box like the composer pill */
+  .icon{display:inline-flex;align-items:flex-end;gap:2px;height:18px}
+  .icon.dots{align-items:center}
+  .bar{width:3px;border-radius:1.5px;background:var(--accent)}
+  .bar.off{background:var(--faded)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .dot.off{background:var(--faded)}
+  .seg{width:9px;height:4px;border-radius:2px;background:var(--accent)}
+  .seg.off{background:var(--faded)}
+  .seg-wrap{display:inline-flex;gap:2px;align-items:center;height:18px}
+
+  /* inline pill preview (composer footer) */
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:14px;background:var(--container-high)}
+  .pill .lbl{font-size:12px;color:var(--on-surface-variant)}
+  .pillrow{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-top:6px}
+  .legend{font-size:12px;color:var(--muted);margin:0 0 16px}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin:0 4px}
+</style>
+</head>
+<body>
+  <h1>Thinking-effort — signal indicator</h1>
+  <p class="sub">A custom bar indicator for reasoning effort. Bars = the levels <em>that provider/model supports</em>. Levels <strong>≤ current</strong> render in the strong accent; levels <strong>above current</strong> (up to that provider's max) render <strong>faded</strong>. A 6-level model shows 6 bars; a 3-level model shows 3 — the width itself conveys the scale.</p>
+  <p class="legend"><span class="sw" style="background:var(--accent)"></span>strong = at/below current &nbsp;·&nbsp; <span class="sw" style="background:var(--faded)"></span>faded = headroom above current</p>
+
+  <div class="warn">
+    <strong>⚠ Data gap to resolve first.</strong> Today <code>SessionMeta.thinking</code> carries only the <em>current</em> level (a string); there is no per-model <em>available-levels</em> list, and the app hardcodes one scale: <code>['off','minimal','low','medium','high','xhigh']</code> (no <code>max</code>). To render true per-provider scales like <code>(off,medium,high)</code> the server needs to send the available levels in <code>session.meta</code>. Pick a visual below; I'll flag which data path you want (see the question after this mockup).
+  </div>
+
+  <!-- STYLE A: ascending bars -->
+  <div class="card">
+    <header><h2>Style A — ascending signal bars</h2><span class="rec">suggested</span>
+      <p>Cell-signal metaphor; height encodes level. Reads instantly as "how much".</p></header>
+    <div class="body"><table id="tA"></table></div>
+  </div>
+
+  <!-- STYLE B: equal segments -->
+  <div class="card">
+    <header><h2>Style B — equal segments (battery/stepper)</h2>
+      <p>Flat equal-width segments. Calmer, less "signal-y", scales cleanly to many levels.</p></header>
+    <div class="body"><table id="tB"></table></div>
+  </div>
+
+  <!-- STYLE C: dots -->
+  <div class="card">
+    <header><h2>Style C — dots</h2>
+      <p>Minimal. Great at small sizes but weakest at conveying magnitude.</p></header>
+    <div class="body"><table id="tC"></table></div>
+  </div>
+
+  <!-- inline preview -->
+  <div class="card">
+    <header><h2>In context — composer footer pill</h2>
+      <p>How Style A sits next to the model pill at real 18px size.</p></header>
+    <div class="body">
+      <div class="pillrow" id="preview"></div>
+    </div>
+  </div>
+
+<script>
+// [providerName, scale[], currentIndex]
+const cases = [
+  ['OpenAI (6-level)', ['off','minimal','low','medium','high','xhigh'], 4],
+  ['Anthropic-style (off,low,med,high,xhigh,max)', ['off','low','medium','high','xhigh','max'], 3],
+  ['Compact (off,med,high)', ['off','medium','high'], 1],
+];
+
+function bars(scale, cur){
+  // ascending heights 5..18
+  const n = scale.length;
+  let h = '<span class="icon">';
+  scale.forEach((lvl,i)=>{
+    const height = Math.round(5 + (13*(i/(n-1||1))));
+    h += `<span class="bar ${i<=cur?'':'off'}" style="height:${height}px" title="${lvl}"></span>`;
+  });
+  return h+'</span>';
+}
+function segs(scale, cur){
+  let h = '<span class="seg-wrap">';
+  scale.forEach((lvl,i)=>{ h += `<span class="seg ${i<=cur?'':'off'}" title="${lvl}"></span>`; });
+  return h+'</span>';
+}
+function dots(scale, cur){
+  let h = '<span class="icon dots">';
+  scale.forEach((lvl,i)=>{ h += `<span class="dot ${i<=cur?'':'off'}" title="${lvl}"></span>`; });
+  return h+'</span>';
+}
+
+function fill(id, render){
+  const t = document.getElementById(id);
+  t.innerHTML = '<tr><th>Provider scale</th><th>Current</th><th>Indicator</th></tr>';
+  for(const [name,scale,cur] of cases){
+    const scaleStr = scale.map((l,i)=> i===cur?`<span class="cur">${l}</span>`:l).join(' · ');
+    t.innerHTML += `<tr><td>${name}</td><td class="scale">${scale[cur]}</td><td>${render(scale,cur)}</td></tr>`;
+  }
+}
+fill('tA', bars); fill('tB', segs); fill('tC', dots);
+
+const pv = document.getElementById('preview');
+for(const [name,scale,cur] of cases){
+  pv.innerHTML += `<span class="pill">${bars(scale,cur)}<span class="lbl">${scale[cur]}</span></span>`;
+}
+</script>
+</body>
+</html>

@@ -76,6 +76,7 @@ class RepoCard extends ConsumerWidget {
           PopupMenuButton<String>(
             icon: const Icon(PhosphorIconsLight.dotsThreeVertical, size: 20),
             tooltip: 'Repo actions',
+            popUpAnimationStyle: AnimationStyle.noAnimation,
             onSelected: (value) {
               switch (value) {
                 case 'new':
@@ -86,33 +87,39 @@ class RepoCard extends ConsumerWidget {
                   _confirmRemove(context, ref);
               }
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'new',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.plus),
-                  title: Text('New session'),
-                  contentPadding: EdgeInsets.zero,
+            itemBuilder: (context) {
+              final cs = Theme.of(context).colorScheme;
+              return [
+                const PopupMenuItem(
+                  value: 'new',
+                  child: ListTile(
+                    leading: Icon(PhosphorIconsLight.plus),
+                    title: Text('New session'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'attach',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.arrowCounterClockwise),
-                  title: Text('Resume session'),
-                  contentPadding: EdgeInsets.zero,
+                const PopupMenuItem(
+                  value: 'attach',
+                  child: ListTile(
+                    leading: Icon(PhosphorIconsLight.arrowCounterClockwise),
+                    title: Text('Resume session'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
-              ),
-              PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'remove',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.trash),
-                  title: Text('Remove from makit'),
-                  contentPadding: EdgeInsets.zero,
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'remove',
+                  child: ListTile(
+                    leading: Icon(PhosphorIconsLight.trash, color: cs.error),
+                    title: Text(
+                      'Remove from makit',
+                      style: TextStyle(color: cs.error),
+                    ),
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ),
-              ),
-            ],
+              ];
+            },
           ),
         ],
       ),

@@ -71,8 +71,12 @@ class SlashPalette extends StatelessWidget {
       );
     }
 
-    return SizedBox(
-      height: 280,
+    return ConstrainedBox(
+      // Cap the palette at half the viewport so it never overwhelms the chat
+      // above the composer; the list shrink-wraps below that on short lists.
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.5,
+      ),
       child: Material(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
         child: ListView.builder(

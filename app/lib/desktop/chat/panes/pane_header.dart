@@ -111,6 +111,7 @@ class SessionActionsMenu extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return PopupMenuButton<String>(
       tooltip: 'Session actions',
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       padding: EdgeInsets.zero,
       // Use `child` (not `icon`): `icon` builds an internal IconButton that
       // enforces a 48px min tap target, which inflates the header row and
@@ -132,25 +133,28 @@ class SessionActionsMenu extends ConsumerWidget {
             _confirmQuit(context, ref);
         }
       },
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: 'rename',
-          child: ListTile(
-            leading: Icon(PhosphorIconsLight.pencilSimple),
-            title: Text('Rename session'),
-            contentPadding: EdgeInsets.zero,
+      itemBuilder: (context) {
+        final cs = Theme.of(context).colorScheme;
+        return [
+          const PopupMenuItem(
+            value: 'rename',
+            child: ListTile(
+              leading: Icon(PhosphorIconsLight.pencilSimple),
+              title: Text('Rename session'),
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
-        ),
-        PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'quit',
-          child: ListTile(
-            leading: Icon(PhosphorIconsLight.power),
-            title: Text('Quit session'),
-            contentPadding: EdgeInsets.zero,
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'quit',
+            child: ListTile(
+              leading: Icon(PhosphorIconsLight.power, color: cs.error),
+              title: Text('Quit session', style: TextStyle(color: cs.error)),
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
-        ),
-      ],
+        ];
+      },
     );
   }
 

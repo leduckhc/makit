@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Chat Input UX Review</title>
+<style>
+:root {
+  --bg: #0f0f0f;
+  --surface: #1a1a1a;
+  --surface-var: #242424;
+  --surface-high: #2e2e2e;
+  --text: #f5f5f5;
+  --text-muted: #9e9e9e;
+  --error: #f44336;
+  --success: #4caf50;
+  --warn: #ff9800;
+  --info: #2196f3;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  color: #fff;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.section {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  border-left: 4px solid var(--info);
+}
+
+.section.strength {
+  border-left-color: var(--success);
+}
+
+.section.issue {
+  border-left-color: var(--warn);
+}
+
+.section.high {
+  border-left-color: var(--error);
+}
+
+h2 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem 0;
+  color: #fff;
+}
+
+.issue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin: 1rem 0;
+}
+
+.card {
+  background: var(--surface-var);
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid var(--surface-high);
+}
+
+.card strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.priority-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.priority-badge.high {
+  background: rgba(244, 67, 54, 0.2);
+  color: #ff6b6b;
+}
+
+.priority-badge.medium {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ffb74d;
+}
+
+.priority-badge.low {
+  background: rgba(33, 150, 243, 0.2);
+  color: #64b5f6;
+}
+
+.code-block {
+  background: var(--bg);
+  border: 1px solid var(--surface-high);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 0.85rem;
+  overflow-x: auto;
+  margin: 12px 0;
+  color: #a0e7e5;
+}
+
+.problem, .recommendation {
+  margin: 1rem 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--surface-var);
+}
+
+.problem {
+  border-left: 3px solid var(--error);
+}
+
+.problem strong {
+  color: #ff6b6b;
+}
+
+.recommendation {
+  border-left: 3px solid var(--success);
+}
+
+.recommendation strong {
+  color: #66bb6a;
+}
+
+.summary {
+  background: linear-gradient(135deg, var(--surface-var) 0%, var(--surface-high) 100%);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 24px;
+}
+
+.summary-row {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.summary-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.summary-row strong {
+  color: #fff;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.summary-row ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-muted);
+}
+
+.summary-row li {
+  margin: 4px 0;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f9f9f9;
+    --surface: #ffffff;
+    --surface-var: #f5f5f5;
+    --surface-high: #eeeeee;
+    --text: #212121;
+    --text-muted: #757575;
+  }
+  .code-block {
+    background: #f5f5f5;
+    border-color: #e0e0e0;
+    color: #00897b;
+  }
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Chat Input UX/UI Review</h1>
+  <p class="subtitle">Specialist lens: composer field, slash palette, send/cancel affordances, accessibility</p>
+
+  <!-- Strengths -->
+  <div class="section strength">
+    <h2>✅ Strengths</h2>
+    <div class="issue-grid">
+      <div class="card">
+        <strong>Adaptive State Layering</strong>
+        <p>Compact/expanded toggle matches mobile/desktop needs. Draft persistence prevents data loss on navigation.</p>
+      </div>
+      <div class="card">
+        <strong>Keyboard Affordances</strong>
+        <p>Configurable send/newline chords. Default Ctrl/Cmd+Enter + native Return is predictable.</p>
+      </div>
+      <div class="card">
+        <strong>Visual Hierarchy</strong>
+        <p>Clear send button state machine (text→active, running→stop, empty→disabled). Slash palette badges help disambiguate sources.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Issue 1 -->
+  <div class="section issue">
+    <span class="priority-badge medium">MEDIUM</span>
+    <h2>1. Slash Palette Scrolling Context</h2>
+    <div class="problem">
+      <strong>Problem:</strong> Fixed height (280px) scrolls independently. On narrow windows it may obscure the input field, create nested scroll zones, and offer no visual indicator of how many commands match.
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong>
+      <ul>
+        <li>Cap palette height to 50% of available composer space (not hardcoded 280px)</li>
+        <li>Show match count badge ("43 skills") in palette header</li>
+        <li>Add keyboard arrow-key cycling through matches (↑/↓ to navigate, Enter to pick)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Issue 2 -->
+  <div class="section issue">
+    <span class="priority-badge medium">MEDIUM</span>
+    <h2>2. Hint Text Clarity</h2>
+    <div class="problem">
+      <strong>Problem:</strong> "Message …" is too generic for an agent-first IDE. User may not know: can they paste code? Can they attach files? What slash commands exist?
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong>
+      <ul>
+        <li>Change hint to: "Message, /slash, or paste code …"</li>
+        <li>Or show transient micro-tooltip on first focus: "Tip: type '/' to see commands"</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Issue 3 -->
+  <div class="section issue">
+    <span class="priority-badge medium">MEDIUM</span>
+    <h2>3. Send Button Affordance in Compact Mode</h2>
+    <div class="problem">
+      <strong>Problem:</strong> State change (disabled gray → enabled blue) is subtle. No visual indication it's clickable. Tooltip only on hover.
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong>
+      <ul>
+        <li>Add visual pulse/glow when text is entered (feedback that send is now active)</li>
+        <li>Or make disabled state more obviously "off": dotted border, 40% opacity</li>
+        <li>Ensure keyboard focus visible when tabbing (golden ring)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Issue 4 -->
+  <div class="section issue">
+    <span class="priority-badge medium">MEDIUM</span>
+    <h2>4. Multiline Field UX Friction</h2>
+    <div class="problem">
+      <strong>Problem:</strong> Auto-growing 3→10 line field works but: scrollbar is hidden, user typing at bottom may not see earlier lines, on narrow displays (split panes) 10-line growth eats vertical space fast.
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong>
+      <ul>
+        <li>Show subtle scrollbar hint (always visible, fades if not scrolling)</li>
+        <li>Cap max-lines to 6 on narrow viewports (&lt;600px) via MediaQuery</li>
+        <li>Add keyboard indicator in hint: "Shift+Return for newline"</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Issue 5 -->
+  <div class="section issue">
+    <span class="priority-badge high">HIGH</span>
+    <h2>5. Cancel Button Placement (UX Debt)</h2>
+    <div class="problem">
+      <strong>Problem:</strong> Cancel button only shows when <code>running == true AND onCancel != null AND _hasText == false</code>. This means:
+      <ul>
+        <li>User can't see cancel affordance while typing a follow-up message during a long turn</li>
+        <li>If field is non-empty, send button obscures stop button — user must clear field first to cancel</li>
+      </ul>
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong> Show cancel button always when running, prioritize it over send:
+      <div class="code-block">if (running && onCancel != null) → stop (red)
+else if (_hasText) → send (blue arrow)
+else → disabled send (gray)
+      </div>
+      This way user can cancel mid-turn without clearing draft.
+    </div>
+  </div>
+
+  <!-- Issue 6 -->
+  <div class="section issue">
+    <span class="priority-badge medium">MEDIUM</span>
+    <h2>6. Attachment Button State (UX Debt)</h2>
+    <div class="problem">
+      <strong>Problem:</strong> Plus button is disabled (grayed, <code>onPressed: null</code>) with comment "Disabled until M6 (@-mention picker)". This looks broken, not planned. Takes up real estate for a placeholder. No affordance explaining why it's disabled.
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong>
+      <ul>
+        <li>Hide the button entirely until feature is ready</li>
+        <li>Or replace with info icon + tooltip: "Attachments coming in v2"</li>
+        <li>Better: Replace with a working quick-command button (e.g., "Last 5 commands") if attachment is months away</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Issue 7 -->
+  <div class="section issue">
+    <span class="priority-badge low">LOW</span>
+    <h2>7. Composer Padding/Inset Consistency</h2>
+    <div class="problem">
+      <strong>Problem:</strong> Nested padding across three layers creates inconsistency. Total ~12–14px left/right is asymmetric when scaled, 20px top/bottom feels loose.
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong> Consolidate into a single design token (e.g., <code>composerPadding = 12</code>) to centralize future tweaks.
+    </div>
+  </div>
+
+  <!-- Issue 8 -->
+  <div class="section issue">
+    <span class="priority-badge medium">MEDIUM</span>
+    <h2>8. Desktop Focus Management After Send</h2>
+    <div class="problem">
+      <strong>Problem:</strong> When user sends a message, composer unfocuses (<code>_focus.unfocus()</code>), returning focus to transcript. On desktop, this means:
+      <ul>
+        <li>User must click back in the composer to type the next message (extra click)</li>
+        <li>Tab cycle breaks (focus jumps to transcript, then back to composer)</li>
+      </ul>
+    </div>
+    <div class="recommendation">
+      <strong>Recommendation:</strong>
+      <ul>
+        <li><strong>Desktop only:</strong> Re-focus the field after send (on mobile, unfocus is correct)</li>
+        <li>Check if externally-owned focusNode interferes; if so, add callback: <code>onSendComplete: () { _focus.requestFocus() }</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <h2 style="margin-top: 0; color: #fff;">📋 Summary: Prioritized Fixes</h2>
+
+    <div class="summary-row">
+      <strong style="color: #ff6b6b;">🔴 High Priority (UX Debt)</strong>
+      <ul>
+        <li><strong>Cancel button visibility:</strong> Show when running, even if field has text</li>
+      </ul>
+    </div>
+
+    <div class="summary-row">
+      <strong style="color: #ffb74d;">🟠 Medium Priority (Friction)</strong>
+      <ul>
+        <li>Slash palette keyboard nav (↑/↓) + match count badge</li>
+        <li>Hint text: "Message, /slash, or paste code …"</li>
+        <li>Send button affordance: pulse on text entry or opacity change on disabled</li>
+        <li>Multiline field: show scroll indicator, cap lines on narrow viewports</li>
+        <li>Attachment button: hide until ready or replace with working feature</li>
+        <li>Desktop focus: re-focus field after send</li>
+      </ul>
+    </div>
+
+    <div class="summary-row">
+      <strong style="color: #64b5f6;">🔵 Low Priority (Polish)</strong>
+      <ul>
+        <li>Padding token consolidation (design system debt)</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

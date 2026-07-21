@@ -156,13 +156,13 @@ class OpenInIdeButton extends ConsumerWidget {
   }
 }
 
-/// A compact Material 3 *split button* for the title bar: two connected tonal
-/// segments sharing one shape — a leading caret that toggles the editor menu
-/// and a trailing segment whose logo opens the preferred editor. Follows the M3
-/// split-button pattern (Flutter has no built-in widget on this channel):
-/// `secondaryContainer` tonal fill, `InkWell` state layers, an outer
-/// full-rounded / inner squared shape, and a caret that rotates while the menu
-/// is open.
+/// A Material 3 *split button* (Expressive, XS size) for the title bar. The
+/// caret segment (menu toggle, whose icon rotates 180° while the menu is open)
+/// sits on the left; the preferred editor's logo sits on the right and opens it
+/// directly. Both segments share one shape: outer corners fully rounded (50%),
+/// inner corners squared (4dp) with a 2dp gap between them. It fills with `surfaceContainer` so it blends
+/// into the chat background it sits on, lifting a tone (to
+/// `surfaceContainerHighest`) while the caret's menu is open.
 class _IdeSplitButton extends StatelessWidget {
   const _IdeSplitButton({
     required this.preferred,
@@ -178,45 +178,51 @@ class _IdeSplitButton extends StatelessWidget {
   final VoidCallback onAction;
   final VoidCallback onToggleMenu;
 
-  static const double _height = 26;
-  static const Radius _outer = Radius.circular(13);
-  static const Radius _inner = Radius.circular(6);
+  // XS split-button metrics (M3 tokens, scaled to fit the 32dp title strip).
+  static const double _height = 28;
+  static const double _outer = _height / 2; // 50% → fully rounded outer corner.
+  static const double _inner = 4; // XS inner corner size.
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    // The caret segment brightens to the fuller `secondary` tone while its menu
-    // is open (M3 selected/active state); the action segment stays tonal.
-    final caretColor = menuOpen ? cs.secondary : cs.secondaryContainer;
-    final caretFg = menuOpen ? cs.onSecondary : cs.onSecondaryContainer;
-
+    // Rest on the chat-content surface so the control blends into the title
+    // strip; the caret lifts a tone while its menu is open (neutral active).
+    final surface = cs.surfaceContainer;
+    final fg = cs.onSurface;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Leading: caret toggles the menu.
+        // Leading: the menu toggle. Lifts a tone while open; the caret rotates.
         _Segment(
           tooltip: 'Choose editor',
           onTap: onToggleMenu,
-          color: caretColor,
-          foreground: caretFg,
-          radius: const BorderRadius.horizontal(left: _outer, right: _inner),
+          background: menuOpen ? cs.surfaceContainerHighest : surface,
+          foreground: fg,
           height: _height,
+          outerRadius: _outer,
+          innerRadius: _inner,
+          leadingEdge: true,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
           child: AnimatedRotation(
             turns: menuOpen ? 0.5 : 0,
             duration: const Duration(milliseconds: 150),
-            child: const Icon(PhosphorIconsLight.caretDown, size: 12),
+            child: const Icon(PhosphorIconsLight.caretDown, size: 14),
           ),
         ),
-        // 2px gap between segments gives the connected-shape M3 look.
+        // 2dp gap between segments (fixed across all sizes per the spec).
         const SizedBox(width: 2),
-        // Trailing: the preferred editor's logo opens it directly.
+        // Trailing: the primary action — open the preferred editor directly.
         _Segment(
           tooltip: actionTooltip,
           onTap: onAction,
-          color: cs.secondaryContainer,
-          foreground: cs.onSecondaryContainer,
-          radius: const BorderRadius.horizontal(left: _inner, right: _outer),
+          background: surface,
+          foreground: fg,
           height: _height,
+          outerRadius: _outer,
+          innerRadius: _inner,
+          leadingEdge: false,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: ideLogo(context, preferred, size: 16),
         ),
       ],
@@ -224,46 +230,64 @@ class _IdeSplitButton extends StatelessWidget {
   }
 }
 
-/// One tonal segment of the [_IdeSplitButton]: a [Material] + [InkWell] so it
-/// carries M3 state layers (hover/press ripple) and the given corner [radius].
-/// The [foreground] drives the ambient [IconTheme] so a monochrome logo
+/// One tonal segment of the [_IdeSplitButton]: a [Material] + [InkWell] carrying
+/// M3 state layers (hover/press ripple) with an asymmetric shape — [outerRadius]
+/// on its outer edge and [innerRadius] on the edge that faces the gap. The
+/// [foreground] drives the ambient [IconTheme] so a monochrome logo
 /// ([IdeTarget.cursor]/[IdeTarget.iterm]) tints to match; colour logos ignore
 /// it.
 class _Segment extends StatelessWidget {
   const _Segment({
     required this.child,
     required this.onTap,
-    required this.color,
+    required this.background,
     required this.foreground,
-    required this.radius,
     required this.height,
+    required this.outerRadius,
+    required this.innerRadius,
+    required this.leadingEdge,
+    required this.padding,
     required this.tooltip,
   });
 
   final Widget child;
   final VoidCallback onTap;
-  final Color color;
+  final Color background;
   final Color foreground;
-  final BorderRadius radius;
   final double height;
+  final double outerRadius;
+  final double innerRadius;
+
+  /// True for the leading segment (outer corner on the left, inner on the
+  /// right); false mirrors it for the trailing segment.
+  final bool leadingEdge;
+  final EdgeInsets padding;
   final String tooltip;
 
   @override
   Widget build(BuildContext context) {
+    final outer = Radius.circular(outerRadius);
+    final inner = Radius.circular(innerRadius);
+    final radius = leadingEdge
+        ? BorderRadius.horizontal(left: outer, right: inner)
+        : BorderRadius.horizontal(left: inner, right: outer);
+
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: color,
-        borderRadius: radius,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: radius,
-          child: SizedBox(
-            height: height,
-            width: height,
-            child: IconTheme.merge(
-              data: IconThemeData(color: foreground, size: 16),
-              child: Center(child: child),
+      child: SizedBox(
+        height: height,
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(borderRadius: radius),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: padding,
+              child: IconTheme.merge(
+                data: IconThemeData(color: foreground, size: 16),
+                child: Center(widthFactor: 1, child: child),
+              ),
             ),
           ),
         ),
