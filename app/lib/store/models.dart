@@ -333,6 +333,7 @@ class Worktree {
     required this.sessionIds,
     this.uncommittedFiles = 0,
     this.aheadCount = 0,
+    this.behindCount = 0,
     this.committedAt,
     this.pr,
   });
@@ -351,6 +352,9 @@ class Worktree {
 
   /// Commits not yet pushed to the remote (what a push would send).
   final int aheadCount;
+
+  /// Commits on the upstream not yet local (what a pull would fetch).
+  final int behindCount;
 
   /// HEAD commit time, or null when unavailable.
   final DateTime? committedAt;
@@ -372,6 +376,7 @@ class Worktree {
       filesChanged: (j['filesChanged'] as num?)?.toInt() ?? 0,
       uncommittedFiles: (j['uncommittedFiles'] as num?)?.toInt() ?? 0,
       aheadCount: (j['aheadCount'] as num?)?.toInt() ?? 0,
+      behindCount: (j['behindCount'] as num?)?.toInt() ?? 0,
       sessionIds: ((j['sessionIds'] as List?) ?? const [])
           .whereType<String>()
           .toList(),

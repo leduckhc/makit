@@ -57,6 +57,18 @@ class ReposState {
     }
     return 0;
   }
+
+  /// Commits the worktree at [worktreePath] is behind its upstream, or 0 when
+  /// there is none. Backs the composer's "X commits behind" hint.
+  int behindCountForWorktreePath(String? worktreePath) {
+    if (worktreePath == null) return 0;
+    for (final repo in repos) {
+      for (final w in repo.worktrees) {
+        if (w.path == worktreePath) return w.behindCount;
+      }
+    }
+    return 0;
+  }
 }
 
 class SessionsState {

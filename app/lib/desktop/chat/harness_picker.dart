@@ -268,6 +268,9 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
     final commitsAhead = ref
         .watch(reposProvider)
         .aheadCountForWorktreePath(widget.worktree.path);
+    final commitsBehind = ref
+        .watch(reposProvider)
+        .behindCountForWorktreePath(widget.worktree.path);
     return Column(
       children: [
         const UnfoldStrip(),
@@ -355,6 +358,7 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                     pr: pr,
                     uncommittedFiles: uncommittedFiles,
                     commitsAhead: commitsAhead,
+                    commitsBehind: commitsBehind,
                     onInsertPrompt: _insertPrompt,
                   ),
                   Composer(

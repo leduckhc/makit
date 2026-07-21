@@ -45,6 +45,7 @@ function repos(branch: string, prInfo: PullRequestInfo | null): RepoDTO[] {
           filesChanged: 0,
           uncommittedFiles: 0,
           aheadCount: 0,
+          behindCount: 0,
           committedAt: null,
           pr: prInfo,
           sessionIds: [],

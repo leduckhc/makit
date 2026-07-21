@@ -471,6 +471,18 @@ export async function commitsAhead(worktreePath: string, baseBranch: string | nu
   return base.code === 0 ? parse(base.stdout) : 0;
 }
 
+/**
+ * Count of commits on this worktree's upstream that are not yet local (what a
+ * pull would fetch). Requires a tracking branch — a branch with no upstream has
+ * nothing to pull, so this returns 0. Best-effort — 0 on any git failure.
+ */
+export async function commitsBehind(worktreePath: string): Promise<number> {
+  const r = await git(["rev-list", "--count", "HEAD..@{upstream}"], worktreePath);
+  if (r.code !== 0) return 0;
+  const n = Number.parseInt(r.stdout.trim(), 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** A single open pull request, as listed for the "New worktree from PR" flow. */
 export interface OpenPr {
   number: number;

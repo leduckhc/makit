@@ -135,6 +135,8 @@ export interface WorktreeDTO {
   uncommittedFiles: number;
   /** Commits not yet pushed to the remote (what a push would send). */
   aheadCount: number;
+  /** Commits on the upstream not yet local (what a pull would fetch). */
+  behindCount: number;
   /** HEAD commit time in epoch milliseconds, or null when unavailable. */
   committedAt: number | null;
   pr: PullRequestDTO | null;

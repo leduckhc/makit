@@ -14,6 +14,7 @@ Widget _host(
   PullRequest? pr,
   int uncommittedFiles = 0,
   int commitsAhead = 0,
+  int commitsBehind = 0,
   required void Function(String) onInsert,
 }) {
   return ProviderScope(
@@ -26,6 +27,7 @@ Widget _host(
           pr: pr,
           uncommittedFiles: uncommittedFiles,
           commitsAhead: commitsAhead,
+          commitsBehind: commitsBehind,
           onInsertPrompt: onInsert,
         ),
       ),
@@ -205,6 +207,26 @@ void main() {
       ),
     );
     expect(find.text('PR #42'), findsOneWidget);
+  });
+
+  testWidgets('commits behind (no unpushed) → chip + default "Pull"', (
+    tester,
+  ) async {
+    String? inserted;
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(unresolvedComments: 1),
+        commitsBehind: 2,
+        onInsert: (p) => inserted = p,
+      ),
+    );
+    // Unfetched commits outrank unresolved comments.
+    expect(find.text('2 commits behind'), findsOneWidget);
+    expect(find.text('1 unresolved comment'), findsNothing);
+    await tester.tap(find.text('Pull'));
+    await tester.pumpAndSettle();
+    expect(inserted, PrPromptAction.pull.defaultPrompt);
   });
 
   testWidgets('hovering the pill lists checks failed → skipped → passed', (

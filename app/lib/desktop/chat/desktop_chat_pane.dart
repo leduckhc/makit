@@ -285,6 +285,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     commitsAhead: ref
                         .watch(reposProvider)
                         .aheadCountForWorktreePath(session.worktreePath),
+                    commitsBehind: ref
+                        .watch(reposProvider)
+                        .behindCountForWorktreePath(session.worktreePath),
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),

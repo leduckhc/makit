@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../ui/widgets/codicons.dart';
 import '../../store/models.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
@@ -20,6 +21,7 @@ class PrComposerBar extends StatelessWidget {
     required this.onInsertPrompt,
     this.uncommittedFiles = 0,
     this.commitsAhead = 0,
+    this.commitsBehind = 0,
   });
 
   /// The open PR for the pane's worktree, or null when there is none.
@@ -28,8 +30,11 @@ class PrComposerBar extends StatelessWidget {
   /// Files with uncommitted changes in the pane's worktree (0 when none).
   final int uncommittedFiles;
 
-  /// Commits not yet pushed to the remote (0 when none / up to date).
+  /// Local commits not yet pushed (0 when none / up to date).
   final int commitsAhead;
+
+  /// Remote commits not yet pulled (0 when none / up to date).
+  final int commitsBehind;
 
   /// Insert a resolved canned prompt into the composer (does not send).
   final void Function(String prompt) onInsertPrompt;
@@ -42,6 +47,7 @@ class PrComposerBar extends StatelessWidget {
       pr: pr,
       uncommittedFiles: uncommittedFiles,
       commitsAhead: commitsAhead,
+      commitsBehind: commitsBehind,
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
@@ -80,13 +86,15 @@ class PrComposerBar extends StatelessWidget {
 /// button's default action, ordered by urgency so the composer never shows a
 /// wall of competing hints:
 ///   1. uncommitted work → Commit and push,
-///   2. unpushed commits → Push,
-///   3. failing CI → Fix PR,
-///   4. unresolved review threads → Resolve comments.
+///   2. behind the remote → Pull (a push would be rejected while behind),
+///   3. unpushed commits → Push,
+///   4. failing CI → Fix PR,
+///   5. unresolved review threads → Resolve comments.
 _Situation? _situationFor({
   required PullRequest? pr,
   required int uncommittedFiles,
   required int commitsAhead,
+  required int commitsBehind,
 }) {
   const amber = Color(0xFFD29922);
   const red = Color(0xFFF85149);
@@ -98,9 +106,17 @@ _Situation? _situationFor({
       action: PrPromptAction.commitAndPush,
     );
   }
+  if (commitsBehind > 0) {
+    return _Situation(
+      icon: Codicons.repoPull,
+      label: '$commitsBehind commit${commitsBehind == 1 ? '' : 's'} behind',
+      color: amber,
+      action: PrPromptAction.pull,
+    );
+  }
   if (commitsAhead > 0) {
     return _Situation(
-      icon: PhosphorIconsLight.arrowLineUp,
+      icon: Codicons.repoPush,
       label: '$commitsAhead commit${commitsAhead == 1 ? '' : 's'} ahead',
       color: amber,
       action: PrPromptAction.push,
@@ -116,7 +132,7 @@ _Situation? _situationFor({
   }
   if ((pr?.unresolvedComments ?? 0) > 0) {
     return _Situation(
-      icon: PhosphorIconsLight.chatCircleText,
+      icon: Codicons.commentDiscussion,
       label: _plural(pr!.unresolvedComments, 'unresolved comment'),
       color: amber,
       action: PrPromptAction.resolveComments,

@@ -133,6 +133,13 @@ const PreferenceEntry<String> prPushPromptPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+const PreferenceEntry<String> prPullPromptPreference = PreferenceEntry(
+  id: 'chat.prPrompt.pull',
+  defaultValue: '',
+  encode: _encodeString,
+  decode: _decodeString,
+);
+
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
@@ -149,6 +156,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   prResolveCommentsPromptPreference,
   prCommitPushPromptPreference,
   prPushPromptPreference,
+  prPullPromptPreference,
 ];
 
 Object? _encodeThemeMode(ThemeMode value) => value.name;

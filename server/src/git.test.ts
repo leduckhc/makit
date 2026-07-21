@@ -20,6 +20,7 @@ import {
   uncommittedFileCount,
   unresolvedReviewThreadCount,
   commitsAhead,
+  commitsBehind,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -229,6 +230,40 @@ test("commitsAhead counts commits ahead of the base branch when no upstream", as
     assert.equal(await commitsAhead(repo, "main"), 2);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("commitsBehind counts upstream commits missing locally (0 without upstream)", async () => {
+  // Two clones sharing a remote: advance the remote, then the stale clone is
+  // "behind" by the number of commits it hasn't fetched.
+  const remote = mkdtempSync(join(tmpdir(), "makit-remote-"));
+  const a = mkdtempSync(join(tmpdir(), "makit-a-"));
+  const b = mkdtempSync(join(tmpdir(), "makit-b-"));
+  try {
+    const ga = (...args: string[]) => execFileSync("git", args, { cwd: a });
+    const gb = (...args: string[]) => execFileSync("git", args, { cwd: b });
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+    // Clone A: seed a commit and push.
+    execFileSync("git", ["clone", "-q", remote, a]);
+    ga("config", "user.email", "t@t.io");
+    ga("config", "user.name", "T");
+    writeFileSync(join(a, "f.txt"), "1\n");
+    ga("add", ".");
+    ga("commit", "-q", "-m", "one");
+    ga("push", "-q", "origin", "main");
+    // Clone B tracks origin/main and is up to date.
+    execFileSync("git", ["clone", "-q", remote, b]);
+    assert.equal(await commitsBehind(b), 0);
+    // A pushes two more commits; B fetches but doesn't merge → behind by 2.
+    writeFileSync(join(a, "f.txt"), "2\n");
+    ga("commit", "-aqm", "two");
+    writeFileSync(join(a, "f.txt"), "3\n");
+    ga("commit", "-aqm", "three");
+    ga("push", "-q", "origin", "main");
+    gb("fetch", "-q", "origin");
+    assert.equal(await commitsBehind(b), 2);
+  } finally {
+    for (const d of [remote, a, b]) rmSync(d, { recursive: true, force: true });
   }
 });
 

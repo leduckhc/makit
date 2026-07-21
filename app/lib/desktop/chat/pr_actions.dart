@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../ui/widgets/codicons.dart';
 import '../settings/prefs/preference.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
@@ -31,7 +32,7 @@ enum PrPromptAction {
   ),
   resolveComments(
     'Resolve comments',
-    PhosphorIconsLight.chatCircleText,
+    Codicons.commentDiscussion,
     prResolveCommentsPromptPreference,
     'Fetch the open review comments on this pull request (e.g. '
         '`gh pr view --comments`). Address each one with a concrete code change, '
@@ -49,10 +50,18 @@ enum PrPromptAction {
   ),
   push(
     'Push',
-    PhosphorIconsLight.arrowLineUp,
+    Codicons.repoPush,
     prPushPromptPreference,
     'Push the current branch to its remote (use `git push -u` to set the '
         'upstream if it has none). Reply when the push succeeds.',
+  ),
+  pull(
+    'Pull',
+    Codicons.repoPull,
+    prPullPromptPreference,
+    'Integrate the latest changes from the remote into this branch (e.g. '
+        '`git pull --rebase`), resolving any conflicts. Reply when the branch '
+        'is up to date.',
   );
 
   const PrPromptAction(
