@@ -10,6 +10,7 @@ import 'composer_focus.dart';
 import 'composer_draft.dart';
 import 'panes/pane_header.dart';
 import 'panes/pane_tree_controller.dart';
+import 'pr_bar.dart';
 import 'selected_session.dart';
 
 /// Harness picker shown in the main content while a session is still a draft
@@ -256,6 +257,14 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                     );
                   }
                   final selected = _chosenAgent ?? _defaultAgent(agents);
+                  // The worktree already exists on disk, so it may head an open
+                  // PR (created in makit, by another agent, or on GitHub). Show
+                  // its status here too so the state is visible before a session
+                  // even starts. Reads the poller-refreshed repos snapshot, so
+                  // it updates in place.
+                  final pr = ref
+                      .watch(reposProvider)
+                      .prForWorktreePath(widget.worktree.path);
                   return SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
                     child: Column(
@@ -274,6 +283,10 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                             color: theme.colorScheme.outline,
                           ),
                         ),
+                        if (pr != null) ...[
+                          const SizedBox(height: 12),
+                          PrStatusPill(pr: pr),
+                        ],
                         const SizedBox(height: 16),
                         Wrap(
                           spacing: 12,

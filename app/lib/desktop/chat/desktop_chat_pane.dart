@@ -276,10 +276,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // worktree from the (poller-refreshed) repos snapshot, so it
                   // updates in place as CI/state changes.
                   PrComposerBar(
-                    pr: _prForWorktree(
-                      ref.watch(reposProvider),
-                      session.worktreePath,
-                    ),
+                    pr: ref
+                        .watch(reposProvider)
+                        .prForWorktreePath(session.worktreePath),
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),
@@ -336,20 +335,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     }
     super.dispose();
   }
-}
-
-/// The open PR for the worktree at [worktreePath], or null when there is none
-/// (no path, no matching worktree, or a worktree without an open PR). Scans the
-/// poller-refreshed [repos] snapshot so the PR bar updates in place as status
-/// changes.
-PullRequest? _prForWorktree(ReposState repos, String? worktreePath) {
-  if (worktreePath == null) return null;
-  for (final repo in repos.repos) {
-    for (final w in repo.worktrees) {
-      if (w.path == worktreePath) return w.pr;
-    }
-  }
-  return null;
 }
 
 class _EmptyTranscript extends StatelessWidget {
