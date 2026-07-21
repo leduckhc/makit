@@ -202,6 +202,29 @@ class FakeServer {
               'state': 'OPEN',
               'title': branch,
               'isDraft': false,
+              'mergeable': 'MERGEABLE',
+              'mergeStateStatus': 'CLEAN',
+              'checkRollup': 'pending',
+              'checks': [
+                {
+                  'name': 'test',
+                  'bucket': 'pass',
+                  'workflowName': 'CI',
+                  'detailsUrl': 'https://github.com/demo/actions/1',
+                },
+                {
+                  'name': 'lint',
+                  'bucket': 'pass',
+                  'workflowName': 'CI',
+                  'detailsUrl': 'https://github.com/demo/actions/2',
+                },
+                {
+                  'name': 'e2e',
+                  'bucket': 'pending',
+                  'workflowName': 'E2E',
+                  'detailsUrl': 'https://github.com/demo/actions/3',
+                },
+              ],
             },
         });
       });
