@@ -18,6 +18,7 @@ import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessio
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter } from "./agent_factory.js";
 import { listRepos, enrichPrs } from "./repo_service.js";
+import type { PersistedProject } from "./project-store.js";
 import {
   isGitRepo,
   detectDefaultBranch,
@@ -45,15 +46,18 @@ export interface AdapterFactoryContext {
 export type AdapterFactory = (context: AdapterFactoryContext) => AgentAdapter;
 
 export interface ManagerOpts {
-  /** Project roots to expose. */
-  projects: string[];
+  /** Project roots to expose. A bare path string gets a fresh server-generated
+   *  id; a `{ id, path }` record (restored from persistence) keeps its id so
+   *  ids stay stable across restarts. */
+  projects: Array<string | PersistedProject>;
   /** Override the production pi adapter, used by deterministic e2e tests. */
   adapterFactory?: AdapterFactory;
   /**
-   * Called with the current list of project paths after every add/remove so
-   * the caller can persist them. Injected to keep the manager fs-agnostic.
+   * Called with the current `{ id, path }` list after every add/remove so the
+   * caller can persist them (ids included, so they survive a restart).
+   * Injected to keep the manager fs-agnostic.
    */
-  onProjectsChanged?: (paths: string[]) => void;
+  onProjectsChanged?: (projects: PersistedProject[]) => void;
   /**
    * Force every spawned pi session onto a specific model (`--model`). Used by
    * the real-pi e2e to select the fake model provider. Unset in production, so
@@ -101,7 +105,7 @@ export class SessionManager extends EventEmitter {
    *  so two sibling drafts racing to send first fork ONE tree, not two. */
   private readonly vwInFlight = new Map<string, Promise<{ path: string; branch: string }>>();
   private readonly adapterFactory?: AdapterFactory;
-  private readonly onProjectsChanged?: (paths: string[]) => void;
+  private readonly onProjectsChanged?: (projects: PersistedProject[]) => void;
   private readonly defaultModel?: string;
   private readonly defaultAgentId: string;
   private readonly store?: EventStore;
@@ -114,8 +118,12 @@ export class SessionManager extends EventEmitter {
     this.defaultModel = opts.defaultModel;
     this.defaultAgentId = "pi";
     this.store = opts.store;
-    for (const path of opts.projects) {
-      const id = randomUUID();
+    for (const entry of opts.projects) {
+      // A bare path gets a fresh server-generated id; a restored `{ id, path }`
+      // keeps its id so a client's persisted projectId stays valid across a
+      // server restart.
+      const path = typeof entry === "string" ? entry : entry.path;
+      const id = typeof entry === "string" ? randomUUID() : entry.id;
       this.projects.set(id, {
         dto: {
           id,
@@ -205,7 +213,9 @@ export class SessionManager extends EventEmitter {
   }
 
   private notifyProjectsChanged(): void {
-    this.onProjectsChanged?.([...this.projects.values()].map((p) => p.dto.path));
+    this.onProjectsChanged?.(
+      [...this.projects.values()].map((p) => ({ id: p.dto.id, path: p.dto.path })),
+    );
   }
 
   listSessions() {

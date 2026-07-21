@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionManager } from "./manager.js";
+import type { PersistedProject } from "./project-store.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { SessionEvent } from "./protocol.js";
@@ -655,15 +656,18 @@ test("addProject dedupes by resolved path and fires onProjectsChanged", () => {
   const a = mkdtempSync(join(tmpdir(), "makit-proj-"));
   const b = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
-    const changes: string[][] = [];
+    const changes: PersistedProject[][] = [];
     const manager = new SessionManager({
       projects: [a],
-      onProjectsChanged: (paths) => changes.push(paths),
+      onProjectsChanged: (projects) => changes.push(projects),
     });
 
     const first = manager.addProject(b);
     assert.equal(manager.listProjects().length, 2);
-    assert.deepEqual(changes.at(-1), [a, b]);
+    assert.deepEqual(
+      changes.at(-1)?.map((p) => p.path),
+      [a, b],
+    );
 
     const again = manager.addProject(b + "/");
     assert.equal(again.id, first.id);
@@ -675,14 +679,29 @@ test("addProject dedupes by resolved path and fires onProjectsChanged", () => {
   }
 });
 
+test("restored {id, path} projects keep their id (stable across restart)", () => {
+  const a = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    // Simulate a restart: the persistence layer hands back the id it stored.
+    const m1 = new SessionManager({ projects: [a] });
+    const persistedId = m1.listProjects()[0].id;
+
+    const m2 = new SessionManager({ projects: [{ id: persistedId, path: a }] });
+    assert.equal(m2.listProjects()[0].id, persistedId);
+    assert.equal(m2.listProjects()[0].path, a);
+  } finally {
+    rmSync(a, { recursive: true, force: true });
+  }
+});
+
 test("removeProject removes the entry and fires onProjectsChanged", () => {
   const a = mkdtempSync(join(tmpdir(), "makit-proj-"));
   const b = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
-    const changes: string[][] = [];
+    const changes: PersistedProject[][] = [];
     const manager = new SessionManager({
       projects: [a, b],
-      onProjectsChanged: (paths) => changes.push(paths),
+      onProjectsChanged: (projects) => changes.push(projects),
     });
     const target = manager.listProjects()[0];
 
