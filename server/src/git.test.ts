@@ -15,6 +15,8 @@ import {
   removeWorktree,
   renameBranch,
   isGitRepo,
+  normalizeChecks,
+  rollupChecks,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -182,4 +184,57 @@ test("read helpers degrade gracefully on a non-repo path", async () => {
   } finally {
     rmSync(plain, { recursive: true, force: true });
   }
+});
+
+test("normalizeChecks maps CheckRun and StatusContext shapes to flat buckets", () => {
+  const rollup = [
+    // CheckRun: completed + success
+    { __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "SUCCESS", detailsUrl: "u1", workflowName: "CI" },
+    // CheckRun: still running
+    { __typename: "CheckRun", name: "build", status: "IN_PROGRESS", detailsUrl: "u2", workflowName: "CI" },
+    // CheckRun: failure
+    { __typename: "CheckRun", name: "lint", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "u3", workflowName: "CI" },
+    // CheckRun: skipped
+    { __typename: "CheckRun", name: "e2e", status: "COMPLETED", conclusion: "SKIPPED" },
+    // CheckRun: cancelled
+    { __typename: "CheckRun", name: "slow", status: "COMPLETED", conclusion: "CANCELLED" },
+    // StatusContext: legacy success
+    { __typename: "StatusContext", context: "CodeRabbit", state: "SUCCESS", targetUrl: "u6" },
+    // StatusContext: legacy pending
+    { __typename: "StatusContext", context: "deploy", state: "PENDING", targetUrl: "" },
+  ];
+  const checks = normalizeChecks(rollup);
+  assert.deepEqual(
+    checks.map((c) => [c.name, c.bucket]),
+    [
+      ["test", "pass"],
+      ["build", "pending"],
+      ["lint", "fail"],
+      ["e2e", "skipping"],
+      ["slow", "cancel"],
+      ["CodeRabbit", "pass"],
+      ["deploy", "pending"],
+    ],
+  );
+  // CheckRun keeps its workflow/detailsUrl; StatusContext maps targetUrl → detailsUrl.
+  assert.equal(checks[0].workflowName, "CI");
+  assert.equal(checks[0].detailsUrl, "u1");
+  assert.equal(checks[5].workflowName, null);
+  assert.equal(checks[5].detailsUrl, "u6");
+});
+
+test("normalizeChecks tolerates non-array / missing rollup", () => {
+  assert.deepEqual(normalizeChecks(undefined), []);
+  assert.deepEqual(normalizeChecks(null), []);
+  assert.deepEqual(normalizeChecks("nope"), []);
+});
+
+test("rollupChecks: fail dominates, then pending, then pass, else none", () => {
+  const mk = (bucket: string) => ({ name: "x", bucket, workflowName: null, detailsUrl: null }) as never;
+  assert.equal(rollupChecks([]), "none");
+  assert.equal(rollupChecks([mk("skipping")]), "none");
+  assert.equal(rollupChecks([mk("pass"), mk("skipping")]), "pass");
+  assert.equal(rollupChecks([mk("pass"), mk("pending")]), "pending");
+  assert.equal(rollupChecks([mk("pending"), mk("fail")]), "fail");
+  assert.equal(rollupChecks([mk("pass"), mk("cancel")]), "fail");
 });

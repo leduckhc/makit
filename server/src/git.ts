@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { log } from "./log.js";
 import { mapLimit } from "./concurrency.js";
+import type { PrCheckBucket, PrCheckDTO, PrCheckRollup } from "./protocol.js";
 
 /**
  * Cap on concurrent per-worktree git reads within a single repo (e.g. the
@@ -239,24 +240,145 @@ export interface PullRequestInfo {
   state: string;
   title: string;
   isDraft: boolean;
+  mergeable: string | null;
+  mergeStateStatus: string | null;
+  checks: PrCheckDTO[];
+  checkRollup: PrCheckRollup;
+}
+
+/** Raw `statusCheckRollup` entry as emitted by `gh` (either shape). */
+interface RawRollupEntry {
+  __typename?: string;
+  // CheckRun shape
+  name?: string;
+  status?: string;
+  conclusion?: string;
+  detailsUrl?: string;
+  workflowName?: string;
+  // StatusContext shape
+  context?: string;
+  state?: string;
+  targetUrl?: string;
+}
+
+/**
+ * Classify one raw `statusCheckRollup` entry into a {@link PrCheckBucket}.
+ * Handles both the GitHub Actions `CheckRun` shape (status + conclusion) and
+ * the legacy `StatusContext` shape (state). Unknown values fall back to
+ * `pending` so an unfinished/unrecognized check never masquerades as passing.
+ */
+function bucketForRollupEntry(e: RawRollupEntry): PrCheckBucket {
+  // CheckRun: not COMPLETED means still running/queued.
+  if (e.status !== undefined) {
+    if (e.status !== "COMPLETED") return "pending";
+    switch ((e.conclusion ?? "").toUpperCase()) {
+      case "SUCCESS":
+        return "pass";
+      case "SKIPPED":
+      case "NEUTRAL":
+        return "skipping";
+      case "CANCELLED":
+        return "cancel";
+      case "FAILURE":
+      case "TIMED_OUT":
+      case "STARTUP_FAILURE":
+      case "ACTION_REQUIRED":
+        return "fail";
+      default:
+        return "pending";
+    }
+  }
+  // StatusContext: a legacy commit status.
+  switch ((e.state ?? "").toUpperCase()) {
+    case "SUCCESS":
+      return "pass";
+    case "FAILURE":
+    case "ERROR":
+      return "fail";
+    case "PENDING":
+    case "EXPECTED":
+      return "pending";
+    default:
+      return "pending";
+  }
+}
+
+/** Normalize `gh`'s mixed `statusCheckRollup` array into flat {@link PrCheckDTO}s. */
+export function normalizeChecks(rollup: unknown): PrCheckDTO[] {
+  if (!Array.isArray(rollup)) return [];
+  return rollup.map((raw) => {
+    const e = raw as RawRollupEntry;
+    return {
+      name: e.name ?? e.context ?? "check",
+      bucket: bucketForRollupEntry(e),
+      workflowName: e.workflowName ?? null,
+      detailsUrl: e.detailsUrl ?? e.targetUrl ?? null,
+    };
+  });
+}
+
+/**
+ * Aggregate a check list into a single verdict for the pill tint. Any hard
+ * failure (`fail`/`cancel`) dominates; else any `pending`; else any `pass`;
+ * else `none` (empty, or every check skipped).
+ */
+export function rollupChecks(checks: PrCheckDTO[]): PrCheckRollup {
+  let sawPending = false;
+  let sawPass = false;
+  for (const c of checks) {
+    if (c.bucket === "fail" || c.bucket === "cancel") return "fail";
+    if (c.bucket === "pending") sawPending = true;
+    if (c.bucket === "pass") sawPass = true;
+  }
+  if (sawPending) return "pending";
+  if (sawPass) return "pass";
+  return "none";
 }
 
 /**
  * The open PR whose head is `branch`, via `gh`. Returns null when `gh` is
  * missing/unauthenticated, the repo has no GitHub remote, or no PR exists —
  * PR info is a nice-to-have, never a hard dependency.
+ *
+ * One `gh pr list` call fetches identity + mergeability + the CI check rollup
+ * together (verified: `--head` list output includes `statusCheckRollup`), so a
+ * poll costs a single subprocess per open PR.
  */
 export async function findOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
   const r = await run(
     "gh",
-    ["pr", "list", "--head", branch, "--state", "open", "--json", "number,url,state,title,isDraft", "--limit", "1"],
+    [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "open",
+      "--json",
+      "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
+      "--limit",
+      "1",
+    ],
     repoPath,
     5000,
   );
   if (r.code !== 0) return null;
   try {
-    const parsed = JSON.parse(r.stdout.trim() || "[]") as PullRequestInfo[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null;
+    const parsed = JSON.parse(r.stdout.trim() || "[]") as Array<Record<string, unknown>>;
+    if (!Array.isArray(parsed) || parsed.length === 0) return null;
+    const p = parsed[0];
+    const checks = normalizeChecks(p.statusCheckRollup);
+    return {
+      number: typeof p.number === "number" ? p.number : 0,
+      url: typeof p.url === "string" ? p.url : "",
+      state: typeof p.state === "string" ? p.state : "OPEN",
+      title: typeof p.title === "string" ? p.title : "",
+      isDraft: p.isDraft === true,
+      mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
+      mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
+      checks,
+      checkRollup: rollupChecks(checks),
+    };
   } catch {
     return null;
   }
