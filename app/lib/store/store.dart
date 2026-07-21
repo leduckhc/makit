@@ -308,6 +308,15 @@ class StoreController extends StateNotifier<StoreState> {
     // to the server; its real user.message echo is ordered after the sub ack and
     // appears once [_flushReplay] has installed the replay cursor.
     if (_awaitingReplay.contains(sessionId)) return;
+    // A pending (draft) session promotes on its first message: the server
+    // creates the worktree + agent, whose startup emits session.commands /
+    // status events BEFORE the user.message echo. Those events consume seqs, so
+    // the optimistic bubble's guessed seq (cursor+1) no longer matches the
+    // echo's seq and the reducer can't dedup them — the first message would
+    // render twice. Skip the optimistic bubble here (as with replay above); the
+    // echo renders it once, ordered after the startup events.
+    final idx = state.sessions.indexWhere((s) => s.id == sessionId);
+    if (idx >= 0 && state.sessions[idx].pending) return;
     // Inject a local user bubble immediately so the input doesn't feel hung.
     // The optimistic event takes the next seq after the cursor; the server's
     // user.message echo arrives with the SAME seq (the server assigns seqs in

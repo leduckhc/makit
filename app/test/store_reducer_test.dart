@@ -417,6 +417,74 @@ void main() {
         expect(items.map((item) => item.text), ['new message']);
       },
     );
+
+    test(
+      'first message on a pending draft is not doubled by startup events',
+      () async {
+        // A draft session promotes on its first message: the server creates the
+        // worktree + agent, whose startup emits a `session.commands` event
+        // BEFORE the `user.message` echo. That startup event consumes a seq, so
+        // an optimistic bubble's guessed seq (cursor+1) no longer matches the
+        // echo's seq and the reducer can't dedup them — the first message would
+        // render twice.
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        // The session shows up as a pending draft (no worktree/agent yet).
+        transport.pushSessions([
+          {'id': _sid, 'projectId': 'p1', 'agent': 'pi', 'pending': true},
+        ]);
+        store.subscribeSession(_sid);
+        // A draft has no history, so its sub replay is an immediate empty ack.
+        transport.pushAck(id: 's-$_sid');
+        await Future<void>.delayed(Duration.zero);
+
+        store.appendOptimisticMessage(_sid, 'first task');
+        store.sendMessage(_sid, 'first task');
+
+        // Promotion starts the agent: its startup `session.commands` (seq 1)
+        // lands before the `user.message` echo (seq 2).
+        transport.pushEvent(seq: 1, sessionId: _sid, kind: 'session.commands');
+        transport.pushEvent(
+          seq: 2,
+          sessionId: _sid,
+          kind: 'user.message',
+          text: 'first task',
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final state = container.read(storeControllerProvider);
+        final items = foldEvents(
+          state.events[_sid]!,
+        ).whereType<UserMessageItem>().toList();
+        expect(items.map((item) => item.text), ['first task']);
+      },
+    );
   });
 
   group('StoreController — repo refresh after project add', () {
@@ -577,6 +645,16 @@ class _CapturingTransport implements Transport {
 
   void pushAck({required String id}) {
     _frames.add(Envelope(t: MsgType.ack, id: id));
+  }
+
+  void pushSessions(List<Map<String, dynamic>> sessions) {
+    _frames.add(
+      Envelope(
+        t: MsgType.event,
+        id: 'snap',
+        body: {'kind': 'sessions.snapshot', 'sessions': sessions},
+      ),
+    );
   }
 
   @override
