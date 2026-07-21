@@ -229,6 +229,10 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final agentsAsync = ref.watch(agentsProvider);
+    // The worktree already exists on disk, so it may head an open PR (created
+    // in makit, by another agent, or on GitHub). Read the poller-refreshed
+    // repos snapshot so the pill above the composer updates in place.
+    final pr = ref.watch(reposProvider).prForWorktreePath(widget.worktree.path);
     return Column(
       children: [
         const UnfoldStrip(),
@@ -257,14 +261,6 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                     );
                   }
                   final selected = _chosenAgent ?? _defaultAgent(agents);
-                  // The worktree already exists on disk, so it may head an open
-                  // PR (created in makit, by another agent, or on GitHub). Show
-                  // its status here too so the state is visible before a session
-                  // even starts. Reads the poller-refreshed repos snapshot, so
-                  // it updates in place.
-                  final pr = ref
-                      .watch(reposProvider)
-                      .prForWorktreePath(widget.worktree.path);
                   return SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
                     child: Column(
@@ -283,10 +279,6 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                             color: theme.colorScheme.outline,
                           ),
                         ),
-                        if (pr != null) ...[
-                          const SizedBox(height: 12),
-                          PrStatusPill(pr: pr),
-                        ],
                         const SizedBox(height: 16),
                         Wrap(
                           spacing: 12,
@@ -317,23 +309,36 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Composer(
-                onSend: _start,
-                running: _starting,
-                alwaysExpanded: true,
-                // A not-yet-started session has no id, so scope the draft to
-                // the worktree; it survives switching away and back.
-                initialText: ref.read(
-                  composerDraftsProvider,
-                )['wt:${widget.worktree.path}'],
-                onDraftChanged: (text) => ref
-                    .read(composerDraftsProvider.notifier)
-                    .set('wt:${widget.worktree.path}', text),
-                focusNode: widget.composerFocusId == null
-                    ? null
-                    : ref.watch(
-                        desktopComposerFocusProvider(widget.composerFocusId!),
-                      ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (pr != null)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 6),
+                      child: PrStatusPill(pr: pr),
+                    ),
+                  Composer(
+                    onSend: _start,
+                    running: _starting,
+                    alwaysExpanded: true,
+                    // A not-yet-started session has no id, so scope the draft to
+                    // the worktree; it survives switching away and back.
+                    initialText: ref.read(
+                      composerDraftsProvider,
+                    )['wt:${widget.worktree.path}'],
+                    onDraftChanged: (text) => ref
+                        .read(composerDraftsProvider.notifier)
+                        .set('wt:${widget.worktree.path}', text),
+                    focusNode: widget.composerFocusId == null
+                        ? null
+                        : ref.watch(
+                            desktopComposerFocusProvider(
+                              widget.composerFocusId!,
+                            ),
+                          ),
+                  ),
+                ],
               ),
             ),
           ),

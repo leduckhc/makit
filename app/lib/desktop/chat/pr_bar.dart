@@ -82,8 +82,12 @@ class PrStatusPill extends StatelessWidget {
     final color = pr.isDraft
         ? cs.outline
         : _rollupColor(context, pr.checkRollup);
+    // Opaque tint: composite the verdict tint over the surface so the pill is
+    // solid (not see-through over content behind it) while keeping the light
+    // tinted look and legible same-colour foreground.
+    final fill = Color.alphaBlend(color.withValues(alpha: 0.14), cs.surface);
     final pill = Material(
-      color: color.withValues(alpha: 0.14),
+      color: fill,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
