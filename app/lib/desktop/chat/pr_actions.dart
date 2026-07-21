@@ -37,6 +37,15 @@ enum PrPromptAction {
         '`gh pr view --comments`). Address each one with a concrete code change, '
         'or reply briefly explaining why no change is needed, then push and '
         'resolve the threads.',
+  ),
+  commitAndPush(
+    'Commit and push',
+    PhosphorIconsLight.arrowLineUp,
+    prCommitPushPromptPreference,
+    'Commit the current uncommitted changes on this branch with a clear, '
+        'conventional commit message summarizing what changed and why, then '
+        'push to the remote (setting the upstream if the branch has none). '
+        'Reply with the commit summary when done.',
   );
 
   const PrPromptAction(

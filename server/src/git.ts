@@ -244,6 +244,8 @@ export interface PullRequestInfo {
   mergeStateStatus: string | null;
   checks: PrCheckDTO[];
   checkRollup: PrCheckRollup;
+  /** Count of unresolved review threads on the PR (via GraphQL). */
+  unresolvedComments: number;
 }
 
 /** Raw `statusCheckRollup` entry as emitted by `gh` (either shape). */
@@ -368,9 +370,10 @@ export async function findOpenPr(repoPath: string, branch: string): Promise<Pull
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
     const p = parsed[0];
     const checks = normalizeChecks(p.statusCheckRollup);
+    const url = typeof p.url === "string" ? p.url : "";
     return {
       number: typeof p.number === "number" ? p.number : 0,
-      url: typeof p.url === "string" ? p.url : "",
+      url,
       state: typeof p.state === "string" ? p.state : "OPEN",
       title: typeof p.title === "string" ? p.title : "",
       isDraft: p.isDraft === true,
@@ -378,10 +381,55 @@ export async function findOpenPr(repoPath: string, branch: string): Promise<Pull
       mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
       checks,
       checkRollup: rollupChecks(checks),
+      unresolvedComments: url ? await unresolvedReviewThreadCount(repoPath, url) : 0,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Number of *unresolved* review threads on a PR, via `gh api graphql`. GitHub's
+ * `gh pr` JSON exposes no resolved-thread field, so GraphQL is the only way to
+ * surface "N unresolved comments". Owner/repo/number are parsed from the PR
+ * URL to avoid an extra `gh` call. Best-effort — 0 when `gh` is missing /
+ * unauthenticated, the URL is unparseable, or the query fails.
+ */
+export async function unresolvedReviewThreadCount(repoPath: string, prUrl: string): Promise<number> {
+  const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(prUrl);
+  if (!m) return 0;
+  const [, owner, repo, number] = m;
+  const query =
+    "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}";
+  const r = await run(
+    "gh",
+    ["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `repo=${repo}`, "-F", `number=${number}`],
+    repoPath,
+    5000,
+  );
+  if (r.code !== 0) return 0;
+  try {
+    const data = JSON.parse(r.stdout) as {
+      data?: {
+        repository?: { pullRequest?: { reviewThreads?: { nodes?: Array<{ isResolved?: boolean }> } } };
+      };
+    };
+    const nodes = data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+    return nodes.filter((n) => n && n.isResolved === false).length;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Count of files with uncommitted changes in a worktree (staged + unstaged +
+ * untracked), via `git status --porcelain` (one line per file). Best-effort —
+ * 0 on any git failure.
+ */
+export async function uncommittedFileCount(worktreePath: string): Promise<number> {
+  const r = await git(["status", "--porcelain"], worktreePath);
+  if (r.code !== 0) return 0;
+  return r.stdout.split("\n").filter((l) => l.trim().length > 0).length;
 }
 
 /** A single open pull request, as listed for the "New worktree from PR" flow. */

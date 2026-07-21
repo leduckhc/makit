@@ -17,6 +17,7 @@ function pr(overrides: Partial<PullRequestInfo> = {}): PullRequestInfo {
     mergeStateStatus: "CLEAN",
     checks: [],
     checkRollup: "none",
+    unresolvedComments: 0,
     ...overrides,
   };
 }
@@ -42,6 +43,7 @@ function repos(branch: string, prInfo: PullRequestInfo | null): RepoDTO[] {
           insertions: 0,
           deletions: 0,
           filesChanged: 0,
+          uncommittedFiles: 0,
           committedAt: null,
           pr: prInfo,
           sessionIds: [],

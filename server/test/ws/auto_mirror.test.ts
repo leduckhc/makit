@@ -85,6 +85,7 @@ function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
           insertions,
           deletions: 0,
           filesChanged: 1,
+          uncommittedFiles: 0,
           committedAt: null,
           pr: prNumber === null
             ? null
@@ -98,6 +99,7 @@ function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
                 mergeStateStatus: null,
                 checks: [],
                 checkRollup: "none",
+                unresolvedComments: 0,
               },
           sessionIds: [],
         },
@@ -121,6 +123,7 @@ function withPr(repos: RepoDTO[], prNumber: number): RepoDTO[] {
         mergeStateStatus: null,
         checks: [],
         checkRollup: "none" as const,
+        unresolvedComments: 0,
       },
     })),
   }));

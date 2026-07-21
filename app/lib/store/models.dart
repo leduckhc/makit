@@ -242,6 +242,7 @@ class PullRequest {
     this.mergeStateStatus,
     this.checks = const [],
     this.checkRollup = 'none',
+    this.unresolvedComments = 0,
   });
 
   final int number;
@@ -261,6 +262,9 @@ class PullRequest {
 
   /// Aggregate CI verdict: `pass` | `fail` | `pending` | `none`.
   final String checkRollup;
+
+  /// Count of unresolved review threads on the PR.
+  final int unresolvedComments;
 
   static PullRequest? fromJson(Map<String, dynamic> j) {
     final number = j['number'];
@@ -283,6 +287,7 @@ class PullRequest {
       checkRollup: j['checkRollup'] is String
           ? j['checkRollup'] as String
           : 'none',
+      unresolvedComments: (j['unresolvedComments'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -326,6 +331,7 @@ class Worktree {
     required this.deletions,
     required this.filesChanged,
     required this.sessionIds,
+    this.uncommittedFiles = 0,
     this.committedAt,
     this.pr,
   });
@@ -338,6 +344,9 @@ class Worktree {
   final int deletions;
   final int filesChanged;
   final List<String> sessionIds;
+
+  /// Files with uncommitted changes (staged + unstaged + untracked).
+  final int uncommittedFiles;
 
   /// HEAD commit time, or null when unavailable.
   final DateTime? committedAt;
@@ -357,6 +366,7 @@ class Worktree {
       insertions: (j['insertions'] as num?)?.toInt() ?? 0,
       deletions: (j['deletions'] as num?)?.toInt() ?? 0,
       filesChanged: (j['filesChanged'] as num?)?.toInt() ?? 0,
+      uncommittedFiles: (j['uncommittedFiles'] as num?)?.toInt() ?? 0,
       sessionIds: ((j['sessionIds'] as List?) ?? const [])
           .whereType<String>()
           .toList(),

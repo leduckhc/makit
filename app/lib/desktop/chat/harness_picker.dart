@@ -262,6 +262,9 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
     // in makit, by another agent, or on GitHub). Read the poller-refreshed
     // repos snapshot so the pill above the composer updates in place.
     final pr = ref.watch(reposProvider).prForWorktreePath(widget.worktree.path);
+    final uncommittedFiles = ref
+        .watch(reposProvider)
+        .uncommittedFilesForWorktreePath(widget.worktree.path);
     return Column(
       children: [
         const UnfoldStrip(),
@@ -345,7 +348,11 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
                   // PR status pill (when the worktree heads a PR) + the
                   // canned-prompt actions split button (always shown — its
                   // "Create PR" action is the path to getting a PR).
-                  PrComposerBar(pr: pr, onInsertPrompt: _insertPrompt),
+                  PrComposerBar(
+                    pr: pr,
+                    uncommittedFiles: uncommittedFiles,
+                    onInsertPrompt: _insertPrompt,
+                  ),
                   Composer(
                     controller: _composerCtrl,
                     onSend: _start,

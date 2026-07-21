@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,7 @@ import 'package:makit/store/models.dart';
 Widget _host(
   PreferencesController controller, {
   PullRequest? pr,
+  int uncommittedFiles = 0,
   required void Function(String) onInsert,
 }) {
   return ProviderScope(
@@ -19,7 +21,11 @@ Widget _host(
     ],
     child: MaterialApp(
       home: Scaffold(
-        body: PrComposerBar(pr: pr, onInsertPrompt: onInsert),
+        body: PrComposerBar(
+          pr: pr,
+          uncommittedFiles: uncommittedFiles,
+          onInsertPrompt: onInsert,
+        ),
       ),
     ),
   );
@@ -29,6 +35,7 @@ PullRequest _pr({
   String rollup = 'pass',
   bool isDraft = false,
   List<PrCheck> checks = const [],
+  int unresolvedComments = 0,
 }) => PullRequest(
   number: 42,
   url: 'https://github.com/o/r/pull/42',
@@ -37,6 +44,7 @@ PullRequest _pr({
   isDraft: isDraft,
   checkRollup: rollup,
   checks: checks,
+  unresolvedComments: unresolvedComments,
 );
 
 void main() {
@@ -97,6 +105,55 @@ void main() {
     expect(find.text('Create PR'), findsOneWidget);
   });
 
+  testWidgets('an existing PR hides "Create PR" from the menu', (tester) async {
+    await tester.pumpWidget(
+      _host(PreferencesController.ephemeral(), pr: _pr(), onInsert: (_) {}),
+    );
+    // Default main segment is the first non-create action (Fix PR).
+    expect(find.text('Create PR'), findsNothing);
+    await tester.tap(find.byTooltip('PR actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Create PR'), findsNothing);
+    expect(find.text('Fix PR'), findsWidgets);
+    expect(find.text('Resolve comments'), findsWidgets);
+    expect(find.text('Commit and push'), findsWidgets);
+  });
+
+  testWidgets('uncommitted files → label + default "Commit and push"', (
+    tester,
+  ) async {
+    String? inserted;
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(unresolvedComments: 3),
+        uncommittedFiles: 2,
+        onInsert: (p) => inserted = p,
+      ),
+    );
+    // Both labels render; uncommitted wins the default action.
+    expect(find.text('2 uncommitted files'), findsOneWidget);
+    expect(find.text('3 unresolved comments'), findsOneWidget);
+    await tester.tap(find.text('Commit and push'));
+    await tester.pumpAndSettle();
+    expect(inserted, PrPromptAction.commitAndPush.defaultPrompt);
+  });
+
+  testWidgets('unresolved comments (no uncommitted) → default "Resolve"', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(unresolvedComments: 1),
+        onInsert: (_) {},
+      ),
+    );
+    expect(find.text('1 unresolved comment'), findsOneWidget);
+    // Main segment repeats the suggested default.
+    expect(find.text('Resolve comments'), findsOneWidget);
+  });
+
   testWidgets('with an open PR the pill renders its number', (tester) async {
     await tester.pumpWidget(
       _host(
@@ -110,5 +167,43 @@ void main() {
       ),
     );
     expect(find.text('PR #42'), findsOneWidget);
+  });
+
+  testWidgets('hovering the pill lists checks failed → skipped → passed', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(
+          rollup: 'fail',
+          checks: const [
+            PrCheck(name: 'analyze', bucket: 'pass'),
+            PrCheck(name: 'lint', bucket: 'skipping'),
+            PrCheck(name: 'test', bucket: 'fail'),
+          ],
+        ),
+        onInsert: (_) {},
+      ),
+    );
+
+    // Hover the pill to reveal the popover.
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('PR #42')));
+    await tester.pumpAndSettle();
+
+    // Rows are ordered failures first, then skipped, then passing.
+    final failY = tester.getTopLeft(find.text('test')).dy;
+    final skipY = tester.getTopLeft(find.text('lint')).dy;
+    final passY = tester.getTopLeft(find.text('analyze')).dy;
+    expect(failY, lessThan(skipY));
+    expect(skipY, lessThan(passY));
+
+    // Third column shows the human status word for each bucket.
+    expect(find.text('failed'), findsOneWidget);
+    expect(find.text('skipped'), findsOneWidget);
+    expect(find.text('passed'), findsOneWidget);
   });
 }

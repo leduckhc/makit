@@ -33,6 +33,18 @@ class ReposState {
     }
     return null;
   }
+
+  /// Count of files with uncommitted changes in the worktree at [worktreePath],
+  /// or 0 when there is none. Backs the composer's "X uncommitted files" label.
+  int uncommittedFilesForWorktreePath(String? worktreePath) {
+    if (worktreePath == null) return 0;
+    for (final repo in repos) {
+      for (final w in repo.worktrees) {
+        if (w.path == worktreePath) return w.uncommittedFiles;
+      }
+    }
+    return 0;
+  }
 }
 
 class SessionsState {

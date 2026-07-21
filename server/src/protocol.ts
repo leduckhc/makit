@@ -113,6 +113,8 @@ export interface PullRequestDTO {
   checks: PrCheckDTO[];
   /** Aggregate CI verdict computed from {@link checks}. */
   checkRollup: PrCheckRollup;
+  /** Count of unresolved review threads on the PR. */
+  unresolvedComments: number;
 }
 
 /**
@@ -129,6 +131,8 @@ export interface WorktreeDTO {
   insertions: number;
   deletions: number;
   filesChanged: number;
+  /** Files with uncommitted changes (staged + unstaged + untracked). */
+  uncommittedFiles: number;
   /** HEAD commit time in epoch milliseconds, or null when unavailable. */
   committedAt: number | null;
   pr: PullRequestDTO | null;

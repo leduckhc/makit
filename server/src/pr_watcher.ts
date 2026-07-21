@@ -81,12 +81,21 @@ function signature(pr: {
   mergeStateStatus: string | null;
   checkRollup: string;
   checks: Array<{ name: string; bucket: string }>;
+  unresolvedComments: number;
 }): string {
   const checks = [...pr.checks]
     .map((c) => `${c.name}:${c.bucket}`)
     .sort()
     .join(",");
-  return [pr.state, pr.isDraft, pr.mergeable, pr.mergeStateStatus, pr.checkRollup, checks].join("|");
+  return [
+    pr.state,
+    pr.isDraft,
+    pr.mergeable,
+    pr.mergeStateStatus,
+    pr.checkRollup,
+    pr.unresolvedComments,
+    checks,
+  ].join("|");
 }
 
 /** Signature of a worktree's PR, or the {@link NO_PR} sentinel when absent. */

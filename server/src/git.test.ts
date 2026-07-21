@@ -17,6 +17,8 @@ import {
   isGitRepo,
   normalizeChecks,
   rollupChecks,
+  uncommittedFileCount,
+  unresolvedReviewThreadCount,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -181,9 +183,32 @@ test("read helpers degrade gracefully on a non-repo path", async () => {
     assert.equal(await detectCurrentBranch(plain), null);
     assert.deepEqual(await listWorktrees(plain), []);
     assert.deepEqual(await diffStat(plain, "main"), { insertions: 0, deletions: 0, filesChanged: 0 });
+    assert.equal(await uncommittedFileCount(plain), 0);
   } finally {
     rmSync(plain, { recursive: true, force: true });
   }
+});
+
+test("uncommittedFileCount counts staged, unstaged, and untracked files", async () => {
+  const repo = makeRepo();
+  try {
+    assert.equal(await uncommittedFileCount(repo), 0);
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    // Modify a tracked file (unstaged), stage a new file, add an untracked one.
+    writeFileSync(join(repo, "README.md"), "hello\nchanged\n");
+    writeFileSync(join(repo, "staged.txt"), "s\n");
+    g("add", "staged.txt");
+    writeFileSync(join(repo, "untracked.txt"), "u\n");
+    assert.equal(await uncommittedFileCount(repo), 3);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("unresolvedReviewThreadCount returns 0 for a non-parseable PR URL", async () => {
+  // A non-GitHub URL short-circuits before any `gh` call.
+  assert.equal(await unresolvedReviewThreadCount(process.cwd(), "https://example.com/x"), 0);
+  assert.equal(await unresolvedReviewThreadCount(process.cwd(), ""), 0);
 });
 
 test("normalizeChecks maps CheckRun and StatusContext shapes to flat buckets", () => {

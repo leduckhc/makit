@@ -177,6 +177,10 @@ export function startWsServer(opts: ServerOpts) {
   const prWatcher = watchPrs({
     fetchPr: (repoPath, branch) => findOpenPr(repoPath, branch),
     onChange: () => void broadcastReposSnapshot(),
+    // Poll every 5s regardless of check state (no adaptive backoff): PR status
+    // stays near-live in the UI.
+    fastMs: 5_000,
+    slowMs: 5_000,
   });
   https.on("close", () => prWatcher.close());
 

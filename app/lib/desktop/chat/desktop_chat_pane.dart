@@ -279,6 +279,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     pr: ref
                         .watch(reposProvider)
                         .prForWorktreePath(session.worktreePath),
+                    uncommittedFiles: ref
+                        .watch(reposProvider)
+                        .uncommittedFilesForWorktreePath(session.worktreePath),
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),
