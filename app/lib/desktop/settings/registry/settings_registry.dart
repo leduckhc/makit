@@ -128,7 +128,8 @@ final List<SettingsSection> kSettingsSections = [
       SettingsItem(
         id: 'agents_chat.pr_actions',
         title: 'PR actions',
-        help: 'Editable canned prompts for the composer\'s PR actions '
+        help:
+            'Editable canned prompts for the composer\'s PR actions '
             '(Create PR, Fix PR, Resolve comments).',
         keywords: [
           'pr',

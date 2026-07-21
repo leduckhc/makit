@@ -61,10 +61,8 @@ enum PrPromptAction {
 
 /// Resolve [action] to the name of the matching enum value, falling back to
 /// the first action for an unknown/legacy stored value.
-PrPromptAction prActionFromName(String name) => PrPromptAction.values.firstWhere(
-  (a) => a.name == name,
-  orElse: () => PrPromptAction.createPr,
-);
+PrPromptAction prActionFromName(String name) => PrPromptAction.values
+    .firstWhere((a) => a.name == name, orElse: () => PrPromptAction.createPr);
 
 /// The effective prompt for [action]: the user's Settings override when it is
 /// non-blank, else the built-in [PrPromptAction.defaultPrompt].

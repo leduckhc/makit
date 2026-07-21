@@ -45,10 +45,7 @@ void main() {
   ) async {
     String? inserted;
     await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        onInsert: (p) => inserted = p,
-      ),
+      _host(PreferencesController.ephemeral(), onInsert: (p) => inserted = p),
     );
 
     // Default last-action is Create PR; tapping its label runs it.
@@ -64,9 +61,7 @@ void main() {
     await controller.set(prCreatePromptPreference, 'MY custom create prompt');
 
     String? inserted;
-    await tester.pumpWidget(
-      _host(controller, onInsert: (p) => inserted = p),
-    );
+    await tester.pumpWidget(_host(controller, onInsert: (p) => inserted = p));
 
     await tester.tap(find.text('Create PR'));
     await tester.pumpAndSettle();
@@ -78,9 +73,7 @@ void main() {
   ) async {
     final controller = PreferencesController.ephemeral();
     String? inserted;
-    await tester.pumpWidget(
-      _host(controller, onInsert: (p) => inserted = p),
-    );
+    await tester.pumpWidget(_host(controller, onInsert: (p) => inserted = p));
 
     // Open the menu via the caret and pick "Fix PR".
     await tester.tap(find.byTooltip('PR actions'));

@@ -36,21 +36,24 @@ void main() {
     expect(pr.checks[1].detailsUrl, isNull);
   });
 
-  test('PullRequest.fromJson defaults new fields when absent (legacy wire)', () {
-    final pr = PullRequest.fromJson({
-      'number': 7,
-      'url': 'u',
-      'state': 'OPEN',
-      'title': 't',
-      'isDraft': true,
-    });
+  test(
+    'PullRequest.fromJson defaults new fields when absent (legacy wire)',
+    () {
+      final pr = PullRequest.fromJson({
+        'number': 7,
+        'url': 'u',
+        'state': 'OPEN',
+        'title': 't',
+        'isDraft': true,
+      });
 
-    expect(pr, isNotNull);
-    expect(pr!.mergeable, isNull);
-    expect(pr.mergeStateStatus, isNull);
-    expect(pr.checks, isEmpty);
-    expect(pr.checkRollup, 'none');
-  });
+      expect(pr, isNotNull);
+      expect(pr!.mergeable, isNull);
+      expect(pr.mergeStateStatus, isNull);
+      expect(pr.checks, isEmpty);
+      expect(pr.checkRollup, 'none');
+    },
+  );
 
   test('PullRequest.fromJson returns null without a number', () {
     expect(PullRequest.fromJson({'url': 'u'}), isNull);

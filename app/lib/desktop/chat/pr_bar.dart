@@ -14,7 +14,11 @@ import 'pr_actions.dart';
 /// on the right. The pill renders only when [pr] is non-null; the actions
 /// button always shows (its "Create PR" action is the path to *getting* a PR).
 class PrComposerBar extends StatelessWidget {
-  const PrComposerBar({super.key, required this.pr, required this.onInsertPrompt});
+  const PrComposerBar({
+    super.key,
+    required this.pr,
+    required this.onInsertPrompt,
+  });
 
   /// The open PR for the pane's worktree, or null when there is none.
   final PullRequest? pr;
@@ -75,7 +79,9 @@ class PrStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = pr.isDraft ? cs.outline : _rollupColor(context, pr.checkRollup);
+    final color = pr.isDraft
+        ? cs.outline
+        : _rollupColor(context, pr.checkRollup);
     final pill = Material(
       color: color.withValues(alpha: 0.14),
       borderRadius: BorderRadius.circular(8),
@@ -103,10 +109,7 @@ class PrStatusPill extends StatelessWidget {
               ],
               if (pr.isDraft) ...[
                 const SizedBox(width: 6),
-                Text(
-                  'draft',
-                  style: TextStyle(color: color, fontSize: 11),
-                ),
+                Text('draft', style: TextStyle(color: color, fontSize: 11)),
               ],
             ],
           ),
@@ -129,7 +132,9 @@ class PrStatusPill extends StatelessWidget {
     final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
     if (pr.checks.isEmpty) {
       return TextSpan(
-        text: pr.url.isEmpty ? 'Open pull request' : 'No CI checks · click to open on the web',
+        text: pr.url.isEmpty
+            ? 'Open pull request'
+            : 'No CI checks · click to open on the web',
         style: base,
       );
     }
@@ -240,10 +245,16 @@ class _SplitButton extends StatelessWidget {
           message: 'Insert "$label" prompt',
           child: Material(
             color: cs.secondaryContainer,
-            borderRadius: const BorderRadius.horizontal(left: _outer, right: _inner),
+            borderRadius: const BorderRadius.horizontal(
+              left: _outer,
+              right: _inner,
+            ),
             child: InkWell(
               onTap: onAction,
-              borderRadius: const BorderRadius.horizontal(left: _outer, right: _inner),
+              borderRadius: const BorderRadius.horizontal(
+                left: _outer,
+                right: _inner,
+              ),
               child: SizedBox(
                 height: _height,
                 child: Padding(
@@ -274,17 +285,27 @@ class _SplitButton extends StatelessWidget {
           message: 'PR actions',
           child: Material(
             color: caretColor,
-            borderRadius: const BorderRadius.horizontal(left: _inner, right: _outer),
+            borderRadius: const BorderRadius.horizontal(
+              left: _inner,
+              right: _outer,
+            ),
             child: InkWell(
               onTap: onToggleMenu,
-              borderRadius: const BorderRadius.horizontal(left: _inner, right: _outer),
+              borderRadius: const BorderRadius.horizontal(
+                left: _inner,
+                right: _outer,
+              ),
               child: SizedBox(
                 height: _height,
                 width: _height,
                 child: AnimatedRotation(
                   turns: menuOpen ? 0.5 : 0,
                   duration: const Duration(milliseconds: 150),
-                  child: Icon(PhosphorIconsLight.caretDown, size: 12, color: caretFg),
+                  child: Icon(
+                    PhosphorIconsLight.caretDown,
+                    size: 12,
+                    color: caretFg,
+                  ),
                 ),
               ),
             ),

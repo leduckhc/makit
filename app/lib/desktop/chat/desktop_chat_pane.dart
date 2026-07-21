@@ -280,7 +280,8 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       ref.watch(reposProvider),
                       session.worktreePath,
                     ),
-                    onInsertPrompt: (prompt) => _insertPrompt(sessionId, prompt),
+                    onInsertPrompt: (prompt) =>
+                        _insertPrompt(sessionId, prompt),
                   ),
                   Composer(
                     // Key by session so switching the pane's bound session (same
@@ -307,7 +308,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     focusNode: widget.composerFocusId == null
                         ? null
                         : ref.watch(
-                            desktopComposerFocusProvider(widget.composerFocusId!),
+                            desktopComposerFocusProvider(
+                              widget.composerFocusId!,
+                            ),
                           ),
                     sendChord: ref
                         .watch(keymapProvider)
