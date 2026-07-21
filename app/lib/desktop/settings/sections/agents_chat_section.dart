@@ -93,7 +93,7 @@ class _PrPromptRowState extends ConsumerState<_PrPromptRow> {
         children: [
           Row(
             children: [
-              Icon(widget.action.icon, size: 16),
+              widget.action.icon.build(size: 16),
               const SizedBox(width: 8),
               Text(
                 widget.action.label,

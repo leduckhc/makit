@@ -3,9 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../ui/widgets/codicons.dart';
+import '../../ui/widgets/icon_glyph.dart';
 import '../settings/prefs/preference.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
+
+/// PNG glyphs exported from the codicon `repo-push`/`repo-pull` SVGs
+/// (assets/icons/, tinted at render time via [IconGlyph]/[ImageIcon]).
+const String _repoPushAsset = 'assets/icons/repo-push.png';
+const String _repoPullAsset = 'assets/icons/repo-pull.png';
 
 /// The canned-prompt actions offered by the composer's "PR actions" split
 /// button (SPEC-23). Each is an **app-owned, agent-agnostic prompt** — selecting
@@ -15,7 +21,7 @@ import '../settings/prefs/preferences_providers.dart';
 enum PrPromptAction {
   createPr(
     'Create PR',
-    PhosphorIconsLight.gitPullRequest,
+    IconGlyph.font(PhosphorIconsLight.gitPullRequest),
     prCreatePromptPreference,
     'Create a GitHub pull request for the current branch. Push the branch '
         'first if it has no upstream, then run `gh pr create` with a clear '
@@ -24,7 +30,7 @@ enum PrPromptAction {
   ),
   fixPr(
     'Fix PR',
-    PhosphorIconsLight.wrench,
+    IconGlyph.font(PhosphorIconsLight.wrench),
     prFixPromptPreference,
     'The CI checks on this pull request are failing. Use `gh pr checks` and '
         'the failing run logs to find the root cause, fix it on this branch, '
@@ -32,7 +38,7 @@ enum PrPromptAction {
   ),
   resolveComments(
     'Resolve comments',
-    Codicons.commentDiscussion,
+    IconGlyph.font(Codicons.commentDiscussion),
     prResolveCommentsPromptPreference,
     'Fetch the open review comments on this pull request (e.g. '
         '`gh pr view --comments`). Address each one with a concrete code change, '
@@ -41,7 +47,7 @@ enum PrPromptAction {
   ),
   commitAndPush(
     'Commit and push',
-    PhosphorIconsLight.arrowLineUp,
+    IconGlyph.font(PhosphorIconsLight.arrowLineUp),
     prCommitPushPromptPreference,
     'Commit the current uncommitted changes on this branch with a clear, '
         'conventional commit message summarizing what changed and why, then '
@@ -50,14 +56,14 @@ enum PrPromptAction {
   ),
   push(
     'Push',
-    Codicons.repoPush,
+    IconGlyph.asset(_repoPushAsset),
     prPushPromptPreference,
     'Push the current branch to its remote (use `git push -u` to set the '
         'upstream if it has none). Reply when the push succeeds.',
   ),
   pull(
     'Pull',
-    Codicons.repoPull,
+    IconGlyph.asset(_repoPullAsset),
     prPullPromptPreference,
     'Integrate the latest changes from the remote into this branch (e.g. '
         '`git pull --rebase`), resolving any conflicts. Reply when the branch '
@@ -74,8 +80,8 @@ enum PrPromptAction {
   /// Menu label, e.g. "Create PR".
   final String label;
 
-  /// Leading glyph shown in the split-button menu.
-  final IconData icon;
+  /// Leading glyph shown in the split-button menu (font icon or PNG asset).
+  final IconGlyph icon;
 
   /// The preference holding the user's override ('' = use [defaultPrompt]).
   final PreferenceEntry<String> promptPreference;

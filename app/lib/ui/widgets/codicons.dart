@@ -6,12 +6,6 @@ import 'package:flutter/widgets.dart';
 abstract final class Codicons {
   static const String _family = 'codicon';
 
-  /// `repo-push` — an up arrow over a repo, for pushing local commits.
-  static const IconData repoPush = IconData(0xeb41, fontFamily: _family);
-
-  /// `repo-pull` — a down arrow over a repo, for pulling remote commits.
-  static const IconData repoPull = IconData(0xeb40, fontFamily: _family);
-
   /// `comment-discussion` — stacked speech bubbles, for review threads.
   static const IconData commentDiscussion = IconData(
     0xeac7,

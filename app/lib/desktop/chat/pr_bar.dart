@@ -4,6 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../ui/widgets/codicons.dart';
+import '../../ui/widgets/icon_glyph.dart';
 import '../../store/models.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
@@ -100,7 +101,7 @@ _Situation? _situationFor({
   const red = Color(0xFFF85149);
   if (uncommittedFiles > 0) {
     return _Situation(
-      icon: PhosphorIconsLight.pencilSimple,
+      icon: const IconGlyph.font(PhosphorIconsLight.pencilSimple),
       label: _plural(uncommittedFiles, 'uncommitted file'),
       color: amber,
       action: PrPromptAction.commitAndPush,
@@ -108,7 +109,7 @@ _Situation? _situationFor({
   }
   if (commitsBehind > 0) {
     return _Situation(
-      icon: Codicons.repoPull,
+      icon: PrPromptAction.pull.icon,
       label: '$commitsBehind commit${commitsBehind == 1 ? '' : 's'} behind',
       color: amber,
       action: PrPromptAction.pull,
@@ -116,7 +117,7 @@ _Situation? _situationFor({
   }
   if (commitsAhead > 0) {
     return _Situation(
-      icon: Codicons.repoPush,
+      icon: PrPromptAction.push.icon,
       label: '$commitsAhead commit${commitsAhead == 1 ? '' : 's'} ahead',
       color: amber,
       action: PrPromptAction.push,
@@ -124,7 +125,7 @@ _Situation? _situationFor({
   }
   if (pr != null && pr.checkRollup == 'fail') {
     return const _Situation(
-      icon: PhosphorIconsLight.xCircle,
+      icon: IconGlyph.font(PhosphorIconsLight.xCircle),
       label: 'CI failing',
       color: red,
       action: PrPromptAction.fixPr,
@@ -132,7 +133,7 @@ _Situation? _situationFor({
   }
   if ((pr?.unresolvedComments ?? 0) > 0) {
     return _Situation(
-      icon: Codicons.commentDiscussion,
+      icon: const IconGlyph.font(Codicons.commentDiscussion),
       label: _plural(pr!.unresolvedComments, 'unresolved comment'),
       color: amber,
       action: PrPromptAction.resolveComments,
@@ -150,7 +151,7 @@ class _Situation {
     required this.action,
   });
 
-  final IconData icon;
+  final IconGlyph icon;
   final String label;
   final Color color;
   final PrPromptAction action;
@@ -168,7 +169,7 @@ class _CountLabel extends StatelessWidget {
     required this.color,
   });
 
-  final IconData icon;
+  final IconGlyph icon;
   final String text;
   final Color color;
 
@@ -185,7 +186,7 @@ class _CountLabel extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 12, color: color),
+          icon.build(size: 12, color: color),
           const SizedBox(width: 5),
           Text(
             text,
@@ -521,7 +522,7 @@ class PrActionsSplitButton extends ConsumerWidget {
       menuChildren: [
         for (final action in _actions)
           MenuItemButton(
-            leadingIcon: Icon(action.icon, size: 18),
+            leadingIcon: action.icon.build(size: 18),
             trailingIcon: action == last
                 ? const Icon(PhosphorIconsLight.check, size: 16)
                 : null,
@@ -554,7 +555,7 @@ class _SplitButton extends StatelessWidget {
   });
 
   final String label;
-  final IconData icon;
+  final IconGlyph icon;
   final bool menuOpen;
   final VoidCallback onAction;
   final VoidCallback onToggleMenu;
@@ -594,7 +595,7 @@ class _SplitButton extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(icon, size: 15, color: cs.onSecondaryContainer),
+                      icon.build(size: 15, color: cs.onSecondaryContainer),
                       const SizedBox(width: 6),
                       Text(
                         label,
