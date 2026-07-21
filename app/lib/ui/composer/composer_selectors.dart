@@ -87,6 +87,59 @@ class ComposerModelSelector extends ConsumerWidget {
   }
 }
 
+/// Ascending signal-bar indicator for the reasoning-effort level. One bar per
+/// entry in [thinkingLevels] (off → xhigh): bars at or below [level] paint in
+/// the strong accent, bars above it fade to show the remaining headroom. An
+/// unrecognised [level] leaves every bar faded.
+class ThinkingSignal extends StatelessWidget {
+  /// Creates the indicator for the current [level] (e.g. `'high'`).
+  const ThinkingSignal({super.key, required this.level, this.size = 16});
+
+  /// The active thinking level; matched against [thinkingLevels] by name.
+  final String level;
+
+  /// The overall height of the tallest bar (the box is [size] tall).
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final current = thinkingLevels.indexOf(level);
+    // Neutral "ink" from the theme (near-black in light, near-white in dark) so
+    // the indicator adapts to both themes without a colour accent. Bars above
+    // the current level drop to a low-alpha version of the same ink.
+    final strong = cs.onSurface;
+    final faded = cs.onSurface.withValues(alpha: 0.28);
+    final n = thinkingLevels.length;
+    // Keep the whole indicator within a [size]-square footprint (matching the
+    // single icon it replaces) so it never widens the composer-footer pills
+    // enough to overflow a narrow split pane: n bars + (n-1) gaps == size.
+    const barWidth = 2.0;
+    final gap = (size - n * barWidth) / (n - 1);
+    return SizedBox(
+      height: size,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var i = 0; i < n; i++) ...[
+            if (i > 0) SizedBox(width: gap),
+            Container(
+              width: barWidth,
+              // Shortest bar 40% tall, tallest full height, linearly stepped.
+              height: size * (0.4 + 0.6 * (i / (n - 1))),
+              decoration: BoxDecoration(
+                color: i <= current ? strong : faded,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Composer-footer control that shows the session's current thinking
 /// (reasoning) effort and, on tap, opens the thinking-level picker (reusing the
 /// `/thinking` client command). Hidden entirely when the agent reports no
@@ -103,11 +156,7 @@ class ComposerThinkingSelector extends ConsumerWidget {
     final meta = ref.watch(sessionMetaProvider(sessionId));
     if (meta == null || meta.thinking.isEmpty) return const SizedBox.shrink();
     return _ComposerPill(
-      leading: Icon(
-        PhosphorIconsLight.cellSignalFull,
-        size: 16,
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-      ),
+      leading: ThinkingSignal(level: meta.thinking),
       label: meta.thinking,
       tooltip: 'Thinking effort',
       onTap: () => handleClientCommand(

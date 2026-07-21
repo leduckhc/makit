@@ -130,7 +130,7 @@ void main() {
       expect(find.text('MODEL'), findsOneWidget);
       expect(find.text('THINK'), findsOneWidget);
       // The add affordance is present (disabled placeholder).
-      expect(find.byIcon(PhosphorIconsLight.plusCircle), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.paperclip), findsOneWidget);
     },
   );
 

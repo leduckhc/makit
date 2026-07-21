@@ -293,8 +293,9 @@ Future<String?> _promptSessionName(
   return result;
 }
 
-/// pi's thinking levels, low → high. `off` disables reasoning.
-const _thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+/// pi's thinking levels, low → high. `off` disables reasoning. Shared with the
+/// composer's [ThinkingSignal] indicator so the bar count matches the picker.
+const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
 /// Present the thinking-level options in a modal sheet; resolves with the
 /// chosen level or null if dismissed.
@@ -307,7 +308,7 @@ Future<String?> _pickThinkingLevel(BuildContext context) {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SheetHeader(title: 'Thinking level'),
-          for (final level in _thinkingLevels)
+          for (final level in thinkingLevels)
             ListTile(
               title: Text(level),
               onTap: () => Navigator.pop(sheetContext, level),

@@ -330,6 +330,7 @@ class _CompactMenuButton extends StatelessWidget {
       context: context,
       position: position,
       items: itemBuilder(context),
+      popUpAnimationStyle: AnimationStyle.noAnimation,
     );
     // The trigger can unmount while the menu is open (its row/worktree removed);
     // its callbacks touch parent state, so bail if we're gone.
@@ -375,9 +376,19 @@ class _RepoMenuButton extends ConsumerWidget {
             showNewSessionDialog(context, ref, projectId: repo.id);
         }
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'hide', child: Text('Hide the repo')),
-        PopupMenuItem(value: 'new-worktree', child: Text('New worktree from…')),
+      itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'new-worktree',
+          child: Text('New worktree from…'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'hide',
+          child: Text(
+            'Hide the repo',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ),
       ],
     );
   }
@@ -719,12 +730,20 @@ class _WorktreeMenuButton extends StatelessWidget {
             child: const Text('Rename branch'),
           ),
         ),
+        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'delete',
           enabled: !isPrimary,
           child: Tooltip(
             message: isPrimary ? "Can't delete the primary worktree" : '',
-            child: const Text('Delete worktree'),
+            child: Text(
+              'Delete worktree',
+              // Destructive: tint red, but only when actually enabled so a
+              // disabled item keeps its greyed-out affordance.
+              style: isPrimary
+                  ? null
+                  : TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ),
         ),
       ],

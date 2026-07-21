@@ -275,6 +275,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
         height: 46,
         child: PopupMenuButton<String>(
           tooltip: 'Session actions',
+          popUpAnimationStyle: AnimationStyle.noAnimation,
           padding: EdgeInsets.zero,
           icon: const Icon(PhosphorIconsLight.dotsThree, size: 20),
           onSelected: (value) {
@@ -304,41 +305,47 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 _confirmQuit();
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: 'rename',
-              child: ListTile(
-                leading: Icon(PhosphorIconsLight.pencilSimple),
-                title: Text('Rename session'),
-                contentPadding: EdgeInsets.zero,
+          itemBuilder: (context) {
+            final cs = Theme.of(context).colorScheme;
+            return [
+              const PopupMenuItem(
+                value: 'rename',
+                child: ListTile(
+                  leading: Icon(PhosphorIconsLight.pencilSimple),
+                  title: Text('Rename session'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-            ),
-            PopupMenuItem(
-              value: 'model',
-              child: ListTile(
-                leading: Icon(PhosphorIconsLight.robot),
-                title: Text('Model'),
-                contentPadding: EdgeInsets.zero,
+              const PopupMenuItem(
+                value: 'model',
+                child: ListTile(
+                  leading: Icon(PhosphorIconsLight.robot),
+                  title: Text('Model'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-            ),
-            PopupMenuItem(
-              value: 'thinking',
-              child: ListTile(
-                leading: Icon(PhosphorIconsLight.brain),
-                title: Text('Thinking'),
-                contentPadding: EdgeInsets.zero,
+              const PopupMenuItem(
+                value: 'thinking',
+                child: ListTile(
+                  leading: Icon(PhosphorIconsLight.brain),
+                  title: Text('Thinking'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-            ),
-            PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'quit',
-              child: ListTile(
-                leading: Icon(PhosphorIconsLight.power),
-                title: Text('Quit session'),
-                contentPadding: EdgeInsets.zero,
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'quit',
+                child: ListTile(
+                  leading: Icon(PhosphorIconsLight.power, color: cs.error),
+                  title: Text(
+                    'Quit session',
+                    style: TextStyle(color: cs.error),
+                  ),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-            ),
-          ],
+            ];
+          },
         ),
       ),
     );
