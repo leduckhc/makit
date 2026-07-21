@@ -13,8 +13,7 @@ void main() {
   DaemonLifecycle build({String Function()? overridePath}) => DaemonLifecycle(
     resolver: MakitCliResolver(
       candidatePaths: const ['/usr/local/bin/makit'],
-      exists: (p) =>
-          p == '/usr/local/bin/makit' || p == '/opt/dev/makit',
+      exists: (p) => p == '/usr/local/bin/makit' || p == '/opt/dev/makit',
       shellLookup: () async => null,
       overridePath: overridePath,
     ),
@@ -56,10 +55,13 @@ void main() {
     expect(calls.single, ['/usr/local/bin/makit', 'start']);
   });
 
-  test('an existing CLI-path override takes precedence over candidates', () async {
-    await build(overridePath: () => '/opt/dev/makit').start();
-    expect(calls.single.first, '/opt/dev/makit');
-  });
+  test(
+    'an existing CLI-path override takes precedence over candidates',
+    () async {
+      await build(overridePath: () => '/opt/dev/makit').start();
+      expect(calls.single.first, '/opt/dev/makit');
+    },
+  );
 
   test('a missing CLI-path override falls back to auto-discovery', () async {
     await build(overridePath: () => '/nope/makit').start();

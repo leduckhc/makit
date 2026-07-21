@@ -133,19 +133,22 @@ void main() {
     expect(calls.single.first, '/opt/dev/makit');
   });
 
-  test('live config changes are honored on the next start (no rebuild)', () async {
-    final config = await makeConfig();
-    final controller = build(config);
-    addTearDown(controller.dispose);
+  test(
+    'live config changes are honored on the next start (no rebuild)',
+    () async {
+      final config = await makeConfig();
+      final controller = build(config);
+      addTearDown(controller.dispose);
 
-    await controller.start();
-    expect(calls.single, [_cliPath, 'start', '--port', '7777']);
+      await controller.start();
+      expect(calls.single, [_cliPath, 'start', '--port', '7777']);
 
-    // Change the bind mode after the controller was built; the serveArgs
-    // closure reads live config, so the next start reflects it.
-    calls.clear();
-    await config.setBindMode(ServerBindMode.lan);
-    await controller.start();
-    expect(calls.single, [_cliPath, 'start', '--lan', '--port', '7777']);
-  });
+      // Change the bind mode after the controller was built; the serveArgs
+      // closure reads live config, so the next start reflects it.
+      calls.clear();
+      await config.setBindMode(ServerBindMode.lan);
+      await controller.start();
+      expect(calls.single, [_cliPath, 'start', '--lan', '--port', '7777']);
+    },
+  );
 }

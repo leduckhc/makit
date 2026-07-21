@@ -218,7 +218,10 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
                 value: ServerBindMode.loopback,
                 label: Text('Loopback'),
               ),
-              ButtonSegment(value: ServerBindMode.custom, label: Text('Custom')),
+              ButtonSegment(
+                value: ServerBindMode.custom,
+                label: Text('Custom'),
+              ),
             ],
             selected: {cfg.bindMode},
             showSelectedIcon: false,
@@ -243,9 +246,7 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
                       isDense: true,
                     ),
                     onSubmitted: (v) => unawaited(
-                      ref
-                          .read(serverConfigProvider.notifier)
-                          .setCustomHost(v),
+                      ref.read(serverConfigProvider.notifier).setCustomHost(v),
                     ),
                   ),
                 ),

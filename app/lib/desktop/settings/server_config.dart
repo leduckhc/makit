@@ -156,7 +156,9 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
   static ServerConfig load(SharedPreferences prefs) {
     final port = prefs.getInt(_kPortKey);
     final cliPath = prefs.getString(_kCliPathKey) ?? '';
-    final resolvedPort = (port == null || port <= 0) ? kDefaultServerPort : port;
+    final resolvedPort = (port == null || port <= 0)
+        ? kDefaultServerPort
+        : port;
 
     final modeStr = prefs.getString(_kBindModeKey);
     if (modeStr != null) {

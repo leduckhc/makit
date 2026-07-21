@@ -3,15 +3,18 @@ import 'package:makit/desktop/settings/server_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('defaults to auto bind mode on port 7777 with no CLI override', () async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
-    final cfg = ServerConfigController.load(prefs);
-    expect(cfg.bindMode, ServerBindMode.auto);
-    expect(cfg.customHost, '');
-    expect(cfg.port, 7777);
-    expect(cfg.cliPath, '');
-  });
+  test(
+    'defaults to auto bind mode on port 7777 with no CLI override',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final cfg = ServerConfigController.load(prefs);
+      expect(cfg.bindMode, ServerBindMode.auto);
+      expect(cfg.customHost, '');
+      expect(cfg.port, 7777);
+      expect(cfg.cliPath, '');
+    },
+  );
 
   test('load reads persisted values', () async {
     SharedPreferences.setMockInitialValues({
@@ -86,7 +89,10 @@ void main() {
     });
 
     test('custom with a blank host falls back to auto', () {
-      const cfg = ServerConfig(bindMode: ServerBindMode.custom, customHost: '  ');
+      const cfg = ServerConfig(
+        bindMode: ServerBindMode.custom,
+        customHost: '  ',
+      );
       expect(cfg.serveArgs(), ['--port', '7777']);
     });
   });

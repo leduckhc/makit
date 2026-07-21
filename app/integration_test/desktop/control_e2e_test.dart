@@ -208,7 +208,10 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
     expect(config.current.customHost, '0.0.0.0');
-    expect(config.current.serveArgs(), containsAllInOrder(['--host', '0.0.0.0']));
+    expect(
+      config.current.serveArgs(),
+      containsAllInOrder(['--host', '0.0.0.0']),
+    );
 
     // Switching to Loopback persists too (no daemon restart is triggered).
     await _scrollAndTap(tester, find.text('Loopback'));
