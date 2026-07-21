@@ -70,7 +70,23 @@ class MakitCliResolver {
     return paths;
   }
 
-  static bool _fileIsExecutable(String path) => File(path).existsSync();
+  /// True only when [path] is a regular file with an execute bit set.
+  ///
+  /// Guards against an override (or candidate) that exists but isn't runnable —
+  /// a directory or a non-executable file — which would otherwise "win" here
+  /// and make `Process.run` fail instead of falling back to discovery. A
+  /// missing path (and, in Dart, a directory) already reports `existsSync() ==
+  /// false`; the mode check additionally rejects a non-executable regular file.
+  static bool _fileIsExecutable(String path) {
+    final file = File(path);
+    if (!file.existsSync()) return false;
+    try {
+      // Any of the owner/group/other execute bits (0o111 == 0x49).
+      return (file.statSync().mode & 0x49) != 0;
+    } on FileSystemException {
+      return false;
+    }
+  }
 
   static Future<String?> _loginShellLookup() async {
     final shell = Platform.environment['SHELL'] ?? '/bin/zsh';

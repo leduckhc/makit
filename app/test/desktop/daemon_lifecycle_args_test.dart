@@ -67,4 +67,40 @@ void main() {
     await build(overridePath: () => '/nope/makit').start();
     expect(calls.single.first, '/usr/local/bin/makit');
   });
+
+  // These exercise the REAL _fileIsExecutable (no injected `exists`) against the
+  // filesystem, so an override only wins when it is a runnable executable.
+  group('CLI-path override must point at a runnable executable', () {
+    late Directory tmp;
+    setUp(() => tmp = Directory.systemTemp.createTempSync('makit-resolver-'));
+    tearDown(() => tmp.deleteSync(recursive: true));
+
+    // No candidates / shell lookup, so resolve() returns the override only when
+    // it is genuinely executable; otherwise null (proving it did not "win").
+    MakitCliResolver resolver(String override) => MakitCliResolver(
+      candidatePaths: const [],
+      shellLookup: () async => null,
+      overridePath: () => override,
+    );
+
+    test('an executable file is used', () async {
+      final exe = '${tmp.path}/makit';
+      File(exe).writeAsStringSync('#!/bin/sh\n');
+      Process.runSync('chmod', ['755', exe]);
+      expect(await resolver(exe).resolve(), exe);
+    });
+
+    test('a non-executable file is rejected (falls back)', () async {
+      final plain = '${tmp.path}/makit';
+      File(plain).writeAsStringSync('not executable');
+      Process.runSync('chmod', ['644', plain]);
+      expect(await resolver(plain).resolve(), isNull);
+    });
+
+    test('a directory is rejected (falls back)', () async {
+      final dir = '${tmp.path}/makit';
+      Directory(dir).createSync();
+      expect(await resolver(dir).resolve(), isNull);
+    });
+  });
 }

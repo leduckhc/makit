@@ -366,12 +366,11 @@ class _CliRowState extends ConsumerState<_CliRow> {
     _override = TextEditingController(
       text: ref.read(serverConfigProvider).cliPath,
     );
-    _resolved = ref
-        .read(desktopControllerProvider)
-        .lifecycle
-        .resolver
-        .resolve();
+    _resolved = _refreshResolved();
   }
+
+  Future<String?> _refreshResolved() =>
+      ref.read(desktopControllerProvider).lifecycle.resolver.resolve();
 
   @override
   void dispose() {
@@ -384,11 +383,7 @@ class _CliRowState extends ConsumerState<_CliRow> {
   void _applyOverride(String value) {
     unawaited(ref.read(serverConfigProvider.notifier).setCliPath(value));
     setState(() {
-      _resolved = ref
-          .read(desktopControllerProvider)
-          .lifecycle
-          .resolver
-          .resolve();
+      _resolved = _refreshResolved();
     });
   }
 
