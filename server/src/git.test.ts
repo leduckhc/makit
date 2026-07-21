@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -318,4 +318,20 @@ test("rollupChecks: fail dominates, then pending, then pass, else none", () => {
   assert.equal(rollupChecks([mk("pass"), mk("pending")]), "pending");
   assert.equal(rollupChecks([mk("pending"), mk("fail")]), "fail");
   assert.equal(rollupChecks([mk("pass"), mk("cancel")]), "fail");
+});
+
+test("uncommittedFileCount enumerates files inside nested untracked dirs", async () => {
+  const repo = makeRepo();
+  try {
+    // A nested untracked directory: `git status --porcelain` alone collapses it
+    // to a single `?? nested/` line, but --untracked-files=all lists each file.
+    mkdirSync(join(repo, "nested", "deep"), { recursive: true });
+    writeFileSync(join(repo, "nested", "a.txt"), "a\n");
+    writeFileSync(join(repo, "nested", "deep", "b.txt"), "b\n");
+    writeFileSync(join(repo, "toplevel.txt"), "x\n");
+    // Two files under nested/ + one top-level = 3 (not 2 with nested/ collapsed).
+    assert.equal(await uncommittedFileCount(repo), 3);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });

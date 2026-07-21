@@ -90,12 +90,14 @@ async function repoSnapshot(dto: ProjectDTO, sessions: Session[]): Promise<RepoD
   }
 
   const worktrees: WorktreeDTO[] = await mapLimit(entries, WORKTREE_CONCURRENCY, async (e) => {
-    const [stat, uncommittedFiles, aheadCount, behindCount] = await Promise.all([
-      diffStat(e.path, defaultBranch),
-      uncommittedFileCount(e.path),
-      commitsAhead(e.path, defaultBranch),
-      commitsBehind(e.path),
-    ]);
+    // Run the per-worktree git probes sequentially so they add no extra
+    // parallel fan-out on top of WORKTREE_CONCURRENCY: at most one of these
+    // helpers runs at a time per worktree (diffStat's own internal parallelism
+    // is unchanged), keeping concurrent git subprocesses within budget.
+    const stat = await diffStat(e.path, defaultBranch);
+    const uncommittedFiles = await uncommittedFileCount(e.path);
+    const aheadCount = await commitsAhead(e.path, defaultBranch);
+    const behindCount = await commitsBehind(e.path);
     return {
       id: e.path,
       path: e.path,

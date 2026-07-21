@@ -419,25 +419,41 @@ export async function unresolvedReviewThreadCount(repoPath: string, prUrl: strin
   if (!m) return 0;
   const [, owner, repo, number] = m;
   const query =
-    "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}";
-  const r = await run(
-    "gh",
-    ["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `repo=${repo}`, "-F", `number=${number}`],
-    repoPath,
-    5000,
-  );
-  if (r.code !== 0) return 0;
-  try {
-    const data = JSON.parse(r.stdout) as {
-      data?: {
-        repository?: { pullRequest?: { reviewThreads?: { nodes?: Array<{ isResolved?: boolean }> } } };
+    "query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}";
+
+  let count = 0;
+  let after: string | null = null;
+  // Page through the thread connection (100/page) so a PR with >100 review
+  // threads isn't undercounted. Cap the loop as a safety net.
+  for (let page = 0; page < 100; page++) {
+    const args = ["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `repo=${repo}`, "-F", `number=${number}`];
+    if (after) args.push("-f", `after=${after}`);
+    const r = await run("gh", args, repoPath, 5000);
+    if (r.code !== 0) return count;
+    try {
+      const data = JSON.parse(r.stdout) as {
+        data?: {
+          repository?: {
+            pullRequest?: {
+              reviewThreads?: {
+                pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+                nodes?: Array<{ isResolved?: boolean }>;
+              };
+            };
+          };
+        };
       };
-    };
-    const nodes = data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
-    return nodes.filter((n) => n && n.isResolved === false).length;
-  } catch {
-    return 0;
+      const threads = data.data?.repository?.pullRequest?.reviewThreads;
+      const nodes = threads?.nodes ?? [];
+      count += nodes.filter((n) => n && n.isResolved === false).length;
+      if (!threads?.pageInfo?.hasNextPage) break;
+      after = threads.pageInfo.endCursor ?? null;
+      if (!after) break;
+    } catch {
+      return count;
+    }
   }
+  return count;
 }
 
 /**
@@ -446,7 +462,7 @@ export async function unresolvedReviewThreadCount(repoPath: string, prUrl: strin
  * 0 on any git failure.
  */
 export async function uncommittedFileCount(worktreePath: string): Promise<number> {
-  const r = await git(["status", "--porcelain"], worktreePath);
+  const r = await git(["status", "--porcelain", "--untracked-files=all"], worktreePath);
   if (r.code !== 0) return 0;
   return r.stdout.split("\n").filter((l) => l.trim().length > 0).length;
 }

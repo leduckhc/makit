@@ -386,7 +386,7 @@ class _ChecksPopover extends StatelessWidget {
         ? (pr.url.isEmpty
               ? 'Open pull request'
               : 'No CI checks · click to open')
-        : 'CI checks · click to open';
+        : (pr.url.isEmpty ? 'CI checks' : 'CI checks · click to open');
     return Material(
       color: cs.surfaceContainerHigh,
       elevation: 3,
