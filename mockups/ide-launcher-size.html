@@ -11,8 +11,7 @@
     --text:#F5F5F5;
     --muted:#9E9E9E;
     --hairline:#333333;
-    --secondary-container:#3A4A3E;  /* M3 dark secondaryContainer (tonal) */
-    --on-secondary-container:#C8E6D0;
+    --container-highest:#2E2E2E;    /* M3 dark surfaceContainerHighest (menu-open) */
     --secondary:#7EE8A6;
     --on-secondary:#0e0e0e;
     --tl-red:#FF5F57;--tl-yellow:#FEBC2E;--tl-green:#28C840;
@@ -46,10 +45,13 @@
   .transcript{padding:12px 16px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--hairline)}
 
   /* --- split button --- */
+  /* Surface-tone styling matching the shipped widget: segments fill with
+     surfaceContainer (== the title strip, so they blend in) and lift to
+     surfaceContainerHighest while the caret's menu is open. */
   .split{display:inline-flex;align-items:center;gap:2px}
-  .seg{background:var(--secondary-container);color:var(--on-secondary-container);
+  .seg{background:var(--container);color:var(--text);
     display:inline-flex;align-items:center;justify-content:center}
-  .seg.active{background:var(--secondary);color:var(--on-secondary)}
+  .seg.active{background:var(--container-highest);color:var(--text)}
   .seg svg{stroke:currentColor;fill:none;stroke-width:2}
   /* VS Code brand mark placeholder */
   .logo{display:inline-flex}
@@ -65,7 +67,7 @@
   <h1>IDE launcher — button size options</h1>
   <p class="sub">The title-bar <strong>"Open in…" split button</strong> (<code>_IdeSplitButton</code> in <code>app/lib/desktop/chat/open_in_ide.dart</code>). Left segment = caret (choose editor), right segment = preferred editor logo (opens it). Shown at real scale inside the <strong>28px</strong> title strip so you can judge the fit. Pick a row — I'll wire the chosen numbers into the three constants (<code>_height</code>, logo <code>size</code>, caret <code>size</code>).</p>
 
-  <div class="callout">Current is option <strong>A (26px)</strong> — it nearly fills the 28px strip, leaving only ~1px top/bottom, which is why it reads oversized. Smaller options add breathing room around the control.</div>
+  <div class="callout">Current is option <strong>A (28px)</strong> — it fills the 28px strip edge to edge, which is why it reads oversized. Smaller options add breathing room around the control.</div>
 
   <div class="grid" id="grid"></div>
 
@@ -76,7 +78,7 @@ const CARET = `<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>`;
 
 // [label, height, logoSize, caretSize, outerR, innerR, tag]
 const opts = [
-  ['A — Current',      26, 16, 12, 13, 6, 'now'],
+  ['A — Current',      28, 16, 14, 14, 4, 'now'],
   ['B — Medium',       22, 14, 10, 11, 5, ''],
   ['C — Small',        20, 13,  9, 10, 5, 'rec'],
   ['D — Compact',      18, 12,  8,  9, 4, ''],
@@ -85,17 +87,20 @@ const opts = [
 const grid = document.getElementById('grid');
 for(const [label,h,logo,caret,outR,inR,tag] of opts){
   const rec = tag==='rec';
-  const width = h; // square segments
-  const total = width*2 + 2;
-  const seg = (active, inner, corners) => `
-    <div class="seg ${active?'active':''}" style="width:${width}px;height:${h}px;border-radius:${corners}">
+  // Asymmetric segment widths, matching the shipped widget: each segment is
+  // its icon plus horizontal padding (caret 2×6px, logo 2×10px), not a square.
+  const leftW = caret + 12;
+  const rightW = logo + 20;
+  const total = leftW + 2 + rightW;
+  const seg = (active, w, inner, corners) => `
+    <div class="seg ${active?'active':''}" style="width:${w}px;height:${h}px;border-radius:${corners}">
       ${inner}
     </div>`;
   // left caret segment: outer-left rounded, inner-right squared
-  const left = seg(false,
+  const left = seg(false, leftW,
     `<span class="logo" style="width:${caret}px;height:${caret}px">${CARET}</span>`,
     `${outR}px ${inR}px ${inR}px ${outR}px`);
-  const right = seg(false,
+  const right = seg(false, rightW,
     `<span class="logo" style="width:${logo}px;height:${logo}px">${VSCODE}</span>`,
     `${inR}px ${outR}px ${outR}px ${inR}px`);
 
@@ -118,7 +123,7 @@ for(const [label,h,logo,caret,outR,inR,tag] of opts){
         <div class="transcript">Agent reply text sits below the header…</div>
       </div>
     </div>
-    <div class="note">Segment <strong>${h}×${h}px</strong>, total width <strong>${total}px</strong>. Corners outer ${outR} / inner ${inR}.</div>
+    <div class="note">Caret segment <strong>${leftW}×${h}px</strong>, logo segment <strong>${rightW}×${h}px</strong>, total width <strong>${total}px</strong>. Corners outer ${outR} / inner ${inR}.</div>
    </div>`);
 }
 </script>
