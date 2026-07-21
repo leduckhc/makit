@@ -85,10 +85,24 @@ function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
           insertions,
           deletions: 0,
           filesChanged: 1,
+          uncommittedFiles: 0,
+          aheadCount: 0,
+          behindCount: 0,
           committedAt: null,
           pr: prNumber === null
             ? null
-            : { number: prNumber, url: `https://example.test/${prNumber}`, state: "OPEN", title: "PR", isDraft: false },
+            : {
+                number: prNumber,
+                url: `https://example.test/${prNumber}`,
+                state: "OPEN",
+                title: "PR",
+                isDraft: false,
+                mergeable: null,
+                mergeStateStatus: null,
+                checks: [],
+                checkRollup: "none",
+                unresolvedComments: 0,
+              },
           sessionIds: [],
         },
       ],
@@ -101,7 +115,18 @@ function withPr(repos: RepoDTO[], prNumber: number): RepoDTO[] {
     ...repo,
     worktrees: repo.worktrees.map((w) => ({
       ...w,
-      pr: { number: prNumber, url: `https://example.test/${prNumber}`, state: "OPEN", title: "PR", isDraft: false },
+      pr: {
+        number: prNumber,
+        url: `https://example.test/${prNumber}`,
+        state: "OPEN",
+        title: "PR",
+        isDraft: false,
+        mergeable: null,
+        mergeStateStatus: null,
+        checks: [],
+        checkRollup: "none" as const,
+        unresolvedComments: 0,
+      },
     })),
   }));
 }

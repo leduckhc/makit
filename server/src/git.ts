@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { log } from "./log.js";
 import { mapLimit } from "./concurrency.js";
+import type { PrCheckBucket, PrCheckDTO, PrCheckRollup } from "./protocol.js";
 
 /**
  * Cap on concurrent per-worktree git reads within a single repo (e.g. the
@@ -239,27 +240,263 @@ export interface PullRequestInfo {
   state: string;
   title: string;
   isDraft: boolean;
+  mergeable: string | null;
+  mergeStateStatus: string | null;
+  checks: PrCheckDTO[];
+  checkRollup: PrCheckRollup;
+  /** Count of unresolved review threads on the PR (via GraphQL). */
+  unresolvedComments: number;
+}
+
+/** Raw `statusCheckRollup` entry as emitted by `gh` (either shape). */
+interface RawRollupEntry {
+  __typename?: string;
+  // CheckRun shape
+  name?: string;
+  status?: string;
+  conclusion?: string;
+  detailsUrl?: string;
+  workflowName?: string;
+  // StatusContext shape
+  context?: string;
+  state?: string;
+  targetUrl?: string;
 }
 
 /**
- * The open PR whose head is `branch`, via `gh`. Returns null when `gh` is
- * missing/unauthenticated, the repo has no GitHub remote, or no PR exists —
- * PR info is a nice-to-have, never a hard dependency.
+ * Classify one raw `statusCheckRollup` entry into a {@link PrCheckBucket}.
+ * Handles both the GitHub Actions `CheckRun` shape (status + conclusion) and
+ * the legacy `StatusContext` shape (state). Unknown values fall back to
+ * `pending` so an unfinished/unrecognized check never masquerades as passing.
  */
-export async function findOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
+function bucketForRollupEntry(e: RawRollupEntry): PrCheckBucket {
+  // CheckRun: not COMPLETED means still running/queued.
+  if (e.status !== undefined) {
+    if (e.status !== "COMPLETED") return "pending";
+    switch ((e.conclusion ?? "").toUpperCase()) {
+      case "SUCCESS":
+        return "pass";
+      case "SKIPPED":
+      case "NEUTRAL":
+        return "skipping";
+      case "CANCELLED":
+        return "cancel";
+      case "FAILURE":
+      case "TIMED_OUT":
+      case "STARTUP_FAILURE":
+      case "ACTION_REQUIRED":
+        return "fail";
+      default:
+        return "pending";
+    }
+  }
+  // StatusContext: a legacy commit status.
+  switch ((e.state ?? "").toUpperCase()) {
+    case "SUCCESS":
+      return "pass";
+    case "FAILURE":
+    case "ERROR":
+      return "fail";
+    case "PENDING":
+    case "EXPECTED":
+      return "pending";
+    default:
+      return "pending";
+  }
+}
+
+/** Normalize `gh`'s mixed `statusCheckRollup` array into flat {@link PrCheckDTO}s. */
+export function normalizeChecks(rollup: unknown): PrCheckDTO[] {
+  if (!Array.isArray(rollup)) return [];
+  return rollup.map((raw) => {
+    const e = raw as RawRollupEntry;
+    return {
+      name: e.name ?? e.context ?? "check",
+      bucket: bucketForRollupEntry(e),
+      workflowName: e.workflowName ?? null,
+      detailsUrl: e.detailsUrl ?? e.targetUrl ?? null,
+    };
+  });
+}
+
+/**
+ * Aggregate a check list into a single verdict for the pill tint. Any hard
+ * failure (`fail`/`cancel`) dominates; else any `pending`; else any `pass`;
+ * else `none` (empty, or every check skipped).
+ */
+export function rollupChecks(checks: PrCheckDTO[]): PrCheckRollup {
+  let sawPending = false;
+  let sawPass = false;
+  for (const c of checks) {
+    if (c.bucket === "fail" || c.bucket === "cancel") return "fail";
+    if (c.bucket === "pending") sawPending = true;
+    if (c.bucket === "pass") sawPass = true;
+  }
+  if (sawPending) return "pending";
+  if (sawPass) return "pass";
+  return "none";
+}
+
+/**
+ * The open PR whose head is `branch`, via `gh`, distinguishing "no open PR"
+ * from a *failed* lookup:
+ *   - returns a {@link PullRequestInfo} when one exists,
+ *   - returns `null` when the lookup succeeded but there is genuinely no open
+ *     PR (e.g. it was merged/closed and left the open set),
+ *   - **throws** when the lookup itself failed (`gh` missing/unauthenticated,
+ *     no GitHub remote, network/parse error).
+ *
+ * The PR watcher relies on this three-way distinction: a returned `null` means
+ * a tracked PR vanished (broadcast the drop), whereas a throw is a transient
+ * failure (retain the last-known status). {@link findOpenPr} is the lenient
+ * wrapper for callers that only care whether a PR exists.
+ *
+ * One `gh pr list` call fetches identity + mergeability + the CI check rollup
+ * together (verified: `--head` list output includes `statusCheckRollup`), so a
+ * poll costs a single subprocess per open PR.
+ */
+export async function fetchOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
   const r = await run(
     "gh",
-    ["pr", "list", "--head", branch, "--state", "open", "--json", "number,url,state,title,isDraft", "--limit", "1"],
+    [
+      "pr",
+      "list",
+      "--head",
+      branch,
+      "--state",
+      "open",
+      "--json",
+      "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
+      "--limit",
+      "1",
+    ],
     repoPath,
     5000,
   );
-  if (r.code !== 0) return null;
+  if (r.code !== 0) throw new Error(`gh pr list --head ${branch} failed (exit ${r.code})`);
+  const parsed = JSON.parse(r.stdout.trim() || "[]") as Array<Record<string, unknown>>;
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  const p = parsed[0];
+  const checks = normalizeChecks(p.statusCheckRollup);
+  const url = typeof p.url === "string" ? p.url : "";
+  return {
+    number: typeof p.number === "number" ? p.number : 0,
+    url,
+    state: typeof p.state === "string" ? p.state : "OPEN",
+    title: typeof p.title === "string" ? p.title : "",
+    isDraft: p.isDraft === true,
+    mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
+    mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
+    checks,
+    checkRollup: rollupChecks(checks),
+    unresolvedComments: url ? await unresolvedReviewThreadCount(repoPath, url) : 0,
+  };
+}
+
+/**
+ * Lenient {@link fetchOpenPr}: returns null for *both* "no open PR" and a failed
+ * lookup. PR info is a nice-to-have for these callers (snapshot enrichment,
+ * rename guard), never a hard dependency, and folding the error case into null
+ * keeps a single flaky `gh` call from aborting a whole batch.
+ */
+export async function findOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
   try {
-    const parsed = JSON.parse(r.stdout.trim() || "[]") as PullRequestInfo[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null;
+    return await fetchOpenPr(repoPath, branch);
   } catch {
     return null;
   }
+}
+
+/**
+ * Number of *unresolved* review threads on a PR, via `gh api graphql`. GitHub's
+ * `gh pr` JSON exposes no resolved-thread field, so GraphQL is the only way to
+ * surface "N unresolved comments". Owner/repo/number are parsed from the PR
+ * URL to avoid an extra `gh` call. Best-effort — 0 when `gh` is missing /
+ * unauthenticated, the URL is unparseable, or the query fails.
+ */
+export async function unresolvedReviewThreadCount(repoPath: string, prUrl: string): Promise<number> {
+  const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(prUrl);
+  if (!m) return 0;
+  const [, owner, repo, number] = m;
+  const query =
+    "query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}";
+
+  let count = 0;
+  let after: string | null = null;
+  // Page through the thread connection (100/page) so a PR with >100 review
+  // threads isn't undercounted. Cap the loop as a safety net.
+  for (let page = 0; page < 100; page++) {
+    const args = ["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `repo=${repo}`, "-F", `number=${number}`];
+    if (after) args.push("-f", `after=${after}`);
+    const r = await run("gh", args, repoPath, 5000);
+    if (r.code !== 0) return count;
+    try {
+      const data = JSON.parse(r.stdout) as {
+        data?: {
+          repository?: {
+            pullRequest?: {
+              reviewThreads?: {
+                pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
+                nodes?: Array<{ isResolved?: boolean }>;
+              };
+            };
+          };
+        };
+      };
+      const threads = data.data?.repository?.pullRequest?.reviewThreads;
+      const nodes = threads?.nodes ?? [];
+      count += nodes.filter((n) => n && n.isResolved === false).length;
+      if (!threads?.pageInfo?.hasNextPage) break;
+      after = threads.pageInfo.endCursor ?? null;
+      if (!after) break;
+    } catch {
+      return count;
+    }
+  }
+  return count;
+}
+
+/**
+ * Count of files with uncommitted changes in a worktree (staged + unstaged +
+ * untracked), via `git status --porcelain` (one line per file). Best-effort —
+ * 0 on any git failure.
+ */
+export async function uncommittedFileCount(worktreePath: string): Promise<number> {
+  const r = await git(["status", "--porcelain", "--untracked-files=all"], worktreePath);
+  if (r.code !== 0) return 0;
+  return r.stdout.split("\n").filter((l) => l.trim().length > 0).length;
+}
+
+/**
+ * Count of commits on this worktree's branch that are not yet on its remote
+ * (i.e. what a push would send). Prefers the upstream tracking branch
+ * (`@{upstream}..HEAD`); when the branch has no upstream (never pushed), falls
+ * back to commits not reachable from [baseBranch] — the commits a first
+ * `git push -u` would publish. Best-effort — 0 on any git failure.
+ */
+export async function commitsAhead(worktreePath: string, baseBranch: string | null): Promise<number> {
+  const parse = (s: string): number => {
+    const n = Number.parseInt(s.trim(), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const up = await git(["rev-list", "--count", "@{upstream}..HEAD"], worktreePath);
+  if (up.code === 0) return parse(up.stdout);
+  // No upstream configured: count commits ahead of the base branch instead.
+  if (!baseBranch) return 0;
+  const base = await git(["rev-list", "--count", `${baseBranch}..HEAD`], worktreePath);
+  return base.code === 0 ? parse(base.stdout) : 0;
+}
+
+/**
+ * Count of commits on this worktree's upstream that are not yet local (what a
+ * pull would fetch). Requires a tracking branch — a branch with no upstream has
+ * nothing to pull, so this returns 0. Best-effort — 0 on any git failure.
+ */
+export async function commitsBehind(worktreePath: string): Promise<number> {
+  const r = await git(["rev-list", "--count", "HEAD..@{upstream}"], worktreePath);
+  if (r.code !== 0) return 0;
+  const n = Number.parseInt(r.stdout.trim(), 10);
+  return Number.isFinite(n) ? n : 0;
 }
 
 /** A single open pull request, as listed for the "New worktree from PR" flow. */

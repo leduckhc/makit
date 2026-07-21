@@ -125,6 +125,22 @@ final List<SettingsSection> kSettingsSections = [
         keywords: ['enter', 'send', 'shortcut'],
         availability: SettingsAvailability.comingSoon,
       ),
+      SettingsItem(
+        id: 'agents_chat.pr_actions',
+        title: 'PR actions',
+        help:
+            'Editable canned prompts for the composer\'s PR actions '
+            '(Create PR, Fix PR, Resolve comments).',
+        keywords: [
+          'pr',
+          'pull request',
+          'prompt',
+          'create pr',
+          'fix pr',
+          'resolve comments',
+          'github',
+        ],
+      ),
     ],
   ),
   SettingsSection(

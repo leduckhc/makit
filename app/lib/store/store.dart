@@ -20,6 +20,55 @@ class ReposState {
   final List<RepoInfo> repos;
 
   RepoInfo? byId(String id) => repos.firstWhereOrNull((r) => r.id == id);
+
+  /// The open PR for the worktree at [worktreePath] across all repos, or null
+  /// when there is none (or [worktreePath] is null). Backs the PR pill wherever
+  /// a worktree is shown (chat composer bar, harness picker).
+  PullRequest? prForWorktreePath(String? worktreePath) {
+    if (worktreePath == null) return null;
+    for (final repo in repos) {
+      for (final w in repo.worktrees) {
+        if (w.path == worktreePath) return w.pr;
+      }
+    }
+    return null;
+  }
+
+  /// Count of files with uncommitted changes in the worktree at [worktreePath],
+  /// or 0 when there is none. Backs the composer's "X uncommitted files" label.
+  int uncommittedFilesForWorktreePath(String? worktreePath) {
+    if (worktreePath == null) return 0;
+    for (final repo in repos) {
+      for (final w in repo.worktrees) {
+        if (w.path == worktreePath) return w.uncommittedFiles;
+      }
+    }
+    return 0;
+  }
+
+  /// Commits not yet pushed for the worktree at [worktreePath], or 0 when there
+  /// is none. Backs the composer's "X commits ahead" hint.
+  int aheadCountForWorktreePath(String? worktreePath) {
+    if (worktreePath == null) return 0;
+    for (final repo in repos) {
+      for (final w in repo.worktrees) {
+        if (w.path == worktreePath) return w.aheadCount;
+      }
+    }
+    return 0;
+  }
+
+  /// Commits the worktree at [worktreePath] is behind its upstream, or 0 when
+  /// there is none. Backs the composer's "X commits behind" hint.
+  int behindCountForWorktreePath(String? worktreePath) {
+    if (worktreePath == null) return 0;
+    for (final repo in repos) {
+      for (final w in repo.worktrees) {
+        if (w.path == worktreePath) return w.behindCount;
+      }
+    }
+    return 0;
+  }
 }
 
 class SessionsState {

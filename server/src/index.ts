@@ -3,7 +3,7 @@
  * makit — desktop server CLI.
  *
  * Usage:
- *   makit serve [--host H] [--lan] [--port 8787] [--project P]... [--no-auth]
+ *   makit serve [--host H] [--lan] [--port 7777] [--project P]... [--no-auth]
  *   makit pair  [--host H] [--port P]                  # prints a QR + URL
  *
  * Default host (secure by default): Tailscale IP if online, else loopback

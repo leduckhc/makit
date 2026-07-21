@@ -3,7 +3,7 @@
 /// This is the host + port makit's local daemon listens on. It drives both
 /// `makit start --host <host> --port <port>` (see [DaemonLifecycle]) and the
 /// loopback endpoint the chat client self-pairs against (see [LoopbackPairing]).
-/// Defaults to `localhost:8787`.
+/// Defaults to `localhost:7777`.
 library;
 
 import 'package:flutter_riverpod/legacy.dart';
@@ -13,7 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 const String kDefaultServerHost = 'localhost';
 
 /// The default bind port.
-const int kDefaultServerPort = 8787;
+const int kDefaultServerPort = 7777;
 
 const String _kHostKey = 'desktop_server_host';
 const String _kPortKey = 'desktop_server_port';

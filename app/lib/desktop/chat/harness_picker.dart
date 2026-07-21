@@ -10,6 +10,7 @@ import 'composer_focus.dart';
 import 'composer_draft.dart';
 import 'panes/pane_header.dart';
 import 'panes/pane_tree_controller.dart';
+import 'pr_bar.dart';
 import 'selected_session.dart';
 
 /// Harness picker shown in the main content while a session is still a draft
@@ -180,6 +181,35 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
   String? _chosenAgent;
   bool _starting = false;
 
+  /// Owns the composer's text so the PR-actions split button (a sibling) can
+  /// inject a canned prompt into the field before any session exists.
+  final TextEditingController _composerCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _composerCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Insert a canned PR-action [prompt] without sending: set the field (or
+  /// append below existing text so a half-typed message survives), persist the
+  /// worktree-scoped draft, and focus the composer for review.
+  void _insertPrompt(String prompt) {
+    final existing = _composerCtrl.text;
+    final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
+    _composerCtrl.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    ref
+        .read(composerDraftsProvider.notifier)
+        .set('wt:${widget.worktree.path}', next);
+    final focusId = widget.composerFocusId;
+    if (focusId != null) {
+      ref.read(desktopComposerFocusProvider(focusId)).requestFocus();
+    }
+  }
+
   String? _defaultAgent(List<AgentDescriptor> agents) {
     for (final a in agents) {
       if (a.available) return a.id;
@@ -228,6 +258,19 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final agentsAsync = ref.watch(agentsProvider);
+    // The worktree already exists on disk, so it may head an open PR (created
+    // in makit, by another agent, or on GitHub). Read the poller-refreshed
+    // repos snapshot so the pill above the composer updates in place.
+    final pr = ref.watch(reposProvider).prForWorktreePath(widget.worktree.path);
+    final uncommittedFiles = ref
+        .watch(reposProvider)
+        .uncommittedFilesForWorktreePath(widget.worktree.path);
+    final commitsAhead = ref
+        .watch(reposProvider)
+        .aheadCountForWorktreePath(widget.worktree.path);
+    final commitsBehind = ref
+        .watch(reposProvider)
+        .behindCountForWorktreePath(widget.worktree.path);
     return Column(
       children: [
         const UnfoldStrip(),
@@ -304,23 +347,42 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Composer(
-                onSend: _start,
-                running: _starting,
-                alwaysExpanded: true,
-                // A not-yet-started session has no id, so scope the draft to
-                // the worktree; it survives switching away and back.
-                initialText: ref.read(
-                  composerDraftsProvider,
-                )['wt:${widget.worktree.path}'],
-                onDraftChanged: (text) => ref
-                    .read(composerDraftsProvider.notifier)
-                    .set('wt:${widget.worktree.path}', text),
-                focusNode: widget.composerFocusId == null
-                    ? null
-                    : ref.watch(
-                        desktopComposerFocusProvider(widget.composerFocusId!),
-                      ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // PR status pill (when the worktree heads a PR) + the
+                  // canned-prompt actions split button (always shown — its
+                  // "Create PR" action is the path to getting a PR).
+                  PrComposerBar(
+                    pr: pr,
+                    uncommittedFiles: uncommittedFiles,
+                    commitsAhead: commitsAhead,
+                    commitsBehind: commitsBehind,
+                    onInsertPrompt: _insertPrompt,
+                  ),
+                  Composer(
+                    controller: _composerCtrl,
+                    onSend: _start,
+                    running: _starting,
+                    alwaysExpanded: true,
+                    // A not-yet-started session has no id, so scope the draft to
+                    // the worktree; it survives switching away and back.
+                    initialText: ref.read(
+                      composerDraftsProvider,
+                    )['wt:${widget.worktree.path}'],
+                    onDraftChanged: (text) => ref
+                        .read(composerDraftsProvider.notifier)
+                        .set('wt:${widget.worktree.path}', text),
+                    focusNode: widget.composerFocusId == null
+                        ? null
+                        : ref.watch(
+                            desktopComposerFocusProvider(
+                              widget.composerFocusId!,
+                            ),
+                          ),
+                  ),
+                ],
               ),
             ),
           ),

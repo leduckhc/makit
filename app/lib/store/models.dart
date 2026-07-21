@@ -193,6 +193,43 @@ class Project {
   final int lastActivityAt;
 }
 
+/// A single CI check on a PR head, normalized server-side from `gh`'s
+/// `statusCheckRollup` (see server `PrCheckDTO`). Rendered in the PR pill's
+/// hover popover.
+class PrCheck {
+  const PrCheck({
+    required this.name,
+    required this.bucket,
+    this.workflowName,
+    this.detailsUrl,
+  });
+
+  /// The check/context name, e.g. `test` or `CodeRabbit`.
+  final String name;
+
+  /// `pass` | `fail` | `pending` | `skipping` | `cancel`.
+  final String bucket;
+
+  /// Owning workflow (Actions checks), or null for a legacy status context.
+  final String? workflowName;
+
+  /// Deep link to the check's details, or null when the provider gave none.
+  final String? detailsUrl;
+
+  static PrCheck? fromJson(Map<String, dynamic> j) {
+    final name = j['name'];
+    if (name is! String) return null;
+    return PrCheck(
+      name: name,
+      bucket: j['bucket'] is String ? j['bucket'] as String : 'pending',
+      workflowName: j['workflowName'] is String
+          ? j['workflowName'] as String
+          : null,
+      detailsUrl: j['detailsUrl'] is String ? j['detailsUrl'] as String : null,
+    );
+  }
+}
+
 /// An open pull request tied to a worktree's branch (surfaced via `gh`).
 class PullRequest {
   const PullRequest({
@@ -201,6 +238,11 @@ class PullRequest {
     required this.state,
     required this.title,
     required this.isDraft,
+    this.mergeable,
+    this.mergeStateStatus,
+    this.checks = const [],
+    this.checkRollup = 'none',
+    this.unresolvedComments = 0,
   });
 
   final int number;
@@ -208,6 +250,21 @@ class PullRequest {
   final String state;
   final String title;
   final bool isDraft;
+
+  /// MERGEABLE | CONFLICTING | UNKNOWN, or null when `gh` didn't report it.
+  final String? mergeable;
+
+  /// CLEAN | BLOCKED | BEHIND | DIRTY | …, or null when unreported.
+  final String? mergeStateStatus;
+
+  /// Per-check status for the hover popover. Empty when there are no checks.
+  final List<PrCheck> checks;
+
+  /// Aggregate CI verdict: `pass` | `fail` | `pending` | `none`.
+  final String checkRollup;
+
+  /// Count of unresolved review threads on the PR.
+  final int unresolvedComments;
 
   static PullRequest? fromJson(Map<String, dynamic> j) {
     final number = j['number'];
@@ -218,6 +275,19 @@ class PullRequest {
       state: j['state'] is String ? j['state'] as String : 'OPEN',
       title: j['title'] is String ? j['title'] as String : '',
       isDraft: j['isDraft'] == true,
+      mergeable: j['mergeable'] is String ? j['mergeable'] as String : null,
+      mergeStateStatus: j['mergeStateStatus'] is String
+          ? j['mergeStateStatus'] as String
+          : null,
+      checks: ((j['checks'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((c) => PrCheck.fromJson(Map<String, dynamic>.from(c)))
+          .whereType<PrCheck>()
+          .toList(),
+      checkRollup: j['checkRollup'] is String
+          ? j['checkRollup'] as String
+          : 'none',
+      unresolvedComments: (j['unresolvedComments'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -261,6 +331,9 @@ class Worktree {
     required this.deletions,
     required this.filesChanged,
     required this.sessionIds,
+    this.uncommittedFiles = 0,
+    this.aheadCount = 0,
+    this.behindCount = 0,
     this.committedAt,
     this.pr,
   });
@@ -273,6 +346,15 @@ class Worktree {
   final int deletions;
   final int filesChanged;
   final List<String> sessionIds;
+
+  /// Files with uncommitted changes (staged + unstaged + untracked).
+  final int uncommittedFiles;
+
+  /// Commits not yet pushed to the remote (what a push would send).
+  final int aheadCount;
+
+  /// Commits on the upstream not yet local (what a pull would fetch).
+  final int behindCount;
 
   /// HEAD commit time, or null when unavailable.
   final DateTime? committedAt;
@@ -292,6 +374,9 @@ class Worktree {
       insertions: (j['insertions'] as num?)?.toInt() ?? 0,
       deletions: (j['deletions'] as num?)?.toInt() ?? 0,
       filesChanged: (j['filesChanged'] as num?)?.toInt() ?? 0,
+      uncommittedFiles: (j['uncommittedFiles'] as num?)?.toInt() ?? 0,
+      aheadCount: (j['aheadCount'] as num?)?.toInt() ?? 0,
+      behindCount: (j['behindCount'] as num?)?.toInt() ?? 0,
       sessionIds: ((j['sessionIds'] as List?) ?? const [])
           .whereType<String>()
           .toList(),

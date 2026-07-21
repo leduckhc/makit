@@ -56,6 +56,8 @@ import { register as registerRepoCommands } from "./ws/commands/repo.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
 import { throttleTrailing } from "./ws/throttle.js";
 import { watchWorktrees } from "./worktree_watcher.js";
+import { watchPrs } from "./pr_watcher.js";
+import { fetchOpenPr } from "./git.js";
 
 export interface ServerOpts {
   host: string;
@@ -166,6 +168,24 @@ export function startWsServer(opts: ServerOpts) {
   const worktreeWatcher = watchWorktrees(() => void broadcastReposSnapshot());
   worktreeWatcher.sync(manager.listProjects().map((p) => p.path));
   https.on("close", () => worktreeWatcher.close());
+
+  // Poll open PRs (CI checks, state, mergeability) and re-broadcast when a
+  // tracked PR actually changes (SPEC-23). GitHub has no client push API, so
+  // this server-side poller is what keeps PR status fresh in the UI without a
+  // manual refresh. Its tracked set is refreshed from each enriched snapshot
+  // (see broadcastReposSnapshot); closed with the listeners.
+  const prWatcher = watchPrs({
+    // fetchOpenPr (not findOpenPr): it throws on a transient gh failure and
+    // returns null only for a genuine "no open PR", so the watcher can tell a
+    // merged/closed PR (broadcast the drop) from a flaky lookup (keep status).
+    fetchPr: (repoPath, branch) => fetchOpenPr(repoPath, branch),
+    onChange: () => void broadcastReposSnapshot(),
+    // Poll every 5s regardless of check state (no adaptive backoff): PR status
+    // stays near-live in the UI.
+    fastMs: 5_000,
+    slowMs: 5_000,
+  });
+  https.on("close", () => prWatcher.close());
 
   // Device ids with a live authenticated WS connection — feeds the control
   // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
@@ -384,6 +404,10 @@ export function startWsServer(opts: ServerOpts) {
       const repos = await manager.enrichPrs(gitOnly);
       if (generation !== reposSnapshotGeneration) return;
       lastEnrichedRepos = repos;
+      // Refresh the PR poller's tracked set from the authoritative snapshot so
+      // it watches exactly the currently-open PRs (and re-seeds their
+      // baselines, so it only fires on changes after this broadcast).
+      prWatcher.sync(repos);
       emit(repos);
     } catch (e) {
       if (generation === reposSnapshotGeneration) {

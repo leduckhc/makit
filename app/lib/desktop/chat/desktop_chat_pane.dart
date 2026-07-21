@@ -15,6 +15,7 @@ import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
 import 'composer_draft.dart';
 import 'harness_picker.dart';
+import 'pr_bar.dart';
 import 'panes/pane_header.dart';
 import 'selected_session.dart';
 import '../../ui/composer/composer_selectors.dart';
@@ -78,6 +79,33 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   final _scroll = ScrollController();
   String? _subscribed;
   int _lastSeq = 0;
+
+  /// Caller-owned composer controllers, one per bound session, so the PR-actions
+  /// split button (a sibling of the composer) can inject prompt text into the
+  /// field. Keyed by session id and disposed with the pane.
+  final _composerControllers = <String, TextEditingController>{};
+
+  TextEditingController _composerControllerFor(String sessionId) =>
+      _composerControllers.putIfAbsent(sessionId, TextEditingController.new);
+
+  /// Insert a canned PR-action [prompt] into the composer without sending it:
+  /// set the field (or append below existing text so a half-typed message is
+  /// never destroyed), persist the draft, and focus the field so the user can
+  /// review and hit Send.
+  void _insertPrompt(String sessionId, String prompt) {
+    final ctrl = _composerControllerFor(sessionId);
+    final existing = ctrl.text;
+    final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
+    ctrl.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    ref.read(composerDraftsProvider.notifier).set(sessionId, next);
+    final focusId = widget.composerFocusId;
+    if (focusId != null) {
+      ref.read(desktopComposerFocusProvider(focusId)).requestFocus();
+    }
+  }
 
   void _ensureSubscribed(String? sessionId) {
     if (sessionId == null || sessionId == _subscribed) return;
@@ -239,38 +267,67 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Composer(
-                // Key by session so switching the pane's bound session (same
-                // leaf id → same pane state) recreates the composer and
-                // re-seeds initialText, instead of leaking s1's text into s2.
-                key: ValueKey(sessionId),
-                commands: ref.watch(commandsProvider(sessionId)),
-                onSend: (text) => _handleSend(sessionId, text),
-                onCancel: () => _cancelTurn(sessionId),
-                running: running,
-                alwaysExpanded: true,
-                // Persist the draft per session so it survives worktree
-                // switches and pane splits (the composer is recreated on both).
-                initialText: ref.read(composerDraftsProvider)[sessionId],
-                onDraftChanged: (text) => ref
-                    .read(composerDraftsProvider.notifier)
-                    .set(sessionId, text),
-                footerActions: [
-                  ComposerModelSelector(sessionId: sessionId),
-                  ComposerThinkingSelector(sessionId: sessionId),
-                  ComposerModeSelector(sessionId: sessionId),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Permanent PR bar (SPEC-23): status pill (opens the PR on
+                  // the web; hover shows CI checks) + a canned-prompt actions
+                  // split button. Reads the open PR for this session's
+                  // worktree from the (poller-refreshed) repos snapshot, so it
+                  // updates in place as CI/state changes.
+                  PrComposerBar(
+                    pr: ref
+                        .watch(reposProvider)
+                        .prForWorktreePath(session.worktreePath),
+                    uncommittedFiles: ref
+                        .watch(reposProvider)
+                        .uncommittedFilesForWorktreePath(session.worktreePath),
+                    commitsAhead: ref
+                        .watch(reposProvider)
+                        .aheadCountForWorktreePath(session.worktreePath),
+                    commitsBehind: ref
+                        .watch(reposProvider)
+                        .behindCountForWorktreePath(session.worktreePath),
+                    onInsertPrompt: (prompt) =>
+                        _insertPrompt(sessionId, prompt),
+                  ),
+                  Composer(
+                    // Key by session so switching the pane's bound session (same
+                    // leaf id → same pane state) recreates the composer and
+                    // re-seeds initialText, instead of leaking s1's text into s2.
+                    key: ValueKey(sessionId),
+                    controller: _composerControllerFor(sessionId),
+                    commands: ref.watch(commandsProvider(sessionId)),
+                    onSend: (text) => _handleSend(sessionId, text),
+                    onCancel: () => _cancelTurn(sessionId),
+                    running: running,
+                    alwaysExpanded: true,
+                    // Persist the draft per session so it survives worktree
+                    // switches and pane splits (the composer is recreated on both).
+                    initialText: ref.read(composerDraftsProvider)[sessionId],
+                    onDraftChanged: (text) => ref
+                        .read(composerDraftsProvider.notifier)
+                        .set(sessionId, text),
+                    footerActions: [
+                      ComposerModelSelector(sessionId: sessionId),
+                      ComposerThinkingSelector(sessionId: sessionId),
+                      ComposerModeSelector(sessionId: sessionId),
+                    ],
+                    focusNode: widget.composerFocusId == null
+                        ? null
+                        : ref.watch(
+                            desktopComposerFocusProvider(
+                              widget.composerFocusId!,
+                            ),
+                          ),
+                    sendChord: ref
+                        .watch(keymapProvider)
+                        .chordFor(ShortcutAction.sendMessage),
+                    newlineChord: ref
+                        .watch(keymapProvider)
+                        .chordFor(ShortcutAction.composerNewline),
+                  ),
                 ],
-                focusNode: widget.composerFocusId == null
-                    ? null
-                    : ref.watch(
-                        desktopComposerFocusProvider(widget.composerFocusId!),
-                      ),
-                sendChord: ref
-                    .watch(keymapProvider)
-                    .chordFor(ShortcutAction.sendMessage),
-                newlineChord: ref
-                    .watch(keymapProvider)
-                    .chordFor(ShortcutAction.composerNewline),
               ),
             ),
           ),
@@ -282,6 +339,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   @override
   void dispose() {
     _scroll.dispose();
+    for (final c in _composerControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 }

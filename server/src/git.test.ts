@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +15,12 @@ import {
   removeWorktree,
   renameBranch,
   isGitRepo,
+  normalizeChecks,
+  rollupChecks,
+  uncommittedFileCount,
+  unresolvedReviewThreadCount,
+  commitsAhead,
+  commitsBehind,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -179,7 +185,153 @@ test("read helpers degrade gracefully on a non-repo path", async () => {
     assert.equal(await detectCurrentBranch(plain), null);
     assert.deepEqual(await listWorktrees(plain), []);
     assert.deepEqual(await diffStat(plain, "main"), { insertions: 0, deletions: 0, filesChanged: 0 });
+    assert.equal(await uncommittedFileCount(plain), 0);
   } finally {
     rmSync(plain, { recursive: true, force: true });
+  }
+});
+
+test("uncommittedFileCount counts staged, unstaged, and untracked files", async () => {
+  const repo = makeRepo();
+  try {
+    assert.equal(await uncommittedFileCount(repo), 0);
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    // Modify a tracked file (unstaged), stage a new file, add an untracked one.
+    writeFileSync(join(repo, "README.md"), "hello\nchanged\n");
+    writeFileSync(join(repo, "staged.txt"), "s\n");
+    g("add", "staged.txt");
+    writeFileSync(join(repo, "untracked.txt"), "u\n");
+    assert.equal(await uncommittedFileCount(repo), 3);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("unresolvedReviewThreadCount returns 0 for a non-parseable PR URL", async () => {
+  // A non-GitHub URL short-circuits before any `gh` call.
+  assert.equal(await unresolvedReviewThreadCount(process.cwd(), "https://example.com/x"), 0);
+  assert.equal(await unresolvedReviewThreadCount(process.cwd(), ""), 0);
+});
+
+test("commitsAhead counts commits ahead of the base branch when no upstream", async () => {
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    // main has no commits ahead of itself.
+    assert.equal(await commitsAhead(repo, "main"), 0);
+    // A branch with two extra commits and no upstream: ahead of main by 2.
+    g("checkout", "-q", "-b", "feature");
+    writeFileSync(join(repo, "a.txt"), "a\n");
+    g("add", "a.txt");
+    g("commit", "-q", "-m", "a");
+    writeFileSync(join(repo, "b.txt"), "b\n");
+    g("add", "b.txt");
+    g("commit", "-q", "-m", "b");
+    assert.equal(await commitsAhead(repo, "main"), 2);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("commitsBehind counts upstream commits missing locally (0 without upstream)", async () => {
+  // Two clones sharing a remote: advance the remote, then the stale clone is
+  // "behind" by the number of commits it hasn't fetched.
+  const remote = mkdtempSync(join(tmpdir(), "makit-remote-"));
+  const a = mkdtempSync(join(tmpdir(), "makit-a-"));
+  const b = mkdtempSync(join(tmpdir(), "makit-b-"));
+  try {
+    const ga = (...args: string[]) => execFileSync("git", args, { cwd: a });
+    const gb = (...args: string[]) => execFileSync("git", args, { cwd: b });
+    execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+    // Clone A: seed a commit and push.
+    execFileSync("git", ["clone", "-q", remote, a]);
+    ga("config", "user.email", "t@t.io");
+    ga("config", "user.name", "T");
+    writeFileSync(join(a, "f.txt"), "1\n");
+    ga("add", ".");
+    ga("commit", "-q", "-m", "one");
+    ga("push", "-q", "origin", "main");
+    // Clone B tracks origin/main and is up to date.
+    execFileSync("git", ["clone", "-q", remote, b]);
+    assert.equal(await commitsBehind(b), 0);
+    // A pushes two more commits; B fetches but doesn't merge → behind by 2.
+    writeFileSync(join(a, "f.txt"), "2\n");
+    ga("commit", "-aqm", "two");
+    writeFileSync(join(a, "f.txt"), "3\n");
+    ga("commit", "-aqm", "three");
+    ga("push", "-q", "origin", "main");
+    gb("fetch", "-q", "origin");
+    assert.equal(await commitsBehind(b), 2);
+  } finally {
+    for (const d of [remote, a, b]) rmSync(d, { recursive: true, force: true });
+  }
+});
+
+test("normalizeChecks maps CheckRun and StatusContext shapes to flat buckets", () => {
+  const rollup = [
+    // CheckRun: completed + success
+    { __typename: "CheckRun", name: "test", status: "COMPLETED", conclusion: "SUCCESS", detailsUrl: "u1", workflowName: "CI" },
+    // CheckRun: still running
+    { __typename: "CheckRun", name: "build", status: "IN_PROGRESS", detailsUrl: "u2", workflowName: "CI" },
+    // CheckRun: failure
+    { __typename: "CheckRun", name: "lint", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "u3", workflowName: "CI" },
+    // CheckRun: skipped
+    { __typename: "CheckRun", name: "e2e", status: "COMPLETED", conclusion: "SKIPPED" },
+    // CheckRun: cancelled
+    { __typename: "CheckRun", name: "slow", status: "COMPLETED", conclusion: "CANCELLED" },
+    // StatusContext: legacy success
+    { __typename: "StatusContext", context: "CodeRabbit", state: "SUCCESS", targetUrl: "u6" },
+    // StatusContext: legacy pending
+    { __typename: "StatusContext", context: "deploy", state: "PENDING", targetUrl: "" },
+  ];
+  const checks = normalizeChecks(rollup);
+  assert.deepEqual(
+    checks.map((c) => [c.name, c.bucket]),
+    [
+      ["test", "pass"],
+      ["build", "pending"],
+      ["lint", "fail"],
+      ["e2e", "skipping"],
+      ["slow", "cancel"],
+      ["CodeRabbit", "pass"],
+      ["deploy", "pending"],
+    ],
+  );
+  // CheckRun keeps its workflow/detailsUrl; StatusContext maps targetUrl → detailsUrl.
+  assert.equal(checks[0].workflowName, "CI");
+  assert.equal(checks[0].detailsUrl, "u1");
+  assert.equal(checks[5].workflowName, null);
+  assert.equal(checks[5].detailsUrl, "u6");
+});
+
+test("normalizeChecks tolerates non-array / missing rollup", () => {
+  assert.deepEqual(normalizeChecks(undefined), []);
+  assert.deepEqual(normalizeChecks(null), []);
+  assert.deepEqual(normalizeChecks("nope"), []);
+});
+
+test("rollupChecks: fail dominates, then pending, then pass, else none", () => {
+  const mk = (bucket: string) => ({ name: "x", bucket, workflowName: null, detailsUrl: null }) as never;
+  assert.equal(rollupChecks([]), "none");
+  assert.equal(rollupChecks([mk("skipping")]), "none");
+  assert.equal(rollupChecks([mk("pass"), mk("skipping")]), "pass");
+  assert.equal(rollupChecks([mk("pass"), mk("pending")]), "pending");
+  assert.equal(rollupChecks([mk("pending"), mk("fail")]), "fail");
+  assert.equal(rollupChecks([mk("pass"), mk("cancel")]), "fail");
+});
+
+test("uncommittedFileCount enumerates files inside nested untracked dirs", async () => {
+  const repo = makeRepo();
+  try {
+    // A nested untracked directory: `git status --porcelain` alone collapses it
+    // to a single `?? nested/` line, but --untracked-files=all lists each file.
+    mkdirSync(join(repo, "nested", "deep"), { recursive: true });
+    writeFileSync(join(repo, "nested", "a.txt"), "a\n");
+    writeFileSync(join(repo, "nested", "deep", "b.txt"), "b\n");
+    writeFileSync(join(repo, "toplevel.txt"), "x\n");
+    // Two files under nested/ + one top-level = 3 (not 2 with nested/ collapsed).
+    assert.equal(await uncommittedFileCount(repo), 3);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });

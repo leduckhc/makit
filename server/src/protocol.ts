@@ -79,6 +79,25 @@ export interface ProjectDTO {
   lastActivityAt: number;
 }
 
+/**
+ * One CI check on a PR head, normalized from `gh`'s `statusCheckRollup` (which
+ * mixes GitHub Actions `CheckRun` and legacy `StatusContext` shapes) into a
+ * single flat form the app renders without any provider-shape logic.
+ */
+export type PrCheckBucket = "pass" | "fail" | "pending" | "skipping" | "cancel";
+export interface PrCheckDTO {
+  /** The check/context name, e.g. `test` or `CodeRabbit`. */
+  name: string;
+  bucket: PrCheckBucket;
+  /** Owning workflow (Actions checks) or null for a legacy status context. */
+  workflowName: string | null;
+  /** Deep link to the check's details, or null when the provider gave none. */
+  detailsUrl: string | null;
+}
+
+/** Aggregate CI verdict across a PR's checks (drives the pill tint). */
+export type PrCheckRollup = "pass" | "fail" | "pending" | "none";
+
 /** Open pull request tied to a worktree's branch (via `gh`). */
 export interface PullRequestDTO {
   number: number;
@@ -86,6 +105,16 @@ export interface PullRequestDTO {
   state: string;
   title: string;
   isDraft: boolean;
+  /** MERGEABLE | CONFLICTING | UNKNOWN, or null when `gh` didn't report it. */
+  mergeable: string | null;
+  /** CLEAN | BLOCKED | BEHIND | DIRTY | …, or null when unreported. */
+  mergeStateStatus: string | null;
+  /** Per-check status for the hover popover. Empty when there are no checks. */
+  checks: PrCheckDTO[];
+  /** Aggregate CI verdict computed from {@link checks}. */
+  checkRollup: PrCheckRollup;
+  /** Count of unresolved review threads on the PR. */
+  unresolvedComments: number;
 }
 
 /**
@@ -102,6 +131,12 @@ export interface WorktreeDTO {
   insertions: number;
   deletions: number;
   filesChanged: number;
+  /** Files with uncommitted changes (staged + unstaged + untracked). */
+  uncommittedFiles: number;
+  /** Commits not yet pushed to the remote (what a push would send). */
+  aheadCount: number;
+  /** Commits on the upstream not yet local (what a pull would fetch). */
+  behindCount: number;
   /** HEAD commit time in epoch milliseconds, or null when unavailable. */
   committedAt: number | null;
   pr: PullRequestDTO | null;

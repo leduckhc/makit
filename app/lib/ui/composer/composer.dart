@@ -32,6 +32,7 @@ class Composer extends StatefulWidget {
     this.sendChord,
     this.newlineChord,
     this.focusNode,
+    this.controller,
     this.footerActions = const <Widget>[],
     this.alwaysExpanded = false,
     this.initialText,
@@ -77,6 +78,12 @@ class Composer extends StatefulWidget {
   /// responsible for disposing it. Null makes the composer own its node.
   final FocusNode? focusNode;
 
+  /// An externally-owned text controller. When provided, a sibling widget (e.g.
+  /// the PR-actions split button) can inject text into the field, and the
+  /// caller owns disposal. Null makes the composer own its controller. When
+  /// provided empty, it is still seeded from [initialText].
+  final TextEditingController? controller;
+
   /// Called when the user taps the cancel (stop) button while a turn is
   /// running and the input is empty. Null disables the cancel affordance.
   final VoidCallback? onCancel;
@@ -95,7 +102,8 @@ class Composer extends StatefulWidget {
 }
 
 class _ComposerState extends State<Composer> {
-  final _ctrl = TextEditingController();
+  late final TextEditingController _ctrl =
+      widget.controller ?? TextEditingController();
   late final FocusNode _focus = widget.focusNode ?? FocusNode();
   final _fieldKey = GlobalKey(); // stable element across compact↔expanded swap
   bool _showSlash = false;
@@ -111,9 +119,10 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     // Restore any persisted draft, placing the caret at the end so the user
-    // resumes where they left off.
+    // resumes where they left off. Guard on empty so an injected controller
+    // that already carries text (a live draft) is never clobbered.
     final seed = widget.initialText ?? '';
-    if (seed.isNotEmpty) {
+    if (seed.isNotEmpty && _ctrl.text.isEmpty) {
       _ctrl.text = seed;
       _ctrl.selection = TextSelection.collapsed(offset: seed.length);
       _hasText = seed.trim().isNotEmpty;
@@ -446,8 +455,8 @@ class _ComposerState extends State<Composer> {
     _slashTipTimer?.cancel();
     _ctrl.removeListener(_onControllerChanged);
     _focus.removeListener(_onFocusChanged);
-    _ctrl.dispose();
-    // Only dispose a focus node we created; an injected one is caller-owned.
+    // Only dispose objects we created; injected ones are caller-owned.
+    if (widget.controller == null) _ctrl.dispose();
     if (widget.focusNode == null) _focus.dispose();
     super.dispose();
   }

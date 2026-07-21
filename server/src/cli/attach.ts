@@ -28,7 +28,7 @@ interface AttachArgs {
 }
 
 function parseAttachArgs(argv: string[]): AttachArgs {
-  const a: AttachArgs = { host: "127.0.0.1", port: 8787, spawn: false };
+  const a: AttachArgs = { host: "127.0.0.1", port: 7777, spawn: false };
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i]!;
     if (t === "--port") a.port = Number(argv[++i]);

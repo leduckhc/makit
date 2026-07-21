@@ -76,3 +76,13 @@ flutter:
     - assets/agents/
     - assets/tray/
     - assets/ide/
+    - assets/icons/
+
+  fonts:
+    # VS Code codicon glyphs (assets/fonts/codicon.ttf, CC-BY-4.0 — see
+    # assets/fonts/codicon-LICENSE.txt). Only the comment-discussion glyph is
+    # used (see lib/ui/widgets/codicons.dart); Push/Pull ship as PNGs under
+    # assets/icons/.
+    - family: codicon
+      fonts:
+        - asset: assets/fonts/codicon.ttf
