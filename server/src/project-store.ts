@@ -17,9 +17,18 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { log } from "./log.js";
+
+/** A persisted project: a server-generated id paired with its root path. The
+ *  id is a random handle (unrelated to the path, so it leaks nothing about the
+ *  filesystem) that stays stable across restarts because it is stored here. */
+export interface PersistedProject {
+  id: string;
+  path: string;
+}
 
 /** Absolute path of the projects persistence file. */
 export function projectsFile(): string {
@@ -27,20 +36,53 @@ export function projectsFile(): string {
 }
 
 /**
- * Read persisted project paths. A missing or malformed file yields `[]` —
- * this must never throw so startup is robust against a corrupt store.
+ * Read persisted projects as `{ id, path }` records. A missing or malformed
+ * file yields `[]` — this must never throw so startup is robust against a
+ * corrupt store.
+ *
+ * Backward compatible: the legacy shape `{ projects: ["/abs", …] }` (bare path
+ * strings, no id) is migrated by minting a fresh id per path, which the next
+ * save persists — so old installs keep working and gain stable ids.
  */
-export function loadProjectPaths(file: string): string[] {
+export function loadProjects(file: string): PersistedProject[] {
   try {
     if (!existsSync(file)) return [];
     const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
     if (typeof parsed !== "object" || parsed === null) return [];
-    const projects = (parsed as { projects?: unknown }).projects;
-    if (!Array.isArray(projects)) return [];
-    return projects.filter(
-      (p): p is string =>
-        typeof p === "string" && existsSync(p) && statSync(p).isDirectory(),
-    );
+    const raw = (parsed as { projects?: unknown }).projects;
+    if (!Array.isArray(raw)) return [];
+    const out: PersistedProject[] = [];
+    // Validate each path in isolation: a stat failure (path vanished, EACCES)
+    // must skip only that entry, never abort the whole load — otherwise the
+    // outer catch returns [] and serve.ts overwrites the store, losing every
+    // other project's persisted id.
+    const isDirectory = (path: string): boolean => {
+      try {
+        return existsSync(path) && statSync(path).isDirectory();
+      } catch {
+        return false;
+      }
+    };
+    for (const entry of raw) {
+      // Legacy: a bare path string. Mint a stable id now (persisted next save).
+      if (typeof entry === "string") {
+        if (isDirectory(entry)) {
+          out.push({ id: randomUUID(), path: entry });
+        }
+        continue;
+      }
+      // Current: an { id, path } record.
+      if (
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as { id?: unknown }).id === "string" &&
+        typeof (entry as { path?: unknown }).path === "string"
+      ) {
+        const { id, path } = entry as PersistedProject;
+        if (isDirectory(path)) out.push({ id, path });
+      }
+    }
+    return out;
   } catch (e) {
     log.warn(`[makit] failed to read projects file ${file}: ${(e as Error).message}`);
     return [];
@@ -48,13 +90,14 @@ export function loadProjectPaths(file: string): string[] {
 }
 
 /**
- * Persist project paths as pretty JSON, creating the parent dir if needed.
- * Never throws — a write failure is logged and swallowed.
+ * Persist projects as pretty JSON, creating the parent dir if needed. Never
+ * throws — a write failure is logged and swallowed.
  */
-export function saveProjectPaths(file: string, paths: string[]): void {
+export function saveProjects(file: string, projects: PersistedProject[]): void {
   try {
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, JSON.stringify({ projects: paths }, null, 2) + "\n");
+    const rows = projects.map((p) => ({ id: p.id, path: p.path }));
+    writeFileSync(file, JSON.stringify({ projects: rows }, null, 2) + "\n");
   } catch (e) {
     log.warn(`[makit] failed to write projects file ${file}: ${(e as Error).message}`);
   }

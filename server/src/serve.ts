@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import qrcode from "qrcode-terminal";
 import { SessionManager } from "./manager.js";
 import { SqliteEventStore } from "./storage/sqlite_event_store.js";
-import { projectsFile, loadProjectPaths, saveProjectPaths } from "./project-store.js";
+import { projectsFile, loadProjects, saveProjects, type PersistedProject } from "./project-store.js";
 import { startWsServer } from "./server.js";
 import { loadApnsConfig, createPushSender } from "./push/config.js";
 import { type PushSender } from "./push/sender.js";
@@ -93,12 +93,26 @@ export function parseArgs(argv: string[]) {
 
 export type ServeArgs = ReturnType<typeof parseArgs>;
 
-/** Dedupe paths by their resolved absolute form, preserving first-seen order. */
-function dedupeResolved(paths: string[]): string[] {
+/**
+ * Merge persisted `{ id, path }` projects with CLI `--project` roots, deduping
+ * by resolved absolute path (first-seen wins, so a persisted id is preferred
+ * over a duplicate CLI path). A persisted entry keeps its id; a CLI-only path
+ * is passed as a bare string so the manager mints a fresh server id for it.
+ */
+function mergeProjects(
+  persisted: PersistedProject[],
+  cliPaths: string[],
+): Array<PersistedProject | string> {
   const seen = new Set<string>();
-  const out: string[] = [];
-  for (const p of paths) {
-    const key = resolve(p);
+  const out: Array<PersistedProject | string> = [];
+  for (const p of persisted) {
+    const key = resolve(p.path);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: p.id, path: key });
+  }
+  for (const raw of cliPaths) {
+    const key = resolve(raw);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(key);
@@ -111,12 +125,13 @@ export async function runServe(opts: ServeArgs) {
   const registry = new DeviceRegistry();
 
   // Merge persisted projects with any CLI `--project` roots, deduping by
-  // resolved path so a restart neither loses nor duplicates entries. Persist
-  // the merged set once at startup so a fresh `--project` gets recorded.
+  // resolved path so a restart neither loses nor duplicates entries. The
+  // manager mints server ids for CLI-only paths; persist the resulting
+  // `{ id, path }` set once at startup so those ids (and migrated legacy
+  // entries) are recorded and stay stable across restarts.
   const file = projectsFile();
-  const persisted = loadProjectPaths(file);
-  const merged = dedupeResolved([...persisted, ...opts.projects]);
-  saveProjectPaths(file, merged);
+  const persisted = loadProjects(file);
+  const merged = mergeProjects(persisted, opts.projects);
 
   // Durable event log: persists sessions + their append-only event stream to a
   // single SQLite file (~/.makit/makit.db) so history survives a restart and
@@ -134,9 +149,15 @@ export async function runServe(opts: ServeArgs) {
 
   const manager = new SessionManager({
     projects: merged,
-    onProjectsChanged: (paths) => saveProjectPaths(file, paths),
+    onProjectsChanged: (projects) => saveProjects(file, projects),
     store,
   });
+  // Record the manager's authoritative id↔path map now (CLI-only paths just got
+  // fresh ids; legacy path-only entries got migrated ids).
+  saveProjects(
+    file,
+    manager.listProjects().map((p) => ({ id: p.id, path: p.path })),
+  );
 
   // SPEC-07: choose the content-free wake sender. Absent/invalid push.json →
   // NoopPushSender (graceful degradation: wakes are no-ops, Slice-1 fallback).

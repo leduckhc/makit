@@ -5,42 +5,62 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
-  loadProjectPaths,
-  saveProjectPaths,
+  loadProjects,
+  saveProjects,
   browseDirectory,
 } from "./project-store.js";
 
-test("saveProjectPaths / loadProjectPaths keeps existing directories", () => {
+test("saveProjects / loadProjects round-trips id+path, dropping deleted dirs", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
   try {
     const file = join(dir, "nested", "projects.json");
     const existing = join(dir, "project");
     mkdirSync(existing);
-    const paths = [existing, join(dir, "deleted-project")];
-    saveProjectPaths(file, paths);
-    assert.deepEqual(loadProjectPaths(file), [existing]);
+    saveProjects(file, [
+      { id: "id-a", path: existing },
+      { id: "id-b", path: join(dir, "deleted-project") },
+    ]);
+    // The deleted dir is filtered on load; the surviving entry keeps its id.
+    assert.deepEqual(loadProjects(file), [{ id: "id-a", path: existing }]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("loadProjectPaths returns [] for a missing file", () => {
+test("loadProjects migrates the legacy path-only format, minting stable ids", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
   try {
-    assert.deepEqual(loadProjectPaths(join(dir, "nope.json")), []);
+    const file = join(dir, "projects.json");
+    const existing = join(dir, "project");
+    mkdirSync(existing);
+    // Legacy shape: bare path strings, no ids.
+    writeFileSync(file, JSON.stringify({ projects: [existing] }));
+    const loaded = loadProjects(file);
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].path, existing);
+    assert.ok(loaded[0].id.length > 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("loadProjectPaths returns [] for a malformed file", () => {
+test("loadProjects returns [] for a missing file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
+  try {
+    assert.deepEqual(loadProjects(join(dir, "nope.json")), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("loadProjects returns [] for a malformed file", () => {
   const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
   try {
     const file = join(dir, "bad.json");
     writeFileSync(file, "{ not valid json ");
-    assert.deepEqual(loadProjectPaths(file), []);
+    assert.deepEqual(loadProjects(file), []);
     writeFileSync(file, JSON.stringify({ projects: "not-an-array" }));
-    assert.deepEqual(loadProjectPaths(file), []);
+    assert.deepEqual(loadProjects(file), []);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

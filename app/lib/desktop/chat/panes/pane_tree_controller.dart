@@ -218,10 +218,26 @@ class PaneTreeController extends StateNotifier<PaneWorkspaceState> {
   /// Selects [worktree], swapping the whole view to its tree and seeding a
   /// single empty starter pane the first time it is chosen.
   void selectWorktree(SelectedWorktree worktree) {
-    final trees = state.trees.containsKey(worktree.path)
-        ? state.trees
-        : {...state.trees, worktree.path: _seed(worktree)};
-    _commit(PaneWorkspaceState(trees: trees, currentKey: worktree.path));
+    final existing = state.trees[worktree.path];
+    // Key trees by the stable worktree path, but always adopt the freshly
+    // selected descriptor. The current selection carries the authoritative
+    // projectId + branch, whereas a tree restored from prefs can hold a stale
+    // projectId that would fail `session.spawn` ("unknown project"). Preserve
+    // the persisted layout (splits/leaves/bound sessions) while refreshing the
+    // worktree's projectId + branch from the current selection.
+    final tree = existing == null
+        ? _seed(worktree)
+        : PaneTreeState(
+            root: existing.root,
+            activeLeafId: existing.activeLeafId,
+            worktree: worktree,
+          );
+    _commit(
+      PaneWorkspaceState(
+        trees: {...state.trees, worktree.path: tree},
+        currentKey: worktree.path,
+      ),
+    );
   }
 
   /// Switches to [worktree]'s tree (seeding it if absent) and binds [sessionId]

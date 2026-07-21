@@ -9,6 +9,7 @@ import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
 import 'composer_draft.dart';
 import 'panes/pane_header.dart';
+import 'panes/pane_tree_controller.dart';
 import 'selected_session.dart';
 
 /// Harness picker shown in the main content while a session is still a draft
@@ -203,7 +204,15 @@ class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
       // The widget may have unmounted while spawnSession was in flight; bail
       // before touching providers through a potentially disposed ref.
       if (!mounted) return;
-      selectSessionExclusive(ref, sid);
+      // Bind the new session into the REAL worktree tree the user is already
+      // looking at. We can't route through selectSessionExclusive here: a
+      // not-yet-started draft has no worktreePath, so that helper would misfile
+      // it into a virtual `draft:<id>` tree — even though this session belongs
+      // to an existing worktree on disk. That misfiling bounced the pane onto a
+      // draft tree and, once the session materialized, back to this empty start
+      // view, dropping the just-sent turn from view.
+      ref.read(selectedSessionProvider.notifier).state = sid;
+      ref.read(paneTreeControllerProvider.notifier).bindActiveSession(sid, wt);
       store.appendOptimisticMessage(sid, text);
       store.sendMessage(sid, text);
     } catch (e) {

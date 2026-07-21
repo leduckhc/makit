@@ -37,6 +37,26 @@ void main() {
       expect(c.current!.root, splitRoot, reason: 'layout preserved');
     });
 
+    test('re-selecting a path adopts the fresh worktree descriptor while '
+        'preserving the persisted layout', () {
+      final c = PaneTreeController.ephemeral();
+      c.selectWorktree(_wtA);
+      c.splitActive(Axis.horizontal);
+      final splitRoot = c.current!.root;
+      final activeLeafId = c.current!.activeLeafId;
+      // Same path, but a fresh projectId (and branch) from a new snapshot.
+      const fresh = SelectedWorktree(
+        projectId: 'p1-new',
+        path: '/wt/a',
+        branch: 'a2',
+      );
+      c.selectWorktree(fresh);
+      expect(c.current!.root, splitRoot, reason: 'layout preserved');
+      expect(c.current!.activeLeafId, activeLeafId, reason: 'focus kept');
+      expect(c.current!.worktree.projectId, 'p1-new');
+      expect(c.current!.worktree.branch, 'a2');
+    });
+
     test(
       'switching worktrees preserves each layout, ratio and active leaf',
       () {
