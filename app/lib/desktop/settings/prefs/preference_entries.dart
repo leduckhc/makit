@@ -79,6 +79,44 @@ const PreferenceEntry<String> preferredIdePreference = PreferenceEntry(
   internal: true,
 );
 
+/// The last PR action the composer's "PR actions" split button ran, so its
+/// main segment repeats it. Stored as a [PrPromptAction] name; falls back to
+/// the first action for an unknown/legacy value. Internal bookkeeping.
+const PreferenceEntry<String> lastPrActionPreference = PreferenceEntry(
+  id: 'chat.lastPrAction',
+  defaultValue: 'createPr',
+  encode: _encodeString,
+  decode: _decodeString,
+  internal: true,
+);
+
+/// User override for the "Create PR" canned prompt. Empty string means "use the
+/// built-in default" (see `pr_actions.dart`), so the built-in can evolve
+/// without stomping a user's edit or vice-versa.
+const PreferenceEntry<String> prCreatePromptPreference = PreferenceEntry(
+  id: 'chat.prPrompt.create',
+  defaultValue: '',
+  encode: _encodeString,
+  decode: _decodeString,
+);
+
+/// User override for the "Fix PR" canned prompt (empty = built-in default).
+const PreferenceEntry<String> prFixPromptPreference = PreferenceEntry(
+  id: 'chat.prPrompt.fix',
+  defaultValue: '',
+  encode: _encodeString,
+  decode: _decodeString,
+);
+
+/// User override for the "Resolve comments" canned prompt (empty = built-in).
+const PreferenceEntry<String> prResolveCommentsPromptPreference =
+    PreferenceEntry(
+      id: 'chat.prPrompt.resolveComments',
+      defaultValue: '',
+      encode: _encodeString,
+      decode: _decodeString,
+    );
+
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
@@ -89,6 +127,10 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   sidebarStartCollapsedPreference,
   textScalePreference,
   preferredIdePreference,
+  lastPrActionPreference,
+  prCreatePromptPreference,
+  prFixPromptPreference,
+  prResolveCommentsPromptPreference,
 ];
 
 Object? _encodeThemeMode(ThemeMode value) => value.name;
