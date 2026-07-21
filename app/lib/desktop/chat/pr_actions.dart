@@ -46,6 +46,13 @@ enum PrPromptAction {
         'conventional commit message summarizing what changed and why, then '
         'push to the remote (setting the upstream if the branch has none). '
         'Reply with the commit summary when done.',
+  ),
+  push(
+    'Push',
+    PhosphorIconsLight.arrowLineUp,
+    prPushPromptPreference,
+    'Push the current branch to its remote (use `git push -u` to set the '
+        'upstream if it has none). Reply when the push succeeds.',
   );
 
   const PrPromptAction(

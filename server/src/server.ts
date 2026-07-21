@@ -57,7 +57,7 @@ import { register as registerDebugCommands } from "./ws/commands/debug.js";
 import { throttleTrailing } from "./ws/throttle.js";
 import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
-import { findOpenPr } from "./git.js";
+import { fetchOpenPr } from "./git.js";
 
 export interface ServerOpts {
   host: string;
@@ -175,7 +175,10 @@ export function startWsServer(opts: ServerOpts) {
   // manual refresh. Its tracked set is refreshed from each enriched snapshot
   // (see broadcastReposSnapshot); closed with the listeners.
   const prWatcher = watchPrs({
-    fetchPr: (repoPath, branch) => findOpenPr(repoPath, branch),
+    // fetchOpenPr (not findOpenPr): it throws on a transient gh failure and
+    // returns null only for a genuine "no open PR", so the watcher can tell a
+    // merged/closed PR (broadcast the drop) from a flaky lookup (keep status).
+    fetchPr: (repoPath, branch) => fetchOpenPr(repoPath, branch),
     onChange: () => void broadcastReposSnapshot(),
     // Poll every 5s regardless of check state (no adaptive backoff): PR status
     // stays near-live in the UI.

@@ -13,6 +13,7 @@ Widget _host(
   PreferencesController controller, {
   PullRequest? pr,
   int uncommittedFiles = 0,
+  int commitsAhead = 0,
   required void Function(String) onInsert,
 }) {
   return ProviderScope(
@@ -24,6 +25,7 @@ Widget _host(
         body: PrComposerBar(
           pr: pr,
           uncommittedFiles: uncommittedFiles,
+          commitsAhead: commitsAhead,
           onInsertPrompt: onInsert,
         ),
       ),
@@ -119,7 +121,7 @@ void main() {
     expect(find.text('Commit and push'), findsWidgets);
   });
 
-  testWidgets('uncommitted files → label + default "Commit and push"', (
+  testWidgets('a single chip shows; uncommitted outranks unresolved', (
     tester,
   ) async {
     String? inserted;
@@ -131,15 +133,51 @@ void main() {
         onInsert: (p) => inserted = p,
       ),
     );
-    // Both labels render; uncommitted wins the default action.
+    // Only the top-priority chip renders — not a wall of competing hints.
     expect(find.text('2 uncommitted files'), findsOneWidget);
-    expect(find.text('3 unresolved comments'), findsOneWidget);
+    expect(find.text('3 unresolved comments'), findsNothing);
     await tester.tap(find.text('Commit and push'));
     await tester.pumpAndSettle();
     expect(inserted, PrPromptAction.commitAndPush.defaultPrompt);
   });
 
-  testWidgets('unresolved comments (no uncommitted) → default "Resolve"', (
+  testWidgets('commits ahead (no uncommitted) → chip + default "Push"', (
+    tester,
+  ) async {
+    String? inserted;
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(unresolvedComments: 2),
+        commitsAhead: 3,
+        onInsert: (p) => inserted = p,
+      ),
+    );
+    // Unpushed commits outrank unresolved comments.
+    expect(find.text('3 commits ahead'), findsOneWidget);
+    expect(find.text('2 unresolved comments'), findsNothing);
+    await tester.tap(find.text('Push'));
+    await tester.pumpAndSettle();
+    expect(inserted, PrPromptAction.push.defaultPrompt);
+  });
+
+  testWidgets('failing CI (nothing local) → chip + default "Fix PR"', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(rollup: 'fail', unresolvedComments: 1),
+        onInsert: (_) {},
+      ),
+    );
+    // Failing CI outranks unresolved comments.
+    expect(find.text('CI failing'), findsOneWidget);
+    expect(find.text('1 unresolved comment'), findsNothing);
+    expect(find.text('Fix PR'), findsOneWidget);
+  });
+
+  testWidgets('unresolved comments (nothing else) → default "Resolve"', (
     tester,
   ) async {
     await tester.pumpWidget(

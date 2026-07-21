@@ -44,6 +44,7 @@ function repos(branch: string, prInfo: PullRequestInfo | null): RepoDTO[] {
           deletions: 0,
           filesChanged: 0,
           uncommittedFiles: 0,
+          aheadCount: 0,
           committedAt: null,
           pr: prInfo,
           sessionIds: [],
@@ -101,6 +102,24 @@ test("pollOnce fires when PR state flips to MERGED", async () => {
   w.sync(repos("feature", open));
   current = pr({ state: "MERGED" });
   assert.equal(await w.pollOnce(), true);
+  assert.equal(changes(), 1);
+  w.close();
+});
+
+test("pollOnce fires when a tracked PR vanishes (merged/closed)", async () => {
+  // fetchPr resolves to null (not a throw) once the PR leaves the open set.
+  const open = pr({ state: "OPEN" });
+  let current: PullRequestInfo | null = open;
+  const { w, changes } = makeWatcher(async () => current);
+  w.sync(repos("feature", open));
+
+  // PR merged/closed — drops out of the open-PR lookup.
+  current = null;
+  assert.equal(await w.pollOnce(), true, "a vanished PR must broadcast the drop");
+  assert.equal(changes(), 1);
+
+  // Still gone: the baseline is now NO_PR, so the next poll is quiet.
+  assert.equal(await w.pollOnce(), false);
   assert.equal(changes(), 1);
   w.close();
 });

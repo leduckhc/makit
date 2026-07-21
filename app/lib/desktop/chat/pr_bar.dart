@@ -19,6 +19,7 @@ class PrComposerBar extends StatelessWidget {
     required this.pr,
     required this.onInsertPrompt,
     this.uncommittedFiles = 0,
+    this.commitsAhead = 0,
   });
 
   /// The open PR for the pane's worktree, or null when there is none.
@@ -27,12 +28,21 @@ class PrComposerBar extends StatelessWidget {
   /// Files with uncommitted changes in the pane's worktree (0 when none).
   final int uncommittedFiles;
 
+  /// Commits not yet pushed to the remote (0 when none / up to date).
+  final int commitsAhead;
+
   /// Insert a resolved canned prompt into the composer (does not send).
   final void Function(String prompt) onInsertPrompt;
 
   @override
   Widget build(BuildContext context) {
-    final unresolved = pr?.unresolvedComments ?? 0;
+    // At most one situational chip: the single most-actionable next step (see
+    // [_situationFor]). It also drives the split button's default action.
+    final situation = _situationFor(
+      pr: pr,
+      uncommittedFiles: uncommittedFiles,
+      commitsAhead: commitsAhead,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
       child: Row(
@@ -44,17 +54,11 @@ class PrComposerBar extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (pr != null) PrStatusPill(pr: pr!),
-                if (uncommittedFiles > 0)
+                if (situation != null)
                   _CountLabel(
-                    icon: PhosphorIconsLight.pencilSimple,
-                    text: _plural(uncommittedFiles, 'uncommitted file'),
-                    color: const Color(0xFFD29922),
-                  ),
-                if (unresolved > 0)
-                  _CountLabel(
-                    icon: PhosphorIconsLight.chatCircleText,
-                    text: _plural(unresolved, 'unresolved comment'),
-                    color: const Color(0xFFD29922),
+                    icon: situation.icon,
+                    text: situation.label,
+                    color: situation.color,
                   ),
               ],
             ),
@@ -63,8 +67,7 @@ class PrComposerBar extends StatelessWidget {
           PrActionsSplitButton(
             onInsertPrompt: onInsertPrompt,
             hasPr: pr != null,
-            unresolvedComments: unresolved,
-            uncommittedFiles: uncommittedFiles,
+            suggestedAction: situation?.action,
           ),
         ],
       ),
@@ -72,11 +75,76 @@ class PrComposerBar extends StatelessWidget {
   }
 }
 
+/// The single most-actionable next step for the pane's worktree, or null when
+/// there's nothing pressing. Drives *both* the lone status chip and the split
+/// button's default action, ordered by urgency so the composer never shows a
+/// wall of competing hints:
+///   1. uncommitted work → Commit and push,
+///   2. unpushed commits → Push,
+///   3. failing CI → Fix PR,
+///   4. unresolved review threads → Resolve comments.
+_Situation? _situationFor({
+  required PullRequest? pr,
+  required int uncommittedFiles,
+  required int commitsAhead,
+}) {
+  const amber = Color(0xFFD29922);
+  const red = Color(0xFFF85149);
+  if (uncommittedFiles > 0) {
+    return _Situation(
+      icon: PhosphorIconsLight.pencilSimple,
+      label: _plural(uncommittedFiles, 'uncommitted file'),
+      color: amber,
+      action: PrPromptAction.commitAndPush,
+    );
+  }
+  if (commitsAhead > 0) {
+    return _Situation(
+      icon: PhosphorIconsLight.arrowLineUp,
+      label: '$commitsAhead commit${commitsAhead == 1 ? '' : 's'} ahead',
+      color: amber,
+      action: PrPromptAction.push,
+    );
+  }
+  if (pr != null && pr.checkRollup == 'fail') {
+    return const _Situation(
+      icon: PhosphorIconsLight.xCircle,
+      label: 'CI failing',
+      color: red,
+      action: PrPromptAction.fixPr,
+    );
+  }
+  if ((pr?.unresolvedComments ?? 0) > 0) {
+    return _Situation(
+      icon: PhosphorIconsLight.chatCircleText,
+      label: _plural(pr!.unresolvedComments, 'unresolved comment'),
+      color: amber,
+      action: PrPromptAction.resolveComments,
+    );
+  }
+  return null;
+}
+
+/// A resolved composer situation: the chip to show plus the action it suggests.
+class _Situation {
+  const _Situation({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.action,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final PrPromptAction action;
+}
+
 /// `N thing` / `N things` — tiny English pluralizer for the count labels.
 String _plural(int n, String singular) => '$n $singular${n == 1 ? '' : 's'}';
 
-/// A compact tinted chip — icon + count text — used for the composer's
-/// "X uncommitted files" / "X unresolved comments" hints beside the PR pill.
+/// A compact tinted chip — icon + text — used for the composer's lone
+/// situational hint (e.g. "3 uncommitted files") beside the PR pill.
 class _CountLabel extends StatelessWidget {
   const _CountLabel({
     required this.icon,
@@ -394,8 +462,7 @@ class PrActionsSplitButton extends ConsumerWidget {
     super.key,
     required this.onInsertPrompt,
     this.hasPr = false,
-    this.unresolvedComments = 0,
-    this.uncommittedFiles = 0,
+    this.suggestedAction,
   });
 
   final void Function(String prompt) onInsertPrompt;
@@ -404,11 +471,9 @@ class PrActionsSplitButton extends ConsumerWidget {
   /// dropped from the menu — there's nothing to create.
   final bool hasPr;
 
-  /// Unresolved review threads on the PR (drives the contextual default).
-  final int unresolvedComments;
-
-  /// Uncommitted files in the worktree (drives the contextual default).
-  final int uncommittedFiles;
+  /// The situational default action (from [_situationFor]), or null when there
+  /// is nothing pressing — then the user's last pick is used.
+  final PrPromptAction? suggestedAction;
 
   /// The actions offered in the menu, minus "Create PR" once a PR exists.
   List<PrPromptAction> get _actions => [
@@ -416,11 +481,11 @@ class PrActionsSplitButton extends ConsumerWidget {
       if (!(hasPr && a == PrPromptAction.createPr)) a,
   ];
 
-  /// The main-segment (default) action: uncommitted work first, then unresolved
-  /// comments, else the user's last pick (never a filtered-out action).
+  /// The main-segment (default) action: the suggested situational action when
+  /// present, else the user's last pick (never a filtered-out action).
   PrPromptAction _defaultAction(WidgetRef ref) {
-    if (uncommittedFiles > 0) return PrPromptAction.commitAndPush;
-    if (unresolvedComments > 0) return PrPromptAction.resolveComments;
+    final suggested = suggestedAction;
+    if (suggested != null && _actions.contains(suggested)) return suggested;
     final last = prActionFromName(ref.preference(lastPrActionPreference));
     return _actions.contains(last) ? last : _actions.first;
   }

@@ -338,15 +338,24 @@ export function rollupChecks(checks: PrCheckDTO[]): PrCheckRollup {
 }
 
 /**
- * The open PR whose head is `branch`, via `gh`. Returns null when `gh` is
- * missing/unauthenticated, the repo has no GitHub remote, or no PR exists —
- * PR info is a nice-to-have, never a hard dependency.
+ * The open PR whose head is `branch`, via `gh`, distinguishing "no open PR"
+ * from a *failed* lookup:
+ *   - returns a {@link PullRequestInfo} when one exists,
+ *   - returns `null` when the lookup succeeded but there is genuinely no open
+ *     PR (e.g. it was merged/closed and left the open set),
+ *   - **throws** when the lookup itself failed (`gh` missing/unauthenticated,
+ *     no GitHub remote, network/parse error).
+ *
+ * The PR watcher relies on this three-way distinction: a returned `null` means
+ * a tracked PR vanished (broadcast the drop), whereas a throw is a transient
+ * failure (retain the last-known status). {@link findOpenPr} is the lenient
+ * wrapper for callers that only care whether a PR exists.
  *
  * One `gh pr list` call fetches identity + mergeability + the CI check rollup
  * together (verified: `--head` list output includes `statusCheckRollup`), so a
  * poll costs a single subprocess per open PR.
  */
-export async function findOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
+export async function fetchOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
   const r = await run(
     "gh",
     [
@@ -364,25 +373,35 @@ export async function findOpenPr(repoPath: string, branch: string): Promise<Pull
     repoPath,
     5000,
   );
-  if (r.code !== 0) return null;
+  if (r.code !== 0) throw new Error(`gh pr list --head ${branch} failed (exit ${r.code})`);
+  const parsed = JSON.parse(r.stdout.trim() || "[]") as Array<Record<string, unknown>>;
+  if (!Array.isArray(parsed) || parsed.length === 0) return null;
+  const p = parsed[0];
+  const checks = normalizeChecks(p.statusCheckRollup);
+  const url = typeof p.url === "string" ? p.url : "";
+  return {
+    number: typeof p.number === "number" ? p.number : 0,
+    url,
+    state: typeof p.state === "string" ? p.state : "OPEN",
+    title: typeof p.title === "string" ? p.title : "",
+    isDraft: p.isDraft === true,
+    mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
+    mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
+    checks,
+    checkRollup: rollupChecks(checks),
+    unresolvedComments: url ? await unresolvedReviewThreadCount(repoPath, url) : 0,
+  };
+}
+
+/**
+ * Lenient {@link fetchOpenPr}: returns null for *both* "no open PR" and a failed
+ * lookup. PR info is a nice-to-have for these callers (snapshot enrichment,
+ * rename guard), never a hard dependency, and folding the error case into null
+ * keeps a single flaky `gh` call from aborting a whole batch.
+ */
+export async function findOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
   try {
-    const parsed = JSON.parse(r.stdout.trim() || "[]") as Array<Record<string, unknown>>;
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    const p = parsed[0];
-    const checks = normalizeChecks(p.statusCheckRollup);
-    const url = typeof p.url === "string" ? p.url : "";
-    return {
-      number: typeof p.number === "number" ? p.number : 0,
-      url,
-      state: typeof p.state === "string" ? p.state : "OPEN",
-      title: typeof p.title === "string" ? p.title : "",
-      isDraft: p.isDraft === true,
-      mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
-      mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
-      checks,
-      checkRollup: rollupChecks(checks),
-      unresolvedComments: url ? await unresolvedReviewThreadCount(repoPath, url) : 0,
-    };
+    return await fetchOpenPr(repoPath, branch);
   } catch {
     return null;
   }
@@ -430,6 +449,26 @@ export async function uncommittedFileCount(worktreePath: string): Promise<number
   const r = await git(["status", "--porcelain"], worktreePath);
   if (r.code !== 0) return 0;
   return r.stdout.split("\n").filter((l) => l.trim().length > 0).length;
+}
+
+/**
+ * Count of commits on this worktree's branch that are not yet on its remote
+ * (i.e. what a push would send). Prefers the upstream tracking branch
+ * (`@{upstream}..HEAD`); when the branch has no upstream (never pushed), falls
+ * back to commits not reachable from [baseBranch] — the commits a first
+ * `git push -u` would publish. Best-effort — 0 on any git failure.
+ */
+export async function commitsAhead(worktreePath: string, baseBranch: string | null): Promise<number> {
+  const parse = (s: string): number => {
+    const n = Number.parseInt(s.trim(), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const up = await git(["rev-list", "--count", "@{upstream}..HEAD"], worktreePath);
+  if (up.code === 0) return parse(up.stdout);
+  // No upstream configured: count commits ahead of the base branch instead.
+  if (!baseBranch) return 0;
+  const base = await git(["rev-list", "--count", `${baseBranch}..HEAD`], worktreePath);
+  return base.code === 0 ? parse(base.stdout) : 0;
 }
 
 /** A single open pull request, as listed for the "New worktree from PR" flow. */

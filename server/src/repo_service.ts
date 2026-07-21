@@ -20,6 +20,7 @@ import {
   diffStat,
   findOpenPr,
   uncommittedFileCount,
+  commitsAhead,
 } from "./git.js";
 import { mapLimit } from "./concurrency.js";
 
@@ -88,9 +89,10 @@ async function repoSnapshot(dto: ProjectDTO, sessions: Session[]): Promise<RepoD
   }
 
   const worktrees: WorktreeDTO[] = await mapLimit(entries, WORKTREE_CONCURRENCY, async (e) => {
-    const [stat, uncommittedFiles] = await Promise.all([
+    const [stat, uncommittedFiles, aheadCount] = await Promise.all([
       diffStat(e.path, defaultBranch),
       uncommittedFileCount(e.path),
+      commitsAhead(e.path, defaultBranch),
     ]);
     return {
       id: e.path,
@@ -101,6 +103,7 @@ async function repoSnapshot(dto: ProjectDTO, sessions: Session[]): Promise<RepoD
       deletions: stat.deletions,
       filesChanged: stat.filesChanged,
       uncommittedFiles,
+      aheadCount,
       committedAt: e.committedAt,
       pr: null,
       sessionIds: sessionsByPath.get(e.path) ?? [],

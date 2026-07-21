@@ -125,6 +125,14 @@ const PreferenceEntry<String> prCommitPushPromptPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+/// User override for the "Push" canned prompt (empty = built-in).
+const PreferenceEntry<String> prPushPromptPreference = PreferenceEntry(
+  id: 'chat.prPrompt.push',
+  defaultValue: '',
+  encode: _encodeString,
+  decode: _decodeString,
+);
+
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
@@ -140,6 +148,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   prFixPromptPreference,
   prResolveCommentsPromptPreference,
   prCommitPushPromptPreference,
+  prPushPromptPreference,
 ];
 
 Object? _encodeThemeMode(ThemeMode value) => value.name;

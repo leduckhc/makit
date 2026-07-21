@@ -133,6 +133,8 @@ export interface WorktreeDTO {
   filesChanged: number;
   /** Files with uncommitted changes (staged + unstaged + untracked). */
   uncommittedFiles: number;
+  /** Commits not yet pushed to the remote (what a push would send). */
+  aheadCount: number;
   /** HEAD commit time in epoch milliseconds, or null when unavailable. */
   committedAt: number | null;
   pr: PullRequestDTO | null;

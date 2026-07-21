@@ -27,6 +27,14 @@
 
 import type { PullRequestInfo } from "./git.js";
 import type { PullRequestDTO, RepoDTO } from "./protocol.js";
+import { mapLimit } from "./concurrency.js";
+
+/**
+ * Max concurrent `gh` PR lookups per poll tick. Mirrors the snapshot's
+ * PR_CONCURRENCY so a many-worktree install can't fan out one subprocess per
+ * tracked PR unboundedly on every tick.
+ */
+const POLL_CONCURRENCY = 6;
 
 /** A PR to poll, identified by the repo it lives in and its head branch. */
 interface TrackedPr {
@@ -35,7 +43,12 @@ interface TrackedPr {
 }
 
 export interface PrWatcherOptions {
-  /** Fetch current PR status for a head branch (typically `findOpenPr`). */
+  /**
+   * Fetch current PR status for a head branch (typically {@link fetchOpenPr}).
+   * Must **throw** on a transient lookup failure and resolve to `null` only for
+   * a genuine "no open PR", so the watcher can tell a vanished PR apart from a
+   * flaky `gh` call.
+   */
   fetchPr: (repoPath: string, branch: string) => Promise<PullRequestInfo | null>;
   /** Called when a tracked PR's status changed — re-broadcasts the snapshot. */
   onChange: () => void;
@@ -142,25 +155,29 @@ export function watchPrs(opts: PrWatcherOptions): PrWatcher {
       return false;
     }
     const entries = [...tracked.values()];
-    const results = await Promise.all(
-      entries.map((t) =>
-        opts
-          .fetchPr(t.repoPath, t.branch)
-          .then((pr) => ({ t, pr }))
-          .catch(() => ({ t, pr: null as PullRequestInfo | null })),
-      ),
+    // Bounded fan-out (POLL_CONCURRENCY): a distinct fetch result per entry so
+    // a resolved `null` (PR gone from the open set) is told apart from a
+    // rejection (transient `gh` failure). fetchPr throws on failure and returns
+    // null only for a genuine "no open PR".
+    const results = await mapLimit(entries, POLL_CONCURRENCY, (t) =>
+      opts
+        .fetchPr(t.repoPath, t.branch)
+        .then((pr) => ({ t, ok: true, pr }) as const)
+        .catch(() => ({ t, ok: false, pr: null }) as const),
     );
 
     let changed = false;
     let pending = false;
-    for (const { t, pr } of results) {
+    for (const { t, ok, pr } of results) {
       const key = keyOf(t.repoPath, t.branch);
-      // A tracked PR that vanished (closed/merged out of the open set) or that
-      // errored transiently: leave its last signature so a broadcast (which
-      // re-derives the tracked set) is the authority on dropping it.
-      if (!pr) continue;
-      if (pr.checkRollup === "pending") pending = true;
-      const sig = signature(pr);
+      // Transient lookup failure: retain the last-known signature so a flaky
+      // `gh` call neither drops the PR nor spuriously broadcasts.
+      if (!ok) continue;
+      if (pr && pr.checkRollup === "pending") pending = true;
+      // A resolved `null` means the PR vanished (merged/closed): its signature
+      // becomes NO_PR, so this differs from the last-known real signature and
+      // triggers a broadcast — the merge is surfaced without local activity.
+      const sig = pr ? signature(pr) : NO_PR;
       if (lastSig.get(key) !== sig) {
         lastSig.set(key, sig);
         changed = true;

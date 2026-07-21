@@ -86,6 +86,7 @@ function repoSnapshot(insertions: number, prNumber: number | null): RepoDTO[] {
           deletions: 0,
           filesChanged: 1,
           uncommittedFiles: 0,
+          aheadCount: 0,
           committedAt: null,
           pr: prNumber === null
             ? null

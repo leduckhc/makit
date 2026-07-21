@@ -19,6 +19,7 @@ import {
   rollupChecks,
   uncommittedFileCount,
   unresolvedReviewThreadCount,
+  commitsAhead,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -209,6 +210,26 @@ test("unresolvedReviewThreadCount returns 0 for a non-parseable PR URL", async (
   // A non-GitHub URL short-circuits before any `gh` call.
   assert.equal(await unresolvedReviewThreadCount(process.cwd(), "https://example.com/x"), 0);
   assert.equal(await unresolvedReviewThreadCount(process.cwd(), ""), 0);
+});
+
+test("commitsAhead counts commits ahead of the base branch when no upstream", async () => {
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    // main has no commits ahead of itself.
+    assert.equal(await commitsAhead(repo, "main"), 0);
+    // A branch with two extra commits and no upstream: ahead of main by 2.
+    g("checkout", "-q", "-b", "feature");
+    writeFileSync(join(repo, "a.txt"), "a\n");
+    g("add", "a.txt");
+    g("commit", "-q", "-m", "a");
+    writeFileSync(join(repo, "b.txt"), "b\n");
+    g("add", "b.txt");
+    g("commit", "-q", "-m", "b");
+    assert.equal(await commitsAhead(repo, "main"), 2);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 test("normalizeChecks maps CheckRun and StatusContext shapes to flat buckets", () => {

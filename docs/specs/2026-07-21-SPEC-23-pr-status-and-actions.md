@@ -76,7 +76,7 @@ overridable via a desktop `PreferenceEntry` (empty override = built-in default).
 A single row sits directly above the docked `Composer`, capped to the same
 readable width:
 
-```
+```text
 [ PR #42  ✓ ]                                   [ ⌄ | PR actions ]
   └ opens PR on web; hover → per-check list        └ caret = menu; main = last-picked action
 ```
