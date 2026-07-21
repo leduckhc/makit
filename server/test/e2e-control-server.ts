@@ -37,7 +37,7 @@ import {
 } from "../src/daemon/paths.js";
 
 const HOST = "127.0.0.1";
-const PORT = 8787;
+const PORT = 7788;
 const DEVICE_LABEL = "e2e phone";
 
 function seedDeviceRegistry(home: string): void {

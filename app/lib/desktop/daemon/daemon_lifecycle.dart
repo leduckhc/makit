@@ -30,17 +30,26 @@ class MakitCliResolver {
     List<String>? candidatePaths,
     bool Function(String path)? exists,
     Future<String?> Function()? shellLookup,
+    String Function()? overridePath,
   }) : candidatePaths = candidatePaths ?? _defaultCandidatePaths(),
        _exists = exists ?? _fileIsExecutable,
-       _shellLookup = shellLookup ?? _loginShellLookup;
+       _shellLookup = shellLookup ?? _loginShellLookup,
+       _overridePath = overridePath;
 
   /// Absolute paths checked, in order, before falling back to the shell lookup.
   final List<String> candidatePaths;
   final bool Function(String path) _exists;
   final Future<String?> Function() _shellLookup;
 
+  /// Supplies a user-configured `makit` path (blank when none). Checked before
+  /// [candidatePaths] so the desktop app can point at a specific binary. A set
+  /// but missing path falls through to auto-discovery rather than hard-failing.
+  final String Function()? _overridePath;
+
   /// Returns the absolute path to `makit`, or `null` if it cannot be found.
   Future<String?> resolve() async {
+    final override = _overridePath?.call().trim() ?? '';
+    if (override.isNotEmpty && _exists(override)) return override;
     for (final path in candidatePaths) {
       if (_exists(path)) return path;
     }
@@ -126,29 +135,18 @@ class DaemonLifecycle {
   /// Spawns the CLI.
   final ProcessRunner run;
 
-  /// Runs `makit start`, optionally binding a specific [host]/[port].
-  Future<DaemonActionResult> start({String? host, int? port}) => _invoke(
-    'start',
-    DaemonActionOutcome.started,
-    extraArgs: [
-      if (host != null && host.isNotEmpty) ...['--host', host],
-      if (port != null && port > 0) ...['--port', '$port'],
-    ],
-  );
+  /// Runs `makit start`, forwarding [serveArgs] (e.g. `--host`, `--lan`,
+  /// `--port`) built by [ServerConfig.serveArgs].
+  Future<DaemonActionResult> start({List<String> serveArgs = const []}) =>
+      _invoke('start', DaemonActionOutcome.started, extraArgs: serveArgs);
 
   /// Runs `makit stop`.
   Future<DaemonActionResult> stop() =>
       _invoke('stop', DaemonActionOutcome.stopped);
 
-  /// Runs `makit restart`, optionally binding a specific [host]/[port].
-  Future<DaemonActionResult> restart({String? host, int? port}) => _invoke(
-    'restart',
-    DaemonActionOutcome.restarted,
-    extraArgs: [
-      if (host != null && host.isNotEmpty) ...['--host', host],
-      if (port != null && port > 0) ...['--port', '$port'],
-    ],
-  );
+  /// Runs `makit restart`, forwarding [serveArgs].
+  Future<DaemonActionResult> restart({List<String> serveArgs = const []}) =>
+      _invoke('restart', DaemonActionOutcome.restarted, extraArgs: serveArgs);
 
   Future<DaemonActionResult> _invoke(
     String verb,

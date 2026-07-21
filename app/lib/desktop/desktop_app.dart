@@ -70,11 +70,17 @@ Future<void> runDesktopApp() async {
     connect: (c) => (c as MakitControlClient).connect(),
     dispose: (c) => (c as MakitControlClient).dispose(),
   );
-  final lifecycle = DaemonLifecycle(resolver: MakitCliResolver());
   final prefs = await SharedPreferences.getInstance();
   final configController = ServerConfigController(
     prefs,
     ServerConfigController.load(prefs),
+  );
+  final lifecycle = DaemonLifecycle(
+    resolver: MakitCliResolver(
+      // Honor the user's optional CLI-path override (read live so a settings
+      // change takes effect without an app restart).
+      overridePath: () => configController.current.cliPath,
+    ),
   );
   final keymapController = KeymapController.load(
     prefs,
@@ -85,10 +91,7 @@ Future<void> runDesktopApp() async {
   final controller = DesktopController(
     client: client,
     lifecycle: lifecycle,
-    serveDefaults: () => (
-      host: configController.current.host,
-      port: configController.current.port,
-    ),
+    serveArgs: () => configController.current.serveArgs(),
   );
 
   final tray = TrayController(
@@ -180,7 +183,9 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
     final conn = ref.read(connectionControllerProvider.notifier);
     final pairing = LoopbackPairing(
       control: ref.read(controlClientProvider),
-      host: ref.read(serverConfigProvider).host,
+      // The desktop app's own client always talks to the daemon over loopback,
+      // regardless of how the daemon binds for other devices.
+      host: '127.0.0.1',
       isPaired: () => ref.read(connectionProvider).paired,
       pairWith: (info, {String label = 'Mac'}) async {
         await conn.pairWith(info, label: label);

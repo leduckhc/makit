@@ -20,7 +20,7 @@ function fakeBackend(over: Partial<ControlBackend> = {}): ControlBackend {
       pid: 7,
       uptimeMs: 1,
       host: "0.0.0.0",
-      port: 8787,
+      port: 7788,
       fingerprint: "fp",
       advertiseHost: "1.2.3.4",
       pairedDevices: 2,

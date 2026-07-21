@@ -138,4 +138,80 @@ void main() {
       reason: 'sessions.list did not surface the default session',
     );
   });
+
+  testWidgets('Endpoint bind-mode picker drives the unified ServerConfig', (
+    tester,
+  ) async {
+    expect(
+      _socketPath.isNotEmpty,
+      isTrue,
+      reason: 'MAKIT_CONTROL_SOCK must be passed via --dart-define',
+    );
+
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final config = ServerConfigController(prefs, const ServerConfig());
+
+    final client = ReconnectingControlClient(
+      create: () => MakitControlClient(socketPath: _socketPath),
+      connect: (c) => (c as MakitControlClient).connect(),
+      dispose: (c) => (c as MakitControlClient).dispose(),
+    );
+    final controller = DesktopController(
+      client: client,
+      lifecycle: DaemonLifecycle(resolver: MakitCliResolver()),
+      serveArgs: () => config.current.serveArgs(),
+    );
+    addTearDown(() async {
+      controller.dispose();
+      await client.close();
+    });
+    controller.startPolling();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          controlClientProvider.overrideWithValue(client),
+          desktopControllerProvider.overrideWithValue(controller),
+          serverConfigProvider.overrideWith((ref) => config),
+          connectionProvider.overrideWithValue(MakitConnState()),
+        ],
+        child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
+      ),
+    );
+
+    // The real daemon is up over the control socket (context for the section).
+    await _pumpUntil(
+      tester,
+      find.textContaining('Running · pid'),
+      reason: 'lifecycle never showed a running daemon',
+    );
+
+    // Ships defaulting to Auto (the new secure default) with no host field.
+    expect(config.current.bindMode, ServerBindMode.auto);
+    expect(
+      find.ancestor(of: find.text('Host'), matching: find.byType(TextField)),
+      findsNothing,
+    );
+
+    // Selecting Custom reveals a host field and persists the mode.
+    await _scrollAndTap(tester, find.text('Custom'));
+    expect(config.current.bindMode, ServerBindMode.custom);
+    final host = find.ancestor(
+      of: find.text('Host'),
+      matching: find.byType(TextField),
+    );
+    expect(host, findsOneWidget);
+
+    // Committing a host persists into the unified config + serveArgs.
+    await tester.enterText(host, '0.0.0.0');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(config.current.customHost, '0.0.0.0');
+    expect(config.current.serveArgs(), containsAllInOrder(['--host', '0.0.0.0']));
+
+    // Switching to Loopback persists too (no daemon restart is triggered).
+    await _scrollAndTap(tester, find.text('Loopback'));
+    expect(config.current.bindMode, ServerBindMode.loopback);
+  });
 }

@@ -108,7 +108,7 @@ void main() {
               _FakeSecureStorage({
                 _kPairedServerKey: jsonEncode({
                   'host': '127.0.0.1',
-                  'port': 8787,
+                  'port': 7788,
                   'fingerprint': _fingerprint,
                   'bearer': 'b',
                   'label': 'desktop',

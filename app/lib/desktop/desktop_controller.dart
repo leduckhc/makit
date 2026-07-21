@@ -20,14 +20,15 @@ class DesktopController extends ChangeNotifier {
   /// Creates a controller over [client] (control socket) and [lifecycle]
   /// (process start/stop).
   ///
-  /// [serveDefaults] supplies the host/port `start`/`restart` bind to when no
-  /// explicit values are given, so every entry point (tray, bootstrap) honors
-  /// the user's configured endpoint. Null → the daemon's own defaults.
+  /// [serveArgs] supplies the `makit start`/`restart` CLI arguments (bind host
+  /// + port) built from the user's [ServerConfig], so every entry point (tray,
+  /// bootstrap) honors the configured endpoint. Null → the daemon's own
+  /// defaults.
   DesktopController({
     required this.client,
     required this.lifecycle,
-    ({String host, int port}) Function()? serveDefaults,
-  }) : _serveDefaults = serveDefaults;
+    List<String> Function()? serveArgs,
+  }) : _serveArgs = serveArgs;
 
   /// Talks to the running daemon over the control socket.
   final ControlClient client;
@@ -35,7 +36,7 @@ class DesktopController extends ChangeNotifier {
   /// Starts/stops/restarts the daemon process via the `makit` CLI.
   final DaemonLifecycle lifecycle;
 
-  final ({String host, int port}) Function()? _serveDefaults;
+  final List<String> Function()? _serveArgs;
 
   DaemonSummary _summary = _stopped;
   String? _lastError;
@@ -83,26 +84,20 @@ class DesktopController extends ChangeNotifier {
 
   /// Starts the daemon (`makit start`) on the configured endpoint, then
   /// refreshes.
-  Future<DaemonActionResult> start() {
-    final d = _serveDefaults?.call();
-    return _act(
-      () => lifecycle.start(host: d?.host, port: d?.port),
-      transient: DaemonState.starting,
-    );
-  }
+  Future<DaemonActionResult> start() => _act(
+    () => lifecycle.start(serveArgs: _serveArgs?.call() ?? const []),
+    transient: DaemonState.starting,
+  );
 
   /// Stops the daemon (`makit stop`), then refreshes.
   Future<DaemonActionResult> stop() => _act(lifecycle.stop);
 
   /// Restarts the daemon (`makit restart`) on the configured endpoint, then
   /// refreshes.
-  Future<DaemonActionResult> restart() {
-    final d = _serveDefaults?.call();
-    return _act(
-      () => lifecycle.restart(host: d?.host, port: d?.port),
-      transient: DaemonState.starting,
-    );
-  }
+  Future<DaemonActionResult> restart() => _act(
+    () => lifecycle.restart(serveArgs: _serveArgs?.call() ?? const []),
+    transient: DaemonState.starting,
+  );
 
   Future<DaemonActionResult> _act(
     Future<DaemonActionResult> Function() action, {
