@@ -182,7 +182,7 @@ final List<SettingsSection> kSettingsSections = [
       SettingsItem(
         id: 'server_devices.sessions',
         title: 'Running sessions',
-        help: 'Live sessions; history and cleanup.',
+        help: 'Active sessions (idle/exited hidden); history and cleanup.',
         keywords: ['sessions', 'running', 'history'],
       ),
       SettingsItem(

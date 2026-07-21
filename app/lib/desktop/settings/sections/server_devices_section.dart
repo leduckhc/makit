@@ -95,7 +95,7 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
             _ExpandableRow(
               icon: PhosphorIconsLight.listBullets,
               title: 'Running sessions',
-              help: 'Live agent sessions known to the daemon.',
+              help: 'Active agent sessions (idle and exited ones are hidden).',
               expanded: _openRow == 'sessions',
               onToggle: () => _toggle('sessions'),
               child: const SessionsScreen(),
