@@ -47,7 +47,7 @@ export function parseArgs(argv: string[]) {
     // secure-by-default (Tailscale > opt-in LAN > loopback).
     host: "",
     lan: false,
-    port: 8787,
+    port: 7777,
     projects: [] as string[],
     noAuth: false,
     persist: true,

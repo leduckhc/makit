@@ -74,7 +74,7 @@ First run generates a self-signed cert in `~/.makit/` and prints a QR with a
 
 ```
 [makit] cert fingerprint: 3b54c69fec19cbad88efaef52a0c5f163aa4d65e55c9796312a1506a22636144
-[makit] mDNS: advertising _makit._tcp on port 8787
+[makit] mDNS: advertising _makit._tcp on port 7777
 [makit] projects:
   · makit  (~/Vibe/makit)
   · cmux  (~/Vibe/cmux)
@@ -85,8 +85,8 @@ First run generates a self-signed cert in `~/.makit/` and prints a QR with a
   █▀▀▀▀▀█ ... (QR here)
   █▄▄▄▄▄█
 
-[makit] makit://pair?host=100.120.70.21&port=8787&fp=...&t=...
-[makit] wss listening on wss://100.120.70.21:8787
+[makit] makit://pair?host=100.120.70.21&port=7777&fp=...&t=...
+[makit] wss listening on wss://100.120.70.21:7777
 ```
 
 **If Tailscale isn't running**, makit binds **loopback only** and refuses to
@@ -146,7 +146,7 @@ cd server && pnpm start -- --no-auth
 
 # Terminal 2:
 cd app && flutter run -d macos \
-  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:8787 \
+  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:7777 \
   --dart-define=MAKIT_FP=$(cat ~/.makit/server.crt | openssl x509 -outform der | shasum -a 256 | cut -d' ' -f1)
 ```
 

@@ -152,7 +152,7 @@ cd server && pnpm start -- --no-auth --project ~/Work/Vibe/makit
 
 # Terminal 2
 cd app && flutter run -d macos \
-  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:8787 \
+  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:7777 \
   --dart-define=MAKIT_FP=$(openssl x509 -in ~/.makit/server.crt -outform der | shasum -a 256 | cut -d' ' -f1)
 ```
 

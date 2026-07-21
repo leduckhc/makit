@@ -3,12 +3,12 @@ import 'package:makit/desktop/settings/server_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('defaults to localhost:8787 when nothing is persisted', () async {
+  test('defaults to localhost:7777 when nothing is persisted', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final cfg = ServerConfigController.load(prefs);
     expect(cfg.host, 'localhost');
-    expect(cfg.port, 8787);
+    expect(cfg.port, 7777);
   });
 
   test('load reads persisted values', () async {
@@ -37,6 +37,6 @@ void main() {
     await controller.setHost('   ');
     await controller.setPort(0);
     expect(controller.state.host, 'localhost');
-    expect(controller.state.port, 8787);
+    expect(controller.state.port, 7777);
   });
 }
