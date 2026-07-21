@@ -117,18 +117,40 @@ test("a fetch error leaves the baseline untouched (no spurious broadcast)", asyn
   w.close();
 });
 
-test("sync with no open PRs clears tracking; pollOnce becomes a no-op", async () => {
-  const seeded = pr();
+test("tracks a branch with no PR yet and fires when one is created (any source)", async () => {
+  // A branch created/pushed outside makit (manual, GitHub UI, another agent)
+  // has no PR in the snapshot yet. The poller must still watch it so a PR that
+  // later appears is discovered without a manual refresh.
+  let current: PullRequestInfo | null = null;
+  const { w, changes } = makeWatcher(async () => current);
+  w.sync(repos("feature", null)); // eligible branch, no PR yet
+
+  // Still no PR: quiet.
+  assert.equal(await w.pollOnce(), false);
+  assert.equal(changes(), 0);
+
+  // A PR appears (created by anyone): the poller detects it and broadcasts.
+  current = pr();
+  assert.equal(await w.pollOnce(), true, "a newly-created PR must broadcast");
+  assert.equal(changes(), 1);
+
+  // No further change: quiet again.
+  assert.equal(await w.pollOnce(), false);
+  assert.equal(changes(), 1);
+  w.close();
+});
+
+test("the primary worktree is never tracked (its branch is not PR'd)", async () => {
   let calls = 0;
   const { w } = makeWatcher(async () => {
     calls += 1;
-    return seeded;
+    return null;
   });
-  w.sync(repos("feature", seeded));
-  w.sync(repos("feature", null)); // PR gone
-  const fired = await w.pollOnce();
-  assert.equal(fired, false);
-  assert.equal(calls, 0, "no tracked PRs → no fetch");
+  const snapshot = repos("main", null);
+  snapshot[0].worktrees[0].isPrimary = true;
+  w.sync(snapshot);
+  assert.equal(await w.pollOnce(), false);
+  assert.equal(calls, 0, "primary worktree → no fetch");
   w.close();
 });
 

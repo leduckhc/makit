@@ -5,9 +5,13 @@
  * near-term way to surface remote changes (CI finishing, a review landing, a
  * merge) is to poll. This poller is the "Tier 2" design from that research:
  *
- *   - **Open PRs only, coalesced.** One poller shared across every client;
- *     clients never talk to GitHub. The tracked set is refreshed from each
- *     `repos.snapshot` via {@link PrWatcher.sync}.
+ *   - **Eligible branches, coalesced.** One poller shared across every client;
+ *     clients never talk to GitHub. The tracked set mirrors `enrichPrs`
+ *     eligibility (every secondary, branched worktree) so the poller can
+ *     *discover* a PR that appears on a branch from any source — created in
+ *     makit, by another agent, or in the GitHub UI — not merely refresh a PR
+ *     it already knew about. The set is refreshed from each `repos.snapshot`
+ *     via {@link PrWatcher.sync}.
  *   - **Change-gated broadcast.** Each tick re-fetches every tracked PR and
  *     compares a structural signature to the last-known one; `onChange` (which
  *     re-runs `broadcastReposSnapshot`) fires only when something actually
@@ -22,7 +26,7 @@
  */
 
 import type { PullRequestInfo } from "./git.js";
-import type { RepoDTO } from "./protocol.js";
+import type { PullRequestDTO, RepoDTO } from "./protocol.js";
 
 /** A PR to poll, identified by the repo it lives in and its head branch. */
 interface TrackedPr {
@@ -61,6 +65,9 @@ function keyOf(repoPath: string, branch: string): string {
   return `${repoPath}\0${branch}`;
 }
 
+/** Sentinel signature for a tracked branch that has no open PR (yet). */
+const NO_PR = "\0none";
+
 /**
  * Structural signature of the PR fields that matter to the UI. Two PRs with
  * the same signature render identically, so no broadcast is warranted. Kept
@@ -80,6 +87,11 @@ function signature(pr: {
     .sort()
     .join(",");
   return [pr.state, pr.isDraft, pr.mergeable, pr.mergeStateStatus, pr.checkRollup, checks].join("|");
+}
+
+/** Signature of a worktree's PR, or the {@link NO_PR} sentinel when absent. */
+function sigOf(pr: PullRequestDTO | null): string {
+  return pr ? signature(pr) : NO_PR;
 }
 
 export function watchPrs(opts: PrWatcherOptions): PrWatcher {
@@ -156,13 +168,18 @@ export function watchPrs(opts: PrWatcherOptions): PrWatcher {
       const next = new Map<string, TrackedPr>();
       for (const repo of repos) {
         for (const w of repo.worktrees) {
-          const pr = w.pr;
-          if (!pr || !w.branch || pr.state.toUpperCase() !== "OPEN") continue;
+          // Mirror enrichPrs eligibility: any secondary, branched worktree can
+          // grow a PR at any time. Tracking them all — not just ones that
+          // already have a known PR — is what lets the poller *discover* a
+          // newly-created PR (from makit, another agent, or the GitHub UI),
+          // rather than only refreshing an existing one.
+          if (!w.branch || w.isPrimary) continue;
           const key = keyOf(repo.path, w.branch);
           next.set(key, { repoPath: repo.path, branch: w.branch });
-          // Seed / refresh the baseline from the authoritative snapshot so the
-          // next poll only fires on a genuine change since this broadcast.
-          lastSig.set(key, signature(pr));
+          // Seed / refresh the baseline from the authoritative snapshot (a real
+          // PR's signature, or the "no PR yet" sentinel) so the next poll only
+          // fires on a genuine change since this broadcast.
+          lastSig.set(key, sigOf(w.pr));
         }
       }
       // Drop signatures for PRs no longer tracked.
