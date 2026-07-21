@@ -1,5 +1,5 @@
-/// Tests for the tool renderer registry — proves the lookup, card defaults,
-/// and the edit-diff detail view without spinning up a simulator.
+/// Tests for the tool renderer registry — proves the lookup, summary lines,
+/// and the inline body views (SPEC-24) without spinning up a simulator.
 library;
 
 import 'package:flutter/material.dart';
@@ -18,6 +18,28 @@ ToolCallItem _tool(String name, Map<String, dynamic> args) => ToolCallItem(
   ended: true,
 );
 
+/// Pump a renderer's inline [ToolRenderer.body] inside a minimal scaffold —
+/// the same content the transcript shows when a tool row is expanded.
+Future<void> _pumpBody(WidgetTester tester, ToolCallItem item) async {
+  final renderer = rendererFor(item)!;
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (ctx) => ListView(children: renderer.body(ctx, item)),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+/// The `code` strings of every [ToolCodeBlock] currently on screen.
+List<String> _codeBlocks(WidgetTester tester) => tester
+    .widgetList<ToolCodeBlock>(find.byType(ToolCodeBlock))
+    .map((b) => b.code)
+    .toList();
+
 void main() {
   group('rendererFor', () {
     test('returns the matching renderer by tool name', () {
@@ -26,6 +48,8 @@ void main() {
       expect(rendererFor(_tool('bash', {})), isNotNull);
       expect(rendererFor(_tool('grep', {})), isNotNull);
       expect(rendererFor(_tool('write', {})), isNotNull);
+      expect(rendererFor(_tool('memory', {})), isNotNull);
+      expect(rendererFor(_tool('skill', {})), isNotNull);
       expect(rendererFor(_tool('askUserQuestion', {})), isNotNull);
       expect(rendererFor(_tool('AskUserQuestion', {})), isNotNull);
     });
@@ -56,16 +80,59 @@ void main() {
     });
   });
 
-  group('built-in renderers — detail views', () {
-    test('rendererFor resolves the built-in tools by name', () {
-      expect(rendererFor(_tool('read', {'path': '/etc/hosts'}))!.name, 'read');
-      expect(rendererFor(_tool('bash', {'command': 'ls'}))!.name, 'bash');
-      expect(rendererFor(_tool('grep', {'pattern': 'TODO'}))!.name, 'grep');
+  group('summaryLine — the collapsed one-liner', () {
+    test('bash summarises the command', () {
+      expect(
+        toolSummaryLine(_tool('bash', {'command': 'echo hi'})),
+        'Ran echo hi',
+      );
+    });
+    test('bash collapses multi-line commands to one line', () {
+      expect(
+        toolSummaryLine(_tool('bash', {'command': 'cd /x &&\n  pnpm  server'})),
+        'Ran cd /x && pnpm server',
+      );
+    });
+    test('edit/read/write/grep summarise their target', () {
+      expect(
+        toolSummaryLine(_tool('edit', {'path': 'lib/foo.dart'})),
+        'Edited lib/foo.dart',
+      );
+      expect(
+        toolSummaryLine(_tool('read', {'path': 'lib/foo.dart'})),
+        'Read lib/foo.dart',
+      );
+      expect(
+        toolSummaryLine(_tool('write', {'path': 'out.txt'})),
+        'Wrote out.txt',
+      );
+      expect(toolSummaryLine(_tool('grep', {'pattern': 'TODO'})), 'Grep TODO');
+    });
+    test('memory/skill summarise action/name', () {
+      expect(toolSummaryLine(_tool('memory', {'action': 'add'})), 'Memory add');
+      expect(
+        toolSummaryLine(_tool('skill', {'name': 'cavecrew'})),
+        'Skill cavecrew',
+      );
+    });
+    test('unknown tools fall back to the raw name', () {
+      expect(toolSummaryLine(_tool('lint', {})), 'lint');
     });
   });
 
-  group('read renderer detail view', () {
-    testWidgets('shows path in app bar and file content', (tester) async {
+  group('languageForPath', () {
+    test('maps common extensions to highlight.js languages', () {
+      expect(languageForPath('lib/main.dart'), 'dart');
+      expect(languageForPath('src/index.ts'), 'typescript');
+      expect(languageForPath('build.sh'), 'bash');
+      expect(languageForPath('data.json'), 'json');
+      expect(languageForPath('README'), 'plaintext');
+      expect(languageForPath('notes.unknownext'), 'plaintext');
+    });
+  });
+
+  group('read renderer body', () {
+    testWidgets('shows path and file content in a code block', (tester) async {
       final item = ToolCallItem(
         seq: 1,
         ts: 0,
@@ -75,19 +142,15 @@ void main() {
         output: 'void main() {}',
         ended: true,
       );
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
 
       expect(find.text('lib/main.dart'), findsOneWidget);
-      expect(find.text('void main() {}'), findsOneWidget);
+      expect(_codeBlocks(tester), contains('void main() {}'));
     });
 
-    testWidgets('shows (empty) when output is blank', (tester) async {
+    testWidgets('renders an (empty) code block when output is blank', (
+      tester,
+    ) async {
       final item = ToolCallItem(
         seq: 1,
         ts: 0,
@@ -97,18 +160,13 @@ void main() {
         output: '',
         ended: true,
       );
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('(empty)'), findsOneWidget);
+      await _pumpBody(tester, item);
+      expect(find.byType(ToolCodeBlock), findsOneWidget);
+      expect(_codeBlocks(tester), contains(''));
     });
   });
 
-  group('write renderer detail view', () {
+  group('write renderer body', () {
     testWidgets('shows path and written content', (tester) async {
       final item = ToolCallItem(
         seq: 1,
@@ -118,21 +176,15 @@ void main() {
         args: const {'path': 'out.txt', 'content': 'hello world'},
         ended: true,
       );
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
 
       expect(find.text('out.txt'), findsOneWidget);
-      expect(find.text('hello world'), findsOneWidget);
+      expect(_codeBlocks(tester), contains('hello world'));
     });
   });
 
-  group('bash renderer detail view', () {
-    testWidgets('shows command and output in separate sections', (
+  group('bash renderer body', () {
+    testWidgets('shows command and output in separate code blocks', (
       tester,
     ) async {
       final item = ToolCallItem(
@@ -145,25 +197,17 @@ void main() {
         ended: true,
         exitCode: 0,
       );
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
 
-      // Header shows the tool's display name (lowercase), left-aligned.
-      expect(find.text('bash'), findsOneWidget);
       expect(find.text('Command'), findsOneWidget);
-      // The command appears both in the header subtitle and the Command section.
-      expect(find.text('echo hi'), findsWidgets);
       expect(find.text('Output'), findsOneWidget);
-      expect(find.text('hi'), findsOneWidget);
+      final blocks = _codeBlocks(tester);
+      expect(blocks, contains('echo hi'));
+      expect(blocks, contains('hi'));
     });
   });
 
-  group('grep renderer detail view', () {
+  group('grep renderer body', () {
     testWidgets('shows pattern, glob and results', (tester) async {
       final item = ToolCallItem(
         seq: 1,
@@ -175,39 +219,24 @@ void main() {
         ended: true,
         exitCode: 0,
       );
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
 
-      expect(find.text('grep'), findsOneWidget);
-      // Pattern shows in the header subtitle and the params section.
-      expect(find.text('TODO'), findsWidgets);
+      expect(find.text('TODO'), findsOneWidget);
       expect(find.text('*.dart'), findsOneWidget);
-      expect(find.text('lib/foo.dart:12: // TODO: fix'), findsOneWidget);
+      expect(_codeBlocks(tester), contains('lib/foo.dart:12: // TODO: fix'));
     });
   });
 
-  group('edit renderer detail view', () {
+  group('edit renderer body', () {
     testWidgets('renders a line-level removed/added diff', (tester) async {
       final item = _tool('edit', {
         'path': 'lib/foo.dart',
         'oldText': 'final x = 1;',
         'newText': 'final x = 2;',
       });
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
 
       expect(find.text('lib/foo.dart'), findsOneWidget);
-      // Old and new lines each render on their own diff row.
       expect(find.text('final x = 1;'), findsOneWidget);
       expect(find.text('final x = 2;'), findsOneWidget);
       // Removed gutter uses U+2212 MINUS; added uses '+'.
@@ -219,13 +248,7 @@ void main() {
       tester,
     ) async {
       final item = _tool('edit', {'path': 'p', 'old': 'A', 'new': 'B'});
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
       expect(find.text('A'), findsOneWidget);
       expect(find.text('B'), findsOneWidget);
     });
@@ -236,34 +259,28 @@ void main() {
         'old_string': 'foo',
         'new_string': 'bar',
       });
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
-      // Header uses the tool name, not the path.
-      expect(find.text('edit'), findsOneWidget);
+      await _pumpBody(tester, item);
       expect(find.text('foo'), findsOneWidget);
       expect(find.text('bar'), findsOneWidget);
     });
   });
 
-  group('generic tool detail (no bespoke renderer)', () {
+  group('generic tool body (no bespoke renderer)', () {
     testWidgets('shows args as label/value rows, never a raw JSON blob', (
       tester,
     ) async {
       final item = _tool('lint', {'fix': true, 'path': 'lib/foo.dart'});
       await tester.pumpWidget(
         MaterialApp(
-          home: Builder(builder: (ctx) => genericToolDetail(ctx, item)),
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ListView(children: genericToolBody(ctx, item)),
+            ),
+          ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // Raw tool name as the header title.
-      expect(find.text('lint'), findsOneWidget);
       expect(find.text('Arguments'), findsOneWidget);
       // Values render as readable rows, not `{"fix":true,...}`.
       expect(find.text('true'), findsOneWidget);
@@ -318,13 +335,7 @@ void main() {
             '[lib/foo.dart#AB12]\n 10:unchanged\n-11:final x = 1;\n+11:final x = 2;',
         ended: true,
       );
-      final renderer = rendererFor(item)!;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(builder: (ctx) => renderer.detail(ctx, item)),
-        ),
-      );
-      await tester.pumpAndSettle();
+      await _pumpBody(tester, item);
 
       expect(find.byType(DiffText), findsOneWidget);
       expect(find.text('[lib/foo.dart#AB12]'), findsOneWidget);

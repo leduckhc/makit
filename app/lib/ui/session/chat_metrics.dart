@@ -23,6 +23,11 @@ const double kChatRadiusSmall = 8;
 const double kChatRadiusMedium = 12;
 const double kChatRadiusLarge = 16;
 
+/// Max height (logical px) of an expanded tool row's body before it scrolls
+/// internally — roughly 20 monospace lines plus section chrome. Keeps a long
+/// file read or command output from taking over the transcript.
+const double kToolExpandedMaxHeight = 340;
+
 /// Tuned status hues for tool-call risk, matching the sidebar `_StatusDot`
 /// palette (and the mockups) instead of raw `Colors.orange` / `Colors.red`,
 /// which shout against the neutral M3 surfaces.

@@ -39,18 +39,16 @@ void anchorToNewestIfNearBottom(ScrollController scroll) {
   });
 }
 
-/// Maps a folded [ChatItem] to its transcript widget. [onOpenTool] is invoked
-/// when a tool card is tapped (mobile routes via `go_router`; desktop pushes a
-/// full-screen route). Horizontal gutter + inter-row spacing are applied by the
-/// caller via [transcriptRow], so the item widgets carry none themselves.
-Widget chatItemWidget(
-  ChatItem item, {
-  required void Function(ToolCallItem) onOpenTool,
-}) => switch (item) {
+/// Maps a folded [ChatItem] to its transcript widget. Tool calls render as
+/// inline collapsible rows (see [ToolCallCard]) that expand in place — there is
+/// no full-screen detail navigation. Horizontal gutter + inter-row spacing are
+/// applied by the caller via [transcriptRow], so the item widgets carry none
+/// themselves.
+Widget chatItemWidget(ChatItem item) => switch (item) {
   UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   ThinkingItem() => ThinkingLine(text: item.text),
-  ToolCallItem() => ToolCallCard(item: item, onTap: () => onOpenTool(item)),
+  ToolCallItem() => ToolCallCard(item: item),
   ErrorItem() => ErrorBanner(message: item.message),
 };
 

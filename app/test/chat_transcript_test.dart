@@ -22,10 +22,7 @@ List<ChatItem> _representativeItems() => [
 Widget _transcript(List<ChatItem> items) => MaterialApp(
   home: Scaffold(
     body: ListView(
-      children: [
-        for (final item in items)
-          transcriptRow(chatItemWidget(item, onOpenTool: (_) {})),
-      ],
+      children: [for (final item in items) transcriptRow(chatItemWidget(item))],
     ),
   ),
 );
@@ -64,6 +61,37 @@ void main() {
     await tester.tap(find.text('reasoning trace'));
     await tester.pump();
     expect(find.byType(SelectableText), findsOneWidget);
+  });
+
+  testWidgets('ToolCallCard expands its body inline on tap', (tester) async {
+    final item = ToolCallItem(
+      seq: 1,
+      ts: 0,
+      callId: 'c1',
+      name: 'bash',
+      args: const {'command': 'echo hi'},
+      output: 'hi',
+      ended: true,
+      exitCode: 0,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: ToolCallCard(item: item)),
+      ),
+    );
+    await tester.pump();
+
+    // Collapsed: shows the one-liner summary, no body sections yet.
+    expect(find.text('Ran echo hi'), findsOneWidget);
+    expect(find.text('Command'), findsNothing);
+
+    await tester.tap(find.text('Ran echo hi'));
+    await tester.pumpAndSettle();
+
+    // Expanded: body sections appear inside a bounded scroll region.
+    expect(find.text('Command'), findsOneWidget);
+    expect(find.text('Output'), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
   });
 
   testWidgets('WorkingIndicator shows the shimmer word (no spinner)', (

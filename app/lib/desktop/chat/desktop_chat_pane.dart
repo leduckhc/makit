@@ -10,7 +10,6 @@ import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/chat_metrics.dart';
-import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
 import 'composer_draft.dart';
@@ -141,19 +140,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     sessionId: sessionId,
   );
 
-  /// Push the fullscreen tool-call drilldown, matching the mobile chat where
-  /// tapping a tool card opens its args / output / diff view.
-  void _openToolDetail(ToolCallItem item) {
-    final sessionId = _subscribed;
-    if (sessionId == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            ToolCallDetailScreen(sessionId: sessionId, callId: item.callId),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final sessionId = widget.sessionId;
@@ -242,7 +228,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                         ? const WorkingIndicator()
                         : chatItemWidget(
                             items[items.length - 1 - (running ? i - 1 : i)],
-                            onOpenTool: _openToolDetail,
                           );
                     // Center each row within the same readable-width cap as
                     // the composer, so the transcript column lines up with the

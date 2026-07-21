@@ -114,14 +114,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   return transcriptRow(const WorkingIndicator());
                 }
                 final index = items.length - 1 - (running ? i - 1 : i);
-                return transcriptRow(
-                  chatItemWidget(
-                    items[index],
-                    onOpenTool: (tool) => context.go(
-                      '/session/${widget.sessionId}/tool/${tool.callId}',
-                    ),
-                  ),
-                );
+                return transcriptRow(chatItemWidget(items[index]));
               },
             ),
           ),
