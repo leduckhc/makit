@@ -75,10 +75,13 @@ void main() {
     setUp(() => tmp = Directory.systemTemp.createTempSync('makit-resolver-'));
     tearDown(() => tmp.deleteSync(recursive: true));
 
-    // No candidates / shell lookup, so resolve() returns the override only when
-    // it is genuinely executable; otherwise null (proving it did not "win").
-    MakitCliResolver resolver(String override) => MakitCliResolver(
-      candidatePaths: const [],
+    // No shell lookup; pass candidates explicitly so we can prove resolution
+    // continues to auto-discovery (not merely rejects the override).
+    MakitCliResolver resolver(
+      String override, {
+      List<String> candidatePaths = const [],
+    }) => MakitCliResolver(
+      candidatePaths: candidatePaths,
       shellLookup: () async => null,
       overridePath: () => override,
     );
@@ -90,17 +93,32 @@ void main() {
       expect(await resolver(exe).resolve(), exe);
     });
 
-    test('a non-executable file is rejected (falls back)', () async {
-      final plain = '${tmp.path}/makit';
-      File(plain).writeAsStringSync('not executable');
-      Process.runSync('chmod', ['644', plain]);
-      expect(await resolver(plain).resolve(), isNull);
-    });
+    test(
+      'a non-executable file is rejected, falling back to a candidate',
+      () async {
+        final plain = '${tmp.path}/makit';
+        final fallback = '${tmp.path}/discovered-makit';
+        File(plain).writeAsStringSync('not executable');
+        File(fallback).writeAsStringSync('#!/bin/sh\n');
+        Process.runSync('chmod', ['644', plain]);
+        Process.runSync('chmod', ['755', fallback]);
+        expect(
+          await resolver(plain, candidatePaths: [fallback]).resolve(),
+          fallback,
+        );
+      },
+    );
 
-    test('a directory is rejected (falls back)', () async {
+    test('a directory is rejected, falling back to a candidate', () async {
       final dir = '${tmp.path}/makit';
+      final fallback = '${tmp.path}/discovered-makit';
       Directory(dir).createSync();
-      expect(await resolver(dir).resolve(), isNull);
+      File(fallback).writeAsStringSync('#!/bin/sh\n');
+      Process.runSync('chmod', ['755', fallback]);
+      expect(
+        await resolver(dir, candidatePaths: [fallback]).resolve(),
+        fallback,
+      );
     });
   });
 }
