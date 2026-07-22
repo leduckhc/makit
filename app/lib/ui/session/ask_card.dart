@@ -372,10 +372,28 @@ class AnsweredAskCard extends StatelessWidget {
     final q = details['question'] ?? item.args['question'];
     if (q is String) {
       return [
-        {'question': q, 'options': details['options'] ?? item.args['options']},
+        {
+          'question': q,
+          'context': details['context'] ?? item.args['context'],
+          'options': details['options'] ?? item.args['options'],
+        },
       ];
     }
     return const [];
+  }
+
+  /// True when the user dismissed the question without answering.
+  bool get _cancelled {
+    if (item.details?['cancelled'] == true) return true;
+    final out = extractToolResultText(item.output ?? item.resultText);
+    return out.toLowerCase().contains('user cancelled');
+  }
+
+  /// Optional free-text comment attached to a selection (pi's allowComment).
+  String? get _comment {
+    final resp = item.details?['response'];
+    final c = resp is Map ? resp['comment'] : null;
+    return (c is String && c.trim().isNotEmpty) ? c.trim() : null;
   }
 
   /// Chosen answer labels for question [i]. Prefers structured data
@@ -383,6 +401,7 @@ class AnsweredAskCard extends StatelessWidget {
   /// freeform), then falls back to the `"User answered: …"` tool output — pi's
   /// `ask_user` returns the chosen title/text as its result with no indices.
   Set<String> _chosenFor(int i, int total) {
+    if (_cancelled) return const {};
     final details = item.details ?? const {};
     final answers = (details['answers'] as List?)?.cast<dynamic>();
     if (answers != null && i < answers.length) {
@@ -393,9 +412,18 @@ class AnsweredAskCard extends StatelessWidget {
     }
     if (total == 1) {
       final resp = details['response'];
-      if (resp is Map && resp['text'] is String) {
-        final t = (resp['text'] as String).trim();
-        if (t.isNotEmpty) return {t};
+      if (resp is Map) {
+        // pi selection shape: {kind:"selection", selections:[titles]}
+        final sels = resp['selections'];
+        if (sels is List && sels.isNotEmpty) {
+          return sels
+              .map((e) => e.toString().trim())
+              .where((s) => s.isNotEmpty)
+              .toSet();
+        }
+        // pi freeform shape: {kind:"freeform", text}
+        final t = resp['text'];
+        if (t is String && t.trim().isNotEmpty) return {t.trim()};
       }
       final out = extractToolResultText(item.output ?? item.resultText).trim();
       final ans = _stripAnsweredPrefix(out);
@@ -417,6 +445,8 @@ class AnsweredAskCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final questions = _questions();
+    final details = item.details ?? const {};
+    final context_ = details['context']?.toString().trim();
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainer,
@@ -445,12 +475,38 @@ class AnsweredAskCard extends StatelessWidget {
               ),
             ],
           ),
+          // Context (the reasoning behind asking this question).
+          if (context_ != null && context_.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              context_,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ],
           for (var qi = 0; qi < questions.length; qi++)
             _AnsweredQuestion(
               question: questions[qi],
               chosen: _chosenFor(qi, questions.length),
               first: qi == 0,
             ),
+          // Comment (user's optional note or reasoning).
+          if (_comment != null && _comment!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: cs.surface,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                _comment!,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
         ],
       ),
     );

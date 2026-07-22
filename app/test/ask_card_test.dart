@@ -243,6 +243,37 @@ void main() {
       },
     );
 
+    testWidgets('shows context and comment when present', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'ask_user',
+        args: const {},
+        ended: true,
+        details: {
+          'question': 'Which PR?',
+          'options': [
+            {'title': 'PR #42'},
+          ],
+          'context': 'To keep the dashboard accurate',
+          'response': {
+            'kind': 'selection',
+            'selections': ['PR #42'],
+            'comment': 'This was my choice',
+          },
+        },
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AnsweredAskCard(item: item)),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('To keep the dashboard accurate'), findsOneWidget);
+      expect(find.text('This was my choice'), findsOneWidget);
+    });
+
     testWidgets('shows a free-text answer that matches no option', (
       tester,
     ) async {
