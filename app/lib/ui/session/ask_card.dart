@@ -447,6 +447,7 @@ class AnsweredAskCard extends StatelessWidget {
     final questions = _questions();
     final details = item.details ?? const {};
     final context_ = details['context']?.toString().trim();
+    final cancelled = _cancelled;
     return Container(
       decoration: BoxDecoration(
         color: cs.surfaceContainer,
@@ -460,13 +461,15 @@ class AnsweredAskCard extends StatelessWidget {
           Row(
             children: [
               Icon(
-                PhosphorIconsLight.checkCircle,
+                cancelled
+                    ? PhosphorIconsLight.xCircle
+                    : PhosphorIconsLight.checkCircle,
                 size: 16,
                 color: cs.onSurfaceVariant,
               ),
               const SizedBox(width: 8),
               Text(
-                'Answered',
+                cancelled ? 'Skipped' : 'Answered',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: cs.onSurfaceVariant,
                   letterSpacing: 0.6,

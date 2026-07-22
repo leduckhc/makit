@@ -343,5 +343,74 @@ void main() {
         expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
       },
     );
+
+    testWidgets('renders context, option descriptions, and a comment', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'ask_user',
+        args: const {'question': 'PR pill?'},
+        details: const {
+          'question': 'PR pill?',
+          'context': 'findOpenPr only queries open PRs, so the pill vanishes.',
+          'options': [
+            {'title': 'Keep pill', 'description': 'Query --state all instead.'},
+            {'title': 'Drop it'},
+          ],
+          'response': {
+            'kind': 'selection',
+            'selections': ['Keep pill'],
+            'comment': 'persist across merges',
+          },
+        },
+        output: 'User answered: Keep pill',
+        ended: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AnsweredAskCard(item: item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('the pill vanishes'), findsOneWidget);
+      expect(find.textContaining('Query --state all'), findsOneWidget);
+      expect(find.text('persist across merges'), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
+    });
+
+    testWidgets('a cancelled ask shows Skipped and highlights nothing', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'ask_user',
+        args: const {'question': 'Which CI?'},
+        details: const {
+          'question': 'Which CI?',
+          'options': [
+            {'title': 'GitHub Actions'},
+            {'title': 'CircleCI'},
+          ],
+          'response': null,
+          'cancelled': true,
+        },
+        output: 'User cancelled the question',
+        ended: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AnsweredAskCard(item: item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Skipped'), findsOneWidget);
+      expect(find.text('Answered'), findsNothing);
+      expect(find.byIcon(PhosphorIconsFill.checkCircle), findsNothing);
+    });
   });
 }
