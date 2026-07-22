@@ -29,7 +29,7 @@ class _FakeControlClient implements ControlClient {
             pid: 42,
             uptimeMs: 0,
             host: 'h',
-            port: 8787,
+            port: 7788,
             fingerprint: 'f',
             advertiseHost: 'h',
             pairedDevices: pairedDevices,

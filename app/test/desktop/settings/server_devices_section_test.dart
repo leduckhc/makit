@@ -70,30 +70,62 @@ void main() {
 
     expect(find.text('SERVER & DEVICES'), findsOneWidget);
     expect(find.text('SERVER'), findsOneWidget);
-    expect(find.text('DEVICES'), findsOneWidget);
     expect(find.text('Endpoint'), findsOneWidget);
     expect(find.text('Lifecycle'), findsOneWidget);
+
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump();
+    expect(find.text('DEVICES'), findsOneWidget);
 
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pump();
     expect(find.text('SESSIONS'), findsOneWidget);
   });
 
-  testWidgets('has no Save button — endpoint applies host on field commit', (
+  testWidgets('defaults to Auto and has no Save button', (tester) async {
+    final config = await makeConfig();
+    await _pump(tester, config: config);
+
+    expect(config.current.bindMode, ServerBindMode.auto);
+    expect(find.widgetWithText(FilledButton, 'Save'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, 'Save'), findsNothing);
+
+    // Auto mode shows no host field.
+    expect(
+      find.ancestor(of: find.text('Host'), matching: find.byType(TextField)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('selecting LAN persists the bind mode', (tester) async {
+    final config = await makeConfig();
+    await _pump(tester, config: config);
+
+    await tester.tap(find.text('LAN'));
+    await tester.pump();
+
+    expect(config.current.bindMode, ServerBindMode.lan);
+  });
+
+  testWidgets('Custom reveals a host field that applies on commit', (
     tester,
   ) async {
     final config = await makeConfig();
     await _pump(tester, config: config);
 
-    expect(find.widgetWithText(FilledButton, 'Save'), findsNothing);
-    expect(find.widgetWithText(OutlinedButton, 'Save'), findsNothing);
+    await tester.tap(find.text('Custom'));
+    await tester.pump();
+    expect(config.current.bindMode, ServerBindMode.custom);
 
-    final host = find.widgetWithText(TextField, 'localhost');
-    await tester.enterText(host, '127.0.0.1');
+    final host = find.ancestor(
+      of: find.text('Host'),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(host, '0.0.0.0');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pump();
 
-    expect(config.current.host, '127.0.0.1');
+    expect(config.current.customHost, '0.0.0.0');
   });
 
   testWidgets('endpoint applies a valid port on commit', (tester) async {
@@ -164,7 +196,7 @@ void main() {
     final connected = MakitConnState(
       server: PairedServer(
         host: 'h',
-        port: 8787,
+        port: 7788,
         fingerprint: fingerprint,
         bearer: 'b',
         label: 'Mac',

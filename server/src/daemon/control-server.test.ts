@@ -32,7 +32,7 @@ function fakeBackend(over: Partial<ControlBackend> = {}): ControlBackend {
       pid: 1,
       uptimeMs: 10,
       host: "0.0.0.0",
-      port: 8787,
+      port: 7788,
       fingerprint: "fp",
       advertiseHost: "192.168.1.2",
       pairedDevices: 0,
@@ -67,7 +67,7 @@ async function collect(req: ControlRequest, backend: ControlBackend): Promise<Co
 test("dispatch: status verb returns backend status", async () => {
   const [res] = await collect({ id: "1", verb: "status" }, fakeBackend());
   assert.equal(res!.ok, true);
-  assert.equal((res as { data: { port: number } }).data.port, 8787);
+  assert.equal((res as { data: { port: number } }).data.port, 7788);
 });
 
 test("dispatch: pair.mint forwards ttlMs args", async () => {

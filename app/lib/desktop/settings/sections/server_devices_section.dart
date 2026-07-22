@@ -95,7 +95,7 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
             _ExpandableRow(
               icon: PhosphorIconsLight.listBullets,
               title: 'Running sessions',
-              help: 'Live agent sessions known to the daemon.',
+              help: 'Active agent sessions (idle and exited ones are hidden).',
               expanded: _openRow == 'sessions',
               onToggle: () => _toggle('sessions'),
               child: const SessionsScreen(),
@@ -109,9 +109,11 @@ class _ServerDevicesSectionState extends State<ServerDevicesSection> {
   }
 }
 
-/// Endpoint (host + port). Applies on field commit (Enter) with the same port
-/// validation as the retired `ServerSettingsScreen` (1–65535) — no Save button
-/// (SPEC-13 #8). A "Save & restart server" action applies to a running daemon.
+/// Endpoint: how the local daemon binds (bind mode + optional custom host) and
+/// on which port. Applies on commit; a "Save & restart server" action pushes
+/// changes to a running daemon. The desktop app's own client always connects
+/// over loopback, so these settings only affect reachability from other
+/// devices (e.g. a paired phone).
 class _EndpointRow extends ConsumerStatefulWidget {
   const _EndpointRow();
 
@@ -120,7 +122,7 @@ class _EndpointRow extends ConsumerStatefulWidget {
 }
 
 class _EndpointRowState extends ConsumerState<_EndpointRow> {
-  late final TextEditingController _host;
+  late final TextEditingController _customHost;
   late final TextEditingController _port;
   String? _portError;
 
@@ -128,20 +130,15 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
   void initState() {
     super.initState();
     final cfg = ref.read(serverConfigProvider);
-    _host = TextEditingController(text: cfg.host);
+    _customHost = TextEditingController(text: cfg.customHost);
     _port = TextEditingController(text: '${cfg.port}');
   }
 
   @override
   void dispose() {
-    _host.dispose();
+    _customHost.dispose();
     _port.dispose();
     super.dispose();
-  }
-
-  void _applyHost(String value) {
-    // Blank collapses to the default host (mirrors ServerConfigController).
-    unawaited(ref.read(serverConfigProvider.notifier).setHost(value));
   }
 
   /// Validates and applies the port. Rejects out-of-range values (keeping the
@@ -159,59 +156,102 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
   }
 
   Future<void> _restart() async {
-    _applyHost(_host.text);
+    final notifier = ref.read(serverConfigProvider.notifier);
+    if (ref.read(serverConfigProvider).bindMode == ServerBindMode.custom) {
+      unawaited(notifier.setCustomHost(_customHost.text));
+    }
     _applyPort(_port.text);
     if (_portError != null) return;
     await ref.read(desktopControllerProvider).restart();
   }
 
   void _reset() {
-    _host.text = kDefaultServerHost;
+    _customHost.text = '';
     _port.text = '$kDefaultServerPort';
     setState(() => _portError = null);
     final notifier = ref.read(serverConfigProvider.notifier);
-    unawaited(notifier.setHost(kDefaultServerHost));
+    unawaited(notifier.setBindMode(ServerBindMode.auto));
+    unawaited(notifier.setCustomHost(''));
     unawaited(notifier.setPort(kDefaultServerPort));
   }
+
+  static String _modeSubtitle(ServerBindMode mode) => switch (mode) {
+    ServerBindMode.auto =>
+      'Auto: Tailscale if available, else loopback. Reachable by your other '
+          'devices over Tailscale.',
+    ServerBindMode.lan =>
+      'LAN: allow access over the local network when Tailscale is off. '
+          'Tailscale still takes precedence when available; use Custom to force '
+          'a specific host. Only use on trusted Wi-Fi.',
+    ServerBindMode.loopback =>
+      'Loopback: this Mac only — not reachable from other devices.',
+    ServerBindMode.custom =>
+      'Custom: bind an explicit host (e.g. 0.0.0.0 for every interface).',
+  };
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final cfg = ref.watch(serverConfigProvider);
     final modified =
-        cfg.host != kDefaultServerHost || cfg.port != kDefaultServerPort;
+        cfg.bindMode != ServerBindMode.auto ||
+        cfg.port != kDefaultServerPort ||
+        cfg.customHost.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         ListTile(
           title: const Text('Endpoint'),
-          subtitle: const Text(
-            'Where the makit server listens. Press Enter to apply. Default: '
-            '$kDefaultServerHost:$kDefaultServerPort.',
-          ),
+          subtitle: Text(_modeSubtitle(cfg.bindMode)),
           trailing: modified
               ? SettingsResetButton(visible: true, onPressed: _reset)
               : null,
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+          child: SegmentedButton<ServerBindMode>(
+            segments: const [
+              ButtonSegment(value: ServerBindMode.auto, label: Text('Auto')),
+              ButtonSegment(value: ServerBindMode.lan, label: Text('LAN')),
+              ButtonSegment(
+                value: ServerBindMode.loopback,
+                label: Text('Loopback'),
+              ),
+              ButtonSegment(
+                value: ServerBindMode.custom,
+                label: Text('Custom'),
+              ),
+            ],
+            selected: {cfg.bindMode},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) => unawaited(
+              ref.read(serverConfigProvider.notifier).setBindMode(s.first),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: TextField(
-                  controller: _host,
-                  decoration: const InputDecoration(
-                    labelText: 'Host',
-                    hintText: kDefaultServerHost,
-                    border: OutlineInputBorder(),
-                    isDense: true,
+              if (cfg.bindMode == ServerBindMode.custom) ...[
+                Expanded(
+                  child: TextField(
+                    controller: _customHost,
+                    decoration: const InputDecoration(
+                      labelText: 'Host',
+                      hintText: '0.0.0.0',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    onSubmitted: (v) => unawaited(
+                      ref.read(serverConfigProvider.notifier).setCustomHost(v),
+                    ),
                   ),
-                  onSubmitted: _applyHost,
                 ),
-              ),
-              const SizedBox(width: 12),
+                const SizedBox(width: 12),
+              ],
               SizedBox(
                 width: 140,
                 child: TextField(
@@ -241,7 +281,7 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
           child: Text(
-            'A running server keeps its current port until restarted.',
+            'A running server keeps its current settings until restarted.',
             style: TextStyle(color: cs.outline, fontSize: 12),
           ),
         ),
@@ -318,15 +358,33 @@ class _CliRow extends ConsumerStatefulWidget {
 
 class _CliRowState extends ConsumerState<_CliRow> {
   Future<String?>? _resolved;
+  late final TextEditingController _override;
 
   @override
   void initState() {
     super.initState();
-    _resolved = ref
-        .read(desktopControllerProvider)
-        .lifecycle
-        .resolver
-        .resolve();
+    _override = TextEditingController(
+      text: ref.read(serverConfigProvider).cliPath,
+    );
+    _resolved = _refreshResolved();
+  }
+
+  Future<String?> _refreshResolved() =>
+      ref.read(desktopControllerProvider).lifecycle.resolver.resolve();
+
+  @override
+  void dispose() {
+    _override.dispose();
+    super.dispose();
+  }
+
+  /// Persists a new CLI-path override and re-resolves so the shown path (and
+  /// any "not found" state) reflects the change immediately.
+  void _applyOverride(String value) {
+    unawaited(ref.read(serverConfigProvider.notifier).setCliPath(value));
+    setState(() {
+      _resolved = _refreshResolved();
+    });
   }
 
   void _copyInstallCommand() {
@@ -351,15 +409,36 @@ class _CliRowState extends ConsumerState<_CliRow> {
             : (path ??
                   'The makit CLI was not found. Install it to control '
                       'the server from here.');
-        return ListTile(
-          leading: Icon(PhosphorIconsLight.terminalWindow, color: cs.outline),
-          title: const Text('CLI'),
-          subtitle: Text(subtitle),
-          trailing: IconButton(
-            tooltip: 'Copy install command',
-            icon: const Icon(PhosphorIconsLight.copy, size: 18),
-            onPressed: _copyInstallCommand,
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              leading: Icon(
+                PhosphorIconsLight.terminalWindow,
+                color: cs.outline,
+              ),
+              title: const Text('CLI'),
+              subtitle: Text(subtitle),
+              trailing: IconButton(
+                tooltip: 'Copy install command',
+                icon: const Icon(PhosphorIconsLight.copy, size: 18),
+                onPressed: _copyInstallCommand,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+              child: TextField(
+                controller: _override,
+                decoration: const InputDecoration(
+                  labelText: 'Override path (optional)',
+                  hintText: '/path/to/makit',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onSubmitted: _applyOverride,
+              ),
+            ),
+          ],
         );
       },
     );

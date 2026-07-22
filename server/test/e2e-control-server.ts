@@ -37,7 +37,7 @@ import {
 } from "../src/daemon/paths.js";
 
 const HOST = "127.0.0.1";
-const PORT = 8787;
+const PORT = 7788;
 const DEVICE_LABEL = "e2e phone";
 
 function seedDeviceRegistry(home: string): void {
@@ -77,6 +77,16 @@ async function main(): Promise<void> {
     adapterFactory: () => new StubAdapter(),
   });
   await manager.ensureDefaultSessions();
+  // The desktop "Running sessions" surface intentionally hides idle/exited
+  // sessions (SessionsScreen._isActive). A freshly-spawned StubAdapter session
+  // is `idle`, so drive the seeded default session to `running` — otherwise the
+  // control-plane e2e would only ever see the empty state and never exercise
+  // the real session-row render path.
+  for (const session of manager.allSessions()) {
+    session.backfill([
+      { ts: Date.now(), kind: "session.status", payload: { status: "running" } },
+    ]);
+  }
 
   const startedAt = Date.now();
   const backend = createServerBackend({

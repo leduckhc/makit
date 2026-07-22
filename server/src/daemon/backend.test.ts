@@ -48,7 +48,7 @@ function deps(over: Partial<ServerBackendDeps> = {}): ServerBackendDeps {
     },
     fingerprint: "fp",
     host: "0.0.0.0",
-    port: 8787,
+    port: 7788,
     advertiseHost: "10.0.0.5",
     version: "9.9.9",
     startedAt: 500,
@@ -65,7 +65,7 @@ test("status maps process + server state", async () => {
   const b = createServerBackend(deps());
   const s = await b.status();
   assert.equal(s.host, "0.0.0.0");
-  assert.equal(s.port, 8787);
+  assert.equal(s.port, 7788);
   assert.equal(s.fingerprint, "fp");
   assert.equal(s.advertiseHost, "10.0.0.5");
   assert.equal(s.pairedDevices, 2);

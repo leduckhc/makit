@@ -4,7 +4,7 @@ import 'package:makit/desktop/chat/loopback_pairing.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/pairing/pair_info.dart';
 
-StatusData _status({int port = 8787, String fingerprint = 'ab12cd34'}) =>
+StatusData _status({int port = 7788, String fingerprint = 'ab12cd34'}) =>
     StatusData(
       pid: 1,
       uptimeMs: 0,
@@ -18,7 +18,7 @@ StatusData _status({int port = 8787, String fingerprint = 'ab12cd34'}) =>
     );
 
 PairMintData _mint({String token = 'tok-123'}) => PairMintData(
-  url: 'makit://pair?host=100.1.2.3&port=8787&fp=ab12cd34&t=$token',
+  url: 'makit://pair?host=100.1.2.3&port=7788&fp=ab12cd34&t=$token',
   token: token,
   expiresAt: 0,
   fingerprint: 'ab12cd34',
@@ -76,7 +76,7 @@ void main() {
 
   test('ensurePaired targets the configured host', () async {
     final control = FakeControlClient(
-      status: _status(port: 8787),
+      status: _status(port: 7788),
       mint: _mint(),
       latency: Duration.zero,
     );
@@ -91,6 +91,6 @@ void main() {
     await pairing.ensurePaired();
 
     expect(seen!.host, 'localhost');
-    expect(seen!.port, 8787);
+    expect(seen!.port, 7788);
   });
 }

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -109,11 +107,6 @@ class _ComposerState extends State<Composer> {
   bool _showSlash = false;
   bool _hasText = false;
   bool _isFocused = false;
-  // A one-time nudge (once per app session) shown when the composer first
-  // gains focus, hinting that '/' opens the command palette. Auto-dismisses.
-  static bool _slashTipSeen = false;
-  bool _showSlashTip = false;
-  Timer? _slashTipTimer;
 
   @override
   void initState() {
@@ -140,13 +133,6 @@ class _ComposerState extends State<Composer> {
   void _onFocusChanged() {
     final focused = _focus.hasFocus;
     if (focused != _isFocused) setState(() => _isFocused = focused);
-    if (focused && !_slashTipSeen) {
-      _slashTipSeen = true;
-      setState(() => _showSlashTip = true);
-      _slashTipTimer = Timer(const Duration(seconds: 4), () {
-        if (mounted) setState(() => _showSlashTip = false);
-      });
-    }
   }
 
   void _onChanged(String value) {
@@ -194,7 +180,6 @@ class _ComposerState extends State<Composer> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_showSlashTip && !_showSlash) _buildSlashTip(cs),
           if (_showSlash)
             SlashPalette(
               filter: _ctrl.text,
@@ -282,30 +267,6 @@ class _ComposerState extends State<Composer> {
       tooltip: 'Attachments coming in v2',
       // Disabled until v2 (@-mention picker); avoids misleading enabled no-op.
       onPressed: null,
-    );
-  }
-
-  /// Transient one-time nudge shown the first time the composer gains focus,
-  /// hinting that '/' opens the command palette. Auto-dismisses after 4s.
-  Widget _buildSlashTip(ColorScheme cs) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            "Tip: type '/' to see commands",
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-          ),
-        ),
-      ),
     );
   }
 
@@ -452,7 +413,6 @@ class _ComposerState extends State<Composer> {
 
   @override
   void dispose() {
-    _slashTipTimer?.cancel();
     _ctrl.removeListener(_onControllerChanged);
     _focus.removeListener(_onFocusChanged);
     // Only dispose objects we created; injected ones are caller-owned.

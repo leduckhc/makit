@@ -111,7 +111,7 @@ function okStatus(pid: number): DaemonDeps["connect"] {
         pid,
         uptimeMs: 5,
         host: "0.0.0.0",
-        port: 8787,
+        port: 7788,
         fingerprint: "fp",
         advertiseHost: "",
         pairedDevices: 0,
@@ -126,7 +126,7 @@ function okStatus(pid: number): DaemonDeps["connect"] {
 test("start: spawns detached, writes the PID file, returns 0", async () => {
   const h = harness({ isAlive: () => false, connect: okStatus(5555), sleep: async () => {} });
   const daemon = createDaemon(h.deps);
-  const code = await daemon.start({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
+  const code = await daemon.start({ host: "0.0.0.0", port: 7788, projects: [], noAuth: false, advertise: "" });
   assert.equal(code, 0);
   assert.equal(h.spawned.length, 1);
   assert.equal(h.spawned[0]!.cmd, "/usr/bin/node");
@@ -146,7 +146,7 @@ test("start: idempotent — already running prints status and does not spawn", a
           pid: 42,
           uptimeMs: 5,
           host: "0.0.0.0",
-          port: 8787,
+          port: 7788,
           fingerprint: "fp",
           advertiseHost: "",
           pairedDevices: 0,
@@ -159,7 +159,7 @@ test("start: idempotent — already running prints status and does not spawn", a
   });
   writePidFile(h.deps.pidPath, 42);
   const daemon = createDaemon(h.deps);
-  const code = await daemon.start({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
+  const code = await daemon.start({ host: "0.0.0.0", port: 7788, projects: [], noAuth: false, advertise: "" });
   assert.equal(code, 0);
   assert.equal(h.spawned.length, 0);
   assert.ok(h.out.join("\n").includes("already running"));
@@ -185,7 +185,7 @@ test("status: running prints pid/port/fingerprint and returns 0", async () => {
           pid: 42,
           uptimeMs: 5,
           host: "0.0.0.0",
-          port: 8787,
+          port: 7788,
           fingerprint: "deadbeef",
           advertiseHost: "",
           pairedDevices: 3,
@@ -201,7 +201,7 @@ test("status: running prints pid/port/fingerprint and returns 0", async () => {
   assert.equal(code, 0);
   const text = h.out.join("\n");
   assert.ok(text.includes("42"));
-  assert.ok(text.includes("8787"));
+  assert.ok(text.includes("7788"));
   assert.ok(text.includes("deadbeef"));
   cleanup(h);
 });
@@ -252,7 +252,7 @@ test("stop: socket reports a different pid → does not kill", async () => {
 test("start: exits 1 and cleans the pid file when the server never answers", async () => {
   const h = harness({ isAlive: () => false, sleep: async () => {}, startupTimeoutMs: 100 });
   const daemon = createDaemon(h.deps);
-  const code = await daemon.start({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
+  const code = await daemon.start({ host: "0.0.0.0", port: 7788, projects: [], noAuth: false, advertise: "" });
   assert.equal(code, 1);
   assert.equal(existsSync(h.deps.pidPath), false, "stale pid file removed on failed start");
   assert.ok(h.out.join("\n").toLowerCase().includes("failed to start"));
@@ -263,7 +263,7 @@ test("restart: stops the running daemon then starts a fresh one", async () => {
   const h = harness({ connect: okStatus(5555), sleep: async () => {} });
   writePidFile(h.deps.pidPath, 5555);
   const daemon = createDaemon(h.deps);
-  const code = await daemon.restart({ host: "0.0.0.0", port: 8787, projects: [], noAuth: false, advertise: "" });
+  const code = await daemon.restart({ host: "0.0.0.0", port: 7788, projects: [], noAuth: false, advertise: "" });
   assert.equal(code, 0);
   assert.deepEqual(h.killed, [{ pid: 5555, signal: "SIGTERM" }]);
   assert.equal(h.spawned.length, 1);
