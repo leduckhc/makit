@@ -2,39 +2,24 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Makit Desktop (Debug, Isolated Profile)",
+      "name": "makit desktop (debug, worktree server)",
       "type": "dart",
       "request": "launch",
-      "program": "app/lib/main.dart",
-      "cwd": "${workspaceFolder}",
-      "args": [
-        "-d",
-        "macos"
-      ],
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/app",
       "deviceId": "macos",
-      "flutterMode": "debug",
-      "preLaunchTask": "makit: start isolated daemon",
-      "env": {
-        "MAKIT_WS_URL": "",
-        "MAKIT_FP": ""
-      },
-      "postDebugTask": "makit: cleanup",
-      "console": "integratedTerminal"
-    },
+      "preLaunchTask": "makit: debug server",
+      "toolArgs": [
+        "--dart-define=MAKIT_WS_URL=wss://127.0.0.1:7990",
+        "--dart-define=MAKIT_FP=${input:makitFp}"
+      ]
+    }
+  ],
+  "inputs": [
     {
-      "name": "Makit Desktop (Release)",
-      "type": "dart",
-      "request": "launch",
-      "program": "app/lib/main.dart",
-      "cwd": "${workspaceFolder}",
-      "args": [
-        "-d",
-        "macos",
-        "--release"
-      ],
-      "deviceId": "macos",
-      "flutterMode": "release",
-      "console": "integratedTerminal"
+      "id": "makitFp",
+      "type": "promptString",
+      "description": "makit server cert SHA-256. Get it once with: MAKIT_DEBUG_PORT=7990 scripts/debug-desktop.sh --print-fp   (stable per machine; VSCode remembers your last entry)"
     }
   ]
 }

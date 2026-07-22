@@ -86,6 +86,7 @@ Future<void> runDesktopApp() async {
   final configController = ServerConfigController(
     prefs,
     ServerConfigController.load(prefs, defaultPort: profile.port),
+    defaultPort: profile.port,
   );
   final lifecycle = DaemonLifecycle(
     resolver: MakitCliResolver(

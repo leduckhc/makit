@@ -1,112 +1,99 @@
 #!/usr/bin/env bash
-# Debug mode for desktop app on a worktree — starts the isolated daemon and launches the app.
-# Usage:
-#   ./scripts/debug-desktop.sh              # start daemon + launch app in debug
-#   ./scripts/debug-desktop.sh --no-app     # start daemon only (daemon runs detached)
-#   ./scripts/debug-desktop.sh --kill       # stop the daemon
+# Run the makit desktop app in DEBUG (hot reload) against a worktree's server.
 #
-# The app connects via dart-defines (MAKIT_WS_URL + MAKIT_FP) to the daemon on
-# this worktree's isolated profile (~/.makit-dev/<hash>). Hot reload works.
-# Logs: ~/.makit-dev/<hash>/makit.log
+# Uses the "dev loop": a plain `tsx` server on loopback + `flutter run` wired to
+# it via --dart-define=MAKIT_WS_URL/MAKIT_FP. The app's `_boot()` sees
+# MAKIT_WS_URL and connects directly (no pairing, no bundled CLI needed — see
+# app/lib/store/connection.dart). This is independent of the app's per-build
+# ServerProfile: the app talks to exactly the URL we pass here.
+#
+# Modes:
+#   debug-desktop.sh [WORKTREE]              # start server + flutter run (default)
+#   debug-desktop.sh --server-only [WORKTREE] # server in foreground (VSCode task)
+#   debug-desktop.sh --print-fp   [WORKTREE]  # print the server cert fingerprint
+#   debug-desktop.sh --kill       [WORKTREE]  # stop this worktree's debug server
+#
+# WORKTREE defaults to the git repo root of the current directory.
+# Env overrides: MAKIT_DEBUG_PORT, MAKIT_DEBUG_HOME, FLUTTER_BIN.
+set -euo pipefail
 
-set -e
-
-cd "$(dirname "$0")/.."
-
-# Derive this worktree's server profile (matches app/lib/desktop/daemon/server_profile.dart)
-derive_profile() {
-  local repo_root="$PWD"
-  local hash=$(echo -n "$repo_root" | shasum -a 256 | cut -c1-8)
-  echo "$hash"
-}
-
-PROFILE_ID=$(derive_profile)
-MAKIT_HOME="$HOME/.makit-dev/$PROFILE_ID"
-PORT=$((7800 + $(printf "%d" 0x$PROFILE_ID) % 100))
-SERVER_CERT="$MAKIT_HOME/server.crt"
-
+MODE=run
 case "${1:-}" in
-  --kill)
-    # Stop the daemon gracefully
-    if pgrep -f "makit.*serve.*--port $PORT" >/dev/null 2>&1; then
-      server/build/cli-bundle/makit --port $PORT stop 2>/dev/null || true
-      sleep 1
-      pkill -f "makit.*serve.*--port $PORT" || true
-      echo "✓ daemon stopped (port $PORT)"
-    else
-      echo "✓ no daemon running on port $PORT"
-    fi
-    exit 0
-    ;;
-  --no-app)
-    # Start daemon only (don't launch the app)
-    ;;
-  *)
-    # Default: start daemon + launch app
-    ;;
+  --server-only) MODE=server; shift ;;
+  --print-fp)    MODE=fp; shift ;;
+  --kill)        MODE=kill; shift ;;
 esac
 
-# Ensure server is built
-if [ ! -f server/build/cli-bundle/makit ]; then
-  echo "==> Building server dist + CLI bundle …"
-  (cd server && pnpm run build)
-  ./scripts/bundle-makit-cli.sh server/build/cli-bundle
-fi
+# Resolve the worktree (explicit arg wins, else the enclosing git repo).
+WT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+WT="$(cd "$WT" && pwd)"
 
-# Start the daemon on the isolated profile
-echo "==> Starting daemon on isolated profile …"
-export MAKIT_HOME
-mkdir -p "$MAKIT_HOME"
+# A dedicated, per-worktree debug home + port so several worktrees can run at
+# once without colliding. The hash only needs to be stable + unique per path;
+# it does NOT need to match the app's ServerProfile (we use MAKIT_WS_URL).
+ID="$(printf '%s' "$WT" | shasum -a 256 | cut -c1-8)"
+DEBUG_HOME="${MAKIT_DEBUG_HOME:-$HOME/.makit-debug/$ID}"
+PORT="${MAKIT_DEBUG_PORT:-$((7900 + 0x$ID % 100))}"
+CRT="$DEBUG_HOME/server.crt"
+WS_URL="wss://127.0.0.1:$PORT"
 
-# Seed projects.json if not present (first run)
-if [ ! -f "$MAKIT_HOME/projects.json" ]; then
-  cat > "$MAKIT_HOME/projects.json" <<EOF
-{
-  "projects": [
-    "/Users/le/Work/Vibe/makit"
-  ]
-}
-EOF
-fi
+FLUTTER="${FLUTTER_BIN:-flutter}"
+command -v "$FLUTTER" >/dev/null 2>&1 || FLUTTER="$HOME/Work/Vibe/flutter/bin/flutter"
 
-# Start daemon (detached, logging to MAKIT_HOME)
-if pgrep -f "makit.*serve.*--port $PORT" >/dev/null 2>&1; then
-  echo "✓ daemon already running on port $PORT"
-else
-  server/build/cli-bundle/makit serve --port $PORT --host 127.0.0.1 > /dev/null 2>&1 &
-  sleep 2
-  if ! pgrep -f "makit.*serve.*--port $PORT" >/dev/null 2>&1; then
-    echo "✗ daemon failed to start"
-    cat "$MAKIT_HOME/makit.log" 2>/dev/null || echo "(no log)"
-    exit 1
+fp() { openssl x509 -in "$CRT" -outform der | shasum -a 256 | cut -d' ' -f1; }
+
+# The bundle step (pnpm deploy) can prune the workspace's dev deps, leaving a
+# dangling `tsx`. Restore them if the runner is missing so debug always works.
+ensure_deps() {
+  if [ ! -f "$WT/server/node_modules/tsx/package.json" ]; then
+    echo "==> restoring server dev deps (tsx missing) …"
+    ( cd "$WT/server" && pnpm install --frozen-lockfile >/dev/null 2>&1 )
   fi
-  echo "✓ daemon started (pid $(pgrep -f "makit.*serve.*--port $PORT" | head -1), port $PORT)"
+}
+
+kill_server() {
+  MAKIT_HOME="$DEBUG_HOME" pkill -f "tsx .*serve.* --port $PORT" 2>/dev/null || true
+}
+
+if [ "$MODE" = kill ]; then
+  kill_server; echo "stopped debug server for $WT (port $PORT)"; exit 0
 fi
 
-# Extract fingerprint and generate test bearer
-if [ ! -f "$SERVER_CERT" ]; then
-  echo "✗ $SERVER_CERT not found (daemon didn't create it?)"
-  exit 1
-fi
-FINGERPRINT=$(openssl x509 -in "$SERVER_CERT" -outform der | shasum -a 256 | cut -d' ' -f1)
-BEARER=$(head -c 32 /dev/urandom | xxd -p)
+start_server() {
+  ensure_deps
+  mkdir -p "$DEBUG_HOME"
+  echo "==> starting server  home=$DEBUG_HOME  $WS_URL  project=$WT"
+  ( cd "$WT/server" && MAKIT_HOME="$DEBUG_HOME" \
+      pnpm exec tsx src/index.ts serve --no-auth --host 127.0.0.1 \
+      --port "$PORT" --project "$WT" ) &
+  SERVER_PID=$!
+  for _ in $(seq 1 100); do [ -f "$CRT" ] && return 0; sleep 0.1; done
+  echo "server did not create $CRT" >&2; exit 1
+}
 
-echo "==> Daemon ready (loopback:$PORT)"
-echo "    fingerprint: $FINGERPRINT"
-echo "    bearer: $BEARER (test mode)"
-echo ""
-
-if [ "$1" = "--no-app" ]; then
-  echo "✓ daemon running. To launch the app:"
-  echo "  flutter run -d macos \\"
-  echo "    --dart-define=MAKIT_WS_URL=wss://127.0.0.1:$PORT \\"
-  echo "    --dart-define=MAKIT_FP=$FINGERPRINT"
-  exit 0
-fi
-
-# Launch the app in debug mode
-echo "==> Launching app (debug, hot reload enabled) …"
-cd app
-flutter run -d macos \
-  --dart-define=MAKIT_WS_URL=wss://127.0.0.1:$PORT \
-  --dart-define=MAKIT_FP=$FINGERPRINT
+case "$MODE" in
+  fp)
+    if [ ! -f "$CRT" ]; then start_server; fi
+    fp
+    [ -n "${SERVER_PID:-}" ] && kill "$SERVER_PID" 2>/dev/null || true
+    ;;
+  server)
+    # Foreground for the VSCode background task; Ctrl-C / task stop ends it.
+    ensure_deps
+    mkdir -p "$DEBUG_HOME"
+    echo "==> starting server  home=$DEBUG_HOME  $WS_URL  project=$WT"
+    cd "$WT/server"
+    exec env MAKIT_HOME="$DEBUG_HOME" pnpm exec tsx src/index.ts serve \
+      --no-auth --host 127.0.0.1 --port "$PORT" --project "$WT"
+    ;;
+  run)
+    trap 'kill "${SERVER_PID:-}" 2>/dev/null || true' EXIT INT TERM
+    start_server
+    FP="$(fp)"
+    echo "==> flutter run -d macos  ($WS_URL, fp ${FP:0:12}…)"
+    cd "$WT/app"
+    "$FLUTTER" run -d macos \
+      --dart-define=MAKIT_WS_URL="$WS_URL" \
+      --dart-define=MAKIT_FP="$FP"
+    ;;
+esac

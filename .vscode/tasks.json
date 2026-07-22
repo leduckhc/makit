@@ -2,45 +2,21 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "makit: start isolated daemon",
+      "label": "makit: debug server",
       "type": "shell",
-      "command": "bash",
-      "args": [
-        "${workspaceFolder}/scripts/debug-desktop.sh",
-        "--no-app"
-      ],
+      "command": "${workspaceFolder}/scripts/debug-desktop.sh",
+      "args": ["--server-only", "${workspaceFolder}"],
+      "options": { "env": { "MAKIT_DEBUG_PORT": "7990" } },
       "isBackground": true,
       "problemMatcher": {
-        "pattern": {
-          "regexp": "^.*✓ daemon started.*$",
-          "file": 1,
-          "location": 2,
-          "message": 3
-        },
+        "pattern": { "regexp": "^$" },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "^.*==> Starting daemon.*$",
-          "endsPattern": "^.*✓ daemon.*$"
+          "beginsPattern": "==> starting server",
+          "endsPattern": "wss listening"
         }
       },
-      "presentation": {
-        "echo": true,
-        "reveal": "always",
-        "focus": false,
-        "panel": "shared"
-      }
-    },
-    {
-      "label": "makit: cleanup",
-      "type": "shell",
-      "command": "bash",
-      "args": [
-        "${workspaceFolder}/scripts/debug-desktop.sh",
-        "--kill"
-      ],
-      "runOptions": {
-        "runOn": "folderOpen"
-      }
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": false }
     }
   ]
 }

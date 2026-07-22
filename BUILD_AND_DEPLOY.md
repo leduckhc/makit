@@ -177,15 +177,24 @@ The desktop app starts/stops the server by spawning the `makit` CLI. Ship a
 self-contained copy inside the bundle so users need no repo, global Node, or
 `tsx`. This is the resolver's preferred, zero-install path (see
 `app/lib/desktop/daemon/daemon_lifecycle.dart`, candidate
-`Contents/Resources/makit/makit`) and removes the legacy `~/.local/bin/makit`
-dev shim from the resolution path.
+`Contents/Resources/makit/makit`). The legacy `~/.local/bin/makit` dev shim
+remains a lower-priority fallback in the resolver, so the bundled copy is
+preferred but does not remove it.
 
 ```bash
 # From the repo root. Fetches the official Node runtime, compiles the server,
 # collects prod-only deps, and assembles Contents/Resources/makit/.
 scripts/bundle-makit-cli.sh \
   "app/build/macos/Build/Products/Release/makit.app/Contents/Resources/makit"
+
+# Intel (x86_64) build: override the fetched Node arch.
+NODE_ARCH=x64 scripts/bundle-makit-cli.sh \
+  "app/build/macos/Build/Products/Release/makit.app/Contents/Resources/makit"
 ```
+
+The script bundles a single-arch Node runtime (`arm64` by default). A universal
+(arm64 + x86_64) release needs a separately assembled architecture-specific
+bundle per slice — build each with the matching `NODE_ARCH`.
 
 Layout: `node` (official nodejs.org build — relocatable), `dist/` (compiled
 server), `node_modules/` (prod deps), and a `makit` shim that execs
@@ -209,17 +218,17 @@ APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password
 # The bundled Node runtime is a Mach-O helper: sign it FIRST, with JIT
 # entitlements (V8 JITs at runtime), then the shim, then the whole app.
 echo "Signing bundled Node runtime..."
-codesign --force --options runtime \
+codesign --force --options runtime --timestamp \
   --entitlements macos/Runner/BundledNode.entitlements \
   --sign "$IDENTITY" \
   "$FLUTTER_APP/Contents/Resources/makit/node"
 
-codesign --force --options runtime --sign "$IDENTITY" \
+codesign --force --options runtime --timestamp --sign "$IDENTITY" \
   "$FLUTTER_APP/Contents/Resources/makit/makit"
 
 # Sign the app (NOT --deep: nested code is already signed above)
 echo "Signing makit.app..."
-codesign --force --options runtime --verify --verbose \
+codesign --force --options runtime --timestamp --verify --verbose \
   --entitlements macos/Runner/Release.entitlements \
   --sign "$IDENTITY" \
   "$FLUTTER_APP"

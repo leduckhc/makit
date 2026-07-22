@@ -58,8 +58,16 @@ echo "==> Fetching official Node v$NODE_VERSION ($NODE_ARCH) …"
 NODE_PKG="node-v$NODE_VERSION-darwin-$NODE_ARCH"
 NODE_TMP="$(mktemp -d)"
 trap 'rm -rf "$DEPLOY_DIR" "$NODE_TMP"' EXIT
-curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/$NODE_PKG.tar.gz" \
-  | tar xz -C "$NODE_TMP"
+NODE_BASE="https://nodejs.org/dist/v$NODE_VERSION"
+curl -fsSL "$NODE_BASE/$NODE_PKG.tar.gz" -o "$NODE_TMP/$NODE_PKG.tar.gz"
+
+echo "==> Verifying Node tarball checksum …"
+curl -fsSL "$NODE_BASE/SHASUMS256.txt" -o "$NODE_TMP/SHASUMS256.txt"
+# Keep only the line for our package, then verify against the downloaded file.
+grep " $NODE_PKG.tar.gz\$" "$NODE_TMP/SHASUMS256.txt" > "$NODE_TMP/SHASUMS256.pkg"
+( cd "$NODE_TMP" && shasum -a 256 -c SHASUMS256.pkg )
+
+tar xz -C "$NODE_TMP" -f "$NODE_TMP/$NODE_PKG.tar.gz"
 
 echo "==> Assembling bundle at $TARGET …"
 rm -rf "$TARGET"

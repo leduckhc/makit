@@ -138,9 +138,16 @@ class ServerConfig {
 /// Reads + persists the [ServerConfig] via [SharedPreferences].
 class ServerConfigController extends StateNotifier<ServerConfig> {
   /// Creates a controller seeded from [initial]; writes go through [_prefs].
-  ServerConfigController(this._prefs, ServerConfig initial) : super(initial);
+  ///
+  /// [defaultPort] is this profile's fallback port (see [ServerProfile.port]);
+  /// [setPort] restores it when given a non-positive value so a dev build never
+  /// resets to the installed profile's 7777 and collides with it.
+  ServerConfigController(this._prefs, ServerConfig initial, {int? defaultPort})
+    : _defaultPort = defaultPort ?? kDefaultServerPort,
+      super(initial);
 
   final SharedPreferences _prefs;
+  final int _defaultPort;
 
   /// The current config. Public accessor so non-widget composition code (the
   /// app root's `serveArgs`/CLI-resolver closures) can read it without touching
@@ -195,9 +202,10 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
     await _prefs.setString(_kCustomHostKey, h);
   }
 
-  /// Persists a new port (non-positive → default) and updates state.
+  /// Persists a new port (non-positive → this profile's default) and updates
+  /// state.
   Future<void> setPort(int port) async {
-    final p = port <= 0 ? kDefaultServerPort : port;
+    final p = port <= 0 ? _defaultPort : port;
     state = state.copyWith(port: p);
     await _prefs.setInt(_kPortKey, p);
   }
