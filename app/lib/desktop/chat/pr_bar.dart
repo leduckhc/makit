@@ -606,14 +606,13 @@ class _SplitButton extends StatelessWidget {
               ),
             ),
           ),
-          // Thin divider between the main button and the caret gutter.
-          SizedBox(
+          // Thin divider between the main button and the caret gutter. A
+          // plain 1px box (not a VerticalDivider) keeps the button out of
+          // VerticalDivider type-finders used elsewhere (e.g. pane dividers).
+          Container(
+            width: 1,
             height: _height,
-            child: VerticalDivider(
-              width: 1,
-              thickness: 1,
-              color: cs.onSecondaryContainer.withValues(alpha: 0.18),
-            ),
+            color: cs.onSecondaryContainer.withValues(alpha: 0.18),
           ),
           // Caret segment: toggles the action menu.
           Tooltip(
