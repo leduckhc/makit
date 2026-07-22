@@ -140,16 +140,18 @@ Rework `ToolCallCard` into a `StatefulWidget` that mirrors `ThinkingLine`
 (keep the class name — single import site — even though it's no longer a
 "card"). No `onTap`/navigation param.
 
-- **Collapsed:** an `InkWell(onTap: toggle)` wrapping a row:
-  `[risk-tinted tool icon]  <summaryLine, maxLines:1, ellipsis>  <status>`
-  where `<status>` is the existing running-spinner / `checkCircle` /
-  `warningCircle` glyph. Icon + risk color come from the existing
-  `rendererFor(item)` + `item.risk` logic already in `ToolCallCard`.
-- **Expanded:** leading icon (tap collapses) + a `Column` of the renderer
-  `body(...)`, wrapped in a **bounded, internally-scrollable** region:
-  `ConstrainedBox(maxHeight: kToolExpandedMaxHeight)` →
-  `Scrollbar` → `SingleChildScrollView(child: Column(body))`. When the body is
-  shorter than the cap it renders at natural height (no scrollbar).
+- **Header (both states):** an `InkWell(onTap: toggle)` over the full row —
+  `[rotating disclosure caret] [risk-tinted tool icon]  <summaryLine, maxLines:1,
+  ellipsis>  <status>`. The caret points right when collapsed and rotates down
+  when expanded (`AnimatedRotation`). Tapping anywhere on the header toggles, in
+  both states, with `Semantics(button, expanded, onTapHint)` for a11y. `<status>`
+  is the existing running-spinner / `checkCircle` / `warningCircle` glyph.
+- **Expanded:** the header (above) followed by the renderer `body(...)`, wrapped
+  in a **bounded, internally-scrollable** region:
+  `ConstrainedBox(maxHeight: kToolExpandedMaxHeight)` → `Scrollbar(controller)` →
+  `SingleChildScrollView(controller)`. The body owns no toggle gesture, so its
+  code blocks stay scrollable/copyable. When shorter than the cap it renders at
+  natural height.
 - `kToolExpandedMaxHeight` ≈ 340 (≈ 20 lines at the 12.5px mono line height plus
   section chrome), defined in `chat_metrics.dart` next to the other tokens.
 

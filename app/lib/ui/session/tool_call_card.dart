@@ -6,10 +6,10 @@ import 'chat_metrics.dart';
 import 'tool_renderers.dart';
 
 /// Inline, collapsible tool-call row. Mirrors `ThinkingLine`: collapsed it is a
-/// single one-liner (tool icon + summary + status); tapping expands the tool's
-/// [ToolRenderer.body] in place. Tapping the leading icon (when expanded)
-/// collapses it again. Long bodies are capped at [kToolExpandedMaxHeight] and
-/// scroll internally.
+/// single one-liner (disclosure caret + tool icon + summary + status); tapping
+/// anywhere on the header toggles between the collapsed one-liner and the
+/// expanded [ToolRenderer.body]. Long bodies are capped at
+/// [kToolExpandedMaxHeight] and scroll internally.
 class ToolCallCard extends StatefulWidget {
   const ToolCallCard({super.key, required this.item});
 
@@ -51,16 +51,30 @@ class _ToolCallCardState extends State<ToolCallCard> {
       ),
     };
 
-    final row = _buildRow(riskIcon, riskColor);
-    if (!_expanded) return InkWell(onTap: _toggle, child: row);
+    // The whole header is a single toggle in both states (full-width tap
+    // target); a rotating caret shows the expand/collapse affordance.
+    final header = Semantics(
+      button: true,
+      expanded: _expanded,
+      onTapHint: _expanded ? 'Collapse tool call' : 'Expand tool call',
+      child: InkWell(
+        onTap: _toggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: _buildRow(riskIcon, riskColor),
+        ),
+      ),
+    );
+
+    if (!_expanded) return header;
 
     final body =
         renderer?.body(context, item) ?? genericToolBody(context, item);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        row,
-        const SizedBox(height: 8),
+        header,
+        const SizedBox(height: 4),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: kToolExpandedMaxHeight),
           child: Scrollbar(
@@ -78,20 +92,12 @@ class _ToolCallCardState extends State<ToolCallCard> {
     );
   }
 
-  /// The collapsed one-liner: leading tool icon, summary text, trailing status.
-  /// When expanded the leading icon becomes the collapse target.
+  /// The one-liner header: rotating disclosure caret, tool icon, summary text,
+  /// trailing status glyph. The entire header is the tap target (built by the
+  /// caller), so no child owns the gesture.
   Widget _buildRow(IconData riskIcon, Color riskColor) {
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
-
-    Widget leading = Icon(riskIcon, size: 16, color: riskColor);
-    if (_expanded) {
-      leading = GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _toggle,
-        child: leading,
-      );
-    }
 
     final status = switch (item.status) {
       ToolStatus.running => const SizedBox(
@@ -112,9 +118,19 @@ class _ToolCallCardState extends State<ToolCallCard> {
     };
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        leading,
+        AnimatedRotation(
+          turns: _expanded ? 0.25 : 0,
+          duration: const Duration(milliseconds: 150),
+          child: Icon(
+            PhosphorIconsLight.caretRight,
+            size: 13,
+            color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Icon(riskIcon, size: 16, color: riskColor),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

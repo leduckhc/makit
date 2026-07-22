@@ -96,8 +96,8 @@ void main() {
     expect(find.text('Output'), findsOneWidget);
     expect(find.byType(SingleChildScrollView), findsWidgets);
 
-    // Tapping the leading icon collapses it again.
-    await tester.tap(find.byType(Icon).first);
+    // Tapping anywhere on the header (here: the summary text) collapses it.
+    await tester.tap(find.text('Ran echo hi'));
     await tester.pumpAndSettle();
     expect(find.text('Command'), findsNothing);
   });
