@@ -50,6 +50,17 @@ void main() {
     expect(c.state['s1']?.requestId, 'r1');
   });
 
+  test('a replacement ask drops the displaced request mapping', () {
+    c.add(_ask(requestId: 'r1'));
+    c.add(_ask(requestId: 'r2')); // same session s1
+    expect(c.state['s1']?.requestId, 'r2');
+    // A late `responded` for the displaced r1 must not clear r2's card.
+    responded.add('r1');
+    return Future<void>.delayed(Duration.zero, () {
+      expect(c.state['s1']?.requestId, 'r2');
+    });
+  });
+
   test('submit sends canonical {indices, answers} and clears the card', () {
     c.add(_ask());
     c.submit('r1', indices: [0], answers: ['GitHub Actions']);

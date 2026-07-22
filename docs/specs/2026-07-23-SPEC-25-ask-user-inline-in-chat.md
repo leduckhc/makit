@@ -104,20 +104,27 @@ A `ConsumerStatefulWidget` rendering a `PendingAsk` (matches the mockup):
 - On submit → `elicitationController.submit(requestId, indices, answers)`.
 
 The card is not a `ChatItem`; each surface renders the session's `PendingAsk`
-(when present) as a **trailing transcript row**, in the reversed list at the
-newest position (where the running/working indicator would sit — a session
-awaiting input is not running, so they don't collide).
+(when present) as a **trailing transcript row**, at the newest position. An
+awaiting ask takes **priority over the working indicator** (`trailerFor` in
+`chat_transcript.dart`): Pi stays `running` while it emits the `askUserQuestion`
+(no awaiting-status transition), so both can be true at once — showing the
+working indicator then would hide the question and, with the composer paused,
+deadlock the user.
 
 ### Composer pause + free-text mode
 
 - While `pendingAskProvider(sessionId) != null` and **not** `freeText`: the
   composer is disabled with the hint "Answer the question above to continue…".
-- When `freeText` is on: composer is enabled; its submit routes to
-  `elicitationController.submit(requestId, indices: [-1], answers: [text])`
-  instead of `sendMessage`, then clears. (Single-question only.)
-- Wiring: the composer reads `pendingAskProvider` for its session and branches in
-  its send handler; the two send sites are `session_screen.dart` and
-  `desktop_chat_pane.dart` (`_send`).
+- When `freeText` is on: the surface swaps in a **dedicated, empty answer
+  composer** (keyed by `answer-<requestId>`, backed by a separate
+  `_answerController`) whose submit routes to
+  `elicitationController.submitFreeText(requestId, text)`. Using a distinct
+  controller means a pre-ask normal draft can never leak in as the answer, and
+  the normal draft is preserved (in its own controller) for when the ask
+  resolves. Free-text is single-question only.
+- The card also offers **Skip**, which cancels the ask (`cancel` → canonical
+  cancelled response) so a multi-question ask (no free-text) still has an escape
+  hatch and the agent is never left hung.
 
 ## Work items
 
@@ -166,8 +173,9 @@ awaiting input is not running, so they don't collide).
   inline card — covered by the store's `responded` subscription.
 - **Free-text ambiguity** for multi-question — avoided by restricting free-text to
   single-question asks.
-- **Trailing-row vs working-indicator collision** — a session awaiting input is
-  not `running`, so only one trailing row shows; assert in tests.
+- **Trailing-row priority:** an awaiting ask outranks the working indicator
+  because Pi stays `running` while asking (verified in `server/src/adapters/
+  pi.ts`); `trailerFor` encodes this and is unit-tested for `running && awaiting`.
 - **Answered-history dependency:** decision #1 relies on the persisted tool row
   arriving. If an adapter ever answers without emitting the tool result, the
   transcript would show no trace; acceptable for now (all current adapters emit it).

@@ -26,6 +26,9 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
+  // Dedicated controller for free-text answers to an inline ask, kept separate
+  // from the normal message draft so the two can never cross-contaminate.
+  final _answerController = TextEditingController();
   int _lastSeq = 0;
 
   @override
@@ -44,6 +47,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
     final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
+    final trailer = trailerFor(
+      running: session?.status == SessionStatus.running,
+      awaiting: pendingAsk != null,
+    );
+    final hasTrailer = trailer != TranscriptTrailer.none;
 
     ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
       prev,
@@ -105,27 +113,21 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 top: topInset + 60,
                 bottom: MediaQuery.of(context).padding.bottom + 200,
               ),
-              itemCount:
-                  items.length +
-                  ((session?.status == SessionStatus.running ||
-                          pendingAsk != null)
-                      ? 1
-                      : 0),
+              itemCount: items.length + (hasTrailer ? 1 : 0),
               itemBuilder: (context, i) {
                 // Reversed: i counts up from the visual bottom. The trailing
-                // row (i == 0) is either the "working…" indicator (running) or
-                // the inline ask card (awaiting an answer) — never both, since
-                // an awaiting session isn't running.
-                final running = session?.status == SessionStatus.running;
-                final trailing = running || pendingAsk != null;
-                if (trailing && i == 0) {
-                  if (running) return transcriptRow(const WorkingIndicator());
-                  return KeyedSubtree(
-                    key: ValueKey('ask-${pendingAsk!.requestId}'),
-                    child: transcriptRow(AskCard(ask: pendingAsk)),
-                  );
+                // row (i == 0) is the inline ask card when awaiting (it takes
+                // priority — Pi stays running while asking), else the
+                // "working…" indicator while running.
+                if (hasTrailer && i == 0) {
+                  return trailer == TranscriptTrailer.ask
+                      ? KeyedSubtree(
+                          key: ValueKey('ask-${pendingAsk!.requestId}'),
+                          child: transcriptRow(AskCard(ask: pendingAsk)),
+                        )
+                      : transcriptRow(const WorkingIndicator());
                 }
-                final index = items.length - 1 - (trailing ? i - 1 : i);
+                final index = items.length - 1 - (hasTrailer ? i - 1 : i);
                 final item = items[index];
                 return KeyedSubtree(
                   key: chatItemKey(item),
@@ -253,19 +255,36 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   borderRadius: 28,
                   // Unified design-system glass (see MASTER.md) — same recipe
                   // as the top bar.
-                  child: Composer(
-                    glass: true,
-                    enabled: pendingAsk == null || pendingAsk.freeText,
-                    commands: ref.watch(commandsProvider(widget.sessionId)),
-                    onSend: (text) => _handleSend(text, pendingAsk),
-                    running: session?.status == SessionStatus.running,
-                    onCancel: _cancelTurn,
-                    footerActions: [
-                      ComposerModelSelector(sessionId: widget.sessionId),
-                      ComposerThinkingSelector(sessionId: widget.sessionId),
-                      ComposerModeSelector(sessionId: widget.sessionId),
-                    ],
-                  ),
+                  child: (pendingAsk != null && pendingAsk.freeText)
+                      // Free-text answer mode: a dedicated, empty answer
+                      // controller (keyed by requestId) so a pre-ask normal
+                      // draft can never leak in as the answer. The normal draft
+                      // lives in the composer's own controller and returns when
+                      // the ask resolves.
+                      ? Composer(
+                          key: ValueKey('answer-${pendingAsk.requestId}'),
+                          glass: true,
+                          controller: _answerController,
+                          onSend: (text) => _handleSend(text, pendingAsk),
+                        )
+                      : Composer(
+                          key: const ValueKey('composer-normal'),
+                          glass: true,
+                          enabled: pendingAsk == null,
+                          commands: ref.watch(
+                            commandsProvider(widget.sessionId),
+                          ),
+                          onSend: (text) => _handleSend(text, pendingAsk),
+                          running: session?.status == SessionStatus.running,
+                          onCancel: _cancelTurn,
+                          footerActions: [
+                            ComposerModelSelector(sessionId: widget.sessionId),
+                            ComposerThinkingSelector(
+                              sessionId: widget.sessionId,
+                            ),
+                            ComposerModeSelector(sessionId: widget.sessionId),
+                          ],
+                        ),
                 ),
               ),
             ),
@@ -436,6 +455,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _answerController.dispose();
     super.dispose();
   }
 }

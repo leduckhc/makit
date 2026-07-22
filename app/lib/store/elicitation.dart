@@ -65,8 +65,14 @@ class ElicitationController extends StateNotifier<Map<String, PendingAsk>> {
   /// requestId) can find and clear the right session's card.
   final Map<String, String> _sessionByRequest = {};
 
-  /// Register a new inline ask (called by the dispatcher).
+  /// Register a new inline ask (called by the dispatcher). If the session
+  /// already had a (different) pending ask, drop its stale request→session
+  /// mapping first so it can't leak — one ask per session at a time.
   void add(PendingAsk ask) {
+    final prev = state[ask.sessionId];
+    if (prev != null && prev.requestId != ask.requestId) {
+      _sessionByRequest.remove(prev.requestId);
+    }
     _sessionByRequest[ask.requestId] = ask.sessionId;
     state = {...state, ask.sessionId: ask};
   }

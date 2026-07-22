@@ -164,27 +164,42 @@ class _AskCardState extends ConsumerState<AskCard> {
 
   Widget _actions(ColorScheme cs) {
     final ask = widget.ask;
-    return Row(
-      children: [
-        if (_i > 0)
-          TextButton(
-            onPressed: () => setState(() => _i--),
-            child: const Text('Back'),
-          ),
-        // Free-text handoff — single-question asks only (composer answers it).
-        if (ask.isSingle)
+    // Wrap (not Row) so the long "Type a different answer" label + Back/Skip/
+    // Submit fold onto a second line on narrow widths / large text instead of
+    // overflowing.
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
           TextButton(
             onPressed: () => ref
                 .read(elicitationControllerProvider.notifier)
-                .enableFreeText(ask.requestId),
-            child: const Text('Type a different answer'),
+                .cancel(ask.requestId),
+            child: const Text('Skip'),
           ),
-        const Spacer(),
-        FilledButton(
-          onPressed: _canAdvance ? _next : null,
-          child: Text(_isLast ? 'Submit' : 'Next'),
-        ),
-      ],
+          if (_i > 0)
+            TextButton(
+              onPressed: () => setState(() => _i--),
+              child: const Text('Back'),
+            ),
+          // Free-text handoff — single-question asks only (composer answers it).
+          if (ask.isSingle)
+            TextButton(
+              onPressed: () => ref
+                  .read(elicitationControllerProvider.notifier)
+                  .enableFreeText(ask.requestId),
+              child: const Text('Type a different answer'),
+            ),
+          FilledButton(
+            onPressed: _canAdvance ? _next : null,
+            child: Text(_isLast ? 'Submit' : 'Next'),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -238,74 +253,84 @@ class _AskOption extends StatelessWidget {
         : (multi ? PhosphorIconsLight.square : PhosphorIconsLight.circle);
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
-      child: Material(
-        color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(9),
-        child: InkWell(
+      child: Semantics(
+        button: true,
+        checked: selected,
+        inMutuallyExclusiveGroup: !multi,
+        label: label,
+        child: Material(
+          color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(9),
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(
-                color: selected ? cs.primary : Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(9),
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(
+                  color: selected ? cs.primary : Colors.transparent,
+                ),
               ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(box, size: 18, color: selected ? cs.primary : cs.outline),
-                const SizedBox(width: 9),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              label,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13.5,
-                              ),
-                            ),
-                          ),
-                          if (recommended) ...[
-                            const SizedBox(width: 7),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 7,
-                                vertical: 1,
-                              ),
-                              decoration: BoxDecoration(
-                                color: cs.tertiary.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    box,
+                    size: 18,
+                    color: selected ? cs.primary : cs.outline,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
                               child: Text(
-                                'Recommended',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: cs.tertiary,
+                                label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13.5,
                                 ),
                               ),
                             ),
+                            if (recommended) ...[
+                              const SizedBox(width: 7),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 1,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: cs.tertiary.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Recommended',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: cs.tertiary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                      if (description != null && description!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            description!,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
                         ),
-                    ],
+                        if (description != null && description!.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              description!,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

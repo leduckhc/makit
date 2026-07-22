@@ -278,4 +278,31 @@ void main() {
     expect(find.byType(ShaderMask), findsOneWidget);
     expect(find.text('working…'), findsNothing);
   });
+
+  group(
+    'trailerFor prioritises an awaiting ask over the working indicator',
+    () {
+      test(
+        'awaiting wins even while running (avoids the invisible-ask deadlock)',
+        () {
+          expect(
+            trailerFor(running: true, awaiting: true),
+            TranscriptTrailer.ask,
+          );
+          expect(
+            trailerFor(running: false, awaiting: true),
+            TranscriptTrailer.ask,
+          );
+          expect(
+            trailerFor(running: true, awaiting: false),
+            TranscriptTrailer.working,
+          );
+          expect(
+            trailerFor(running: false, awaiting: false),
+            TranscriptTrailer.none,
+          );
+        },
+      );
+    },
+  );
 }

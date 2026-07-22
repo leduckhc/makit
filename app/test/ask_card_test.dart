@@ -160,4 +160,13 @@ void main() {
     expect(find.textContaining('message box below'), findsOneWidget);
     expect(find.text('GitHub Actions'), findsNothing);
   });
+
+  testWidgets('Skip cancels the ask', (tester) async {
+    await pump(tester, single());
+    await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+    await tester.pumpAndSettle();
+    final (_, body) = responses.single;
+    expect(body['kind'], 'askUserQuestion');
+    expect(body['cancelled'], true);
+  });
 }

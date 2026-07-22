@@ -63,6 +63,18 @@ Key chatItemKey(ChatItem item) => switch (item) {
   _ => ValueKey('seq-${item.seq}'),
 };
 
+/// The trailing transcript row shown below the newest message. An awaiting
+/// inline ask takes priority over the working indicator: Pi stays `running`
+/// while it emits an `askUserQuestion`, so both can be true at once — showing
+/// the working indicator then would hide the question and (with the composer
+/// paused) deadlock the user. Prefer the ask.
+enum TranscriptTrailer { none, working, ask }
+
+TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
+    awaiting
+    ? TranscriptTrailer.ask
+    : (running ? TranscriptTrailer.working : TranscriptTrailer.none);
+
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the
 /// one-liner. When expanded, tapping the leading icon collapses it again.

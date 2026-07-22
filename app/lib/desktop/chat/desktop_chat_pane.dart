@@ -85,6 +85,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   /// split button (a sibling of the composer) can inject prompt text into the
   /// field. Keyed by session id and disposed with the pane.
   final _composerControllers = <String, TextEditingController>{};
+  // Dedicated controller for free-text answers to an inline ask, kept separate
+  // from the per-session message drafts so the two never cross-contaminate.
+  final _answerController = TextEditingController();
 
   TextEditingController _composerControllerFor(String sessionId) =>
       _composerControllers.putIfAbsent(sessionId, TextEditingController.new);
@@ -212,6 +215,8 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     final running = session.status == SessionStatus.running;
     final pendingAsk = ref.watch(pendingAskProvider(sessionId));
+    final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
+    final hasTrailer = trailer != TranscriptTrailer.none;
 
     return Column(
       children: [
@@ -233,22 +238,21 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // lazily as the user scrolls up.
                   reverse: true,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  itemCount:
-                      items.length + (running || pendingAsk != null ? 1 : 0),
+                  itemCount: items.length + (hasTrailer ? 1 : 0),
                   itemBuilder: (context, i) {
                     // Reversed: i counts up from the bottom. The trailing row
-                    // (i == 0) is either the "working…" indicator (running) or
-                    // the inline ask card (awaiting an answer).
-                    final bool trailing = running || pendingAsk != null;
-                    final bool isTrailer = trailing && i == 0;
+                    // (i == 0) is the inline ask card when awaiting (priority —
+                    // Pi stays running while asking), else the "working…"
+                    // indicator while running.
+                    final bool isTrailer = hasTrailer && i == 0;
                     final ChatItem? item = isTrailer
                         ? null
-                        : items[items.length - 1 - (trailing ? i - 1 : i)];
+                        : items[items.length - 1 - (hasTrailer ? i - 1 : i)];
                     final Widget child = !isTrailer
                         ? chatItemWidget(item!)
-                        : (running
-                              ? const WorkingIndicator()
-                              : AskCard(ask: pendingAsk!));
+                        : (trailer == TranscriptTrailer.ask
+                              ? AskCard(ask: pendingAsk!)
+                              : const WorkingIndicator());
                     // Center each row within the same readable-width cap as
                     // the composer, so the transcript column lines up with the
                     // input instead of stretching edge-to-edge. The ListView
@@ -260,9 +264,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     return KeyedSubtree(
                       key: !isTrailer
                           ? chatItemKey(item!)
-                          : (running
-                                ? null
-                                : ValueKey('ask-${pendingAsk!.requestId}')),
+                          : (trailer == TranscriptTrailer.ask
+                                ? ValueKey('ask-${pendingAsk!.requestId}')
+                                : null),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(
@@ -306,43 +310,57 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),
-                  Composer(
-                    // Key by session so switching the pane's bound session (same
-                    // leaf id → same pane state) recreates the composer and
-                    // re-seeds initialText, instead of leaking s1's text into s2.
-                    key: ValueKey(sessionId),
-                    enabled: pendingAsk == null || pendingAsk.freeText,
-                    controller: _composerControllerFor(sessionId),
-                    commands: ref.watch(commandsProvider(sessionId)),
-                    onSend: (text) => _handleSend(sessionId, text, pendingAsk),
-                    onCancel: () => _cancelTurn(sessionId),
-                    running: running,
-                    alwaysExpanded: true,
-                    // Persist the draft per session so it survives worktree
-                    // switches and pane splits (the composer is recreated on both).
-                    initialText: ref.read(composerDraftsProvider)[sessionId],
-                    onDraftChanged: (text) => ref
-                        .read(composerDraftsProvider.notifier)
-                        .set(sessionId, text),
-                    footerActions: [
-                      ComposerModelSelector(sessionId: sessionId),
-                      ComposerThinkingSelector(sessionId: sessionId),
-                      ComposerModeSelector(sessionId: sessionId),
-                    ],
-                    focusNode: widget.composerFocusId == null
-                        ? null
-                        : ref.watch(
-                            desktopComposerFocusProvider(
-                              widget.composerFocusId!,
+                  if (pendingAsk != null && pendingAsk.freeText)
+                    // Free-text answer mode: a dedicated empty answer controller
+                    // (keyed by requestId) so the per-session normal draft can
+                    // never leak in as the answer, and is preserved for when the
+                    // ask resolves.
+                    Composer(
+                      key: ValueKey('answer-${pendingAsk.requestId}'),
+                      controller: _answerController,
+                      alwaysExpanded: true,
+                      onSend: (text) =>
+                          _handleSend(sessionId, text, pendingAsk),
+                    )
+                  else
+                    Composer(
+                      // Key by session so switching the pane's bound session (same
+                      // leaf id → same pane state) recreates the composer and
+                      // re-seeds initialText, instead of leaking s1's text into s2.
+                      key: ValueKey(sessionId),
+                      enabled: pendingAsk == null,
+                      controller: _composerControllerFor(sessionId),
+                      commands: ref.watch(commandsProvider(sessionId)),
+                      onSend: (text) =>
+                          _handleSend(sessionId, text, pendingAsk),
+                      onCancel: () => _cancelTurn(sessionId),
+                      running: running,
+                      alwaysExpanded: true,
+                      // Persist the draft per session so it survives worktree
+                      // switches and pane splits (the composer is recreated on both).
+                      initialText: ref.read(composerDraftsProvider)[sessionId],
+                      onDraftChanged: (text) => ref
+                          .read(composerDraftsProvider.notifier)
+                          .set(sessionId, text),
+                      footerActions: [
+                        ComposerModelSelector(sessionId: sessionId),
+                        ComposerThinkingSelector(sessionId: sessionId),
+                        ComposerModeSelector(sessionId: sessionId),
+                      ],
+                      focusNode: widget.composerFocusId == null
+                          ? null
+                          : ref.watch(
+                              desktopComposerFocusProvider(
+                                widget.composerFocusId!,
+                              ),
                             ),
-                          ),
-                    sendChord: ref
-                        .watch(keymapProvider)
-                        .chordFor(ShortcutAction.sendMessage),
-                    newlineChord: ref
-                        .watch(keymapProvider)
-                        .chordFor(ShortcutAction.composerNewline),
-                  ),
+                      sendChord: ref
+                          .watch(keymapProvider)
+                          .chordFor(ShortcutAction.sendMessage),
+                      newlineChord: ref
+                          .watch(keymapProvider)
+                          .chordFor(ShortcutAction.composerNewline),
+                    ),
                 ],
               ),
             ),
@@ -358,6 +376,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     for (final c in _composerControllers.values) {
       c.dispose();
     }
+    _answerController.dispose();
     super.dispose();
   }
 }
