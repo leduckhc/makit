@@ -80,8 +80,11 @@ in debug mode.
   ./scripts/debug-desktop.sh --kill
   ```
 
-**Hot reload not working?**
-- Rebuild the server: `cd server && pnpm run build`, then hot reload the app.
+**Server-side changes not taking effect?**
+- The debug server runs `tsx` directly on the TypeScript source, so `pnpm run
+  build` (which only writes `dist/`) does nothing for it. Stop and restart the
+  debug server task (VS Code) or rerun `./scripts/debug-desktop.sh` to pick up
+  server changes, then hot reload the app for UI changes.
 
 **`tsx` missing / server won't start?**
 - The bundle step can prune dev deps; the script restores them automatically,
