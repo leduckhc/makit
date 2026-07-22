@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "${workspaceFolder}/scripts/debug-desktop.sh",
       "args": ["--server-only", "${workspaceFolder}"],
-      "options": { "env": { "MAKIT_DEBUG_PORT": "7990" } },
+      "options": { "env": { "MAKIT_DEBUG_PORT": "${input:makitPort}" } },
       "isBackground": true,
       "problemMatcher": {
         "pattern": { "regexp": "^$" },
@@ -17,6 +17,14 @@
         }
       },
       "presentation": { "reveal": "always", "panel": "dedicated", "focus": false }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "makitPort",
+      "type": "promptString",
+      "description": "makit debug server port — pick a free port per worktree so parallel worktrees don't collide (VS Code remembers your last entry).",
+      "default": "7990"
     }
   ]
 }
