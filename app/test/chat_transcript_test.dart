@@ -307,32 +307,31 @@ void main() {
     },
   );
 
-  testWidgets(
-    'answered askUserQuestion renders as a resolved card, not a tool row',
-    (tester) async {
-      final item = ToolCallItem(
-        seq: 1,
-        ts: 0,
-        callId: 'c1',
-        name: 'askUserQuestion',
-        args: const {
-          'question': 'Which CI?',
-          'options': [
-            {'label': 'GitHub Actions'},
-            {'label': 'CircleCI'},
-          ],
-        },
-        details: const {
-          'answers': ['GitHub Actions'],
-        },
-        ended: true,
-      );
-      await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: chatItemWidget(item))),
-      );
-      await tester.pump();
-      expect(find.byType(AnsweredAskCard), findsOneWidget);
-      expect(find.byType(ToolCallCard), findsNothing);
-    },
-  );
+  testWidgets('answered ask_user renders as a resolved card, not a tool row', (
+    tester,
+  ) async {
+    final item = ToolCallItem(
+      seq: 1,
+      ts: 0,
+      callId: 'c1',
+      name: 'ask_user',
+      args: const {
+        'question': 'Which CI?',
+        'options': [
+          {'label': 'GitHub Actions'},
+          {'label': 'CircleCI'},
+        ],
+      },
+      details: const {
+        'answers': ['GitHub Actions'],
+      },
+      ended: true,
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: chatItemWidget(item))),
+    );
+    await tester.pump();
+    expect(find.byType(AnsweredAskCard), findsOneWidget);
+    expect(find.byType(ToolCallCard), findsNothing);
+  });
 }

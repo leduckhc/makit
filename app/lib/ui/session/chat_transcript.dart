@@ -56,9 +56,13 @@ Widget chatItemWidget(ChatItem item) => switch (item) {
   ErrorItem() => ErrorBanner(message: item.message),
 };
 
-/// A persisted, answered `askUserQuestion` tool call.
-bool _isAnsweredAsk(ToolCallItem item) =>
-    item.ended && item.name.toLowerCase() == 'askuserquestion';
+/// A persisted, answered ask-user tool call. Matches pi's `ask_user` and the
+/// `askUserQuestion` variants other adapters use (underscore/case-insensitive).
+bool _isAnsweredAsk(ToolCallItem item) {
+  if (!item.ended) return false;
+  final n = item.name.toLowerCase().replaceAll('_', '');
+  return n == 'askuser' || n == 'askuserquestion';
+}
 
 /// Stable identity for a chat item's transcript row. Applied by each surface at
 /// the **ListView child level** (via `KeyedSubtree`) so stateful rows
