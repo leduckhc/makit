@@ -542,9 +542,11 @@ class PrActionsSplitButton extends ConsumerWidget {
   }
 }
 
-/// A compact labelled M3 split button: a leading action segment (icon + label)
-/// and a trailing caret segment that toggles the menu. Tonal `secondaryContainer`
-/// fill, connected-shape radii, caret rotates while the menu is open.
+/// A compact labelled split button styled to match [PrStatusPill]: a single
+/// tonal `secondaryContainer` surface with the pill's gentle radius (8), a
+/// leading action segment (icon + label) and a trailing caret segment (toggles
+/// the menu) separated by a thin divider — no gap. The caret segment tints on
+/// open; the caret rotates while the menu is open.
 class _SplitButton extends StatelessWidget {
   const _SplitButton({
     required this.label,
@@ -561,8 +563,7 @@ class _SplitButton extends StatelessWidget {
   final VoidCallback onToggleMenu;
 
   static const double _height = 28;
-  static const Radius _outer = Radius.circular(14);
-  static const Radius _inner = Radius.circular(6);
+  static const Radius _radius = Radius.circular(8);
 
   @override
   Widget build(BuildContext context) {
@@ -570,24 +571,18 @@ class _SplitButton extends StatelessWidget {
     final caretColor = menuOpen ? cs.secondary : cs.secondaryContainer;
     final caretFg = menuOpen ? cs.onSecondary : cs.onSecondaryContainer;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Action segment: icon + label runs the last-picked action.
-        Tooltip(
-          message: 'Insert "$label" prompt',
-          child: Material(
-            color: cs.secondaryContainer,
-            borderRadius: const BorderRadius.horizontal(
-              left: _outer,
-              right: _inner,
-            ),
+    return Material(
+      color: cs.secondaryContainer,
+      borderRadius: const BorderRadius.all(_radius),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Action segment: icon + label runs the last-picked action.
+          Tooltip(
+            message: 'Insert "$label" prompt',
             child: InkWell(
               onTap: onAction,
-              borderRadius: const BorderRadius.horizontal(
-                left: _outer,
-                right: _inner,
-              ),
               child: SizedBox(
                 height: _height,
                 child: Padding(
@@ -611,40 +606,40 @@ class _SplitButton extends StatelessWidget {
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 2),
-        // Caret segment: toggles the action menu.
-        Tooltip(
-          message: 'PR actions',
-          child: Material(
-            color: caretColor,
-            borderRadius: const BorderRadius.horizontal(
-              left: _inner,
-              right: _outer,
+          // Thin divider between the main button and the caret gutter.
+          SizedBox(
+            height: _height,
+            child: VerticalDivider(
+              width: 1,
+              thickness: 1,
+              color: cs.onSecondaryContainer.withValues(alpha: 0.18),
             ),
-            child: InkWell(
-              onTap: onToggleMenu,
-              borderRadius: const BorderRadius.horizontal(
-                left: _inner,
-                right: _outer,
-              ),
-              child: SizedBox(
-                height: _height,
-                width: _height,
-                child: AnimatedRotation(
-                  turns: menuOpen ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 150),
-                  child: Icon(
-                    PhosphorIconsLight.caretDown,
-                    size: 12,
-                    color: caretFg,
+          ),
+          // Caret segment: toggles the action menu.
+          Tooltip(
+            message: 'PR actions',
+            child: Material(
+              color: caretColor,
+              child: InkWell(
+                onTap: onToggleMenu,
+                child: SizedBox(
+                  height: _height,
+                  width: _height,
+                  child: AnimatedRotation(
+                    turns: menuOpen ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: Icon(
+                      PhosphorIconsLight.caretDown,
+                      size: 12,
+                      color: caretFg,
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
