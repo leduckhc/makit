@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/store/elicitation.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/ui/session/ask_card.dart';
@@ -206,5 +207,110 @@ void main() {
       // The non-chosen option is dimmed via an Opacity wrapper.
       expect(find.byType(Opacity), findsWidgets);
     });
+
+    testWidgets(
+      'derives the choice from output when details are absent (pi ask_user)',
+      (tester) async {
+        final item = ToolCallItem(
+          seq: 1,
+          ts: 0,
+          callId: 'c1',
+          name: 'ask_user',
+          args: const {
+            'questions': [
+              {
+                'question': 'Which CI?',
+                'options': [
+                  {'label': 'GitHub Actions'},
+                  {'label': 'CircleCI'},
+                ],
+              },
+            ],
+          },
+          // No details — pi's ask_user returns the chosen label as the output.
+          output: 'GitHub Actions',
+          ended: true,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AnsweredAskCard(item: item)),
+          ),
+        );
+        await tester.pumpAndSettle();
+        // Exactly one option is marked chosen (filled check).
+        expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
+        expect(find.text('GitHub Actions'), findsOneWidget);
+      },
+    );
+
+    testWidgets('shows a free-text answer that matches no option', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'ask_user',
+        args: const {
+          'questions': [
+            {
+              'question': 'Branch name?',
+              'options': [
+                {'label': 'feat/ci'},
+                {'label': 'chore/actions'},
+              ],
+            },
+          ],
+        },
+        output: 'my/custom-branch',
+        ended: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AnsweredAskCard(item: item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // The typed answer appears (as the chosen row), not lost.
+      expect(find.text('my/custom-branch'), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
+    });
+
+    testWidgets(
+      'reads pi\'s details shape (question + options[title] + response)',
+      (tester) async {
+        final item = ToolCallItem(
+          seq: 1,
+          ts: 0,
+          callId: 'c1',
+          name: 'ask_user',
+          args: const {'question': "What's your favorite color?"},
+          details: const {
+            'question': "What's your favorite color?",
+            'options': [
+              {'title': 'Red'},
+              {'title': 'Green'},
+              {'title': 'Blue'},
+            ],
+            'response': {'kind': 'freeform', 'text': 'teal'},
+          },
+          output: 'User answered: teal',
+          ended: true,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AnsweredAskCard(item: item)),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text("What's your favorite color?"), findsOneWidget);
+        // Option titles render.
+        expect(find.text('Red'), findsOneWidget);
+        expect(find.text('Green'), findsOneWidget);
+        // The freeform answer shows as the chosen row.
+        expect(find.text('teal'), findsOneWidget);
+        expect(find.byIcon(PhosphorIconsFill.checkCircle), findsOneWidget);
+      },
+    );
   });
 }

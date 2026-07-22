@@ -12,6 +12,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import 'chat_metrics.dart';
+import 'tool_result_text.dart';
 
 class AskCard extends ConsumerStatefulWidget {
   const AskCard({super.key, required this.ask});
@@ -165,42 +166,48 @@ class _AskCardState extends ConsumerState<AskCard> {
 
   Widget _actions(ColorScheme cs) {
     final ask = widget.ask;
-    // Wrap (not Row) so the long "Type a different answer" label + Back/Skip/
-    // Submit fold onto a second line on narrow widths / large text instead of
-    // overflowing.
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Wrap(
-        alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 4,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          TextButton(
-            onPressed: () => ref
-                .read(elicitationControllerProvider.notifier)
-                .cancel(ask.requestId),
-            child: const Text('Skip'),
-          ),
-          if (_i > 0)
-            TextButton(
-              onPressed: () => setState(() => _i--),
-              child: const Text('Back'),
-            ),
-          // Free-text handoff — single-question asks only (composer answers it).
-          if (ask.isSingle)
-            TextButton(
+    // Two rows so the primary Submit and the secondary actions never wrap onto
+    // each other: the free-text link sits on its own row above; Back/Skip on
+    // the left, Submit/Next on the right.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (ask.isSingle)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
               onPressed: () => ref
                   .read(elicitationControllerProvider.notifier)
                   .enableFreeText(ask.requestId),
-              child: const Text('Type a different answer'),
+              icon: const Icon(PhosphorIconsLight.pencilSimple, size: 15),
+              label: const Text('Type a different answer'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+              ),
             ),
-          FilledButton(
-            onPressed: _canAdvance ? _next : null,
-            child: Text(_isLast ? 'Submit' : 'Next'),
           ),
-        ],
-      ),
+        Row(
+          children: [
+            TextButton(
+              onPressed: () => ref
+                  .read(elicitationControllerProvider.notifier)
+                  .cancel(ask.requestId),
+              child: const Text('Skip'),
+            ),
+            if (_i > 0)
+              TextButton(
+                onPressed: () => setState(() => _i--),
+                child: const Text('Back'),
+              ),
+            const Spacer(),
+            FilledButton(
+              onPressed: _canAdvance ? _next : null,
+              child: Text(_isLast ? 'Submit' : 'Next'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -349,32 +356,61 @@ class AnsweredAskCard extends StatelessWidget {
   const AnsweredAskCard({super.key, required this.item});
   final ToolCallItem item;
 
-  /// Questions in the wizard form, accepting both the array and single shapes.
+  /// Questions to display, tolerant of both shapes we see in the wild:
+  ///  - the uicall wizard shape: `args.questions[]` with `{label}` options;
+  ///  - pi's `ask_user` result: `details.question` + `details.options[{title}]`
+  ///    (and the model's `args.question`/`args.options` mirror it).
   List<Map<String, dynamic>> _questions() {
-    final raw = item.args['questions'];
-    if (raw is List) {
-      return raw
+    final details = item.details ?? const {};
+    final rawQs = item.args['questions'];
+    if (rawQs is List) {
+      return rawQs
           .whereType<Map<dynamic, dynamic>>()
           .map(Map<String, dynamic>.from)
           .toList();
     }
-    if (item.args['question'] is String) {
+    final q = details['question'] ?? item.args['question'];
+    if (q is String) {
       return [
-        {
-          'header': item.args['header'],
-          'question': item.args['question'],
-          'options': item.args['options'],
-        },
+        {'question': q, 'options': details['options'] ?? item.args['options']},
       ];
     }
     return const [];
   }
 
-  /// Chosen answer labels for question [i]; multi-select arrives joined by " + ".
-  Set<String> _chosen(int i) {
-    final answers = (item.details?['answers'] as List?)?.cast<dynamic>();
-    if (answers == null || i >= answers.length) return const {};
-    return answers[i].toString().split(' + ').map((s) => s.trim()).toSet();
+  /// Chosen answer labels for question [i]. Prefers structured data
+  /// (`details.answers` for the uicall shape, `details.response.text` for pi's
+  /// freeform), then falls back to the `"User answered: …"` tool output — pi's
+  /// `ask_user` returns the chosen title/text as its result with no indices.
+  Set<String> _chosenFor(int i, int total) {
+    final details = item.details ?? const {};
+    final answers = (details['answers'] as List?)?.cast<dynamic>();
+    if (answers != null && i < answers.length) {
+      final joined = answers[i].toString().trim();
+      if (joined.isNotEmpty) {
+        return joined.split(' + ').map((s) => s.trim()).toSet();
+      }
+    }
+    if (total == 1) {
+      final resp = details['response'];
+      if (resp is Map && resp['text'] is String) {
+        final t = (resp['text'] as String).trim();
+        if (t.isNotEmpty) return {t};
+      }
+      final out = extractToolResultText(item.output ?? item.resultText).trim();
+      final ans = _stripAnsweredPrefix(out);
+      if (ans.isNotEmpty) return {ans};
+    }
+    return const {};
+  }
+
+  /// pi wraps the answer as `User answered: <text>` in the tool result.
+  static String _stripAnsweredPrefix(String s) {
+    final m = RegExp(
+      r'^\s*User answered:\s*',
+      caseSensitive: false,
+    ).firstMatch(s);
+    return (m == null ? s : s.substring(m.end)).trim();
   }
 
   @override
@@ -412,7 +448,7 @@ class AnsweredAskCard extends StatelessWidget {
           for (var qi = 0; qi < questions.length; qi++)
             _AnsweredQuestion(
               question: questions[qi],
-              chosen: _chosen(qi),
+              chosen: _chosenFor(qi, questions.length),
               first: qi == 0,
             ),
         ],
@@ -441,7 +477,10 @@ class _AnsweredQuestion extends StatelessWidget {
         const [];
     // Free-text / "Other" answers won't match an option — surface them too.
     final extras = chosen
-        .where((a) => !options.any((o) => o['label']?.toString() == a))
+        .where(
+          (a) =>
+              !options.any((o) => (o['label'] ?? o['title'])?.toString() == a),
+        )
         .toList();
     return Padding(
       padding: EdgeInsets.only(top: first ? 8 : 14),
@@ -457,9 +496,11 @@ class _AnsweredQuestion extends StatelessWidget {
           const SizedBox(height: 8),
           for (final opt in options)
             _AnsweredOption(
-              label: opt['label']?.toString() ?? '',
+              label: (opt['label'] ?? opt['title'])?.toString() ?? '',
               description: opt['description']?.toString(),
-              chosen: chosen.contains(opt['label']?.toString()),
+              chosen: chosen.contains(
+                (opt['label'] ?? opt['title'])?.toString(),
+              ),
             ),
           for (final ans in extras)
             _AnsweredOption(label: ans, description: null, chosen: true),
