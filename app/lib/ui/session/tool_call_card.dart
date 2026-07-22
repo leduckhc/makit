@@ -6,9 +6,9 @@ import 'chat_metrics.dart';
 import 'tool_renderers.dart';
 
 /// Inline, collapsible tool-call row. Mirrors `ThinkingLine`: collapsed it is a
-/// single one-liner (disclosure caret + tool icon + summary + status); tapping
-/// anywhere on the header toggles between the collapsed one-liner and the
-/// expanded [ToolRenderer.body]. Long bodies are capped at
+/// single one-liner (tool icon + summary + status + a trailing disclosure
+/// caret); tapping anywhere on the header toggles between the collapsed
+/// one-liner and the expanded [ToolRenderer.body]. Long bodies are capped at
 /// [kToolExpandedMaxHeight] and scroll internally.
 class ToolCallCard extends StatefulWidget {
   const ToolCallCard({super.key, required this.item});
@@ -92,9 +92,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
     );
   }
 
-  /// The one-liner header: rotating disclosure caret, tool icon, summary text,
-  /// trailing status glyph. The entire header is the tap target (built by the
-  /// caller), so no child owns the gesture.
+  /// The one-liner header: tool icon, summary text, status glyph, and a
+  /// trailing rotating disclosure caret. The entire header is the tap target
+  /// (built by the caller), so no child owns the gesture.
   Widget _buildRow(IconData riskIcon, Color riskColor) {
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
@@ -117,19 +117,21 @@ class _ToolCallCardState extends State<ToolCallCard> {
       ),
     };
 
+    // Disclosure caret lives at the trailing (right) edge; points right when
+    // collapsed and rotates down when expanded.
+    final caret = AnimatedRotation(
+      turns: _expanded ? 0.25 : 0,
+      duration: const Duration(milliseconds: 150),
+      child: Icon(
+        PhosphorIconsLight.caretRight,
+        size: 13,
+        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+      ),
+    );
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        AnimatedRotation(
-          turns: _expanded ? 0.25 : 0,
-          duration: const Duration(milliseconds: 150),
-          child: Icon(
-            PhosphorIconsLight.caretRight,
-            size: 13,
-            color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-          ),
-        ),
-        const SizedBox(width: 4),
         Icon(riskIcon, size: 16, color: riskColor),
         const SizedBox(width: 8),
         Expanded(
@@ -148,6 +150,8 @@ class _ToolCallCardState extends State<ToolCallCard> {
         ),
         const SizedBox(width: 8),
         status,
+        const SizedBox(width: 8),
+        caret,
       ],
     );
   }

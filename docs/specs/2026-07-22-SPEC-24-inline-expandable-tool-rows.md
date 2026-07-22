@@ -145,11 +145,12 @@ Rework `ToolCallCard` into a `StatefulWidget` that mirrors `ThinkingLine`
 "card"). No `onTap`/navigation param.
 
 - **Header (both states):** an `InkWell(onTap: toggle)` over the full row —
-  `[rotating disclosure caret] [risk-tinted tool icon]  <summaryLine, maxLines:1,
-  ellipsis>  <status>`. The caret points right when collapsed and rotates down
-  when expanded (`AnimatedRotation`). Tapping anywhere on the header toggles, in
-  both states, with `Semantics(button, expanded, onTapHint)` for a11y. `<status>`
-  is the existing running-spinner / `checkCircle` / `warningCircle` glyph.
+  `[risk-tinted tool icon]  <summaryLine, maxLines:1, ellipsis>  <status>
+  [rotating disclosure caret]`. The caret sits at the trailing (right) edge,
+  points right when collapsed and rotates down when expanded
+  (`AnimatedRotation`). Tapping anywhere on the header toggles, in both states,
+  with `Semantics(button, expanded, onTapHint)` for a11y. `<status>` is the
+  existing running-spinner / `checkCircle` / `warningCircle` glyph.
 - **Expanded:** the header (above) followed by the renderer `body(...)`, wrapped
   in a **bounded, internally-scrollable** region:
   `ConstrainedBox(maxHeight: kToolExpandedMaxHeight)` → `Scrollbar(controller)` →
