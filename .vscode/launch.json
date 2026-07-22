@@ -1,25 +1,40 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "app",
-            "cwd": "app",
-            "request": "launch",
-            "type": "dart"
-        },
-        {
-            "name": "app (profile mode)",
-            "cwd": "app",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "profile"
-        },
-        {
-            "name": "app (release mode)",
-            "cwd": "app",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "release"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Makit Desktop (Debug, Isolated Profile)",
+      "type": "dart",
+      "request": "launch",
+      "program": "app/lib/main.dart",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-d",
+        "macos"
+      ],
+      "deviceId": "macos",
+      "flutterMode": "debug",
+      "preLaunchTask": "makit: start isolated daemon",
+      "env": {
+        "MAKIT_WS_URL": "",
+        "MAKIT_FP": ""
+      },
+      "postDebugTask": "makit: cleanup",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Makit Desktop (Release)",
+      "type": "dart",
+      "request": "launch",
+      "program": "app/lib/main.dart",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "-d",
+        "macos",
+        "--release"
+      ],
+      "deviceId": "macos",
+      "flutterMode": "release",
+      "console": "integratedTerminal"
+    }
+  ]
 }
