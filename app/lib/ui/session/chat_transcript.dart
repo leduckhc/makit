@@ -17,6 +17,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../store/models.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
+import 'ask_card.dart';
 import 'tool_call_card.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
@@ -39,20 +40,52 @@ void anchorToNewestIfNearBottom(ScrollController scroll) {
   });
 }
 
-/// Maps a folded [ChatItem] to its transcript widget. [onOpenTool] is invoked
-/// when a tool card is tapped (mobile routes via `go_router`; desktop pushes a
-/// full-screen route). Horizontal gutter + inter-row spacing are applied by the
-/// caller via [transcriptRow], so the item widgets carry none themselves.
-Widget chatItemWidget(
-  ChatItem item, {
-  required void Function(ToolCallItem) onOpenTool,
-}) => switch (item) {
+/// Maps a folded [ChatItem] to its transcript widget. Tool calls render as
+/// inline collapsible rows (see [ToolCallCard]) that expand in place — there is
+/// no full-screen detail navigation. Horizontal gutter + inter-row spacing are
+/// applied by the caller via [transcriptRow], so the item widgets carry none
+/// themselves.
+Widget chatItemWidget(ChatItem item) => switch (item) {
   UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   ThinkingItem() => ThinkingLine(text: item.text),
-  ToolCallItem() => ToolCallCard(item: item, onTap: () => onOpenTool(item)),
+  // An answered askUserQuestion settles into a quiet resolved card (chosen
+  // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
+  ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
+  ToolCallItem() => ToolCallCard(item: item),
   ErrorItem() => ErrorBanner(message: item.message),
 };
+
+/// A persisted, answered ask-user tool call. Matches pi's `ask_user` and the
+/// `askUserQuestion` variants other adapters use (underscore/case-insensitive).
+bool _isAnsweredAsk(ToolCallItem item) {
+  if (!item.ended) return false;
+  final n = item.name.toLowerCase().replaceAll('_', '');
+  return n == 'askuser' || n == 'askuserquestion';
+}
+
+/// Stable identity for a chat item's transcript row. Applied by each surface at
+/// the **ListView child level** (via `KeyedSubtree`) so stateful rows
+/// ([ToolCallCard], [ThinkingLine]) keep their expand/collapse state when the
+/// reversed list reorders as new items stream in — otherwise Flutter would
+/// reconcile the unkeyed rows by position and migrate/reset state to the wrong
+/// item.
+Key chatItemKey(ChatItem item) => switch (item) {
+  ToolCallItem() => ValueKey('tool-${item.callId}'),
+  _ => ValueKey('seq-${item.seq}'),
+};
+
+/// The trailing transcript row shown below the newest message. An awaiting
+/// inline ask takes priority over the working indicator: Pi stays `running`
+/// while it emits an `askUserQuestion`, so both can be true at once — showing
+/// the working indicator then would hide the question and (with the composer
+/// paused) deadlock the user. Prefer the ask.
+enum TranscriptTrailer { none, working, ask }
+
+TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
+    awaiting
+    ? TranscriptTrailer.ask
+    : (running ? TranscriptTrailer.working : TranscriptTrailer.none);
 
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the

@@ -7,7 +7,6 @@ import '../pairing/onboarding_screen.dart';
 import '../pairing/readiness.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/session/session_screen.dart';
-import '../ui/session/tool_call_detail_screen.dart';
 import '../ui/settings/settings_screen.dart';
 
 /// Exposed so widgets sitting in `MaterialApp.builder` (above the Navigator)
@@ -45,15 +44,6 @@ final routerProvider = Provider<GoRouter>((ref) {
             path: 'session/:id',
             builder: (_, s) =>
                 SessionScreen(sessionId: s.pathParameters['id']!),
-            routes: [
-              GoRoute(
-                path: 'tool/:callId',
-                builder: (_, s) => ToolCallDetailScreen(
-                  sessionId: s.pathParameters['id']!,
-                  callId: s.pathParameters['callId']!,
-                ),
-              ),
-            ],
           ),
         ],
       ),

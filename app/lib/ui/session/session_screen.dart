@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
+import '../../store/elicitation.dart';
 import '../../store/store.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
+import 'ask_card.dart';
 import 'chat_transcript.dart';
 import 'chat_metrics.dart';
 import '../widgets/connection_chip.dart';
@@ -24,6 +26,9 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
+  // Dedicated controller for free-text answers to an inline ask, kept separate
+  // from the normal message draft so the two can never cross-contaminate.
+  final _answerController = TextEditingController();
   int _lastSeq = 0;
 
   @override
@@ -41,6 +46,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
+    final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
+    // Clear the dedicated free-text answer controller whenever the ask ends or
+    // leaves free-text mode, so a later answer composer never reopens with a
+    // stale draft.
+    ref.listen(pendingAskProvider(widget.sessionId), (prev, next) {
+      if (next == null || !next.freeText) _answerController.clear();
+    });
+    final trailer = trailerFor(
+      running: session?.status == SessionStatus.running,
+      awaiting: pendingAsk != null,
+    );
+    final hasTrailer = trailer != TranscriptTrailer.none;
 
     ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
       prev,
@@ -102,25 +119,25 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 top: topInset + 60,
                 bottom: MediaQuery.of(context).padding.bottom + 200,
               ),
-              itemCount:
-                  items.length +
-                  (session?.status == SessionStatus.running ? 1 : 0),
+              itemCount: items.length + (hasTrailer ? 1 : 0),
               itemBuilder: (context, i) {
-                // Reversed: i counts up from the visual bottom. When running,
-                // i == 0 is the trailing "working…" indicator sitting just
-                // below the newest message.
-                final running = session?.status == SessionStatus.running;
-                if (running && i == 0) {
-                  return transcriptRow(const WorkingIndicator());
+                // Reversed: i counts up from the visual bottom. The trailing
+                // row (i == 0) is the inline ask card when awaiting (it takes
+                // priority — Pi stays running while asking), else the
+                // "working…" indicator while running.
+                if (hasTrailer && i == 0) {
+                  return trailer == TranscriptTrailer.ask
+                      ? KeyedSubtree(
+                          key: ValueKey('ask-${pendingAsk!.requestId}'),
+                          child: transcriptRow(AskCard(ask: pendingAsk)),
+                        )
+                      : transcriptRow(const WorkingIndicator());
                 }
-                final index = items.length - 1 - (running ? i - 1 : i);
-                return transcriptRow(
-                  chatItemWidget(
-                    items[index],
-                    onOpenTool: (tool) => context.go(
-                      '/session/${widget.sessionId}/tool/${tool.callId}',
-                    ),
-                  ),
+                final index = items.length - 1 - (hasTrailer ? i - 1 : i);
+                final item = items[index];
+                return KeyedSubtree(
+                  key: chatItemKey(item),
+                  child: transcriptRow(chatItemWidget(item)),
                 );
               },
             ),
@@ -244,18 +261,36 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   borderRadius: 28,
                   // Unified design-system glass (see MASTER.md) — same recipe
                   // as the top bar.
-                  child: Composer(
-                    glass: true,
-                    commands: ref.watch(commandsProvider(widget.sessionId)),
-                    onSend: (text) => _handleSend(text),
-                    running: session?.status == SessionStatus.running,
-                    onCancel: _cancelTurn,
-                    footerActions: [
-                      ComposerModelSelector(sessionId: widget.sessionId),
-                      ComposerThinkingSelector(sessionId: widget.sessionId),
-                      ComposerModeSelector(sessionId: widget.sessionId),
-                    ],
-                  ),
+                  child: (pendingAsk != null && pendingAsk.freeText)
+                      // Free-text answer mode: a dedicated, empty answer
+                      // controller (keyed by requestId) so a pre-ask normal
+                      // draft can never leak in as the answer. The normal draft
+                      // lives in the composer's own controller and returns when
+                      // the ask resolves.
+                      ? Composer(
+                          key: ValueKey('answer-${pendingAsk.requestId}'),
+                          glass: true,
+                          controller: _answerController,
+                          onSend: (text) => _handleSend(text, pendingAsk),
+                        )
+                      : Composer(
+                          key: const ValueKey('composer-normal'),
+                          glass: true,
+                          enabled: pendingAsk == null,
+                          commands: ref.watch(
+                            commandsProvider(widget.sessionId),
+                          ),
+                          onSend: (text) => _handleSend(text, pendingAsk),
+                          running: session?.status == SessionStatus.running,
+                          onCancel: _cancelTurn,
+                          footerActions: [
+                            ComposerModelSelector(sessionId: widget.sessionId),
+                            ComposerThinkingSelector(
+                              sessionId: widget.sessionId,
+                            ),
+                            ComposerModeSelector(sessionId: widget.sessionId),
+                          ],
+                        ),
                 ),
               ),
             ),
@@ -394,7 +429,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     );
   }
 
-  Future<void> _handleSend(String text) async {
+  Future<void> _handleSend(String text, [PendingAsk? pendingAsk]) async {
+    // Free-text answer to an inline ask: route to the elicitation response
+    // instead of sending a normal message (single-question only).
+    if (pendingAsk != null && pendingAsk.freeText) {
+      ref
+          .read(elicitationControllerProvider.notifier)
+          .submitFreeText(pendingAsk.requestId, text);
+      return;
+    }
     if (text.startsWith('/')) {
       final handled = await handleClientCommand(
         text,
@@ -418,6 +461,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _answerController.dispose();
     super.dispose();
   }
 }

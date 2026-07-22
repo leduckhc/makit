@@ -35,8 +35,19 @@ class Composer extends StatefulWidget {
     this.alwaysExpanded = false,
     this.initialText,
     this.onDraftChanged,
+    this.enabled = true,
+    this.disabledHint,
   });
   final void Function(String text) onSend;
+
+  /// When false, the composer is inert: the field + send are replaced by a
+  /// muted [disabledHint] bar. Used while a session is awaiting an inline
+  /// answer (SPEC-25) so the user resolves the question above instead of
+  /// sending a normal message.
+  final bool enabled;
+
+  /// Hint shown in place of the field when [enabled] is false.
+  final String? disabledHint;
 
   /// Text to seed the field with when the composer first mounts — used to
   /// restore a half-typed draft after the composer is disposed and recreated
@@ -199,8 +210,30 @@ class _ComposerState extends State<Composer> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: _expanded ? _buildExpanded(cs) : _buildCompact(cs),
+                child: !widget.enabled
+                    ? _buildDisabled(cs)
+                    : (_expanded ? _buildExpanded(cs) : _buildCompact(cs)),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Inert bar shown while [Composer.enabled] is false (awaiting an inline
+  /// answer): a muted hint in place of the field + send.
+  Widget _buildDisabled(ColorScheme cs) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      child: Row(
+        children: [
+          Icon(PhosphorIconsLight.chatCircleDots, size: 16, color: cs.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              widget.disabledHint ?? 'Answer the question above to continue…',
+              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
             ),
           ),
         ],

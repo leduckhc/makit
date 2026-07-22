@@ -5,12 +5,13 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/models.dart';
+import '../../store/elicitation.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
+import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/chat_metrics.dart';
-import '../../ui/session/tool_call_detail_screen.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
 import 'composer_draft.dart';
@@ -84,6 +85,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   /// split button (a sibling of the composer) can inject prompt text into the
   /// field. Keyed by session id and disposed with the pane.
   final _composerControllers = <String, TextEditingController>{};
+  // Dedicated controller for free-text answers to an inline ask, kept separate
+  // from the per-session message drafts so the two never cross-contaminate.
+  final _answerController = TextEditingController();
 
   TextEditingController _composerControllerFor(String sessionId) =>
       _composerControllers.putIfAbsent(sessionId, TextEditingController.new);
@@ -119,7 +123,17 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     });
   }
 
-  Future<void> _handleSend(String sessionId, String text) async {
+  Future<void> _handleSend(
+    String sessionId,
+    String text, [
+    PendingAsk? pendingAsk,
+  ]) async {
+    if (pendingAsk != null && pendingAsk.freeText) {
+      ref
+          .read(elicitationControllerProvider.notifier)
+          .submitFreeText(pendingAsk.requestId, text);
+      return;
+    }
     if (text.startsWith('/')) {
       final handled = await handleClientCommand(
         text,
@@ -140,19 +154,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     ref: ref,
     sessionId: sessionId,
   );
-
-  /// Push the fullscreen tool-call drilldown, matching the mobile chat where
-  /// tapping a tool card opens its args / output / diff view.
-  void _openToolDetail(ToolCallItem item) {
-    final sessionId = _subscribed;
-    if (sessionId == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            ToolCallDetailScreen(sessionId: sessionId, callId: item.callId),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -213,6 +214,14 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     }
 
     final running = session.status == SessionStatus.running;
+    final pendingAsk = ref.watch(pendingAskProvider(sessionId));
+    // Clear the dedicated free-text answer controller when the ask ends or
+    // leaves free-text mode, so a later answer composer starts empty.
+    ref.listen(pendingAskProvider(sessionId), (prev, next) {
+      if (next == null || !next.freeText) _answerController.clear();
+    });
+    final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
+    final hasTrailer = trailer != TranscriptTrailer.none;
 
     return Column(
       children: [
@@ -234,27 +243,42 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // lazily as the user scrolls up.
                   reverse: true,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  itemCount: items.length + (running ? 1 : 0),
+                  itemCount: items.length + (hasTrailer ? 1 : 0),
                   itemBuilder: (context, i) {
-                    // Reversed: i counts up from the bottom. When running,
-                    // i == 0 is the trailing "working…" indicator.
-                    final Widget child = (running && i == 0)
-                        ? const WorkingIndicator()
-                        : chatItemWidget(
-                            items[items.length - 1 - (running ? i - 1 : i)],
-                            onOpenTool: _openToolDetail,
-                          );
+                    // Reversed: i counts up from the bottom. The trailing row
+                    // (i == 0) is the inline ask card when awaiting (priority —
+                    // Pi stays running while asking), else the "working…"
+                    // indicator while running.
+                    final bool isTrailer = hasTrailer && i == 0;
+                    final ChatItem? item = isTrailer
+                        ? null
+                        : items[items.length - 1 - (hasTrailer ? i - 1 : i)];
+                    final Widget child = !isTrailer
+                        ? chatItemWidget(item!)
+                        : (trailer == TranscriptTrailer.ask
+                              ? AskCard(ask: pendingAsk!)
+                              : const WorkingIndicator());
                     // Center each row within the same readable-width cap as
                     // the composer, so the transcript column lines up with the
                     // input instead of stretching edge-to-edge. The ListView
                     // itself stays full width so the mouse wheel scrolls
                     // anywhere in the pane; only the row *content* is capped.
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: kReadableContentMaxWidth,
+                    // Key item rows by identity (via KeyedSubtree) so inline
+                    // expand/collapse state stays with the right call as the
+                    // reversed list reorders.
+                    return KeyedSubtree(
+                      key: !isTrailer
+                          ? chatItemKey(item!)
+                          : (trailer == TranscriptTrailer.ask
+                                ? ValueKey('ask-${pendingAsk!.requestId}')
+                                : null),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: kReadableContentMaxWidth,
+                          ),
+                          child: transcriptRow(child),
                         ),
-                        child: transcriptRow(child),
                       ),
                     );
                   },
@@ -291,42 +315,57 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),
-                  Composer(
-                    // Key by session so switching the pane's bound session (same
-                    // leaf id → same pane state) recreates the composer and
-                    // re-seeds initialText, instead of leaking s1's text into s2.
-                    key: ValueKey(sessionId),
-                    controller: _composerControllerFor(sessionId),
-                    commands: ref.watch(commandsProvider(sessionId)),
-                    onSend: (text) => _handleSend(sessionId, text),
-                    onCancel: () => _cancelTurn(sessionId),
-                    running: running,
-                    alwaysExpanded: true,
-                    // Persist the draft per session so it survives worktree
-                    // switches and pane splits (the composer is recreated on both).
-                    initialText: ref.read(composerDraftsProvider)[sessionId],
-                    onDraftChanged: (text) => ref
-                        .read(composerDraftsProvider.notifier)
-                        .set(sessionId, text),
-                    footerActions: [
-                      ComposerModelSelector(sessionId: sessionId),
-                      ComposerThinkingSelector(sessionId: sessionId),
-                      ComposerModeSelector(sessionId: sessionId),
-                    ],
-                    focusNode: widget.composerFocusId == null
-                        ? null
-                        : ref.watch(
-                            desktopComposerFocusProvider(
-                              widget.composerFocusId!,
+                  if (pendingAsk != null && pendingAsk.freeText)
+                    // Free-text answer mode: a dedicated empty answer controller
+                    // (keyed by requestId) so the per-session normal draft can
+                    // never leak in as the answer, and is preserved for when the
+                    // ask resolves.
+                    Composer(
+                      key: ValueKey('answer-${pendingAsk.requestId}'),
+                      controller: _answerController,
+                      alwaysExpanded: true,
+                      onSend: (text) =>
+                          _handleSend(sessionId, text, pendingAsk),
+                    )
+                  else
+                    Composer(
+                      // Key by session so switching the pane's bound session (same
+                      // leaf id → same pane state) recreates the composer and
+                      // re-seeds initialText, instead of leaking s1's text into s2.
+                      key: ValueKey(sessionId),
+                      enabled: pendingAsk == null,
+                      controller: _composerControllerFor(sessionId),
+                      commands: ref.watch(commandsProvider(sessionId)),
+                      onSend: (text) =>
+                          _handleSend(sessionId, text, pendingAsk),
+                      onCancel: () => _cancelTurn(sessionId),
+                      running: running,
+                      alwaysExpanded: true,
+                      // Persist the draft per session so it survives worktree
+                      // switches and pane splits (the composer is recreated on both).
+                      initialText: ref.read(composerDraftsProvider)[sessionId],
+                      onDraftChanged: (text) => ref
+                          .read(composerDraftsProvider.notifier)
+                          .set(sessionId, text),
+                      footerActions: [
+                        ComposerModelSelector(sessionId: sessionId),
+                        ComposerThinkingSelector(sessionId: sessionId),
+                        ComposerModeSelector(sessionId: sessionId),
+                      ],
+                      focusNode: widget.composerFocusId == null
+                          ? null
+                          : ref.watch(
+                              desktopComposerFocusProvider(
+                                widget.composerFocusId!,
+                              ),
                             ),
-                          ),
-                    sendChord: ref
-                        .watch(keymapProvider)
-                        .chordFor(ShortcutAction.sendMessage),
-                    newlineChord: ref
-                        .watch(keymapProvider)
-                        .chordFor(ShortcutAction.composerNewline),
-                  ),
+                      sendChord: ref
+                          .watch(keymapProvider)
+                          .chordFor(ShortcutAction.sendMessage),
+                      newlineChord: ref
+                          .watch(keymapProvider)
+                          .chordFor(ShortcutAction.composerNewline),
+                    ),
                 ],
               ),
             ),
@@ -342,6 +381,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     for (final c in _composerControllers.values) {
       c.dispose();
     }
+    _answerController.dispose();
     super.dispose();
   }
 }
