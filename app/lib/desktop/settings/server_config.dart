@@ -138,9 +138,16 @@ class ServerConfig {
 /// Reads + persists the [ServerConfig] via [SharedPreferences].
 class ServerConfigController extends StateNotifier<ServerConfig> {
   /// Creates a controller seeded from [initial]; writes go through [_prefs].
-  ServerConfigController(this._prefs, ServerConfig initial) : super(initial);
+  ///
+  /// [defaultPort] is this profile's fallback port (see [ServerProfile.port]);
+  /// [setPort] restores it when given a non-positive value so a dev build never
+  /// resets to the installed profile's 7777 and collides with it.
+  ServerConfigController(this._prefs, ServerConfig initial, {int? defaultPort})
+    : _defaultPort = defaultPort ?? kDefaultServerPort,
+      super(initial);
 
   final SharedPreferences _prefs;
+  final int _defaultPort;
 
   /// The current config. Public accessor so non-widget composition code (the
   /// app root's `serveArgs`/CLI-resolver closures) can read it without touching
@@ -153,12 +160,11 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
   /// default to [ServerBindMode.auto]. A legacy host that was deliberately set
   /// to a non-loopback value migrates to [ServerBindMode.custom] so those
   /// users keep reaching their configured endpoint.
-  static ServerConfig load(SharedPreferences prefs) {
+  static ServerConfig load(SharedPreferences prefs, {int? defaultPort}) {
+    final fallbackPort = defaultPort ?? kDefaultServerPort;
     final port = prefs.getInt(_kPortKey);
     final cliPath = prefs.getString(_kCliPathKey) ?? '';
-    final resolvedPort = (port == null || port <= 0)
-        ? kDefaultServerPort
-        : port;
+    final resolvedPort = (port == null || port <= 0) ? fallbackPort : port;
 
     final modeStr = prefs.getString(_kBindModeKey);
     if (modeStr != null) {
@@ -196,9 +202,10 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
     await _prefs.setString(_kCustomHostKey, h);
   }
 
-  /// Persists a new port (non-positive → default) and updates state.
+  /// Persists a new port (non-positive → this profile's default) and updates
+  /// state.
   Future<void> setPort(int port) async {
-    final p = port <= 0 ? kDefaultServerPort : port;
+    final p = port <= 0 ? _defaultPort : port;
     state = state.copyWith(port: p);
     await _prefs.setInt(_kPortKey, p);
   }

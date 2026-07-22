@@ -142,8 +142,17 @@ class DaemonLifecycle {
   /// Creates a lifecycle driver.
   ///
   /// [resolver] locates the CLI; [run] spawns it (defaults to [Process.run]).
-  DaemonLifecycle({required this.resolver, ProcessRunner? run})
-    : run = run ?? Process.run;
+  /// [environment] is merged into the spawned CLI's environment (on top of the
+  /// inherited parent env) — used to pass `MAKIT_HOME` so this app instance's
+  /// daemon is isolated from other builds. Ignored when a custom [run] is
+  /// injected (tests supply their own runner).
+  DaemonLifecycle({
+    required this.resolver,
+    ProcessRunner? run,
+    Map<String, String>? environment,
+  }) : run =
+           run ??
+           ((exe, args) => Process.run(exe, args, environment: environment));
 
   /// Locates the `makit` executable.
   final MakitCliResolver resolver;

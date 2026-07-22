@@ -3,8 +3,8 @@
  * multi-project feature. Kept side-effect-free (beyond fs at a caller-given
  * path) so it is trivially unit-testable.
  *
- * Persistence lives in a small JSON file (`~/.makit/projects.json` by default,
- * overridable via MAKIT_PROJECTS_FILE) shaped `{ "projects": ["/abs", …] }`.
+ * Persistence lives in a small JSON file (`$MAKIT_HOME/projects.json` by
+ * default, overridable via MAKIT_PROJECTS_FILE) shaped `{ "projects": […] }`.
  * Load/save never throw on bad input — a corrupt or missing file degrades to
  * an empty list so the server always starts.
  */
@@ -18,8 +18,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { makitHome } from "./daemon/paths.js";
 import { log } from "./log.js";
 
 /** A persisted project: a server-generated id paired with its root path. The
@@ -32,7 +32,7 @@ export interface PersistedProject {
 
 /** Absolute path of the projects persistence file. */
 export function projectsFile(): string {
-  return process.env.MAKIT_PROJECTS_FILE ?? join(homedir(), ".makit", "projects.json");
+  return process.env.MAKIT_PROJECTS_FILE ?? join(makitHome(), "projects.json");
 }
 
 /**

@@ -1,0 +1,30 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "makit: debug server",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-desktop.sh",
+      "args": ["--server-only", "${workspaceFolder}"],
+      "options": { "env": { "MAKIT_DEBUG_PORT": "${input:makitPort}" } },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "==> starting server",
+          "endsPattern": "wss listening"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": false }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "makitPort",
+      "type": "promptString",
+      "description": "makit debug server port — pick a free port per worktree so parallel worktrees don't collide (VS Code remembers your last entry).",
+      "default": "7990"
+    }
+  ]
+}

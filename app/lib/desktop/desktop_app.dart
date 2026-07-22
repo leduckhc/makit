@@ -25,6 +25,7 @@ import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
 import '../shortcuts/keymap_controller.dart';
 import '../store/connection.dart';
+import '../store/secure_store.dart';
 import '../store/store.dart';
 import '../ui/widgets/srv_request_handler.dart';
 import 'chat/desktop_auto_select.dart';
@@ -36,6 +37,7 @@ import 'chat/loopback_pairing.dart';
 import 'chat/panes/pane_tree_controller.dart';
 import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
+import 'daemon/server_profile.dart';
 import 'desktop_controller.dart';
 import 'screens/providers.dart';
 import 'settings/prefs/preference_entries.dart';
@@ -50,30 +52,41 @@ final desktopControllerProvider = Provider<DesktopController>(
   (ref) => throw UnimplementedError('overridden in runDesktopApp'),
 );
 
+/// The isolated server profile this app instance runs against (per build).
+/// Self-derives from the running executable by default (so widget tests need no
+/// override); [runDesktopApp] overrides it with the already-derived profile.
+final serverProfileProvider = Provider<ServerProfile>(
+  (ref) => ServerProfile.resolve(),
+);
+
 /// Navigator for the chat window, so the sidebar can push the Settings/Server
 /// page from a callback created above the [Navigator].
 final _desktopNavKey = GlobalKey<NavigatorState>();
-
-String _controlSocketPath() {
-  final home = Platform.environment['HOME'] ?? '';
-  return '$home/.makit/control.sock';
-}
 
 /// Boots the macOS desktop control app.
 Future<void> runDesktopApp() async {
   WidgetsFlutterBinding.ensureInitialized();
   await windowManager.ensureInitialized();
 
-  final socketPath = _controlSocketPath();
+  // Per-build isolation: a `main` build and a worktree build each get their own
+  // MAKIT_HOME, port, prefs namespace, and window label so two windows never
+  // collide. The installed app keeps the historical ~/.makit + 7777 defaults.
+  final profile = ServerProfile.resolve();
+
+  final socketPath = profile.controlSocketPath;
   final client = ReconnectingControlClient(
     create: () => MakitControlClient(socketPath: socketPath),
     connect: (c) => (c as MakitControlClient).connect(),
     dispose: (c) => (c as MakitControlClient).dispose(),
   );
+  // Namespace SharedPreferences per profile (dev builds only) so a worktree
+  // window's settings don't overwrite main's. Must run before getInstance().
+  if (!profile.isDefault) SharedPreferences.setPrefix(profile.prefsPrefix);
   final prefs = await SharedPreferences.getInstance();
   final configController = ServerConfigController(
     prefs,
-    ServerConfigController.load(prefs),
+    ServerConfigController.load(prefs, defaultPort: profile.port),
+    defaultPort: profile.port,
   );
   final lifecycle = DaemonLifecycle(
     resolver: MakitCliResolver(
@@ -81,6 +94,9 @@ Future<void> runDesktopApp() async {
       // change takes effect without an app restart).
       overridePath: () => configController.current.cliPath,
     ),
+    // Pass MAKIT_HOME so the spawned daemon writes its socket/pid/db under this
+    // profile's home — matching the control socket the app connects to above.
+    environment: profile.environment,
   );
   final keymapController = KeymapController.load(
     prefs,
@@ -115,10 +131,10 @@ Future<void> runDesktopApp() async {
   // the CLI, or crashes underneath us.
   controller.startPolling();
 
-  const options = WindowOptions(
-    size: Size(1120, 760),
+  final options = WindowOptions(
+    size: const Size(1120, 760),
     center: true,
-    title: '',
+    title: profile.windowTitle,
     // Frameless look: hide the OS titlebar and let Flutter draw to the top of
     // the window. On macOS the traffic-light buttons stay; the sidebar header
     // (a DragToMoveArea) insets below them and doubles as the window drag
@@ -129,6 +145,8 @@ Future<void> runDesktopApp() async {
     windowManager.waitUntilReadyToShow(options, () async {
       await windowManager.show();
       await windowManager.focus();
+      // Distinguish windows in Cmd-Tab / the Window menu / Mission Control.
+      await windowManager.setTitle(profile.windowTitle);
     }),
   );
 
@@ -138,6 +156,13 @@ Future<void> runDesktopApp() async {
       overrides: [
         controlClientProvider.overrideWithValue(client),
         desktopControllerProvider.overrideWithValue(controller),
+        serverProfileProvider.overrideWithValue(profile),
+        // Per-profile pairing bearer so main and worktree builds never clobber
+        // each other's stored server (a shared bearer wedged the app into
+        // permanent "Reconnecting").
+        secureStorageProvider.overrideWithValue(
+          defaultSecureStore(namespace: profile.isDefault ? null : profile.id),
+        ),
         serverConfigProvider.overrideWith((ref) => configController),
         keymapProvider.overrideWith((ref) => keymapController),
         preferencesControllerProvider.overrideWith(
