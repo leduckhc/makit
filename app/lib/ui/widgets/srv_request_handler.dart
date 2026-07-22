@@ -16,9 +16,9 @@ import '../../app/router.dart';
 import '../../notifications/notification_observer.dart';
 import '../../notifications/notification_request.dart';
 import '../../store/connection.dart';
+import '../../store/elicitation.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
-import 'srv_dialogs/ask_wizard.dart';
 
 // Re-export the wizard's test entrypoint so existing importers of
 // `srv_request_handler.dart` keep resolving it after the SPEC-19 split.
@@ -244,15 +244,8 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
   Future<void> _presentDialog(Envelope env) async {
     final kind = env.body['kind'] as String? ?? 'unknown';
 
-    // Use the app's Navigator, not this widget's context — we're above it.
-    final navCtx = (widget.navigatorKey ?? makitNavigatorKey).currentContext;
-    if (navCtx == null) return;
-
-    // Normalise: pi's "askUserQuestion" tool can arrive as either
-    //   { question, options, multi?, recommended? }                 (single)
-    //   { questions: [{header, question, options, multi?, ...}] }   (wizard)
-    // We support both — the wizard form is what the Anthropic-standard
-    // schema uses and what pi's LLM training expects.
+    // askUserQuestion renders inline (SPEC-25) — it needs no Navigator, so
+    // handle it before the navigator-context guard below.
     if (kind == 'askUserQuestion') {
       final questions = _normaliseQuestions(env.body);
       if (questions.isEmpty) {
@@ -264,9 +257,23 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
         });
         return;
       }
-      await _showAskUserQuestion(navCtx, env.id, questions);
+      // The desktop reminder timer (scheduled in _dispatch) and _onResponded
+      // cleanup still apply; the store answers via the connection's respondTo.
+      ref
+          .read(elicitationControllerProvider.notifier)
+          .add(
+            PendingAsk(
+              requestId: env.id,
+              sessionId: env.body['sessionId'] as String? ?? '',
+              questions: questions,
+            ),
+          );
       return;
     }
+
+    // Use the app's Navigator, not this widget's context — we're above it.
+    final navCtx = (widget.navigatorKey ?? makitNavigatorKey).currentContext;
+    if (navCtx == null) return;
 
     if (kind == 'confirmAction') {
       await _showConfirmAction(navCtx, env.id, env.body);
@@ -302,41 +309,6 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
       ];
     }
     return const [];
-  }
-
-  Future<void> _showAskUserQuestion(
-    BuildContext ctx,
-    String requestId,
-    List<Map<String, dynamic>> questions,
-  ) async {
-    final result = await _showTrackedDialog<Map<String, dynamic>?>(
-      requestId: requestId,
-      context: ctx,
-      barrierDismissible: false,
-      builder: (dctx) => AskWizard(questions: questions),
-    );
-
-    if (result == null) {
-      // User cancelled — still send a canonical-shaped response so the
-      // connector can dispatch back to the agent cleanly.
-      _respond(requestId, SrvResponse.cancelled('askUserQuestion'));
-      return;
-    }
-    // result is already canonical {indices, answers}; the builder adds `kind`
-    // and (for the single-question form) a convenience `answer`.
-    final indices = (result['indices'] as List).cast<int>();
-    final answers = (result['answers'] as List).cast<String>();
-    final answer = (questions.length == 1 && answers.isNotEmpty)
-        ? answers.first
-        : null;
-    _respond(
-      requestId,
-      SrvResponse.askUserQuestion(
-        indices: indices,
-        answers: answers,
-        answer: answer,
-      ),
-    );
   }
 
   Future<void> _showConfirmAction(

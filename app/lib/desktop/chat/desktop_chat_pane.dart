@@ -5,9 +5,11 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/models.dart';
+import '../../store/elicitation.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
+import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
@@ -118,7 +120,17 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     });
   }
 
-  Future<void> _handleSend(String sessionId, String text) async {
+  Future<void> _handleSend(
+    String sessionId,
+    String text, [
+    PendingAsk? pendingAsk,
+  ]) async {
+    if (pendingAsk != null && pendingAsk.freeText) {
+      ref
+          .read(elicitationControllerProvider.notifier)
+          .submitFreeText(pendingAsk.requestId, text);
+      return;
+    }
     if (text.startsWith('/')) {
       final handled = await handleClientCommand(
         text,
@@ -199,6 +211,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     }
 
     final running = session.status == SessionStatus.running;
+    final pendingAsk = ref.watch(pendingAskProvider(sessionId));
 
     return Column(
       children: [
@@ -220,17 +233,22 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // lazily as the user scrolls up.
                   reverse: true,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  itemCount: items.length + (running ? 1 : 0),
+                  itemCount:
+                      items.length + (running || pendingAsk != null ? 1 : 0),
                   itemBuilder: (context, i) {
-                    // Reversed: i counts up from the bottom. When running,
-                    // i == 0 is the trailing "working…" indicator.
-                    final bool isIndicator = running && i == 0;
-                    final ChatItem? item = isIndicator
+                    // Reversed: i counts up from the bottom. The trailing row
+                    // (i == 0) is either the "working…" indicator (running) or
+                    // the inline ask card (awaiting an answer).
+                    final bool trailing = running || pendingAsk != null;
+                    final bool isTrailer = trailing && i == 0;
+                    final ChatItem? item = isTrailer
                         ? null
-                        : items[items.length - 1 - (running ? i - 1 : i)];
-                    final Widget child = item == null
-                        ? const WorkingIndicator()
-                        : chatItemWidget(item);
+                        : items[items.length - 1 - (trailing ? i - 1 : i)];
+                    final Widget child = !isTrailer
+                        ? chatItemWidget(item!)
+                        : (running
+                              ? const WorkingIndicator()
+                              : AskCard(ask: pendingAsk!));
                     // Center each row within the same readable-width cap as
                     // the composer, so the transcript column lines up with the
                     // input instead of stretching edge-to-edge. The ListView
@@ -240,7 +258,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     // expand/collapse state stays with the right call as the
                     // reversed list reorders.
                     return KeyedSubtree(
-                      key: item == null ? null : chatItemKey(item),
+                      key: !isTrailer
+                          ? chatItemKey(item!)
+                          : (running
+                                ? null
+                                : ValueKey('ask-${pendingAsk!.requestId}')),
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(
@@ -289,9 +311,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     // leaf id → same pane state) recreates the composer and
                     // re-seeds initialText, instead of leaking s1's text into s2.
                     key: ValueKey(sessionId),
+                    enabled: pendingAsk == null || pendingAsk.freeText,
                     controller: _composerControllerFor(sessionId),
                     commands: ref.watch(commandsProvider(sessionId)),
-                    onSend: (text) => _handleSend(sessionId, text),
+                    onSend: (text) => _handleSend(sessionId, text, pendingAsk),
                     onCancel: () => _cancelTurn(sessionId),
                     running: running,
                     alwaysExpanded: true,

@@ -11,6 +11,7 @@ import 'package:makit/notifications/notification_observer.dart';
 import 'package:makit/notifications/notification_request.dart';
 import 'package:makit/notifications/notification_service.dart';
 import 'package:makit/store/connection.dart';
+import 'package:makit/store/elicitation.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/transport/transport.dart';
 import 'package:makit/ui/widgets/srv_request_handler.dart';
@@ -408,7 +409,7 @@ void main() {
   );
 
   testWidgets(
-    'desktop mode shows the dialog immediately even when backgrounded',
+    'desktop mode surfaces askUserQuestion inline (no dialog, no notification)',
     (tester) async {
       final (transport, notifications, _) = await pumpHandler(
         tester,
@@ -436,14 +437,16 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      // No diversion to a notification while backgrounded — the dialog route
-      // is pushed instead. Settle its entrance animation to confirm it shows.
+      // No diversion to a notification, and no modal — the ask is pushed into
+      // the elicitation store for inline rendering in the transcript.
       expect(notifications.shown, isEmpty);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsOneWidget);
-      expect(find.text('Deploy to prod?'), findsOneWidget);
-      expect(notifications.shown, isEmpty);
+      expect(find.byType(AlertDialog), findsNothing);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(SrvRequestHandler)),
+      );
+      final ask = container.read(pendingAskProvider('s1'));
+      expect(ask, isNotNull);
+      expect(ask!.questions.first['question'], 'Deploy to prod?');
     },
   );
 

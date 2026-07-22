@@ -5,10 +5,12 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
+import '../../store/elicitation.dart';
 import '../../store/store.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
+import 'ask_card.dart';
 import 'chat_transcript.dart';
 import 'chat_metrics.dart';
 import '../widgets/connection_chip.dart';
@@ -41,6 +43,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
+    final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
 
     ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
       prev,
@@ -104,16 +107,25 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               ),
               itemCount:
                   items.length +
-                  (session?.status == SessionStatus.running ? 1 : 0),
+                  ((session?.status == SessionStatus.running ||
+                          pendingAsk != null)
+                      ? 1
+                      : 0),
               itemBuilder: (context, i) {
-                // Reversed: i counts up from the visual bottom. When running,
-                // i == 0 is the trailing "working…" indicator sitting just
-                // below the newest message.
+                // Reversed: i counts up from the visual bottom. The trailing
+                // row (i == 0) is either the "working…" indicator (running) or
+                // the inline ask card (awaiting an answer) — never both, since
+                // an awaiting session isn't running.
                 final running = session?.status == SessionStatus.running;
-                if (running && i == 0) {
-                  return transcriptRow(const WorkingIndicator());
+                final trailing = running || pendingAsk != null;
+                if (trailing && i == 0) {
+                  if (running) return transcriptRow(const WorkingIndicator());
+                  return KeyedSubtree(
+                    key: ValueKey('ask-${pendingAsk!.requestId}'),
+                    child: transcriptRow(AskCard(ask: pendingAsk)),
+                  );
                 }
-                final index = items.length - 1 - (running ? i - 1 : i);
+                final index = items.length - 1 - (trailing ? i - 1 : i);
                 final item = items[index];
                 return KeyedSubtree(
                   key: chatItemKey(item),
@@ -243,8 +255,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   // as the top bar.
                   child: Composer(
                     glass: true,
+                    enabled: pendingAsk == null || pendingAsk.freeText,
                     commands: ref.watch(commandsProvider(widget.sessionId)),
-                    onSend: (text) => _handleSend(text),
+                    onSend: (text) => _handleSend(text, pendingAsk),
                     running: session?.status == SessionStatus.running,
                     onCancel: _cancelTurn,
                     footerActions: [
@@ -391,7 +404,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     );
   }
 
-  Future<void> _handleSend(String text) async {
+  Future<void> _handleSend(String text, [PendingAsk? pendingAsk]) async {
+    // Free-text answer to an inline ask: route to the elicitation response
+    // instead of sending a normal message (single-question only).
+    if (pendingAsk != null && pendingAsk.freeText) {
+      ref
+          .read(elicitationControllerProvider.notifier)
+          .submitFreeText(pendingAsk.requestId, text);
+      return;
+    }
     if (text.startsWith('/')) {
       final handled = await handleClientCommand(
         text,
