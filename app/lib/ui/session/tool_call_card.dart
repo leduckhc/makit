@@ -7,9 +7,9 @@ import 'tool_renderers.dart';
 
 /// Inline, collapsible tool-call row. Mirrors `ThinkingLine`: collapsed it is a
 /// single one-liner (tool icon + summary + status + a trailing disclosure
-/// caret); tapping anywhere on the header toggles between the collapsed
-/// one-liner and the expanded [ToolRenderer.body]. Long bodies are capped at
-/// [kToolExpandedMaxHeight] and scroll internally.
+/// caret shown on hover); tapping anywhere on the header toggles between the
+/// collapsed one-liner and the expanded [ToolRenderer.body]. Long bodies are
+/// capped at [kToolExpandedMaxHeight] and scroll internally.
 class ToolCallCard extends StatefulWidget {
   const ToolCallCard({super.key, required this.item});
 
@@ -21,6 +21,7 @@ class ToolCallCard extends StatefulWidget {
 
 class _ToolCallCardState extends State<ToolCallCard> {
   bool _expanded = false;
+  bool _hovered = false;
   final ScrollController _bodyScroll = ScrollController();
 
   void _toggle() => setState(() => _expanded = !_expanded);
@@ -59,6 +60,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
       onTapHint: _expanded ? 'Collapse tool call' : 'Expand tool call',
       child: InkWell(
         onTap: _toggle,
+        onHover: (h) => setState(() => _hovered = h),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: _buildRow(riskIcon, riskColor),
@@ -118,14 +120,19 @@ class _ToolCallCardState extends State<ToolCallCard> {
     };
 
     // Disclosure caret lives at the trailing (right) edge; points right when
-    // collapsed and rotates down when expanded.
-    final caret = AnimatedRotation(
-      turns: _expanded ? 0.25 : 0,
-      duration: const Duration(milliseconds: 150),
-      child: Icon(
-        PhosphorIconsLight.caretRight,
-        size: 13,
-        color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+    // collapsed and rotates down when expanded. Only visible on hover (its
+    // space is reserved so the row never reflows).
+    final caret = AnimatedOpacity(
+      opacity: _hovered ? 1 : 0,
+      duration: const Duration(milliseconds: 120),
+      child: AnimatedRotation(
+        turns: _expanded ? 0.25 : 0,
+        duration: const Duration(milliseconds: 150),
+        child: Icon(
+          PhosphorIconsLight.caretRight,
+          size: 13,
+          color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+        ),
       ),
     );
 

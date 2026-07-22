@@ -108,6 +108,43 @@ void main() {
     expect(find.text('Ran echo hi'), findsOneWidget);
   });
 
+  testWidgets('disclosure caret is hidden until the row is hovered', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'bash',
+        args: const {'command': 'echo hi'},
+        output: 'hi',
+        ended: true,
+        exitCode: 0,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: ToolCallCard(item: item)),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      double caretOpacity() =>
+          tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity;
+      expect(caretOpacity(), 0);
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.byType(ToolCallCard)));
+      await tester.pumpAndSettle();
+      expect(caretOpacity(), 1);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets('hovering an expanded tool body does not crash the Scrollbar', (
     tester,
   ) async {
