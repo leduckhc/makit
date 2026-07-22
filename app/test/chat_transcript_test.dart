@@ -3,6 +3,8 @@
 /// list of [ChatItem]s to the expected widget types.
 library;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
@@ -98,6 +100,62 @@ void main() {
     await tester.tap(find.byType(Icon).first);
     await tester.pumpAndSettle();
     expect(find.text('Command'), findsNothing);
+  });
+
+  testWidgets('hovering an expanded tool body does not crash the Scrollbar', (
+    tester,
+  ) async {
+    // The bug is desktop-only: Material scrollbars are hover-interactive on
+    // macOS/desktop, so reproduce under that platform. Reset before the body
+    // ends (framework asserts foundation vars are unset), hence try/finally.
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'bash',
+        args: const {'command': 'echo hi'},
+        // Long output so the body overflows kToolExpandedMaxHeight and the
+        // Scrollbar thumb becomes interactive (hover would otherwise no-op).
+        output: List.generate(200, (i) => 'line $i').join('\n'),
+        ended: true,
+        exitCode: 0,
+      );
+      // Outer transcript uses its OWN controller (like the real surfaces), so
+      // the PrimaryScrollController is empty. A bare inner Scrollbar would grab
+      // that empty controller and assert on hover; the dedicated body
+      // controller prevents it.
+      final outer = ScrollController();
+      addTearDown(outer.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ListView(
+              controller: outer,
+              children: [transcriptRow(chatItemWidget(item))],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Ran echo hi'));
+      await tester.pumpAndSettle();
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.byType(ToolCallCard)));
+      await tester.pumpAndSettle();
+      // Then over the scrollbar thumb at the body's right edge.
+      final rect = tester.getRect(find.byType(ToolCallCard));
+      await gesture.moveTo(Offset(rect.right - 2, rect.center.dy));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('tool expansion state follows callId, not list position', (

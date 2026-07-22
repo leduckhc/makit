@@ -21,8 +21,15 @@ class ToolCallCard extends StatefulWidget {
 
 class _ToolCallCardState extends State<ToolCallCard> {
   bool _expanded = false;
+  final ScrollController _bodyScroll = ScrollController();
 
   void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  void dispose() {
+    _bodyScroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +64,9 @@ class _ToolCallCardState extends State<ToolCallCard> {
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: kToolExpandedMaxHeight),
           child: Scrollbar(
+            controller: _bodyScroll,
             child: SingleChildScrollView(
+              controller: _bodyScroll,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: body,
