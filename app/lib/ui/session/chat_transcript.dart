@@ -17,6 +17,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../store/models.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
+import 'ask_card.dart';
 import 'tool_call_card.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
@@ -48,9 +49,16 @@ Widget chatItemWidget(ChatItem item) => switch (item) {
   UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   ThinkingItem() => ThinkingLine(text: item.text),
+  // An answered askUserQuestion settles into a quiet resolved card (chosen
+  // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
+  ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
   ToolCallItem() => ToolCallCard(item: item),
   ErrorItem() => ErrorBanner(message: item.message),
 };
+
+/// A persisted, answered `askUserQuestion` tool call.
+bool _isAnsweredAsk(ToolCallItem item) =>
+    item.ended && item.name.toLowerCase() == 'askuserquestion';
 
 /// Stable identity for a chat item's transcript row. Applied by each surface at
 /// the **ListView child level** (via `KeyedSubtree`) so stateful rows

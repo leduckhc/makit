@@ -17,10 +17,12 @@ Only `askUserQuestion` moves inline. `confirmAction`, `input`, and generic
 
 ## Locked UX decisions
 
-1. **Resolved state = fold to a one-liner.** After answering, the inline card is
-   removed; the already-persisted `askUserQuestion` `ToolCallItem` represents it
-   as a collapsed tool row (`_AskUserQuestionRenderer` + the SPEC-24 fold). No new
-   resolved widget is needed.
+1. **Resolved state = a quiet resolved card.** After answering, the live inline
+   card is removed and the persisted (ended) `askUserQuestion` `ToolCallItem`
+   renders as a neutral-bordered `AnsweredAskCard` (chosen option highlighted,
+   the rest dimmed) — the answered form matching the old `_AskUserQuestionRenderer`
+   — shown inline as history while the agent's turn continues below. It does
+   **not** fold to a one-liner (superseded).
 2. **Composer paused while awaiting**, with a hint ("Answer the question above…").
    The ask card offers a **"Type a different answer"** affordance; choosing it
    switches the session into *free-text answer mode* — the composer is re-enabled
@@ -142,8 +144,9 @@ deadlock the user.
 ## Non-goals
 
 - No change to `confirmAction`, `input`, or generic `srv.request` (stay modal).
-- No new resolved/answered widget — decision #1 reuses the persisted folded tool
-  row (`_AskUserQuestionRenderer`).
+- Decision #1 renders answered `askUserQuestion` tool calls as a dedicated
+  `AnsweredAskCard` (routed in `chatItemWidget`), bypassing the SPEC-24 tool-row
+  fold for that tool name.
 - No free-text for **multi-question** asks (option selection required there).
 - No server/protocol/notification-payload change; mobile background notifications
   and desktop reminders are untouched.

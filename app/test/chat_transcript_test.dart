@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/ui/session/ask_card.dart';
 import 'package:makit/ui/session/chat_message.dart';
 import 'package:makit/ui/session/chat_metrics.dart';
 import 'package:makit/ui/session/chat_transcript.dart';
@@ -303,6 +304,35 @@ void main() {
           );
         },
       );
+    },
+  );
+
+  testWidgets(
+    'answered askUserQuestion renders as a resolved card, not a tool row',
+    (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'askUserQuestion',
+        args: const {
+          'question': 'Which CI?',
+          'options': [
+            {'label': 'GitHub Actions'},
+            {'label': 'CircleCI'},
+          ],
+        },
+        details: const {
+          'answers': ['GitHub Actions'],
+        },
+        ended: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: chatItemWidget(item))),
+      );
+      await tester.pump();
+      expect(find.byType(AnsweredAskCard), findsOneWidget);
+      expect(find.byType(ToolCallCard), findsNothing);
     },
   );
 }

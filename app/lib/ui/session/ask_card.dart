@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/elicitation.dart';
+import '../../store/models.dart';
 import 'chat_metrics.dart';
 
 class AskCard extends ConsumerStatefulWidget {
@@ -335,6 +336,204 @@ class _AskOption extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Quiet resolved state for an answered `askUserQuestion` (SPEC-25 decision #1):
+/// a neutral-bordered card with the chosen option highlighted and the rest
+/// dimmed — the answered form matching the old `_AskUserQuestionRenderer`, shown
+/// inline as history while the agent's turn continues below. Rendered for the
+/// persisted (ended) tool call, not the live [AskCard].
+class AnsweredAskCard extends StatelessWidget {
+  const AnsweredAskCard({super.key, required this.item});
+  final ToolCallItem item;
+
+  /// Questions in the wizard form, accepting both the array and single shapes.
+  List<Map<String, dynamic>> _questions() {
+    final raw = item.args['questions'];
+    if (raw is List) {
+      return raw
+          .whereType<Map<dynamic, dynamic>>()
+          .map(Map<String, dynamic>.from)
+          .toList();
+    }
+    if (item.args['question'] is String) {
+      return [
+        {
+          'header': item.args['header'],
+          'question': item.args['question'],
+          'options': item.args['options'],
+        },
+      ];
+    }
+    return const [];
+  }
+
+  /// Chosen answer labels for question [i]; multi-select arrives joined by " + ".
+  Set<String> _chosen(int i) {
+    final answers = (item.details?['answers'] as List?)?.cast<dynamic>();
+    if (answers == null || i >= answers.length) return const {};
+    return answers[i].toString().split(' + ').map((s) => s.trim()).toSet();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final questions = _questions();
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainer,
+        border: Border.all(color: cs.outlineVariant),
+        borderRadius: BorderRadius.circular(kChatRadiusMedium),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                PhosphorIconsLight.checkCircle,
+                size: 16,
+                color: cs.onSurfaceVariant,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Answered',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          for (var qi = 0; qi < questions.length; qi++)
+            _AnsweredQuestion(
+              question: questions[qi],
+              chosen: _chosen(qi),
+              first: qi == 0,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnsweredQuestion extends StatelessWidget {
+  const _AnsweredQuestion({
+    required this.question,
+    required this.chosen,
+    required this.first,
+  });
+  final Map<String, dynamic> question;
+  final Set<String> chosen;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    final options =
+        (question['options'] as List?)
+            ?.whereType<Map<dynamic, dynamic>>()
+            .map(Map<String, dynamic>.from)
+            .toList() ??
+        const [];
+    // Free-text / "Other" answers won't match an option — surface them too.
+    final extras = chosen
+        .where((a) => !options.any((o) => o['label']?.toString() == a))
+        .toList();
+    return Padding(
+      padding: EdgeInsets.only(top: first ? 8 : 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            question['question']?.toString() ?? '',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          for (final opt in options)
+            _AnsweredOption(
+              label: opt['label']?.toString() ?? '',
+              description: opt['description']?.toString(),
+              chosen: chosen.contains(opt['label']?.toString()),
+            ),
+          for (final ans in extras)
+            _AnsweredOption(label: ans, description: null, chosen: true),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnsweredOption extends StatelessWidget {
+  const _AnsweredOption({
+    required this.label,
+    required this.chosen,
+    this.description,
+  });
+  final String label;
+  final String? description;
+  final bool chosen;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    // Chosen: highlighted (primaryContainer + filled check). Rest: dimmed.
+    final tile = Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: chosen ? cs.primaryContainer : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: chosen
+              ? cs.primary.withValues(alpha: 0.5)
+              : Colors.transparent,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            chosen ? PhosphorIconsFill.checkCircle : PhosphorIconsLight.circle,
+            size: 18,
+            color: chosen ? cs.primary : cs.outline,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontWeight: chosen ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 13.5,
+                  ),
+                ),
+                if (description != null && description!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      description!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    // Dim the whole non-chosen row (mockup §D: chosen highlighted, rest dimmed).
+    return Semantics(
+      checked: chosen,
+      label: label,
+      child: chosen ? tile : Opacity(opacity: 0.5, child: tile),
     );
   }
 }
