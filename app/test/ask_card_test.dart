@@ -163,6 +163,19 @@ void main() {
     expect(find.text('GitHub Actions'), findsNothing);
   });
 
+  testWidgets('free-text mode keeps a Skip escape hatch', (tester) async {
+    await pump(tester, single());
+    await tester.tap(find.text('Type a different answer'));
+    await tester.pumpAndSettle();
+
+    // Skip is still available so the user can bail without typing.
+    expect(find.widgetWithText(TextButton, 'Skip'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Skip'));
+    await tester.pumpAndSettle();
+    final (_, body) = responses.single;
+    expect(body['cancelled'], true);
+  });
+
   testWidgets('Skip cancels the ask', (tester) async {
     await pump(tester, single());
     await tester.tap(find.widgetWithText(TextButton, 'Skip'));

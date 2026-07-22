@@ -47,6 +47,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
     final items = ref.watch(chatItemsProvider(widget.sessionId));
     final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
+    // Clear the dedicated free-text answer controller whenever the ask ends or
+    // leaves free-text mode, so a later answer composer never reopens with a
+    // stale draft.
+    ref.listen(pendingAskProvider(widget.sessionId), (prev, next) {
+      if (next == null || !next.freeText) _answerController.clear();
+    });
     final trailer = trailerFor(
       running: session?.status == SessionStatus.running,
       awaiting: pendingAsk != null,

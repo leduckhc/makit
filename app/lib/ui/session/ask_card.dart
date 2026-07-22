@@ -144,9 +144,21 @@ class _AskCardState extends ConsumerState<AskCard> {
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          if (ask.freeText)
-            _FreeTextNote(cs: cs)
-          else ...[
+          if (ask.freeText) ...[
+            _FreeTextNote(cs: cs),
+            const SizedBox(height: 4),
+            // Keep an escape hatch: the composer is enabled for typing, but a
+            // user who changes their mind can still cancel the ask from here.
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => ref
+                    .read(elicitationControllerProvider.notifier)
+                    .cancel(ask.requestId),
+                child: const Text('Skip'),
+              ),
+            ),
+          ] else ...[
             for (var i = 0; i < opts.length; i++)
               _AskOption(
                 label: opts[i]['label']?.toString() ?? '?',

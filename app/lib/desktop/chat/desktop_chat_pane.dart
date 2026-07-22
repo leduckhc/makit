@@ -215,6 +215,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     final running = session.status == SessionStatus.running;
     final pendingAsk = ref.watch(pendingAskProvider(sessionId));
+    // Clear the dedicated free-text answer controller when the ask ends or
+    // leaves free-text mode, so a later answer composer starts empty.
+    ref.listen(pendingAskProvider(sessionId), (prev, next) {
+      if (next == null || !next.freeText) _answerController.clear();
+    });
     final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
     final hasTrailer = trailer != TranscriptTrailer.none;
 

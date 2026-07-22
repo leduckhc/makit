@@ -205,18 +205,18 @@
   <section class="issue">
     <header>
       <h2><span class="tag">B</span>Question types</h2>
-      <p>Single-select can answer on tap (no Submit needed); multi-select shows checkboxes + a Submit; a free-text row covers "Other". Same <code>{label, description, recommended}</code> option shape as the wizard.</p>
+      <p>Single-select requires an explicit Submit (no answer-on-tap); multi-select shows checkboxes + a Submit; a free-text row covers "Other". Same <code>{label, description, recommended}</code> option shape as the wizard.</p>
     </header>
     <div class="grid">
       <div class="cell">
-        <div class="lbl">Single-select — tap to answer</div>
+        <div class="lbl">Single-select — select + Submit</div>
         <div class="pane"><div class="col-inner">
           <div class="ask">
             <div class="ahead"><span class="qico">__QUESTION__</span><span class="kicker">Migration</span></div>
             <div class="q">Apply the DB migration now?</div>
-            <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">Yes, run it</div></div></div>
+            <div class="opt sel"><span class="box">__RADIO_ON__</span><div class="otext"><div class="olabel">Yes, run it</div></div></div>
             <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">No, just generate the SQL</div></div></div>
-            <div class="hint" style="margin-top:8px;margin-bottom:0">Tap an option to answer.</div>
+            <div class="actions"><span class="spacer"></span><button class="btn btn-text">Skip</button><button class="btn btn-primary">Submit</button></div>
           </div>
         </div></div>
       </div>
