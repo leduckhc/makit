@@ -91,15 +91,21 @@ void main() {
     await tester.tap(find.text('Ran echo hi'));
     await tester.pumpAndSettle();
 
-    // Expanded: body sections appear inside a bounded scroll region.
+    // Expanded: header collapses to just the verb; body sections appear inside
+    // a bounded scroll region.
     expect(find.text('Command'), findsOneWidget);
     expect(find.text('Output'), findsOneWidget);
     expect(find.byType(SingleChildScrollView), findsWidgets);
+    // The full command moved into the body, so the header now reads just 'Ran'.
+    expect(find.text('Ran'), findsOneWidget);
+    expect(find.text('Ran echo hi'), findsNothing);
 
-    // Tapping anywhere on the header (here: the summary text) collapses it.
-    await tester.tap(find.text('Ran echo hi'));
+    // Tapping anywhere on the header (here: the verb label) collapses it, and
+    // the full one-liner summary returns.
+    await tester.tap(find.text('Ran'));
     await tester.pumpAndSettle();
     expect(find.text('Command'), findsNothing);
+    expect(find.text('Ran echo hi'), findsOneWidget);
   });
 
   testWidgets('hovering an expanded tool body does not crash the Scrollbar', (

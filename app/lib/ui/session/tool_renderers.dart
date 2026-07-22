@@ -57,6 +57,11 @@ abstract class ToolRenderer {
   /// `Edited <path>`, `Read <path>`. Defaults to [displayName].
   String summaryLine(ToolCallItem item) => displayName;
 
+  /// Short header label shown when the row is **expanded** — just the verb
+  /// (`Ran`, `Read`, `Edited`, …), since the full command/path/argument is
+  /// already visible in the body. Defaults to [displayName].
+  String label(ToolCallItem item) => displayName;
+
   /// Expanded body sections shown inline when the row is opened. Default:
   /// readable args + result text.
   List<Widget> body(BuildContext context, ToolCallItem item) =>
@@ -101,6 +106,11 @@ List<Widget> genericToolBody(BuildContext context, ToolCallItem item) {
 /// [ToolRenderer.summaryLine] when registered, otherwise the raw tool name.
 String toolSummaryLine(ToolCallItem item) =>
     rendererFor(item)?.summaryLine(item) ?? item.name;
+
+/// Short header label for [item] shown when its row is expanded — the
+/// renderer's [ToolRenderer.label] when registered, otherwise the raw name.
+String toolLabel(ToolCallItem item) =>
+    rendererFor(item)?.label(item) ?? item.name;
 
 /// Titled section used in tool bodies.
 class ToolSection extends StatelessWidget {
@@ -332,6 +342,9 @@ class _ReadRenderer extends ToolRenderer {
       'Read ${item.args['path'] ?? '(no path)'}';
 
   @override
+  String label(ToolCallItem item) => 'Read';
+
+  @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
     final path = item.args['path']?.toString() ?? '(no path)';
     final content = extractToolResultText(item.output ?? item.deltas.join());
@@ -369,6 +382,9 @@ class _WriteRenderer extends ToolRenderer {
       'Wrote ${item.args['path'] ?? '(no path)'}';
 
   @override
+  String label(ToolCallItem item) => 'Wrote';
+
+  @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
     final path = item.args['path']?.toString() ?? '(no path)';
     final content =
@@ -396,6 +412,9 @@ class _EditRenderer extends ToolRenderer {
   @override
   String summaryLine(ToolCallItem item) =>
       'Edited ${item.args['path'] ?? '(no path)'}';
+
+  @override
+  String label(ToolCallItem item) => 'Edited';
 
   /// Read the "before"/"after" text from whichever key the agent used.
   /// Different agents name these differently (edit/StrReplace tools commonly
@@ -466,8 +485,11 @@ class _BashRenderer extends ToolRenderer {
   @override
   String summaryLine(ToolCallItem item) {
     final cmd = _oneLine(item.args['command']?.toString() ?? '');
-    return cmd.isEmpty ? 'bash' : 'Ran $cmd';
+    return cmd.isEmpty ? 'Ran' : 'Ran $cmd';
   }
+
+  @override
+  String label(ToolCallItem item) => 'Ran';
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
@@ -504,8 +526,11 @@ class _GrepRenderer extends ToolRenderer {
   @override
   String summaryLine(ToolCallItem item) {
     final pattern = _oneLine(item.args['pattern']?.toString() ?? '');
-    return pattern.isEmpty ? 'grep' : 'Grep $pattern';
+    return pattern.isEmpty ? 'Grep' : 'Grep $pattern';
   }
+
+  @override
+  String label(ToolCallItem item) => 'Grep';
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
@@ -553,6 +578,9 @@ class _MemoryRenderer extends ToolRenderer {
   }
 
   @override
+  String label(ToolCallItem item) => 'Memory';
+
+  @override
   List<Widget> body(BuildContext context, ToolCallItem item) {
     final args = item.args;
     final result = extractToolResultText(item.resultText);
@@ -587,6 +615,9 @@ class _SkillRenderer extends ToolRenderer {
         item.args['name']?.toString() ?? item.args['skill_id']?.toString();
     return name == null || name.isEmpty ? 'Skill' : 'Skill $name';
   }
+
+  @override
+  String label(ToolCallItem item) => 'Skill';
 
   @override
   List<Widget> body(BuildContext context, ToolCallItem item) {

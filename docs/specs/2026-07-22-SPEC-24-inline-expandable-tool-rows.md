@@ -89,18 +89,22 @@ abstract class ToolRenderer {
 - The `askUserQuestion` renderer returns its list of question/answer widgets as
   a body (no inner `Scaffold`/`ListView.separated`; the outer expander scrolls).
 
-Per-renderer `summaryLine`:
+Per-renderer `summaryLine` (collapsed) and `label` (expanded verb):
 
-| tool   | summary                                             |
-|--------|-----------------------------------------------------|
-| bash   | `Ran <command>` (first line, whitespace-collapsed)  |
-| edit   | `Edited <path>`                                      |
-| write  | `Wrote <path>`                                       |
-| read   | `Read <path>`                                        |
-| grep   | `Grep <pattern>`                                     |
-| memory | `Memory <action>` (`saved`/`searched`/…) or `Memory`|
-| skill  | `Skill <name>`                                       |
-| other  | `displayName` (raw tool name)                        |
+| tool   | collapsed `summaryLine`                             | expanded `label` |
+|--------|-----------------------------------------------------|------------------|
+| bash   | `Ran <command>` (first line, whitespace-collapsed)  | `Ran`            |
+| edit   | `Edited <path>`                                      | `Edited`         |
+| write  | `Wrote <path>`                                       | `Wrote`          |
+| read   | `Read <path>`                                        | `Read`           |
+| grep   | `Grep <pattern>`                                     | `Grep`           |
+| memory | `Memory <action>` or `Memory`                        | `Memory`         |
+| skill  | `Skill <name>` or `Skill`                            | `Skill`          |
+| other  | `displayName` (raw tool name)                        | `displayName`    |
+
+When expanded, the header shows only `label` (the verb) because the full
+command/path/argument is already visible in the body; collapsing restores the
+full `summaryLine`.
 
 ### Row identity (state preservation)
 

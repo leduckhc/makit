@@ -134,7 +134,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
         const SizedBox(width: 8),
         Expanded(
           child: Text(
-            toolSummaryLine(item),
+            _expanded ? toolLabel(item) : toolSummaryLine(item),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

@@ -106,6 +106,21 @@ void main() {
     });
   });
 
+  group('label — the short header shown when expanded', () {
+    test('registered tools expose just the verb', () {
+      expect(toolLabel(_tool('bash', {'command': 'echo hi'})), 'Ran');
+      expect(toolLabel(_tool('read', {'path': 'x'})), 'Read');
+      expect(toolLabel(_tool('write', {'path': 'x'})), 'Wrote');
+      expect(toolLabel(_tool('edit', {'path': 'x'})), 'Edited');
+      expect(toolLabel(_tool('grep', {'pattern': 'x'})), 'Grep');
+      expect(toolLabel(_tool('memory', {'action': 'add'})), 'Memory');
+      expect(toolLabel(_tool('skill', {'name': 'x'})), 'Skill');
+    });
+    test('unknown tools fall back to the raw name', () {
+      expect(toolLabel(_tool('lint', {})), 'lint');
+    });
+  });
+
   group('languageForPath', () {
     test('maps common extensions to highlight.js languages', () {
       expect(languageForPath('lib/main.dart'), 'dart');
