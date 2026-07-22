@@ -368,11 +368,20 @@ const ICONS = {
 // place, walking only text nodes — so element identity, <input> state, and any
 // listeners are preserved (vs. rewriting document.body.innerHTML wholesale).
 const PLACEHOLDER = /(__[A-Z0-9_]+__)/;
-const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+  acceptNode(node) {
+    // Skip this <script> (and any <style>) so we don't rewrite our own source
+    // — their text nodes contain the same placeholder tokens.
+    if (node.parentElement && node.parentElement.closest('script, style')) {
+      return NodeFilter.FILTER_REJECT;
+    }
+    return PLACEHOLDER.test(node.nodeValue)
+      ? NodeFilter.FILTER_ACCEPT
+      : NodeFilter.FILTER_SKIP;
+  },
+});
 const targets = [];
-while (walker.nextNode()) {
-  if (PLACEHOLDER.test(walker.currentNode.nodeValue)) targets.push(walker.currentNode);
-}
+while (walker.nextNode()) targets.push(walker.currentNode);
 for (const node of targets) {
   const frag = document.createDocumentFragment();
   for (const part of node.nodeValue.split(PLACEHOLDER)) {
