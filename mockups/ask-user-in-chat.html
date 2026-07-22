@@ -86,6 +86,7 @@
   .ask .ahead{display:flex;align-items:center;gap:8px;margin-bottom:2px}
   .ask .qico{width:18px;height:18px;flex:0 0 auto;color:var(--primary)}
   .ask .qico svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7}
+  .qico[style] svg{width:100%;height:100%}
   .ask .kicker{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--primary);font-weight:700}
   .ask .step{margin-left:auto;font-size:11px;color:var(--muted)}
   .ask .q{font-size:14px;font-weight:600;color:var(--text);margin:6px 0 12px;line-height:1.4}
@@ -302,41 +303,48 @@
     </div>
   </section>
 
-  <!-- AWAITING AFFORDANCE -->
+  <!-- FREE-TEXT: INLINE IN THE CARD -->
   <section class="issue">
     <header>
-      <h2><span class="tag">E</span>While awaiting — composer state</h2>
-      <p>The agent is blocked on the answer, so the composer shouldn't invite a normal message. Two options: (1) dim/disable it with a hint, or (2) keep it enabled so typing counts as a free-text answer to the open question.</p>
+      <h2><span class="tag">E</span>“Type a different answer” — inline in the card (not a dialog, not the composer)</h2>
+      <p><strong>Proposed change to decision #2.</strong> Today “type your own” either hands off to the main composer or (for pi's freeform fallback) pops a modal <code>input</code> dialog. Instead: tapping <em>Type a different answer</em> reveals a text field <strong>inside the ask card itself</strong>, with its own Send. The composer stays paused throughout; nothing leaves the card. On submit it resolves like any other answer and settles into the quiet resolved card (§D).</p>
     </header>
-    <div class="grid">
-      <div class="cell">
-        <div class="lbl">Option 1 — paused composer</div>
+    <div class="pair">
+      <div class="col before">
+        <div class="lbl">Collapsed — options + a free-text link</div>
         <div class="pane"><div class="col-inner">
-          <div class="ask" style="margin-bottom:12px">
+          <div class="ask">
             <div class="ahead"><span class="qico">__QUESTION__</span><span class="kicker">CI provider</span></div>
-            <div class="q" style="margin-bottom:8px">Which CI should I wire up?</div>
+            <div class="q">Which CI should I wire up?</div>
             <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">GitHub Actions</div></div></div>
             <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">CircleCI</div></div></div>
+            <div style="display:flex;align-items:center;gap:6px;margin:8px 2px 0;color:var(--primary);font-size:12.5px"><span class="qico" style="width:14px;height:14px">__PENCIL__</span> <span>Type a different answer</span></div>
+            <div class="actions"><span class="spacer"></span><button class="btn btn-text">Skip</button><button class="btn btn-primary">Submit</button></div>
           </div>
-          <div class="composer await-note">
+        </div></div>
+        <div class="note">A subtle link under the options. The composer below stays disabled with its hint.</div>
+      </div>
+      <div class="col after">
+        <div class="lbl">Expanded — inline text field revealed in the card</div>
+        <div class="pane"><div class="col-inner">
+          <div class="ask">
+            <div class="ahead"><span class="qico">__QUESTION__</span><span class="kicker">CI provider</span></div>
+            <div class="q">Which CI should I wire up?</div>
+            <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">GitHub Actions</div></div></div>
+            <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">CircleCI</div></div></div>
+            <!-- inline free-text row inside the card -->
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;border:1px solid rgba(126,232,166,.5);border-radius:9px;background:var(--container-highest)">
+              <span class="qico" style="width:15px;height:15px;color:var(--muted)">__PENCIL__</span>
+              <input style="flex:1;background:transparent;border:0;color:var(--text);font-size:13.5px;outline:none" value="Buildkite" />
+              <span class="send" style="width:28px;height:28px;background:var(--primary);color:#06210F">__ARROW__</span>
+            </div>
+            <div class="actions"><span class="spacer"></span><button class="btn btn-text">Cancel</button></div>
+          </div>
+          <div class="composer await-note" style="margin-top:12px">
             <div class="field" style="color:var(--primary)">Answer the question above to continue…</div>
           </div>
         </div></div>
-      </div>
-      <div class="cell">
-        <div class="lbl">Option 2 — typing = free-text answer</div>
-        <div class="pane"><div class="col-inner">
-          <div class="ask" style="margin-bottom:12px">
-            <div class="ahead"><span class="qico">__QUESTION__</span><span class="kicker">CI provider</span></div>
-            <div class="q" style="margin-bottom:8px">Which CI should I wire up?</div>
-            <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">GitHub Actions</div></div></div>
-            <div class="opt"><span class="box">__RADIO_OFF__</span><div class="otext"><div class="olabel">CircleCI</div></div></div>
-          </div>
-          <div class="composer" style="opacity:1">
-            <div class="field">Type an answer, or pick an option above…</div>
-            <div class="foot"><span class="chip">answering</span><span class="spacer"></span><span class="send">__ARROW__</span></div>
-          </div>
-        </div></div>
+        <div class="note">The field lives in the card; Enter or the arrow submits it as the answer. The main composer never takes over and no modal opens.</div>
       </div>
     </div>
   </section>
