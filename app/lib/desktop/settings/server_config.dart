@@ -153,12 +153,11 @@ class ServerConfigController extends StateNotifier<ServerConfig> {
   /// default to [ServerBindMode.auto]. A legacy host that was deliberately set
   /// to a non-loopback value migrates to [ServerBindMode.custom] so those
   /// users keep reaching their configured endpoint.
-  static ServerConfig load(SharedPreferences prefs) {
+  static ServerConfig load(SharedPreferences prefs, {int? defaultPort}) {
+    final fallbackPort = defaultPort ?? kDefaultServerPort;
     final port = prefs.getInt(_kPortKey);
     final cliPath = prefs.getString(_kCliPathKey) ?? '';
-    final resolvedPort = (port == null || port <= 0)
-        ? kDefaultServerPort
-        : port;
+    final resolvedPort = (port == null || port <= 0) ? fallbackPort : port;
 
     final modeStr = prefs.getString(_kBindModeKey);
     if (modeStr != null) {

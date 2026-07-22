@@ -531,7 +531,9 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 /// top-level tear-off so the constructor default doesn't shadow it.
 const BrowseLan _defaultBrowseLan = browseLan;
 
-final _secureStorageProvider = Provider<SecureStore>(
+/// The secure store for tokens/bearers. Public so the desktop composition root
+/// can override it with a per-profile file (see `runDesktopApp`).
+final secureStorageProvider = Provider<SecureStore>(
   // macOS: the desktop app ships ad-hoc signed ("Sign to Run Locally",
   // CODE_SIGN_IDENTITY = "-"), so any keychain item's ACL is bound to an
   // unstable code signature and macOS re-prompts for the login password on
@@ -551,7 +553,7 @@ final pushRegistrarProvider = Provider<PushRegistrar>(
 final connectionControllerProvider =
     StateNotifierProvider<ConnectionController, MakitConnState>((ref) {
       return ConnectionController(
-        ref.watch(_secureStorageProvider),
+        ref.watch(secureStorageProvider),
         pushRegistrar: ref.watch(pushRegistrarProvider),
       );
     });

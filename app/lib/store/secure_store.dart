@@ -90,11 +90,19 @@ class FileSecureStore implements SecureStore {
 
 /// Platform-appropriate [SecureStore]: [FileSecureStore] on macOS, otherwise
 /// [KeychainSecureStore] over the default [FlutterSecureStorage].
-SecureStore defaultSecureStore() {
+///
+/// [namespace] isolates the on-disk file per desktop server profile so two
+/// builds (e.g. `main` and a worktree) keep independent pairing bearers and
+/// never clobber each other. Null/empty → the shared default file (mobile and
+/// the installed desktop app).
+SecureStore defaultSecureStore({String? namespace}) {
   if (Platform.isMacOS) {
     final home = Platform.environment['HOME'] ?? '.';
+    final suffix = (namespace == null || namespace.isEmpty)
+        ? ''
+        : '.$namespace';
     final path =
-        '$home/Library/Application Support/dev.getmakit.app/secure_store.json';
+        '$home/Library/Application Support/dev.getmakit.app/secure_store$suffix.json';
     return FileSecureStore(File(path));
   }
   return const KeychainSecureStore(FlutterSecureStorage());

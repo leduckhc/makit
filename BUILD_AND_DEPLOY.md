@@ -171,6 +171,26 @@ flutter build macos --release
 # Output: build/macos/Build/Products/Release/makit.app
 ```
 
+#### Step 2.5: Bundle the `makit` CLI into the app
+
+The desktop app starts/stops the server by spawning the `makit` CLI. Ship a
+self-contained copy inside the bundle so users need no repo, global Node, or
+`tsx`. This is the resolver's preferred, zero-install path (see
+`app/lib/desktop/daemon/daemon_lifecycle.dart`, candidate
+`Contents/Resources/makit/makit`) and removes the legacy `~/.local/bin/makit`
+dev shim from the resolution path.
+
+```bash
+# From the repo root. Fetches the official Node runtime, compiles the server,
+# collects prod-only deps, and assembles Contents/Resources/makit/.
+scripts/bundle-makit-cli.sh \
+  "app/build/macos/Build/Products/Release/makit.app/Contents/Resources/makit"
+```
+
+Layout: `node` (official nodejs.org build — relocatable), `dist/` (compiled
+server), `node_modules/` (prod deps), and a `makit` shim that execs
+`./node ./dist/src/index.js "$@"`.
+
 #### Step 3: Create a Signed and Notarized DMG
 
 Create a build script `app/tool/build-macos-dmg.sh`:
@@ -185,9 +205,22 @@ TEAM_ID="RT8DP44B6N"
 APPLE_ID="your-apple-id@example.com"
 APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"  # app-specific password
 
-# Sign the app
+# Sign inside-out with the hardened runtime (required for notarization).
+# The bundled Node runtime is a Mach-O helper: sign it FIRST, with JIT
+# entitlements (V8 JITs at runtime), then the shim, then the whole app.
+echo "Signing bundled Node runtime..."
+codesign --force --options runtime \
+  --entitlements macos/Runner/BundledNode.entitlements \
+  --sign "$IDENTITY" \
+  "$FLUTTER_APP/Contents/Resources/makit/node"
+
+codesign --force --options runtime --sign "$IDENTITY" \
+  "$FLUTTER_APP/Contents/Resources/makit/makit"
+
+# Sign the app (NOT --deep: nested code is already signed above)
 echo "Signing makit.app..."
-codesign --deep --force --verify --verbose \
+codesign --force --options runtime --verify --verbose \
+  --entitlements macos/Runner/Release.entitlements \
   --sign "$IDENTITY" \
   "$FLUTTER_APP"
 

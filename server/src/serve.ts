@@ -25,11 +25,10 @@ import { DeviceRegistry } from "./pairing/registry.js";
 import { buildPairUrl } from "./pairing/url.js";
 import { MdnsAd } from "./pairing/mdns.js";
 import { mkdirSync, rmSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { createServerBackend } from "./daemon/backend.js";
 import { createControlServer, type ControlServerHandle } from "./daemon/control-server.js";
 import { readPidFile } from "./daemon/service.js";
-import { controlSocketPath, pidFilePath, logFilePath, ensureMakitHome } from "./daemon/paths.js";
+import { controlSocketPath, pidFilePath, logFilePath, ensureMakitHome, makitHome } from "./daemon/paths.js";
 
 /** makit version, read from package.json (best-effort). */
 const MAKIT_VERSION: string = (() => {
@@ -87,7 +86,11 @@ export function parseArgs(argv: string[]) {
     args.host = decision.host;
     args.bindMode = decision.mode;
   }
-  if (args.projects.length === 0) args.projects.push(process.cwd());
+  // No project auto-default. The daemon just starts; projects come from the
+  // persisted MAKIT_HOME/projects.json (loaded in runServe) and are added at
+  // runtime by the app via the `project.add` API. `--project` remains an
+  // optional convenience for terminal/dev/e2e use (the desktop app never
+  // passes it).
   return args;
 }
 
@@ -139,7 +142,7 @@ export async function runServe(opts: ServeArgs) {
   // (in-memory only, M0 behaviour).
   const store = opts.persist
     ? (() => {
-        const dbPath = process.env.MAKIT_DB_FILE ?? resolvePath(homedir(), ".makit", "makit.db");
+        const dbPath = process.env.MAKIT_DB_FILE ?? resolvePath(makitHome(), "makit.db");
         mkdirSync(dirname(dbPath), { recursive: true });
         console.log(`[makit] event log: ${dbPath}`);
         return new SqliteEventStore(dbPath);
