@@ -100,7 +100,17 @@ Per-renderer `summaryLine`:
 | grep   | `Grep <pattern>`                                     |
 | memory | `Memory <action>` (`saved`/`searched`/…) or `Memory`|
 | skill  | `Skill <name>`                                       |
-| other  | `displayName` + first non-empty scalar arg if useful |
+| other  | `displayName` (raw tool name)                        |
+
+### Row identity (state preservation)
+
+`ToolCallCard` (and `ThinkingLine`) are stateful (expanded/collapsed). In the
+reversed transcript `ListView.builder`, new items shift positions, so each
+surface **keys the ListView child** by item identity via `KeyedSubtree(key:
+chatItemKey(item), …)` (`tool-<callId>` for tool calls, `seq-<seq>` otherwise).
+Keying the leaf widget alone is insufficient — reconciliation happens at the
+ListView-child level (the `transcriptRow`/`Center` wrapper), so the key must live
+there or expand state migrates/resets to the wrong call as items stream in.
 
 ### Code blocks + syntax highlighting
 
@@ -165,8 +175,11 @@ cap; otherwise the parent handles the gesture.
 - Convert `ToolCallCard` to a stateful expandable row per the design; drop
   `onTap`. Keep risk-icon/status logic.
 
-### W3 — Wire-through (`chat_transcript.dart`, `session_screen.dart`, `desktop_chat_pane.dart`)
+### W3 — Wire-through + row keying (`chat_transcript.dart`, `session_screen.dart`, `desktop_chat_pane.dart`)
 - `chatItemWidget`: remove `onOpenTool`; `ToolCallItem() => ToolCallCard(item: item)`.
+- Add `chatItemKey(ChatItem)`; both surfaces wrap each ListView child in
+  `KeyedSubtree(key: chatItemKey(item), …)` so inline expand/collapse state
+  stays with the right call across reorders.
 - `session_screen.dart`: drop the `onOpenTool:` argument (remove the `context.go`
   tool route usage).
 - `desktop_chat_pane.dart`: drop `onOpenTool:`; delete `_openToolDetail` and the
@@ -208,6 +221,8 @@ cap; otherwise the parent handles the gesture.
 - Widget: an over-long body is capped at `kToolExpandedMaxHeight` and scrolls
   internally (a `Scrollbar`/`SingleChildScrollView` is present); a short body
   is not scrollable.
+- Widget: expanding one tool call then appending another does **not** migrate or
+  reset the first call's expanded state (keyed-row regression test).
 - Renderer bodies keep prior content (bash Command/Output, edit diff rows +
   `DiffText`, read/write content, grep results, generic args-as-rows).
 - Both surfaces compile without `onOpenTool`; no references to

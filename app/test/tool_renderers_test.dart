@@ -66,20 +66,6 @@ void main() {
     });
   });
 
-  group('display names', () {
-    test('registered tools expose their lowercase name', () {
-      expect(toolDisplayName(_tool('read', {})), 'read');
-      expect(toolDisplayName(_tool('write', {})), 'write');
-      expect(toolDisplayName(_tool('edit', {})), 'edit');
-      expect(toolDisplayName(_tool('bash', {})), 'bash');
-      expect(toolDisplayName(_tool('grep', {})), 'grep');
-    });
-
-    test('unknown tools fall back to their raw name', () {
-      expect(toolDisplayName(_tool('lint', {})), 'lint');
-    });
-  });
-
   group('summaryLine — the collapsed one-liner', () {
     test('bash summarises the command', () {
       expect(
@@ -285,6 +271,42 @@ void main() {
       // Values render as readable rows, not `{"fix":true,...}`.
       expect(find.text('true'), findsOneWidget);
       expect(find.textContaining('{'), findsNothing);
+    });
+  });
+
+  group('memory and skill renderer bodies', () {
+    testWidgets('memory titles its args Input (not Saved) and shows result', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'memory',
+        args: const {'action': 'add', 'content': 'remember this'},
+        output: 'ok',
+        ended: true,
+      );
+      await _pumpBody(tester, item);
+      expect(find.text('Input'), findsOneWidget);
+      expect(find.text('Saved'), findsNothing);
+      expect(find.text('remember this'), findsOneWidget);
+    });
+
+    testWidgets('skill shows its args and description', (tester) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'skill',
+        args: const {'name': 'cavecrew'},
+        output: 'how to delegate',
+        ended: true,
+      );
+      await _pumpBody(tester, item);
+      expect(find.text('Arguments'), findsOneWidget);
+      expect(find.text('Description'), findsOneWidget);
+      expect(find.text('how to delegate'), findsOneWidget);
     });
   });
 

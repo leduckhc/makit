@@ -224,22 +224,30 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   itemBuilder: (context, i) {
                     // Reversed: i counts up from the bottom. When running,
                     // i == 0 is the trailing "working…" indicator.
-                    final Widget child = (running && i == 0)
+                    final bool isIndicator = running && i == 0;
+                    final ChatItem? item = isIndicator
+                        ? null
+                        : items[items.length - 1 - (running ? i - 1 : i)];
+                    final Widget child = item == null
                         ? const WorkingIndicator()
-                        : chatItemWidget(
-                            items[items.length - 1 - (running ? i - 1 : i)],
-                          );
+                        : chatItemWidget(item);
                     // Center each row within the same readable-width cap as
                     // the composer, so the transcript column lines up with the
                     // input instead of stretching edge-to-edge. The ListView
                     // itself stays full width so the mouse wheel scrolls
                     // anywhere in the pane; only the row *content* is capped.
-                    return Center(
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          maxWidth: kReadableContentMaxWidth,
+                    // Key item rows by identity (via KeyedSubtree) so inline
+                    // expand/collapse state stays with the right call as the
+                    // reversed list reorders.
+                    return KeyedSubtree(
+                      key: item == null ? null : chatItemKey(item),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(
+                            maxWidth: kReadableContentMaxWidth,
+                          ),
+                          child: transcriptRow(child),
                         ),
-                        child: transcriptRow(child),
                       ),
                     );
                   },

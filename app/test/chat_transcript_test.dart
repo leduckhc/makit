@@ -10,6 +10,7 @@ import 'package:makit/ui/session/chat_message.dart';
 import 'package:makit/ui/session/chat_metrics.dart';
 import 'package:makit/ui/session/chat_transcript.dart';
 import 'package:makit/ui/session/tool_call_card.dart';
+import 'package:makit/ui/session/tool_renderers.dart' show ToolCodeBlock;
 
 List<ChatItem> _representativeItems() => [
   UserMessageItem(seq: 1, ts: 0, text: 'hi'),
@@ -92,6 +93,75 @@ void main() {
     expect(find.text('Command'), findsOneWidget);
     expect(find.text('Output'), findsOneWidget);
     expect(find.byType(SingleChildScrollView), findsWidgets);
+
+    // Tapping the leading icon collapses it again.
+    await tester.tap(find.byType(Icon).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Command'), findsNothing);
+  });
+
+  testWidgets('tool expansion state follows callId, not list position', (
+    tester,
+  ) async {
+    ToolCallItem bash(String id, String cmd) => ToolCallItem(
+      seq: id.hashCode,
+      ts: 0,
+      callId: id,
+      name: 'bash',
+      args: {'command': cmd},
+      output: cmd,
+      ended: true,
+      exitCode: 0,
+    );
+    final a = bash('a', 'echo a');
+    final b = bash('b', 'echo b');
+    var items = <ChatItem>[a];
+    late StateSetter setOuter;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (ctx, setState) {
+              setOuter = setState;
+              // Newest-first, like the reversed transcript. Rows are keyed by
+              // identity exactly as the real surfaces do.
+              return ListView(
+                children: [
+                  for (final it in items.reversed)
+                    KeyedSubtree(
+                      key: chatItemKey(it),
+                      child: transcriptRow(chatItemWidget(it)),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // Expand call 'a'.
+    await tester.tap(find.text('Ran echo a'));
+    await tester.pumpAndSettle();
+    expect(find.text('Command'), findsOneWidget);
+
+    // A new tool call 'b' streams in and becomes the newest (slot 0). Without
+    // keying by callId, Flutter would reuse slot-0 state and 'b' would appear
+    // expanded instead of 'a'.
+    setOuter(() => items = [a, b]);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ran echo b'), findsOneWidget);
+    // Exactly one body is expanded, and it is still 'a' (code 'echo a').
+    expect(find.text('Command'), findsOneWidget);
+    final codes = tester
+        .widgetList<ToolCodeBlock>(find.byType(ToolCodeBlock))
+        .map((w) => w.code)
+        .toList();
+    expect(codes, contains('echo a'));
+    expect(codes, isNot(contains('echo b')));
   });
 
   testWidgets('WorkingIndicator shows the shimmer word (no spinner)', (

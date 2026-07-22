@@ -52,6 +52,17 @@ Widget chatItemWidget(ChatItem item) => switch (item) {
   ErrorItem() => ErrorBanner(message: item.message),
 };
 
+/// Stable identity for a chat item's transcript row. Applied by each surface at
+/// the **ListView child level** (via `KeyedSubtree`) so stateful rows
+/// ([ToolCallCard], [ThinkingLine]) keep their expand/collapse state when the
+/// reversed list reorders as new items stream in — otherwise Flutter would
+/// reconcile the unkeyed rows by position and migrate/reset state to the wrong
+/// item.
+Key chatItemKey(ChatItem item) => switch (item) {
+  ToolCallItem() => ValueKey('tool-${item.callId}'),
+  _ => ValueKey('seq-${item.seq}'),
+};
+
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the
 /// one-liner. When expanded, tapping the leading icon collapses it again.

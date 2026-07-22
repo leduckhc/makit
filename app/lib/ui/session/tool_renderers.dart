@@ -97,11 +97,6 @@ List<Widget> genericToolBody(BuildContext context, ToolCallItem item) {
 // Shared body helpers
 // ---------------------------------------------------------------------------
 
-/// Human-facing tool title for [item] — the renderer's [ToolRenderer.displayName]
-/// when one is registered, otherwise the raw (lowercase) tool name.
-String toolDisplayName(ToolCallItem item) =>
-    rendererFor(item)?.displayName ?? item.name;
-
 /// Collapsed one-liner summary for [item] — the renderer's
 /// [ToolRenderer.summaryLine] when registered, otherwise the raw tool name.
 String toolSummaryLine(ToolCallItem item) =>
@@ -564,7 +559,7 @@ class _MemoryRenderer extends ToolRenderer {
     return [
       if (args.isNotEmpty)
         ToolSection(
-          title: 'Saved',
+          title: 'Input',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

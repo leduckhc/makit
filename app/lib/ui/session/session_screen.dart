@@ -114,7 +114,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   return transcriptRow(const WorkingIndicator());
                 }
                 final index = items.length - 1 - (running ? i - 1 : i);
-                return transcriptRow(chatItemWidget(items[index]));
+                final item = items[index];
+                return KeyedSubtree(
+                  key: chatItemKey(item),
+                  child: transcriptRow(chatItemWidget(item)),
+                );
               },
             ),
           ),
