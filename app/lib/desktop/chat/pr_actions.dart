@@ -47,7 +47,7 @@ enum PrPromptAction {
   ),
   commitAndPush(
     'Commit and push',
-    IconGlyph.font(PhosphorIconsLight.arrowLineUp),
+    IconGlyph.asset(_repoPushAsset),
     prCommitPushPromptPreference,
     'Commit the current uncommitted changes on this branch with a clear, '
         'conventional commit message summarizing what changed and why, then '
