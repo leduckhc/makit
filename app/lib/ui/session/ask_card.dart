@@ -172,7 +172,9 @@ class _AskCardState extends ConsumerState<AskCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (ask.isSingle)
+        // Free-text handoff — single-select asks only (multi-select users pick
+        // options; a multi-select-over-input ask has no free-text path).
+        if (ask.isSingle && !_multi)
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton.icon(

@@ -130,4 +130,72 @@ void main() {
     c.enableFreeText('r1');
     expect(c.state['s1']?.freeText, isFalse);
   });
+
+  group('multi-select over ctx.ui.input', () {
+    const title =
+        'Which platforms?\n\nContext:\nThe build matrix drives CI cost.\n\n'
+        'Options (select one or more):\n'
+        '1. iOS \u2014 iPhone + iPad\n'
+        '2. macOS \u2014 desktop app\n'
+        '3. Android';
+
+    test('fromMultiSelectInput parses question, context, and options', () {
+      final ask = PendingAsk.fromMultiSelectInput(
+        requestId: 'r1',
+        sessionId: 's1',
+        title: title,
+      )!;
+      expect(ask.viaInputText, isTrue);
+      final q = ask.questions.single;
+      expect(q['question'], 'Which platforms?');
+      expect(q['context'], 'The build matrix drives CI cost.');
+      expect(q['multi'], true);
+      final opts = (q['options'] as List).cast<Map<String, dynamic>>();
+      expect(opts.map((o) => o['label']), ['iOS', 'macOS', 'Android']);
+      expect(opts[0]['description'], 'iPhone + iPad');
+      expect(opts[2].containsKey('description'), isFalse);
+    });
+
+    test('fromMultiSelectInput returns null for ordinary free-text input', () {
+      expect(
+        PendingAsk.fromMultiSelectInput(
+          requestId: 'r1',
+          sessionId: 's1',
+          title: 'What should I name the branch?',
+        ),
+        isNull,
+      );
+    });
+
+    test('submit answers on the input channel as comma-separated titles', () {
+      c.add(
+        PendingAsk.fromMultiSelectInput(
+          requestId: 'r1',
+          sessionId: 's1',
+          title: title,
+        )!,
+      );
+      // AskCard joins a multi-select question's picks with ' + '.
+      c.submit('r1', indices: [0], answers: ['iOS + macOS']);
+      final (id, body) = responses.single;
+      expect(id, 'r1');
+      expect(body['kind'], 'input');
+      expect(body['value'], 'iOS, macOS');
+      expect(c.state.containsKey('s1'), isFalse);
+    });
+
+    test('cancel answers on the input channel', () {
+      c.add(
+        PendingAsk.fromMultiSelectInput(
+          requestId: 'r1',
+          sessionId: 's1',
+          title: title,
+        )!,
+      );
+      c.cancel('r1');
+      final (_, body) = responses.single;
+      expect(body['kind'], 'input');
+      expect(body['cancelled'], true);
+    });
+  });
 }

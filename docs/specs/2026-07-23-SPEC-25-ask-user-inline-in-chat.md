@@ -148,6 +148,10 @@ deadlock the user.
   `AnsweredAskCard` (routed in `chatItemWidget`), bypassing the SPEC-24 tool-row
   fold for that tool name.
 - No free-text for **multi-question** asks (option selection required there).
+- Multi-select `ask_user` arrives as pi-ask-user's `ctx.ui.input` fallback (options
+  in the prompt text); makit parses it into an inline multi-select card
+  (`PendingAsk.fromMultiSelectInput`) and answers on the `input` channel
+  (comma-separated titles) rather than showing a modal.
 - No server/protocol/notification-payload change; mobile background notifications
   and desktop reminders are untouched.
 - `AskWizard` is retained (debug/test entry + fallback), not deleted.

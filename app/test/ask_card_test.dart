@@ -172,6 +172,60 @@ void main() {
     expect(body['cancelled'], true);
   });
 
+  testWidgets('multi-select-over-input renders inline and answers via input', (
+    tester,
+  ) async {
+    final ask = PendingAsk.fromMultiSelectInput(
+      requestId: 'r1',
+      sessionId: 's1',
+      title:
+          'Which platforms?\n\nOptions (select one or more):\n'
+          '1. iOS \u2014 phones\n2. macOS\n3. Android',
+    )!;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          elicitationControllerProvider.overrideWith((ref) {
+            final c = ElicitationController(
+              respond: (id, b) => responses.add((id, b)),
+              responded: responded.stream,
+            );
+            c.add(ask);
+            return c;
+          }),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Consumer(
+              builder: (ctx, ref, _) {
+                final a = ref.watch(pendingAskProvider('s1'));
+                return a == null ? const SizedBox() : AskCard(ask: a);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Inline checkbox card — not a modal, no free-text handoff for multi-select.
+    expect(find.text('Which platforms?'), findsOneWidget);
+    expect(find.text('iOS'), findsOneWidget);
+    expect(find.text('phones'), findsOneWidget); // option description
+    expect(find.text('Type a different answer'), findsNothing);
+
+    await tester.tap(find.text('iOS'));
+    await tester.tap(find.text('macOS'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Submit'));
+    await tester.pumpAndSettle();
+
+    // Answered on the input channel as comma-separated titles.
+    final (_, body) = responses.single;
+    expect(body['kind'], 'input');
+    expect(body['value'], 'iOS, macOS');
+  });
+
   group('AnsweredAskCard (resolved history, SPEC-25 #1)', () {
     testWidgets('highlights the chosen option and dims the rest', (
       tester,

@@ -24,6 +24,7 @@ class PendingAsk {
     required this.sessionId,
     required this.questions,
     this.freeText = false,
+    this.viaInputText = false,
   });
 
   /// The `srv.request` envelope id — used as the response correlation id.
@@ -38,6 +39,12 @@ class PendingAsk {
   /// re-enabled and its next submit answers this ask (single-question only).
   final bool freeText;
 
+  /// When true, this ask actually arrived as pi-ask-user's multi-select
+  /// `ctx.ui.input` fallback (options embedded in the prompt text), so the
+  /// answer must go back on the `input` channel as a comma-separated string
+  /// rather than the `askUserQuestion` `{indices, answers}` shape.
+  final bool viaInputText;
+
   bool get isSingle => questions.length == 1;
 
   PendingAsk copyWith({bool? freeText}) => PendingAsk(
@@ -45,7 +52,67 @@ class PendingAsk {
     sessionId: sessionId,
     questions: questions,
     freeText: freeText ?? this.freeText,
+    viaInputText: viaInputText,
   );
+
+  /// pi-ask-user's headless multi-select fallback calls `ctx.ui.input` with the
+  /// options rendered into the prompt as `"…\n\nOptions (select one or more):\n
+  /// 1. Title — desc\n2. …"`, expecting a comma-separated reply. Parse that back
+  /// into a structured multi-select ask, or return null when [title] isn't that
+  /// shape (an ordinary free-text input).
+  static PendingAsk? fromMultiSelectInput({
+    required String requestId,
+    required String sessionId,
+    required String title,
+  }) {
+    const marker = '\n\nOptions (select one or more):\n';
+    final idx = title.indexOf(marker);
+    if (idx < 0) return null;
+    final prompt = title.substring(0, idx);
+    final optionList = title.substring(idx + marker.length);
+
+    var question = prompt;
+    String? context;
+    const cmarker = '\n\nContext:\n';
+    final ci = prompt.indexOf(cmarker);
+    if (ci >= 0) {
+      question = prompt.substring(0, ci);
+      context = prompt.substring(ci + cmarker.length).trim();
+    }
+
+    final options = <Map<String, dynamic>>[];
+    for (final line in optionList.split('\n')) {
+      final m = RegExp(r'^\s*\d+\.\s+(.*)$').firstMatch(line);
+      if (m == null) continue;
+      final rest = m.group(1)!;
+      final dash = rest.indexOf(
+        ' \u2014 ',
+      ); // " — " separates title/description
+      if (dash >= 0) {
+        options.add({
+          'label': rest.substring(0, dash).trim(),
+          'description': rest.substring(dash + 3).trim(),
+        });
+      } else {
+        options.add({'label': rest.trim()});
+      }
+    }
+    if (options.isEmpty) return null;
+
+    return PendingAsk(
+      requestId: requestId,
+      sessionId: sessionId,
+      viaInputText: true,
+      questions: [
+        {
+          'question': question.trim(),
+          if (context != null && context.isNotEmpty) 'context': context,
+          'multi': true,
+          'options': options,
+        },
+      ],
+    );
+  }
 }
 
 /// Holds at most one [PendingAsk] per session (the agent asks one at a time).
@@ -86,21 +153,38 @@ class ElicitationController extends StateNotifier<Map<String, PendingAsk>> {
     state = {...state, sessionId!: ask.copyWith(freeText: true)};
   }
 
-  /// Send the canonical `{indices, answers}` response and clear the card.
+  /// Send the response and clear the card. Multi-select-over-input asks answer
+  /// on the `input` channel (comma-separated titles); everything else uses the
+  /// canonical `askUserQuestion` `{indices, answers}` shape.
   void submit(
     String requestId, {
     required List<int> indices,
     required List<String> answers,
   }) {
-    _respond(
-      requestId,
-      SrvResponse.askUserQuestion(
-        indices: indices,
-        answers: answers,
-        answer: answers.length == 1 ? answers.first : null,
-      ),
-    );
+    final ask = _askFor(requestId);
+    if (ask != null && ask.viaInputText) {
+      final value = answers
+          .expand((a) => a.split(' + '))
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .join(', ');
+      _respond(requestId, SrvResponse.input(value));
+    } else {
+      _respond(
+        requestId,
+        SrvResponse.askUserQuestion(
+          indices: indices,
+          answers: answers,
+          answer: answers.length == 1 ? answers.first : null,
+        ),
+      );
+    }
     _remove(requestId);
+  }
+
+  PendingAsk? _askFor(String requestId) {
+    final sessionId = _sessionByRequest[requestId];
+    return sessionId == null ? null : state[sessionId];
   }
 
   /// Answer with a single free-text string (single-question asks).
@@ -109,7 +193,13 @@ class ElicitationController extends StateNotifier<Map<String, PendingAsk>> {
 
   /// Cancel the ask (canonical cancelled shape) and clear the card.
   void cancel(String requestId) {
-    _respond(requestId, SrvResponse.cancelled('askUserQuestion'));
+    final ask = _askFor(requestId);
+    _respond(
+      requestId,
+      SrvResponse.cancelled(
+        ask?.viaInputText == true ? 'input' : 'askUserQuestion',
+      ),
+    );
     _remove(requestId);
   }
 

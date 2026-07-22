@@ -281,6 +281,18 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
     }
 
     if (kind == 'input') {
+      // pi-ask-user's multi-select fallback arrives as ctx.ui.input with the
+      // options embedded in the prompt. Render it inline as a multi-select
+      // card instead of a modal; ordinary free-text input stays modal.
+      final ms = PendingAsk.fromMultiSelectInput(
+        requestId: env.id,
+        sessionId: env.body['sessionId'] as String? ?? '',
+        title: env.body['title']?.toString() ?? '',
+      );
+      if (ms != null) {
+        ref.read(elicitationControllerProvider.notifier).add(ms);
+        return;
+      }
       await _showInput(navCtx, env.id, env.body);
       return;
     }
