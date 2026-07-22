@@ -364,13 +364,28 @@ const ICONS = {
   __PENCIL__:'<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
   __ARROW__:'<svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
 };
-// Replace placeholders in place via DOM traversal to preserve event listeners and scripts.
-document.querySelectorAll('[data-icon]').forEach(el => {
-  const key = el.getAttribute('data-icon');
-  if (ICONS[key]) el.innerHTML = ICONS[key];
-});
-// Fallback: replace remaining text placeholders (for backwards compatibility).
-document.body.innerHTML = document.body.innerHTML.replace(/__[A-Z0-9_]+__/g, m => ICONS[m] || m);
+// Replace placeholder tokens (e.g. __QUESTION__) with their inline SVG in
+// place, walking only text nodes — so element identity, <input> state, and any
+// listeners are preserved (vs. rewriting document.body.innerHTML wholesale).
+const PLACEHOLDER = /(__[A-Z0-9_]+__)/;
+const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+const targets = [];
+while (walker.nextNode()) {
+  if (PLACEHOLDER.test(walker.currentNode.nodeValue)) targets.push(walker.currentNode);
+}
+for (const node of targets) {
+  const frag = document.createDocumentFragment();
+  for (const part of node.nodeValue.split(PLACEHOLDER)) {
+    if (ICONS[part]) {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = ICONS[part];
+      frag.appendChild(tpl.content);
+    } else if (part) {
+      frag.appendChild(document.createTextNode(part));
+    }
+  }
+  node.replaceWith(frag);
+}
 </script>
 </body>
 </html>
