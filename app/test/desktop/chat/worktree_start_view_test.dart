@@ -47,6 +47,7 @@ class _FakeStore extends StoreController {
     String? baseBranch,
     String? worktreePath,
     String? branch,
+    List<ConfigOptionPick>? configOptions,
   }) async {
     const sid = 's-new';
     state = state.copyWith(

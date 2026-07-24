@@ -13,6 +13,8 @@ class AgentDescriptor {
     required this.label,
     required this.transport,
     required this.available,
+    this.fingerprint = '',
+    this.configOptions = const [],
   });
 
   final String id;
@@ -22,6 +24,17 @@ class AgentDescriptor {
   final String transport;
   final bool available;
 
+  /// Hash of the harness's resolved binary + catalog-affecting config inputs
+  /// (SPEC-27). Empty when the server didn't advertise one. Used to detect a
+  /// stale cached capability catalog.
+  final String fingerprint;
+
+  /// The harness's cached capability catalog — the `configOptions` snapshot
+  /// from the server's throwaway probe (SPEC-27), rendered pre-session by the
+  /// SPEC-26 generic renderer. Empty when the harness advertises no options
+  /// (default-only) or the field is absent.
+  final List<SessionConfigOption> configOptions;
+
   static AgentDescriptor? fromJson(Map<String, dynamic> j) {
     final id = j['id'] as String?;
     if (id == null) return null;
@@ -30,8 +43,32 @@ class AgentDescriptor {
       label: (j['label'] as String?) ?? id,
       transport: (j['transport'] as String?) ?? 'native',
       available: (j['available'] as bool?) ?? true,
+      fingerprint: (j['fingerprint'] is String) ? j['fingerprint'] as String : '',
+      configOptions: ((j['configOptions'] is List) ? j['configOptions'] as List<dynamic> : const <dynamic>[])
+          .whereType<Map<dynamic, dynamic>>()
+          .map(
+            (m) => SessionConfigOption.fromJson(Map<String, dynamic>.from(m)),
+          )
+          .whereType<SessionConfigOption>()
+          .toList(),
     );
   }
+}
+
+/// A single pre-spawn config pick carried on `session.spawn` (SPEC-27): the
+/// [id] of a harness [SessionConfigOption] and the chosen [value] (a [String]
+/// for a select option, a [bool] for a boolean). The server maps [id] to the
+/// transport-specific apply-at-launch param (ACP `session/set_config_option`
+/// `configId`, or codex thread/turn params).
+class ConfigOptionPick {
+  const ConfigOptionPick({required this.id, required this.value});
+
+  final String id;
+
+  /// A [String] for a select option, a [bool] for a boolean.
+  final Object value;
+
+  Map<String, dynamic> toJson() => {'id': id, 'value': value};
 }
 
 /// One command exposed by the agent — extension, prompt template, or skill.

@@ -46,6 +46,7 @@ class _FakeStore extends StoreController {
     String? baseBranch,
     String? worktreePath,
     String? branch,
+    List<ConfigOptionPick>? configOptions,
   }) async {
     spawned.add(projectId);
     if (fail) throw Exception('nope');
