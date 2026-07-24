@@ -16,7 +16,6 @@ import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   ClientSideConnection,
-  type Agent as AcpAgent,
   type Client as AcpClient,
   type Stream,
   type RequestPermissionRequest,
@@ -69,7 +68,7 @@ export class AcpAdapter extends SubprocessAdapter {
   private readonly connectFn: (cwd: string, env: Record<string, string>) => AcpTransport;
 
   private transport?: AcpTransport;
-  private conn?: AcpAgent;
+  private conn?: ClientSideConnection;
   private acpSessionId?: string;
   private makitSessionId = "";
   private workspaceRoot = "";
