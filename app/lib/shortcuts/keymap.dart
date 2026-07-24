@@ -37,13 +37,22 @@ class Keymap {
       ShortcutAction.nextSession: primary(LogicalKeyboardKey.bracketRight),
       ShortcutAction.previousSession: primary(LogicalKeyboardKey.bracketLeft),
       ShortcutAction.openSettings: primary(LogicalKeyboardKey.comma),
-      ShortcutAction.splitPaneVertical: primary(LogicalKeyboardKey.keyD),
-      ShortcutAction.splitPaneHorizontal: primary(
+      ShortcutAction.splitVertical: primary(LogicalKeyboardKey.keyD),
+      ShortcutAction.splitHorizontal: primary(
         LogicalKeyboardKey.keyD,
         shift: true,
       ),
-      ShortcutAction.newPane: primary(LogicalKeyboardKey.keyT),
-      ShortcutAction.closePane: primary(LogicalKeyboardKey.keyW),
+      ShortcutAction.newTab: primary(LogicalKeyboardKey.keyT),
+      ShortcutAction.closeSplit: primary(LogicalKeyboardKey.keyW),
+      ShortcutAction.closeTab: primary(LogicalKeyboardKey.keyW, shift: true),
+      ShortcutAction.nextTab: primary(
+        LogicalKeyboardKey.bracketRight,
+        shift: true,
+      ),
+      ShortcutAction.prevTab: primary(
+        LogicalKeyboardKey.bracketLeft,
+        shift: true,
+      ),
     });
   }
 

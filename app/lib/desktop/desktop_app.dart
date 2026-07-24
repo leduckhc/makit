@@ -28,12 +28,11 @@ import '../store/connection.dart';
 import '../store/store.dart';
 import '../ui/widgets/srv_request_handler.dart';
 import 'chat/desktop_auto_select.dart';
-import 'chat/desktop_draft_reconcile.dart';
 import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
 import 'chat/keymap_scope.dart';
 import 'chat/loopback_pairing.dart';
-import 'chat/panes/pane_tree_controller.dart';
+import 'chat/panes/workspace_controller.dart';
 import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
 import 'desktop_controller.dart';
@@ -87,7 +86,7 @@ Future<void> runDesktopApp() async {
     cmdIsPrimary: cmdIsPrimaryModifier,
   );
   final preferencesController = PreferencesController.load(prefs);
-  final paneTreeController = PaneTreeController.load(prefs);
+  final workspaceController = WorkspaceController.load(prefs);
   final controller = DesktopController(
     client: client,
     lifecycle: lifecycle,
@@ -143,7 +142,7 @@ Future<void> runDesktopApp() async {
         preferencesControllerProvider.overrideWith(
           (ref) => preferencesController,
         ),
-        paneTreeControllerProvider.overrideWith((ref) => paneTreeController),
+        workspaceControllerProvider.overrideWith((ref) => workspaceController),
       ],
       child: const _DesktopApp(),
     ),
@@ -227,8 +226,6 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
   Widget build(BuildContext context) {
     // SPEC-10: auto-select the most recent session when none is picked.
     ref.watch(desktopAutoSelectSessionProvider);
-    // Migrate/prune virtual draft trees as their sessions materialize or vanish.
-    ref.watch(desktopDraftReconcileProvider);
     // Read reactively here (not inside `builder`, which builds in a descendant
     // context) so changing the pref rebuilds and re-wires the reminder delay.
     final reminderDelay = Duration(

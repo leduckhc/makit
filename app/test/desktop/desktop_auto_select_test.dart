@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_auto_select.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
@@ -30,7 +31,7 @@ ProviderContainer _container(List<Session> sessions) {
 
 void main() {
   test(
-    'auto-selects the most recently active session when none selected',
+    'auto-reveals the most recently active session when the active tab is empty',
     () async {
       final container = _container([
         _session('older', 100),
@@ -41,6 +42,8 @@ void main() {
       container.read(desktopAutoSelectSessionProvider);
       await Future<void>.delayed(Duration.zero);
 
+      // Reveal opens/focuses a tab for the session in the active split; the
+      // derived selection mirrors that tab.
       expect(container.read(selectedSessionProvider), 'newer');
     },
   );
@@ -52,18 +55,21 @@ void main() {
     ]);
     addTearDown(container.dispose);
 
-    container.read(selectedSessionProvider.notifier).state = 'older';
+    // A session already revealed into the active tab is a valid selection.
+    container.read(workspaceControllerProvider.notifier).revealSession('older');
     container.read(desktopAutoSelectSessionProvider);
     await Future<void>.delayed(Duration.zero);
 
     expect(container.read(selectedSessionProvider), 'older');
   });
 
-  test('re-selects when the current session disappears', () async {
+  test('re-reveals when the current session disappears', () async {
     final container = _container([_session('only', 50)]);
     addTearDown(container.dispose);
 
-    container.read(selectedSessionProvider.notifier).state = 'gone';
+    // Reveal a session that isn't in the store (a stale tab): auto-select
+    // replaces it with the surviving most-recent one.
+    container.read(workspaceControllerProvider.notifier).revealSession('gone');
     container.read(desktopAutoSelectSessionProvider);
     await Future<void>.delayed(Duration.zero);
 

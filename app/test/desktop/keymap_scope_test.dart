@@ -1,10 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
-import 'package:makit/desktop/chat/panes/pane_node.dart';
-import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
+import 'package:makit/desktop/chat/panes/split_node.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/shortcuts/key_chord.dart';
@@ -18,7 +18,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// live global shortcuts. Uses Ctrl-primary defaults (cmdIsPrimary: false) so
 /// the combos are deterministic regardless of the test host platform.
 void main() {
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    resetNodeIds();
+    SharedPreferences.setMockInitialValues({});
+  });
 
   Future<KeymapController> controller() async {
     final prefs = await SharedPreferences.getInstance();
@@ -45,13 +48,33 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> pressCtrl(WidgetTester tester, LogicalKeyboardKey key) async {
+  Future<void> pressCtrl(
+    WidgetTester tester,
+    LogicalKeyboardKey key, {
+    bool shift = false,
+  }) async {
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyDownEvent(key);
     await tester.sendKeyUpEvent(key);
+    if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump();
   }
+
+  Session session(String id) => Session(
+    id: id,
+    projectId: 'p1',
+    agent: 'pi',
+    title: id,
+    status: SessionStatus.idle,
+    policy: ApprovalPolicy.askOnRisky,
+    branch: 'feature-x',
+    worktreePath: '/tmp/wt-x',
+  );
+
+  WorkspaceController workspace(ProviderContainer c) =>
+      c.read(workspaceControllerProvider.notifier);
 
   testWidgets('Ctrl+B toggles the sidebar', (tester) async {
     final keymap = await controller();
@@ -88,8 +111,6 @@ void main() {
       container: container,
     );
 
-    // Simulate the user clicking an empty/non-focusable region: focus falls
-    // back to the framework root scope, which sits above the keymap scope.
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
 
@@ -122,13 +143,10 @@ void main() {
     );
     await tester.pump();
 
-    // Clicking into the composer-like field must focus it and keep focus: the
-    // idle-focus reclaim only pulls back empty scopes, never a real leaf.
     fieldFocus.requestFocus();
     await tester.pump();
     expect(fieldFocus.hasPrimaryFocus, isTrue);
 
-    // Typing must reach the field (regression: focus was stolen on tap).
     await tester.enterText(find.byType(TextField), 'hello');
     await tester.pump();
     expect(find.text('hello'), findsOneWidget);
@@ -153,89 +171,44 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets(
-    "Ctrl+D splits the current worktree's tree into a fresh harness-picker pane",
-    (tester) async {
-      final keymap = await controller();
-      const wt = SelectedWorktree(
-        projectId: 'p1',
-        path: '/tmp/wt-x',
-        branch: 'feature-x',
-      );
-      final session = Session(
-        id: 's1',
-        projectId: 'p1',
-        agent: 'pi',
-        title: 'Wire up pairing',
-        status: SessionStatus.idle,
-        policy: ApprovalPolicy.askOnRisky,
-        branch: 'feature-x',
-        worktreePath: '/tmp/wt-x',
-      );
-      final container = ProviderContainer(
-        overrides: [
-          keymapProvider.overrideWith((_) => keymap),
-          sessionsProvider.overrideWithValue(SessionsState([session])),
-        ],
-      );
-      addTearDown(container.dispose);
-      // Selecting the session binds it into its worktree's tree (current).
-      container
-          .read(paneTreeControllerProvider.notifier)
-          .bindActiveSession('s1', wt);
-
-      await pumpScope(
-        tester,
-        keymap: keymap,
-        onOpenSettings: () {},
-        container: container,
-      );
-
-      await pressCtrl(tester, LogicalKeyboardKey.keyD);
-
-      // No eager "New worktree" dialog: each tree already owns its worktree.
-      expect(find.text('New worktree'), findsNothing);
-      final cur = container.read(paneTreeControllerProvider).current!;
-      // The pane split within the SAME worktree, and the fresh active leaf is
-      // empty (a null-session leaf → that worktree's harness picker).
-      expect(cur.root, isA<PaneSplit>());
-      expect(cur.worktree, wt);
-      final controllerN = container.read(paneTreeControllerProvider.notifier);
-      expect(controllerN.activeLeafSessionId, isNull);
-    },
-  );
-
-  testWidgets('Ctrl+T opens the New session dialog for the active pane', (
+  testWidgets('Ctrl+D divides the active split into a splitter', (
     tester,
   ) async {
     final keymap = await controller();
-    const wt = SelectedWorktree(
-      projectId: 'p1',
-      path: '/tmp/wt-t',
-      branch: 'feature-t',
-    );
-    final session = Session(
-      id: 's1',
-      projectId: 'p1',
-      agent: 'pi',
-      title: 'Wire up pairing',
-      status: SessionStatus.idle,
-      policy: ApprovalPolicy.askOnRisky,
-      branch: 'feature-t',
-      worktreePath: '/tmp/wt-t',
-    );
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
-        sessionsProvider.overrideWithValue(SessionsState([session])),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    expect(container.read(workspaceControllerProvider).root, isA<Split>());
+
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+    await pressCtrl(tester, LogicalKeyboardKey.keyD);
+
+    // The single split became a splitter with two splits; the new (active)
+    // split holds an empty starter tab.
+    expect(container.read(workspaceControllerProvider).root, isA<Splitter>());
+    expect(container.read(selectedSessionProvider), isNull);
+  });
+
+  testWidgets('Ctrl+T opens the New session dialog', (tester) async {
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        sessionsProvider.overrideWithValue(SessionsState([session('s1')])),
         agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
       ],
     );
     addTearDown(container.dispose);
-    container
-        .read(paneTreeControllerProvider.notifier)
-        .bindActiveSession('s1', wt);
-    container.read(selectedSessionProvider.notifier).state = 's1';
+    workspace(container).revealSession('s1');
 
     await pumpScope(
       tester,
@@ -247,50 +220,25 @@ void main() {
     await pressCtrl(tester, LogicalKeyboardKey.keyT);
     await tester.pumpAndSettle();
 
-    // The dialog opened (rather than resetting the pane to an empty picker):
-    // the running session and its pane binding are untouched.
+    // The dialog opened; the running session's tab is untouched.
     expect(find.text('New session'), findsOneWidget);
-    final cur = container.read(paneTreeControllerProvider).current!;
-    expect(cur.root, isA<PaneLeaf>());
-    expect(cur.worktree, wt);
-    expect(
-      container.read(paneTreeControllerProvider.notifier).activeLeafSessionId,
-      's1',
-    );
     expect(container.read(selectedSessionProvider), 's1');
   });
 
-  testWidgets('Ctrl+W closes the active pane but keeps the session', (
+  testWidgets('Ctrl+W closes the active split but keeps the sessions', (
     tester,
   ) async {
     final keymap = await controller();
-    const wt = SelectedWorktree(
-      projectId: 'p1',
-      path: '/tmp/wt-w',
-      branch: 'feature-w',
-    );
-    final session = Session(
-      id: 's1',
-      projectId: 'p1',
-      agent: 'pi',
-      title: 'Wire up pairing',
-      status: SessionStatus.idle,
-      policy: ApprovalPolicy.askOnRisky,
-      branch: 'feature-w',
-      worktreePath: '/tmp/wt-w',
-    );
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
-        sessionsProvider.overrideWithValue(SessionsState([session])),
+        sessionsProvider.overrideWithValue(SessionsState([session('s1')])),
       ],
     );
     addTearDown(container.dispose);
-    final notifier = container.read(paneTreeControllerProvider.notifier);
-    notifier.bindActiveSession('s1', wt);
-    container.read(selectedSessionProvider.notifier).state = 's1';
-    // Split so there are two panes; closing one leaves the sibling.
-    notifier.splitActive(Axis.horizontal);
+    // s1 in the first split, then divide so a fresh empty split is active.
+    workspace(container).revealSession('s1');
+    workspace(container).divideActive(Axis.horizontal);
 
     await pumpScope(
       tester,
@@ -301,24 +249,30 @@ void main() {
 
     await pressCtrl(tester, LogicalKeyboardKey.keyW);
 
-    // The active (empty) pane is gone; the sibling with the session remains.
-    final cur = container.read(paneTreeControllerProvider).current!;
-    expect(cur.root, isA<PaneLeaf>());
-    expect((cur.root as PaneLeaf).sessionId, 's1');
-    // The session was never deleted from the store.
+    // The active (empty) split is gone; the sibling with s1 remains.
+    final root = container.read(workspaceControllerProvider).root;
+    expect(root, isA<Split>());
+    expect(container.read(selectedSessionProvider), 's1');
     expect(container.read(sessionsProvider).byId('s1'), isNotNull);
   });
 
-  testWidgets('Ctrl+D is a no-op when nothing is selected', (tester) async {
+  testWidgets('Ctrl+Shift+] cycles to the next tab in the active split', (
+    tester,
+  ) async {
     final keymap = await controller();
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
-        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        sessionsProvider.overrideWithValue(
+          SessionsState([session('s1'), session('s2')]),
+        ),
       ],
     );
     addTearDown(container.dispose);
-    final before = container.read(paneTreeControllerProvider);
+    // Two tabs in one split: s1 then s2 (active).
+    workspace(container).revealSession('s1');
+    workspace(container).revealSession('s2');
+    expect(container.read(selectedSessionProvider), 's2');
 
     await pumpScope(
       tester,
@@ -326,12 +280,38 @@ void main() {
       onOpenSettings: () {},
       container: container,
     );
-    await pressCtrl(tester, LogicalKeyboardKey.keyD);
 
-    // No current tree → nothing to split, and no dialog.
-    expect(find.text('New worktree'), findsNothing);
-    expect(container.read(paneTreeControllerProvider), before);
-    expect(container.read(paneTreeControllerProvider).current, isNull);
+    // From s2 → next wraps to s1.
+    await pressCtrl(tester, LogicalKeyboardKey.bracketRight, shift: true);
+    expect(container.read(selectedSessionProvider), 's1');
+  });
+
+  testWidgets('Ctrl+Shift+W closes the active tab', (tester) async {
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        sessionsProvider.overrideWithValue(
+          SessionsState([session('s1'), session('s2')]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    workspace(container).revealSession('s1');
+    workspace(container).revealSession('s2'); // active tab s2
+
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    await pressCtrl(tester, LogicalKeyboardKey.keyW, shift: true);
+
+    // s2's tab closed; the split falls back to the remaining s1 tab.
+    expect(container.read(selectedSessionProvider), 's1');
+    expect(container.read(sessionsProvider).byId('s2'), isNotNull);
   });
 
   testWidgets('rebinding is reflected live in the scope', (tester) async {
@@ -348,7 +328,6 @@ void main() {
       container: container,
     );
 
-    // Rebind open-settings to Ctrl+P, then that combo should fire it.
     await keymap.rebind(
       ShortcutAction.openSettings,
       const KeyChord(LogicalKeyboardKey.keyP, control: true),

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'desktop_sidebar.dart';
-import 'panes/pane_tree_view.dart';
+import 'split_tree_view.dart';
 import 'sidebar_layout.dart';
 
 /// The desktop chat surface: a foldable, resizable [DesktopSidebar] on the left
@@ -30,7 +30,7 @@ class DesktopChatShell extends ConsumerWidget {
             ),
             const _SidebarResizeHandle(),
           ],
-          const Expanded(child: PaneTreeView()),
+          const Expanded(child: WorkspaceView()),
         ],
       ),
     );

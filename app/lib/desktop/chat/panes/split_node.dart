@@ -1,12 +1,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show Axis;
 
-import 'pane_node.dart' show DropEdge, kMinPaneRatio, kMaxPaneRatio;
 import '../selected_worktree.dart';
 
-// Re-export so consumers of the Split/Tab model don't also import pane_node.dart
-// just for these shared constants and the drop-edge enum.
-export 'pane_node.dart' show DropEdge, kMinPaneRatio, kMaxPaneRatio;
+/// The edge of a target [Split] a dragged [Split] is dropped onto.
+///
+/// [left]/[right] re-dock side-by-side (a horizontal splitter); [top]/[bottom]
+/// stack the splits (a vertical splitter).
+enum DropEdge {
+  /// Dock the source to the left of the target.
+  left,
+
+  /// Dock the source to the right of the target.
+  right,
+
+  /// Dock the source above the target.
+  top,
+
+  /// Dock the source below the target.
+  bottom,
+}
+
+/// The lower and upper bounds a [Splitter.ratio] is clamped to, so a child is
+/// never dragged fully closed.
+const double kMinPaneRatio = 0.1;
+
+/// See [kMinPaneRatio].
+const double kMaxPaneRatio = 0.9;
 
 /// A node in the recursive workspace tree: either a [Split] (a leaf region that
 /// hosts a strip of [Tab]s) or a [Splitter] (two children divided along an

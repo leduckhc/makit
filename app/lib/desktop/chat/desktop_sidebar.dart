@@ -128,7 +128,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
     try {
       final sid = await store.spawnSession(projectId);
       if (!mounted) return;
-      openDraftSession(ref, projectId, sid);
+      openDraftSession(ref, sid);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

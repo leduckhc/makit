@@ -20,6 +20,8 @@ import 'transport/transport.dart';
 import 'ui/widgets/makit_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
 import 'desktop/desktop_app.dart';
+import 'desktop/chat/desktop_chat_shell.dart';
+import 'desktop/chat/keymap_scope.dart';
 import 'platform_shell.dart';
 
 Future<void> main() async {
@@ -93,15 +95,17 @@ Future<void> main() async {
   // above), so its window_manager/daemon bootstrap stays guarded by
   // Platform.isMacOS and never runs on iPad.
   //
-  // Both branches currently build the mobile router: Lane 3 lands the
-  // desktop-style `WorkspaceView` and swaps it into `workspaceBuilder`. Until
-  // then iPad keeps working on the existing UI (plan: "before Lane 3 it simply
-  // routes iPad to the current pane UI").
+  // The workspace branch reuses the desktop `DesktopChatShell` (sidebar +
+  // `WorkspaceView`) over the same store/connection the mobile bootstrap above
+  // already set up. It intentionally omits macOS-only chrome: no daemon/tray,
+  // no desktop Settings window (the sidebar's settings button is hidden), and
+  // the workspace controller is the in-memory (non-persisted) default — layout
+  // persistence there is only wired for macOS in runDesktopApp.
   runApp(
     UncontrolledProviderScope(
       container: container,
       child: PlatformShell(
-        workspaceBuilder: (_) => const MakitApp(),
+        workspaceBuilder: (_) => const _WorkspaceShellApp(),
         mobileBuilder: (_) => const MakitApp(),
       ),
     ),
@@ -185,6 +189,34 @@ class _MakitAppState extends ConsumerState<MakitApp>
       builder: (context, child) =>
           SrvRequestHandler(child: child ?? const SizedBox()),
       debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
+/// SPEC-28 (decision 10): the iPad workspace app. A minimal [MaterialApp]
+/// hosting the desktop [DesktopChatShell] (sidebar + `WorkspaceView`) over the
+/// mobile bootstrap's store/connection, with the global keyboard shortcuts
+/// installed. It deliberately omits the macOS-only Settings window (the
+/// sidebar's settings button is hidden) and the daemon/tray glue; those live in
+/// `runDesktopApp`. Layout persistence is macOS-only for now — the iPad uses the
+/// in-memory workspace controller default.
+class _WorkspaceShellApp extends StatelessWidget {
+  const _WorkspaceShellApp();
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'makit',
+      theme: makitLightTheme,
+      darkTheme: makitDarkTheme,
+      themeMode: ThemeMode.system,
+      debugShowCheckedModeBanner: false,
+      builder: (context, child) =>
+          SrvRequestHandler(child: child ?? const SizedBox()),
+      home: DesktopKeymapScope(
+        onOpenSettings: () {},
+        child: const DesktopChatShell(),
+      ),
     );
   }
 }

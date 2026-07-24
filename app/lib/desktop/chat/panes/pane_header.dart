@@ -6,10 +6,9 @@ import 'package:window_manager/window_manager.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../../../ui/composer/client_commands.dart';
-import '../selected_session.dart';
 import '../sidebar_layout.dart';
 import '../title_bar_strip.dart';
-import 'pane_tree_controller.dart';
+import 'workspace_controller.dart';
 
 /// The docked pane header: the session title, the sidebar-unfold control when
 /// collapsed, and the session actions menu (SPEC-19, moved from
@@ -91,21 +90,30 @@ String sessionPaneTitle(Session? session, String fallbackId) {
   return fallbackId;
 }
 
-/// The session-level overflow menu (Rename / Quit) for a pane header. Model and
+/// The session-level overflow menu (Rename / Quit) for a tab strip. Model and
 /// thinking-effort live inline in the composer footer, so they are not repeated
-/// here. Shared by the docked [PaneHeader] and the split pane tree's tab strip.
+/// here. Shared by the docked [PaneHeader] and the workspace tab strip.
 class SessionActionsMenu extends ConsumerWidget {
-  /// Creates the actions menu acting on [sessionId]. [leafId] is the pane leaf
-  /// hosting the menu; when provided, "Quit session" also closes that pane
-  /// (Quit = kill the session **and** close its pane). Null keeps the plain
-  /// unbind behaviour (the standalone [PaneHeader], not used in the pane tree).
-  const SessionActionsMenu({super.key, required this.sessionId, this.leafId});
+  /// Creates the actions menu acting on [sessionId]. [splitId]/[tabId] identify
+  /// the tab hosting the menu; when both are provided, "Quit session" also
+  /// closes that tab (Quit = kill the session **and** close its tab). Null
+  /// keeps the plain unbind behaviour (the standalone [PaneHeader], not used in
+  /// the workspace tree).
+  const SessionActionsMenu({
+    super.key,
+    required this.sessionId,
+    this.splitId,
+    this.tabId,
+  });
 
   /// The session the menu's actions target.
   final String sessionId;
 
-  /// The pane leaf hosting this menu, closed on Quit when non-null.
-  final String? leafId;
+  /// The split hosting this menu's tab, closed on Quit when non-null.
+  final String? splitId;
+
+  /// The tab hosting this menu, closed on Quit when non-null.
+  final String? tabId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -184,23 +192,18 @@ class SessionActionsMenu extends ConsumerWidget {
     // Capture notifiers before the async gap: the optimistic close disposes
     // this menu's widget, so nothing below may touch `ref`/`context`.
     final store = ref.read(storeControllerProvider.notifier);
-    final panes = ref.read(paneTreeControllerProvider.notifier);
-    final selection = ref.read(selectedSessionProvider.notifier);
+    final workspace = ref.read(workspaceControllerProvider.notifier);
 
-    // Optimistic: close the pane now, don't wait on the server. Quit = close
-    // this pane + kill the session. Closing the last pane clears the tree to
-    // the empty placeholder; a split collapses into its sibling.
-    if (leafId != null) {
-      panes.setActive(leafId!);
-      panes.closeActive();
+    // Optimistic: close the tab now, don't wait on the server. Quit = close
+    // this tab + kill the session. Closing the last tab collapses the split
+    // into its sibling (or resets the sole split to an empty starter tab).
+    if (splitId != null && tabId != null) {
+      workspace.closeTab(splitId!, tabId!);
     }
-    // Drop any *other* panes still bound to the session so it never lingers in
-    // another worktree's layout. If the sidebar still points here, move it to
-    // the surviving active pane (never stomp a newer user selection).
-    panes.unbindSession(sessionId);
-    if (selection.state == sessionId) {
-      selection.state = panes.activeLeafSessionId;
-    }
+    // Drop any *other* tab still hosting the session so it never lingers in the
+    // layout. The sidebar highlight (selectedSessionProvider) is derived from
+    // the active tab, so it follows the surviving layout automatically.
+    workspace.unbindSession(sessionId);
 
     // Fire the kill in the background. The sidebar reconciles from server
     // snapshots, so on failure the session simply stays/reappears there; just

@@ -37,7 +37,6 @@ ProviderContainer _thinkingContainer(String text) {
       ).overrideWithValue([ThinkingItem(seq: 1, ts: 0, text: text)]),
     ],
   );
-  container.read(selectedSessionProvider.notifier).state = 's1';
   return container;
 }
 
@@ -145,7 +144,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(selectedSessionProvider.notifier).state = 's1';
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -182,7 +180,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(selectedSessionProvider.notifier).state = 's1';
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -255,7 +252,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(selectedSessionProvider.notifier).state = 's1';
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -294,7 +290,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(selectedSessionProvider.notifier).state = 's1';
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -332,7 +327,6 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      container.read(selectedSessionProvider.notifier).state = 's1';
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -375,7 +369,6 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      container.read(selectedSessionProvider.notifier).state = 's1';
 
       await tester.pumpWidget(
         UncontrolledProviderScope(
@@ -403,7 +396,6 @@ void main() {
       ],
     );
     addTearDown(container.dispose);
-    container.read(selectedSessionProvider.notifier).state = 's1';
 
     Widget app(Widget child) => UncontrolledProviderScope(
       container: container,
@@ -575,7 +567,6 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
-      container.read(selectedSessionProvider.notifier).state = 's1';
 
       await tester.pumpWidget(
         UncontrolledProviderScope(

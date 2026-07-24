@@ -6,7 +6,8 @@ import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
 import 'composer_focus.dart';
 import 'new_session_dialog.dart';
-import 'panes/pane_tree_controller.dart';
+import 'panes/split_node.dart';
+import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
 import 'sidebar_layout.dart';
 import '../settings/settings_window.dart' show settingsOpenProvider;
@@ -159,15 +160,11 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.toggleSidebar:
         ref.read(sidebarCollapsedProvider.notifier).update((v) => !v);
       case ShortcutAction.focusComposer:
-        // Focus the composer of the currently active leaf pane (each leaf owns
-        // its own composer FocusNode, keyed by leaf id). No-op when nothing is
-        // selected (no current tree).
-        final activeLeafId = ref
-            .read(paneTreeControllerProvider)
-            .current
-            ?.activeLeafId;
-        if (activeLeafId != null) {
-          ref.read(desktopComposerFocusProvider(activeLeafId)).requestFocus();
+        // Focus the composer of the active split's active tab (each tab owns
+        // its own composer FocusNode, keyed by tab id).
+        final tab = activeTab(ref.read(workspaceControllerProvider));
+        if (tab != null) {
+          ref.read(desktopComposerFocusProvider(tab.id)).requestFocus();
         }
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
@@ -178,22 +175,28 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleSession(ref, 1);
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
-      case ShortcutAction.splitPaneVertical:
-        _splitPane(ref, Axis.horizontal);
-      case ShortcutAction.splitPaneHorizontal:
-        _splitPane(ref, Axis.vertical);
-      case ShortcutAction.newPane:
-        // An empty pane whose only affordance is a button is a dead end for a
-        // keyboard action, so "New session in pane" opens the dialog directly,
-        // pre-filled with the active worktree when it's real (SPEC-27).
+      case ShortcutAction.splitVertical:
+        ref.read(workspaceControllerProvider.notifier).divideActive(Axis.horizontal);
+      case ShortcutAction.splitHorizontal:
+        ref.read(workspaceControllerProvider.notifier).divideActive(Axis.vertical);
+      case ShortcutAction.newTab:
+        // A tab with only a New-session button is a dead end for a keyboard
+        // action, so "New tab" opens the dialog directly, pre-filled with the
+        // active tab's worktree when it's real (SPEC-27).
         showNewSessionDialog(
           context,
           ref,
           projectId: _currentProjectId(ref),
           worktree: activeRealWorktree(ref),
         );
-      case ShortcutAction.closePane:
-        closeActivePane(ref);
+      case ShortcutAction.closeSplit:
+        closeActiveSplit(ref);
+      case ShortcutAction.closeTab:
+        closeActiveTab(ref);
+      case ShortcutAction.nextTab:
+        _cycleTab(ref, 1);
+      case ShortcutAction.prevTab:
+        _cycleTab(ref, -1);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:
@@ -201,16 +204,22 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     }
   }
 
-  /// Splits the active pane, landing a fresh empty pane in the SAME worktree.
-  ///
-  /// Each tree owns its worktree, so the fresh leaf (a null-session leaf)
-  /// automatically renders that worktree's harness picker while the existing
-  /// pane keeps its own session. Splitting is therefore just `splitActive`,
-  /// a no-op when nothing is selected (no current tree). The old
-  /// new-worktree-dialog / linked-draft fallbacks are gone: a tree can only
-  /// exist for a concrete worktree, so there is no worktree-less pane to split.
-  void _splitPane(WidgetRef ref, Axis axis) {
-    ref.read(paneTreeControllerProvider.notifier).splitActive(axis);
+  /// Cycles the active split's active tab by [delta] (wrapping). No-op when the
+  /// active split has a single tab.
+  void _cycleTab(WidgetRef ref, int delta) {
+    final state = ref.read(workspaceControllerProvider);
+    final split = firstSplitWhere(
+      state.root,
+      (s) => s.id == state.activeSplitId ? s : null,
+    );
+    if (split == null || split.tabs.length < 2) return;
+    final index = split.tabs.indexWhere((t) => t.id == split.activeTabId);
+    if (index < 0) return;
+    final next = (index + delta) % split.tabs.length;
+    final wrapped = next < 0 ? next + split.tabs.length : next;
+    ref
+        .read(workspaceControllerProvider.notifier)
+        .setActiveTab(split.id, split.tabs[wrapped].id);
   }
 
   /// Session ids in sidebar display order (repo order, then each repo's
