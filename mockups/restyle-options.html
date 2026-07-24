@@ -25,6 +25,7 @@
     --hover:rgba(255,255,255,.05); --active:rgba(255,255,255,.08);
     --shadow:none; --border:0px; --track:var(--panel-3);
     --tab-active:var(--panel-3); --send:var(--panel-3); --send-ink:var(--text);
+    --tab-top-radius:0px;
   }
 
   /* ============ OPTION 1 · FLATLINE (Linear-ish, cool near-black) ============ */
@@ -84,7 +85,7 @@
     --accent:#57e08d; --accent-ink:#08130c; --accent-soft:rgba(87,224,141,.16);
     --radius-s:8px; --radius-m:12px; --radius-l:16px; --row:34px; --tabbar:38px;
     --border:0px; --shadow:0 4px 16px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
-    --tab-active:#303136; --send:var(--accent); --send-ink:var(--accent-ink);
+    --tab-active:#303136; --send:var(--accent); --send-ink:var(--accent-ink); --tab-top-radius:7px;
   }
   [data-style="soft"][data-mode="light"]{
     --bg:#f2f3f5; --panel:#ffffff; --panel-2:#f7f8fa; --panel-3:#eef0f3;
@@ -93,7 +94,7 @@
     --accent:#12924a; --accent-ink:#ffffff; --accent-soft:rgba(18,146,74,.10);
     --radius-s:8px; --radius-m:12px; --radius-l:16px; --row:34px; --tabbar:38px;
     --border:0px; --shadow:0 4px 20px rgba(20,22,28,.08), 0 1px 3px rgba(20,22,28,.06);
-    --tab-active:#ffffff; --send:var(--accent); --send-ink:#fff;
+    --tab-active:#ffffff; --send:var(--accent); --send-ink:#fff; --tab-top-radius:7px;
   }
 
   /* ============ OPTION 5 · DAYLIGHT (airy light, generous whitespace, hairlines) ============ */
@@ -105,7 +106,7 @@
     --radius-s:7px; --radius-m:11px; --row:36px; --tabbar:40px;
     --border:1px; --shadow:0 1px 2px rgba(16,19,23,.05);
     --fs-base:13.5px; --tab-active:#eef4f0;
-    --send:var(--accent); --send-ink:#fff;
+    --send:var(--accent); --send-ink:#fff; --tab-top-radius:6px;
   }
 
   * { box-sizing:border-box; }
@@ -192,21 +193,28 @@
   .split{ flex:1; display:flex; flex-direction:column; min-width:0; }
   .split + .split{ border-left:1px solid var(--hair); }
 
-  .tabbar{ height:var(--tabbar); flex:0 0 auto; display:flex; align-items:center; gap:3px;
-    padding:0 6px; background:var(--panel); border-bottom:var(--border) solid var(--hair); }
-  .grip{ color:var(--faint); font-size:12px; padding:0 4px; cursor:grab; opacity:.6; }
-  .tab{ display:flex; align-items:center; gap:7px; height:24px; padding:0 8px; border-radius:var(--radius-s);
-    color:var(--muted); cursor:default; max-width:180px; font-size:12.5px; }
+  /* VSCode-style seated tabs: squared, flush, active merges with the pane body */
+  .tabbar{ height:var(--tabbar); flex:0 0 auto; display:flex; align-items:stretch; gap:0;
+    background:var(--panel); border-bottom:1px solid var(--hair); }
+  .grip{ display:none; }
+  .tab{ display:flex; align-items:center; gap:7px; padding:0 11px; min-width:0; max-width:190px;
+    color:var(--muted); cursor:default; font-size:12.5px; position:relative;
+    border-right:1px solid var(--hair);
+    border-radius:var(--tab-top-radius) var(--tab-top-radius) 0 0; }
   .tab:hover{ background:var(--hover); color:var(--text); }
-  .tab.active{ background:var(--tab-active); color:var(--text); }
-  .tab .dot{ width:6px;height:6px;border-radius:50%; }
+  /* active tab shares the transcript bg (var(--bg)) so it seats into the pane,
+     with a 2px accent cap on top — reads as a real tab, not a floating pill */
+  .tab.active{ background:var(--bg); color:var(--text); box-shadow:inset 0 2px 0 var(--accent); }
+  .tab .dot{ width:6px;height:6px;border-radius:50%; flex:0 0 auto; }
   .tab .lbl{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .tab .x{ opacity:0; font-size:12px; color:var(--faint); width:15px;height:15px; display:grid;place-items:center; border-radius:4px; }
+  .tab .x{ opacity:0; font-size:12px; color:var(--faint); width:16px;height:16px; display:grid;place-items:center; border-radius:4px; flex:0 0 auto; }
   .tab:hover .x, .tab.active .x{ opacity:1; }
   .tab .x:hover{ background:var(--hair-strong); color:var(--text); }
-  .tabbar .add{ width:22px;height:22px; display:grid;place-items:center; border-radius:6px; color:var(--muted); }
+  .tabbar .add{ width:30px; display:grid;place-items:center; color:var(--muted); border-right:1px solid var(--hair); }
   .tabbar .add:hover{ background:var(--hover); color:var(--text); }
-  .tabbar .spacer{ flex:1; }
+  /* the empty header area IS the split's drag handle (VSCode: grab here to move the group) */
+  .tabbar .spacer{ flex:1; align-self:stretch; cursor:grab; }
+  .tabbar .spacer:hover{ background:var(--hover); }
 
   /* ---- chat transcript ---- */
   .chat{ flex:1; overflow:auto; padding:20px 22px; display:flex; flex-direction:column; gap:14px; }
