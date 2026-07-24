@@ -135,23 +135,29 @@ test("migrates a legacy sessions schema in place, idempotently, keeping existing
 
     // Opening through the store migrates: row intact, new fields readable.
     const store = new SqliteEventStore(path);
-    const loaded = store.loadSessions();
-    assert.equal(loaded.length, 1);
-    assert.equal(loaded[0].title, "legacy row");
-    assert.equal(loaded[0].resumeSessionPath, undefined);
-    assert.equal(loaded[0].branch, undefined);
-    assert.equal(loaded[0].worktreePath, undefined);
-    // The migrated columns are writable end-to-end.
-    store.saveSession(meta("s-old", { title: "legacy row", branch: "b", worktreePath: "/wt" }));
-    store.close();
+    try {
+      const loaded = store.loadSessions();
+      assert.equal(loaded.length, 1);
+      assert.equal(loaded[0].title, "legacy row");
+      assert.equal(loaded[0].resumeSessionPath, undefined);
+      assert.equal(loaded[0].branch, undefined);
+      assert.equal(loaded[0].worktreePath, undefined);
+      // The migrated columns are writable end-to-end.
+      store.saveSession(meta("s-old", { title: "legacy row", branch: "b", worktreePath: "/wt" }));
+    } finally {
+      store.close();
+    }
 
     // Reopening the already-migrated file is a no-op (idempotent migration).
     const reopened = new SqliteEventStore(path);
-    const again = reopened.loadSessions();
-    assert.equal(again.length, 1);
-    assert.equal(again[0].branch, "b");
-    assert.equal(again[0].worktreePath, "/wt");
-    reopened.close();
+    try {
+      const again = reopened.loadSessions();
+      assert.equal(again.length, 1);
+      assert.equal(again[0].branch, "b");
+      assert.equal(again[0].worktreePath, "/wt");
+    } finally {
+      reopened.close();
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
