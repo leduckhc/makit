@@ -51,6 +51,12 @@ export type SessionLifecycle =
       pendingWorktreePath?: string;
       branch?: string;
       virtualWorktreeId?: string;
+      /**
+       * Pre-spawn config picks (SPEC-27): `{id, value}` requests, validated
+       * against the cached catalog, applied at launch after the real
+       * session/thread starts and before the first prompt.
+       */
+      configPicks?: { id: string; value: string | boolean }[];
     }
   | { phase: "started"; branch?: string; worktreePath?: string };
 
@@ -311,6 +317,7 @@ export class Session extends EventEmitter {
     pendingWorktreePath?: string;
     branch?: string;
     virtualWorktreeId?: string;
+    configPicks?: { id: string; value: string | boolean }[];
   }): void {
     this._lifecycle = { phase: "draft", ...opts };
   }
