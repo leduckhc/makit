@@ -3,16 +3,22 @@
 **Status:** Proposed · **Priority:** P2 · **Surface:** desktop chat starter (`app/lib/desktop/chat/`), server (`server/src/`), wire protocol
 **Depends on:** SPEC-26 (unified `configOptions` model + composer renderer this dialog reuses), SPEC-10 (desktop chat app). **Supersedes** SPEC-05's spawn path (session-in-pane) — all sessions are headless (no attachable pane).
 **Prerequisite / assumption:** **Two transports, one config model.** pi runs
-**over ACP** via the standalone **`pi-acp`** adapter (the native pi adapter
-`server/src/adapters/pi.ts` is **removed**; `pi-acp` is the ACP server — pi does
-not ship an ACP mode). codex runs on **`codex app-server`** (`codex-native`,
-`CodexAppServerAdapter`) — **kept**, not retired — with its config surface
-**projected** into the same `SessionConfigOption` model (SPEC-26). So the
-`native` transport stays for codex; the descriptor `transport` is `"acp"` or
-`"native"`. (`codex-acp` is the ACP target for codex — not yet implemented; when
-it ships codex moves to the ACP path with no client/wire change.)
-**Availability gate:** pi is listed only when the `pi-acp` binary resolves; codex
-when `codex app-server` resolves. *This spec introduces the cached capability
+**over ACP** via the standalone **`pi-acp`** adapter — the existing
+[svkozak/pi-acp](https://github.com/svkozak/pi-acp) npm package (`pi-acp` bin;
+spawns `pi --mode rpc` and bridges ACP JSON-RPC over stdio; Node 22+, pi on
+`PATH`) — so makit **wraps pi with `pi-acp`** when starting a pi agent. The
+native pi adapter `server/src/adapters/pi.ts` is **removed**; pi does not ship
+an ACP mode — `pi-acp` is the ACP server. codex runs on **`codex app-server`**
+(`codex-native`, `CodexAppServerAdapter`) — **kept**, not retired — with its
+config surface **projected** into the same `SessionConfigOption` model
+(SPEC-26). So the `native` transport stays for codex; the descriptor
+`transport` is `"acp"` or `"native"`. (`codex-acp` is the ACP target for codex
+— not yet implemented; when it ships codex moves to the ACP path with no
+client/wire change.)
+**Availability gate:** pi is listed only when **both** the `pi-acp` binary and
+the `pi` binary resolve on `PATH` (pi-acp spawns `pi --mode rpc`; no `npx`
+auto-install — deterministic, no network at spawn); codex when `codex
+app-server` resolves. *This spec introduces the cached capability
 catalog on `agents.list` + `agents.refresh` and the `session.spawn` config
 picks (applied at launch).*
 
@@ -216,11 +222,13 @@ interface AgentDescriptor {
   bare binary checksum.
 - **Probe (only on miss/refresh), per transport.** **ACP** (pi): launch the
   adapter, run `initialize` + `session/new` in an **empty temp `cwd`**, capture
-  the returned `configOptions`, then **clean up** — invoke the agent's
-  session-cleanup RPC if it offers one (ACP v1 has no standard
-  `session/close`/delete), then **kill** + dispose. A successful `session/new`
-  may write persistent session state (e.g. `pi-acp` files); `kill()` alone can
-  orphan it, so probes MUST use a throwaway temp `cwd` + best-effort cleanup.
+  the returned `configOptions`, then **clean up** — `pi-acp` supports
+  **`session/delete`** (call it to drop the probe session; it also cleans the
+  `~/.pi/pi-acp/session-map.json` entry), then **kill** + dispose. Other ACP
+  agents without a delete RPC fall back to best-effort. A successful
+  `session/new` writes persistent session state (pi sessions under
+  `~/.pi/agent/sessions/`, the pi-acp session map), so probes MUST use a
+  throwaway temp `cwd` + the delete/cleanup step to avoid ghost sessions.
   **codex `app-server`:** query the model/reasoning surface (no user thread
   retained) and **project** it into `configOptions` (SPEC-26). **cwd caveat:**
   the single empty-`cwd` catalog is valid only for harnesses whose
@@ -362,7 +370,9 @@ Flutter (`flutter test --no-pub`, `flutter analyze --no-pub`):
 
 - **Reintroducing `pi-acp` (PR #25 context).** pi-acp was removed in #25 citing
   ACP file-access; **that concern is accepted here — no extra fs sandboxing is
-  planned.** Running pi over ACP is the intended path.
+  planned.** Running pi over ACP is the intended path. Note pi-acp does **no**
+  ACP fs/terminal delegation — pi reads/writes and executes locally in the
+  session `cwd`, same trust model as native pi had.
 - **codex is app-server, not ACP (stopgap).** codex's catalog is **projected**
   from `codex app-server` (model + reasoning-effort), not native ACP
   `configOptions`; its probe and apply-at-launch use the app-server thread/turn
