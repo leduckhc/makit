@@ -20,6 +20,7 @@ import 'transport/transport.dart';
 import 'ui/widgets/makit_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
 import 'desktop/desktop_app.dart';
+import 'platform_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,8 +86,25 @@ Future<void> main() async {
     }
   }, fireImmediately: false);
 
+  // SPEC-28 (decision 10): iPadOS reaches the workspace shell by *size class*,
+  // not just Platform — a full-screen (regular×regular) iPad routes to the
+  // workspace, while iPhone / compact split-view iPads stay on the mobile
+  // router. macOS never reaches here (it returned early via runDesktopApp
+  // above), so its window_manager/daemon bootstrap stays guarded by
+  // Platform.isMacOS and never runs on iPad.
+  //
+  // Both branches currently build the mobile router: Lane 3 lands the
+  // desktop-style `WorkspaceView` and swaps it into `workspaceBuilder`. Until
+  // then iPad keeps working on the existing UI (plan: "before Lane 3 it simply
+  // routes iPad to the current pane UI").
   runApp(
-    UncontrolledProviderScope(container: container, child: const MakitApp()),
+    UncontrolledProviderScope(
+      container: container,
+      child: PlatformShell(
+        workspaceBuilder: (_) => const MakitApp(),
+        mobileBuilder: (_) => const MakitApp(),
+      ),
+    ),
   );
 
   // Init the plugin AFTER the first frame so startup isn't blocked, and skip
