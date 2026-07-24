@@ -205,7 +205,7 @@ void main() {
     },
   );
 
-  testWidgets('Ctrl+T resets the active pane to an empty harness-picker pane', (
+  testWidgets('Ctrl+T opens the New session dialog for the active pane', (
     tester,
   ) async {
     final keymap = await controller();
@@ -228,6 +228,7 @@ void main() {
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
         sessionsProvider.overrideWithValue(SessionsState([session])),
+        agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
       ],
     );
     addTearDown(container.dispose);
@@ -244,17 +245,19 @@ void main() {
     );
 
     await pressCtrl(tester, LogicalKeyboardKey.keyT);
+    await tester.pumpAndSettle();
 
+    // The dialog opened (rather than resetting the pane to an empty picker):
+    // the running session and its pane binding are untouched.
+    expect(find.text('New session'), findsOneWidget);
     final cur = container.read(paneTreeControllerProvider).current!;
-    // No split: still a single leaf, now empty (harness picker), same
-    // worktree. The session keeps running but the sidebar highlight clears.
     expect(cur.root, isA<PaneLeaf>());
     expect(cur.worktree, wt);
     expect(
       container.read(paneTreeControllerProvider.notifier).activeLeafSessionId,
-      isNull,
+      's1',
     );
-    expect(container.read(selectedSessionProvider), isNull);
+    expect(container.read(selectedSessionProvider), 's1');
   });
 
   testWidgets('Ctrl+W closes the active pane but keeps the session', (

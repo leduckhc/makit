@@ -183,7 +183,15 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.splitPaneHorizontal:
         _splitPane(ref, Axis.vertical);
       case ShortcutAction.newPane:
-        newPaneInActiveWorktree(ref);
+        // An empty pane whose only affordance is a button is a dead end for a
+        // keyboard action, so "New session in pane" opens the dialog directly,
+        // pre-filled with the active worktree when it's real (SPEC-27).
+        showNewSessionDialog(
+          context,
+          ref,
+          projectId: _currentProjectId(ref),
+          worktree: activeRealWorktree(ref),
+        );
       case ShortcutAction.closePane:
         closeActivePane(ref);
       // Composer-scope actions are handled inside the Composer, not here.

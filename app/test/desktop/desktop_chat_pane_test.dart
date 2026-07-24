@@ -121,7 +121,7 @@ void main() {
       ),
     );
 
-    expect(find.text('Select or start a session'), findsOneWidget);
+    expect(find.text('Select a session, or start a new one'), findsOneWidget);
   });
 
   testWidgets('shows transcript header when a session is selected', (
@@ -498,44 +498,58 @@ void main() {
       return container;
     }
 
-    testWidgets('a real worktree with no session renders its harness picker', (
-      tester,
-    ) async {
-      await pumpPane(tester, worktree: _wtA);
-
-      expect(find.byType(WorktreeStartView), findsOneWidget);
-      expect(find.text('Select or start a session'), findsNothing);
-    });
-
     testWidgets(
-      'a real worktree with a dead (persisted, now-missing) session id '
-      'still falls back to the harness picker',
+      'a real worktree with no session shows the starter pre-filled with '
+      'that worktree',
       (tester) async {
-        await pumpPane(tester, sessionId: 'dead-session', worktree: _wtA);
+        await pumpPane(tester, worktree: _wtA);
 
-        expect(find.byType(WorktreeStartView), findsOneWidget);
+        final starter = tester.widget<EmptyPaneStarter>(
+          find.byType(EmptyPaneStarter),
+        );
+        expect(starter.worktree, _wtA);
+        expect(find.text('New session'), findsOneWidget);
       },
     );
 
     testWidgets(
-      "a draft's virtual worktree with no (or a dead) session falls through "
-      'to the empty placeholder instead of the harness picker',
+      'a real worktree with a dead (persisted, now-missing) session id '
+      'still shows the starter pre-filled with that worktree',
+      (tester) async {
+        await pumpPane(tester, sessionId: 'dead-session', worktree: _wtA);
+
+        final starter = tester.widget<EmptyPaneStarter>(
+          find.byType(EmptyPaneStarter),
+        );
+        expect(starter.worktree, _wtA);
+      },
+    );
+
+    testWidgets(
+      "a draft's virtual worktree with no (or a dead) session shows the "
+      'starter with NO pre-fill (nothing on disk to land on)',
       (tester) async {
         final draft = draftWorktreeFor('p1', 's1');
         await pumpPane(tester, sessionId: 'dead-session', worktree: draft);
 
-        expect(find.byType(WorktreeStartView), findsNothing);
-        expect(find.text('Select or start a session'), findsOneWidget);
+        final starter = tester.widget<EmptyPaneStarter>(
+          find.byType(EmptyPaneStarter),
+        );
+        expect(starter.worktree, isNull);
+        expect(find.text('Select a session, or start a new one'), findsOneWidget);
       },
     );
 
-    testWidgets('a draft worktree with no session id also shows the empty '
-        'placeholder', (tester) async {
+    testWidgets('a draft worktree with no session id also shows the starter '
+        'with no pre-fill', (tester) async {
       final draft = draftWorktreeFor('p1', 's1');
       await pumpPane(tester, worktree: draft);
 
-      expect(find.byType(WorktreeStartView), findsNothing);
-      expect(find.text('Select or start a session'), findsOneWidget);
+      final starter = tester.widget<EmptyPaneStarter>(
+        find.byType(EmptyPaneStarter),
+      );
+      expect(starter.worktree, isNull);
+      expect(find.text('Select a session, or start a new one'), findsOneWidget);
     });
   });
 

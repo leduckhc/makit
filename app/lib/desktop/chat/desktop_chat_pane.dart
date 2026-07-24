@@ -16,6 +16,7 @@ import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_focus.dart';
 import 'composer_draft.dart';
 import 'harness_picker.dart';
+import 'new_session_dialog.dart';
 import 'pr_bar.dart';
 import 'panes/pane_header.dart';
 import 'selected_session.dart';
@@ -26,7 +27,7 @@ import '../../ui/composer/composer_selectors.dart';
 // them after the SPEC-19 split.
 export 'panes/pane_header.dart'
     show PaneHeader, SessionActionsMenu, UnfoldStrip, sessionPaneTitle;
-export 'harness_picker.dart' show HarnessPicker, WorktreeStartView;
+export 'harness_picker.dart' show HarnessPicker;
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -166,24 +167,20 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         : ref.watch(sessionsProvider).byId(sessionId);
     if (sessionId == null || session == null) {
       final worktree = widget.worktree;
-      // A real worktree with no (or a dead) session renders its harness picker.
-      // A draft's virtual worktree (`draft:<id>`) has nothing on disk, so once
-      // its pending session is gone (e.g. a persisted draft pane after a server
-      // restart) fall through to the empty placeholder instead of a start view
-      // that would try to launch an agent in a path that isn't a worktree.
-      if (worktree != null && !worktree.path.startsWith(kDraftWorktreePrefix)) {
-        return WorktreeStartView(
-          key: ValueKey(worktree.path),
-          worktree: worktree,
-          composerFocusId: widget.composerFocusId,
-        );
-      }
-      // Nothing selected at all: the empty placeholder (still owns the unfold
-      // affordance when the sidebar is hidden).
+      // A real worktree with no (or a dead) session pre-fills the New-session
+      // dialog with it. A draft's virtual worktree (`draft:<id>`) has nothing
+      // on disk, so it (and a null worktree) offers the dialog with no
+      // pre-fill. Every sessionless pane reaches the same placeholder + button
+      // (SPEC-27) — no dead-end panes.
+      final prefill =
+          (worktree != null &&
+              !worktree.path.startsWith(kDraftWorktreePrefix))
+          ? worktree
+          : null;
       return Column(
         children: [
           if (widget.showHeader) const UnfoldStrip(),
-          const Expanded(child: _NoSelection()),
+          Expanded(child: EmptyPaneStarter(worktree: prefill)),
         ],
       );
     }
@@ -409,11 +406,20 @@ class _EmptyTranscript extends StatelessWidget {
   }
 }
 
-class _NoSelection extends StatelessWidget {
-  const _NoSelection();
+/// The unified sessionless-pane placeholder (SPEC-27): a short prompt plus a
+/// "New session" button that opens the New-session dialog, pre-filling the
+/// Worktree field with [worktree] when it is a real on-disk worktree. Replaces
+/// both the old `WorktreeStartView` and the button-less `_NoSelection` so every
+/// empty pane state reaches the one starter (no dead-end panes).
+class EmptyPaneStarter extends ConsumerWidget {
+  /// Creates the placeholder; [worktree] pre-fills the dialog when known.
+  const EmptyPaneStarter({super.key, this.worktree});
+
+  /// The real worktree to pre-fill the dialog with, or null for no pre-fill.
+  final SelectedWorktree? worktree;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: Column(
@@ -422,8 +428,19 @@ class _NoSelection extends StatelessWidget {
           Icon(PhosphorIconsLight.chats, size: 40, color: cs.outline),
           const SizedBox(height: 12),
           Text(
-            'Select or start a session',
+            'Select a session, or start a new one',
             style: TextStyle(color: cs.outline),
+          ),
+          const SizedBox(height: 16),
+          FilledButton.icon(
+            icon: const Icon(PhosphorIconsLight.plus, size: 16),
+            label: const Text('New session'),
+            onPressed: () => showNewSessionDialog(
+              context,
+              ref,
+              projectId: worktree?.projectId,
+              worktree: worktree,
+            ),
           ),
         ],
       ),

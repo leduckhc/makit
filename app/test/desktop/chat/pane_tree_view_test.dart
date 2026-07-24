@@ -185,7 +185,7 @@ void main() {
         await tester.pumpWidget(_tree(c));
         await tester.pumpAndSettle();
 
-        expect(find.text('Select or start a session'), findsOneWidget);
+        expect(find.text('Select a session, or start a new one'), findsOneWidget);
       },
     );
   });
@@ -205,13 +205,25 @@ void main() {
 
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
-      expect(find.text('Select or start a session'), findsOneWidget);
+      expect(find.text('Select a session, or start a new one'), findsOneWidget);
+      expect(
+        tester
+            .widget<EmptyPaneStarter>(find.byType(EmptyPaneStarter))
+            .worktree,
+        isNull,
+        reason: 'no tree selected → starter has no pre-fill',
+      );
 
-      // Select worktree A → its seeded starter pane shows the harness picker.
+      // Select worktree A → its seeded starter pane pre-fills with worktree A.
       c.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
       await tester.pumpAndSettle();
-      expect(find.text('Select or start a session'), findsNothing);
-      expect(find.byType(WorktreeStartView), findsOneWidget);
+      expect(find.byType(EmptyPaneStarter), findsOneWidget);
+      expect(
+        tester
+            .widget<EmptyPaneStarter>(find.byType(EmptyPaneStarter))
+            .worktree,
+        _wtA,
+      );
     });
 
     testWidgets('switching worktrees preserves each layout', (tester) async {
@@ -230,18 +242,18 @@ void main() {
       ctrl.splitActive(Axis.horizontal);
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
-      expect(find.byType(WorktreeStartView), findsNWidgets(2));
+      expect(find.byType(EmptyPaneStarter), findsNWidgets(2));
 
       // Worktree B: a fresh single starter pane.
       ctrl.selectWorktree(_wtB);
       await tester.pumpAndSettle();
-      expect(find.byType(WorktreeStartView), findsOneWidget);
+      expect(find.byType(EmptyPaneStarter), findsOneWidget);
       expect(c.read(paneTreeControllerProvider).current!.root, isA<PaneLeaf>());
 
       // Back to A: its two-pane layout is intact.
       ctrl.selectWorktree(_wtA);
       await tester.pumpAndSettle();
-      expect(find.byType(WorktreeStartView), findsNWidgets(2));
+      expect(find.byType(EmptyPaneStarter), findsNWidgets(2));
       expect(
         c.read(paneTreeControllerProvider).current!.root,
         isA<PaneSplit>(),
@@ -271,7 +283,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // No dead pane, no crash: the leaf resolves to its worktree picker.
-        expect(find.byType(WorktreeStartView), findsOneWidget);
+        expect(find.byType(EmptyPaneStarter), findsOneWidget);
       },
     );
   });
@@ -553,46 +565,6 @@ void main() {
         reason: 'the shortcut focuses the active leaf composer',
       );
     });
-
-    testWidgets('focuses a worktree-start pane composer', (tester) async {
-      // The active leaf is an empty starter leaf (WorktreeStartView), whose
-      // Composer must be bound to the leaf's desktopComposerFocusProvider node
-      // for the shortcut to reach it (SPEC-14 per-leaf focus fix).
-      final c = ProviderContainer(
-        overrides: [
-          keymapOverride,
-          sessionsProvider.overrideWithValue(SessionsState(const [])),
-          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
-          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
-        ],
-      );
-      addTearDown(c.dispose);
-      c.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
-
-      await tester.pumpWidget(keymapTree(c));
-      await tester.pumpAndSettle();
-
-      // The worktree-start view renders its own docked composer.
-      final field = find.descendant(
-        of: find.byType(Composer),
-        matching: find.byType(EditableText),
-      );
-      expect(field, findsOneWidget);
-      expect(
-        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
-        isFalse,
-      );
-
-      await pressFocusComposer(tester);
-
-      expect(
-        tester.widget<EditableText>(field).focusNode.hasPrimaryFocus,
-        isTrue,
-        reason:
-            'the shortcut focuses the worktree-start pane composer via the '
-            'per-leaf focus node',
-      );
-    });
   });
 
   group('divider', () {
@@ -645,7 +617,7 @@ void main() {
         isNull,
         reason: 'the last pane closes to the empty placeholder',
       );
-      expect(find.text('Select or start a session'), findsOneWidget);
+      expect(find.text('Select a session, or start a new one'), findsOneWidget);
       expect(c.read(sessionsProvider).byId('s1'), isNotNull);
     });
 
@@ -710,7 +682,7 @@ void main() {
         isNull,
         reason: 'Quit closes the pane immediately, before the server replies',
       );
-      expect(find.text('Select or start a session'), findsOneWidget);
+      expect(find.text('Select a session, or start a new one'), findsOneWidget);
 
       // Let the background kill resolve so no pending future outlives the test.
       conn.killCompleted.complete(const {});

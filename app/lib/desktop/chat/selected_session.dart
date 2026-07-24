@@ -50,15 +50,13 @@ void closeActivePane(WidgetRef ref) {
   closePane(ref, activeLeafId);
 }
 
-/// Reset the active pane to a fresh empty pane (harness picker) in the current
-/// worktree without splitting (keyboard "New session in pane"). Any session
-/// bound to the pane keeps running; the sidebar session highlight is cleared so
-/// it matches the now-empty pane. No-op when no worktree is selected.
-void newPaneInActiveWorktree(WidgetRef ref) {
-  final controller = ref.read(paneTreeControllerProvider.notifier);
-  if (controller.current == null) return;
-  controller.resetActiveToEmpty();
-  ref.read(selectedSessionProvider.notifier).state = null;
+/// The active pane's real worktree for pre-filling the New-session dialog, or
+/// null when nothing is selected or the pane sits on a still-virtual draft
+/// worktree (`draft:` prefix, nothing on disk) that can't be pre-filled.
+SelectedWorktree? activeRealWorktree(WidgetRef ref) {
+  final wt = ref.read(paneTreeControllerProvider).current?.worktree;
+  if (wt == null || wt.path.startsWith(kDraftWorktreePrefix)) return null;
+  return wt;
 }
 
 /// Select a session: switch the pane view to that session's worktree tree
