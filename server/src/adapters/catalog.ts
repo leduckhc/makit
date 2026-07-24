@@ -31,37 +31,40 @@ export function onPath(cmd: string): boolean {
   return false;
 }
 
-function piNativeAvailable(): boolean {
-  return onPath(process.env.MAKIT_PI_BIN || "pi");
-}
-
-/** Resolve the codex-acp binary if one is available (env override or PATH). */
-export function codexAcpBin(): string | undefined {
-  const override = process.env.MAKIT_CODEX_ACP_BIN;
-  if (override && (existsSync(override) || onPath(override))) return override;
-  if (onPath("codex-acp")) return "codex-acp";
-  return undefined;
+/**
+ * pi runs over ACP via the standalone `pi-acp` adapter (which spawns
+ * `pi --mode rpc`). It is offered only when BOTH the `pi-acp` bridge binary and
+ * the `pi` binary it drives resolve on PATH — no `npx` auto-install, so spawns
+ * are deterministic and offline.
+ */
+function piAcpAvailable(): boolean {
+  return (
+    onPath(process.env.MAKIT_PI_ACP_BIN || "pi-acp") &&
+    onPath(process.env.MAKIT_PI_BIN || "pi")
+  );
 }
 
 /**
- * List the agents this makit host can offer. Native pi is always listed; Codex
- * variants are listed only when their respective binary is detected.
+ * List the agents this makit host can offer. pi (ACP, via `pi-acp`) is listed
+ * only when both `pi-acp` and `pi` resolve on PATH; codex (native, via
+ * `codex app-server`) is listed when the `codex` binary resolves.
  */
 export function listAgents(): AgentDescriptor[] {
-  const agents: AgentDescriptor[] = [
-    { id: "pi", label: "Pi (native)", transport: "native", available: piNativeAvailable() },
-  ];
-  if (codexAcpBin()) {
-    agents.push({ id: "codex", label: "Codex (ACP)", transport: "acp", available: true });
+  const agents: AgentDescriptor[] = [];
+  if (piAcpAvailable()) {
+    agents.push({ id: "pi", label: "Pi (ACP)", transport: "acp", available: true });
   }
   // Native codex app-server path (first-party JSON-RPC), when codex is installed.
   if (onPath(process.env.MAKIT_CODEX_BIN || "codex")) {
-    agents.push({ id: "codex-native", label: "Codex (app-server)", transport: "native", available: true });
+    agents.push({ id: "codex", label: "Codex (app-server)", transport: "native", available: true });
   }
   return agents;
 }
 
-/** Transport for a given agent id (defaults to native for the built-in pi). */
+/**
+ * Transport for a given agent id: codex (and its legacy `codex-native` alias)
+ * runs native via `codex app-server`; pi and every other ACP agent run over ACP.
+ */
 export function transportFor(agentId: string): AgentTransport {
-  return agentId === "codex" ? "acp" : "native";
+  return agentId === "codex" || agentId === "codex-native" ? "native" : "acp";
 }
