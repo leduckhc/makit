@@ -168,47 +168,56 @@ class _TabBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    return SizedBox(
+    return Container(
       height: _kTabBarHeight,
-      child: Row(
+      color: cs.surfaceContainerLow,
+      child: Stack(
         children: [
-          // Split-move grip: dragging it re-docks the whole split.
-          _SplitMoveGrip(split: split),
-          Expanded(
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (var i = 0; i < split.tabs.length; i++)
-                  _TabChip(
-                    key: ValueKey(split.tabs[i].id),
-                    split: split,
-                    tab: split.tabs[i],
-                    index: i,
-                    active: split.tabs[i].id == split.activeTabId,
+          // The empty header area is the split's drag handle (VSCode-style):
+          // grab anywhere without a tab/button to re-dock the whole split.
+          Positioned.fill(child: _SplitHeaderDragHandle(split: split)),
+          Row(
+            children: [
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < split.tabs.length; i++)
+                        _TabChip(
+                          key: ValueKey(split.tabs[i].id),
+                          split: split,
+                          tab: split.tabs[i],
+                          index: i,
+                          active: split.tabs[i].id == split.activeTabId,
+                        ),
+                    ],
                   ),
-              ],
-            ),
+                ),
+              ),
+              IconButton(
+                iconSize: 14,
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+                tooltip: 'New session',
+                color: cs.onSurfaceVariant,
+                icon: const Icon(PhosphorIconsLight.plus),
+                onPressed: () {
+                  ref.read(workspaceControllerProvider.notifier).setActiveSplit(split.id);
+                  final worktree = _prefillWorktree(ref, split);
+                  showNewSessionDialog(
+                    context,
+                    ref,
+                    projectId: worktree?.projectId,
+                    worktree: worktree,
+                  );
+                },
+              ),
+            ],
           ),
-          IconButton(
-            iconSize: 14,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-            tooltip: 'New session',
-            color: cs.onSurfaceVariant,
-            icon: const Icon(PhosphorIconsLight.plus),
-            onPressed: () {
-              ref.read(workspaceControllerProvider.notifier).setActiveSplit(split.id);
-              final worktree = _prefillWorktree(ref, split);
-              showNewSessionDialog(
-                context,
-                ref,
-                projectId: worktree?.projectId,
-                worktree: worktree,
-              );
-            },
-          ),
-          const SizedBox(width: 4),
         ],
       ),
     );
@@ -236,9 +245,12 @@ SelectedWorktree? _prefillWorktree(WidgetRef ref, Split split) {
   );
 }
 
-/// The left-of-the-bar grip that drags the whole split to another split's edge.
-class _SplitMoveGrip extends ConsumerWidget {
-  const _SplitMoveGrip({required this.split});
+/// The empty tab-bar header area, draggable to re-dock the whole split to
+/// another split's edge (VSCode-style: grab where there are no tabs). Fills the
+/// space behind the tab row via [Positioned.fill]; tabs/buttons sit on top and
+/// win hit-testing, so only the empty region initiates a split move.
+class _SplitHeaderDragHandle extends ConsumerWidget {
+  const _SplitHeaderDragHandle({required this.split});
 
   final Split split;
 
@@ -247,6 +259,7 @@ class _SplitMoveGrip extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     return Draggable<SplitDragData>(
       data: SplitDragData(split.id),
+      hitTestBehavior: HitTestBehavior.opaque,
       onDragStarted: () =>
           ref.read(workspaceControllerProvider.notifier).setActiveSplit(split.id),
       feedback: Material(
@@ -258,10 +271,7 @@ class _SplitMoveGrip extends ConsumerWidget {
         child: Semantics(
           label: 'Move split',
           button: true,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 6),
-            child: Icon(PhosphorIconsLight.dotsSixVertical, size: 14),
-          ),
+          child: const SizedBox.expand(),
         ),
       ),
     );
@@ -300,8 +310,17 @@ class _TabChip extends ConsumerWidget {
       constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
       padding: const EdgeInsets.only(left: 10, right: 4),
       decoration: BoxDecoration(
-        color: active ? cs.surfaceContainerHighest : Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
+        // Active tab uses the pane's own surface so it "seats" into the body
+        // below; a 2px primary cap marks it. Inactive tabs are flush and
+        // transparent (reading the recessed bar). Right divider separates tabs.
+        color: active ? cs.surface : Colors.transparent,
+        border: Border(
+          top: BorderSide(
+            color: active ? cs.primary : Colors.transparent,
+            width: 2,
+          ),
+          right: BorderSide(color: cs.outlineVariant, width: 1),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -364,10 +383,7 @@ class _TabChip extends ConsumerWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => controller.setActiveTab(split.id, tab.id),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-                child: chip,
-              ),
+              child: chip,
             ),
           ),
         );
