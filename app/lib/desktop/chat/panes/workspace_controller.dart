@@ -281,6 +281,30 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       _focus(existing.$1, existing.$2);
       return;
     }
+    // Bind into the active split's EMPTY active tab when there is one (the
+    // starter placeholder seeded by divide/reset) instead of appending next to
+    // it — revealing a session should fill the placeholder, not leave a
+    // dangling "New" tab.
+    final active = _splitById(state.activeSplitId);
+    final activeTab =
+        active?.tabs.where((t) => t.id == active.activeTabId).firstOrNull;
+    if (active != null && activeTab != null && activeTab.sessionId == null) {
+      final bound = Tab(id: activeTab.id, sessionId: sessionId);
+      final root = tree.mapSplits(
+        state.root,
+        (s) => s.id != active.id
+            ? s
+            : Split(
+                id: s.id,
+                tabs: [
+                  for (final t in s.tabs) t.id == activeTab.id ? bound : t,
+                ],
+                activeTabId: activeTab.id,
+              ),
+      );
+      _commit(WorkspaceState(root: root, activeSplitId: active.id));
+      return;
+    }
     openTab(
       state.activeSplitId,
       Tab(id: nextNodeId(SplitNodeKind.tab), sessionId: sessionId),
