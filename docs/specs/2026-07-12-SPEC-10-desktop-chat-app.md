@@ -31,7 +31,7 @@ UI, composer, design system) — this is an **extension, not a rewrite**.
 
 1. **Tech = extend the existing Flutter desktop app.** Not Electron/Tauri/native.
    Reuse the server, transport, pairing, tray/daemon glue, and the locked design
-   system (`design-system/makit/MASTER.md`). We own the polish.
+   system (`design-system/makit/DESIGN.md`). We own the polish.
 2. **Chat is the main window.** The app launches into a two-pane chat surface.
    The SPEC-03 control screens (Devices / QR / Status / Sessions) move behind a
    **Settings & Server** section, still reachable from the window and the tray.
@@ -123,7 +123,7 @@ Flutter desktop app  ──loopback WSS──▶  makit daemon (Node/TS)  ──
 - **Chat protocol** (existing WS + JSON): `session.spawn`, `agents.list`,
   `send.message`, session events, `srv.request`/`srv.response` — all already
   spoken by `app/lib/{transport,store}`.
-- **Design system**: `design-system/makit/MASTER.md` (grey neutrals + green
+- **Design system**: `design-system/makit/DESIGN.md` (grey neutrals + green
   accent, chat bubbles, tool cards, composer). Desktop reuses tokens/widgets.
 - **Keep the mobile app unaffected**: desktop chat lives in `app/lib/desktop/`;
   reuses `store`/`transport`/`ui` widgets read-only. Gate behind `Platform.isMacOS`

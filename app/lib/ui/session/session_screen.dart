@@ -259,7 +259,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: GlassSurface(
                   borderRadius: 28,
-                  // Unified design-system glass (see MASTER.md) — same recipe
+                  // Unified design-system glass (see DESIGN.md §7) — same recipe
                   // as the top bar.
                   child: (pendingAsk != null && pendingAsk.freeText)
                       // Free-text answer mode: a dedicated, empty answer

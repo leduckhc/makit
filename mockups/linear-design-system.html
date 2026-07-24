@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Linear design-system mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    /* ---- Linear DESIGN.md tokens ---- */
+    --canvas:#010102;
+    --surface-1:#0c0d10;
+    --surface-2:#16171b;
+    --surface-3:#1d1f24;
+    --surface-4:#25272d;
+    --hairline:#23252a;
+    --hairline-strong:#33363d;
+    --hairline-tertiary:#1a1c20;
+
+    /* accent overridden to a restrained green — used sparingly, never on chat bubbles */
+    --primary:#4cb782;
+    --primary-hover:#63d29c;
+    --primary-focus:#4cb782;
+    --on-primary:#04130b;
+    --brand-secure:#7aad97;
+
+    --ink:#f7f8f8;
+    --ink-muted:#d0d6e0;
+    --ink-subtle:#8a8f98;
+    --ink-tertiary:#62666d;
+
+    --success:#27a644;
+
+    /* product issue-tag palette (in-product only) */
+    --tag-red:#eb5757;
+    --tag-orange:#f2994a;
+    --tag-yellow:#f2c94c;
+    --tag-blue:#5e9ed6;
+    --tag-purple:#9b7fd6;
+
+    --font-display:'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Display',system-ui,'Segoe UI',Roboto,sans-serif;
+    --font-text:'Inter',-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,'Segoe UI',Roboto,sans-serif;
+    --font-mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+
+    /* radius */
+    --r-xs:4px; --r-sm:6px; --r-md:8px; --r-lg:12px; --r-xl:16px; --r-xxl:24px; --r-pill:9999px;
+  }
+
+  /* ---- Light mode: matching inversion, green accent held scarce ---- */
+  [data-theme="light"]{
+    --canvas:#f7f8fa;         /* off-white with faint cool tint (never pure #fff) */
+    --surface-1:#ffffff;
+    --surface-2:#f0f1f4;
+    --surface-3:#e8eaee;
+    --surface-4:#dfe1e7;
+    --hairline:#e4e5ea;
+    --hairline-strong:#cfd2d9;
+    --hairline-tertiary:#eceef1;
+
+    --primary:#1f9d63;        /* darker green so white text keeps contrast on light */
+    --primary-hover:#38b27f;
+    --primary-focus:#1f9d63;
+    --on-primary:#ffffff;
+    --brand-secure:#2f7d5c;
+
+    --ink:#0b0d0f;
+    --ink-muted:#3c4149;
+    --ink-subtle:#6b7280;
+    --ink-tertiary:#9aa0a8;
+
+    --success:#1f9d57;
+  }
+  [data-theme="light"] .phone,
+  [data-theme="light"] .window{box-shadow:0 1px 2px rgba(11,13,15,0.05),0 8px 24px rgba(11,13,15,0.06)}
+  [data-theme="light"] .card,
+  [data-theme="light"] .setrow{box-shadow:0 1px 2px rgba(11,13,15,0.04)}
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+
+  /* ---- Theme toggle (fixed) ---- */
+  .theme-toggle{position:fixed;top:20px;right:24px;z-index:50;display:inline-flex;align-items:center;gap:8px;
+    font-family:var(--font-text);font-size:13px;font-weight:500;color:var(--ink);
+    background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-pill);
+    padding:8px 14px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.25)}
+  .theme-toggle:hover{border-color:var(--hairline-strong)}
+  .theme-toggle .tt-icon{font-size:14px;color:var(--primary-hover)}
+  body{
+    background:var(--canvas);
+    color:var(--ink);
+    font-family:var(--font-text);
+    font-size:16px;
+    line-height:1.5;
+    letter-spacing:-0.05px;
+    -webkit-font-smoothing:antialiased;
+    padding:56px 32px 96px;
+  }
+
+  /* ---- Page header ---- */
+  .page-head{max-width:1280px;margin:0 auto 64px}
+  .eyebrow{font-family:var(--font-text);font-size:13px;font-weight:500;line-height:1.3;letter-spacing:0.4px;color:var(--primary-hover);text-transform:uppercase;margin:0 0 16px}
+  h1.hero{font-family:var(--font-display);font-size:56px;font-weight:600;line-height:1.10;letter-spacing:-1.8px;margin:0 0 16px;max-width:16ch}
+  .lead{font-size:18px;line-height:1.5;letter-spacing:-0.1px;color:var(--ink-muted);max-width:60ch;margin:0}
+  .brandmark{display:inline-flex;align-items:center;gap:10px;margin-bottom:28px;font-family:var(--font-display);font-weight:600;font-size:18px;letter-spacing:-0.4px}
+  .brandmark .logo{width:22px;height:22px;border-radius:6px;background:var(--primary);display:inline-block;position:relative}
+  .brandmark .logo::after{content:"";position:absolute;inset:5px 5px auto auto;width:8px;height:8px;border-radius:2px;background:var(--primary-hover)}
+
+  /* ---- Section scaffolding ---- */
+  .section{max-width:1280px;margin:0 auto 96px}
+  .section-eyebrow{font-size:13px;font-weight:500;letter-spacing:0.4px;color:var(--ink-subtle);text-transform:uppercase;margin:0 0 12px}
+  h2.section-title{font-family:var(--font-display);font-size:40px;font-weight:600;line-height:1.15;letter-spacing:-1.0px;margin:0 0 12px}
+  .section-note{color:var(--ink-subtle);font-size:14px;max-width:70ch;margin:0 0 40px}
+
+  /* device grid */
+  .devices{display:flex;flex-wrap:wrap;gap:40px;align-items:flex-start}
+
+  /* ---- Phone frame ---- */
+  .phone{
+    width:344px;flex:0 0 auto;
+    background:var(--surface-1);
+    border:1px solid var(--hairline);
+    border-radius:var(--r-xl);
+    padding:10px;
+    position:relative;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .phone .caption{position:absolute;top:-26px;left:2px;font-size:12px;line-height:1.4;color:var(--ink-subtle)}
+  .screen{
+    background:var(--canvas);
+    border:1px solid var(--hairline);
+    border-radius:12px;
+    height:712px;
+    overflow:hidden;
+    display:flex;flex-direction:column;
+    position:relative;
+  }
+
+  /* status bar */
+  .statusbar{display:flex;justify-content:space-between;align-items:center;padding:10px 18px 6px;font-size:12px;color:var(--ink-muted);flex:0 0 auto}
+  .statusbar .dots{display:flex;gap:4px;align-items:center}
+  .statusbar .dots span{width:4px;height:4px;border-radius:50%;background:var(--ink-subtle)}
+
+  /* app top nav */
+  .appbar{display:flex;align-items:center;justify-content:space-between;padding:8px 16px 12px;flex:0 0 auto}
+  .appbar .title{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-0.4px}
+  .appbar .sub{font-size:12px;color:var(--ink-subtle);margin-top:2px}
+  .icon-btn{width:32px;height:32px;border-radius:var(--r-md);border:1px solid var(--hairline);background:var(--surface-1);display:flex;align-items:center;justify-content:center;color:var(--ink-muted);font-size:16px}
+
+  .scroll{flex:1 1 auto;overflow:hidden;padding:4px 16px 16px}
+
+  /* ---- Buttons ---- */
+  .btn{font-family:var(--font-text);font-size:14px;font-weight:500;line-height:1.2;letter-spacing:0;border-radius:var(--r-md);padding:8px 14px;border:1px solid transparent;cursor:default;display:inline-flex;align-items:center;gap:6px}
+  .btn-primary{background:var(--primary);color:var(--on-primary)}
+  .btn-secondary{background:var(--surface-1);color:var(--ink);border-color:var(--hairline)}
+  .btn-tertiary{background:transparent;color:var(--ink-muted)}
+  .btn-full{width:100%;justify-content:center}
+
+  /* ---- Pills / badges ---- */
+  .status-badge{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);color:var(--ink-muted);font-size:12px;line-height:1.4;border-radius:var(--r-pill);padding:3px 10px}
+  .status-badge .dot{width:6px;height:6px;border-radius:50%}
+  .dot-running{background:var(--tag-yellow);box-shadow:0 0 0 3px rgba(242,201,76,0.15)}
+  .dot-idle{background:var(--ink-tertiary)}
+  .dot-approval{background:var(--primary-hover);box-shadow:0 0 0 3px rgba(130,143,255,0.15)}
+  .dot-success{background:var(--success)}
+  .dot-error{background:var(--tag-red)}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;border-radius:var(--r-sm);padding:3px 8px;border:1px solid var(--hairline);color:var(--ink-muted);background:var(--surface-1)}
+  .agent-chip{font-family:var(--font-mono);font-size:11px;letter-spacing:0}
+
+  /* ---- Cards ---- */
+  .card{background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-lg);padding:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.03)}
+  .card + .card{margin-top:12px}
+
+  /* project card */
+  .proj-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .proj-name{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:-0.2px;margin:0}
+  .proj-path{font-family:var(--font-mono);font-size:11px;color:var(--ink-subtle);margin:4px 0 0}
+  .proj-meta{display:flex;gap:14px;margin-top:14px;font-size:12px;color:var(--ink-subtle)}
+  .proj-meta b{color:var(--ink-muted);font-weight:500}
+
+  /* session row */
+  .session-row{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--hairline)}
+  .session-row:last-child{border-bottom:none}
+  .session-row .savatar{width:32px;height:32px;border-radius:var(--r-md);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-size:11px;font-weight:500;background:var(--surface-2);border:1px solid var(--hairline);color:var(--ink-muted)}
+  .session-row .sbody{min-width:0;flex:1}
+  .session-row .sline1{display:flex;align-items:center;gap:8px;justify-content:space-between}
+  .session-row .stitle{font-size:14px;font-weight:500;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .session-row .stime{font-size:11px;color:var(--ink-tertiary);flex:0 0 auto}
+  .session-row .spreview{font-size:13px;color:var(--ink-subtle);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  /* ---- Chat ---- */
+  .chat{display:flex;flex-direction:column;gap:14px;padding:6px 0}
+  .msg{max-width:82%}
+  .msg .bubble{border-radius:var(--r-lg);padding:12px 14px;font-size:14px;line-height:1.5}
+  .msg.agent{align-self:flex-start}
+  .msg.agent .bubble{background:var(--surface-2);border:1px solid var(--hairline);color:var(--ink);border-top-left-radius:var(--r-xs)}
+  .msg.user{align-self:flex-end}
+  .msg.user .bubble{background:var(--surface-3);color:var(--ink);border:1px solid var(--hairline);border-top-right-radius:var(--r-xs)}
+  .msg .who{font-size:11px;color:var(--ink-tertiary);margin:0 0 5px 4px}
+  .msg.user .who{text-align:right;margin-right:4px}
+
+  /* tool card inside chat */
+  .tool-card{background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-md);overflow:hidden;margin-top:2px}
+  .tool-head{display:flex;align-items:center;gap:8px;padding:9px 12px;font-size:13px}
+  .tool-head .ticon{width:20px;height:20px;border-radius:var(--r-xs);background:var(--surface-3);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--ink-muted)}
+  .tool-head .tname{font-family:var(--font-mono);font-size:12px;color:var(--ink)}
+  .tool-head .tdiff{margin-left:auto;font-family:var(--font-mono);font-size:11px}
+  .tdiff .add{color:var(--success)}
+  .tdiff .del{color:var(--tag-red)}
+  .tool-head .chev{color:var(--ink-tertiary);font-size:11px}
+  .tool-body{border-top:1px solid var(--hairline);background:var(--canvas);padding:10px 12px;font-family:var(--font-mono);font-size:12px;line-height:1.5;color:var(--ink-muted)}
+  .tool-body .code-add{color:var(--success)}
+  .tool-body .code-del{color:var(--tag-red)}
+  .tool-body .ln{color:var(--ink-tertiary);user-select:none;padding-right:10px}
+
+  /* approval banner */
+  .approval{background:var(--surface-2);border:1px solid var(--hairline-strong);border-radius:var(--r-lg);padding:14px;margin-top:2px}
+  .approval .atitle{font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;margin:0 0 4px}
+  .approval .adesc{font-size:12px;color:var(--ink-subtle);margin:0 0 12px}
+  .approval .arow{display:flex;gap:8px}
+  .approval .arow .btn{flex:1;justify-content:center}
+
+  /* composer */
+  .composer{flex:0 0 auto;border-top:1px solid var(--hairline);padding:10px 14px 14px;background:var(--canvas)}
+  .quick-chips{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .quick-chips .chip{cursor:default}
+  .quick-chips .chip.primary{border-color:var(--primary);color:var(--primary-hover)}
+  .input-wrap{display:flex;align-items:center;gap:8px;background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-md);padding:8px 10px 8px 12px}
+  .input-wrap.focused{outline:2px solid rgba(76,183,130,0.5);outline-offset:0}
+  .input-wrap .ph{flex:1;font-size:14px;color:var(--ink-subtle)}
+  .input-wrap .send{width:30px;height:30px;border-radius:var(--r-md);background:var(--primary);color:var(--on-primary);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .composer .cbar{display:flex;gap:14px;margin-top:8px;color:var(--ink-tertiary);font-size:13px}
+
+  /* pairing */
+  .pair-wrap{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 20px}
+  .qr{width:196px;height:196px;border-radius:var(--r-lg);background:#fff;padding:14px;margin:8px 0 22px}
+  .qr svg{width:100%;height:100%;display:block}
+  .pair-title{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:-0.4px;margin:0 0 8px}
+  .pair-sub{font-size:14px;color:var(--ink-subtle);margin:0 0 22px;max-width:34ch}
+  .pair-code{font-family:var(--font-mono);font-size:20px;letter-spacing:6px;color:var(--ink);background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-md);padding:10px 18px;margin-bottom:24px}
+  .secure-note{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--brand-secure)}
+
+  /* settings rows */
+  .settings-group{margin-top:6px}
+  .settings-group .glabel{font-size:12px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ink-subtle);margin:18px 4px 8px}
+  .setrow{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-md);margin-bottom:8px}
+  .setrow .sl{display:flex;align-items:center;gap:12px}
+  .setrow .sl .si{width:28px;height:28px;border-radius:var(--r-sm);background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--ink-muted)}
+  .setrow .sname{font-size:14px}
+  .setrow .sval{font-size:13px;color:var(--ink-subtle)}
+  .toggle{width:38px;height:22px;border-radius:var(--r-pill);background:var(--primary);position:relative;flex:0 0 auto}
+  .toggle::after{content:"";position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;background:#fff}
+  .toggle.off{background:var(--surface-4)}
+  .toggle.off::after{right:auto;left:2px}
+  .radio{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+  .radio .opt{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--hairline);border-radius:var(--r-md);background:var(--surface-1);font-size:13px}
+  .radio .opt.active{border-color:var(--primary);background:var(--surface-2)}
+  .radio .opt .rdot{width:16px;height:16px;border-radius:50%;border:1px solid var(--hairline-strong);flex:0 0 auto;position:relative}
+  .radio .opt.active .rdot{border-color:var(--primary)}
+  .radio .opt.active .rdot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--primary)}
+  .radio .opt .rtxt b{display:block;font-weight:500;color:var(--ink)}
+  .radio .opt .rtxt span{color:var(--ink-subtle);font-size:12px}
+
+  /* bottom tab bar */
+  .tabbar{flex:0 0 auto;display:flex;border-top:1px solid var(--hairline);background:var(--canvas)}
+  .tabbar .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 13px;font-size:10px;color:var(--ink-tertiary)}
+  .tabbar .tab.active{color:var(--primary-hover)}
+  .tabbar .tab .tglyph{font-size:16px;line-height:1}
+
+  /* section-back chat header */
+  .chat-head{display:flex;align-items:center;gap:10px;padding:8px 12px 12px;border-bottom:1px solid var(--hairline);flex:0 0 auto}
+  .chat-head .back{color:var(--ink-muted);font-size:18px}
+  .chat-head .ctitle{font-size:14px;font-weight:500;line-height:1.2}
+  .chat-head .cmeta{font-size:11px;color:var(--ink-subtle);margin-top:2px}
+
+  .presence{margin-left:auto;display:flex;align-items:center;gap:-6px}
+  .presence .pav{width:22px;height:22px;border-radius:50%;border:2px solid var(--canvas);background:var(--surface-4);margin-left:-6px;font-size:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted)}
+
+  /* legend / footer swatches */
+  .footer{max-width:1280px;margin:0 auto;border-top:1px solid var(--hairline);padding-top:40px}
+  .footer h3{font-family:var(--font-display);font-size:20px;font-weight:600;letter-spacing:-0.2px;margin:0 0 20px}
+  .swatches{display:flex;flex-wrap:wrap;gap:14px}
+  .sw{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-subtle)}
+  .sw .chipc{width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--hairline)}
+  .sw code{font-family:var(--font-mono);font-size:11px;color:var(--ink-muted);display:block}
+  .footlinks{margin-top:32px;color:var(--ink-tertiary);font-size:12px}
+
+  @media (max-width:520px){
+    body{padding:32px 16px 64px}
+    h1.hero{font-size:36px;letter-spacing:-1.2px}
+  }
+
+  /* ---- Desktop app window ---- */
+  .window{max-width:1240px;background:var(--surface-1);border:1px solid var(--hairline);border-radius:var(--r-xl);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,0.04)}
+  .titlebar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--hairline);background:var(--canvas)}
+  .titlebar .traffic{display:flex;gap:8px}
+  .titlebar .traffic span{width:12px;height:12px;border-radius:50%;background:var(--surface-4)}
+  .titlebar .wtitle{margin-left:10px;font-size:13px;color:var(--ink-subtle);display:flex;align-items:center;gap:8px}
+  .titlebar .wtitle .logo{width:16px;height:16px;border-radius:5px;background:var(--primary)}
+  .titlebar .wactions{margin-left:auto;display:flex;gap:8px}
+  .wbody{display:grid;grid-template-columns:236px 1fr 300px;height:640px}
+
+  /* sidebar */
+  .sidebar{background:var(--canvas);border-right:1px solid var(--hairline);display:flex;flex-direction:column;min-width:0}
+  .sidebar .snav{padding:12px 10px;overflow:auto;flex:1}
+  .sidebar .sgroup{margin-bottom:16px}
+  .sidebar .sgtitle{font-size:11px;text-transform:uppercase;letter-spacing:0.4px;color:var(--ink-subtle);padding:4px 8px;margin-bottom:2px}
+  .navitem{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:var(--r-md);font-size:13px;color:var(--ink-muted);white-space:nowrap;overflow:hidden}
+  .navitem .nglyph{font-size:13px;width:16px;text-align:center;color:var(--ink-subtle)}
+  .navitem .ncount{margin-left:auto;font-size:11px;color:var(--ink-tertiary)}
+  .navitem.active{background:var(--surface-3);color:var(--ink)}
+  .navitem.active .nglyph{color:var(--primary-hover)}
+  .navitem.child{padding-left:14px;font-size:13px}
+  .navitem .sdot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+  .sidebar-foot{border-top:1px solid var(--hairline);padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-subtle)}
+
+  /* center chat column — lifted above the darker sidebar/header chrome */
+  .chatcol{display:flex;flex-direction:column;min-width:0;background:var(--surface-1)}
+  .chatcol .cchead{display:flex;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--hairline)}
+  .chatcol .cchead .ctitle{font-family:var(--font-display);font-size:16px;font-weight:600;letter-spacing:-0.2px}
+  .chatcol .cchead .cmeta{font-size:12px;color:var(--ink-subtle);margin-top:2px}
+  .chatcol .ccscroll{flex:1;overflow:auto;padding:20px 20px}
+  .chatcol .chat{max-width:720px;margin:0 auto}
+  .chatcol .composer{max-width:760px;margin:0 auto;width:100%;background:transparent}
+  /* settings rows sit on the lifted chat surface — bump one step for contrast */
+  .chatcol .setrow,.chatcol .radio .opt{background:var(--surface-2)}
+
+  /* right detail / diff panel */
+  .detail{background:var(--surface-1);border-left:1px solid var(--hairline);display:flex;flex-direction:column;min-width:0}
+  .detail .dhead{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:center;gap:8px}
+  .detail .dhead .dt{font-family:var(--font-mono);font-size:12px;color:var(--ink)}
+  .detail .dhead .dd{margin-left:auto;font-family:var(--font-mono);font-size:11px}
+  .detail .dbody{flex:1;overflow:auto;font-family:var(--font-mono);font-size:12px;line-height:1.6;padding:12px 0}
+  .detail .dbody .drow{display:flex;padding:0 14px}
+  .detail .dbody .drow.add{background:rgba(39,166,68,0.08)}
+  .detail .dbody .drow.del{background:rgba(235,87,87,0.08)}
+  .detail .dbody .dln{color:var(--ink-tertiary);width:34px;flex:0 0 auto;user-select:none}
+  .detail .dbody .add .dcode{color:var(--success)}
+  .detail .dbody .del .dcode{color:var(--tag-red)}
+  .detail .dfoot{border-top:1px solid var(--hairline);padding:12px 16px;display:flex;gap:8px}
+
+  .kbd{font-family:var(--font-mono);font-size:11px;background:var(--surface-2);border:1px solid var(--hairline);border-radius:var(--r-xs);padding:1px 5px;color:var(--ink-muted)}
+</style>
+</head>
+<body>
+
+  <button class="theme-toggle" id="themeToggle" aria-label="Toggle light / dark">
+    <span class="tt-icon">◐</span><span class="tt-label">Dark</span>
+  </button>
+
+  <header class="page-head">
+    <div class="brandmark"><span class="logo"></span> makit</div>
+    <p class="eyebrow">Design exploration · Linear system</p>
+    <h1 class="hero">Drive your coding agent, dressed in Linear.</h1>
+    <p class="lead">makit's client re-skinned with the Linear marketing design system —
+      deepest-dark canvas (#010102), a four-step surface ladder, hairline borders, and a single
+      restrained green accent reserved for the brand mark, primary CTAs, and focus rings —
+      never on chat bubbles.</p>
+  </header>
+
+  <!-- ============ SECTION 1: core flow ============ -->
+  <section class="section">
+    <p class="section-eyebrow">Core flow</p>
+    <h2 class="section-title">Projects → Sessions → Chat</h2>
+    <p class="section-note">The three-level information architecture. Surface lift carries hierarchy:
+      canvas for the page, surface-1 cards for projects, surface-2 bubbles for agent turns.
+      User messages sit on a neutral surface-3 — the green accent stays off chat entirely and appears
+      only on the active tab, the send button, and primary CTAs.</p>
+
+    <div class="devices">
+
+      <!-- Phone 1: Projects (home) -->
+      <div class="phone">
+        <div class="caption">Home · Projects</div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><span></span><span></span><span></span> LTE</span></div>
+          <div class="appbar">
+            <div>
+              <div class="title">Projects</div>
+              <div class="sub">desk-mini · connected</div>
+            </div>
+            <div class="icon-btn">＋</div>
+          </div>
+          <div class="scroll">
+            <div class="card">
+              <div class="proj-top">
+                <div>
+                  <p class="proj-name">makit</p>
+                  <p class="proj-path">~/work/makit</p>
+                </div>
+                <span class="status-badge"><span class="dot dot-running"></span>2 running</span>
+              </div>
+              <div class="proj-meta"><span><b>4</b> sessions</span><span><b>main</b></span><span>2m ago</span></div>
+            </div>
+
+            <div class="card">
+              <div class="proj-top">
+                <div>
+                  <p class="proj-name">acme-web</p>
+                  <p class="proj-path">~/work/acme-web</p>
+                </div>
+                <span class="status-badge"><span class="dot dot-approval"></span>needs you</span>
+              </div>
+              <div class="proj-meta"><span><b>1</b> session</span><span><b>feat/checkout</b></span><span>just now</span></div>
+            </div>
+
+            <div class="card">
+              <div class="proj-top">
+                <div>
+                  <p class="proj-name">infra-scripts</p>
+                  <p class="proj-path">~/ops/infra-scripts</p>
+                </div>
+                <span class="status-badge"><span class="dot dot-idle"></span>idle</span>
+              </div>
+              <div class="proj-meta"><span><b>2</b> sessions</span><span><b>main</b></span><span>1h ago</span></div>
+            </div>
+
+            <div class="card">
+              <div class="proj-top">
+                <div>
+                  <p class="proj-name">notes-vault</p>
+                  <p class="proj-path">~/notes-vault</p>
+                </div>
+                <span class="status-badge"><span class="dot dot-success"></span>done</span>
+              </div>
+              <div class="proj-meta"><span><b>1</b> session</span><span>yesterday</span></div>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab active"><span class="tglyph">▤</span>Projects</div>
+            <div class="tab"><span class="tglyph">◇</span>Devices</div>
+            <div class="tab"><span class="tglyph">⚙</span>Settings</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone 2: Sessions list -->
+      <div class="phone">
+        <div class="caption">Project · Sessions</div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><span></span><span></span><span></span> LTE</span></div>
+          <div class="chat-head">
+            <span class="back">‹</span>
+            <div>
+              <div class="ctitle">makit</div>
+              <div class="cmeta">~/work/makit · 4 sessions</div>
+            </div>
+            <div class="icon-btn" style="margin-left:auto">＋</div>
+          </div>
+          <div class="scroll">
+            <div class="session-row">
+              <div class="savatar">pi</div>
+              <div class="sbody">
+                <div class="sline1"><span class="stitle">Refactor transport layer</span><span class="stime">2m</span></div>
+                <div class="spreview">Applied edit to <span style="font-family:var(--font-mono)">ws-client.ts</span> · running tests…</div>
+                <div style="margin-top:8px"><span class="status-badge"><span class="dot dot-running"></span>running</span></div>
+              </div>
+            </div>
+            <div class="session-row">
+              <div class="savatar">cdx</div>
+              <div class="sbody">
+                <div class="sline1"><span class="stitle">Fix QR pairing timeout</span><span class="stime">6m</span></div>
+                <div class="spreview">Wants to run <span style="font-family:var(--font-mono)">rm -rf .cache</span></div>
+                <div style="margin-top:8px"><span class="status-badge"><span class="dot dot-approval"></span>awaiting approval</span></div>
+              </div>
+            </div>
+            <div class="session-row">
+              <div class="savatar">cla</div>
+              <div class="sbody">
+                <div class="sline1"><span class="stitle">Write NOTIFICATIONS.md</span><span class="stime">18m</span></div>
+                <div class="spreview">What tone should the push copy use?</div>
+                <div style="margin-top:8px"><span class="status-badge"><span class="dot dot-approval"></span>awaiting input</span></div>
+              </div>
+            </div>
+            <div class="session-row">
+              <div class="savatar">pi</div>
+              <div class="sbody">
+                <div class="sline1"><span class="stitle">Bump deps + changelog</span><span class="stime">1h</span></div>
+                <div class="spreview">Done — 3 files changed, tests green.</div>
+                <div style="margin-top:8px"><span class="status-badge"><span class="dot dot-success"></span>completed</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="composer" style="border-top:1px solid var(--hairline)">
+            <button class="btn btn-primary btn-full">＋ New session</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone 3: Chat + tool cards + approval -->
+      <div class="phone">
+        <div class="caption">Session · Chat</div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><span></span><span></span><span></span> LTE</span></div>
+          <div class="chat-head">
+            <span class="back">‹</span>
+            <div>
+              <div class="ctitle">Refactor transport layer</div>
+              <div class="cmeta"><span class="agent-chip">pi</span> · running</div>
+            </div>
+            <div class="presence">
+              <span class="pav">DK</span>
+              <span class="pav">▦</span>
+            </div>
+          </div>
+          <div class="scroll">
+            <div class="chat">
+              <div class="msg user">
+                <div class="bubble">Refactor the WS client to auto-reconnect with backoff.</div>
+              </div>
+
+              <div class="msg agent" style="max-width:100%">
+                <div class="who">pi</div>
+                <div class="bubble">I'll add exponential backoff to the reconnect loop and cover it with a test. Editing the client first.</div>
+                <div class="tool-card">
+                  <div class="tool-head">
+                    <span class="ticon">✎</span>
+                    <span class="tname">edit ws-client.ts</span>
+                    <span class="tdiff"><span class="add">+18</span> <span class="del">−4</span></span>
+                    <span class="chev">▾</span>
+                  </div>
+                  <div class="tool-body">
+                    <div><span class="ln">42</span><span class="code-del">- setTimeout(reconnect, 1000)</span></div>
+                    <div><span class="ln">42</span><span class="code-add">+ const d = backoff(attempt++)</span></div>
+                    <div><span class="ln">43</span><span class="code-add">+ setTimeout(reconnect, d)</span></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="msg agent" style="max-width:100%">
+                <div class="tool-card">
+                  <div class="tool-head">
+                    <span class="ticon">▶</span>
+                    <span class="tname">shell · pnpm test</span>
+                    <span class="tdiff" style="color:var(--ink-subtle)">running…</span>
+                    <span class="chev">▸</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="msg agent" style="max-width:100%">
+                <div class="approval">
+                  <p class="atitle"><span class="dot dot-approval" style="width:8px;height:8px;border-radius:50%"></span>Approval required</p>
+                  <p class="adesc">pi wants to run a network command:
+                    <span style="font-family:var(--font-mono);color:var(--ink)">git push origin feat/reconnect</span></p>
+                  <div class="arow">
+                    <button class="btn btn-secondary">Deny</button>
+                    <button class="btn btn-primary">Approve</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="quick-chips">
+              <span class="chip primary">/approve</span>
+              <span class="chip">/cancel</span>
+              <span class="chip">@ws-client.ts</span>
+            </div>
+            <div class="input-wrap focused">
+              <span class="ph">Message pi…</span>
+              <span class="send">↑</span>
+            </div>
+            <div class="cbar"><span>/</span><span>@</span><span>🎙</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION 2: pairing + settings ============ -->
+  <section class="section">
+    <p class="section-eyebrow">Onboarding & control</p>
+    <h2 class="section-title">Pairing &amp; approvals</h2>
+    <p class="section-note">Pairing keeps the green scarce — brand mark and single CTA only.
+      The QR sits in a white inverse tile (the one place white surface is allowed). Settings use the
+      surface-1 row pattern; the selected approval policy is the sole green-accented option.</p>
+
+    <div class="devices">
+
+      <!-- Phone 4: Pairing -->
+      <div class="phone">
+        <div class="caption">Pair device</div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><span></span><span></span><span></span> LTE</span></div>
+          <div class="appbar"><div><div class="title">Pair device</div></div><div class="icon-btn">✕</div></div>
+          <div class="scroll">
+            <div class="pair-wrap">
+              <div class="qr">
+                <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">
+                  <rect width="100" height="100" fill="#fff"/>
+                  <g fill="#010102">
+                    <rect x="6" y="6" width="24" height="24"/><rect x="12" y="12" width="12" height="12" fill="#fff"/>
+                    <rect x="70" y="6" width="24" height="24"/><rect x="76" y="12" width="12" height="12" fill="#fff"/>
+                    <rect x="6" y="70" width="24" height="24"/><rect x="12" y="76" width="12" height="12" fill="#fff"/>
+                    <rect x="38" y="8" width="6" height="6"/><rect x="50" y="8" width="6" height="6"/><rect x="44" y="16" width="6" height="6"/><rect x="56" y="20" width="6" height="6"/>
+                    <rect x="38" y="38" width="6" height="6"/><rect x="50" y="44" width="6" height="6"/><rect x="62" y="38" width="6" height="6"/><rect x="74" y="44" width="6" height="6"/><rect x="86" y="38" width="6" height="6"/>
+                    <rect x="44" y="50" width="6" height="6"/><rect x="56" y="56" width="6" height="6"/><rect x="68" y="50" width="6" height="6"/><rect x="80" y="56" width="6" height="6"/>
+                    <rect x="38" y="62" width="6" height="6"/><rect x="50" y="68" width="6" height="6"/><rect x="62" y="62" width="6" height="6"/><rect x="74" y="68" width="6" height="6"/><rect x="86" y="62" width="6" height="6"/>
+                    <rect x="38" y="80" width="6" height="6"/><rect x="50" y="86" width="6" height="6"/><rect x="62" y="80" width="6" height="6"/><rect x="74" y="86" width="6" height="6"/><rect x="86" y="86" width="6" height="6"/>
+                    <rect x="16" y="44" width="6" height="6"/><rect x="8" y="56" width="6" height="6"/><rect x="20" y="62" width="6" height="6"/>
+                  </g>
+                </svg>
+              </div>
+              <p class="pair-title">Scan from your desktop</p>
+              <p class="pair-sub">Run <span style="font-family:var(--font-mono);color:var(--ink)">makit serve</span> and this QR appears in your terminal. Or enter the code:</p>
+              <div class="pair-code">4F2A·9C7</div>
+              <button class="btn btn-primary btn-full" style="max-width:240px">Enter code manually</button>
+              <div style="height:20px"></div>
+              <div class="secure-note">🔒 End-to-end encrypted over your Tailscale tailnet</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone 5: Settings / approval policy -->
+      <div class="phone">
+        <div class="caption">Session settings</div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><span></span><span></span><span></span> LTE</span></div>
+          <div class="chat-head"><span class="back">‹</span><div><div class="ctitle">Session settings</div><div class="cmeta">Refactor transport layer</div></div></div>
+          <div class="scroll">
+            <div class="settings-group">
+              <div class="glabel">Approval policy</div>
+              <div class="radio">
+                <div class="opt"><span class="rdot"></span><span class="rtxt"><b>YOLO</b><span>Agent runs autonomously; you observe.</span></span></div>
+                <div class="opt active"><span class="rdot"></span><span class="rtxt"><b>Ask on risky</b><span>Writes, shell &amp; network need approval.</span></span></div>
+                <div class="opt"><span class="rdot"></span><span class="rtxt"><b>Ask always</b><span>Every tool call needs approval.</span></span></div>
+              </div>
+
+              <div class="glabel">Notifications</div>
+              <div class="setrow"><div class="sl"><span class="si">🔔</span><span class="sname">Awaiting approval</span></div><span class="toggle"></span></div>
+              <div class="setrow"><div class="sl"><span class="si">💬</span><span class="sname">Agent asks a question</span></div><span class="toggle"></span></div>
+              <div class="setrow"><div class="sl"><span class="si">✓</span><span class="sname">Turn finished</span></div><span class="toggle off"></span></div>
+
+              <div class="glabel">Session</div>
+              <div class="setrow"><div class="sl"><span class="si">◎</span><span class="sname">Agent</span></div><span class="sval">pi · gpt-5</span></div>
+              <div class="setrow"><div class="sl"><span class="si">⑂</span><span class="sname">Branch</span></div><span class="sval">feat/reconnect</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phone 6: Devices -->
+      <div class="phone">
+        <div class="caption">Devices &amp; pairing</div>
+        <div class="screen">
+          <div class="statusbar"><span>9:41</span><span class="dots"><span></span><span></span><span></span> LTE</span></div>
+          <div class="appbar"><div><div class="title">Devices</div><div class="sub">3 paired</div></div><div class="icon-btn">＋</div></div>
+          <div class="scroll">
+            <div class="card">
+              <div class="proj-top">
+                <div><p class="proj-name">iPhone 15 Pro</p><p class="proj-path">this device · paired 3d ago</p></div>
+                <span class="status-badge"><span class="dot dot-success"></span>active</span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="proj-top">
+                <div><p class="proj-name">iPad Air</p><p class="proj-path">paired 2w ago</p></div>
+                <span class="status-badge"><span class="dot dot-idle"></span>offline</span>
+              </div>
+              <div style="margin-top:12px"><button class="btn btn-secondary">Revoke</button></div>
+            </div>
+            <div class="card">
+              <div class="proj-top">
+                <div><p class="proj-name">Web · Chrome</p><p class="proj-path">paired 5d ago</p></div>
+                <span class="status-badge"><span class="dot dot-running"></span>viewing</span>
+              </div>
+              <div style="margin-top:12px"><button class="btn btn-secondary">Revoke</button></div>
+            </div>
+            <div style="margin-top:16px"><button class="btn btn-primary btn-full">＋ Pair a new device</button></div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span class="tglyph">▤</span>Projects</div>
+            <div class="tab active"><span class="tglyph">◇</span>Devices</div>
+            <div class="tab"><span class="tglyph">⚙</span>Settings</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ SECTION 3: desktop ============ -->
+  <section class="section">
+    <p class="section-eyebrow">Desktop</p>
+    <h2 class="section-title">Three-pane workspace</h2>
+    <p class="section-note">The desktop client keeps the same surface ladder at wider scale:
+      a canvas sidebar (projects → sessions tree), a surface-canvas chat column capped at a readable
+      720px, and a surface-1 detail pane for diff drilldowns. Green shows up only on the brand mark,
+      the active session row glyph, the send button, and primary CTAs.</p>
+
+    <div class="window">
+      <div class="titlebar">
+        <div class="traffic"><span></span><span></span><span></span></div>
+        <div class="wtitle"><span class="logo"></span> makit — desk-mini</div>
+        <div class="wactions">
+          <button class="btn btn-secondary">Sign in</button>
+          <button class="btn btn-primary">＋ New session</button>
+        </div>
+      </div>
+      <div class="wbody">
+
+        <!-- left sidebar -->
+        <aside class="sidebar">
+          <div class="snav">
+            <div class="sgroup">
+              <div class="sgtitle">Projects</div>
+              <div class="navitem"><span class="nglyph">▾</span>makit<span class="ncount">4</span></div>
+              <div class="navitem child active"><span class="sdot dot-running"></span>Refactor transport layer</div>
+              <div class="navitem child"><span class="sdot dot-approval"></span>Fix QR pairing timeout</div>
+              <div class="navitem child"><span class="sdot dot-approval"></span>Write NOTIFICATIONS.md</div>
+              <div class="navitem child"><span class="sdot dot-success"></span>Bump deps + changelog</div>
+            </div>
+            <div class="sgroup">
+              <div class="navitem"><span class="nglyph">▸</span>acme-web<span class="ncount">1</span></div>
+              <div class="navitem"><span class="nglyph">▸</span>infra-scripts<span class="ncount">2</span></div>
+              <div class="navitem"><span class="nglyph">▸</span>notes-vault<span class="ncount">1</span></div>
+            </div>
+            <div class="sgroup">
+              <div class="sgtitle">Workspace</div>
+              <div class="navitem"><span class="nglyph">◇</span>Devices</div>
+              <div class="navitem"><span class="nglyph">⚙</span>Settings</div>
+            </div>
+          </div>
+          <div class="sidebar-foot"><span class="dot dot-success" style="width:8px;height:8px;border-radius:50%"></span> connected · tailnet</div>
+        </aside>
+
+        <!-- center chat -->
+        <section class="chatcol">
+          <div class="cchead">
+            <div>
+              <div class="ctitle">Refactor transport layer</div>
+              <div class="cmeta"><span class="agent-chip">pi</span> · gpt-5 · feat/reconnect</div>
+            </div>
+            <span class="status-badge" style="margin-left:auto"><span class="dot dot-running"></span>running</span>
+            <div class="presence"><span class="pav">DK</span><span class="pav">▦</span></div>
+          </div>
+          <div class="ccscroll">
+            <div class="chat">
+              <div class="msg user">
+                <div class="bubble">Refactor the WS client to auto-reconnect with exponential backoff, and add a test for it.</div>
+              </div>
+              <div class="msg agent" style="max-width:100%">
+                <div class="who">pi</div>
+                <div class="bubble">Adding backoff to the reconnect loop, then a unit test. Editing the client first — open the diff on the right to review.</div>
+                <div class="tool-card">
+                  <div class="tool-head">
+                    <span class="ticon">✎</span>
+                    <span class="tname">edit ws-client.ts</span>
+                    <span class="tdiff"><span class="add">+18</span> <span class="del">−4</span></span>
+                    <span class="chev">▸</span>
+                  </div>
+                </div>
+              </div>
+              <div class="msg agent" style="max-width:100%">
+                <div class="tool-card">
+                  <div class="tool-head">
+                    <span class="ticon">▶</span>
+                    <span class="tname">shell · pnpm test</span>
+                    <span class="tdiff" style="color:var(--success)">✓ 42 passed</span>
+                    <span class="chev">▸</span>
+                  </div>
+                </div>
+              </div>
+              <div class="msg agent" style="max-width:100%">
+                <div class="approval">
+                  <p class="atitle"><span class="dot dot-approval" style="width:8px;height:8px;border-radius:50%"></span>Approval required</p>
+                  <p class="adesc">pi wants to run a network command:
+                    <span style="font-family:var(--font-mono);color:var(--ink)">git push origin feat/reconnect</span></p>
+                  <div class="arow">
+                    <button class="btn btn-secondary">Deny</button>
+                    <button class="btn btn-primary">Approve</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="quick-chips">
+              <span class="chip primary">/approve</span>
+              <span class="chip">/cancel</span>
+              <span class="chip">/model</span>
+              <span class="chip">@ws-client.ts</span>
+            </div>
+            <div class="input-wrap focused">
+              <span class="ph">Message pi…  —  ⌘K palette · ⌘↩ send</span>
+              <span class="send">↑</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- right detail / diff -->
+        <aside class="detail">
+          <div class="dhead">
+            <span class="dt">ws-client.ts</span>
+            <span class="dd"><span style="color:var(--success)">+18</span> <span style="color:var(--tag-red)">−4</span></span>
+          </div>
+          <div class="dbody">
+            <div class="drow"><span class="dln">40</span><span class="dcode">  connect() {</span></div>
+            <div class="drow"><span class="dln">41</span><span class="dcode">    this.ws.onclose = () =&gt; {</span></div>
+            <div class="drow del"><span class="dln">42</span><span class="dcode">-     setTimeout(reconnect, 1000)</span></div>
+            <div class="drow add"><span class="dln">42</span><span class="dcode">+     const d = backoff(this.attempt++)</span></div>
+            <div class="drow add"><span class="dln">43</span><span class="dcode">+     setTimeout(reconnect, d)</span></div>
+            <div class="drow"><span class="dln">44</span><span class="dcode">    }</span></div>
+            <div class="drow"><span class="dln">45</span><span class="dcode">  }</span></div>
+            <div class="drow"><span class="dln">46 </span><span class="dcode"></span></div>
+            <div class="drow add"><span class="dln">47</span><span class="dcode">+ function backoff(n) {</span></div>
+            <div class="drow add"><span class="dln">48</span><span class="dcode">+   return Math.min(30000, 2 ** n * 500)</span></div>
+            <div class="drow add"><span class="dln">49</span><span class="dcode">+ }</span></div>
+          </div>
+          <div class="dfoot">
+            <button class="btn btn-secondary btn-full">Open file</button>
+            <button class="btn btn-secondary btn-full">Copy</button>
+          </div>
+        </aside>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SECTION 4: desktop settings ============ -->
+  <section class="section">
+    <p class="section-eyebrow">Desktop</p>
+    <h2 class="section-title">Settings</h2>
+    <p class="section-note">A two-pane preferences window: a canvas category rail on the left, a
+      surface-canvas content column on the right. Rows lift onto surface-1; the selected policy and
+      enabled toggles are the only green in view. Content caps at ~640px for a comfortable measure.</p>
+
+    <div class="window">
+      <div class="titlebar">
+        <div class="traffic"><span></span><span></span><span></span></div>
+        <div class="wtitle"><span class="logo"></span> makit — Settings</div>
+        <div class="wactions"><button class="btn btn-secondary">Done</button></div>
+      </div>
+      <div class="wbody" style="grid-template-columns:236px 1fr">
+
+        <!-- settings category rail -->
+        <aside class="sidebar">
+          <div class="snav">
+            <div class="sgroup">
+              <div class="navitem active"><span class="nglyph">⚙</span>General</div>
+              <div class="navitem"><span class="nglyph">◉</span>Approvals</div>
+              <div class="navitem"><span class="nglyph">🔔</span>Notifications</div>
+              <div class="navitem"><span class="nglyph">◇</span>Devices</div>
+              <div class="navitem"><span class="nglyph">◎</span>Agents</div>
+              <div class="navitem"><span class="nglyph">🔒</span>Security</div>
+              <div class="navitem"><span class="nglyph">ⓘ</span>About</div>
+            </div>
+          </div>
+          <div class="sidebar-foot">makit v0.4.1 · desk-mini</div>
+        </aside>
+
+        <!-- settings content -->
+        <section class="chatcol">
+          <div class="cchead"><div><div class="ctitle">General</div><div class="cmeta">Workspace-wide preferences</div></div></div>
+          <div class="ccscroll">
+            <div class="settings-group" style="max-width:640px;margin:0 auto">
+
+              <div class="glabel">Appearance</div>
+              <div class="setrow"><div class="sl"><span class="si">◑</span><span class="sname">Theme</span></div><span class="sval">Dark (Linear)</span></div>
+              <div class="setrow"><div class="sl"><span class="si">A</span><span class="sname">Editor font</span></div><span class="sval">JetBrains Mono · 13px</span></div>
+              <div class="setrow"><div class="sl"><span class="si">▤</span><span class="sname">Compact tool cards</span></div><span class="toggle"></span></div>
+
+              <div class="glabel">Default approval policy</div>
+              <div class="radio">
+                <div class="opt"><span class="rdot"></span><span class="rtxt"><b>YOLO</b><span>Agent runs autonomously; you observe.</span></span></div>
+                <div class="opt active"><span class="rdot"></span><span class="rtxt"><b>Ask on risky</b><span>Writes, shell &amp; network need approval.</span></span></div>
+                <div class="opt"><span class="rdot"></span><span class="rtxt"><b>Ask always</b><span>Every tool call needs approval.</span></span></div>
+              </div>
+
+              <div class="glabel">Notifications</div>
+              <div class="setrow"><div class="sl"><span class="si">🔔</span><span class="sname">Awaiting approval</span></div><span class="toggle"></span></div>
+              <div class="setrow"><div class="sl"><span class="si">💬</span><span class="sname">Agent asks a question</span></div><span class="toggle"></span></div>
+              <div class="setrow"><div class="sl"><span class="si">✓</span><span class="sname">Turn finished</span></div><span class="toggle off"></span></div>
+              <div class="setrow"><div class="sl"><span class="si">🔕</span><span class="sname">Quiet hours</span></div><span class="sval">22:00 – 08:00</span></div>
+
+              <div class="glabel">Server &amp; transport</div>
+              <div class="setrow"><div class="sl"><span class="si">◈</span><span class="sname">Bind mode</span></div><span class="sval">Tailscale tailnet</span></div>
+              <div class="setrow"><div class="sl"><span class="si">⇄</span><span class="sname">Port</span></div><span class="sval">9787</span></div>
+              <div class="setrow"><div class="sl"><span class="si">🔒</span><span class="sname">Certificate</span></div><span class="status-badge"><span class="dot dot-success"></span>pinned</span></div>
+
+              <div style="display:flex;gap:8px;margin-top:20px">
+                <button class="btn btn-primary">Save changes</button>
+                <button class="btn btn-tertiary">Reset to defaults</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TOKEN LEGEND ============ -->
+  <footer class="footer">
+    <h3>Applied tokens</h3>
+    <div class="swatches">
+      <div class="sw"><span class="chipc" style="background:#010102"></span><div><b>canvas</b><code>#010102</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#0c0d10"></span><div><b>surface-1</b><code>#0c0d10</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#16171b"></span><div><b>surface-2</b><code>#16171b</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#1d1f24"></span><div><b>surface-3</b><code>#1d1f24</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#4cb782"></span><div><b>primary</b><code>#4cb782</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#63d29c"></span><div><b>primary-hover</b><code>#63d29c</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#27a644"></span><div><b>success</b><code>#27a644</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#f7f8f8"></span><div><b>ink</b><code>#f7f8f8</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#8a8f98"></span><div><b>ink-subtle</b><code>#8a8f98</code></div></div>
+      <div class="sw"><span class="chipc" style="background:#23252a"></span><div><b>hairline</b><code>#23252a</code></div></div>
+    </div>
+    <p class="footlinks">Inter (Display/Text substitute) · JetBrains Mono (Linear Mono substitute) · radius md 8px on buttons, lg 12px on cards, xl 16px on frames · green reserved for brand mark, primary CTA, active nav, and focus ring — never on chat bubbles (user messages use neutral surface-3).</p>
+  </footer>
+
+  <script>
+    (function(){
+      var root=document.documentElement, btn=document.getElementById('themeToggle');
+      var label=btn.querySelector('.tt-label'), icon=btn.querySelector('.tt-icon');
+      function apply(mode){
+        root.setAttribute('data-theme',mode);
+        label.textContent = mode==='light' ? 'Light' : 'Dark';
+        icon.textContent = mode==='light' ? '◑' : '◐';
+      }
+      apply('dark');
+      btn.addEventListener('click',function(){
+        apply(root.getAttribute('data-theme')==='light' ? 'dark' : 'light');
+      });
+    })();
+  </script>
+</body>
+</html>
