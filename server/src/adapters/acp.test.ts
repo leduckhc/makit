@@ -690,3 +690,112 @@ test("parses grouped ACP select options into groups", async () => {
     { name: "Anthropic", options: [{ value: "sonnet", name: "Sonnet" }] },
   ]);
 });
+
+test("configOption action → session/set_config_option; complete response list replaces + re-emits", async () => {
+  const setCalls: any[] = [];
+  const { adapter, events } = pairWithNewSession(
+    {
+      sessionId: "acp-sess-1",
+      configOptions: [
+        { id: "model", name: "Model", category: "model", type: "select", currentValue: "gpt-5", options: [{ value: "gpt-5", name: "GPT-5" }, { value: "o3", name: "o3" }] },
+        { id: "reasoning", name: "Reasoning", category: "thought_level", type: "select", currentValue: "low", options: [{ value: "low", name: "Low" }] },
+      ],
+    },
+    {
+      onSetConfigOption: (p) => {
+        setCalls.push(p);
+        // Dependent option recompute: switching model changes reasoning choices.
+        return {
+          configOptions: [
+            { id: "model", name: "Model", category: "model", type: "select", currentValue: "o3", options: [{ value: "gpt-5", name: "GPT-5" }, { value: "o3", name: "o3" }] },
+            { id: "reasoning", name: "Reasoning", category: "thought_level", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
+          ],
+        };
+      },
+    },
+  );
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "model", value: "o3" });
+  assert.deepEqual(setCalls.at(-1), { sessionId: "acp-sess-1", configId: "model", value: "o3" });
+  await collectUntil(events, "session.meta");
+  const payload = events.find((e) => e.kind === "session.meta")!.payload as any;
+  // The COMPLETE response list replaced the cached options (never merged).
+  assert.equal(payload.configOptions[0].currentValue, "o3");
+  assert.equal(payload.configOptions[1].currentValue, "high");
+  assert.deepEqual(payload.configOptions[1].options, [{ value: "high", name: "High" }]);
+});
+
+test("boolean configOption action sends type:boolean and a boolean value", async () => {
+  const setCalls: any[] = [];
+  const { adapter, events } = pairWithNewSession(
+    {
+      sessionId: "acp-sess-1",
+      configOptions: [{ id: "web", name: "Web", category: "_tools", type: "boolean", currentValue: false }],
+    },
+    {
+      onSetConfigOption: (p) => {
+        setCalls.push(p);
+        return { configOptions: [{ id: "web", name: "Web", category: "_tools", type: "boolean", currentValue: true }] };
+      },
+    },
+  );
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "web", value: true });
+  assert.deepEqual(setCalls.at(-1), { sessionId: "acp-sess-1", configId: "web", value: true, type: "boolean" });
+  await collectUntil(events, "session.meta");
+  assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).configOptions[0].currentValue, true);
+});
+
+test("config_option_update notification re-emits the complete configOptions list", async () => {
+  const { adapter, events, agentRef } = pairWithNewSession({
+    sessionId: "acp-sess-1",
+    configOptions: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "gpt-5", options: [{ value: "gpt-5", name: "GPT-5" }, { value: "o3", name: "o3" }] }],
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  events.length = 0;
+  await agentRef().update("acp-sess-1", {
+    sessionUpdate: "config_option_update",
+    configOptions: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "o3", options: [{ value: "gpt-5", name: "GPT-5" }, { value: "o3", name: "o3" }] }],
+  });
+  await collectUntil(events, "session.meta");
+  assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).configOptions[0].currentValue, "o3");
+});
+
+test("modes-only agent routes a configOption id:mode to set_session_mode (no set_config_option)", async () => {
+  const setModeCalls: any[] = [];
+  const setConfigCalls: any[] = [];
+  let agentRef!: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async () => {});
+    (agentRef as unknown as { newSession: () => Promise<unknown> }).newSession = async () => ({
+      sessionId: "acp-sess-1",
+      modes: { currentModeId: "code", availableModes: [{ id: "ask", name: "Ask" }, { id: "code", name: "Code" }] },
+    });
+    (agentRef as unknown as { setSessionMode: (p: any) => Promise<unknown> }).setSessionMode = async (p) => {
+      setModeCalls.push(p);
+      return {};
+    };
+    (agentRef as unknown as { setSessionConfigOption: (p: any) => Promise<unknown> }).setSessionConfigOption = async (p) => {
+      setConfigCalls.push(p);
+      return { configOptions: [] };
+    };
+    return agentRef;
+  });
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "mode", value: "ask" });
+  assert.deepEqual(setModeCalls.at(-1), { sessionId: "acp-sess-1", modeId: "ask" });
+  assert.equal(setConfigCalls.length, 0);
+  await collectUntil(events, "session.meta");
+  assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).configOptions[0].currentValue, "ask");
+});

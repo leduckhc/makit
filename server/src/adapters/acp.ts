@@ -191,16 +191,54 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 
   /**
-   * Control actions from the app. ACP only supports session-mode switching
-   * (no model/thinking), so `mode` maps to `session/set_session_mode`; other
-   * actions are silently ignored on this transport.
+   * Control actions from the app. `configOption` maps to ACP
+   * `session/set_config_option` (SPEC-26); `mode` maps to
+   * `session/set_session_mode` (legacy, for `modes`-only agents). Other actions
+   * are silently ignored on this transport.
    */
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
-    if (action !== "mode" || !this.conn || !this.acpSessionId) return;
+    if (!this.conn || !this.acpSessionId) return;
+    if (action === "configOption") return this.setConfigOption(args);
+    if (action !== "mode") return;
     const modeId = typeof args?.id === "string" ? args.id : "";
     if (!modeId) return;
-    if (!this.conn.setSessionMode) return;
-    await this.conn.setSessionMode({ sessionId: this.acpSessionId, modeId });
+    await this.applyMode(modeId);
+  }
+
+  /**
+   * Apply a `configOption` control action. Real ACP `configOptions` map to
+   * `session/set_config_option` (our `id` → wire `configId`); the response's
+   * COMPLETE list replaces the cached options (never merged) and re-emits so
+   * dependent options recompute. A `modes`-only agent has only the synthesised
+   * `category:"mode"` option, which routes to `setSessionMode` instead.
+   */
+  private async setConfigOption(args?: Record<string, unknown>): Promise<void> {
+    const id = typeof args?.id === "string" ? args.id : "";
+    if (!id) return;
+    const value = args?.value;
+
+    // modes-only agent: the sole option is the synthesised mode selector.
+    if (!this.configOptions) {
+      if (id === "mode" && typeof value === "string") await this.applyMode(value);
+      return;
+    }
+    if (!this.conn!.setSessionConfigOption) return;
+
+    const target = this.configOptions.find((o) => o.id === id);
+    const req =
+      target?.type === "boolean"
+        ? { sessionId: this.acpSessionId!, configId: id, value: value === true, type: "boolean" as const }
+        : { sessionId: this.acpSessionId!, configId: id, value: String(value ?? "") };
+    const res = await this.conn!.setSessionConfigOption(req);
+    // The COMPLETE list replaces the cache (never merge) so dependent options stay correct.
+    this.captureConfigOptions(res.configOptions);
+    this.emitMeta();
+  }
+
+  /** Route a mode change to `session/set_session_mode` and reflect it locally. */
+  private async applyMode(modeId: string): Promise<void> {
+    if (!this.conn!.setSessionMode) return;
+    await this.conn!.setSessionMode({ sessionId: this.acpSessionId!, modeId });
     // Reflect immediately; the agent may also confirm via current_mode_update.
     if (this.modes) {
       this.modes = { ...this.modes, current: modeId };
@@ -291,12 +329,22 @@ export class AcpAdapter extends SubprocessAdapter {
       sessionUpdate: async (params: SessionNotification) => {
         if (params.sessionId !== this.acpSessionId) return;
         // The agent can switch modes autonomously; keep the selector in sync.
-        const u = params.update as { sessionUpdate?: string; currentModeId?: string };
+        const u = params.update as {
+          sessionUpdate?: string;
+          currentModeId?: string;
+          configOptions?: AcpConfigOption[];
+        };
         if (u.sessionUpdate === "current_mode_update") {
           if (this.modes && typeof u.currentModeId === "string") {
             this.modes = { ...this.modes, current: u.currentModeId };
             this.emitMeta();
           }
+          return;
+        }
+        // The agent pushed an updated config-option set; re-emit the complete list.
+        if (u.sessionUpdate === "config_option_update") {
+          this.captureConfigOptions(u.configOptions);
+          this.emitMeta();
           return;
         }
         this.mapper.handle(params.update);
