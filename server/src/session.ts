@@ -380,8 +380,8 @@ export class Session extends EventEmitter {
 
   /**
    * Rename the session. Trims, ignores empty/unchanged titles, and emits
-   * `titleChanged` so the server can re-broadcast the sessions snapshot and
-   * sync the mux pane label. Returns whether the title actually changed.
+   * `titleChanged` so the server can re-broadcast the sessions snapshot.
+   * Returns whether the title actually changed.
    */
   setTitle(title: string): boolean {
     const next = title.trim();

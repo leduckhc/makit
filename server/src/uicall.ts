@@ -23,7 +23,7 @@ export type UICall =
 /**
  * A callback that presents a UICall on the user's phone and resolves with
  * their answer. Used by both the HTTP bridge (connector tools) and the
- * PiAdapter UI interceptor (transparent ctx.ui.* transport).
+ * pi ACP adapter (transparent ctx.ui.* transport).
  */
 export type AskUser = (call: UICall & { sessionId?: string }) => Promise<UIResponse>;
 
@@ -92,7 +92,7 @@ export interface ConfirmActionResponse {
 
 /**
  * Prompt the user for a single free-text value. Maps pi's `ctx.ui.input` and
- * `ctx.ui.editor` (multiline). Used by the PiAdapter UI interceptor.
+ * `ctx.ui.editor` (multiline). Used by the pi ACP adapter interceptor.
  *
  * Response: `{ kind: "input", value?: string, cancelled?: boolean }`
  */

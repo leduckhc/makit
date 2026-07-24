@@ -5,7 +5,7 @@
  * deterministic, scripted responses (see scenarios.ts). The genuine `pi`
  * binary runs unmodified; only its LLM backend is swapped for this stub via a
  * registered custom provider (test/fake-model/provider-extension.ts). This
- * lets the e2e exercise the real pi → PiAdapter → WS → app path while keeping
+ * lets the e2e exercise the real pi → pi ACP adapter → WS → app path while keeping
  * the model output deterministic and hermetic (no network, no API keys).
  */
 

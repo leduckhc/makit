@@ -165,7 +165,7 @@ function extractText(content: unknown): string {
 }
 
 /**
- * Replay a pi transcript into AdapterEvents (the same shapes PiAdapter emits
+ * Replay a pi transcript into AdapterEvents (the same shapes the pi adapter emits
  * live), so a session can be backfilled before it resumes. Faithful mapping:
  *   user text          → user.message   { text }
  *   assistant text     → agent.message  { text }
@@ -196,7 +196,7 @@ export function parseTranscript(path: string): AdapterEvent[] {
 }
 
 /**
- * Map ONE pi session record to AdapterEvents (same shapes PiAdapter emits
+ * Map ONE pi session record to AdapterEvents (same shapes the pi adapter emits
  * live). Shared by {@link parseTranscript} (bulk backfill) for resuming a
  * prior transcript. Never throws; unknown records → [].
  */

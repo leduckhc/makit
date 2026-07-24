@@ -229,7 +229,7 @@ export async function runServe(opts: ServeArgs) {
     url: bridge.url,
     token: bridge.token,
     extensionPaths,
-    // Same flat-envelope askDevice, reused by the PiAdapter UI interceptor.
+    // Same flat-envelope askDevice, reused by the pi ACP adapter interceptor.
     askUser: async (call) => {
       const { sessionId, ...rest } = call;
       return askDeviceValidated(rest as Record<string, unknown>, sessionId);

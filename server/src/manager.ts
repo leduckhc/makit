@@ -78,8 +78,9 @@ export interface BridgeBinding {
   /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
   extensionPaths: string[];
   /**
-   * Present a UICall on the phone and resolve with the answer. Used by the
-   * PiAdapter UI interceptor to transport pi's ctx.ui.* calls to the app.
+   * Present a UICall on the phone and resolve with the answer. Threaded into an
+   * adapter's `start()` so agents can transport interactive prompts (pi's
+   * `ctx.ui.*` over ACP, or ACP permission/elicitation) to the app.
    */
   askUser?: AskUser;
 }
@@ -226,13 +227,14 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
-  /** Set the loopback bridge + askUser wiring so subsequently-spawned pi
-   *  sessions can transport `ctx.ui.*` calls to the app (PiAdapter interceptor). */
+  /** Set the loopback bridge + askUser wiring so subsequently-spawned
+   *  sessions can transport interactive prompts (`ctx.ui.*` / ACP
+   *  permission/elicitation) to the app. */
   setBridge(bridge: BridgeBinding) {
     this.bridge = bridge;
   }
 
-  /** Spawn a fresh pi session inside `projectId`. */
+  /** Spawn a fresh session inside `projectId` (default agent when unspecified). */
   async spawnPiSession(projectId: string, title?: string, agent?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
@@ -245,9 +247,9 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Spawn a session for a chosen agent. Native pi keeps the multiplexer-pane
-   * path (World B/D mirror); ACP-backed agents always run
-   * headless since there's no real TUI to mirror.
+   * Spawn a session for a chosen agent. All sessions run headless (SPEC-27):
+   * pi over ACP via `pi-acp`, codex via `codex app-server`. There is no longer
+   * an attachable multiplexer pane.
    */
   async spawnSession(projectId: string, title?: string, agent?: string): Promise<Session> {
     const agentId = agent ?? this.defaultAgentId;
@@ -731,7 +733,8 @@ export class SessionManager extends EventEmitter {
     // Resolve the concrete agent for this session (falls back to the host default).
     const agentId = opts.agent ?? this.defaultAgentId;
     // Create the session first so we have an id to thread into the bridge.
-    // askUser is threaded through `start()` below (same as PiAdapter), not the
+    // askUser is threaded through `start()` below (uniform across agent types),
+    // not the
     // constructor — keeps the adapter construction uniform across agent types.
     const built = buildAdapter(agentId);
     const adapter = built.adapter;

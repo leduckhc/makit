@@ -119,7 +119,7 @@ test("listRepos issues its per-worktree shells concurrently, not serially (P3)",
   }
 });
 
-test("native pi fallback keeps agent=pi when no mux", async () => {
+test("pi threads agent=pi through the adapter factory (headless, ACP)", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const agents: string[] = [];
@@ -131,7 +131,7 @@ test("native pi fallback keeps agent=pi when no mux", async () => {
       },
     });
     const projectId = manager.listProjects()[0].id;
-    await manager.spawnSession(projectId, "t", "pi"); // explicit native pi
+    await manager.spawnSession(projectId, "t", "pi"); // explicit pi (ACP via pi-acp)
     assert.deepEqual(agents, ["pi"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -152,7 +152,7 @@ test("spawnSession threads the chosen agent id into the adapter factory", async 
     const projectId = manager.listProjects()[0].id;
 
     await manager.spawnSession(projectId, "t", "codex");
-    await manager.spawnSession(projectId, "t"); // default native pi
+    await manager.spawnSession(projectId, "t"); // default agent (pi)
 
     assert.deepEqual(agents, ["codex", "pi"]);
   } finally {
@@ -160,15 +160,34 @@ test("spawnSession threads the chosen agent id into the adapter factory", async 
   }
 });
 
-test("listAgents exposes pi without pi-acp", () => {
+test("listAgents exposes pi (ACP via pi-acp) when both binaries resolve, and never a pi-acp id", () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  const binDir = mkdtempSync(join(tmpdir(), "makit-bin-"));
+  const piAcp = join(binDir, "pi-acp");
+  const pi = join(binDir, "pi");
+  writeFileSync(piAcp, "#!/bin/sh\n");
+  writeFileSync(pi, "#!/bin/sh\n");
+  chmodSync(piAcp, 0o755);
+  chmodSync(pi, 0o755);
+  const savedAcp = process.env.MAKIT_PI_ACP_BIN;
+  const savedPi = process.env.MAKIT_PI_BIN;
+  process.env.MAKIT_PI_ACP_BIN = piAcp;
+  process.env.MAKIT_PI_BIN = pi;
   try {
     const manager = new SessionManager({ projects: [cwd] });
-    const ids = manager.listAgents().map((a) => a.id);
-    assert.ok(ids.includes("pi"));
-    assert.ok(!ids.includes("pi-acp"));
+    const agents = manager.listAgents();
+    const entry = agents.find((a) => a.id === "pi");
+    assert.ok(entry, "pi should be listed");
+    assert.equal(entry!.transport, "acp");
+    // pi is the agent id on the wire; there is no separate "pi-acp" id.
+    assert.ok(!agents.some((a) => a.id === "pi-acp"));
   } finally {
+    if (savedAcp === undefined) delete process.env.MAKIT_PI_ACP_BIN;
+    else process.env.MAKIT_PI_ACP_BIN = savedAcp;
+    if (savedPi === undefined) delete process.env.MAKIT_PI_BIN;
+    else process.env.MAKIT_PI_BIN = savedPi;
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
   }
 });
 
