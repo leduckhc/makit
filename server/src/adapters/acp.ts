@@ -13,8 +13,9 @@
  * native pi adapter.
  */
 
-import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { readFile, writeFile, mkdir, realpath, mkdtemp, rm } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import {
   ClientSideConnection,
   type Client as AcpClient,
@@ -480,6 +481,80 @@ export function defaultConnect(spec: AcpSpawnSpec) {
       onExit: (cb) => proc.onExit((code) => cb(code)),
       dispose: () => proc.dispose(),
     };
+  };
+}
+
+// ---------- capability probe (SPEC-27) -------------------------------------
+
+/**
+ * Throwaway capability probe for an ACP harness (pi via `pi-acp`): spawn the
+ * adapter's child in an **empty temp `cwd`**, run `initialize` + `session/new`,
+ * capture the returned `configOptions` (parsed to makit's wire shape), then
+ * clean up. When the agent advertises the `session/delete` capability we call
+ * it to drop the probe session (pi-acp also prunes its
+ * `~/.pi/pi-acp/session-map.json` entry) — tolerating a method-not-found from
+ * agents that lie about it. The child is always killed and the temp dir always
+ * removed, so no ghost sessions/dirs are left behind.
+ *
+ * Standalone (not a full makit {@link Session}): it reuses only the transport
+ * plumbing + config-option parser. Returns `[]` for an option-less harness.
+ */
+export async function probeAcpConfigOptions(
+  spec: AcpSpawnSpec,
+  opts: { connect?: (cwd: string, env: Record<string, string>) => AcpTransport } = {},
+): Promise<SessionConfigOption[]> {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "makit-acp-probe-")));
+  const connect = opts.connect ?? defaultConnect(spec);
+  const transport = connect(cwd, spec.env ?? {});
+  try {
+    const conn = new ClientSideConnection(() => probeClient(), transport.stream);
+    const init = await conn.initialize({
+      protocolVersion: 1,
+      clientCapabilities: {
+        fs: { readTextFile: true, writeTextFile: true },
+        terminal: false,
+        session: { configOptions: { boolean: {} } },
+      },
+    });
+    const res = await conn.newSession({ cwd, mcpServers: [] });
+    const options =
+      Array.isArray(res.configOptions) && res.configOptions.length > 0
+        ? res.configOptions.map(parseAcpConfigOption)
+        : [];
+
+    // Drop the throwaway session when the agent advertises session/delete.
+    const supportsDelete = Boolean(init.agentCapabilities?.sessionCapabilities?.delete);
+    if (supportsDelete && conn.deleteSession) {
+      try {
+        await conn.deleteSession({ sessionId: res.sessionId });
+      } catch (e) {
+        log.warn(`[makit] ACP probe session/delete failed: ${(e as Error).message}`);
+      }
+    }
+    return options;
+  } finally {
+    transport.dispose();
+    await rm(cwd, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Minimal ACP {@link AcpClient} for the probe: it never runs a turn, so it
+ * needs no real fs/permission handling — filesystem requests are refused and
+ * permission/elicitation requests are cancelled/declined.
+ */
+function probeClient(): AcpClient {
+  return {
+    sessionUpdate: async () => {},
+    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+    readTextFile: async () => {
+      throw new Error("ACP probe does not serve files");
+    },
+    writeTextFile: async () => {
+      throw new Error("ACP probe does not serve files");
+    },
+    unstable_createElicitation: async () => ({ action: "decline" }),
+    unstable_completeElicitation: async () => {},
   };
 }
 

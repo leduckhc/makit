@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { CodexAppServerAdapter, defaultConnect, type CodexTransport } from "./codex.js";
+import { CodexAppServerAdapter, defaultConnect, probeCodexConfigOptions, projectCodexModelList, buildCodexConfigOptions, type CodexTransport } from "./codex.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -372,4 +372,52 @@ test("configOption thought_level action overrides the next turn's reasoning effo
   await adapter.send({ text: "go" });
   const turn = fake.sent.filter((m) => m.method === "turn/start").at(-1);
   assert.equal(turn.params.effort, "high");
+});
+
+// ---------- capability projection + probe (SPEC-27) ------------------------
+
+test("projectCodexModelList maps visible models and picks the default", () => {
+  const projected = projectCodexModelList({
+    data: [
+      { model: "gpt-5-codex", displayName: "GPT-5 Codex", hidden: false, defaultReasoningEffort: "medium", isDefault: true },
+      { model: "o3", displayName: "o3", description: "reasoning", hidden: false, isDefault: false },
+      { model: "hidden-model", hidden: true },
+    ],
+  });
+  assert.deepEqual(
+    projected.models.map((m) => m.value),
+    ["gpt-5-codex", "o3"],
+  );
+  assert.equal(projected.activeModel, "gpt-5-codex");
+  assert.equal(projected.activeEffort, "medium");
+});
+
+test("buildCodexConfigOptions emits model + thought_level, defaulting effort", () => {
+  const options = buildCodexConfigOptions([{ value: "o3", name: "o3" }], "o3", undefined);
+  assert.equal(options[0].id, "model");
+  assert.equal(options[0].currentValue, "o3");
+  assert.equal(options[1].id, "thought_level");
+  assert.equal(options[1].currentValue, "medium");
+});
+
+test("buildCodexConfigOptions omits the model option when the catalog is empty", () => {
+  const options = buildCodexConfigOptions([], undefined, "high");
+  assert.equal(options.length, 1);
+  assert.equal(options[0].id, "thought_level");
+  assert.equal(options[0].currentValue, "high");
+});
+
+test("probeCodexConfigOptions projects the app-server model/list surface (no thread started)", async () => {
+  const fake = fakeAppServer();
+  const options = await probeCodexConfigOptions({ connect: () => fake.transport });
+  // Handshake used initialize + model/list, but NEVER thread/start.
+  const methods = fake.sent.map((m: any) => m.method).filter(Boolean);
+  assert.ok(methods.includes("initialize"));
+  assert.ok(methods.includes("model/list"));
+  assert.ok(!methods.includes("thread/start"), "probe must not start a thread");
+  // Projected into the shared config-option shape.
+  const model = options.find((o) => o.id === "model");
+  assert.ok(model);
+  assert.deepEqual(model!.options!.map((m) => m.value), ["gpt-5-codex", "o3"]);
+  assert.ok(options.some((o) => o.id === "thought_level"));
 });

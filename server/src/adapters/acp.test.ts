@@ -14,7 +14,7 @@ import {
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
-import { AcpAdapter, defaultConnect, type AcpTransport } from "./acp.js";
+import { AcpAdapter, defaultConnect, probeAcpConfigOptions, type AcpTransport } from "./acp.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -798,4 +798,81 @@ test("modes-only agent routes a configOption id:mode to set_session_mode (no set
   assert.equal(setConfigCalls.length, 0);
   await collectUntil(events, "session.meta");
   assert.equal((events.find((e) => e.kind === "session.meta")!.payload as any).configOptions[0].currentValue, "ask");
+});
+
+// ---------- capability probe (SPEC-27) -------------------------------------
+
+/**
+ * Build a probe-facing fake agent: newSession returns `res`; initialize
+ * advertises `session/delete` iff `supportsDelete`; deleteSession is recorded.
+ */
+function probePair(
+  res: Record<string, unknown>,
+  opts: { supportsDelete?: boolean } = {},
+): { transport: AcpTransport; deleteCalls: { sessionId: string }[] } {
+  const deleteCalls: { sessionId: string }[] = [];
+  const { transport } = pair((conn) => {
+    const agent = new ScriptedAgent(conn, async () => {});
+    (agent as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
+      protocolVersion: 1 as const,
+      agentCapabilities: {
+        loadSession: false,
+        ...(opts.supportsDelete ? { sessionCapabilities: { delete: {} } } : {}),
+      },
+    });
+    (agent as unknown as { newSession: () => Promise<unknown> }).newSession = async () => res;
+    (agent as unknown as { deleteSession: (p: { sessionId: string }) => Promise<unknown> }).deleteSession =
+      async (p) => {
+        deleteCalls.push(p);
+        return {};
+      };
+    return agent;
+  });
+  return { transport, deleteCalls };
+}
+
+test("probeAcpConfigOptions captures configOptions from session/new and deletes the probe session", async () => {
+  const { transport, deleteCalls } = probePair(
+    {
+      sessionId: "probe-sess-1",
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "gpt-5",
+          options: [
+            { value: "gpt-5", name: "GPT-5" },
+            { value: "o3", name: "o3" },
+          ],
+        },
+      ],
+    },
+    { supportsDelete: true },
+  );
+
+  const options = await probeAcpConfigOptions(
+    { agent: "pi", command: "x" },
+    { connect: () => transport },
+  );
+  assert.equal(options.length, 1);
+  assert.equal(options[0].id, "model");
+  assert.equal(options[0].currentValue, "gpt-5");
+  // The throwaway session was dropped via session/delete.
+  assert.deepEqual(deleteCalls, [{ sessionId: "probe-sess-1" }]);
+});
+
+test("probeAcpConfigOptions returns [] for an option-less harness and skips delete when unadvertised", async () => {
+  const { transport, deleteCalls } = probePair(
+    { sessionId: "probe-sess-2" },
+    { supportsDelete: false },
+  );
+  const options = await probeAcpConfigOptions(
+    { agent: "pi", command: "x" },
+    { connect: () => transport },
+  );
+  assert.deepEqual(options, []);
+  // No delete capability advertised → probe does not call session/delete.
+  assert.equal(deleteCalls.length, 0);
 });
