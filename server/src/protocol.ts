@@ -61,6 +61,36 @@ export interface SessionEvent {
   payload: Record<string, unknown>;
 }
 
+/**
+ * Generic, category-tagged session config model (SPEC-26). Mirrors ACP v1's
+ * Session Config Options and the codex app-server projection: the composer
+ * renders this ONE list (ordered by agent priority) instead of the bespoke
+ * model/thinking/mode widgets. Carried on `session.meta` as `configOptions`,
+ * ADDITIVE alongside the legacy `{model, thinking, models, modes}` fields during
+ * the migration window. Set via the `session.action` `configOption {id, value}`.
+ */
+export type ConfigOptionCategory = "mode" | "model" | "model_config" | "thought_level" | string;
+export interface ConfigOptionValue {
+  value: string;
+  name: string;
+  description?: string;
+}
+export interface ConfigOptionGroup {
+  name: string;
+  options: ConfigOptionValue[];
+}
+export interface SessionConfigOption {
+  id: string;
+  name: string;
+  description?: string;
+  category?: ConfigOptionCategory;
+  type: "select" | "boolean";
+  currentValue: string | boolean;
+  // select only: either a flat value list OR named groups (ACP allows both).
+  options?: ConfigOptionValue[];
+  groups?: ConfigOptionGroup[];
+}
+
 export type SessionStatus =
   | "idle"
   | "running"
