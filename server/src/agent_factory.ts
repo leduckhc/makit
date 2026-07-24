@@ -7,7 +7,7 @@
  */
 
 import type { AgentAdapter } from "./adapters/adapter.js";
-import { AcpAdapter } from "./adapters/acp.js";
+import { AcpAdapter, type AcpSpawnSpec } from "./adapters/acp.js";
 import { CodexAppServerAdapter } from "./adapters/codex.js";
 
 /**
@@ -17,6 +17,15 @@ import { CodexAppServerAdapter } from "./adapters/codex.js";
  */
 function piAcpBin(): string {
   return process.env.MAKIT_PI_ACP_BIN || "pi-acp";
+}
+
+/**
+ * The ACP spawn spec for pi (via the `pi-acp` bridge). Shared by the live
+ * adapter build and the throwaway capability probe (SPEC-27) so both drive the
+ * exact same binary.
+ */
+export function piAcpSpec(): AcpSpawnSpec {
+  return { agent: "pi", command: piAcpBin(), args: [] };
 }
 
 /**
@@ -37,7 +46,7 @@ export function buildAdapter(agentId: string): { agent: string; adapter: AgentAd
     default:
       return {
         agent: "pi",
-        adapter: new AcpAdapter({ spec: { agent: "pi", command: piAcpBin(), args: [] } }),
+        adapter: new AcpAdapter({ spec: piAcpSpec() }),
       };
   }
 }
