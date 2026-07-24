@@ -115,6 +115,7 @@ class SessionMeta {
     required this.thinking,
     required this.models,
     this.modes,
+    this.configOptions = const [],
   });
 
   final ModelInfo? model;
@@ -125,6 +126,11 @@ class SessionMeta {
   /// agent that advertises them. Native pi has no modes (null); ACP has no
   /// model/thinking. Drives the composer's mode selector.
   final SessionModes? modes;
+
+  /// Generic, category-tagged config selectors (ACP `configOptions`), ordered
+  /// by agent priority. Empty when the agent emits only the legacy
+  /// `model`/`thinking`/`modes` fields (back-compat). See SPEC-26.
+  final List<SessionConfigOption> configOptions;
 
   static SessionMeta fromJson(Map<String, dynamic> j) {
     final rawModel = j['model'];
@@ -142,6 +148,130 @@ class SessionMeta {
       modes: rawModes is Map
           ? SessionModes.fromJson(Map<String, dynamic>.from(rawModes))
           : null,
+      configOptions: ((j['configOptions'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map(
+            (m) => SessionConfigOption.fromJson(Map<String, dynamic>.from(m)),
+          )
+          .whereType<SessionConfigOption>()
+          .toList(),
+    );
+  }
+}
+
+/// Whether a [SessionConfigOption] is a value picker or an on/off toggle.
+/// ACP defaults an option to `select` when `type` is absent.
+enum ConfigOptionType { select, boolean }
+
+/// One choice within a select [SessionConfigOption] — either directly under
+/// `options` (flat) or inside a [ConfigOptionGroup].
+class ConfigOptionValue {
+  const ConfigOptionValue({
+    required this.value,
+    required this.name,
+    this.description,
+  });
+
+  final String value;
+  final String name;
+  final String? description;
+
+  static ConfigOptionValue? fromJson(Map<String, dynamic> j) {
+    final value = j['value'] as String?;
+    if (value == null) return null;
+    return ConfigOptionValue(
+      value: value,
+      name: (j['name'] as String?) ?? value,
+      description: j['description'] as String?,
+    );
+  }
+}
+
+/// A named group of [ConfigOptionValue]s for a grouped select option. The
+/// composer renders these as labeled sections.
+class ConfigOptionGroup {
+  const ConfigOptionGroup({required this.name, required this.options});
+
+  final String name;
+  final List<ConfigOptionValue> options;
+
+  static ConfigOptionGroup? fromJson(Map<String, dynamic> j) {
+    final name = j['name'] as String?;
+    if (name == null) return null;
+    return ConfigOptionGroup(
+      name: name,
+      options: _parseOptionValues(j['options']),
+    );
+  }
+}
+
+List<ConfigOptionValue> _parseOptionValues(Object? raw) =>
+    ((raw as List?) ?? const [])
+        .whereType<Map<dynamic, dynamic>>()
+        .map((m) => ConfigOptionValue.fromJson(Map<String, dynamic>.from(m)))
+        .whereType<ConfigOptionValue>()
+        .toList();
+
+/// A generic, category-tagged session config selector advertised by the agent
+/// (ACP `configOptions`). Supersedes the legacy `model`/`thinking`/`modes`
+/// fields on [SessionMeta]. Ordered by agent priority; the composer renders
+/// each option by [category]. See SPEC-26.
+class SessionConfigOption {
+  const SessionConfigOption({
+    required this.id,
+    required this.name,
+    this.description,
+    this.category,
+    required this.type,
+    required this.currentValue,
+    this.options = const [],
+    this.groups = const [],
+  });
+
+  final String id;
+  final String name;
+  final String? description;
+
+  /// Semantic, UX-only hint: known values are `mode`, `model`, `model_config`,
+  /// `thought_level`. Open string — unknown/`_`-prefixed values are preserved
+  /// and rendered with the generic select.
+  final String? category;
+
+  final ConfigOptionType type;
+
+  /// The active value: a [String] for `select`, a [bool] for `boolean`.
+  final Object currentValue;
+
+  /// Flat choices for a select option; empty when grouped or boolean.
+  final List<ConfigOptionValue> options;
+
+  /// Named groups for a grouped select option; empty when flat or boolean.
+  final List<ConfigOptionGroup> groups;
+
+  static SessionConfigOption? fromJson(Map<String, dynamic> j) {
+    final id = j['id'] as String?;
+    final name = j['name'] as String?;
+    if (id == null || name == null) return null;
+    final type = j['type'] == 'boolean'
+        ? ConfigOptionType.boolean
+        : ConfigOptionType.select;
+    final rawValue = j['currentValue'];
+    final currentValue = rawValue is bool || rawValue is String
+        ? rawValue as Object
+        : (type == ConfigOptionType.boolean ? false : '');
+    return SessionConfigOption(
+      id: id,
+      name: name,
+      description: j['description'] as String?,
+      category: j['category'] as String?,
+      type: type,
+      currentValue: currentValue,
+      options: _parseOptionValues(j['options']),
+      groups: ((j['groups'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((m) => ConfigOptionGroup.fromJson(Map<String, dynamic>.from(m)))
+          .whereType<ConfigOptionGroup>()
+          .toList(),
     );
   }
 }
