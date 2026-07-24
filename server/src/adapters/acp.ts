@@ -25,6 +25,7 @@ import {
   type WriteTextFileRequest,
   type CreateElicitationRequest,
   type CreateElicitationResponse,
+  type SessionConfigOption as AcpConfigOption,
 } from "@agentclientprotocol/sdk";
 import type { AnyMessage } from "@agentclientprotocol/sdk";
 import type { SpawnOpts, UserInput } from "./adapter.js";
@@ -34,6 +35,7 @@ import { spawnLineProcess } from "./child_transport.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
 import type { AskUser } from "../uicall.js";
+import type { SessionConfigOption, ConfigOptionValue, ConfigOptionGroup } from "../protocol.js";
 import { log } from "../log.js";
 
 export interface AcpSpawnSpec {
@@ -82,6 +84,15 @@ export class AcpAdapter extends SubprocessAdapter {
    */
   private modes?: { current: string; available: { id: string; name: string }[] };
 
+  /**
+   * ACP v1 Session Config Options captured from the `session/new` response,
+   * already parsed into makit's wire {@link SessionConfigOption} shape. When
+   * present these SUPERSEDE `modes` (the spec says a client that supports
+   * `configOptions` uses it exclusively); `modes`-only agents get a single
+   * synthesised `category:"mode"` option instead (see {@link buildConfigOptions}).
+   */
+  private configOptions?: SessionConfigOption[];
+
   constructor(opts: AcpAdapterOpts) {
     super();
     this.spec = opts.spec;
@@ -116,6 +127,9 @@ export class AcpAdapter extends SubprocessAdapter {
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: true },
         terminal: false,
+        // We support boolean session config options (SPEC-26). Advertising this
+        // lets agents include `type:"boolean"` entries in `configOptions`.
+        session: { configOptions: { boolean: {} } },
       },
     });
 
@@ -128,6 +142,7 @@ export class AcpAdapter extends SubprocessAdapter {
     const res = await this.conn.newSession({ cwd, mcpServers: [] });
     this.acpSessionId = res.sessionId;
     this.captureModes(res.modes);
+    this.captureConfigOptions(res.configOptions);
     this.emit("status", "idle");
     this.emitMeta();
   }
@@ -212,13 +227,55 @@ export class AcpAdapter extends SubprocessAdapter {
     };
   }
 
-  /** Emit the ACP session modes as `session.meta` (only when modes exist). */
+  /** Cache the ACP configOptions from a newSession response, parsed to wire shape. */
+  private captureConfigOptions(options: AcpConfigOption[] | null | undefined): void {
+    if (!Array.isArray(options) || options.length === 0) {
+      this.configOptions = undefined;
+      return;
+    }
+    this.configOptions = options.map(parseAcpConfigOption);
+  }
+
+  /**
+   * The `configOptions` to surface on `session.meta`. Agent-supplied options win
+   * (`modes` is ignored per spec); otherwise a `modes`-only agent gets a single
+   * synthesised `category:"mode"` option for back-compat. Undefined when neither.
+   */
+  private buildConfigOptions(): SessionConfigOption[] | undefined {
+    if (this.configOptions) return this.configOptions;
+    if (this.modes) {
+      return [
+        {
+          id: "mode",
+          name: "Mode",
+          category: "mode",
+          type: "select",
+          currentValue: this.modes.current,
+          options: this.modes.available.map((m) => ({ value: m.id, name: m.name })),
+        },
+      ];
+    }
+    return undefined;
+  }
+
+  /**
+   * Emit the session config as `session.meta`. Keeps the legacy
+   * `{model, thinking, models, modes}` fields (migration window) and adds the
+   * unified `configOptions` list (SPEC-26) when the agent supports either.
+   */
   private emitMeta(): void {
-    if (!this.modes) return;
+    const configOptions = this.buildConfigOptions();
+    if (!this.modes && !configOptions) return;
     this.emitEvent({
       ts: Date.now(),
       kind: "session.meta",
-      payload: { model: null, thinking: "", models: [], modes: this.modes },
+      payload: {
+        model: null,
+        thinking: "",
+        models: [],
+        modes: this.modes,
+        ...(configOptions ? { configOptions } : {}),
+      },
     });
   }
 
@@ -474,6 +531,50 @@ function permissionPreview(tc: Record<string, unknown>): string | undefined {
     }
   }
   return undefined;
+}
+
+// ---------- ACP config-option parsing (SPEC-26) ----------------------------
+
+/**
+ * Map an ACP v1 {@link AcpConfigOption} into makit's wire
+ * {@link SessionConfigOption}. Boolean options carry a boolean `currentValue`;
+ * select options carry either a flat value list (`options`) or named `groups`
+ * (ACP allows both — grouped choices preserve their group names). Absent
+ * `description`/`category` are omitted rather than emitted as `undefined`.
+ */
+export function parseAcpConfigOption(opt: AcpConfigOption): SessionConfigOption {
+  const base: SessionConfigOption =
+    opt.type === "boolean"
+      ? { id: opt.id, name: opt.name, type: "boolean", currentValue: opt.currentValue }
+      : { id: opt.id, name: opt.name, type: "select", currentValue: opt.currentValue };
+  if (typeof opt.description === "string") base.description = opt.description;
+  if (typeof opt.category === "string") base.category = opt.category;
+
+  if (opt.type === "select") {
+    const raw = Array.isArray(opt.options) ? opt.options : [];
+    if (isGroupedSelect(raw)) {
+      base.groups = raw.map(
+        (g): ConfigOptionGroup => ({ name: g.name, options: g.options.map(parseSelectValue) }),
+      );
+    } else {
+      base.options = raw.map(parseSelectValue);
+    }
+  }
+  return base;
+}
+
+/** ACP grouped selects carry `{group, name, options}`; flat ones carry `{value, name}`. */
+function isGroupedSelect(
+  options: readonly unknown[],
+): options is { group: string; name: string; options: { value: string; name: string; description?: string | null }[] }[] {
+  const first = options[0];
+  return isRecord(first) && "group" in first;
+}
+
+function parseSelectValue(v: { value: string; name: string; description?: string | null }): ConfigOptionValue {
+  const out: ConfigOptionValue = { value: v.value, name: v.name };
+  if (typeof v.description === "string") out.description = v.description;
+  return out;
 }
 
 // ---------- production spec helper -----------------------------------------

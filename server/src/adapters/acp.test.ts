@@ -524,3 +524,169 @@ test("acp defaultConnect routes a spawn failure to onExit instead of crashing th
   ]);
   assert.equal(code, null);
 });
+
+// ---- SPEC-26: ACP session config options ----------------------------------
+
+/** Build an adapter paired with an agent whose newSession returns `res`. */
+function pairWithNewSession(
+  res: Record<string, unknown>,
+  opts: {
+    onSetConfigOption?: (p: { sessionId: string; configId: string; value: unknown }) => unknown;
+    onInitialize?: (p: any) => void;
+  } = {},
+): { adapter: AcpAdapter; events: AdapterEvent[]; agentRef: () => ScriptedAgent } {
+  let agentRef!: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async () => {});
+    (agentRef as unknown as { newSession: () => Promise<unknown> }).newSession = async () => res;
+    if (opts.onInitialize) {
+      const orig = agentRef.initialize.bind(agentRef);
+      (agentRef as unknown as { initialize: (p: any) => Promise<unknown> }).initialize = async (p) => {
+        opts.onInitialize!(p);
+        return orig(p);
+      };
+    }
+    if (opts.onSetConfigOption) {
+      (agentRef as unknown as {
+        setSessionConfigOption: (p: any) => Promise<unknown>;
+      }).setSessionConfigOption = async (p) => opts.onSetConfigOption!(p);
+    }
+    return agentRef;
+  });
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  return { adapter, events, agentRef: () => agentRef };
+}
+
+test("advertises clientCapabilities.session.configOptions.boolean on initialize", async () => {
+  let capabilities: any;
+  const { adapter } = pairWithNewSession(
+    { sessionId: "acp-sess-1" },
+    { onInitialize: (p) => (capabilities = p.clientCapabilities) },
+  );
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  assert.deepEqual(capabilities.session.configOptions.boolean, {});
+});
+
+test("captures ACP configOptions and emits them ordered on session.meta", async () => {
+  const { adapter, events } = pairWithNewSession({
+    sessionId: "acp-sess-1",
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "gpt-5",
+        options: [
+          { value: "gpt-5", name: "GPT-5" },
+          { value: "o3", name: "o3", description: "reasoning" },
+        ],
+      },
+      {
+        id: "web",
+        name: "Web search",
+        category: "_tools",
+        type: "boolean",
+        currentValue: true,
+      },
+    ],
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  const payload = events.find((e) => e.kind === "session.meta")!.payload as any;
+  assert.deepEqual(payload.configOptions, [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: "gpt-5",
+      options: [
+        { value: "gpt-5", name: "GPT-5" },
+        { value: "o3", name: "o3", description: "reasoning" },
+      ],
+    },
+    { id: "web", name: "Web search", category: "_tools", type: "boolean", currentValue: true },
+  ]);
+});
+
+test("ignores modes when configOptions are present (no synthesised mode option)", async () => {
+  const { adapter, events } = pairWithNewSession({
+    sessionId: "acp-sess-1",
+    modes: {
+      currentModeId: "code",
+      availableModes: [
+        { id: "ask", name: "Ask" },
+        { id: "code", name: "Code" },
+      ],
+    },
+    configOptions: [
+      { id: "model", name: "Model", category: "model", type: "select", currentValue: "a", options: [{ value: "a", name: "A" }] },
+    ],
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  const payload = events.find((e) => e.kind === "session.meta")!.payload as any;
+  // configOptions used exclusively; no synthesised category:"mode" option.
+  assert.equal(payload.configOptions.length, 1);
+  assert.equal(payload.configOptions[0].id, "model");
+  // Legacy modes field still emitted (additive migration window).
+  assert.equal(payload.modes.current, "code");
+});
+
+test("synthesises a single category:mode option from modes-only agents", async () => {
+  const { adapter, events } = pairWithNewSession({
+    sessionId: "acp-sess-1",
+    modes: {
+      currentModeId: "code",
+      availableModes: [
+        { id: "ask", name: "Ask" },
+        { id: "code", name: "Code" },
+      ],
+    },
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  const payload = events.find((e) => e.kind === "session.meta")!.payload as any;
+  assert.equal(payload.configOptions.length, 1);
+  assert.deepEqual(payload.configOptions[0], {
+    id: "mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "code",
+    options: [
+      { value: "ask", name: "Ask" },
+      { value: "code", name: "Code" },
+    ],
+  });
+});
+
+test("parses grouped ACP select options into groups", async () => {
+  const { adapter, events } = pairWithNewSession({
+    sessionId: "acp-sess-1",
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "gpt-5",
+        options: [
+          { group: "openai", name: "OpenAI", options: [{ value: "gpt-5", name: "GPT-5" }] },
+          { group: "anthropic", name: "Anthropic", options: [{ value: "sonnet", name: "Sonnet" }] },
+        ],
+      },
+    ],
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  await collectUntil(events, "session.meta");
+  const payload = events.find((e) => e.kind === "session.meta")!.payload as any;
+  assert.equal(payload.configOptions[0].options, undefined);
+  assert.deepEqual(payload.configOptions[0].groups, [
+    { name: "OpenAI", options: [{ value: "gpt-5", name: "GPT-5" }] },
+    { name: "Anthropic", options: [{ value: "sonnet", name: "Sonnet" }] },
+  ]);
+});
