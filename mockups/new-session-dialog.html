@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit · New session dialog</title>
+<style>
+  /* Tokens lifted from mockups/makit-design-lab.html (neutral greys + green). */
+  .mode-light {
+    --bg: oklch(0.985 0 0); --surface: oklch(1 0 0); --surface-2: oklch(0.975 0 0);
+    --text: oklch(0.22 0 0); --muted: oklch(0.50 0 0); --hairline: oklch(0.90 0 0);
+    --accent: oklch(0.62 0.17 150); --accent-fg: oklch(1 0 0);
+    --chip: oklch(0.965 0 0); --chip-sel: oklch(0.93 0.05 150);
+  }
+  .mode-dark {
+    --bg: oklch(0.205 0 0); --surface: oklch(0.26 0 0); --surface-2: oklch(0.23 0 0);
+    --text: oklch(0.97 0 0); --muted: oklch(0.70 0 0); --hairline: oklch(0.32 0 0);
+    --accent: oklch(0.80 0.19 150); --accent-fg: oklch(0.24 0.05 150);
+    --chip: oklch(0.30 0 0); --chip-sel: oklch(0.38 0.06 150);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Segoe UI, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-wrap: wrap; gap: 40px; padding: 40px; justify-content: center; align-items: flex-start;
+  }
+  .lab-controls { position: fixed; top: 12px; right: 16px; display: flex; gap: 8px; z-index: 10; }
+  .lab-controls button {
+    font: inherit; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--hairline);
+    background: var(--surface); color: var(--text); cursor: pointer;
+  }
+  .stage { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .stage > h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; font-weight: 600; }
+
+  /* ---- Dialog ---- */
+  .dialog {
+    width: 480px; background: var(--surface); color: var(--text);
+    border: 1px solid var(--hairline); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.28); overflow: hidden;
+  }
+  .dialog-header { display: flex; align-items: flex-start; padding: 16px 14px 4px 20px; }
+  .dialog-header .title { flex: 1; font-size: 17px; font-weight: 600; }
+  .close {
+    width: 28px; height: 28px; border-radius: 8px; border: none; background: transparent;
+    color: var(--muted); font-size: 18px; cursor: pointer; display: grid; place-items: center; line-height: 1;
+  }
+  .close:hover { background: var(--surface-2); color: var(--text); }
+  .dialog-sub { padding: 0 20px 12px; color: var(--muted); font-size: 12.5px; }
+  .dialog-body { padding: 4px 20px 18px; display: flex; flex-direction: column; }
+
+  .field { padding: 12px 0; border-bottom: 1px solid var(--hairline); }
+  .field:last-of-type { border-bottom: none; }
+  .field-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; letter-spacing: .02em; }
+
+  /* segmented toggle (worktree source, reasoning) */
+  .seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; padding: 2px; gap: 2px; }
+  .seg button {
+    font: inherit; font-size: 12.5px; border: none; background: transparent; color: var(--muted);
+    padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+
+  /* dropdown-ish rows */
+  .select {
+    width: 100%; display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 10px; cursor: pointer;
+  }
+  .select .val { flex: 1; }
+  .select .sub { color: var(--muted); font-size: 12px; }
+  .select .caret { color: var(--muted); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+  /* harness chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 999px;
+    background: var(--chip); border: 1px solid var(--hairline); cursor: pointer; font-size: 13px;
+  }
+  .chip .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--muted); opacity: .55; display: grid; place-items: center; color: var(--surface); font-size: 10px; }
+  .chip.sel { background: var(--chip-sel); border-color: var(--accent); font-weight: 600; }
+  .chip.sel .dot { background: var(--accent); opacity: 1; }
+  .chip.disabled { opacity: .45; cursor: not-allowed; }
+
+  /* reasoning signal bars */
+  .signal { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+  .signal i { width: 2.5px; background: var(--muted); opacity: .3; border-radius: 1px; display: inline-block; }
+  .seg button.on .signal i.act { background: var(--text); opacity: 1; }
+  .signal i:nth-child(1){height:5px} .signal i:nth-child(2){height:7px}
+  .signal i:nth-child(3){height:9px} .signal i:nth-child(4){height:11px}
+  .signal i:nth-child(5){height:14px}
+
+  /* compact config pills (inside the composer) */
+  .cpills { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .cpill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--hairline); color: var(--muted);
+    font-size: 12.5px; cursor: pointer; line-height: 1;
+  }
+  .cpill:hover { border-color: var(--accent); color: var(--text); }
+  .cpill .lead { width: 15px; height: 15px; display: grid; place-items: center; font-size: 11px; }
+  .cpill .avatar { width: 15px; height: 15px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; color: var(--accent-fg); font-size: 9px; }
+  .cpill .signal i.act { background: var(--text); opacity: 1; }
+  .composer .divider { height: 1px; background: var(--hairline); margin: 2px -2px; }
+
+  /* borderless config buttons (ghost pills) */
+  .ghost { background: transparent; border: none; }
+  .ghost:hover { background: var(--surface); }
+
+  /* harness cards */
+  .hcards { display: flex; flex-wrap: wrap; gap: 10px; }
+  .hcard {
+    width: 150px; padding: 12px; border-radius: 12px; background: var(--surface);
+    border: 1px solid var(--hairline); cursor: pointer;
+  }
+  .hcard.sel { border-color: var(--accent); background: var(--chip-sel); }
+  .hcard .top { display: flex; align-items: center; justify-content: space-between; }
+  .hcard .ic { font-size: 18px; }
+  .hcard .check { color: var(--accent); font-weight: 700; }
+  .hcard .name { font-weight: 600; margin-top: 8px; }
+  .hcard .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .hcard.disabled { opacity: .5; cursor: not-allowed; }
+
+  /* buttons */
+  .btn { font: inherit; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--hairline); background: var(--surface); color: var(--text); cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
+
+  /* composer (first message) */
+  .composer {
+    margin-top: 6px; background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .composer textarea {
+    width: 100%; resize: none; border: none; outline: none; background: transparent;
+    color: var(--text); font: inherit; min-height: 44px;
+  }
+  .composer textarea::placeholder { color: var(--muted); }
+  .composer .row { display: flex; align-items: center; gap: 6px; }
+  .composer .row .spacer { flex: 1; }
+  .send {
+    width: 30px; height: 30px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--accent); color: var(--accent-fg); font-size: 15px; display: grid; place-items: center;
+  }
+  .badge { font-size: 10.5px; color: var(--muted); border: 1px solid var(--hairline); border-radius: 6px; padding: 1px 6px; margin-left: 6px; }
+</style>
+</head>
+<body class="mode-light">
+  <div class="lab-controls">
+    <button onclick="document.body.className = document.body.className==='mode-light'?'mode-dark':'mode-light'">Toggle light/dark</button>
+  </div>
+
+  <!-- ===================== ACP CONFIG CATALOG (model/reasoning/mode) ===================== -->
+  <div class="stage">
+    <h2>ACP config options — rendered from the cached catalog (model / reasoning / mode)</h2>
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="title">New session</div>
+        <button class="close" title="Cancel">✕</button>
+      </div>
+      <div class="dialog-sub">Configure the session, then start it with your first message.</div>
+      <div class="dialog-body">
+
+        <!-- 1 · Worktree -->
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg" style="margin-bottom:10px">
+            <button class="on">Existing</button>
+            <button>New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="select">
+            <span class="val">feature/tab-system</span>
+            <span class="sub">makit</span>
+            <span class="caret">▾</span>
+          </div>
+          <div class="hint">Defaults to the active tab’s worktree. Choose another, or create one.</div>
+        </div>
+
+        <!-- 2 · Harness -->
+        <div class="field">
+          <div class="field-label">Harness</div>
+          <div class="chips">
+            <span class="chip sel"><span class="dot">🤖</span>pi</span>
+            <span class="chip"><span class="dot">🤖</span>codex</span>
+            <span class="chip"><span class="dot">🤖</span>claude</span>
+            <span class="chip disabled"><span class="dot">🤖</span>gemini <span class="badge">unavailable</span></span>
+          </div>
+        </div>
+
+        <!-- 3 · Model -->
+        <div class="field">
+          <div class="field-label">Model</div>
+          <div class="select">
+            <span class="val">GPT-5</span>
+            <span class="sub">openai</span>
+            <span class="caret">▾</span>
+          </div>
+        </div>
+
+        <!-- 4 · Reasoning -->
+        <div class="field">
+          <div class="field-label">Reasoning</div>
+          <div class="seg">
+            <button>off</button>
+            <button>minimal</button>
+            <button>low</button>
+            <button class="on">medium
+              <span class="signal"><i class="act"></i><i class="act"></i><i class="act"></i><i></i><i></i></span>
+            </button>
+            <button>high</button>
+            <button>xhigh</button>
+          </div>
+          <div class="hint">Scoped to the harness. Changing harness resets model + reasoning to its defaults.</div>
+        </div>
+
+        <!-- 5 · First message (composer) -->
+        <div class="field" style="border-bottom:none;padding-bottom:4px">
+          <div class="field-label">First message</div>
+          <div class="composer">
+            <textarea placeholder="Describe the task to start the session…">Add a tab strip to each split and wire up the reveal-on-click behavior.</textarea>
+            <div class="row">
+              <span class="sub" style="color:var(--muted);font-size:12px">⏎ to send · ⇧⏎ for newline</span>
+              <span class="spacer"></span>
+              <button class="send" title="Start session">↑</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ACP HARNESS (configOptions from cached catalog) ===================== -->
+  <div class="stage">
+    <h2>ACP harness — configOptions from cached catalog</h2>
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="title">New session</div>
+        <button class="close" title="Cancel">✕</button>
+      </div>
+      <div class="dialog-sub">Configure the session, then start it with your first message.</div>
+      <div class="dialog-body">
+
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg" style="margin-bottom:10px">
+            <button>Existing</button>
+            <button class="on">New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="select">
+            <span class="val">Branch from</span>
+            <span class="sub">main</span>
+            <span class="caret">▾</span>
+          </div>
+          <div class="hint">Forks a fresh worktree off the chosen base branch.</div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Harness</div>
+          <div class="chips">
+            <span class="chip"><span class="dot">🤖</span>pi</span>
+            <span class="chip sel"><span class="dot">🤖</span>acp-agent</span>
+          </div>
+          <div class="hint">Config options are read from this harness's <b>cached catalog</b> (no live session) and shown below.</div>
+        </div>
+
+        <!-- First message (composer) with ACP configOptions rendered generically -->
+        <div class="field" style="border-bottom:none;padding-bottom:4px">
+          <div class="field-label">First message</div>
+          <div class="composer">
+            <div class="cpills">
+              <span class="cpill ghost"><span class="lead">◆</span>Model 2 <span class="caret">▾</span></span>
+              <span class="cpill ghost">think: high <span class="caret">▾</span></span>
+              <span class="cpill ghost">mode: code <span class="caret">▾</span></span>
+              <span class="cpill ghost">brave □</span>
+            </div>
+            <div class="divider"></div>
+            <textarea placeholder="Describe the task to start the session…"></textarea>
+            <div class="row">
+              <span class="sub" style="color:var(--muted);font-size:12px">⏎ to send · ⇧⏎ for newline</span>
+              <span class="spacer"></span>
+              <button class="send" title="Start session" disabled>↑</button>
+            </div>
+          </div>
+          <div class="hint">Options come from the cached <code>configOptions</code> catalog (categories: model / thought_level / model_config / mode / boolean), rendered by SPEC-26's generic renderer. Picks apply at launch; ✕ just closes (nothing created).</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== COMPACT VARIANT (config pills inside the composer) ===================== -->
+  <div class="stage">
+    <h2>Compact — harness / model / reasoning as pills in the composer</h2>
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="title">New session</div>
+        <button class="close" title="Cancel">✕</button>
+      </div>
+      <div class="dialog-sub">Pick a worktree, then start with your first message.</div>
+      <div class="dialog-body">
+
+        <!-- Worktree stays as a field -->
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg" style="margin-bottom:10px">
+            <button class="on">Existing</button>
+            <button>New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="select">
+            <span class="val">feature/tab-system</span>
+            <span class="sub">makit</span>
+            <span class="caret">▾</span>
+          </div>
+        </div>
+
+        <!-- First message with config pills inside the composer -->
+        <div class="field" style="border-bottom:none;padding-bottom:4px">
+          <div class="field-label">First message</div>
+          <div class="composer">
+            <div class="cpills">
+              <span class="cpill"><span class="avatar">🤖</span>pi <span class="caret">▾</span></span>
+              <span class="cpill"><span class="lead">◆</span>GPT-5 <span class="caret">▾</span></span>
+              <span class="cpill">
+                <span class="signal"><i class="act"></i><i class="act"></i><i class="act"></i><i></i><i></i></span>
+                medium <span class="caret">▾</span>
+              </span>
+            </div>
+            <div class="divider"></div>
+            <textarea placeholder="Describe the task to start the session…">Add a tab strip to each split and wire up reveal-on-click.</textarea>
+            <div class="row">
+              <span class="sub" style="color:var(--muted);font-size:12px">⏎ to send · ⇧⏎ for newline</span>
+              <span class="spacer"></span>
+              <button class="send" title="Start session">↑</button>
+            </div>
+          </div>
+          <div class="hint">ACP harness: config options come from the cached catalog, rendered as pills here too.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== CARDS VARIANT (harness cards + borderless composer buttons) ===================== -->
+  <div class="stage">
+    <h2>✅ CHOSEN · Harness cards — model / reasoning as borderless buttons in the composer</h2>
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="title">New session</div>
+        <button class="close" title="Cancel">✕</button>
+      </div>
+      <div class="dialog-sub">Configure the session, then start it with your first message.</div>
+      <div class="dialog-body">
+
+        <!-- Worktree -->
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg" style="margin-bottom:10px">
+            <button class="on">Existing</button>
+            <button>New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="select">
+            <span class="val">feature/tab-system</span>
+            <span class="sub">makit</span>
+            <span class="caret">▾</span>
+          </div>
+        </div>
+
+        <!-- Harness as cards -->
+        <div class="field">
+          <div class="field-label">Harness</div>
+          <div class="hcards">
+            <div class="hcard sel">
+              <div class="top"><span class="ic">🤖</span><span class="check">✓</span></div>
+              <div class="name">pi</div>
+              <div class="meta">acp (pi-acp)</div>
+            </div>
+            <div class="hcard">
+              <div class="top"><span class="ic">🤖</span></div>
+              <div class="name">codex</div>
+              <div class="meta">app-server</div>
+            </div>
+            <div class="hcard">
+              <div class="top"><span class="ic">🤖</span></div>
+              <div class="name">claude</div>
+              <div class="meta">acp</div>
+            </div>
+            <div class="hcard disabled">
+              <div class="top"><span class="ic">🤖</span></div>
+              <div class="name">gemini</div>
+              <div class="meta">unavailable</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- First message with borderless model/reasoning buttons -->
+        <div class="field" style="border-bottom:none;padding-bottom:4px">
+          <div class="field-label">First message</div>
+          <div class="composer">
+            <div class="cpills">
+              <span class="cpill ghost"><span class="lead">◆</span>GPT-5 <span class="caret">▾</span></span>
+              <span class="cpill ghost">
+                <span class="signal"><i class="act"></i><i class="act"></i><i class="act"></i><i></i><i></i></span>
+                medium <span class="caret">▾</span>
+              </span>
+            </div>
+            <div class="divider"></div>
+            <textarea placeholder="Describe the task to start the session…">Add a tab strip to each split and wire up reveal-on-click.</textarea>
+            <div class="row">
+              <span class="sub" style="color:var(--muted);font-size:12px">⏎ to send · ⇧⏎ for newline</span>
+              <span class="spacer"></span>
+              <button class="send" title="Start session">↑</button>
+            </div>
+          </div>
+          <div class="hint">ACP harness: model/reasoning/mode come from the cached configOptions catalog.</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</body>
+</html>
