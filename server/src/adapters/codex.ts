@@ -13,6 +13,9 @@
  */
 
 import type { SpawnOpts, UserInput } from "./adapter.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
@@ -179,22 +182,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    */
   private async captureModelCatalog(): Promise<void> {
     try {
-      const res = (await this.request("model/list", {})) as { data?: unknown } | undefined;
-      const data = Array.isArray(res?.data) ? res.data.filter(isRecord) : [];
-      const visible = data.filter((m) => m.hidden !== true);
-      this.catalogModels = visible.map((m) => {
-        const value = String(m.model ?? m.id ?? "");
-        const name = typeof m.displayName === "string" && m.displayName ? m.displayName : value;
-        const description = typeof m.description === "string" ? m.description : "";
-        return description ? { value, name, description } : { value, name };
-      });
-      const active = visible.find((m) => m.isDefault === true) ?? visible[0];
-      if (active) {
-        if (!this.activeModel) this.activeModel = String(active.model ?? active.id ?? "");
-        if (!this.activeEffort && typeof active.defaultReasoningEffort === "string") {
-          this.activeEffort = active.defaultReasoningEffort;
-        }
-      }
+      const res = await this.request("model/list", {});
+      const projected = projectCodexModelList(res);
+      this.catalogModels = projected.models;
+      if (!this.activeModel && projected.activeModel) this.activeModel = projected.activeModel;
+      if (!this.activeEffort && projected.activeEffort) this.activeEffort = projected.activeEffort;
     } catch (e) {
       log.warn(`[makit] codex model/list failed: ${(e as Error).message}`);
       this.catalogModels = [];
@@ -209,25 +201,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * `category:"thought_level"` reasoning-effort select.
    */
   private emitConfigOptions(): void {
-    const configOptions: SessionConfigOption[] = [];
-    if (this.catalogModels.length > 0) {
-      configOptions.push({
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: this.activeModel ?? this.catalogModels[0]!.value,
-        options: this.catalogModels,
-      });
-    }
-    configOptions.push({
-      id: "thought_level",
-      name: "Reasoning effort",
-      category: "thought_level",
-      type: "select",
-      currentValue: this.activeEffort ?? DEFAULT_REASONING_EFFORT,
-      options: REASONING_EFFORTS,
-    });
+    const configOptions = buildCodexConfigOptions(
+      this.catalogModels,
+      this.activeModel,
+      this.activeEffort,
+    );
     this.emitEvent({ ts: Date.now(), kind: "session.meta", payload: { configOptions } });
   }
 
@@ -437,6 +415,132 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private rejectPending(): void {
     for (const [, p] of this.pending) p.reject(new Error("codex app-server exited"));
     this.pending.clear();
+  }
+}
+
+// ---------- config-option projection (SPEC-26 / SPEC-27) -------------------
+
+/**
+ * Projected view of codex's `model/list` result: the visible models as
+ * {@link ConfigOptionValue}s plus the default active model + reasoning effort.
+ * Pure so it is the ONE source of truth shared by the live adapter
+ * ({@link CodexAppServerAdapter.captureModelCatalog}) and the throwaway probe
+ * ({@link probeCodexConfigOptions}).
+ */
+export function projectCodexModelList(res: unknown): {
+  models: ConfigOptionValue[];
+  activeModel?: string;
+  activeEffort?: string;
+} {
+  const data = isRecord(res) && Array.isArray(res.data) ? res.data.filter(isRecord) : [];
+  const visible = data.filter((m) => m.hidden !== true);
+  const models: ConfigOptionValue[] = visible.map((m) => {
+    const value = String(m.model ?? m.id ?? "");
+    const name = typeof m.displayName === "string" && m.displayName ? m.displayName : value;
+    const description = typeof m.description === "string" ? m.description : "";
+    return description ? { value, name, description } : { value, name };
+  });
+  const active = visible.find((m) => m.isDefault === true) ?? visible[0];
+  const out: { models: ConfigOptionValue[]; activeModel?: string; activeEffort?: string } = { models };
+  if (active) {
+    out.activeModel = String(active.model ?? active.id ?? "");
+    if (typeof active.defaultReasoningEffort === "string") out.activeEffort = active.defaultReasoningEffort;
+  }
+  return out;
+}
+
+/**
+ * Build the projected {@link SessionConfigOption} list codex surfaces: a
+ * `category:"model"` select (only when a catalog is available) and a
+ * `category:"thought_level"` reasoning-effort select. Single source of truth
+ * for the live `session.meta` emission and the cached-catalog probe.
+ */
+export function buildCodexConfigOptions(
+  models: ConfigOptionValue[],
+  activeModel: string | undefined,
+  activeEffort: string | undefined,
+): SessionConfigOption[] {
+  const configOptions: SessionConfigOption[] = [];
+  if (models.length > 0) {
+    configOptions.push({
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: activeModel ?? models[0]!.value,
+      options: models,
+    });
+  }
+  configOptions.push({
+    id: "thought_level",
+    name: "Reasoning effort",
+    category: "thought_level",
+    type: "select",
+    currentValue: activeEffort ?? DEFAULT_REASONING_EFFORT,
+    options: REASONING_EFFORTS,
+  });
+  return configOptions;
+}
+
+/**
+ * Throwaway capability probe for codex (native `app-server`): spawn
+ * `codex app-server`, `initialize`, query `model/list`, and project the result
+ * into the same {@link SessionConfigOption} list the live adapter emits — then
+ * dispose. NO thread is started (no `thread/start`), so there is no user
+ * session/worktree to clean up. Best-effort: a codex without `model/list`
+ * yields just the reasoning-effort option.
+ */
+export async function probeCodexConfigOptions(
+  opts: {
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    connect?: (cwd: string, env: Record<string, string>) => CodexTransport;
+  } = {},
+): Promise<SessionConfigOption[]> {
+  const command = opts.command ?? process.env.MAKIT_CODEX_BIN ?? "codex";
+  const args = opts.args ?? ["app-server"];
+  const connect = opts.connect ?? defaultConnect(command, args);
+  const cwd = await mkdtemp(join(tmpdir(), "makit-codex-probe-"));
+  const transport = connect(cwd, opts.env ?? {});
+
+  const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  let nextId = 1;
+  transport.onLine((line) => {
+    const msg = parseJsonLine(line);
+    if (!isRecord(msg) || msg.id === undefined) return;
+    if (msg.result === undefined && msg.error === undefined) return;
+    const p = pending.get(msg.id as number);
+    if (!p) return;
+    pending.delete(msg.id as number);
+    if (msg.error !== undefined) p.reject(new Error(String(msg.error)));
+    else p.resolve(msg.result);
+  });
+  transport.onExit(() => {
+    for (const [, p] of pending) p.reject(new Error("codex app-server exited during probe"));
+    pending.clear();
+  });
+  const request = (method: string, params: unknown): Promise<unknown> => {
+    const id = nextId++;
+    transport.send(JSON.stringify({ method, id, params }));
+    return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+  };
+
+  try {
+    await request("initialize", {
+      clientInfo: { name: "makit", title: "makit", version: "0.1.0" },
+      capabilities: { experimentalApi: true, requestAttestation: false },
+    });
+    transport.send(JSON.stringify({ method: "initialized", params: {} }));
+    const res = await request("model/list", {});
+    const projected = projectCodexModelList(res);
+    return buildCodexConfigOptions(projected.models, projected.activeModel, projected.activeEffort);
+  } catch (e) {
+    log.warn(`[makit] codex probe failed: ${(e as Error).message}`);
+    return buildCodexConfigOptions([], undefined, undefined);
+  } finally {
+    transport.dispose();
+    await rm(cwd, { recursive: true, force: true }).catch(() => {});
   }
 }
 

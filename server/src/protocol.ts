@@ -251,6 +251,7 @@ export type CmdKind =
   | "project.remove"
   // misc
   | "agents.list"
+  | "agents.refresh"
   | "push.register"
   // dev-only probes
   | "debug.ask"
