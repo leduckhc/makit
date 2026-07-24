@@ -1,15 +1,16 @@
 /**
  * AcpAdapter — drives any Agent Client Protocol (v1) agent as a subprocess and
  * bridges it to makit's `AgentAdapter` seam. makit acts as the ACP *client*;
- * the agent (e.g. `codex-acp`, `claude-agent-acp`) is the server.
+ * the agent (e.g. `pi` via `pi-acp`, `codex-acp`) is the server.
  *
  * Lifecycle: spawn agent → `initialize` → `session/new` → one `session/prompt`
  * per user turn. Streaming `session/update` notifications are normalized by
  * {@link AcpEventMapper}. Tool-permission requests are surfaced to the phone
  * via `askUser` (confirmAction).
  *
- * Only pi's native `PiAdapter` gives full-fidelity pi (extension slash commands,
- * ctx.ui.* transport). This path trades some of that for multi-agent reach.
+ * pi runs through this adapter via the `pi-acp` bridge (SPEC-27), which spawns
+ * `pi --mode rpc` and bridges ACP JSON-RPC over stdio; makit no longer ships a
+ * native pi adapter.
  */
 
 import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
@@ -150,7 +151,7 @@ export class AcpAdapter extends SubprocessAdapter {
   async send(input: UserInput): Promise<void> {
     if (!this.conn || !this.acpSessionId) throw new Error("AcpAdapter: send before start");
 
-    // Echo the user message so transcripts are complete (mirrors PiAdapter).
+    // Echo the user message so transcripts are complete (mirrors the pi adapter).
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: { text: input.text } });
 
     const turnKey = this.turns.enterTurn();
@@ -625,12 +626,3 @@ function parseSelectValue(v: { value: string; name: string; description?: string
   return out;
 }
 
-// ---------- production spec helper -----------------------------------------
-/** Resolve the `codex-acp` binary (override via MAKIT_CODEX_ACP_BIN). */
-export function codexAcpSpec(): AcpSpawnSpec {
-  return {
-    agent: "codex",
-    command: process.env.MAKIT_CODEX_ACP_BIN || "codex-acp",
-    args: [],
-  };
-}
