@@ -1,0 +1,411 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show Axis;
+import 'package:flutter_riverpod/legacy.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'split_node.dart';
+// Aliased so the controller's own `setRatio`/`moveSplit` methods can still
+// reach the pure tree functions of the same name.
+import 'split_node.dart' as tree;
+
+/// SharedPreferences key holding the whole workspace (the split/tab tree plus
+/// the active split) as a single JSON object.
+const String kWorkspacePrefsKey = 'desktop_workspace';
+
+/// The single, worktree-agnostic workspace: the recursive split/tab [root] plus
+/// which [Split] is active. Immutable; the [WorkspaceController] swaps in new
+/// instances.
+@immutable
+class WorkspaceState {
+  /// Creates a workspace state. [activeSplitId] must reference a [Split] in
+  /// [root].
+  const WorkspaceState({required this.root, required this.activeSplitId});
+
+  /// Rebuilds a workspace from its [toJson] map.
+  factory WorkspaceState.fromJson(Map<String, Object?> json) => WorkspaceState(
+    root: SplitNode.fromJson(json['root'] as Map<String, Object?>),
+    activeSplitId: json['activeSplitId'] as String,
+  );
+
+  /// The root of the split/tab tree.
+  final SplitNode root;
+
+  /// The id of the [Split] that split/tab-open actions act on. Always
+  /// references a live [Split].
+  final String activeSplitId;
+
+  /// JSON for persistence.
+  Map<String, Object?> toJson() => {
+    'root': root.toJson(),
+    'activeSplitId': activeSplitId,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is WorkspaceState &&
+      other.root == root &&
+      other.activeSplitId == activeSplitId;
+
+  @override
+  int get hashCode => Object.hash(root, activeSplitId);
+}
+
+/// Holds and mutates the single desktop/iPad workspace. There is exactly one
+/// layout, worktree-agnostic (SPEC-28 decision 3, reverting SPEC-20's
+/// per-worktree map). Mirrors the [PreferencesController]/[KeymapController]
+/// pattern: nullable prefs make the controller ephemeral (provider default +
+/// tests); every mutation writes the whole workspace back through as one JSON
+/// blob.
+class WorkspaceController extends StateNotifier<WorkspaceState> {
+  /// Creates a controller over [prefs], seeded from [initial]. When [prefs] is
+  /// null the controller is ephemeral (mutations update state but are not
+  /// persisted).
+  WorkspaceController(this._prefs, WorkspaceState initial) : super(initial);
+
+  /// A non-persisting controller seeded with the starter workspace.
+  WorkspaceController.ephemeral() : this(null, _seed());
+
+  /// Builds a controller from the persisted workspace. Corrupt or absent JSON
+  /// yields the starter workspace (single empty [Split]).
+  static WorkspaceController load(SharedPreferences prefs) =>
+      WorkspaceController(prefs, _decode(prefs.getString(kWorkspacePrefsKey)));
+
+  final SharedPreferences? _prefs;
+
+  /// The starter workspace: a single [Split] holding one empty (sessionless)
+  /// starter [Tab], active (decision 7).
+  static WorkspaceState _seed() {
+    final tab = Tab(id: nextNodeId(SplitNodeKind.tab));
+    final split = Split(
+      id: nextNodeId(SplitNodeKind.split),
+      tabs: [tab],
+      activeTabId: tab.id,
+    );
+    return WorkspaceState(root: split, activeSplitId: split.id);
+  }
+
+  static WorkspaceState _decode(String? raw) {
+    if (raw == null || raw.isEmpty) return _seed();
+    Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return _seed();
+    }
+    if (decoded is! Map) return _seed();
+    try {
+      return WorkspaceState.fromJson({
+        for (final e in decoded.entries) '${e.key}': e.value,
+      });
+    } on Object {
+      // Any structural mismatch (missing keys, wrong types, unknown node kind)
+      // → starter workspace rather than a crash, so a bad blob never bricks the
+      // workspace.
+      return _seed();
+    }
+  }
+
+  // -- Splits ---------------------------------------------------------------
+
+  /// Splits the active [Split] along [axis]. The new [Split] is seeded with one
+  /// empty starter [Tab] and becomes active; the original keeps its tabs.
+  void divideActive(Axis axis) {
+    final tab = Tab(id: nextNodeId(SplitNodeKind.tab));
+    final newSplit = Split(
+      id: nextNodeId(SplitNodeKind.split),
+      tabs: [tab],
+      activeTabId: tab.id,
+    );
+    final root = tree.divideSplit(state.root, state.activeSplitId, axis, newSplit);
+    if (identical(root, state.root)) return;
+    _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
+  }
+
+  /// Removes the active [Split], collapsing its parent [Splitter] into the
+  /// surviving sibling and focusing that sibling's left-most split. No-op when
+  /// the active split is the only one.
+  void closeActiveSplit() {
+    final target = state.activeSplitId;
+    final next = tree.removeSplit(state.root, target);
+    if (identical(next, state.root)) return; // sole split → no-op
+    _commit(WorkspaceState(root: next, activeSplitId: _focusAfterRemoval(target, next)));
+  }
+
+  /// Focuses the [Split] with [id]. No-op when it is already active or absent.
+  void setActiveSplit(String id) {
+    if (id == state.activeSplitId || !tree.containsSplit(state.root, id)) return;
+    _commit(WorkspaceState(root: state.root, activeSplitId: id));
+  }
+
+  /// Sets [Splitter] [splitterId]'s ratio (clamped in [setRatio]).
+  void setRatio(String splitterId, double ratio) {
+    final root = tree.setRatio(state.root, splitterId, ratio);
+    if (identical(root, state.root)) return;
+    _commit(WorkspaceState(root: root, activeSplitId: state.activeSplitId));
+  }
+
+  /// Adds [delta] to [Splitter] [splitterId]'s current ratio, reading the live
+  /// state so rapid divider drags accumulate correctly.
+  void adjustRatio(String splitterId, double delta) {
+    final current = _ratioOf(state.root, splitterId);
+    if (current == null) return;
+    setRatio(splitterId, current + delta);
+  }
+
+  /// Re-docks the [source] split onto [edge] of the [target] split; the moved
+  /// split stays active.
+  void moveSplit(String source, String target, DropEdge edge) {
+    final next = tree.moveSplit(state.root, source, target, edge);
+    if (identical(next, state.root)) return;
+    final active = tree.containsSplit(next, source) ? source : tree.firstSplitId(next);
+    _commit(WorkspaceState(root: next, activeSplitId: active));
+  }
+
+  // -- Tabs -----------------------------------------------------------------
+
+  /// Appends [tab] to [Split] [splitId] and activates it. When [tab] hosts a
+  /// session already open elsewhere (decision 5), its existing tab is revealed
+  /// instead of being duplicated. No-op when [splitId] is absent.
+  void openTab(String splitId, Tab tab) {
+    final sessionId = tab.sessionId;
+    if (sessionId != null) {
+      final existing = tree.findTab(state.root, sessionId);
+      if (existing != null) {
+        _focus(existing.$1, existing.$2);
+        return;
+      }
+    }
+    if (!tree.containsSplit(state.root, splitId)) return;
+    final root = tree.mapSplits(
+      state.root,
+      (s) => s.id == splitId ? tree.addTab(s, tab) : s,
+    );
+    _commit(WorkspaceState(root: root, activeSplitId: splitId));
+  }
+
+  /// Removes [Tab] [tabId] from [Split] [splitId]. When it was the split's last
+  /// tab the split collapses (parent [Splitter] folds into the sibling), unless
+  /// it is the only split, which instead resets to one empty starter [Tab].
+  /// No-op when [splitId] or [tabId] is absent.
+  void closeTab(String splitId, String tabId) {
+    final split = _splitById(splitId);
+    if (split == null) return;
+    final removed = tree.removeTab(split, tabId);
+    if (identical(removed, split)) return; // tabId absent → no-op
+    if (removed != null) {
+      final root = tree.mapSplits(
+        state.root,
+        (s) => s.id == splitId ? removed : s,
+      );
+      _commit(WorkspaceState(root: root, activeSplitId: state.activeSplitId));
+      return;
+    }
+    _collapseOrReset(splitId);
+  }
+
+  /// Switches the active tab of [Split] [splitId] to [tabId]. No-op when either
+  /// is absent or [tabId] is already active.
+  void setActiveTab(String splitId, String tabId) {
+    final split = _splitById(splitId);
+    if (split == null) return;
+    final updated = tree.activateTab(split, tabId);
+    if (identical(updated, split)) return;
+    final root = tree.mapSplits(
+      state.root,
+      (s) => s.id == splitId ? updated : s,
+    );
+    _commit(WorkspaceState(root: root, activeSplitId: state.activeSplitId));
+  }
+
+  /// Moves [Tab] [tabId] from [fromSplitId] to [toSplitId] at [index],
+  /// activating it in the target. A same-split move reorders. When the move
+  /// empties the source split it collapses (or, were it the only split, resets
+  /// to a starter [Tab]). No-op when a split or the tab is absent.
+  void moveTab(String fromSplitId, String tabId, String toSplitId, int index) {
+    if (fromSplitId == toSplitId) {
+      final split = _splitById(fromSplitId);
+      if (split == null) return;
+      final reordered = tree.reorderTab(split, tabId, index);
+      if (identical(reordered, split)) return;
+      final root = tree.mapSplits(
+        state.root,
+        (s) => s.id == fromSplitId ? reordered : s,
+      );
+      _commit(WorkspaceState(root: root, activeSplitId: state.activeSplitId));
+      return;
+    }
+
+    final from = _splitById(fromSplitId);
+    final to = _splitById(toSplitId);
+    if (from == null || to == null) return;
+    final moving = _tabOf(from, tabId);
+    if (moving == null) return;
+
+    final target = _insertTab(to, moving, index);
+    final source = tree.removeTab(from, tabId); // Split? (null when emptied)
+
+    if (source != null) {
+      final root = tree.mapSplits(state.root, (s) {
+        if (s.id == toSplitId) return target;
+        if (s.id == fromSplitId) return source;
+        return s;
+      });
+      _commit(WorkspaceState(root: root, activeSplitId: toSplitId));
+      return;
+    }
+
+    // Source emptied: update the target first, then collapse the source out of
+    // the resulting tree (or reset it if it was somehow the sole split).
+    final withTarget = tree.mapSplits(
+      state.root,
+      (s) => s.id == toSplitId ? target : s,
+    );
+    final collapsed = tree.removeSplit(withTarget, fromSplitId);
+    if (identical(collapsed, withTarget)) {
+      _resetSole(fromSplitId);
+      return;
+    }
+    _commit(WorkspaceState(root: collapsed, activeSplitId: toSplitId));
+  }
+
+  // -- Session-oriented ops -------------------------------------------------
+
+  /// SPEC-28 decision 6. Reveals [sessionId]: if a tab already hosts it, focus
+  /// that split + tab; otherwise open a new [Tab] for it in the active split.
+  /// The session's worktree is its own metadata — never stored on the tab.
+  void revealSession(String sessionId) {
+    final existing = tree.findTab(state.root, sessionId);
+    if (existing != null) {
+      _focus(existing.$1, existing.$2);
+      return;
+    }
+    openTab(
+      state.activeSplitId,
+      Tab(id: nextNodeId(SplitNodeKind.tab), sessionId: sessionId),
+    );
+  }
+
+  /// Removes the tab hosting [sessionId] from wherever it lives (e.g. after the
+  /// session is quit), collapsing/resetting per [closeTab]. No-op when no tab
+  /// hosts it.
+  void unbindSession(String sessionId) {
+    final located = tree.findTab(state.root, sessionId);
+    if (located == null) return;
+    closeTab(located.$1, located.$2);
+  }
+
+  // -- Internals ------------------------------------------------------------
+
+  /// Focuses tab [tabId] in split [splitId], making that split active.
+  void _focus(String splitId, String tabId) {
+    final split = _splitById(splitId);
+    if (split == null) return;
+    final updated = tree.activateTab(split, tabId);
+    final root = identical(updated, split)
+        ? state.root
+        : tree.mapSplits(state.root, (s) => s.id == splitId ? updated : s);
+    _commit(WorkspaceState(root: root, activeSplitId: splitId));
+  }
+
+  /// Collapses split [splitId] out of the tree, or — when it is the sole split
+  /// — resets it to a single empty starter [Tab] (it can never fully close).
+  void _collapseOrReset(String splitId) {
+    final next = tree.removeSplit(state.root, splitId);
+    if (identical(next, state.root)) {
+      _resetSole(splitId);
+      return;
+    }
+    _commit(
+      WorkspaceState(root: next, activeSplitId: _focusAfterRemoval(splitId, next)),
+    );
+  }
+
+  /// Resets the sole split [splitId] to a single fresh empty starter [Tab].
+  void _resetSole(String splitId) {
+    final tab = Tab(id: nextNodeId(SplitNodeKind.tab));
+    final fresh = Split(id: splitId, tabs: [tab], activeTabId: tab.id);
+    _commit(WorkspaceState(root: fresh, activeSplitId: splitId));
+  }
+
+  /// The split to focus after [removedSplitId] is collapsed out of [next]:
+  /// the current active split when it survives and was not the one removed;
+  /// otherwise the removed split's surviving sibling (or the first split).
+  String _focusAfterRemoval(String removedSplitId, SplitNode next) {
+    if (removedSplitId != state.activeSplitId &&
+        tree.containsSplit(next, state.activeSplitId)) {
+      return state.activeSplitId;
+    }
+    final sibling = _siblingFirstSplitId(state.root, removedSplitId);
+    return (sibling != null && tree.containsSplit(next, sibling))
+        ? sibling
+        : tree.firstSplitId(next);
+  }
+
+  Split? _splitById(String id) =>
+      tree.firstSplitWhere(state.root, (s) => s.id == id ? s : null);
+
+  Tab? _tabOf(Split split, String tabId) {
+    for (final t in split.tabs) {
+      if (t.id == tabId) return t;
+    }
+    return null;
+  }
+
+  Split _insertTab(Split split, Tab tab, int index) {
+    final tabs = [...split.tabs];
+    tabs.insert(index.clamp(0, tabs.length), tab);
+    return Split(id: split.id, tabs: tabs, activeTabId: tab.id);
+  }
+
+  /// The left-most split id of [targetId]'s sibling subtree, or null when
+  /// [targetId] has no parent [Splitter] (it is the root split).
+  String? _siblingFirstSplitId(SplitNode node, String targetId) {
+    switch (node) {
+      case Split():
+        return null;
+      case Splitter():
+        final first = node.first;
+        final second = node.second;
+        if (first is Split && first.id == targetId) {
+          return tree.firstSplitId(second);
+        }
+        if (second is Split && second.id == targetId) {
+          return tree.firstSplitId(first);
+        }
+        return _siblingFirstSplitId(first, targetId) ??
+            _siblingFirstSplitId(second, targetId);
+    }
+  }
+
+  double? _ratioOf(SplitNode node, String splitterId) {
+    switch (node) {
+      case Split():
+        return null;
+      case Splitter():
+        if (node.id == splitterId) return node.ratio;
+        return _ratioOf(node.first, splitterId) ??
+            _ratioOf(node.second, splitterId);
+    }
+  }
+
+  void _commit(WorkspaceState next) {
+    state = next;
+    _persist();
+  }
+
+  Future<void> _persist() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    await prefs.setString(kWorkspacePrefsKey, jsonEncode(state.toJson()));
+  }
+}
+
+/// The single desktop/iPad workspace. Defaults to a non-persisting controller
+/// seeded with the starter workspace; `runDesktopApp` overrides it with a
+/// [SharedPreferences]-backed one, and tests may override it too.
+final workspaceControllerProvider =
+    StateNotifierProvider<WorkspaceController, WorkspaceState>(
+      (ref) => WorkspaceController.ephemeral(),
+    );
