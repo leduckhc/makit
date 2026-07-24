@@ -176,7 +176,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
               // the hover background spans folder + name + caret + the actions,
               // instead of covering only the name.
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(6),
                 onTap: () => setState(() => _expanded = !_expanded),
                 onFocusChange: (f) => setState(() => _repoFocused = f),
                 child: Padding(
@@ -194,10 +194,10 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                           repo.name.toUpperCase(),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.outline,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                             fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
+                            letterSpacing: 0.6,
                           ),
                         ),
                       ),
@@ -263,7 +263,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                 alignment: Alignment.centerLeft,
                 child: InkWell(
                   onTap: () => setState(() => _showAll = !_showAll),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(6),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -474,7 +474,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
             child: Material(
               type: MaterialType.transparency,
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(6),
                 onFocusChange: (f) => setState(() => _focused = f),
                 onTap: () {
                   if (selectable) {
@@ -495,7 +495,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                     color: worktreeSelected
                         ? theme.colorScheme.surfaceContainerHighest
                         : null,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -587,7 +587,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                     'PR #${worktree.pr!.number}',
                                     style: theme.textTheme.labelSmall?.copyWith(
                                       color: theme.colorScheme.outline,
-                                      fontWeight: FontWeight.w300,
+                                      fontWeight: FontWeight.w400,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
@@ -595,7 +595,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                     '•',
                                     style: theme.textTheme.labelSmall?.copyWith(
                                       color: theme.colorScheme.outline,
-                                      fontWeight: FontWeight.w300,
+                                      fontWeight: FontWeight.w400,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
@@ -604,7 +604,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                   _branchAgeLabel(worktree.committedAt),
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: theme.colorScheme.outline,
-                                    fontWeight: FontWeight.w300,
+                                    fontWeight: FontWeight.w400,
                                   ),
                                 ),
                               ],
@@ -833,14 +833,14 @@ class _DraftWorktreeTile extends StatelessWidget {
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(6),
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
               color: selected
                   ? theme.colorScheme.surfaceContainerHighest
                   : null,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -875,7 +875,7 @@ class _DraftWorktreeTile extends StatelessWidget {
                         _branchAgeLabel(createdAt),
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.outline,
-                          fontWeight: FontWeight.w300,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                     ),
@@ -931,7 +931,7 @@ class _SessionTile extends StatelessWidget {
         visualDensity: VisualDensity.compact,
         selected: selected,
         selectedTileColor: theme.colorScheme.surfaceContainerHighest,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         contentPadding: EdgeInsets.only(left: indented ? 24 : 8, right: 12),
         title: Row(
           children: [
