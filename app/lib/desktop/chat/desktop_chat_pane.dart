@@ -348,9 +348,17 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           .read(composerDraftsProvider.notifier)
                           .set(sessionId, text),
                       footerActions: [
-                        ComposerModelSelector(sessionId: sessionId),
-                        ComposerThinkingSelector(sessionId: sessionId),
-                        ComposerModeSelector(sessionId: sessionId),
+                        if (ref
+                            .watch(sessionMetaProvider(sessionId))
+                            ?.configOptions
+                            .isNotEmpty ??
+                            false)
+                          ComposerConfigOptions(sessionId: sessionId)
+                        else ...[
+                          ComposerModelSelector(sessionId: sessionId),
+                          ComposerThinkingSelector(sessionId: sessionId),
+                          ComposerModeSelector(sessionId: sessionId),
+                        ],
                       ],
                       focusNode: widget.composerFocusId == null
                           ? null

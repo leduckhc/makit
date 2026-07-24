@@ -5,6 +5,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../home/repo_chips.dart' show AgentAvatar;
+import '../widgets/searchable_list_sheet.dart';
 import '../widgets/sheet_header.dart';
 import 'client_commands.dart';
 
@@ -234,5 +235,219 @@ class ComposerModeSelector extends ConsumerWidget {
     ref
         .read(storeControllerProvider.notifier)
         .sendSessionAction(sessionId, 'mode', args: {'id': picked});
+  }
+}
+
+/// SPEC-26 — the unified, category-driven composer config renderer. Reads the
+/// session's ordered [SessionConfigOption] list off `session.meta` and renders
+/// a pill per option (reusing the [_ComposerPill] look), in the exact order the
+/// agent sent them. Each pill dispatches the single `configOption {id, value}`
+/// session action; the composer re-renders wholly from the refreshed list the
+/// agent returns (never merging locally), so dependent options stay correct.
+///
+/// Renders nothing when the session advertises no `configOptions` — the legacy
+/// [ComposerModelSelector]/[ComposerThinkingSelector]/[ComposerModeSelector]
+/// triple is shown by the call site in that case (native pi, until SPEC-27).
+class ComposerConfigOptions extends ConsumerWidget {
+  /// Creates the unified config-option renderer for [sessionId].
+  const ComposerConfigOptions({super.key, required this.sessionId});
+
+  /// The session whose config options this widget reads and sets.
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(sessionMetaProvider(sessionId))?.configOptions;
+    if (options == null || options.isEmpty) return const SizedBox.shrink();
+    final agent = ref.watch(sessionsProvider).byId(sessionId)?.agent ?? '';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final option in options)
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: _ConfigOptionPill(
+                sessionId: sessionId,
+                option: option,
+                agent: agent,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A single config-option pill, rendered by [SessionConfigOption.category] and
+/// [SessionConfigOption.type]. Boolean options toggle in place; select options
+/// open a picker (searchable for `model`, labeled sections for grouped lists).
+class _ConfigOptionPill extends ConsumerWidget {
+  const _ConfigOptionPill({
+    required this.sessionId,
+    required this.option,
+    required this.agent,
+  });
+
+  final String sessionId;
+  final SessionConfigOption option;
+  final String agent;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    if (option.type == ConfigOptionType.boolean) {
+      final on = option.currentValue == true;
+      return _ComposerPill(
+        leading: Icon(
+          on ? PhosphorIconsFill.checkSquare : PhosphorIconsLight.square,
+          size: 16,
+          color: cs.onSurfaceVariant,
+        ),
+        label: option.name,
+        tooltip: option.description ?? option.name,
+        onTap: () => _send(ref, !on),
+      );
+    }
+
+    final currentValue = option.currentValue is String
+        ? option.currentValue as String
+        : '';
+    final label = _displayName(currentValue);
+    return _ComposerPill(
+      leading: _leadingFor(context),
+      label: label,
+      tooltip: option.description ?? option.name,
+      onTap: () => _pick(context, ref, currentValue),
+    );
+  }
+
+  /// The pill's leading widget, chosen by semantic category: the agent avatar
+  /// for a model picker, the reasoning signal bars for a thinking level, and a
+  /// neutral sliders glyph for modes / model config / unknown categories.
+  Widget _leadingFor(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return switch (option.category) {
+      'model' => AgentAvatar(agent: agent, size: 16),
+      'thought_level' => ThinkingSignal(
+        level: option.currentValue is String
+            ? option.currentValue as String
+            : '',
+      ),
+      _ => Icon(
+        PhosphorIconsLight.slidersHorizontal,
+        size: 16,
+        color: cs.onSurfaceVariant,
+      ),
+    };
+  }
+
+  /// Open the appropriate picker and dispatch the pick. The `model` category
+  /// gets the searchable sheet (mirroring [ComposerModelSelector]); every other
+  /// select opens a plain sheet with grouped choices rendered as sections.
+  Future<void> _pick(
+    BuildContext context,
+    WidgetRef ref,
+    String currentValue,
+  ) async {
+    final picked = option.category == 'model'
+        ? await _pickSearchable(context, currentValue)
+        : await _pickFromSheet(context, currentValue);
+    if (picked == null || picked == currentValue) return;
+    _send(ref, picked);
+  }
+
+  /// Every choice across a flat `options` list plus all grouped `options`.
+  List<ConfigOptionValue> get _allValues => [
+    ...option.options,
+    for (final g in option.groups) ...g.options,
+  ];
+
+  /// Human label for [value]: the matching choice's name, else the raw value.
+  String _displayName(String value) {
+    for (final v in _allValues) {
+      if (v.value == value) return v.name;
+    }
+    return value.isEmpty ? option.name : value;
+  }
+
+  void _send(WidgetRef ref, Object value) {
+    ref
+        .read(storeControllerProvider.notifier)
+        .sendSessionAction(sessionId, 'configOption', args: {
+          'id': option.id,
+          'value': value,
+        });
+  }
+
+  Future<String?> _pickSearchable(BuildContext context, String current) {
+    bool matches(ConfigOptionValue v, String q) =>
+        v.name.toLowerCase().contains(q.toLowerCase());
+    return showSearchableListSheet<String>(
+      context: context,
+      title: option.name,
+      items: _allValues.map((v) => v.value).toList(),
+      matches: (value, q) {
+        final v = _allValues.firstWhere((e) => e.value == value);
+        return matches(v, q);
+      },
+      tileBuilder: (ctx, value) {
+        final v = _allValues.firstWhere((e) => e.value == value);
+        return ListTile(
+          title: Text(v.name),
+          subtitle: v.description == null ? null : Text(v.description!),
+          trailing: value == current
+              ? const Icon(PhosphorIconsLight.check)
+              : null,
+          onTap: () => Navigator.of(ctx).pop(value),
+        );
+      },
+    );
+  }
+
+  Future<String?> _pickFromSheet(BuildContext context, String current) {
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        Widget tile(ConfigOptionValue v) => ListTile(
+          title: Text(v.name),
+          subtitle: v.description == null ? null : Text(v.description!),
+          trailing: v.value == current
+              ? const Icon(PhosphorIconsLight.check)
+              : null,
+          onTap: () => Navigator.pop(sheetContext, v.value),
+        );
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SheetHeader(title: option.name),
+                if (option.groups.isNotEmpty)
+                  for (final group in option.groups) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Text(
+                        group.name,
+                        style: Theme.of(sheetContext).textTheme.labelSmall
+                            ?.copyWith(
+                              color: Theme.of(
+                                sheetContext,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ),
+                    for (final v in group.options) tile(v),
+                  ]
+                else
+                  for (final v in option.options) tile(v),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }

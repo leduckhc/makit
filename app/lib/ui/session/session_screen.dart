@@ -284,11 +284,25 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                           running: session?.status == SessionStatus.running,
                           onCancel: _cancelTurn,
                           footerActions: [
-                            ComposerModelSelector(sessionId: widget.sessionId),
-                            ComposerThinkingSelector(
-                              sessionId: widget.sessionId,
-                            ),
-                            ComposerModeSelector(sessionId: widget.sessionId),
+                            if (ref
+                                .watch(sessionMetaProvider(widget.sessionId))
+                                ?.configOptions
+                                .isNotEmpty ??
+                                false)
+                              ComposerConfigOptions(
+                                sessionId: widget.sessionId,
+                              )
+                            else ...[
+                              ComposerModelSelector(
+                                sessionId: widget.sessionId,
+                              ),
+                              ComposerThinkingSelector(
+                                sessionId: widget.sessionId,
+                              ),
+                              ComposerModeSelector(
+                                sessionId: widget.sessionId,
+                              ),
+                            ],
                           ],
                         ),
                 ),
