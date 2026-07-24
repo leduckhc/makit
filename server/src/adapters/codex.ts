@@ -19,10 +19,23 @@ import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js"
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord, parseJsonLine } from "./wire.js";
 import type { AskUser } from "../uicall.js";
+import type { SessionConfigOption, ConfigOptionValue } from "../protocol.js";
 import { log } from "../log.js";
 
 /** Codex speaks LF-delimited JSON over stdio — the shared line transport. */
 export type CodexTransport = ChildLineTransport;
+
+/**
+ * Reasoning-effort levels projected as the `thought_level` config option
+ * (SPEC-26). codex's `turn/start.effort` accepts these values.
+ */
+const REASONING_EFFORTS: ConfigOptionValue[] = [
+  { value: "minimal", name: "Minimal" },
+  { value: "low", name: "Low" },
+  { value: "medium", name: "Medium" },
+  { value: "high", name: "High" },
+];
+const DEFAULT_REASONING_EFFORT = "medium";
 
 export interface CodexAdapterOpts {
   /** Executable + args (default: `codex app-server`). */
@@ -52,6 +65,16 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private threadId?: string;
   private nextId = 1;
   private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+
+  /**
+   * Projected config surface (SPEC-26). codex `app-server` is not ACP, so its
+   * model list (from `model/list`) and reasoning effort are projected into the
+   * same {@link SessionConfigOption} shape the composer consumes. Picks apply on
+   * the next turn via `turn/start` `model`/`effort` overrides.
+   */
+  private catalogModels: ConfigOptionValue[] = [];
+  private activeModel?: string;
+  private activeEffort?: string;
 
   constructor(opts: CodexAdapterOpts = {}) {
     super();
@@ -87,7 +110,10 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     })) as { thread?: { id?: string } };
     this.threadId = started?.thread?.id;
     if (!this.threadId) throw new Error("codex app-server: thread/start returned no thread id");
+    this.activeModel = this.model;
+    await this.captureModelCatalog();
     this.emit("status", "idle");
+    this.emitConfigOptions();
   }
 
   async send(input: UserInput): Promise<void> {
@@ -100,6 +126,8 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       const res = (await this.request("turn/start", {
         threadId: this.threadId,
         input: [{ type: "text", text: input.text, text_elements: [] }],
+        ...(this.activeModel ? { model: this.activeModel } : {}),
+        ...(this.activeEffort ? { effort: this.activeEffort } : {}),
       })) as { turn?: { id?: string } };
       const turnId = res?.turn?.id;
       if (turnId) this.turns.enterTurn(turnId);
@@ -120,9 +148,87 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     }
   }
 
+  /**
+   * Control actions from the app. Projects the unified `configOption` action
+   * (SPEC-26) onto codex's turn params: `model`/`thought_level` picks are cached
+   * and applied on the next `turn/start` (`model`/`effort`), then re-emitted so
+   * the composer reflects the new current value.
+   */
+  async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action !== "configOption") return;
+    const id = typeof args?.id === "string" ? args.id : "";
+    const value = typeof args?.value === "string" ? args.value : "";
+    if (!value) return;
+    if (id === "model") this.activeModel = value;
+    else if (id === "thought_level") this.activeEffort = value;
+    else return;
+    this.emitConfigOptions();
+  }
+
   async kill(): Promise<void> {
     this.transport?.dispose();
     this.handleExit(null, () => this.rejectPending());
+  }
+
+  // ---- config-option projection (SPEC-26) ----------------------------------
+
+  /**
+   * Fetch codex's model catalog via the `model/list` RPC and seed the active
+   * model + reasoning effort from the default entry. Best-effort: an older
+   * app-server without `model/list` simply yields no model option.
+   */
+  private async captureModelCatalog(): Promise<void> {
+    try {
+      const res = (await this.request("model/list", {})) as { data?: unknown } | undefined;
+      const data = Array.isArray(res?.data) ? res.data.filter(isRecord) : [];
+      const visible = data.filter((m) => m.hidden !== true);
+      this.catalogModels = visible.map((m) => {
+        const value = String(m.model ?? m.id ?? "");
+        const name = typeof m.displayName === "string" && m.displayName ? m.displayName : value;
+        const description = typeof m.description === "string" ? m.description : "";
+        return description ? { value, name, description } : { value, name };
+      });
+      const active = visible.find((m) => m.isDefault === true) ?? visible[0];
+      if (active) {
+        if (!this.activeModel) this.activeModel = String(active.model ?? active.id ?? "");
+        if (!this.activeEffort && typeof active.defaultReasoningEffort === "string") {
+          this.activeEffort = active.defaultReasoningEffort;
+        }
+      }
+    } catch (e) {
+      log.warn(`[makit] codex model/list failed: ${(e as Error).message}`);
+      this.catalogModels = [];
+    }
+    if (!this.activeEffort) this.activeEffort = DEFAULT_REASONING_EFFORT;
+  }
+
+  /**
+   * Emit the projected config surface as `session.meta.configOptions`, in the
+   * same {@link SessionConfigOption} shape the ACP adapter emits: a
+   * `category:"model"` select (when a catalog is available) and a
+   * `category:"thought_level"` reasoning-effort select.
+   */
+  private emitConfigOptions(): void {
+    const configOptions: SessionConfigOption[] = [];
+    if (this.catalogModels.length > 0) {
+      configOptions.push({
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: this.activeModel ?? this.catalogModels[0]!.value,
+        options: this.catalogModels,
+      });
+    }
+    configOptions.push({
+      id: "thought_level",
+      name: "Reasoning effort",
+      category: "thought_level",
+      type: "select",
+      currentValue: this.activeEffort ?? DEFAULT_REASONING_EFFORT,
+      options: REASONING_EFFORTS,
+    });
+    this.emitEvent({ ts: Date.now(), kind: "session.meta", payload: { configOptions } });
   }
 
   // ---- JSON-RPC plumbing ---------------------------------------------------
