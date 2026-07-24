@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { SqliteEventStore } from "./sqlite_event_store.js";
 import type { SessionMeta } from "./event_store.js";
@@ -102,6 +106,55 @@ test("saveSession round-trips branch + worktreePath (absent stays undefined)", (
   assert.equal(byId.get("s2")!.branch, undefined);
   assert.equal(byId.get("s2")!.worktreePath, undefined);
   store.close();
+});
+
+test("migrates a legacy sessions schema in place, idempotently, keeping existing rows", () => {
+  const dir = mkdtempSync(join(tmpdir(), "makit-store-"));
+  const path = join(dir, "events.db");
+  try {
+    // Seed a pre-migration DB: sessions table WITHOUT resume_session_path,
+    // branch, or worktree_path, plus one existing row.
+    const legacy = new DatabaseSync(path);
+    legacy.exec(`
+      CREATE TABLE sessions (
+        id             TEXT PRIMARY KEY,
+        project_id     TEXT NOT NULL,
+        agent          TEXT NOT NULL,
+        title          TEXT NOT NULL,
+        status         TEXT NOT NULL,
+        policy         TEXT NOT NULL,
+        created_at     INTEGER NOT NULL,
+        last_activity_at INTEGER NOT NULL,
+        last_preview   TEXT NOT NULL
+      );
+    `);
+    legacy
+      .prepare("INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run("s-old", "p1", "pi", "legacy row", "idle", "ask-on-risky", 1000, 1000, "old");
+    legacy.close();
+
+    // Opening through the store migrates: row intact, new fields readable.
+    const store = new SqliteEventStore(path);
+    const loaded = store.loadSessions();
+    assert.equal(loaded.length, 1);
+    assert.equal(loaded[0].title, "legacy row");
+    assert.equal(loaded[0].resumeSessionPath, undefined);
+    assert.equal(loaded[0].branch, undefined);
+    assert.equal(loaded[0].worktreePath, undefined);
+    // The migrated columns are writable end-to-end.
+    store.saveSession(meta("s-old", { title: "legacy row", branch: "b", worktreePath: "/wt" }));
+    store.close();
+
+    // Reopening the already-migrated file is a no-op (idempotent migration).
+    const reopened = new SqliteEventStore(path);
+    const again = reopened.loadSessions();
+    assert.equal(again.length, 1);
+    assert.equal(again[0].branch, "b");
+    assert.equal(again[0].worktreePath, "/wt");
+    reopened.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("deleteSession removes the session and its events", () => {
