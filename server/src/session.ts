@@ -76,6 +76,9 @@ export interface SessionInit {
   lastPreview?: string;
   /** On-disk transcript path so a cold session can be re-attached (pi resume). */
   resumeSessionPath?: string;
+  /** Restore the started-session branch/worktree on rehydration. */
+  branch?: string;
+  worktreePath?: string;
   /**
    * Lazy history source for rehydrated sessions. When present, the persisted
    * event log is NOT loaded at construction — it is read once, on first
@@ -137,6 +140,9 @@ export class Session extends EventEmitter {
     if (typeof init.lastActivityAt === "number") this.lastActivityAt = init.lastActivityAt;
     if (typeof init.lastPreview === "string") this.lastPreview = init.lastPreview;
     this.resumeSessionPath = init.resumeSessionPath;
+    if (init.branch !== undefined || init.worktreePath !== undefined) {
+      this._lifecycle = { phase: "started", branch: init.branch, worktreePath: init.worktreePath };
+    }
     this.hydrateFrom = init.hydrateFrom;
 
     this.persistMeta();
@@ -230,6 +236,8 @@ export class Session extends EventEmitter {
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
       resumeSessionPath: this.resumeSessionPath,
+      branch: this.branch,
+      worktreePath: this.worktreePath,
     };
   }
 

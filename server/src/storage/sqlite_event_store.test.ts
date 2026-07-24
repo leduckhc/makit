@@ -91,6 +91,19 @@ test("saveSession upserts by id; loadSessions orders by lastActivityAt desc", ()
   store.close();
 });
 
+test("saveSession round-trips branch + worktreePath (absent stays undefined)", () => {
+  const store = new SqliteEventStore();
+  store.saveSession(meta("s1", { branch: "feature-x", worktreePath: "/tmp/wt" }));
+  store.saveSession(meta("s2"));
+
+  const byId = new Map(store.loadSessions().map((s) => [s.id, s]));
+  assert.equal(byId.get("s1")!.branch, "feature-x");
+  assert.equal(byId.get("s1")!.worktreePath, "/tmp/wt");
+  assert.equal(byId.get("s2")!.branch, undefined);
+  assert.equal(byId.get("s2")!.worktreePath, undefined);
+  store.close();
+});
+
 test("deleteSession removes the session and its events", () => {
   const store = new SqliteEventStore();
   store.saveSession(meta("s1"));

@@ -35,7 +35,9 @@ export class SqliteEventStore implements EventStore {
         created_at     INTEGER NOT NULL,
         last_activity_at INTEGER NOT NULL,
         last_preview   TEXT NOT NULL,
-        resume_session_path TEXT
+        resume_session_path TEXT,
+        branch         TEXT,
+        worktree_path  TEXT
       );
       CREATE TABLE IF NOT EXISTS events (
         session_id TEXT NOT NULL,
@@ -47,11 +49,17 @@ export class SqliteEventStore implements EventStore {
       );
       CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, seq);
     `);
-    // Back-compat: add the nullable resume path to pre-existing DBs whose
-    // sessions table predates this column.
+    // Back-compat: add nullable columns to pre-existing DBs whose sessions
+    // table predates them.
     const cols = this.db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
     if (!cols.some((c) => c.name === "resume_session_path")) {
       this.db.exec("ALTER TABLE sessions ADD COLUMN resume_session_path TEXT");
+    }
+    if (!cols.some((c) => c.name === "branch")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN branch TEXT");
+    }
+    if (!cols.some((c) => c.name === "worktree_path")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN worktree_path TEXT");
     }
   }
 
@@ -89,8 +97,8 @@ export class SqliteEventStore implements EventStore {
     this.db
       .prepare(
         `INSERT INTO sessions
-           (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           (id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, branch, worktree_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            project_id = excluded.project_id,
            agent = excluded.agent,
@@ -99,7 +107,9 @@ export class SqliteEventStore implements EventStore {
            policy = excluded.policy,
            last_activity_at = excluded.last_activity_at,
            last_preview = excluded.last_preview,
-           resume_session_path = excluded.resume_session_path`,
+           resume_session_path = excluded.resume_session_path,
+           branch = excluded.branch,
+           worktree_path = excluded.worktree_path`,
       )
       .run(
         m.id,
@@ -112,13 +122,15 @@ export class SqliteEventStore implements EventStore {
         m.lastActivityAt,
         m.lastPreview,
         m.resumeSessionPath ?? null,
+        m.branch ?? null,
+        m.worktreePath ?? null,
       );
   }
 
   loadSessions(): SessionMeta[] {
     const rows = this.db
       .prepare(
-        `SELECT id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path
+        `SELECT id, project_id, agent, title, status, policy, created_at, last_activity_at, last_preview, resume_session_path, branch, worktree_path
          FROM sessions ORDER BY last_activity_at DESC`,
       )
       .all() as Array<Record<string, unknown>>;
@@ -133,6 +145,8 @@ export class SqliteEventStore implements EventStore {
       lastActivityAt: Number(r.last_activity_at),
       lastPreview: r.last_preview as string,
       resumeSessionPath: (r.resume_session_path as string | null) ?? undefined,
+      branch: (r.branch as string | null) ?? undefined,
+      worktreePath: (r.worktree_path as string | null) ?? undefined,
     }));
   }
 

@@ -165,6 +165,8 @@ export class SessionManager extends EventEmitter {
         lastActivityAt: meta.lastActivityAt,
         lastPreview: meta.lastPreview,
         resumeSessionPath: meta.resumeSessionPath,
+        branch: meta.branch,
+        worktreePath: meta.worktreePath,
         hydrateFrom: () => store.read(meta.id),
       });
       this.sessions.set(session.id, session);

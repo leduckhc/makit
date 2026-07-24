@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { SessionManager } from "./manager.js";
+import { Session } from "./session.js";
 import type { PersistedProject } from "./project-store.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
@@ -883,6 +884,24 @@ test("rehydrates persisted sessions on boot as read-only history", async () => {
   });
   await mgr.getSession("sess-persist")!.sendUserMessage("hi again");
   assert.match(errs[0] ?? "", /re-attach/);
+  store.close();
+});
+
+test("branch + worktreePath survive a restart (rehydrated session keeps them)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  // --- first run: a live session gets promoted onto a worktree.
+  const started: SpawnOpts[] = [];
+  const live = new Session({ projectId: "proj-x", agent: "pi", adapter: stubAdapter(started), store });
+  live.markStarted({ branch: "feature-x", worktreePath: "/tmp/wt" });
+
+  // --- restart: a fresh manager over the same store rehydrates it cold.
+  const mgr = new SessionManager({ projects: [], store });
+  const cold = mgr.getSession(live.id)!;
+  assert.equal(cold.branch, "feature-x");
+  assert.equal(cold.worktreePath, "/tmp/wt");
+  assert.equal(cold.toDTO().branch, "feature-x");
+  assert.equal(cold.toDTO().worktreePath, "/tmp/wt");
   store.close();
 });
 
