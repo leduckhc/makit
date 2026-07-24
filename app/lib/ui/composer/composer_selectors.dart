@@ -260,6 +260,58 @@ class ComposerConfigOptions extends ConsumerWidget {
     final options = ref.watch(sessionMetaProvider(sessionId))?.configOptions;
     if (options == null || options.isEmpty) return const SizedBox.shrink();
     final agent = ref.watch(sessionsProvider).byId(sessionId)?.agent ?? '';
+    // The live session is authoritative: each pill's current value comes from
+    // the option itself, and a pick dispatches the single `configOption`
+    // session action (never merging locally — the agent re-emits the full
+    // list, keeping dependent options correct).
+    return ConfigOptionPickRow(
+      options: options,
+      values: {for (final o in options) o.id: o.currentValue},
+      agent: agent,
+      onPick: (id, value) => ref
+          .read(storeControllerProvider.notifier)
+          .sendSessionAction(sessionId, 'configOption', args: {
+            'id': id,
+            'value': value,
+          }),
+    );
+  }
+}
+
+/// SPEC-27 — the reusable config-option pill row shared by the live composer
+/// ([ComposerConfigOptions]) and the pre-session New-session dialog. The caller
+/// supplies the ordered [options], the current [values] (id → String/bool), the
+/// owning [agent] (for the model pill's avatar), and an [onPick] callback
+/// invoked with `(id, value)` when a pill is changed. This decouples the pill
+/// visuals/pickers from where the value lives (session meta vs. local pending
+/// picks) and how a pick is applied (session action vs. local state).
+class ConfigOptionPickRow extends StatelessWidget {
+  /// Creates a pill row for [options], reading current [values] and reporting
+  /// changes via [onPick].
+  const ConfigOptionPickRow({
+    super.key,
+    required this.options,
+    required this.values,
+    required this.agent,
+    required this.onPick,
+  });
+
+  /// The config options to render, in agent (display) order.
+  final List<SessionConfigOption> options;
+
+  /// Current value per option id: a [String] for a select, a [bool] for a
+  /// boolean. A missing id falls back to the option's own `currentValue`.
+  final Map<String, Object> values;
+
+  /// The owning agent id — the model pill uses it for the agent avatar.
+  final String agent;
+
+  /// Invoked with `(optionId, value)` when a pill's value changes.
+  final void Function(String id, Object value) onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    if (options.isEmpty) return const SizedBox.shrink();
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -267,10 +319,11 @@ class ComposerConfigOptions extends ConsumerWidget {
           Flexible(
             child: Padding(
               padding: const EdgeInsets.only(right: 6),
-              child: _ConfigOptionPill(
-                sessionId: sessionId,
+              child: ConfigOptionPill(
                 option: option,
+                currentValue: values[option.id] ?? option.currentValue,
                 agent: agent,
+                onPick: (value) => onPick(option.id, value),
               ),
             ),
           ),
@@ -282,22 +335,33 @@ class ComposerConfigOptions extends ConsumerWidget {
 /// A single config-option pill, rendered by [SessionConfigOption.category] and
 /// [SessionConfigOption.type]. Boolean options toggle in place; select options
 /// open a picker (searchable for `model`, labeled sections for grouped lists).
-class _ConfigOptionPill extends ConsumerWidget {
-  const _ConfigOptionPill({
-    required this.sessionId,
+/// The [currentValue] and the [onPick] callback are supplied by the caller so
+/// the same pill serves both a live session and a pre-session draft.
+class ConfigOptionPill extends StatelessWidget {
+  /// Creates a pill for [option] showing [currentValue], reporting picks via
+  /// [onPick].
+  const ConfigOptionPill({
+    super.key,
     required this.option,
+    required this.currentValue,
     required this.agent,
+    required this.onPick,
   });
 
-  final String sessionId;
   final SessionConfigOption option;
+
+  /// The active value: a [String] for a select, a [bool] for a boolean.
+  final Object currentValue;
   final String agent;
 
+  /// Invoked with the chosen value (a [String] or [bool]) on a change.
+  final void Function(Object value) onPick;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     if (option.type == ConfigOptionType.boolean) {
-      final on = option.currentValue == true;
+      final on = currentValue == true;
       return _ComposerPill(
         leading: Icon(
           on ? PhosphorIconsFill.checkSquare : PhosphorIconsLight.square,
@@ -306,19 +370,17 @@ class _ConfigOptionPill extends ConsumerWidget {
         ),
         label: option.name,
         tooltip: option.description ?? option.name,
-        onTap: () => _send(ref, !on),
+        onTap: () => onPick(!on),
       );
     }
 
-    final currentValue = option.currentValue is String
-        ? option.currentValue as String
-        : '';
-    final label = _displayName(currentValue);
+    final current = currentValue is String ? currentValue as String : '';
+    final label = _displayName(current);
     return _ComposerPill(
       leading: _leadingFor(context),
       label: label,
       tooltip: option.description ?? option.name,
-      onTap: () => _pick(context, ref, currentValue),
+      onTap: () => _pick(context, current),
     );
   }
 
@@ -330,9 +392,7 @@ class _ConfigOptionPill extends ConsumerWidget {
     return switch (option.category) {
       'model' => AgentAvatar(agent: agent, size: 16),
       'thought_level' => ThinkingSignal(
-        level: option.currentValue is String
-            ? option.currentValue as String
-            : '',
+        level: currentValue is String ? currentValue as String : '',
       ),
       _ => Icon(
         PhosphorIconsLight.slidersHorizontal,
@@ -345,16 +405,12 @@ class _ConfigOptionPill extends ConsumerWidget {
   /// Open the appropriate picker and dispatch the pick. The `model` category
   /// gets the searchable sheet (mirroring [ComposerModelSelector]); every other
   /// select opens a plain sheet with grouped choices rendered as sections.
-  Future<void> _pick(
-    BuildContext context,
-    WidgetRef ref,
-    String currentValue,
-  ) async {
+  Future<void> _pick(BuildContext context, String current) async {
     final picked = option.category == 'model'
-        ? await _pickSearchable(context, currentValue)
-        : await _pickFromSheet(context, currentValue);
-    if (picked == null || picked == currentValue) return;
-    _send(ref, picked);
+        ? await _pickSearchable(context, current)
+        : await _pickFromSheet(context, current);
+    if (picked == null || picked == current) return;
+    onPick(picked);
   }
 
   /// Every choice across a flat `options` list plus all grouped `options`.
@@ -369,15 +425,6 @@ class _ConfigOptionPill extends ConsumerWidget {
       if (v.value == value) return v.name;
     }
     return value.isEmpty ? option.name : value;
-  }
-
-  void _send(WidgetRef ref, Object value) {
-    ref
-        .read(storeControllerProvider.notifier)
-        .sendSessionAction(sessionId, 'configOption', args: {
-          'id': option.id,
-          'value': value,
-        });
   }
 
   Future<String?> _pickSearchable(BuildContext context, String current) {
