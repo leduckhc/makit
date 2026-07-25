@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { SessionManager } from "./manager.js";
 import { Session } from "./session.js";
@@ -903,6 +903,54 @@ test("branch + worktreePath survive a restart (rehydrated session keeps them)", 
   assert.equal(cold.toDTO().branch, "feature-x");
   assert.equal(cold.toDTO().worktreePath, "/tmp/wt");
   store.close();
+});
+
+test("reattachSession resumes in the session's worktree, not the project root", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const projectDir = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  const worktreeDir = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    // A prior run left a worktreed pi session with a resume transcript.
+    store.saveSession({
+      id: "sess-wt",
+      projectId: "proj-x",
+      agent: "pi",
+      title: "worktreed",
+      status: "idle",
+      policy: "ask-on-risky",
+      createdAt: 1,
+      lastActivityAt: 2,
+      lastPreview: "",
+      resumeSessionPath: "/tmp/transcript.jsonl",
+      branch: "feature-x",
+      worktreePath: worktreeDir,
+    });
+
+    const started: SpawnOpts[] = [];
+    const factoryPaths: string[] = [];
+    const mgr = new SessionManager({
+      projects: [projectDir],
+      store,
+      adapterFactory: (opts) => {
+        factoryPaths.push(opts.projectPath);
+        return stubAdapter(started);
+      },
+    });
+    const live = await mgr.reattachSession("sess-wt");
+    assert.equal(live.worktreePath, worktreeDir);
+    assert.deepEqual(factoryPaths, [worktreeDir]);
+    assert.equal(started[0].cwd, worktreeDir);
+
+    // A vanished worktree falls back to the project path.
+    rmSync(worktreeDir, { recursive: true, force: true });
+    await mgr.reattachSession("sess-wt");
+    assert.equal(started[1].cwd, resolve(projectDir));
+  } finally {
+    rmSync(projectDir, { recursive: true, force: true });
+    rmSync(worktreeDir, { recursive: true, force: true });
+    store.close();
+  }
 });
 
 test("reattachSession resumes a cold pi session and continues the durable seq space", async () => {
