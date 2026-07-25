@@ -236,7 +236,10 @@ export class Session extends EventEmitter {
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
       resumeSessionPath: this.resumeSessionPath,
-      branch: this.branch,
+      // Only a STARTED session's location is persisted: a draft's bound branch
+      // must not survive a restart as "started on that branch" (the constructor
+      // infers phase "started" from these fields on rehydration).
+      branch: this._lifecycle.phase === "started" ? this._lifecycle.branch : undefined,
       worktreePath: this.worktreePath,
     };
   }

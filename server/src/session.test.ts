@@ -163,6 +163,21 @@ test("lifecycle models draft → started as a discriminated union (P4)", () => {
   assert.equal(session.pendingAgent, undefined);
 });
 
+test("a draft's bound branch is not persisted, so rehydration keeps it unstarted-looking", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter(), store });
+  session.beginDraft({ agent: "pi", pendingWorktreePath: "/tmp/wt", branch: "feature-b" });
+  // Any recorded event upserts meta — this must NOT persist the draft's branch,
+  // or a restart would rehydrate the draft as a started session on that branch.
+  session.adapter.emit("event", { ts: 1, kind: "user.message", payload: { text: "hi" } });
+
+  const meta = store.loadSessions()[0];
+  assert.equal(meta.branch, undefined);
+  assert.equal(meta.worktreePath, undefined);
+  store.close();
+});
+
 test("pendingWorktreePath is unreadable on a started lifecycle (P4 type-level guard)", () => {
   const lc: SessionLifecycle = { phase: "started", branch: "b", worktreePath: "/tmp/wt" };
   if (lc.phase === "started") {
