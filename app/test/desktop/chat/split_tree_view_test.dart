@@ -77,7 +77,11 @@ ProviderContainer _container({
       eventsProvider.overrideWithValue(EventsState(const {}, const {})),
       for (final s in sessions)
         sessionMetaProvider(s.id).overrideWithValue(
-          const SessionMeta(model: _model, thinking: 'medium', models: [_model]),
+          const SessionMeta(
+            model: _model,
+            thinking: 'medium',
+            models: [_model],
+          ),
         ),
     ],
   );
@@ -103,7 +107,11 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(find.text('New'), findsOneWidget, reason: 'empty tab labelled New');
+      expect(
+        find.text('New'),
+        findsOneWidget,
+        reason: 'empty tab labelled New',
+      );
       expect(find.text('Select a session, or start a new one'), findsOneWidget);
       expect(find.byType(EmptyPaneStarter), findsOneWidget);
     });
@@ -144,7 +152,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(c.read(selectedSessionProvider), 's1');
       // s1 still appears exactly once in the tree.
-      expect(findTab(c.read(workspaceControllerProvider).root, 's1'), isNotNull);
+      expect(
+        findTab(c.read(workspaceControllerProvider).root, 's1'),
+        isNotNull,
+      );
     });
 
     testWidgets('tapping a tab switches the active tab', (tester) async {
@@ -187,23 +198,25 @@ void main() {
   });
 
   group('close (empty-split invariant)', () {
-    testWidgets('closing the last tab of a split collapses it into the sibling',
-        (tester) async {
-      final c = _container(sessions: [_session('s1', 'Kept')]);
-      addTearDown(c.dispose);
-      _ws(c).revealSession('s1'); // split A: s1
-      _ws(c).divideActive(Axis.horizontal); // split B (empty) active
-      await tester.pumpWidget(_tree(c));
-      await tester.pumpAndSettle();
-      expect(c.read(workspaceControllerProvider).root, isA<Splitter>());
+    testWidgets(
+      'closing the last tab of a split collapses it into the sibling',
+      (tester) async {
+        final c = _container(sessions: [_session('s1', 'Kept')]);
+        addTearDown(c.dispose);
+        _ws(c).revealSession('s1'); // split A: s1
+        _ws(c).divideActive(Axis.horizontal); // split B (empty) active
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+        expect(c.read(workspaceControllerProvider).root, isA<Splitter>());
 
-      // The active split (B) has a single empty tab; closing it collapses B.
-      await tester.tap(find.byTooltip('Close tab').last);
-      await tester.pumpAndSettle();
+        // The active split (B) has a single empty tab; closing it collapses B.
+        await tester.tap(find.byTooltip('Close tab').last);
+        await tester.pumpAndSettle();
 
-      expect(c.read(workspaceControllerProvider).root, isA<Split>());
-      expect(c.read(selectedSessionProvider), 's1');
-    });
+        expect(c.read(workspaceControllerProvider).root, isA<Split>());
+        expect(c.read(selectedSessionProvider), 's1');
+      },
+    );
 
     testWidgets('closing the last tab of the sole split resets it to a starter '
         'tab (never empty)', (tester) async {
@@ -238,10 +251,7 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(
-        (c.read(workspaceControllerProvider).root as Splitter).ratio,
-        0.5,
-      );
+      expect((c.read(workspaceControllerProvider).root as Splitter).ratio, 0.5);
 
       await tester.drag(find.byType(VerticalDivider), const Offset(-120, 0));
       await tester.pumpAndSettle();
@@ -338,6 +348,109 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  group('drag & drop (gestures)', () {
+    // Drives a Draggable→DragTarget drop: press on [from], move toward [to] in
+    // steps so the Draggable starts and the target registers onMove at the
+    // final position, then release.
+    Future<void> dragDrop(WidgetTester tester, Finder from, Offset to) async {
+      final start = tester.getCenter(from);
+      final g = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 30));
+      final mid = Offset((start.dx + to.dx) / 2, (start.dy + to.dy) / 2);
+      await g.moveTo(mid);
+      await tester.pump(const Duration(milliseconds: 30));
+      await g.moveTo(to);
+      await tester.pump(const Duration(milliseconds: 30));
+      await g.moveTo(to);
+      await tester.pump(const Duration(milliseconds: 30));
+      await g.up();
+      await tester.pumpAndSettle();
+    }
+
+    List<String> sessionOrder(ProviderContainer c, String splitId) {
+      final split = firstSplitWhere(
+        c.read(workspaceControllerProvider).root,
+        (s) => s.id == splitId ? s : null,
+      )!;
+      return [
+        for (final t in split.tabs)
+          if (t.sessionId != null) t.sessionId!,
+      ];
+    }
+
+    Split? splitById(ProviderContainer c, String id) => firstSplitWhere(
+      c.read(workspaceControllerProvider).root,
+      (s) => s.id == id ? s : null,
+    );
+
+    Future<ProviderContainer> twoPanes(WidgetTester tester) async {
+      final c = _container(
+        sessions: [_session('s1', 'Alpha'), _session('s2', 'Beta')],
+      );
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1'); // pane A: s1
+      _ws(c).divideActive(Axis.horizontal); // pane B (empty) active
+      _ws(c).revealSession('s2'); // pane B: s2
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('dropping a tab on another pane\'s body moves it into that '
+        'group', (tester) async {
+      final c = await twoPanes(tester);
+      expect(c.read(workspaceControllerProvider).root, isA<Splitter>());
+
+      // Drag pane B's tab (Beta) onto pane A's body centre.
+      final paneA = tester.getCenter(find.byType(DesktopChatPane).first);
+      await dragDrop(tester, find.text('Beta'), paneA);
+
+      final root = c.read(workspaceControllerProvider).root;
+      expect(root, isA<Split>(), reason: 'emptied pane B collapsed away');
+      expect(findTab(root, 's1'), isNotNull);
+      expect(findTab(root, 's2'), isNotNull);
+    });
+
+    testWidgets('dropping a tab near a pane edge detaches it into a new split', (
+      tester,
+    ) async {
+      final c = _container(
+        sessions: [_session('s1', 'Alpha'), _session('s2', 'Beta')],
+      );
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      _ws(c).revealSession('s2'); // one pane, tabs [s1, s2]
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      expect(c.read(workspaceControllerProvider).root, isA<Split>());
+
+      // Drag Beta to the right edge of the pane.
+      final rect = tester.getRect(find.byType(DesktopChatPane));
+      await dragDrop(
+        tester,
+        find.text('Beta'),
+        Offset(rect.right - 6, rect.center.dy),
+      );
+
+      final ctrl = c.read(workspaceControllerProvider);
+      expect(ctrl.root, isA<Splitter>(), reason: 'Beta detached into a split');
+      expect(splitById(c, ctrl.activeSplitId)!.tabs.single.sessionId, 's2');
+    });
+
+    testWidgets('dropping a tab on another pane\'s tab reorders into it', (
+      tester,
+    ) async {
+      final c = await twoPanes(tester);
+      final first = findTab(c.read(workspaceControllerProvider).root, 's1')!.$1;
+
+      // Drop Beta onto the Alpha tab chip → insert at Alpha's index (0).
+      await dragDrop(tester, find.text('Beta'), tester.getCenter(find.text('Alpha')));
+
+      expect(c.read(workspaceControllerProvider).root, isA<Split>());
+      expect(sessionOrder(c, first), ['s2', 's1']);
     });
   });
 

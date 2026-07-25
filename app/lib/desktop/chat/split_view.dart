@@ -222,11 +222,7 @@ class _SplitViewState extends ConsumerState<SplitView> {
           if (zone == null) {
             controller.openSessionInSplit(widget.split.id, data.sessionId);
           } else {
-            controller.openSessionAtEdge(
-              widget.split.id,
-              data.sessionId,
-              zone,
-            );
+            controller.openSessionAtEdge(widget.split.id, data.sessionId, zone);
           }
         }
       },
@@ -323,7 +319,9 @@ class _TabBar extends ConsumerWidget {
                 color: cs.onSurfaceVariant,
                 icon: const Icon(PhosphorIconsLight.plus),
                 onPressed: () {
-                  ref.read(workspaceControllerProvider.notifier).setActiveSplit(split.id);
+                  ref
+                      .read(workspaceControllerProvider.notifier)
+                      .setActiveSplit(split.id);
                   final worktree = _prefillWorktree(ref, split);
                   showNewSessionDialog(
                     context,
@@ -376,8 +374,9 @@ class _SplitHeaderDragHandle extends ConsumerWidget {
     return Draggable<SplitDragData>(
       data: SplitDragData(split.id),
       hitTestBehavior: HitTestBehavior.opaque,
-      onDragStarted: () =>
-          ref.read(workspaceControllerProvider.notifier).setActiveSplit(split.id),
+      onDragStarted: () => ref
+          .read(workspaceControllerProvider.notifier)
+          .setActiveSplit(split.id),
       // No visible drag avatar — the target pane's drop highlight is the only
       // affordance (a floating tab-sized chip read as a stray tab).
       feedback: const SizedBox.shrink(),
@@ -419,7 +418,9 @@ class _TabChip extends ConsumerWidget {
     final session = sessionId == null
         ? null
         : ref.watch(sessionsProvider).byId(sessionId);
-    final label = sessionId == null ? 'New' : sessionPaneTitle(session, sessionId);
+    final label = sessionId == null
+        ? 'New'
+        : sessionPaneTitle(session, sessionId);
 
     final chip = Container(
       constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),

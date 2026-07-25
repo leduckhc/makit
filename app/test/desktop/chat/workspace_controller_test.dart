@@ -5,8 +5,10 @@ import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The single active [Split] of a workspace.
-Split activeSplit(WorkspaceController c) =>
-    firstSplitWhere(c.state.root, (s) => s.id == c.state.activeSplitId ? s : null)!;
+Split activeSplit(WorkspaceController c) => firstSplitWhere(
+  c.state.root,
+  (s) => s.id == c.state.activeSplitId ? s : null,
+)!;
 
 /// The [Split] with [id], or null.
 Split? splitById(WorkspaceController c, String id) =>
@@ -38,7 +40,11 @@ void expectIntegrity(WorkspaceController c) {
     reason: 'activeSplitId must reference an existing split',
   );
   for (final id in splitIds(c.state.root)) {
-    expect(splitById(c, id)!.tabs, isNotEmpty, reason: 'a live split has >=1 tab');
+    expect(
+      splitById(c, id)!.tabs,
+      isNotEmpty,
+      reason: 'a live split has >=1 tab',
+    );
   }
 }
 
@@ -169,7 +175,10 @@ void main() {
       c.openTab(second, const Tab(id: 't-dup', sessionId: 's-1'));
       // It is not duplicated; instead its existing tab is revealed.
       expect(findTab(c.state.root, 's-1'), (first, 't-1'));
-      expect(splitById(c, second)!.tabs.any((t) => t.sessionId == 's-1'), isFalse);
+      expect(
+        splitById(c, second)!.tabs.any((t) => t.sessionId == 's-1'),
+        isFalse,
+      );
       expect(c.state.activeSplitId, first, reason: 'existing tab is revealed');
       expectIntegrity(c);
     });
@@ -195,20 +204,27 @@ void main() {
       expectIntegrity(c);
     });
 
-    test('closeTab on the last tab of the sole split resets to a starter tab', () {
-      final c = WorkspaceController.ephemeral();
-      final splitId = c.state.activeSplitId;
-      final onlyTab = activeSplit(c).activeTabId;
-      c.closeTab(splitId, onlyTab);
-      // The sole split can never fully close: it resets to one empty tab.
-      expect(c.state.root, isA<Split>());
-      final split = c.state.root as Split;
-      expect(split.tabs, hasLength(1));
-      expect(split.tabs.single.sessionId, isNull);
-      expect(split.tabs.single.id, isNot(onlyTab), reason: 'fresh starter tab');
-      expect(c.state.activeSplitId, split.id);
-      expectIntegrity(c);
-    });
+    test(
+      'closeTab on the last tab of the sole split resets to a starter tab',
+      () {
+        final c = WorkspaceController.ephemeral();
+        final splitId = c.state.activeSplitId;
+        final onlyTab = activeSplit(c).activeTabId;
+        c.closeTab(splitId, onlyTab);
+        // The sole split can never fully close: it resets to one empty tab.
+        expect(c.state.root, isA<Split>());
+        final split = c.state.root as Split;
+        expect(split.tabs, hasLength(1));
+        expect(split.tabs.single.sessionId, isNull);
+        expect(
+          split.tabs.single.id,
+          isNot(onlyTab),
+          reason: 'fresh starter tab',
+        );
+        expect(c.state.activeSplitId, split.id);
+        expectIntegrity(c);
+      },
+    );
 
     test('closeTab on the last tab of a non-sole split collapses it', () {
       final c = WorkspaceController.ephemeral();
@@ -344,18 +360,24 @@ void main() {
       expectIntegrity(c);
     });
 
-    test('openSessionInSplit moves an already-open session into the target', () {
-      final c = WorkspaceController.ephemeral();
-      final first = c.state.activeSplitId;
-      c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
-      c.divideActive(Axis.horizontal);
-      final second = c.state.activeSplitId;
-      c.openSessionInSplit(second, 's-1');
-      expect(findTab(c.state.root, 's-1')?.$1, second);
-      // Not duplicated: it exists in exactly one split.
-      expect(splitById(c, first)!.tabs.any((t) => t.sessionId == 's-1'), isFalse);
-      expectIntegrity(c);
-    });
+    test(
+      'openSessionInSplit moves an already-open session into the target',
+      () {
+        final c = WorkspaceController.ephemeral();
+        final first = c.state.activeSplitId;
+        c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
+        c.divideActive(Axis.horizontal);
+        final second = c.state.activeSplitId;
+        c.openSessionInSplit(second, 's-1');
+        expect(findTab(c.state.root, 's-1')?.$1, second);
+        // Not duplicated: it exists in exactly one split.
+        expect(
+          splitById(c, first)!.tabs.any((t) => t.sessionId == 's-1'),
+          isFalse,
+        );
+        expectIntegrity(c);
+      },
+    );
 
     test('openSessionInSplit just activates when already in the target', () {
       final c = WorkspaceController.ephemeral();
@@ -371,6 +393,21 @@ void main() {
       expectIntegrity(c);
     });
 
+    test('openSessionInSplit focuses the target split when already there', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
+      c.divideActive(Axis.horizontal); // second split becomes active
+      final second = c.state.activeSplitId;
+      // s-1 lives in `first`; dropping it onto `first` must refocus `first`,
+      // not leave `second` active.
+      c.openSessionInSplit(first, 's-1');
+      expect(c.state.activeSplitId, first);
+      expect(c.state.activeSplitId, isNot(second));
+      expect(splitById(c, first)!.activeTabId, 't-1');
+      expectIntegrity(c);
+    });
+
     test('openSessionAtEdge opens an unopened session in a new split', () {
       final c = WorkspaceController.ephemeral();
       final first = c.state.activeSplitId;
@@ -382,17 +419,23 @@ void main() {
       expectIntegrity(c);
     });
 
-    test('openSessionAtEdge relocates an already-open session to a new split', () {
-      final c = WorkspaceController.ephemeral();
-      final first = c.state.activeSplitId;
-      c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
-      c.openSessionAtEdge(first, 's-1', DropEdge.bottom);
-      final newId = c.state.activeSplitId;
-      expect(newId, isNot(first));
-      expect(findTab(c.state.root, 's-1')?.$1, newId);
-      expect(splitById(c, first)!.tabs.any((t) => t.sessionId == 's-1'), isFalse);
-      expectIntegrity(c);
-    });
+    test(
+      'openSessionAtEdge relocates an already-open session to a new split',
+      () {
+        final c = WorkspaceController.ephemeral();
+        final first = c.state.activeSplitId;
+        c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
+        c.openSessionAtEdge(first, 's-1', DropEdge.bottom);
+        final newId = c.state.activeSplitId;
+        expect(newId, isNot(first));
+        expect(findTab(c.state.root, 's-1')?.$1, newId);
+        expect(
+          splitById(c, first)!.tabs.any((t) => t.sessionId == 's-1'),
+          isFalse,
+        );
+        expectIntegrity(c);
+      },
+    );
   });
 
   group('WorkspaceController revealSession', () {
@@ -510,15 +553,18 @@ void main() {
       expectIntegrity(c);
     });
 
-    test('structurally wrong JSON falls back to the starter workspace', () async {
-      SharedPreferences.setMockInitialValues({
-        kWorkspacePrefsKey: '{"root": {"k": "bogus"}}',
-      });
-      final prefs = await SharedPreferences.getInstance();
-      final c = WorkspaceController.load(prefs);
-      expect(c.state.root, isA<Split>());
-      expectIntegrity(c);
-    });
+    test(
+      'structurally wrong JSON falls back to the starter workspace',
+      () async {
+        SharedPreferences.setMockInitialValues({
+          kWorkspacePrefsKey: '{"root": {"k": "bogus"}}',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final c = WorkspaceController.load(prefs);
+        expect(c.state.root, isA<Split>());
+        expectIntegrity(c);
+      },
+    );
 
     test('absent JSON loads the starter workspace', () async {
       final prefs = await SharedPreferences.getInstance();

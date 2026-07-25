@@ -118,7 +118,12 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       tabs: [tab],
       activeTabId: tab.id,
     );
-    final root = tree.divideSplit(state.root, state.activeSplitId, axis, newSplit);
+    final root = tree.divideSplit(
+      state.root,
+      state.activeSplitId,
+      axis,
+      newSplit,
+    );
     if (identical(root, state.root)) return;
     _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
   }
@@ -130,12 +135,19 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     final target = state.activeSplitId;
     final next = tree.removeSplit(state.root, target);
     if (identical(next, state.root)) return; // sole split → no-op
-    _commit(WorkspaceState(root: next, activeSplitId: _focusAfterRemoval(target, next)));
+    _commit(
+      WorkspaceState(
+        root: next,
+        activeSplitId: _focusAfterRemoval(target, next),
+      ),
+    );
   }
 
   /// Focuses the [Split] with [id]. No-op when it is already active or absent.
   void setActiveSplit(String id) {
-    if (id == state.activeSplitId || !tree.containsSplit(state.root, id)) return;
+    if (id == state.activeSplitId || !tree.containsSplit(state.root, id)) {
+      return;
+    }
     _commit(WorkspaceState(root: state.root, activeSplitId: id));
   }
 
@@ -159,7 +171,9 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   void moveSplit(String source, String target, DropEdge edge) {
     final next = tree.moveSplit(state.root, source, target, edge);
     if (identical(next, state.root)) return;
-    final active = tree.containsSplit(next, source) ? source : tree.firstSplitId(next);
+    final active = tree.containsSplit(next, source)
+        ? source
+        : tree.firstSplitId(next);
     _commit(WorkspaceState(root: next, activeSplitId: active));
   }
 
@@ -301,20 +315,32 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
         ? tree.mapSplits(state.root, (s) => s.id == fromSplitId ? source : s)
         : tree.removeSplit(state.root, fromSplitId);
 
+    final root = _dockNewSplit(base, targetSplitId, newSplit, edge);
+    if (identical(root, base)) return; // target vanished → no-op
+    _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
+  }
+
+  /// Docks [newSplit] on [edge] of [targetSplitId] within [base], returning the
+  /// new tree (or [base] unchanged when the target is absent). Shared by the
+  /// tab- and session-to-edge drops.
+  SplitNode _dockNewSplit(
+    SplitNode base,
+    String targetSplitId,
+    Split newSplit,
+    DropEdge edge,
+  ) {
     final axis = switch (edge) {
       DropEdge.left || DropEdge.right => Axis.horizontal,
       DropEdge.top || DropEdge.bottom => Axis.vertical,
     };
     final newAfter = edge == DropEdge.right || edge == DropEdge.bottom;
-    final root = tree.divideSplit(
+    return tree.divideSplit(
       base,
       targetSplitId,
       axis,
       newSplit,
       newAfter: newAfter,
     );
-    if (identical(root, base)) return; // target vanished → no-op
-    _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
   }
 
   /// Drops [sessionId] into [splitId] (e.g. dragged from the sidebar): moves
@@ -332,7 +358,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       return;
     }
     if (existing.$1 == splitId) {
-      setActiveTab(splitId, existing.$2);
+      _focus(splitId, existing.$2);
       return;
     }
     moveTab(existing.$1, existing.$2, splitId, 1 << 30);
@@ -358,18 +384,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       tabs: [tab],
       activeTabId: tab.id,
     );
-    final axis = switch (edge) {
-      DropEdge.left || DropEdge.right => Axis.horizontal,
-      DropEdge.top || DropEdge.bottom => Axis.vertical,
-    };
-    final newAfter = edge == DropEdge.right || edge == DropEdge.bottom;
-    final root = tree.divideSplit(
-      state.root,
-      targetSplitId,
-      axis,
-      newSplit,
-      newAfter: newAfter,
-    );
+    final root = _dockNewSplit(state.root, targetSplitId, newSplit, edge);
     if (identical(root, state.root)) return;
     _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
   }
@@ -390,8 +405,9 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     // it — revealing a session should fill the placeholder, not leave a
     // dangling "New" tab.
     final active = _splitById(state.activeSplitId);
-    final activeTab =
-        active?.tabs.where((t) => t.id == active.activeTabId).firstOrNull;
+    final activeTab = active?.tabs
+        .where((t) => t.id == active.activeTabId)
+        .firstOrNull;
     if (active != null && activeTab != null && activeTab.sessionId == null) {
       final bound = Tab(id: activeTab.id, sessionId: sessionId);
       final root = tree.mapSplits(
@@ -446,7 +462,10 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       return;
     }
     _commit(
-      WorkspaceState(root: next, activeSplitId: _focusAfterRemoval(splitId, next)),
+      WorkspaceState(
+        root: next,
+        activeSplitId: _focusAfterRemoval(splitId, next),
+      ),
     );
   }
 
