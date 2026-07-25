@@ -37,6 +37,18 @@ class SplitDragData {
   final String splitId;
 }
 
+/// A session dragged from the sidebar onto a pane: dropped into a group
+/// (centre / tab strip) or a new split (edge). See [SessionDragData] handling
+/// in [SplitView].
+@immutable
+class SessionDragData {
+  /// Creates the drag payload.
+  const SessionDragData(this.sessionId);
+
+  /// The session being dragged in from the sidebar.
+  final String sessionId;
+}
+
 /// Renders a single [Split]: a tab strip (its tabs in order, active
 /// highlighted, per-tab close ✕, a `+` opening the New session dialog) above
 /// the active tab's body. The region is a [DragTarget] for split re-docking
@@ -131,7 +143,7 @@ class _SplitViewState extends ConsumerState<SplitView> {
           });
           return true;
         }
-        if (data is TabDragData) {
+        if (data is TabDragData || data is SessionDragData) {
           final zone = _tabZoneFor(details.offset);
           setState(() {
             _hoverEdge = zone;
@@ -152,7 +164,7 @@ class _SplitViewState extends ConsumerState<SplitView> {
               _hoverTabCentre = false;
             });
           }
-        } else if (data is TabDragData) {
+        } else if (data is TabDragData || data is SessionDragData) {
           final zone = _tabZoneFor(details.offset);
           if (zone != _hoverEdge || (zone == null) != _hoverTabCentre) {
             setState(() {
@@ -196,6 +208,23 @@ class _SplitViewState extends ConsumerState<SplitView> {
               data.fromSplitId,
               data.tabId,
               widget.split.id,
+              zone,
+            );
+          }
+          return;
+        }
+        if (data is SessionDragData) {
+          final zone = _tabZoneFor(details.offset);
+          setState(() {
+            _hoverEdge = null;
+            _hoverTabCentre = false;
+          });
+          if (zone == null) {
+            controller.openSessionInSplit(widget.split.id, data.sessionId);
+          } else {
+            controller.openSessionAtEdge(
+              widget.split.id,
+              data.sessionId,
               zone,
             );
           }
@@ -344,16 +373,14 @@ class _SplitHeaderDragHandle extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
     return Draggable<SplitDragData>(
       data: SplitDragData(split.id),
       hitTestBehavior: HitTestBehavior.opaque,
       onDragStarted: () =>
           ref.read(workspaceControllerProvider.notifier).setActiveSplit(split.id),
-      feedback: Material(
-        color: Colors.transparent,
-        child: Container(width: 160, height: _kTabBarHeight, color: cs.primaryContainer),
-      ),
+      // No visible drag avatar — the target pane's drop highlight is the only
+      // affordance (a floating tab-sized chip read as a stray tab).
+      feedback: const SizedBox.shrink(),
       child: MouseRegion(
         cursor: SystemMouseCursors.grab,
         child: Semantics(

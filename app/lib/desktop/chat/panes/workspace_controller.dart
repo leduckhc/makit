@@ -317,6 +317,63 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
   }
 
+  /// Drops [sessionId] into [splitId] (e.g. dragged from the sidebar): moves
+  /// its existing tab there (dedupe, decision 5), just activates it when it is
+  /// already in [splitId], or opens a fresh tab when it lives nowhere yet —
+  /// appended and activated. No-op when [splitId] is absent.
+  void openSessionInSplit(String splitId, String sessionId) {
+    if (!tree.containsSplit(state.root, splitId)) return;
+    final existing = tree.findTab(state.root, sessionId);
+    if (existing == null) {
+      openTab(
+        splitId,
+        Tab(id: nextNodeId(SplitNodeKind.tab), sessionId: sessionId),
+      );
+      return;
+    }
+    if (existing.$1 == splitId) {
+      setActiveTab(splitId, existing.$2);
+      return;
+    }
+    moveTab(existing.$1, existing.$2, splitId, 1 << 30);
+  }
+
+  /// Drops [sessionId] into a brand-new [Split] docked on [edge] of
+  /// [targetSplitId]: moves its existing tab (dedupe) or opens a fresh tab in
+  /// the new split. No-op when [targetSplitId] is absent.
+  void openSessionAtEdge(
+    String targetSplitId,
+    String sessionId,
+    DropEdge edge,
+  ) {
+    if (!tree.containsSplit(state.root, targetSplitId)) return;
+    final existing = tree.findTab(state.root, sessionId);
+    if (existing != null) {
+      moveTabToEdge(existing.$1, existing.$2, targetSplitId, edge);
+      return;
+    }
+    final tab = Tab(id: nextNodeId(SplitNodeKind.tab), sessionId: sessionId);
+    final newSplit = Split(
+      id: nextNodeId(SplitNodeKind.split),
+      tabs: [tab],
+      activeTabId: tab.id,
+    );
+    final axis = switch (edge) {
+      DropEdge.left || DropEdge.right => Axis.horizontal,
+      DropEdge.top || DropEdge.bottom => Axis.vertical,
+    };
+    final newAfter = edge == DropEdge.right || edge == DropEdge.bottom;
+    final root = tree.divideSplit(
+      state.root,
+      targetSplitId,
+      axis,
+      newSplit,
+      newAfter: newAfter,
+    );
+    if (identical(root, state.root)) return;
+    _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
+  }
+
   // -- Session-oriented ops -------------------------------------------------
 
   /// SPEC-28 decision 6. Reveals [sessionId]: if a tab already hosts it, focus

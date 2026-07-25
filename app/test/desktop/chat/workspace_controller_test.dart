@@ -334,6 +334,67 @@ void main() {
     });
   });
 
+  group('WorkspaceController openSession* (sidebar drop)', () {
+    test('openSessionInSplit opens a new tab for an unopened session', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openSessionInSplit(first, 's-1');
+      expect(findTab(c.state.root, 's-1')?.$1, first);
+      expect(activeSplit(c).tabs.any((t) => t.sessionId == 's-1'), isTrue);
+      expectIntegrity(c);
+    });
+
+    test('openSessionInSplit moves an already-open session into the target', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
+      c.divideActive(Axis.horizontal);
+      final second = c.state.activeSplitId;
+      c.openSessionInSplit(second, 's-1');
+      expect(findTab(c.state.root, 's-1')?.$1, second);
+      // Not duplicated: it exists in exactly one split.
+      expect(splitById(c, first)!.tabs.any((t) => t.sessionId == 's-1'), isFalse);
+      expectIntegrity(c);
+    });
+
+    test('openSessionInSplit just activates when already in the target', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
+      c.openTab(first, const Tab(id: 't-2', sessionId: 's-2'));
+      c.openSessionInSplit(first, 's-1');
+      expect(splitById(c, first)!.activeTabId, 't-1');
+      expect(
+        splitById(c, first)!.tabs.where((t) => t.sessionId == 's-1').length,
+        1,
+      );
+      expectIntegrity(c);
+    });
+
+    test('openSessionAtEdge opens an unopened session in a new split', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openSessionAtEdge(first, 's-1', DropEdge.right);
+      final newId = c.state.activeSplitId;
+      expect(newId, isNot(first));
+      expect(splitById(c, newId)!.tabs.single.sessionId, 's-1');
+      expect(c.state.root, isA<Splitter>());
+      expectIntegrity(c);
+    });
+
+    test('openSessionAtEdge relocates an already-open session to a new split', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
+      c.openSessionAtEdge(first, 's-1', DropEdge.bottom);
+      final newId = c.state.activeSplitId;
+      expect(newId, isNot(first));
+      expect(findTab(c.state.root, 's-1')?.$1, newId);
+      expect(splitById(c, first)!.tabs.any((t) => t.sessionId == 's-1'), isFalse);
+      expectIntegrity(c);
+    });
+  });
+
   group('WorkspaceController revealSession', () {
     test('revealSession focuses an existing tab without duplicating', () {
       final c = WorkspaceController.ephemeral();
