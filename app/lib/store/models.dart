@@ -43,14 +43,20 @@ class AgentDescriptor {
       label: (j['label'] as String?) ?? id,
       transport: (j['transport'] as String?) ?? 'native',
       available: (j['available'] as bool?) ?? true,
-      fingerprint: (j['fingerprint'] is String) ? j['fingerprint'] as String : '',
-      configOptions: ((j['configOptions'] is List) ? j['configOptions'] as List<dynamic> : const <dynamic>[])
-          .whereType<Map<dynamic, dynamic>>()
-          .map(
-            (m) => SessionConfigOption.fromJson(Map<String, dynamic>.from(m)),
-          )
-          .whereType<SessionConfigOption>()
-          .toList(),
+      fingerprint: (j['fingerprint'] is String)
+          ? j['fingerprint'] as String
+          : '',
+      configOptions:
+          ((j['configOptions'] is List)
+                  ? j['configOptions'] as List<dynamic>
+                  : const <dynamic>[])
+              .whereType<Map<dynamic, dynamic>>()
+              .map(
+                (m) =>
+                    SessionConfigOption.fromJson(Map<String, dynamic>.from(m)),
+              )
+              .whereType<SessionConfigOption>()
+              .toList(),
     );
   }
 }

@@ -36,16 +36,19 @@ void main() {
       );
     });
 
-    test('iPad Stage-Manager / split-view compact width falls back to mobile', () {
-      // A narrow split-view column: regular height but compact width.
-      expect(
-        prefersWorkspaceShell(
-          platform: TargetPlatform.iOS,
-          size: const Size(507, 1024),
-        ),
-        isFalse,
-      );
-    });
+    test(
+      'iPad Stage-Manager / split-view compact width falls back to mobile',
+      () {
+        // A narrow split-view column: regular height but compact width.
+        expect(
+          prefersWorkspaceShell(
+            platform: TargetPlatform.iOS,
+            size: const Size(507, 1024),
+          ),
+          isFalse,
+        );
+      },
+    );
 
     test('non-Apple platforms always route to mobile', () {
       expect(

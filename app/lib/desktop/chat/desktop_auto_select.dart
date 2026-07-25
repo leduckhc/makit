@@ -15,7 +15,9 @@ final desktopAutoSelectSessionProvider = Provider<void>((ref) {
     if (current != null && next.byId(current) != null) return;
     final sorted = [...next.sessions]
       ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
-    ref.read(workspaceControllerProvider.notifier).revealSession(sorted.first.id);
+    ref
+        .read(workspaceControllerProvider.notifier)
+        .revealSession(sorted.first.id);
   }
 
   ref.listen(sessionsProvider, (_, next) => pick(next));

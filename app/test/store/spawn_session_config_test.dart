@@ -55,11 +55,7 @@ class _CapturingTransport implements Transport {
     if (env.t == MsgType.cmd && env.body['kind'] == 'session.spawn') {
       spawnBodies.add(env.body);
       _frames.add(
-        Envelope(
-          t: MsgType.ack,
-          id: env.id,
-          body: const {'sessionId': 's-1'},
-        ),
+        Envelope(t: MsgType.ack, id: env.id, body: const {'sessionId': 's-1'}),
       );
     }
   }

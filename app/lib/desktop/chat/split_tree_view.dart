@@ -36,7 +36,10 @@ class WorkspaceView extends ConsumerWidget {
         ),
         const Divider(height: 1),
         Expanded(
-          child: _NodeView(node: state.root, activeSplitId: state.activeSplitId),
+          child: _NodeView(
+            node: state.root,
+            activeSplitId: state.activeSplitId,
+          ),
         ),
       ],
     );
@@ -94,7 +97,9 @@ class _SplitterView extends ConsumerWidget {
     );
     return LayoutBuilder(
       builder: (context, constraints) {
-        final extent = horizontal ? constraints.maxWidth : constraints.maxHeight;
+        final extent = horizontal
+            ? constraints.maxWidth
+            : constraints.maxHeight;
         final divider = _SplitterDivider(
           axis: splitter.axis,
           onDrag: (delta) {
@@ -107,7 +112,9 @@ class _SplitterView extends ConsumerWidget {
           },
         );
         final children = [first, divider, second];
-        return horizontal ? Row(children: children) : Column(children: children);
+        return horizontal
+            ? Row(children: children)
+            : Column(children: children);
       },
     );
   }

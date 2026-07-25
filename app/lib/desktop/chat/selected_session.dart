@@ -82,7 +82,9 @@ void closeActiveTab(WidgetRef ref) {
   final state = ref.read(workspaceControllerProvider);
   final tab = activeTab(state);
   if (tab == null) return;
-  ref.read(workspaceControllerProvider.notifier).closeTab(state.activeSplitId, tab.id);
+  ref
+      .read(workspaceControllerProvider.notifier)
+      .closeTab(state.activeSplitId, tab.id);
 }
 
 /// Close the whole active split (the keyboard "Close split"). No-op when it is
@@ -105,5 +107,8 @@ void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
   final state = ref.read(workspaceControllerProvider);
   ref
       .read(workspaceControllerProvider.notifier)
-      .openTab(state.activeSplitId, Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree));
+      .openTab(
+        state.activeSplitId,
+        Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree),
+      );
 }

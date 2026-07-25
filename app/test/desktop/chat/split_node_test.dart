@@ -51,7 +51,12 @@ void main() {
     test('divides a nested split, leaving siblings untouched (identity)', () {
       final a = _leaf('a', 'ta');
       final b = _leaf('b', 'tb');
-      final root = Splitter(id: 'sp', axis: Axis.horizontal, first: a, second: b);
+      final root = Splitter(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: a,
+        second: b,
+      );
       final c = _leaf('c', 'tc');
       final result =
           divideSplit(root, 'b', Axis.vertical, c, splitterId: 'sp2')
@@ -65,7 +70,10 @@ void main() {
     test('is a no-op (same identity) for an unknown target', () {
       final root = _leaf('a', 't1');
       expect(
-        identical(divideSplit(root, 'z', Axis.horizontal, _leaf('b', 't2')), root),
+        identical(
+          divideSplit(root, 'z', Axis.horizontal, _leaf('b', 't2')),
+          root,
+        ),
         isTrue,
       );
     });
@@ -174,7 +182,10 @@ void main() {
         second: _leaf('b', 'tb'),
       );
       expect(
-        identical(moveSplit(root, 'a', 'a', DropEdge.right, splitterId: 'x'), root),
+        identical(
+          moveSplit(root, 'a', 'a', DropEdge.right, splitterId: 'x'),
+          root,
+        ),
         isTrue,
       );
     });
@@ -194,9 +205,15 @@ void main() {
     test('top edge stacks the source above the target (vertical)', () {
       final a = _leaf('a', 'ta');
       final b = _leaf('b', 'tb');
-      final root = Splitter(id: 'sp', axis: Axis.horizontal, first: a, second: b);
+      final root = Splitter(
+        id: 'sp',
+        axis: Axis.horizontal,
+        first: a,
+        second: b,
+      );
       final sp =
-          moveSplit(root, 'a', 'b', DropEdge.top, splitterId: 'sp2') as Splitter;
+          moveSplit(root, 'a', 'b', DropEdge.top, splitterId: 'sp2')
+              as Splitter;
       expect(sp.axis, Axis.vertical);
       expect(identical(sp.first, a), isTrue);
       expect(identical(sp.second, b), isTrue);
@@ -207,7 +224,8 @@ void main() {
       final b = _leaf('b', 'tb');
       final root = Splitter(id: 'sp', axis: Axis.vertical, first: a, second: b);
       final sp =
-          moveSplit(root, 'a', 'b', DropEdge.left, splitterId: 'sp2') as Splitter;
+          moveSplit(root, 'a', 'b', DropEdge.left, splitterId: 'sp2')
+              as Splitter;
       expect(sp.axis, Axis.horizontal);
       expect(identical(sp.first, a), isTrue);
       expect(identical(sp.second, b), isTrue);
@@ -220,7 +238,10 @@ void main() {
         first: _leaf('a', 'ta'),
         second: _leaf('b', 'tb'),
       );
-      expect(identical(moveSplit(root, 'z', 'b', DropEdge.right), root), isTrue);
+      expect(
+        identical(moveSplit(root, 'z', 'b', DropEdge.right), root),
+        isTrue,
+      );
     });
 
     test('is a no-op when the target does not exist', () {
@@ -230,29 +251,35 @@ void main() {
         first: _leaf('a', 'ta'),
         second: _leaf('b', 'tb'),
       );
-      expect(identical(moveSplit(root, 'a', 'z', DropEdge.right), root), isTrue);
+      expect(
+        identical(moveSplit(root, 'a', 'z', DropEdge.right), root),
+        isTrue,
+      );
     });
 
-    test('re-docks across a nested tree: prunes source then divides target', () {
-      final a = _leaf('a', 'ta', sessionId: 's1');
-      final b = _leaf('b', 'tb');
-      final c = _leaf('c', 'tc');
-      final root = Splitter(
-        id: 'sp',
-        axis: Axis.horizontal,
-        first: a,
-        second: Splitter(id: 'sp2', axis: Axis.vertical, first: b, second: c),
-      );
-      final result =
-          moveSplit(root, 'a', 'c', DropEdge.bottom, splitterId: 'sp3')
-              as Splitter;
-      expect(result.axis, Axis.vertical);
-      expect(identical(result.first, b), isTrue);
-      final inner = result.second as Splitter;
-      expect(inner.axis, Axis.vertical);
-      expect(identical(inner.first, c), isTrue);
-      expect(identical(inner.second, a), isTrue);
-    });
+    test(
+      're-docks across a nested tree: prunes source then divides target',
+      () {
+        final a = _leaf('a', 'ta', sessionId: 's1');
+        final b = _leaf('b', 'tb');
+        final c = _leaf('c', 'tc');
+        final root = Splitter(
+          id: 'sp',
+          axis: Axis.horizontal,
+          first: a,
+          second: Splitter(id: 'sp2', axis: Axis.vertical, first: b, second: c),
+        );
+        final result =
+            moveSplit(root, 'a', 'c', DropEdge.bottom, splitterId: 'sp3')
+                as Splitter;
+        expect(result.axis, Axis.vertical);
+        expect(identical(result.first, b), isTrue);
+        final inner = result.second as Splitter;
+        expect(inner.axis, Axis.vertical);
+        expect(identical(inner.first, c), isTrue);
+        expect(identical(inner.second, a), isTrue);
+      },
+    );
   });
 
   group('helpers', () {
@@ -407,7 +434,10 @@ void main() {
       const split = Split(
         id: 'a',
         activeTabId: 't1',
-        tabs: [Tab(id: 't1'), Tab(id: 't2')],
+        tabs: [
+          Tab(id: 't1'),
+          Tab(id: 't2'),
+        ],
       );
       expect(activateTab(split, 't2').activeTabId, 't2');
     });
@@ -416,7 +446,10 @@ void main() {
       const split = Split(
         id: 'a',
         activeTabId: 't1',
-        tabs: [Tab(id: 't1'), Tab(id: 't2')],
+        tabs: [
+          Tab(id: 't1'),
+          Tab(id: 't2'),
+        ],
       );
       expect(identical(activateTab(split, 'z'), split), isTrue);
     });
@@ -425,7 +458,11 @@ void main() {
       const split = Split(
         id: 'a',
         activeTabId: 't1',
-        tabs: [Tab(id: 't1'), Tab(id: 't2'), Tab(id: 't3')],
+        tabs: [
+          Tab(id: 't1'),
+          Tab(id: 't2'),
+          Tab(id: 't3'),
+        ],
       );
       final result = reorderTab(split, 't1', 2);
       expect(result.tabs.map((t) => t.id), ['t2', 't3', 't1']);
@@ -464,11 +501,7 @@ void main() {
       const boundTab = Tab(id: 't2', sessionId: 's1', worktree: worktree);
       expect(boundTab.toJson().containsKey('worktree'), isFalse);
 
-      const split = Split(
-        id: 'a',
-        activeTabId: 't1',
-        tabs: [emptyTab],
-      );
+      const split = Split(id: 'a', activeTabId: 't1', tabs: [emptyTab]);
       final decoded = SplitNode.fromJson(split.toJson()) as Split;
       expect(decoded.tabs.single.worktree, worktree);
       expect(decoded.tabs.single.sessionId, isNull);

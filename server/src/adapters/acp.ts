@@ -700,4 +700,3 @@ function parseSelectValue(v: { value: string; name: string; description?: string
   if (typeof v.description === "string") out.description = v.description;
   return out;
 }
-

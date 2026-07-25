@@ -114,9 +114,7 @@ void main() {
               name: 'Model',
               category: 'model',
               currentValue: 'gpt-5',
-              options: const [
-                ConfigOptionValue(value: 'gpt-5', name: 'GPT-5'),
-              ],
+              options: const [ConfigOptionValue(value: 'gpt-5', name: 'GPT-5')],
             ),
             _select(
               id: 'reasoning',

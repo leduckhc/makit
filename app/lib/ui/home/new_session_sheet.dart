@@ -155,10 +155,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   ),
               ],
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _onStart,
-                child: const Text('Start'),
-              ),
+              FilledButton(onPressed: _onStart, child: const Text('Start')),
               const SizedBox(height: 8),
               Text(
                 'Opens the session; type your first message there.',
@@ -211,10 +208,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
               value: WorktreeSource.newBranch,
               label: Text('New branch'),
             ),
-            ButtonSegment(
-              value: WorktreeSource.fromPr,
-              label: Text('From PR'),
-            ),
+            ButtonSegment(value: WorktreeSource.fromPr, label: Text('From PR')),
           ],
           selected: {_source},
           showSelectedIcon: false,
@@ -398,11 +392,7 @@ class _RowSelect extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                value,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
             if (sub != null) ...[
               Text(
@@ -422,11 +412,7 @@ class _RowSelect extends StatelessWidget {
 /// A selectable harness card: agent avatar + name + transport, with an accent
 /// ring + check when selected and dimmed when unavailable.
 class _HarnessCard extends StatelessWidget {
-  const _HarnessCard({
-    required this.agent,
-    required this.selected,
-    this.onTap,
-  });
+  const _HarnessCard({required this.agent, required this.selected, this.onTap});
 
   final AgentDescriptor agent;
   final bool selected;

@@ -27,7 +27,8 @@ WorkspaceController _workspace(ProviderContainer c) =>
     c.read(workspaceControllerProvider.notifier);
 
 /// The active split's active tab (via the same walk the providers use).
-Tab _activeTab(ProviderContainer c) => activeTab(c.read(workspaceControllerProvider))!;
+Tab _activeTab(ProviderContainer c) =>
+    activeTab(c.read(workspaceControllerProvider))!;
 
 /// Pumps a bare button whose press invokes [action] with a real [WidgetRef],
 /// then taps it.
@@ -100,7 +101,10 @@ void main() {
       // Reveal focused the existing s1 tab (active selection is s1 again); s1
       // still appears exactly once in the tree.
       expect(container.read(selectedSessionProvider), 's1');
-      final located = findTab(container.read(workspaceControllerProvider).root, 's1');
+      final located = findTab(
+        container.read(workspaceControllerProvider).root,
+        's1',
+      );
       expect(located, isNotNull);
     });
   });
@@ -172,7 +176,9 @@ void main() {
       expect(container.read(selectedSessionProvider), 's1');
     });
 
-    testWidgets('closeActiveSplit is a no-op on the sole split', (tester) async {
+    testWidgets('closeActiveSplit is a no-op on the sole split', (
+      tester,
+    ) async {
       final container = ProviderContainer(
         overrides: [
           sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),

@@ -90,17 +90,17 @@ void main() {
 
   group('ConfigOptionPick.toJson', () {
     test('serializes a string pick', () {
-      expect(
-        const ConfigOptionPick(id: 'model', value: 'gpt-5').toJson(),
-        {'id': 'model', 'value': 'gpt-5'},
-      );
+      expect(const ConfigOptionPick(id: 'model', value: 'gpt-5').toJson(), {
+        'id': 'model',
+        'value': 'gpt-5',
+      });
     });
 
     test('serializes a boolean pick', () {
-      expect(
-        const ConfigOptionPick(id: 'yolo', value: true).toJson(),
-        {'id': 'yolo', 'value': true},
-      );
+      expect(const ConfigOptionPick(id: 'yolo', value: true).toJson(), {
+        'id': 'yolo',
+        'value': true,
+      });
     });
   });
 }

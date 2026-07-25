@@ -232,7 +232,9 @@ void main() {
     );
   });
 
-  testWidgets('selecting a harness card swaps the config pills', (tester) async {
+  testWidgets('selecting a harness card swaps the config pills', (
+    tester,
+  ) async {
     await _open(tester, agents: [_pi, _codex]);
 
     // Default selection is the first available agent (Pi) → its model pill.

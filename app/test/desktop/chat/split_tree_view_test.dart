@@ -414,31 +414,36 @@ void main() {
       expect(findTab(root, 's2'), isNotNull);
     });
 
-    testWidgets('dropping a tab near a pane edge detaches it into a new split', (
-      tester,
-    ) async {
-      final c = _container(
-        sessions: [_session('s1', 'Alpha'), _session('s2', 'Beta')],
-      );
-      addTearDown(c.dispose);
-      _ws(c).revealSession('s1');
-      _ws(c).revealSession('s2'); // one pane, tabs [s1, s2]
-      await tester.pumpWidget(_tree(c));
-      await tester.pumpAndSettle();
-      expect(c.read(workspaceControllerProvider).root, isA<Split>());
+    testWidgets(
+      'dropping a tab near a pane edge detaches it into a new split',
+      (tester) async {
+        final c = _container(
+          sessions: [_session('s1', 'Alpha'), _session('s2', 'Beta')],
+        );
+        addTearDown(c.dispose);
+        _ws(c).revealSession('s1');
+        _ws(c).revealSession('s2'); // one pane, tabs [s1, s2]
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+        expect(c.read(workspaceControllerProvider).root, isA<Split>());
 
-      // Drag Beta to the right edge of the pane.
-      final rect = tester.getRect(find.byType(DesktopChatPane));
-      await dragDrop(
-        tester,
-        find.text('Beta'),
-        Offset(rect.right - 6, rect.center.dy),
-      );
+        // Drag Beta to the right edge of the pane.
+        final rect = tester.getRect(find.byType(DesktopChatPane));
+        await dragDrop(
+          tester,
+          find.text('Beta'),
+          Offset(rect.right - 6, rect.center.dy),
+        );
 
-      final ctrl = c.read(workspaceControllerProvider);
-      expect(ctrl.root, isA<Splitter>(), reason: 'Beta detached into a split');
-      expect(splitById(c, ctrl.activeSplitId)!.tabs.single.sessionId, 's2');
-    });
+        final ctrl = c.read(workspaceControllerProvider);
+        expect(
+          ctrl.root,
+          isA<Splitter>(),
+          reason: 'Beta detached into a split',
+        );
+        expect(splitById(c, ctrl.activeSplitId)!.tabs.single.sessionId, 's2');
+      },
+    );
 
     testWidgets('dropping a tab on another pane\'s tab reorders into it', (
       tester,
@@ -447,7 +452,11 @@ void main() {
       final first = findTab(c.read(workspaceControllerProvider).root, 's1')!.$1;
 
       // Drop Beta onto the Alpha tab chip → insert at Alpha's index (0).
-      await dragDrop(tester, find.text('Beta'), tester.getCenter(find.text('Alpha')));
+      await dragDrop(
+        tester,
+        find.text('Beta'),
+        tester.getCenter(find.text('Alpha')),
+      );
 
       expect(c.read(workspaceControllerProvider).root, isA<Split>());
       expect(sessionOrder(c, first), ['s2', 's1']);

@@ -157,7 +157,12 @@ void main() {
         'thinking': '',
         'models': const [],
         'configOptions': [
-          <String, Object?>{'id': 'ok', 'name': 'OK', 'type': 'select', 'currentValue': '1'},
+          <String, Object?>{
+            'id': 'ok',
+            'name': 'OK',
+            'type': 'select',
+            'currentValue': '1',
+          },
           'not-a-map',
           {'name': 'no id'},
           42,

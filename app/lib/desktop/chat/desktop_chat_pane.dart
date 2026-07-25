@@ -173,8 +173,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       // pre-fill. Every sessionless pane reaches the same placeholder + button
       // (SPEC-27) — no dead-end panes.
       final prefill =
-          (worktree != null &&
-              !worktree.path.startsWith(kDraftWorktreePrefix))
+          (worktree != null && !worktree.path.startsWith(kDraftWorktreePrefix))
           ? worktree
           : null;
       return Column(
@@ -346,9 +345,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           .set(sessionId, text),
                       footerActions: [
                         if (ref
-                            .watch(sessionMetaProvider(sessionId))
-                            ?.configOptions
-                            .isNotEmpty ??
+                                .watch(sessionMetaProvider(sessionId))
+                                ?.configOptions
+                                .isNotEmpty ??
                             false)
                           ComposerConfigOptions(sessionId: sessionId)
                         else ...[

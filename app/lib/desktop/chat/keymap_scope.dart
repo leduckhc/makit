@@ -176,9 +176,13 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
       case ShortcutAction.splitVertical:
-        ref.read(workspaceControllerProvider.notifier).divideActive(Axis.horizontal);
+        ref
+            .read(workspaceControllerProvider.notifier)
+            .divideActive(Axis.horizontal);
       case ShortcutAction.splitHorizontal:
-        ref.read(workspaceControllerProvider.notifier).divideActive(Axis.vertical);
+        ref
+            .read(workspaceControllerProvider.notifier)
+            .divideActive(Axis.vertical);
       case ShortcutAction.newTab:
         // A tab with only a New-session button is a dead end for a keyboard
         // action, so "New tab" opens the dialog directly, pre-filled with the

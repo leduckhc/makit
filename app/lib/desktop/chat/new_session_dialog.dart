@@ -150,7 +150,10 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         final wt = _selectedExistingWorktree();
         return (path: wt?.path ?? _existingPath, branch: wt?.branch);
       case _WorktreeSource.newBranch:
-        final r = await store.createWorktree(projectId, baseBranch: _baseBranch);
+        final r = await store.createWorktree(
+          projectId,
+          baseBranch: _baseBranch,
+        );
         return (path: r.path, branch: r.branch);
       case _WorktreeSource.fromPr:
         final pr = _prNumber;
@@ -217,9 +220,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     final selectedAgent = _agentById(agents, selectedAgentId);
 
     return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): _close,
-      },
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
       child: Dialog(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480, maxHeight: 640),
@@ -355,10 +356,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         for (final w in worktrees)
           DropdownMenuItem(
             value: w.path,
-            child: Text(
-              w.branch ?? w.path,
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(w.branch ?? w.path, overflow: TextOverflow.ellipsis),
           ),
       ],
       onChanged: _spawning ? null : (v) => setState(() => _existingPath = v),
@@ -370,7 +368,9 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     for (final r in ref.read(reposProvider).repos) {
       if (r.id == _projectId) repo = r;
     }
-    final options = repo == null ? const <String>[] : branchOptionsForRepo(repo);
+    final options = repo == null
+        ? const <String>[]
+        : branchOptionsForRepo(repo);
     if (options.isEmpty) {
       return Text(
         'Forks a fresh worktree off the repo’s default branch.',
@@ -385,7 +385,10 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       isExpanded: true,
       items: [
         for (final b in options)
-          DropdownMenuItem(value: b, child: Text(b, overflow: TextOverflow.ellipsis)),
+          DropdownMenuItem(
+            value: b,
+            child: Text(b, overflow: TextOverflow.ellipsis),
+          ),
       ],
       onChanged: _spawning ? null : (v) => setState(() => _baseBranch = v),
     );
@@ -416,9 +419,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
             ),
           );
         }
-        final value = prs.any((p) => p.number == _prNumber)
-            ? _prNumber
-            : null;
+        final value = prs.any((p) => p.number == _prNumber) ? _prNumber : null;
         return DropdownButtonFormField<int>(
           key: const ValueKey('pr-picker'),
           initialValue: value,
@@ -498,7 +499,8 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     AgentDescriptor? selectedAgent,
     String? selectedAgentId,
   ) {
-    final options = selectedAgent?.configOptions ?? const <SessionConfigOption>[];
+    final options =
+        selectedAgent?.configOptions ?? const <SessionConfigOption>[];
     final keymap = ref.watch(keymapProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

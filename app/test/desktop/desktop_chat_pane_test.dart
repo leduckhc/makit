@@ -528,7 +528,10 @@ void main() {
           find.byType(EmptyPaneStarter),
         );
         expect(starter.worktree, isNull);
-        expect(find.text('Select a session, or start a new one'), findsOneWidget);
+        expect(
+          find.text('Select a session, or start a new one'),
+          findsOneWidget,
+        );
       },
     );
 

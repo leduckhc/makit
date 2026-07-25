@@ -31,7 +31,9 @@ const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 
 Widget _app(ProviderContainer c) => UncontrolledProviderScope(
   container: c,
-  child: const MaterialApp(home: Scaffold(body: DesktopChatPane(sessionId: 's1'))),
+  child: const MaterialApp(
+    home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+  ),
 );
 
 void main() {

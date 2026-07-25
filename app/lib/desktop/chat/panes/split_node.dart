@@ -110,7 +110,11 @@ final class Tab {
 /// empty strip.
 final class Split extends SplitNode {
   /// Creates a split. [activeTabId] must reference a tab in [tabs].
-  const Split({required this.id, required this.tabs, required this.activeTabId});
+  const Split({
+    required this.id,
+    required this.tabs,
+    required this.activeTabId,
+  });
 
   /// Rebuilds a split (and its tabs) from its [toJson] map.
   factory Split.fromJson(Map<String, Object?> json) => Split(
@@ -366,10 +370,7 @@ SplitNode moveSplit(
   String? splitterId,
 }) {
   if (sourceSplitId == targetSplitId) return root;
-  final source = firstSplitWhere(
-    root,
-    (s) => s.id == sourceSplitId ? s : null,
-  );
+  final source = firstSplitWhere(root, (s) => s.id == sourceSplitId ? s : null);
   if (source == null || !containsSplit(root, targetSplitId)) return root;
 
   final pruned = removeSplit(root, sourceSplitId);
@@ -435,11 +436,8 @@ bool containsSplit(SplitNode root, String splitId) =>
 // ---------------------------------------------------------------------------
 
 /// Appends [tab] to [split] and makes it the active tab.
-Split addTab(Split split, Tab tab) => Split(
-  id: split.id,
-  tabs: [...split.tabs, tab],
-  activeTabId: tab.id,
-);
+Split addTab(Split split, Tab tab) =>
+    Split(id: split.id, tabs: [...split.tabs, tab], activeTabId: tab.id);
 
 /// Removes tab [tabId] from [split]. Returns null when it was the last tab (the
 /// caller collapses or resets the split), or [split] unchanged (same identity)
@@ -459,8 +457,7 @@ Split? removeTab(Split split, String tabId) {
 /// Makes tab [tabId] active in [split]. Returns [split] unchanged (same
 /// identity) when [tabId] is not present or already active.
 Split activateTab(Split split, String tabId) {
-  if (split.activeTabId == tabId ||
-      !split.tabs.any((t) => t.id == tabId)) {
+  if (split.activeTabId == tabId || !split.tabs.any((t) => t.id == tabId)) {
     return split;
   }
   return Split(id: split.id, tabs: split.tabs, activeTabId: tabId);

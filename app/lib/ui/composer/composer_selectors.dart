@@ -270,10 +270,11 @@ class ComposerConfigOptions extends ConsumerWidget {
       agent: agent,
       onPick: (id, value) => ref
           .read(storeControllerProvider.notifier)
-          .sendSessionAction(sessionId, 'configOption', args: {
-            'id': id,
-            'value': value,
-          }),
+          .sendSessionAction(
+            sessionId,
+            'configOption',
+            args: {'id': id, 'value': value},
+          ),
     );
   }
 }
