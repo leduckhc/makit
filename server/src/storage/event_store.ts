@@ -30,6 +30,13 @@ export interface SessionMeta {
    * after a server restart. Null/absent for agents that can't resume this way.
    */
   resumeSessionPath?: string;
+  /**
+   * Git branch + worktree the session runs in (set on markStarted). Persisted
+   * so a rehydrated session still reports its branch/worktree after a server
+   * restart instead of falling back to the project's default branch.
+   */
+  branch?: string;
+  worktreePath?: string;
 }
 
 /** A new event to append: seq + sessionId are assigned/owned by the store. */
