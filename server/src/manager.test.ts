@@ -911,7 +911,8 @@ test("reattachSession resumes in the session's worktree, not the project root", 
   const projectDir = makeGitRepo();
   // realpath: git reports /private/var/... on macOS while mkdtemp returns the
   // /var/... symlink, and the manager compares resolved (not deref'd) paths.
-  const worktreeDir = join(realpathSync(mkdtempSync(join(tmpdir(), "makit-wt-"))), "feature-x");
+  const worktreeParent = realpathSync(mkdtempSync(join(tmpdir(), "makit-wt-")));
+  const worktreeDir = join(worktreeParent, "feature-x");
   execFileSync("git", ["worktree", "add", "-q", "-b", "feature-x", worktreeDir], { cwd: projectDir });
   const impostorDir = mkdtempSync(join(tmpdir(), "makit-impostor-"));
   try {
@@ -973,7 +974,7 @@ test("reattachSession resumes in the session's worktree, not the project root", 
     assert.equal(started[2].cwd, resolve(projectDir));
   } finally {
     rmSync(projectDir, { recursive: true, force: true });
-    rmSync(worktreeDir, { recursive: true, force: true });
+    rmSync(worktreeParent, { recursive: true, force: true });
     rmSync(impostorDir, { recursive: true, force: true });
     store.close();
   }
