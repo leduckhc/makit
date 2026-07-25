@@ -812,13 +812,17 @@ export class SessionManager extends EventEmitter {
       throw new Error(`cannot re-attach agent "${session.agent}" — history only`);
     }
 
-    // cwd: the session's own worktree when it still exists (so the resumed
-    // agent runs on its branch, not the default), else the session's project
-    // if still known, else the first project.
+    // cwd: the session's own worktree when it is still an ACTIVE worktree of
+    // the project AND still on disk (so the resumed agent runs on its branch,
+    // not the default, and a pruned-then-recreated path is never trusted),
+    // else the session's project if still known, else the first project.
     const project = this.projects.get(session.projectId) ?? [...this.projects.values()][0];
     const worktree = session.worktreePath;
-    const cwd =
-      worktree && existsSync(worktree) ? worktree : (project?.dto.path ?? process.cwd());
+    let cwd = project?.dto.path ?? process.cwd();
+    if (worktree && project && existsSync(worktree)) {
+      const entries = await listWorktrees(project.dto.path);
+      if (entries.some((e) => resolve(e.path) === resolve(worktree))) cwd = worktree;
+    }
 
     const adapter = this.adapterFactory
       ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: "pi" })
