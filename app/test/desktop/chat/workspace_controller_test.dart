@@ -277,6 +277,63 @@ void main() {
     });
   });
 
+  group('WorkspaceController moveTabToEdge', () {
+    test('detaches a tab into a new split docked at the target edge', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openTab(first, const Tab(id: 't-a', sessionId: 's-a'));
+      c.divideActive(Axis.horizontal);
+      final second = c.state.activeSplitId;
+      c.moveTabToEdge(first, 't-a', second, DropEdge.right);
+      final newId = c.state.activeSplitId;
+      expect(newId, isNot(first));
+      expect(newId, isNot(second));
+      expect(splitById(c, newId)!.tabs.single.id, 't-a');
+      expect(splitById(c, first)!.tabs.any((t) => t.id == 't-a'), isFalse);
+      expect(containsSplit(c.state.root, second), isTrue);
+      expect(c.state.root, isA<Splitter>());
+      expectIntegrity(c);
+    });
+
+    test('collapses the source split when the moved tab empties it', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.divideActive(Axis.horizontal);
+      final second = c.state.activeSplitId;
+      final secondTab = activeSplit(c).activeTabId;
+      c.moveTabToEdge(second, secondTab, first, DropEdge.bottom);
+      expect(containsSplit(c.state.root, second), isFalse);
+      final newId = c.state.activeSplitId;
+      expect(splitById(c, newId)!.tabs.single.id, secondTab);
+      expect(containsSplit(c.state.root, first), isTrue);
+      expectIntegrity(c);
+    });
+
+    test('detaches a tab onto its own split edge into a sibling', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      c.openTab(first, const Tab(id: 't-a', sessionId: 's-a'));
+      c.moveTabToEdge(first, 't-a', first, DropEdge.right);
+      expect(splitById(c, first)!.tabs.any((t) => t.id == 't-a'), isFalse);
+      final newId = c.state.activeSplitId;
+      expect(newId, isNot(first));
+      expect(splitById(c, newId)!.tabs.single.id, 't-a');
+      expect(c.state.root, isA<Splitter>());
+      expectIntegrity(c);
+    });
+
+    test('is a no-op moving the sole tab onto its own split edge', () {
+      final c = WorkspaceController.ephemeral();
+      final first = c.state.activeSplitId;
+      final tab = activeSplit(c).activeTabId;
+      final before = c.state.root;
+      c.moveTabToEdge(first, tab, first, DropEdge.left);
+      expect(c.state.root, before);
+      expect(splitIds(c.state.root), [first]);
+      expectIntegrity(c);
+    });
+  });
+
   group('WorkspaceController revealSession', () {
     test('revealSession focuses an existing tab without duplicating', () {
       final c = WorkspaceController.ephemeral();

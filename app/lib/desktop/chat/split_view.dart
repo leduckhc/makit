@@ -58,6 +58,9 @@ class SplitView extends ConsumerStatefulWidget {
 class _SplitViewState extends ConsumerState<SplitView> {
   final _key = GlobalKey();
   DropEdge? _hoverEdge;
+  // True while a *tab* is hovering the pane's centre zone (drop = move the tab
+  // into this group). Edge zones set [_hoverEdge] instead (drop = new split).
+  bool _hoverTabCentre = false;
 
   /// The drop edge nearest [global] (a [DragTargetDetails.offset]). The same
   /// offset drives both the hover highlight and the accept, so they always
@@ -86,6 +89,25 @@ class _SplitViewState extends ConsumerState<SplitView> {
     return nearest;
   }
 
+  /// The drop zone for a *tab* dropped at [global]. VSCode-style:
+  ///  - anywhere on the tab strip, or the body's centre dead-zone (inner half)
+  ///    → null (move the tab into this group);
+  ///  - near a body edge → that edge (detach into a new split on that side).
+  DropEdge? _tabZoneFor(Offset global) {
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    final local = box.globalToLocal(global);
+    final size = box.size;
+    // Anywhere on the tab strip means "add to this group". Dropping on a
+    // specific tab is handled by that chip's own DragTarget, which sits in
+    // front and wins the drop for precise index insertion.
+    if (local.dy <= _kTabBarHeight) return null;
+    final dx = (local.dx / size.width).clamp(0.0, 1.0);
+    final dy = (local.dy / size.height).clamp(0.0, 1.0);
+    if ((dx - 0.5).abs() < 0.25 && (dy - 0.5).abs() < 0.25) return null;
+    return _edgeFor(global);
+  }
+
   Tab _activeTab() {
     final split = widget.split;
     for (final t in split.tabs) {
@@ -98,22 +120,86 @@ class _SplitViewState extends ConsumerState<SplitView> {
   Widget build(BuildContext context) {
     final controller = ref.read(workspaceControllerProvider.notifier);
     final active = _activeTab();
-    return DragTarget<SplitDragData>(
+    return DragTarget<Object>(
       onWillAcceptWithDetails: (details) {
-        if (details.data.splitId == widget.split.id) return false;
-        setState(() => _hoverEdge = _edgeFor(details.offset));
-        return true;
+        final data = details.data;
+        if (data is SplitDragData) {
+          if (data.splitId == widget.split.id) return false;
+          setState(() {
+            _hoverEdge = _edgeFor(details.offset);
+            _hoverTabCentre = false;
+          });
+          return true;
+        }
+        if (data is TabDragData) {
+          final zone = _tabZoneFor(details.offset);
+          setState(() {
+            _hoverEdge = zone;
+            _hoverTabCentre = zone == null;
+          });
+          return true;
+        }
+        return false;
       },
       onMove: (details) {
-        if (details.data.splitId == widget.split.id) return;
-        final edge = _edgeFor(details.offset);
-        if (edge != _hoverEdge) setState(() => _hoverEdge = edge);
+        final data = details.data;
+        if (data is SplitDragData) {
+          if (data.splitId == widget.split.id) return;
+          final edge = _edgeFor(details.offset);
+          if (edge != _hoverEdge || _hoverTabCentre) {
+            setState(() {
+              _hoverEdge = edge;
+              _hoverTabCentre = false;
+            });
+          }
+        } else if (data is TabDragData) {
+          final zone = _tabZoneFor(details.offset);
+          if (zone != _hoverEdge || (zone == null) != _hoverTabCentre) {
+            setState(() {
+              _hoverEdge = zone;
+              _hoverTabCentre = zone == null;
+            });
+          }
+        }
       },
-      onLeave: (_) => setState(() => _hoverEdge = null),
+      onLeave: (_) => setState(() {
+        _hoverEdge = null;
+        _hoverTabCentre = false;
+      }),
       onAcceptWithDetails: (details) {
-        final edge = _edgeFor(details.offset);
-        setState(() => _hoverEdge = null);
-        controller.moveSplit(details.data.splitId, widget.split.id, edge);
+        final data = details.data;
+        if (data is SplitDragData) {
+          final edge = _edgeFor(details.offset);
+          setState(() {
+            _hoverEdge = null;
+            _hoverTabCentre = false;
+          });
+          controller.moveSplit(data.splitId, widget.split.id, edge);
+          return;
+        }
+        if (data is TabDragData) {
+          final zone = _tabZoneFor(details.offset);
+          setState(() {
+            _hoverEdge = null;
+            _hoverTabCentre = false;
+          });
+          if (zone == null) {
+            // Centre → move the tab into this group (append after its tabs).
+            controller.moveTab(
+              data.fromSplitId,
+              data.tabId,
+              widget.split.id,
+              widget.split.tabs.length,
+            );
+          } else {
+            controller.moveTabToEdge(
+              data.fromSplitId,
+              data.tabId,
+              widget.split.id,
+              zone,
+            );
+          }
+        }
       },
       builder: (context, candidate, rejected) {
         // Listener (not GestureDetector) so pointer-down activates the split
@@ -145,7 +231,9 @@ class _SplitViewState extends ConsumerState<SplitView> {
                     ],
                   ),
                 ),
-                if (_hoverEdge != null)
+                if (_hoverTabCentre)
+                  const Positioned.fill(child: _DropHighlight())
+                else if (_hoverEdge != null)
                   Positioned.fill(child: _DropHighlight(edge: _hoverEdge!)),
               ],
             ),
@@ -392,16 +480,21 @@ class _TabChip extends ConsumerWidget {
   }
 }
 
-/// Translucent overlay covering the half of the split toward [edge], showing
-/// where a dropped split will re-dock.
+/// Translucent overlay showing where a drop will land: half the pane toward
+/// [edge] for an edge dock (split re-dock or tab detach), or the whole pane
+/// when [edge] is null (a tab dropped in the centre → move into this group).
 class _DropHighlight extends StatelessWidget {
-  const _DropHighlight({required this.edge});
+  const _DropHighlight({this.edge});
 
-  final DropEdge edge;
+  final DropEdge? edge;
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.primary.withValues(alpha: 0.25);
+    final edge = this.edge;
+    if (edge == null) {
+      return IgnorePointer(child: ColoredBox(color: color));
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;

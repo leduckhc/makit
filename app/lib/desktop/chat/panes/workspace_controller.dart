@@ -270,6 +270,53 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     _commit(WorkspaceState(root: collapsed, activeSplitId: toSplitId));
   }
 
+  /// Detaches [Tab] [tabId] from [fromSplitId] into a brand-new [Split] docked
+  /// on [edge] of [targetSplitId] (VSCode-style: drag a tab onto a pane edge to
+  /// split). The new split becomes active. When the move empties the source it
+  /// collapses. No-op when a split or the tab is absent, or when detaching the
+  /// sole tab of a split onto an edge of that same split (nothing would change).
+  void moveTabToEdge(
+    String fromSplitId,
+    String tabId,
+    String targetSplitId,
+    DropEdge edge,
+  ) {
+    final from = _splitById(fromSplitId);
+    if (from == null) return;
+    final moving = _tabOf(from, tabId);
+    if (moving == null) return;
+    if (fromSplitId == targetSplitId && from.tabs.length == 1) return;
+
+    final newSplit = Split(
+      id: nextNodeId(SplitNodeKind.split),
+      tabs: [moving],
+      activeTabId: moving.id,
+    );
+
+    // Detach from the source first: reduced split when tabs remain, else the
+    // emptied source is collapsed out of the tree (target always survives —
+    // the same-split sole-tab case is guarded above).
+    final source = tree.removeTab(from, tabId); // Split? (null when emptied)
+    final base = source != null
+        ? tree.mapSplits(state.root, (s) => s.id == fromSplitId ? source : s)
+        : tree.removeSplit(state.root, fromSplitId);
+
+    final axis = switch (edge) {
+      DropEdge.left || DropEdge.right => Axis.horizontal,
+      DropEdge.top || DropEdge.bottom => Axis.vertical,
+    };
+    final newAfter = edge == DropEdge.right || edge == DropEdge.bottom;
+    final root = tree.divideSplit(
+      base,
+      targetSplitId,
+      axis,
+      newSplit,
+      newAfter: newAfter,
+    );
+    if (identical(root, base)) return; // target vanished → no-op
+    _commit(WorkspaceState(root: root, activeSplitId: newSplit.id));
+  }
+
   // -- Session-oriented ops -------------------------------------------------
 
   /// SPEC-28 decision 6. Reveals [sessionId]: if a tab already hosts it, focus
