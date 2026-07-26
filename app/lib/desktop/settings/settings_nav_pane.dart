@@ -58,36 +58,36 @@ class SettingsNavPane extends StatelessWidget {
     return Material(
       color: cs.surfaceContainerLowest,
       child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Clear the macOS traffic-light buttons that overlay the top-left
-        // corner (the OS titlebar is hidden), so the close button / title
-        // don't collide with them.
-        const SizedBox(height: kTitleBarStripHeight),
-        _Header(onClose: onClose),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-          child: TextField(
-            controller: controller,
-            onChanged: onQueryChanged,
-            decoration: const InputDecoration(
-              isDense: true,
-              hintText: 'Search settings',
-              prefixIcon: Icon(PhosphorIconsLight.magnifyingGlass, size: 18),
-              border: OutlineInputBorder(),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Clear the macOS traffic-light buttons that overlay the top-left
+          // corner (the OS titlebar is hidden), so the close button / title
+          // don't collide with them.
+          const SizedBox(height: kTitleBarStripHeight),
+          _Header(onClose: onClose),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+            child: TextField(
+              controller: controller,
+              onChanged: onQueryChanged,
+              decoration: const InputDecoration(
+                isDense: true,
+                hintText: 'Search settings',
+                prefixIcon: Icon(PhosphorIconsLight.magnifyingGlass, size: 18),
+                border: OutlineInputBorder(),
+              ),
             ),
           ),
-        ),
-        Expanded(
-          child: searching
-              ? _SearchResults(query: query, onSelectResult: onSelectResult)
-              : _SectionList(
-                  sections: sections,
-                  selectedId: selectedId,
-                  onSelect: onSelect,
-                ),
-        ),
-      ],
+          Expanded(
+            child: searching
+                ? _SearchResults(query: query, onSelectResult: onSelectResult)
+                : _SectionList(
+                    sections: sections,
+                    selectedId: selectedId,
+                    onSelect: onSelect,
+                  ),
+          ),
+        ],
       ),
     );
   }

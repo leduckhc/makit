@@ -838,9 +838,7 @@ class _DraftWorktreeTile extends StatelessWidget {
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
-              color: selected
-                  ? theme.colorScheme.surfaceContainer
-                  : null,
+              color: selected ? theme.colorScheme.surfaceContainer : null,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Column(

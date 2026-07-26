@@ -292,6 +292,7 @@ class _TabBar extends ConsumerWidget {
           // grab anywhere without a tab/button to re-dock the whole split.
           Positioned.fill(child: _SplitHeaderDragHandle(split: split)),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Flexible(
                 child: SingleChildScrollView(
@@ -308,6 +309,7 @@ class _TabBar extends ConsumerWidget {
                           tab: split.tabs[i],
                           index: i,
                           active: split.tabs[i].id == split.activeTabId,
+                          splitActive: active,
                         ),
                     ],
                   ),
@@ -405,12 +407,18 @@ class _TabChip extends ConsumerWidget {
     required this.tab,
     required this.index,
     required this.active,
+    required this.splitActive,
   });
 
   final Split split;
   final Tab tab;
   final int index;
   final bool active;
+
+  /// Whether this chip's split is the focused one. Only the focused split's
+  /// active tab shows the green cap; every other tab (inactive, or the active
+  /// tab of an unfocused split) stays dimmed.
+  final bool splitActive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -430,15 +438,18 @@ class _TabChip extends ConsumerWidget {
       padding: const EdgeInsets.only(left: 10, right: 4),
       decoration: BoxDecoration(
         // Active tab uses the pane's own surface so it "seats" into the body
-        // below; a 2px primary cap marks it. Inactive tabs are flush and
-        // transparent (reading the recessed bar). Right divider separates tabs.
+        // below; a 2px primary cap marks it — but only when its split is
+        // focused, so a multi-pane layout shows exactly one green tab. Inactive
+        // tabs (and unfocused panes' active tabs) stay dimmed.
         color: active ? cs.surface : Colors.transparent,
         border: Border(
           top: BorderSide(
-            color: active ? cs.primary : Colors.transparent,
+            color: active && splitActive ? cs.primary : Colors.transparent,
             width: 2,
           ),
-          right: active ? BorderSide(color: cs.outlineVariant, width: 1) : BorderSide.none,
+          right: active
+              ? BorderSide(color: cs.outlineVariant, width: 1)
+              : BorderSide.none,
         ),
       ),
       child: Row(

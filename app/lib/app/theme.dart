@@ -214,21 +214,24 @@ ThemeData _build(Brightness brightness) {
 
     // ----- Buttons: quiet by default; one filled green CTA -----------------
     filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
-        disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.08),
-        disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.35),
-        elevation: 0,
-        minimumSize: const Size(64, 32),
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        shape: controlShape,
-        textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-      ).copyWith(
-        overlayColor: WidgetStatePropertyAll(
-          scheme.onPrimary.withValues(alpha: 0.10),
-        ),
-      ),
+      style:
+          FilledButton.styleFrom(
+            backgroundColor: scheme.primary,
+            foregroundColor: scheme.onPrimary,
+            disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.08),
+            disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.35),
+            elevation: 0,
+            minimumSize: const Size(64, 32),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            shape: controlShape,
+            textStyle: textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ).copyWith(
+            overlayColor: WidgetStatePropertyAll(
+              scheme.onPrimary.withValues(alpha: 0.10),
+            ),
+          ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
@@ -353,9 +356,7 @@ ThemeData _build(Brightness brightness) {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(kRadiusControl),
-        borderSide: BorderSide(
-          color: scheme.primary.withValues(alpha: 0.6),
-        ),
+        borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.6)),
       ),
     ),
 
