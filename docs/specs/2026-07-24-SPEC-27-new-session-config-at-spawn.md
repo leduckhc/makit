@@ -110,7 +110,7 @@ to the harness default — **backward compatible**.
 5. **One cached catalog per harness, keyed by a fingerprint.** Each harness's
    `configOptions` are cached in a small store and read on every "new session"
    with no live session. Populated by the throwaway probe (decision 4).
-   **Fingerprint** = hash of the resolved **binary (path + version/mtime)** plus
+   **Fingerprint** = hash of the resolved **binary (path + size + mtime)** plus
    the harness's config inputs that change its catalog — for pi (`pi-acp`),
    `~/.pi/agent/models.json` + provider auth state; for codex, its model config
    / auth; for other agents, their own config/env. A pure binary checksum is insufficient (editing `models.json`
@@ -216,7 +216,7 @@ interface AgentDescriptor {
   on a fingerprint miss/change it re-probes that harness (once) before
   returning. `agents.refresh { agent }` forces a re-probe.
 - **Fingerprint.** `catalog.ts` computes it from the resolved binary
-  (path + `--version`/mtime) **plus** the harness's catalog-affecting config:
+  (path + size + mtime) **plus** the harness's catalog-affecting config:
   for pi (`pi-acp`), `~/.pi/agent/models.json` + provider auth/login state; for
   codex, its model config / auth; for another agent, its own config/env. Not a
   bare binary checksum.

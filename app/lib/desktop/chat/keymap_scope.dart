@@ -219,11 +219,12 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     if (split == null || split.tabs.length < 2) return;
     final index = split.tabs.indexWhere((t) => t.id == split.activeTabId);
     if (index < 0) return;
+    // Dart's `%` returns a non-negative result for a positive divisor, so this
+    // already wraps correctly for delta = ±1.
     final next = (index + delta) % split.tabs.length;
-    final wrapped = next < 0 ? next + split.tabs.length : next;
     ref
         .read(workspaceControllerProvider.notifier)
-        .setActiveTab(split.id, split.tabs[wrapped].id);
+        .setActiveTab(split.id, split.tabs[next].id);
   }
 
   /// Session ids in sidebar display order (repo order, then each repo's

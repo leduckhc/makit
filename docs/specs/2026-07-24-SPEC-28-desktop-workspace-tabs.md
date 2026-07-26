@@ -73,7 +73,7 @@ Naming rules that kill the confusion:
 - **"Split" = UI leaf region** (holds tabs). **"Splitter" = the divider node.**
   Neither is ever called "pane".
 - The `PaneNode`/`PaneLeaf`/`PaneSplit` **class names** are renamed to
-  `Workspace`/`Split`/`Splitter` by this spec (see the Flutter section); with
+  `SplitNode`/`Split`/`Splitter` by this spec (see the Flutter section); with
   the server mux pane gone there is no remaining `paneId`/`PaneInfo` wire field
   to reconcile.
 

@@ -99,7 +99,7 @@ void main() {
     },
   );
 
-  testWidgets('no session selected: pane shows placeholder and NO composer', (
+  testWidgets('unresolvable session: pane shows placeholder and NO composer', (
     tester,
   ) async {
     final c = ProviderContainer();

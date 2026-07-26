@@ -295,7 +295,8 @@ export class SessionManager extends EventEmitter {
     picks: { id: string; value: string | boolean }[],
   ): { id: string; value: string | boolean }[] {
     const fingerprint = fingerprintAgent(agentId);
-    const cached = this.capabilityCache?.get(agentId) ?? this.getCapabilityCache().get(agentId);
+    const cache = this.capabilityCache ?? this.getCapabilityCache();
+    const cached = cache.get(agentId);
     // Only trust the catalog when it matches the current fingerprint.
     const catalog =
       cached && cached.fingerprint === fingerprint ? cached.configOptions : undefined;

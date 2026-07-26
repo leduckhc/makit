@@ -150,25 +150,29 @@ class _SplitterDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final horizontal = axis == Axis.horizontal;
-    return MouseRegion(
-      cursor: horizontal
-          ? SystemMouseCursors.resizeColumn
-          : SystemMouseCursors.resizeRow,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onHorizontalDragUpdate: horizontal
-            ? (details) => onDrag(details.delta.dx)
-            : null,
-        onVerticalDragUpdate: horizontal
-            ? null
-            : (details) => onDrag(details.delta.dy),
-        child: SizedBox(
-          width: horizontal ? _kDividerExtent : double.infinity,
-          height: horizontal ? double.infinity : _kDividerExtent,
-          child: Center(
-            child: horizontal
-                ? const VerticalDivider(width: 1)
-                : const Divider(height: 1),
+    return Semantics(
+      label: 'Resize split',
+      container: true,
+      child: MouseRegion(
+        cursor: horizontal
+            ? SystemMouseCursors.resizeColumn
+            : SystemMouseCursors.resizeRow,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragUpdate: horizontal
+              ? (details) => onDrag(details.delta.dx)
+              : null,
+          onVerticalDragUpdate: horizontal
+              ? null
+              : (details) => onDrag(details.delta.dy),
+          child: SizedBox(
+            width: horizontal ? _kDividerExtent : double.infinity,
+            height: horizontal ? double.infinity : _kDividerExtent,
+            child: Center(
+              child: horizontal
+                  ? const VerticalDivider(width: 1)
+                  : const Divider(height: 1),
+            ),
           ),
         ),
       ),

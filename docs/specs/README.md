@@ -43,7 +43,7 @@ but are otherwise independently implementable. Respect the dependency order.
 | [SPEC-27](./2026-07-24-SPEC-27-new-session-config-at-spawn.md) | New-session config at spawn (worktree · harness · config options; desktop dialog + mobile sheet; **cached capability catalog**; native pi/mux-pane removed — pi over `pi-acp`, codex over `app-server`, projected into one config model) | SPEC-26, SPEC-10 |
 | [SPEC-28](./2026-07-24-SPEC-28-desktop-workspace-tabs.md) | Desktop/iPad workspace: recursive splits + tabs (supersedes SPEC-20) | SPEC-10, SPEC-19, SPEC-27 |
 
-```
+```text
 SPEC-01 ─┬─> SPEC-02 (CLI clients)
          └─> SPEC-03 (desktop app)
 SPEC-04 ───> SPEC-05 (spawn pi in pane — RETIRED by SPEC-27)

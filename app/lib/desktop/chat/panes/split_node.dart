@@ -423,15 +423,21 @@ SplitNode moveSplit(
 // ---------------------------------------------------------------------------
 
 /// Rebuilds [root], replacing every [Split] with [transform] applied to it.
-/// Splitters are preserved unchanged (same id/axis/ratio).
-SplitNode mapSplits(SplitNode root, Split Function(Split) transform) =>
-    switch (root) {
-      Split() => transform(root),
-      Splitter() => root.copyWith(
-        first: mapSplits(root.first, transform),
-        second: mapSplits(root.second, transform),
-      ),
-    };
+/// Splitters keep their identity when neither child changed (so untouched
+/// subtrees are not needlessly copied, matching the other tree functions).
+SplitNode mapSplits(SplitNode root, Split Function(Split) transform) {
+  switch (root) {
+    case Split():
+      return transform(root);
+    case Splitter():
+      final first = mapSplits(root.first, transform);
+      final second = mapSplits(root.second, transform);
+      if (identical(first, root.first) && identical(second, root.second)) {
+        return root;
+      }
+      return root.copyWith(first: first, second: second);
+  }
+}
 
 /// Returns [select] applied to the first split (left-most, depth-first) for
 /// which it returns a non-null value, or null when no split matches.

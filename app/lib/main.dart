@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,6 +23,7 @@ import 'ui/widgets/srv_request_handler.dart';
 import 'desktop/desktop_app.dart';
 import 'desktop/chat/desktop_chat_shell.dart';
 import 'desktop/chat/keymap_scope.dart';
+import 'desktop/chat/panes/workspace_controller.dart';
 import 'platform_shell.dart';
 
 Future<void> main() async {
@@ -55,7 +57,13 @@ Future<void> main() async {
   final notifications = container.read(notificationServiceProvider);
   notifications.onTapSession = (payload) {
     final sid = parseNotificationPayload(payload).sessionId;
-    if (sid != null && sid.isNotEmpty) {
+    if (sid == null || sid.isEmpty) return;
+    // On the workspace shell (regular iPad) there is no go_router navigator to
+    // receive the deep link, so reveal the session in the workspace controller
+    // instead; the mobile router handles it via go() otherwise.
+    if (_prefersWorkspaceShellNow()) {
+      container.read(workspaceControllerProvider.notifier).revealSession(sid);
+    } else {
       makitNavigatorKey.currentContext?.go('/session/$sid');
     }
   };
@@ -117,6 +125,19 @@ Future<void> main() async {
   if (!isE2ETestMode) {
     unawaited(notifications.init());
   }
+}
+
+/// Whether the app is currently on the workspace shell (macOS / regular iPad)
+/// rather than the mobile router — computed from the implicit view's size class,
+/// mirroring [PlatformShell]. Used off the widget tree (the notification tap
+/// handler runs at bootstrap, with no [BuildContext]).
+bool _prefersWorkspaceShellNow() {
+  final view = WidgetsBinding.instance.platformDispatcher.implicitView;
+  if (view == null) return false;
+  return prefersWorkspaceShell(
+    platform: defaultTargetPlatform,
+    size: view.physicalSize / view.devicePixelRatio,
+  );
 }
 
 /// SPEC-07: drain the persisted force-quit pending-action queue through

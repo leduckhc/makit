@@ -155,7 +155,10 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                   ),
               ],
               const SizedBox(height: 20),
-              FilledButton(onPressed: _onStart, child: const Text('Start')),
+              FilledButton(
+                onPressed: _canStart ? _onStart : null,
+                child: const Text('Start'),
+              ),
               const SizedBox(height: 8),
               Text(
                 'Opens the session; type your first message there.',
@@ -169,6 +172,15 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
       ),
     );
   }
+
+  /// The active source has a valid selection to start from. Guards against
+  /// spawning a plain default-branch session when the user is on "existing"
+  /// with no worktree, or on "From PR" without a PR picked.
+  bool get _canStart => switch (_source) {
+    WorktreeSource.existing => _worktreePath != null,
+    WorktreeSource.newBranch => true,
+    WorktreeSource.fromPr => _prNumber != null,
+  };
 
   void _onStart() {
     Navigator.pop(

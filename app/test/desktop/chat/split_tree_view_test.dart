@@ -16,6 +16,7 @@ import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
+import 'package:makit/desktop/chat/split_view.dart' show TabDragData;
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -349,6 +350,8 @@ void main() {
         ),
         findsOneWidget,
       );
+      // The session tab is itself draggable (into another group / a new split).
+      expect(find.byType(Draggable<TabDragData>), findsOneWidget);
     });
   });
 

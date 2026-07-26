@@ -5,7 +5,7 @@
  * testable and cheap to call on demand.
  */
 
-import { existsSync, statSync } from "node:fs";
+import { statSync, accessSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -43,16 +43,32 @@ export interface AgentDescriptor {
  * Returns `undefined` when nothing resolves.
  */
 export function resolveBinPath(cmd: string): string | undefined {
-  if (cmd.includes("/") || cmd.includes("\\")) return existsSync(cmd) ? cmd : undefined;
+  if (cmd.includes("/") || cmd.includes("\\")) return isRunnable(cmd) ? cmd : undefined;
   const dirs = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
   const exts = process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
   for (const dir of dirs) {
     for (const ext of exts) {
       const candidate = join(dir, cmd + ext);
-      if (existsSync(candidate)) return candidate;
+      if (isRunnable(candidate)) return candidate;
     }
   }
   return undefined;
+}
+
+/**
+ * Whether [p] is a regular file that is executable (POSIX `X_OK`), so a
+ * directory or a non-executable file named `pi`/`codex` on PATH does not mark
+ * the harness available only to fail later at spawn time. Windows has no
+ * executable bit, so a regular file suffices there.
+ */
+function isRunnable(p: string): boolean {
+  try {
+    if (!statSync(p).isFile()) return false;
+    if (process.platform !== "win32") accessSync(p, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** True if `cmd` is an absolute/relative existing file or resolves on PATH. */

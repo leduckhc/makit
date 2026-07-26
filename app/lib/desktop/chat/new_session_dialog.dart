@@ -190,7 +190,8 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
 
   /// The single start action: resolve/create the worktree, spawn the session
   /// with the pending picks, send the first message, select it in the active
-  /// pane, then close. Errors surface inline (nothing to tear down).
+  /// pane, then close. Errors surface inline; a worktree created for this spawn
+  /// (newBranch/fromPr) is removed on failure so a retry doesn't orphan it.
   Future<void> _start(String text) async {
     if (_spawning) return;
     final projectId = _projectId;
@@ -201,13 +202,17 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       _spawning = true;
       _error = null;
     });
+    final store = ref.read(storeControllerProvider.notifier);
+    // A newBranch/fromPr source CREATES a worktree in _resolveWorktree; track it
+    // so a failed spawn can remove it (an `existing` source reuses one).
+    String? createdWorktree;
     try {
       final (:path, :branch) = await _resolveWorktree(projectId);
+      createdWorktree = _source == _WorktreeSource.existing ? null : path;
       final picks = [
         for (final e in _picks.entries)
           ConfigOptionPick(id: e.key, value: e.value),
       ];
-      final store = ref.read(storeControllerProvider.notifier);
       final sid = await store.spawnSession(
         projectId,
         agent: agentId,
@@ -215,12 +220,18 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         branch: branch,
         configOptions: picks.isEmpty ? null : picks,
       );
+      createdWorktree = null; // spawned — the worktree now hosts a session.
       if (!mounted) return;
       store.appendOptimisticMessage(sid, text);
       store.sendMessage(sid, text);
       selectSessionExclusive(ref, sid);
       Navigator.of(context).pop();
     } catch (e) {
+      if (createdWorktree != null) {
+        await store
+            .removeWorktree(projectId, createdWorktree)
+            .catchError((_) {});
+      }
       if (!mounted) return;
       setState(() {
         _spawning = false;

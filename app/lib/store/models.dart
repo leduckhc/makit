@@ -191,13 +191,17 @@ class SessionMeta {
       modes: rawModes is Map
           ? SessionModes.fromJson(Map<String, dynamic>.from(rawModes))
           : null,
-      configOptions: ((j['configOptions'] as List?) ?? const [])
-          .whereType<Map<dynamic, dynamic>>()
-          .map(
-            (m) => SessionConfigOption.fromJson(Map<String, dynamic>.from(m)),
-          )
-          .whereType<SessionConfigOption>()
-          .toList(),
+      configOptions:
+          ((j['configOptions'] is List)
+                  ? j['configOptions'] as List
+                  : const <dynamic>[])
+              .whereType<Map<dynamic, dynamic>>()
+              .map(
+                (m) =>
+                    SessionConfigOption.fromJson(Map<String, dynamic>.from(m)),
+              )
+              .whereType<SessionConfigOption>()
+              .toList(),
     );
   }
 }

@@ -13,7 +13,7 @@ import { Session } from "./session.js";
 import type { PersistedProject } from "./project-store.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
-import type { SessionEvent } from "./protocol.js";
+import type { SessionEvent, SessionConfigOption } from "./protocol.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
@@ -349,7 +349,7 @@ function stubActionAdapter(
 }
 
 /** A capability cache pre-warmed with a fixed catalog for `agentId`. */
-function warmCache(agentId: string, configOptions: import("./protocol.js").SessionConfigOption[]): CapabilityCache {
+function warmCache(agentId: string, configOptions: SessionConfigOption[]): CapabilityCache {
   const cache = new CapabilityCache({
     path: join(mkdtempSync(join(tmpdir(), "makit-capm-")), "cache.json"),
     prober: async () => configOptions,
@@ -358,7 +358,7 @@ function warmCache(agentId: string, configOptions: import("./protocol.js").Sessi
   return cache;
 }
 
-const PI_CATALOG: import("./protocol.js").SessionConfigOption[] = [
+const PI_CATALOG: SessionConfigOption[] = [
   {
     id: "model",
     name: "Model",

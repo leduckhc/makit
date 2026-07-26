@@ -15,6 +15,10 @@ import '../selected_worktree.dart';
 /// the active split) as a single JSON object.
 const String kWorkspacePrefsKey = 'desktop_workspace';
 
+/// Sentinel "append" index for tab inserts: `_insertTab`/`reorderTab` clamp to
+/// the tab count, so any out-of-range value lands the tab last.
+const int _kAppendIndex = 1 << 30;
+
 /// The single, worktree-agnostic workspace: the recursive split/tab [root] plus
 /// which [Split] is active. Immutable; the [WorkspaceController] swaps in new
 /// instances.
@@ -375,7 +379,7 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
       _focus(splitId, existing.$2);
       return;
     }
-    moveTab(existing.$1, existing.$2, splitId, 1 << 30);
+    moveTab(existing.$1, existing.$2, splitId, _kAppendIndex);
   }
 
   /// Drops [sessionId] into a brand-new [Split] docked on [edge] of
@@ -591,7 +595,13 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
   Future<void> _persist() async {
     final prefs = _prefs;
     if (prefs == null) return;
-    await prefs.setString(kWorkspacePrefsKey, jsonEncode(state.toJson()));
+    try {
+      await prefs.setString(kWorkspacePrefsKey, jsonEncode(state.toJson()));
+    } catch (_) {
+      // Best-effort persistence: a failed write must not crash the app or
+      // surface as an unhandled async error — the in-memory workspace is intact
+      // and the next mutation retries the write.
+    }
   }
 }
 

@@ -491,13 +491,21 @@ export function buildCodexConfigOptions(
 ): SessionConfigOption[] {
   const configOptions: SessionConfigOption[] = [];
   if (models.length > 0) {
+    // Keep the select self-consistent: a forced/unlisted active model (e.g.
+    // CodexAdapterOpts.model, or a pick for an id not in model/list) is
+    // appended so currentValue always matches an option instead of rendering
+    // an empty selection.
+    const options = [...models];
+    if (activeModel && !options.some((o) => o.value === activeModel)) {
+      options.push({ value: activeModel, name: activeModel });
+    }
     configOptions.push({
       id: "model",
       name: "Model",
       category: "model",
       type: "select",
       currentValue: activeModel ?? models[0]!.value,
-      options: models,
+      options,
     });
   }
   configOptions.push({

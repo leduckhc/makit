@@ -234,10 +234,16 @@ class RepoCard extends ConsumerWidget {
       final agents = await store.fetchAgents();
       final selectable = agents.where((a) => a.available).toList();
       // Open PRs power the "From PR" worktree source; best-effort (an empty or
-      // failed lookup just hides that option).
+      // failed lookup just hides that option). Bounded so a slow `gh` can't
+      // stall opening the sheet.
       List<OpenPr> openPrs = const [];
       try {
-        openPrs = await store.listOpenPrs(repo.id);
+        openPrs = await store
+            .listOpenPrs(repo.id)
+            .timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => const <OpenPr>[],
+            );
       } catch (_) {
         openPrs = const [];
       }
