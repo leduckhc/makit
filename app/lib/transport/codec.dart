@@ -162,6 +162,9 @@ class WireCodec {
           worktreePath: j['worktreePath'] is String
               ? j['worktreePath'] as String
               : null,
+          resumable: j['resumable'] == true,
+          archived: j['archived'] == true,
+          orphaned: j['orphaned'] == true,
         ),
       );
     }

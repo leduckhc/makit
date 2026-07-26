@@ -9,8 +9,38 @@ import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/secure_store.dart';
+import 'package:makit/transport/protocol.dart';
 
-Session _session(String id, {String? worktreePath, String? branch}) => Session(
+/// A connection that answers every request instantly — so the fire-and-forget
+/// archive on tab close leaves no pending timeout Timer in widget tests.
+class _FastConn extends ConnectionController {
+  _FastConn() : super(const _NoStore());
+  final sent = <Map<String, dynamic>>[];
+  @override
+  Future<Map<String, dynamic>> request(MsgType t, Map<String, dynamic> body) {
+    sent.add(body);
+    return Future.value(const {});
+  }
+}
+
+class _NoStore implements SecureStore {
+  const _NoStore();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
+
+Session _session(
+  String id, {
+  String? worktreePath,
+  String? branch,
+  bool pending = false,
+}) => Session(
   id: id,
   projectId: 'p1',
   agent: 'codex',
@@ -19,6 +49,7 @@ Session _session(String id, {String? worktreePath, String? branch}) => Session(
   policy: ApprovalPolicy.askOnRisky,
   branch: branch,
   worktreePath: worktreePath,
+  pending: pending,
 );
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
@@ -158,6 +189,7 @@ void main() {
     ) async {
       final container = ProviderContainer(
         overrides: [
+          connectionControllerProvider.overrideWith((_) => _FastConn()),
           sessionsProvider.overrideWithValue(
             SessionsState([_session('s1'), _session('s2')]),
           ),
@@ -174,6 +206,51 @@ void main() {
       // split into the sibling that hosts s1.
       expect(container.read(workspaceControllerProvider).root, isA<Split>());
       expect(container.read(selectedSessionProvider), 's1');
+    });
+
+    testWidgets('closeActiveTab archives the orphaned session (SPEC-29)', (
+      tester,
+    ) async {
+      final conn = _FastConn();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith((_) => conn),
+          sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
+        ],
+      );
+      addTearDown(container.dispose);
+      _workspace(container).revealSession('s1');
+
+      await _invoke(tester, container, closeActiveTab);
+
+      // Closing the sole tab orphans s1 → it is archived (soft, recoverable).
+      final archive = conn.sent.firstWhere(
+        (b) => b['kind'] == 'session.archive',
+        orElse: () => const {},
+      );
+      expect(archive['sessionId'], 's1');
+    });
+
+    testWidgets('closeActiveTab does NOT archive an untouched draft (SPEC-29)', (
+      tester,
+    ) async {
+      final conn = _FastConn();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith((_) => conn),
+          sessionsProvider.overrideWithValue(
+            SessionsState([_session('d1', pending: true)]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      _workspace(container).revealSession('d1');
+
+      await _invoke(tester, container, closeActiveTab);
+
+      // A never-started draft has no history worth preserving — closing its tab
+      // must not archive it (no empty entry in the Archived list).
+      expect(conn.sent.any((b) => b['kind'] == 'session.archive'), isFalse);
     });
 
     testWidgets('closeActiveSplit is a no-op on the sole split', (

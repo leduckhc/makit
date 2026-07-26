@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../store/connection.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/connection_chip.dart';
+import '../../ui/project/folder_browser.dart';
 import 'connection_endpoint.dart';
 import 'session_status_dot.dart';
 import 'split_view.dart' show SessionDragData;
 import 'title_bar_strip.dart';
 import 'server_profile_badge.dart';
 import 'new_session_dialog.dart';
+import 'archived_sidebar_view.dart';
 import 'selected_session.dart';
-import '../../ui/project/folder_browser.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
@@ -34,6 +34,7 @@ class DesktopSidebar extends ConsumerWidget {
     final repos = ref.watch(reposProvider).repos;
     final sessions = ref.watch(sessionsProvider);
     final selected = ref.watch(selectedSessionProvider);
+    final archived = ref.watch(sidebarArchivedProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Material(
@@ -42,7 +43,9 @@ class DesktopSidebar extends ConsumerWidget {
         children: [
           const _Header(),
           Expanded(
-            child: repos.isEmpty
+            child: archived
+                ? const ArchivedSidebarView()
+                : repos.isEmpty
                 ? const _EmptySidebar()
                 : ListView(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -151,7 +154,14 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final repo = widget.repo;
-    final sessions = widget.sessions;
+    // Exited sessions are hidden from the sidebar's repo groups — but only the
+    // truly dead ones. A cold, RESUMABLE session (e.g. every session right
+    // after a server restart, before re-attach) stays visible so it remains
+    // discoverable and can be reopened (it auto-attaches on subscribe).
+    // Archived sessions live in the Archived view. Drafts + live sessions stay.
+    final sessions = widget.sessions
+        .where((s) => s.status != SessionStatus.exited || s.resumable)
+        .toList();
     final selectedId = widget.selectedId;
     final onSelect = widget.onSelect;
     final drafts = sessions.where((s) => s.pending).toList();
@@ -1020,6 +1030,8 @@ class _Footer extends ConsumerWidget {
     final server = ref.watch(connectionProvider).server;
     final endpoint = formatEndpoint(server?.host, server?.port);
     final theme = Theme.of(context);
+    final archived = ref.watch(sidebarArchivedProvider) as bool?;
+    final showArchived = archived ?? false;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
@@ -1042,12 +1054,32 @@ class _Footer extends ConsumerWidget {
           IconButton(
             tooltip: 'Add repo',
             icon: const Icon(PhosphorIconsLight.folderPlus, size: 18),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             onPressed: () => showFolderBrowser(context),
+          ),
+          IconButton(
+            tooltip: showArchived
+                ? 'Show active sessions'
+                : 'Show archived sessions',
+            icon: Icon(
+              showArchived
+                  ? PhosphorIconsLight.stackSimple
+                  : PhosphorIconsLight.archiveBox,
+              size: 18,
+            ),
+            color: showArchived ? theme.colorScheme.primary : null,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            onPressed: () => ref.read(sidebarArchivedProvider.notifier).state =
+                !showArchived,
           ),
           if (onOpenSettings != null)
             IconButton(
               tooltip: 'Settings & Server',
               icon: const Icon(PhosphorIconsLight.gearSix, size: 18),
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               onPressed: onOpenSettings,
             ),
         ],

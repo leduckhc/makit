@@ -42,6 +42,7 @@ but are otherwise independently implementable. Respect the dependency order.
 | [SPEC-26](./2026-07-24-SPEC-26-acp-config-options-unified-composer.md) | ACP `configOptions` + unified composer config model (build first) | SPEC-15 |
 | [SPEC-27](./2026-07-24-SPEC-27-new-session-config-at-spawn.md) | New-session config at spawn (worktree · harness · config options; desktop dialog + mobile sheet; **cached capability catalog**; native pi/mux-pane removed — pi over `pi-acp`, codex over `app-server`, projected into one config model) | SPEC-26, SPEC-10 |
 | [SPEC-28](./2026-07-24-SPEC-28-desktop-workspace-tabs.md) | Desktop/iPad workspace: recursive splits + tabs (supersedes SPEC-20) | SPEC-10, SPEC-19, SPEC-27 |
+| [SPEC-29](./2026-07-26-SPEC-29-session-lifecycle-resume-list-delete.md) | Adapter-native session lifecycle: resume (ACP `session/load`\|`session/resume`, codex `thread/resume`), list, delete, fork — fixes server-restart resume for pi **and** codex | SPEC-27, SPEC-17, SPEC-19 |
 
 ```text
 SPEC-01 ─┬─> SPEC-02 (CLI clients)

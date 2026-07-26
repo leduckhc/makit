@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import type { AdapterEvent, AgentAdapter, SessionCapabilities, SpawnOpts, UserInput } from "./adapter.js";
 import type { SessionConfigOption } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
 
@@ -30,6 +30,11 @@ const MARKDOWN_SAMPLE = [
 export class StubAdapter extends EventEmitter implements AgentAdapter {
   readonly agent = "stub";
 
+  /** Resume-capable so keyless e2e can exercise the server-restart resume path
+   *  (SPEC-29): the manager persists {@link agentSessionId} and re-attaches by it. */
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false };
+  agentSessionId?: string;
+
   private sessionId = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
 
@@ -40,6 +45,9 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   async start(opts: SpawnOpts): Promise<void> {
     this.sessionId = opts.sessionId ?? "";
+    // Echo back a native id so the manager can persist + resume it. On resume,
+    // reuse the id makit hands us so identity is stable across a restart.
+    this.agentSessionId = opts.resumeAgentSessionId ?? `stub-${this.sessionId || Date.now()}`;
     this.emit("status", "idle");
     this.emitMeta();
     this.emitEvent({

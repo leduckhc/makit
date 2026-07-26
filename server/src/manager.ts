@@ -15,10 +15,13 @@ import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption, type SessionDTO } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
-import { buildAdapter } from "./agent_factory.js";
+import { buildAdapter, piAcpSpec } from "./agent_factory.js";
+import { listAcpSessions } from "./adapters/acp.js";
+import { listCodexThreads } from "./adapters/codex.js";
+import type { AgentSessionInfo } from "./adapters/adapter.js";
 import { listRepos, enrichPrs } from "./repo_service.js";
 import type { PersistedProject } from "./project-store.js";
 import {
@@ -46,6 +49,22 @@ export interface AdapterFactoryContext {
 }
 
 export type AdapterFactory = (context: AdapterFactoryContext) => AgentAdapter;
+
+/**
+ * One row of the adapter-native session list (SPEC-29). Mirrors the legacy
+ * {@link PiSessionMeta} wire fields (so the app's `PiSessionMeta.fromJson`
+ * keeps working) minus the server-internal `path`, plus the owning `agent` so
+ * the client knows which harness to resume with.
+ */
+export interface AgentSessionListItem {
+  piSessionId: string;
+  agent: string;
+  name: string;
+  preview: string;
+  messageCount: number;
+  lastActivityAt: number;
+  attached: boolean;
+}
 
 export interface ManagerOpts {
   /** Project roots to expose. A bare path string gets a fresh server-generated
@@ -176,8 +195,10 @@ export class SessionManager extends EventEmitter {
         lastActivityAt: meta.lastActivityAt,
         lastPreview: meta.lastPreview,
         resumeSessionPath: meta.resumeSessionPath,
+        agentSessionId: meta.agentSessionId,
         branch: meta.branch,
         worktreePath: meta.worktreePath,
+        archived: meta.archived,
         hydrateFrom: () => store.read(meta.id),
       });
       this.sessions.set(session.id, session);
@@ -232,7 +253,41 @@ export class SessionManager extends EventEmitter {
   }
 
   listSessions() {
-    return [...this.sessions.values()].map((s) => s.toDTO());
+    // Archived sessions (SPEC-29) are hidden from the ACTIVE list, but kept in
+    // the registry (resumable + restorable). `allSessions()` still returns them
+    // for fan-out/lookup; only this DTO list excludes them.
+    return [...this.sessions.values()].filter((s) => !s.archived).map((s) => s.toDTO());
+  }
+
+  /** The archived sessions (SPEC-29), for the "Show archived" list. Newest first.
+   *  Each is tagged `orphaned` when its recorded worktree is no longer an active
+   *  worktree of the project (e.g. the worktree was removed) so the UI can flag
+   *  it and offer a recreate-or-run-at-root resume. Sessions whose project has
+   *  been removed are omitted entirely — they're unreachable (no repo/cwd). */
+  async listArchivedSessions(): Promise<SessionDTO[]> {
+    const archived = [...this.sessions.values()].filter((s) => s.archived);
+    // Resolve each project's live worktree paths once (git shell), cached.
+    const worktreePaths = new Map<string, Set<string>>();
+    const out: SessionDTO[] = [];
+    for (const session of archived) {
+      const project = this.projects.get(session.projectId);
+      if (!project) continue; // project removed → unreachable, hide it
+      let paths = worktreePaths.get(session.projectId);
+      if (!paths) {
+        const entries = await listWorktrees(project.dto.path).catch(() => []);
+        paths = new Set(entries.map((e) => resolve(e.path)));
+        worktreePaths.set(session.projectId, paths);
+      }
+      // A session running in the repo root (non-git / unborn HEAD) is never
+      // orphaned; otherwise it's orphaned when its worktree is no longer listed.
+      const wt = session.worktreePath;
+      const orphaned =
+        wt != null && resolve(wt) !== resolve(project.dto.path)
+          ? !paths.has(resolve(wt))
+          : false;
+      out.push({ ...session.toDTO(), orphaned });
+    }
+    return out.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
   }
 
   getSession(id: string): Session | undefined {
@@ -525,17 +580,24 @@ export class SessionManager extends EventEmitter {
     // succeeds. Killing first would orphan sessions (unrecoverably) if the
     // removal then failed, leaving the worktree on disk without its sessions.
     await removeWorktree(repoPath, worktreePath, true);
-    // Match both started sessions (worktreePath) and drafts still bound via
-    // pendingWorktreePath — a surviving draft would later launch its agent in
-    // the now-deleted directory.
+    // Reconcile sessions bound to the removed worktree (SPEC-29):
+    //  - archived  → leave as-is (already preserved; it simply becomes orphaned)
+    //  - draft     → kill (no transcript to keep; must not launch in a deleted dir)
+    //  - live      → ARCHIVE, not kill — preserve the transcript + resume handle
+    //               (mirrors close==archive). It survives as an orphaned archived
+    //               session, restorable later.
     for (const session of this.sessions.values()) {
       if (session.projectId !== projectId) continue;
       const lc = session.lifecycle;
       const bound =
         session.worktreePath ??
         (lc.phase === "draft" ? lc.pendingWorktreePath : undefined);
-      if (bound && resolve(bound) === target) {
+      if (!bound || resolve(bound) !== target) continue;
+      if (session.archived) continue;
+      if (session.pending) {
         await this.killSession(session.id);
+      } else {
+        await this.archiveSession(session.id);
       }
     }
   }
@@ -606,6 +668,9 @@ export class SessionManager extends EventEmitter {
     // routes to session/set_config_option, codex caches model/effort for the
     // first turn/start; an adapter that can't honour a pick ignores it.
     await this.applyConfigPicks(adapter, lc.configPicks);
+    // Persist the live adapter's native id so this session can resume after a
+    // server restart (SPEC-29).
+    session.captureAgentSessionId();
     session.markStarted({ branch, worktreePath, title: humanizeSlug(base) });
     return session;
   }
@@ -762,6 +827,61 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Adapter-native session discovery (SPEC-29): enumerate a project's prior
+   * sessions by asking each AVAILABLE agent over its own protocol — ACP
+   * `session/list` (pi via `pi-acp`) and codex `thread/list` — instead of
+   * scraping pi's on-disk transcript files. Agent-agnostic (codex sessions now
+   * appear) and capability-gated (an agent without listing yields nothing). One
+   * throwaway connection per agent; results are merged and sorted newest-first.
+   * Never throws — a failing agent contributes no rows rather than failing the
+   * whole list.
+   */
+  async listAgentSessions(projectId: string): Promise<AgentSessionListItem[]> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const cwd = project.dto.path;
+
+    const perAgent = await Promise.all(
+      listAgents().map(async (descriptor) => {
+        try {
+          const infos =
+            descriptor.transport === "native"
+              ? await listCodexThreads(cwd)
+              : await listAcpSessions(piAcpSpec(), cwd);
+          return infos.map((info) => this.toSessionListItem(info, descriptor.id));
+        } catch (e) {
+          // Per-agent degradation: a spawn failure (harness missing) or an
+          // unreadable path must not fail the whole list — that agent just
+          // contributes no rows.
+          log.warn(`[makit] listAgentSessions(${descriptor.id}) failed: ${(e as Error).message}`);
+          return [] as AgentSessionListItem[];
+        }
+      }),
+    );
+    return perAgent.flat().sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  }
+
+  /**
+   * Normalize an {@link AgentSessionInfo} to the wire list item, tagging it with
+   * the owning agent and marking `attached` when a live makit session already
+   * runs this native session/thread id.
+   */
+  private toSessionListItem(info: AgentSessionInfo, agent: string): AgentSessionListItem {
+    const attached = [...this.sessions.values()].some(
+      (s) => s.agentSessionId === info.id,
+    );
+    return {
+      piSessionId: info.id,
+      agent,
+      name: info.title || info.preview || new Date(info.updatedAt ?? Date.now()).toISOString(),
+      preview: info.preview ?? "",
+      messageCount: info.messageCount ?? 0,
+      lastActivityAt: info.updatedAt ?? 0,
+      attached,
+    };
+  }
+
+  /**
    * Resume a prior on-disk pi session: backfill its full transcript into a new
    * makit session, then launch pi with `--session <path>` to continue it live.
    * Idempotent — attaching the same pi session twice returns the existing
@@ -800,6 +920,43 @@ export class SessionManager extends EventEmitter {
     } finally {
       this.attachInFlight.delete(piSessionId);
     }
+  }
+
+  /**
+   * Archive a session (SPEC-29): a soft, recoverable hide. Sets the persisted
+   * `archived` flag — so it drops from the active session list and survives a
+   * restart — and stops the live agent process (archived sessions shouldn't
+   * hold one), swapping in the detached placeholder. The event log + resume
+   * handle are KEPT, so `unarchive` + a later subscribe resume it exactly like
+   * any cold session. Deliberately makit-side only: we do NOT call the back
+   * end's native archive, so the underlying session/thread stays directly
+   * resumable (no archived-thread-resume edge case). Idempotent.
+   */
+  async archiveSession(id: string): Promise<void> {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error(`no such session: ${id}`);
+    if (session.archived) return;
+    // Best-effort: archiving is the recovery path in the removeWorktree loop
+    // (called after git already deleted the tree), so a rejecting kill() must
+    // not abort the archive — or the reconciliation of the remaining sessions.
+    try {
+      await session.adapter.kill();
+    } catch (e) {
+      log.warn(`[makit] archiveSession(${id}): kill failed: ${(e as Error).message}`);
+    }
+    session.replaceAdapter(new DetachedAdapter(session.agent));
+    session.setArchived(true);
+  }
+
+  /**
+   * Restore an archived session (SPEC-29): clear the flag so it returns to the
+   * active list. It stays cold until the next subscribe re-attaches it (resume
+   * by its kept native id). Idempotent.
+   */
+  async unarchiveSession(id: string): Promise<void> {
+    const session = this.sessions.get(id);
+    if (!session) throw new Error(`no such session: ${id}`);
+    session.setArchived(false);
   }
 
   /** Kill a session's agent process and drop it from the registry. */
@@ -847,6 +1004,8 @@ export class SessionManager extends EventEmitter {
     if (opts.backfill && opts.backfill.length > 0) session.backfill(opts.backfill);
 
     await activeAdapter.start(this.startOpts(project.dto.path, session.id, opts.resumeSessionPath));
+    // Persist the live adapter's native session/thread id for restart-resume.
+    session.captureAgentSessionId();
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
@@ -860,11 +1019,13 @@ export class SessionManager extends EventEmitter {
     projectPath: string,
     sessionId: string,
     resumeSessionPath?: string,
+    resumeAgentSessionId?: string,
   ): import("./adapters/adapter.js").SpawnOpts {
     return {
       cwd: projectPath,
       sessionId,
       resumeSessionPath,
+      resumeAgentSessionId,
       model: this.defaultModel,
       env: this.bridge
         ? {
@@ -893,13 +1054,15 @@ export class SessionManager extends EventEmitter {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no such session: ${sessionId}`);
 
+    // A session is resumable iff it captured a native agent session/thread id
+    // (SPEC-29) OR a legacy pi resume path. The adapter itself decides how to
+    // honour it (ACP session/resume|load, codex thread/resume, pi --session)
+    // from its advertised capabilities; a back end that can do neither starts
+    // fresh but live.
+    const agentSessionId = session.agentSessionId;
     const resumeSessionPath = session.resumeSessionPath;
-    if (!resumeSessionPath) {
+    if (!agentSessionId && !resumeSessionPath) {
       throw new Error(`session ${sessionId} cannot be re-attached — history only`);
-    }
-    // Real (non-stubbed) hosts can only resume native pi from a transcript.
-    if (!this.adapterFactory && session.agent !== "pi") {
-      throw new Error(`cannot re-attach agent "${session.agent}" — history only`);
     }
 
     // cwd: the session's own worktree when it is still an ACTIVE worktree of
@@ -915,10 +1078,13 @@ export class SessionManager extends EventEmitter {
     }
 
     const adapter = this.adapterFactory
-      ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: "pi" })
-      : buildAdapter("pi").adapter;
+      ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: session.agent })
+      : buildAdapter(session.agent).adapter;
     session.replaceAdapter(adapter);
-    await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath));
+    await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId));
+    // The resumed adapter may report a new native id (e.g. an ACP agent that
+    // could only start fresh); persist whatever it now holds.
+    session.captureAgentSessionId();
     return session;
   }
   /** Ensure each project has at least one default session. Convenience for M0. */

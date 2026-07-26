@@ -38,7 +38,7 @@ class _KillConnection extends ConnectionController {
     MsgType type,
     Map<String, dynamic> body,
   ) async {
-    if (body['kind'] == 'session.kill') {
+    if (body['kind'] == 'session.archive') {
       if (killFails) throw StateError('kill refused');
       return const {};
     }

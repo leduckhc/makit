@@ -25,7 +25,7 @@ import 'package:makit/store/store.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/composer/composer.dart';
 
-/// A connection whose `session.kill` completes only when the test says so.
+/// A connection whose `session.archive` completes only when the test says so.
 class _KillConnection extends ConnectionController {
   _KillConnection() : super(const _NoStore());
 
@@ -36,7 +36,7 @@ class _KillConnection extends ConnectionController {
     MsgType type,
     Map<String, dynamic> body,
   ) {
-    if (body['kind'] == 'session.kill') return killCompleted.future;
+    if (body['kind'] == 'session.archive') return killCompleted.future;
     return Future.value(const {});
   }
 }
@@ -222,7 +222,10 @@ void main() {
 
     testWidgets('closing the last tab of the sole split resets it to a starter '
         'tab (never empty)', (tester) async {
-      final c = _container(sessions: [_session('s1', 'Wire up pairing')]);
+      final c = _container(
+        sessions: [_session('s1', 'Wire up pairing')],
+        connection: _KillConnection(),
+      );
       addTearDown(c.dispose);
       _ws(c).revealSession('s1');
       await tester.pumpWidget(_tree(c));
@@ -233,7 +236,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // The sole split can never fully close: it resets to an empty starter
-      // tab. The session itself is not killed (still in the store).
+      // tab. Closing the tab archives the session (soft, recoverable); it is
+      // still in the local store until the server's next snapshot arrives.
       final root = c.read(workspaceControllerProvider).root as Split;
       expect(root.tabs, hasLength(1));
       expect(root.tabs.single.sessionId, isNull);
@@ -266,7 +270,9 @@ void main() {
   });
 
   group('quit', () {
-    testWidgets('Quit closes the tab and kills the session', (tester) async {
+    testWidgets('Archive closes the tab and archives the session', (
+      tester,
+    ) async {
       final conn = _KillConnection();
       final c = _container(
         sessions: [_session('s1', 'Wire up pairing')],
@@ -279,19 +285,22 @@ void main() {
 
       await tester.tap(find.byTooltip('Session actions'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Quit session'));
+      await tester.tap(find.text('Archive session'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Archive'));
       await tester.pumpAndSettle();
 
-      // Optimistic: the sole split reset to an empty starter tab before the
-      // kill resolved.
+      // Tabs are dropped only AFTER the archive is acknowledged, so a failed
+      // archive can't orphan the layout. Before completion the tab is intact.
       expect(conn.killCompleted.isCompleted, isFalse);
-      expect(c.read(selectedSessionProvider), isNull);
-      expect(find.byType(EmptyPaneStarter), findsOneWidget);
+      expect(find.byType(EmptyPaneStarter), findsNothing);
 
       conn.killCompleted.complete(const {});
       await tester.pumpAndSettle();
+
+      // Once archived, the sole split reset to an empty starter tab.
+      expect(c.read(selectedSessionProvider), isNull);
+      expect(find.byType(EmptyPaneStarter), findsOneWidget);
     });
   });
 

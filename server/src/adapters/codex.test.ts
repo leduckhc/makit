@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { CodexAppServerAdapter, defaultConnect, probeCodexConfigOptions, projectCodexModelList, buildCodexConfigOptions, type CodexTransport } from "./codex.js";
+import { CodexAppServerAdapter, defaultConnect, probeCodexConfigOptions, projectCodexModelList, buildCodexConfigOptions, projectCodexThreadList, type CodexTransport } from "./codex.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -38,6 +38,8 @@ function fakeAppServer() {
         return { userAgent: "fake", codexHome: "/tmp" };
       case "thread/start":
         return { thread: { id: "th1" } };
+      case "thread/resume":
+        return { thread: { id: "th-resumed" } };
       case "turn/start":
         return { turn: { id: "t1" } };
       case "turn/interrupt":
@@ -420,4 +422,44 @@ test("probeCodexConfigOptions projects the app-server model/list surface (no thr
   assert.ok(model);
   assert.deepEqual(model!.options!.map((m) => m.value), ["gpt-5-codex", "o3"]);
   assert.ok(options.some((o) => o.id === "thought_level"));
+});
+
+test("projectCodexThreadList filters by cwd, drops ephemeral, scales seconds→ms (SPEC-29)", () => {
+  const res = {
+    data: [
+      { id: "t1", cwd: "/repo", preview: "hi", recencyAt: 1700000000, ephemeral: false },
+      { id: "t2", cwd: "/other", preview: "nope", recencyAt: 1700000100 },
+      { id: "t3", cwd: "/repo", preview: "ghost", ephemeral: true },
+      { id: "t4", cwd: "/repo", updatedAt: 1700000200 },
+    ],
+  };
+  const out = projectCodexThreadList(res, "/repo");
+  assert.deepEqual(out.map((t) => t.id), ["t1", "t4"]);
+  assert.equal(out[0].preview, "hi");
+  assert.equal(out[0].updatedAt, 1700000000 * 1000);
+  assert.equal(out[1].updatedAt, 1700000200 * 1000);
+});
+
+test("projectCodexThreadList tolerates a malformed result", () => {
+  assert.deepEqual(projectCodexThreadList(null, "/repo"), []);
+  assert.deepEqual(projectCodexThreadList({ data: "nope" }, "/repo"), []);
+});
+
+test("start({resumeAgentSessionId}) resumes via thread/resume, not thread/start (SPEC-29)", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: "/repo", sessionId: "m1", resumeAgentSessionId: "th-prev" });
+  const methods = fake.sent.map((m: any) => m.method).filter(Boolean);
+  assert.ok(methods.includes("thread/resume"), "must call thread/resume");
+  assert.ok(!methods.includes("thread/start"), "must NOT start a fresh thread");
+  const resume = fake.sent.find((m: any) => m.method === "thread/resume");
+  assert.equal(resume.params.threadId, "th-prev");
+  assert.equal(resume.params.cwd, "/repo");
+  assert.equal(adapter.agentSessionId, "th-resumed");
+  await adapter.kill();
+});
+
+test("codex advertises the full session lifecycle capability set (SPEC-29)", () => {
+  const adapter = new CodexAppServerAdapter();
+  assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
 });

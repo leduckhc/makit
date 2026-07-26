@@ -209,6 +209,26 @@ export interface SessionDTO {
   branch?: string;
   /** Absolute worktree path, once created. */
   worktreePath?: string;
+  /**
+   * True when this session can be brought back to a live agent after a server
+   * restart — it has a persisted native session/thread id and its back end
+   * supports resume/load (SPEC-29). Cold resumable sessions are auto-attached
+   * by the app on subscribe; non-resumable cold sessions stay read-only.
+   */
+  resumable: boolean;
+  /**
+   * Archived (SPEC-29): a soft, recoverable hide. Archived sessions are omitted
+   * from the active `sessions.snapshot`; this flag is present for any surface
+   * that explicitly lists archived sessions.
+   */
+  archived: boolean;
+  /**
+   * Orphaned (SPEC-29): an archived session whose recorded worktree is no longer
+   * an active worktree of its project (e.g. the worktree was removed). Only set
+   * on the `session.listArchived` result; undefined elsewhere. The branch ref
+   * usually still exists, so resume can offer to recreate the worktree.
+   */
+  orphaned?: boolean;
 }
 
 let _seq = 0;
@@ -238,6 +258,9 @@ export type CmdKind =
   | "session.list"
   | "session.attach"
   | "session.kill"
+  | "session.archive"
+  | "session.unarchive"
+  | "session.listArchived"
   | "session.setAgent"
   // repos / projects / worktrees
   | "worktree.create"

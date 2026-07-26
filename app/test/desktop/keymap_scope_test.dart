@@ -12,7 +12,29 @@ import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/secure_store.dart';
+import 'package:makit/transport/protocol.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// A connection that answers every request instantly — so the fire-and-forget
+/// archive on tab close leaves no pending timeout Timer in widget tests.
+class _FastConn extends ConnectionController {
+  _FastConn() : super(const _NoStore());
+  @override
+  Future<Map<String, dynamic>> request(MsgType t, Map<String, dynamic> body) =>
+      Future.value(const {});
+}
+
+class _NoStore implements SecureStore {
+  const _NoStore();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
 
 /// Widget-level proof that [DesktopKeymapScope] turns a persisted [Keymap] into
 /// live global shortcuts. Uses Ctrl-primary defaults (cmdIsPrimary: false) so
@@ -291,6 +313,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
+        connectionControllerProvider.overrideWith((_) => _FastConn()),
         sessionsProvider.overrideWithValue(
           SessionsState([session('s1'), session('s2')]),
         ),

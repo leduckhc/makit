@@ -76,7 +76,7 @@ class SessionsState {
   final List<Session> sessions;
 
   List<Session> forProject(String projectId) =>
-      sessions.where((s) => s.projectId == projectId).toList()
+      sessions.where((s) => s.projectId == projectId && !s.archived).toList()
         ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
 
   Session? byId(String id) => sessions.firstWhereOrNull((s) => s.id == id);
@@ -327,6 +327,32 @@ class StoreController extends StateNotifier<StoreState> {
 
   void subscribeSession(String sessionId) {
     _subscribed.add(sessionId);
+    // A cold, resumable session (the server restarted while we were away) has no
+    // live agent process. Ask the server to bring it back BEFORE subscribing so
+    // the first message lands on a live agent instead of a `session.error`
+    // (SPEC-29). A non-resumable cold session just replays as read-only history.
+    final session = state.sessions.firstWhereOrNull((s) => s.id == sessionId);
+    if (session != null &&
+        session.resumable &&
+        session.status == SessionStatus.exited) {
+      unawaited(_reattachThenSub(sessionId));
+      return;
+    }
+    _sendSub(sessionId);
+  }
+
+  /// Re-attach a cold resumable session to its live agent, then subscribe.
+  /// A failed re-attach (offline / history-only) still falls through to `sub`
+  /// so the transcript renders read-only rather than showing nothing.
+  Future<void> _reattachThenSub(String sessionId) async {
+    try {
+      await _ref.read(connectionControllerProvider.notifier).request(
+        MsgType.cmd,
+        {'kind': 'session.attach', 'sessionId': sessionId},
+      );
+    } catch (_) {
+      // History-only or transport error — show what we have.
+    }
     _sendSub(sessionId);
   }
 
@@ -499,6 +525,34 @@ class StoreController extends StateNotifier<StoreState> {
       MsgType.cmd,
       {'kind': 'session.kill', 'sessionId': sessionId},
     );
+  }
+
+  /// Archive a session (SPEC-29): a soft, recoverable hide. The server drops it
+  /// from the active `sessions.snapshot` (it stays resumable + restorable) and
+  /// broadcasts a fresh snapshot so the list updates.
+  Future<void> archiveSession(String sessionId) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.archive', 'sessionId': sessionId},
+    );
+  }
+
+  /// Restore an archived session to the active list (SPEC-29).
+  Future<void> unarchiveSession(String sessionId) async {
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.unarchive', 'sessionId': sessionId},
+    );
+  }
+
+  /// Fetch the archived sessions (SPEC-29). Not part of the active snapshot;
+  /// loaded on demand for the "Show archived sessions" list.
+  Future<List<Session>> listArchivedSessions() async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': 'session.listArchived'},
+    );
+    return WireCodec.decodeSessions(ack['sessions']) ?? const [];
   }
 
   /// Set the harness a still-pending draft will start with. The server

@@ -5,7 +5,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../store/store.dart';
 import 'desktop_chat_pane.dart';
 import 'new_session_dialog.dart';
-import 'selected_worktree.dart';
+import 'selected_session.dart';
 import 'session_status_dot.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
@@ -470,7 +470,8 @@ class _TabChip extends ConsumerWidget {
             tooltip: 'Close tab',
             color: cs.onSurfaceVariant.withValues(alpha: 0.6),
             icon: const Icon(PhosphorIconsLight.x),
-            onPressed: () => controller.closeTab(split.id, tab.id),
+            onPressed: () =>
+                closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
           ),
         ],
       ),

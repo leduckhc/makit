@@ -82,6 +82,10 @@ export interface SessionInit {
   lastPreview?: string;
   /** On-disk transcript path so a cold session can be re-attached (pi resume). */
   resumeSessionPath?: string;
+  /** Native agent session/thread id, restored on rehydration for resume (SPEC-29). */
+  agentSessionId?: string;
+  /** Archived on rehydration (SPEC-29): hidden from the active list, still resumable. */
+  archived?: boolean;
   /** Restore the started-session branch/worktree on rehydration. */
   branch?: string;
   worktreePath?: string;
@@ -107,6 +111,22 @@ export class Session extends EventEmitter {
   lastPreview = "";
   /** On-disk transcript path used to relaunch a pi session (resume linkage). */
   readonly resumeSessionPath?: string;
+
+  /**
+   * Native agent session/thread id (ACP `sessionId`, codex `threadId`) once the
+   * live adapter has started, so this makit session can be resumed after a
+   * server restart (SPEC-29). Undefined for drafts and cold/history-only
+   * sessions until re-attached.
+   */
+  agentSessionId?: string;
+
+  /**
+   * Archived (SPEC-29): a soft, recoverable hide. An archived session is
+   * excluded from the active session list (`SessionManager.listSessions`) but
+   * keeps its full event log + resume handle and can be restored. Persisted so
+   * it stays archived across a restart.
+   */
+  archived = false;
 
   /** Pending lazy history loader — consumed (set to undefined) on first use. */
   private hydrateFrom?: () => SessionEvent[];
@@ -146,6 +166,8 @@ export class Session extends EventEmitter {
     if (typeof init.lastActivityAt === "number") this.lastActivityAt = init.lastActivityAt;
     if (typeof init.lastPreview === "string") this.lastPreview = init.lastPreview;
     this.resumeSessionPath = init.resumeSessionPath;
+    this.agentSessionId = init.agentSessionId;
+    this.archived = init.archived ?? false;
     if (init.branch !== undefined || init.worktreePath !== undefined) {
       this._lifecycle = { phase: "started", branch: init.branch, worktreePath: init.worktreePath };
     }
@@ -242,6 +264,8 @@ export class Session extends EventEmitter {
       lastActivityAt: this.lastActivityAt,
       lastPreview: this.lastPreview,
       resumeSessionPath: this.resumeSessionPath,
+      agentSessionId: this.agentSessionId,
+      archived: this.archived,
       // Only a STARTED session's location is persisted: a draft's bound branch
       // must not survive a restart as "started on that branch" (the constructor
       // infers phase "started" from these fields on rehydration).
@@ -257,6 +281,34 @@ export class Session extends EventEmitter {
   replaceAdapter(adapter: AgentAdapter): void {
     this.adapter = adapter;
     this.bindAdapter(adapter);
+  }
+
+  /**
+   * Adopt the live adapter's native session/thread id (ACP `sessionId`, codex
+   * `threadId`) as this session's durable resume handle (SPEC-29), persisting
+   * it so the session can be resumed after a server restart. Called by the
+   * manager right after `adapter.start()` resolves. No-op when the adapter has
+   * no id (e.g. the detached placeholder).
+   */
+  captureAgentSessionId(): void {
+    const id = this.adapter.agentSessionId;
+    if (!id || id === this.agentSessionId) return;
+    this.agentSessionId = id;
+    this.persistMeta();
+    this.emit("metaChanged");
+  }
+
+  /**
+   * Set the archived flag (SPEC-29) and persist it. Emits `metaChanged` so the
+   * server re-broadcasts the active session list (which now excludes archived
+   * sessions). Returns whether the flag actually changed.
+   */
+  setArchived(archived: boolean): boolean {
+    if (this.archived === archived) return false;
+    this.archived = archived;
+    this.persistMeta();
+    this.emit("metaChanged");
+    return true;
   }
 
   /**
@@ -378,6 +430,10 @@ export class Session extends EventEmitter {
       pendingAgent: this.pendingAgent,
       branch: this.branch,
       worktreePath: this.worktreePath,
+      // SPEC-29: a session with a persisted native id can be brought back to a
+      // live agent after a server restart (the app auto-attaches cold ones).
+      resumable: this.agentSessionId != null,
+      archived: this.archived,
     };
   }
 

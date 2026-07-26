@@ -781,6 +781,9 @@ class Session {
     this.pendingAgent,
     this.branch,
     this.worktreePath,
+    this.resumable = false,
+    this.archived = false,
+    this.orphaned = false,
   });
 
   final String id;
@@ -807,6 +810,19 @@ class Session {
   /// Absolute worktree path, once created.
   final String? worktreePath;
 
+  /// True when a (possibly cold) session can be brought back to a live agent
+  /// after a server restart (SPEC-29). Drives auto-attach on subscribe.
+  final bool resumable;
+
+  /// Archived (SPEC-29): hidden from the active list. Present for surfaces that
+  /// explicitly list archived sessions; the active snapshot omits these.
+  final bool archived;
+
+  /// Orphaned (SPEC-29): an archived session whose worktree was removed. Only
+  /// set on the `session.listArchived` result; drives the "worktree removed"
+  /// affordance in the archive view.
+  final bool orphaned;
+
   Session copyWith({
     SessionStatus? status,
     ApprovalPolicy? policy,
@@ -819,6 +835,9 @@ class Session {
     String? pendingAgent,
     String? branch,
     String? worktreePath,
+    bool? resumable,
+    bool? archived,
+    bool? orphaned,
   }) => Session(
     id: id,
     projectId: projectId,
@@ -833,5 +852,8 @@ class Session {
     pendingAgent: pendingAgent ?? this.pendingAgent,
     branch: branch ?? this.branch,
     worktreePath: worktreePath ?? this.worktreePath,
+    resumable: resumable ?? this.resumable,
+    archived: archived ?? this.archived,
+    orphaned: orphaned ?? this.orphaned,
   );
 }

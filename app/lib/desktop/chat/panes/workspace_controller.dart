@@ -490,6 +490,12 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     closeTab(located.$1, located.$2);
   }
 
+  /// Whether any tab in the workspace still hosts [sessionId] (SPEC-29). Used
+  /// after closing a tab to decide whether the session is now orphaned (no
+  /// remaining view) and should be archived.
+  bool isSessionBound(String sessionId) =>
+      tree.findTab(state.root, sessionId) != null;
+
   // -- Internals ------------------------------------------------------------
 
   /// Focuses tab [tabId] in split [splitId], making that split active.

@@ -72,16 +72,18 @@ class SessionTile extends ConsumerWidget {
     );
   }
 
-  /// Confirms the quit, then requests the kill and only reports the row as
+  /// Confirms the archive, then requests it and only reports the row as
   /// dismissed once the server acknowledges. Returning false on failure keeps
   /// the row in place (the session is still in [sessionsProvider]), so a failed
-  /// kill never desyncs the list from server state.
+  /// archive never desyncs the list from server state.
   Future<bool> _confirmAndQuit(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
     final confirmed = await _confirmQuit(context);
     if (!confirmed) return false;
     try {
-      await ref.read(storeControllerProvider.notifier).killSession(session.id);
+      await ref
+          .read(storeControllerProvider.notifier)
+          .archiveSession(session.id);
       return true;
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));

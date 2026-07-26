@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'dart:async';
+
 import '../../store/models.dart';
 import '../../store/store.dart';
 import 'panes/split_node.dart';
@@ -82,9 +84,36 @@ void closeActiveTab(WidgetRef ref) {
   final state = ref.read(workspaceControllerProvider);
   final tab = activeTab(state);
   if (tab == null) return;
-  ref
-      .read(workspaceControllerProvider.notifier)
-      .closeTab(state.activeSplitId, tab.id);
+  closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+}
+
+/// Close [tabId] in [splitId] and, when its session is no longer shown in any
+/// other tab, archive it (SPEC-29). Archiving is soft + recoverable: the server
+/// drops it from the active `sessions.snapshot` so the sidebar list updates,
+/// while the transcript + resume handle are kept. Shared by the tab close (X)
+/// button and the close-tab shortcut so both behave identically. A tab with no
+/// session (empty starter) just closes.
+void closeTabAndArchive(
+  WidgetRef ref,
+  String splitId,
+  String tabId,
+  String? sessionId,
+) {
+  final workspace = ref.read(workspaceControllerProvider.notifier);
+  workspace.closeTab(splitId, tabId);
+  if (sessionId == null || workspace.isSessionBound(sessionId)) return;
+  // A never-started draft has no history worth preserving — archiving it would
+  // leave an empty, permanently-persisted entry in the Archived list. Just let
+  // closeTab drop it.
+  if (ref.read(sessionsProvider).byId(sessionId)?.pending ?? false) return;
+  // Fire-and-forget: the sidebar reconciles from the fresh server snapshot, so
+  // a failed archive is non-fatal — the session simply stays/reappears there.
+  unawaited(
+    ref
+        .read(storeControllerProvider.notifier)
+        .archiveSession(sessionId)
+        .catchError((_) {}),
+  );
 }
 
 /// Close the whole active split (the keyboard "Close split"). No-op when it is

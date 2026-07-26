@@ -348,12 +348,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   ref: ref,
                   sessionId: widget.sessionId,
                 );
-              case 'quit':
-                _confirmQuit();
+              case 'archive':
+                _confirmArchive();
             }
           },
           itemBuilder: (context) {
-            final cs = Theme.of(context).colorScheme;
             return [
               const PopupMenuItem(
                 value: 'rename',
@@ -380,14 +379,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 ),
               ),
               const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'quit',
+              const PopupMenuItem(
+                value: 'archive',
                 child: ListTile(
-                  leading: Icon(PhosphorIconsLight.power, color: cs.error),
-                  title: Text(
-                    'Quit session',
-                    style: TextStyle(color: cs.error),
-                  ),
+                  leading: Icon(PhosphorIconsLight.archiveBox),
+                  title: Text('Archive session'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -398,14 +394,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     );
   }
 
-  Future<void> _confirmQuit() async {
+  Future<void> _confirmArchive() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('Quit session?'),
+        title: const Text('Archive session?'),
         content: const Text(
-          'This stops the agent process and removes the session. '
-          'The transcript stays on disk and can be re-attached later.',
+          'This stops the agent process and removes the session from the active list. '
+          'The transcript stays on disk and can be restored later.',
         ),
         actions: [
           TextButton(
@@ -414,7 +410,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dctx, true),
-            child: const Text('Quit'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -424,10 +420,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     try {
       await ref
           .read(storeControllerProvider.notifier)
-          .killSession(widget.sessionId);
+          .archiveSession(widget.sessionId);
       if (mounted) context.go('/');
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('Could not archive: $e')));
     }
   }
 

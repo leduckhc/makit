@@ -7,10 +7,13 @@
  */
 
 import { EventEmitter } from "node:events";
-import type { AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import { NO_SESSION_CAPABILITIES, type AgentAdapter, type SessionCapabilities, type SpawnOpts, type UserInput } from "./adapter.js";
 
 export class DetachedAdapter extends EventEmitter implements AgentAdapter {
   readonly agent: string;
+  /** Cold sessions can do nothing until re-attached (SPEC-29). */
+  readonly capabilities: SessionCapabilities = NO_SESSION_CAPABILITIES;
+  readonly agentSessionId = undefined;
 
   constructor(agent = "pi") {
     super();
