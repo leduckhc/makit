@@ -96,9 +96,22 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     }
     if (decoded is! Map) return _seed();
     try {
-      return WorkspaceState.fromJson({
+      final state = WorkspaceState.fromJson({
         for (final e in decoded.entries) '${e.key}': e.value,
       });
+      // Advance the id counters past the restored tree so ids minted this
+      // session can't collide with persisted `split-0`/`tab-0`/… nodes.
+      seedNodeIdsFrom(state.root);
+      // Guard the invariant: a blob from an older/other build can point
+      // activeSplitId at a split that no longer exists, which would freeze
+      // every mutation. Recover by focusing the first split.
+      if (!containsSplit(state.root, state.activeSplitId)) {
+        return WorkspaceState(
+          root: state.root,
+          activeSplitId: firstSplitId(state.root),
+        );
+      }
+      return state;
     } on Object {
       // Any structural mismatch (missing keys, wrong types, unknown node kind)
       // → starter workspace rather than a crash, so a bad blob never bricks the

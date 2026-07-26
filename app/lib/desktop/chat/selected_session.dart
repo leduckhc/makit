@@ -105,6 +105,7 @@ void openDraftSession(WidgetRef ref, String sessionId) {
 /// session dialog opened from that tab pre-fills with the worktree.
 void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
   final state = ref.read(workspaceControllerProvider);
+  // Ensure id-seeding has run (completed when state is read), then mint fresh id.
   ref
       .read(workspaceControllerProvider.notifier)
       .openTab(

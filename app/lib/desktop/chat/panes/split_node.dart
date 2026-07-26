@@ -260,6 +260,35 @@ void resetNodeIds() {
   _tabCounter = 0;
 }
 
+/// Advances the [nextNodeId] counters past the highest `kind-N` id already
+/// present in [root], so ids minted after a persisted tree is restored can
+/// never collide with existing nodes (the counters otherwise restart at 0 each
+/// launch while the restored tree already holds `split-0`/`tab-0`/…). Ids that
+/// don't match the `kind-N` shape are ignored.
+void seedNodeIdsFrom(SplitNode root) {
+  int bumpedPast(int current, String id, String prefix) {
+    if (!id.startsWith(prefix)) return current;
+    final n = int.tryParse(id.substring(prefix.length));
+    return (n != null && n + 1 > current) ? n + 1 : current;
+  }
+
+  void walk(SplitNode node) {
+    switch (node) {
+      case Split():
+        _splitCounter = bumpedPast(_splitCounter, node.id, 'split-');
+        for (final t in node.tabs) {
+          _tabCounter = bumpedPast(_tabCounter, t.id, 'tab-');
+        }
+      case Splitter():
+        _splitterCounter = bumpedPast(_splitterCounter, node.id, 'splitter-');
+        walk(node.first);
+        walk(node.second);
+    }
+  }
+
+  walk(root);
+}
+
 // ---------------------------------------------------------------------------
 // Pure tree functions — immutable, identity-preserving on untouched nodes.
 // ---------------------------------------------------------------------------

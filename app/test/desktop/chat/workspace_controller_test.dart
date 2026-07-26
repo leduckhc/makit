@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
@@ -573,5 +575,59 @@ void main() {
       expect((c.state.root as Split).tabs, hasLength(1));
       expectIntegrity(c);
     });
+
+    test('ids minted after a reload never collide with restored ids', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final c1 = WorkspaceController.load(prefs); // seeds split-0 / tab-0
+      c1.divideActive(Axis.horizontal); // splitter-0, split-1, tab-1
+      await Future<void>.delayed(Duration.zero); // persist
+
+      // Simulate a fresh process: the id counters restart at zero while the
+      // persisted tree still holds split-0/tab-0/…
+      resetNodeIds();
+      final c2 = WorkspaceController.load(prefs);
+      c2.divideActive(Axis.horizontal);
+      c2.divideActive(Axis.vertical);
+
+      final ids = <String>[];
+      void walk(SplitNode n) {
+        switch (n) {
+          case Split():
+            ids
+              ..add(n.id)
+              ..addAll(n.tabs.map((t) => t.id));
+          case Splitter():
+            ids.add(n.id);
+            walk(n.first);
+            walk(n.second);
+        }
+      }
+
+      walk(c2.state.root);
+      expect(ids.toSet().length, ids.length, reason: 'all node ids are unique');
+      expectIntegrity(c2);
+    });
+
+    test(
+      'decode focuses the first split when activeSplitId is stale',
+      () async {
+        const tree = Split(
+          id: 'split-0',
+          tabs: [Tab(id: 'tab-0')],
+          activeTabId: 'tab-0',
+        );
+        SharedPreferences.setMockInitialValues({
+          kWorkspacePrefsKey: jsonEncode({
+            'root': tree.toJson(),
+            'activeSplitId': 'ghost-split', // references a non-existent split
+          }),
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final c = WorkspaceController.load(prefs);
+        expect(c.state.activeSplitId, 'split-0');
+        expectIntegrity(c);
+      },
+    );
   });
 }

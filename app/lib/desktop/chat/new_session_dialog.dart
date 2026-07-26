@@ -152,7 +152,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       case _WorktreeSource.newBranch:
         final r = await store.createWorktree(
           projectId,
-          baseBranch: _baseBranch,
+          baseBranch: _effectiveBaseBranch(projectId),
         );
         return (path: r.path, branch: r.branch);
       case _WorktreeSource.fromPr:
@@ -164,10 +164,28 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   }
 
   Worktree? _selectedExistingWorktree() {
-    for (final w in _worktreesFor(_projectId)) {
+    final worktrees = _worktreesFor(_projectId);
+    for (final w in worktrees) {
       if (w.path == _existingPath) return w;
     }
-    return null;
+    // Fall back to the first worktree — the value the dropdown displays when
+    // _existingPath isn't among the current options — so the spawned worktree
+    // always matches what the user sees.
+    return worktrees.isEmpty ? null : worktrees.first;
+  }
+
+  /// The base branch actually used for a new-branch spawn: [_baseBranch] when it
+  /// is a live option, else the first option (what [_newBranchPanel] displays).
+  String? _effectiveBaseBranch(String? projectId) {
+    RepoInfo? repo;
+    for (final r in ref.read(reposProvider).repos) {
+      if (r.id == projectId) repo = r;
+    }
+    final options = repo == null
+        ? const <String>[]
+        : branchOptionsForRepo(repo);
+    if (options.isEmpty) return _baseBranch;
+    return options.contains(_baseBranch) ? _baseBranch : options.first;
   }
 
   /// The single start action: resolve/create the worktree, spawn the session
@@ -348,6 +366,13 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     final value = worktrees.any((w) => w.path == _existingPath)
         ? _existingPath
         : worktrees.first.path;
+    // Sync stale _existingPath to the fallback on first render when path was
+    // not found in the list (e.g., worktree was deleted after pairing).
+    if (value != _existingPath) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _existingPath = value);
+      });
+    }
     return DropdownButtonFormField<String>(
       key: ValueKey('existing-$_projectId'),
       initialValue: value,

@@ -40,6 +40,12 @@ import type { AskUser } from "../uicall.js";
 import type { SessionConfigOption, ConfigOptionValue, ConfigOptionGroup } from "../protocol.js";
 import { log } from "../log.js";
 
+/**
+ * Timeout (ms) for ACP harness initialization and session spawn. If the child
+ * process hangs before or after `initialize`/`newSession`, it is aborted.
+ */
+const ACP_HANDSHAKE_TIMEOUT = 15_000;
+
 export interface AcpSpawnSpec {
   /** makit agent label surfaced in the session DTO ("pi", "codex", …). */
   agent: string;
@@ -124,16 +130,24 @@ export class AcpAdapter extends SubprocessAdapter {
 
     this.conn = new ClientSideConnection(() => this.buildClient(), this.transport.stream);
 
-    await this.conn.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: false,
-        // We support boolean session config options (SPEC-26). Advertising this
-        // lets agents include `type:"boolean"` entries in `configOptions`.
-        session: { configOptions: { boolean: {} } },
-      },
-    });
+    await Promise.race([
+      this.conn.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: false,
+          // We support boolean session config options (SPEC-26). Advertising this
+          // lets agents include `type:"boolean"` entries in `configOptions`.
+          session: { configOptions: { boolean: {} } },
+        },
+      }),
+      new Promise<void>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP initialize timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
 
     if (opts.resumeSessionPath) {
       // ACP resume is keyed by an ACP sessionId, not by makit's on-disk path.
@@ -141,7 +155,15 @@ export class AcpAdapter extends SubprocessAdapter {
       log.warn("[makit] AcpAdapter: resumeSessionPath ignored (ACP resume not wired yet)");
     }
 
-    const res = await this.conn.newSession({ cwd, mcpServers: [] });
+    const res = await Promise.race([
+      this.conn.newSession({ cwd, mcpServers: [] }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP newSession timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
     this.acpSessionId = res.sessionId;
     this.captureModes(res.modes);
     this.captureConfigOptions(res.configOptions);
@@ -508,15 +530,31 @@ export async function probeAcpConfigOptions(
   const transport = connect(cwd, spec.env ?? {});
   try {
     const conn = new ClientSideConnection(() => probeClient(), transport.stream);
-    const init = await conn.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: false,
-        session: { configOptions: { boolean: {} } },
-      },
-    });
-    const res = await conn.newSession({ cwd, mcpServers: [] });
+    const init = await Promise.race([
+      conn.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: false,
+          session: { configOptions: { boolean: {} } },
+        },
+      }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP probe initialize timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
+    const res = await Promise.race([
+      conn.newSession({ cwd, mcpServers: [] }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP probe newSession timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
     const options =
       Array.isArray(res.configOptions) && res.configOptions.length > 0
         ? res.configOptions.map(parseAcpConfigOption)
