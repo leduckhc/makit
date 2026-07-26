@@ -29,6 +29,26 @@ import { log } from "../log.js";
 export type CodexTransport = ChildLineTransport;
 
 /**
+ * Bound codex JSON-RPC handshakes: `request()` only settles on a response, an
+ * error frame, or transport exit, so a started-but-silent `codex app-server`
+ * would otherwise hang session launch and `agents.list` forever. Mirrors the
+ * ACP adapter's `ACP_HANDSHAKE_TIMEOUT`.
+ */
+const CODEX_HANDSHAKE_TIMEOUT = 15_000;
+
+/** Rejects with a labelled error when [p] doesn't settle within [ms]. */
+function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<T>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer));
+}
+
+/**
  * Reasoning-effort levels projected as the `thought_level` config option
  * (SPEC-26). codex's `turn/start.effort` accepts these values.
  */
@@ -182,7 +202,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    */
   private async captureModelCatalog(): Promise<void> {
     try {
-      const res = await this.request("model/list", {});
+      const res = await withDeadline(
+        this.request("model/list", {}),
+        CODEX_HANDSHAKE_TIMEOUT,
+        "codex model/list",
+      );
       const projected = projectCodexModelList(res);
       this.catalogModels = projected.models;
       if (!this.activeModel && projected.activeModel) this.activeModel = projected.activeModel;
@@ -211,10 +235,15 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
 
   // ---- JSON-RPC plumbing ---------------------------------------------------
 
-  private request(method: string, params: unknown): Promise<unknown> {
+  private request(method: string, params: unknown, timeoutMs = 15_000): Promise<unknown> {
     const id = this.nextId++;
     this.write({ method, id, params });
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    return Promise.race([
+      new Promise((resolve, reject) => this.pending.set(id, { resolve, reject })),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`codex.${method} timeout after ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
   }
 
   private notify(method: string, params: unknown): void {
@@ -527,12 +556,20 @@ export async function probeCodexConfigOptions(
   };
 
   try {
-    await request("initialize", {
-      clientInfo: { name: "makit", title: "makit", version: "0.1.0" },
-      capabilities: { experimentalApi: true, requestAttestation: false },
-    });
+    await withDeadline(
+      request("initialize", {
+        clientInfo: { name: "makit", title: "makit", version: "0.1.0" },
+        capabilities: { experimentalApi: true, requestAttestation: false },
+      }),
+      CODEX_HANDSHAKE_TIMEOUT,
+      "codex probe initialize",
+    );
     transport.send(JSON.stringify({ method: "initialized", params: {} }));
-    const res = await request("model/list", {});
+    const res = await withDeadline(
+      request("model/list", {}),
+      CODEX_HANDSHAKE_TIMEOUT,
+      "codex probe model/list",
+    );
     const projected = projectCodexModelList(res);
     return buildCodexConfigOptions(projected.models, projected.activeModel, projected.activeEffort);
   } catch (e) {

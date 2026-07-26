@@ -104,12 +104,5 @@ void openDraftSession(WidgetRef ref, String sessionId) {
 /// with [worktree] in the active split (SPEC-28 — no layout swap). The New
 /// session dialog opened from that tab pre-fills with the worktree.
 void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
-  final state = ref.read(workspaceControllerProvider);
-  // Ensure id-seeding has run (completed when state is read), then mint fresh id.
-  ref
-      .read(workspaceControllerProvider.notifier)
-      .openTab(
-        state.activeSplitId,
-        Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree),
-      );
+  ref.read(workspaceControllerProvider.notifier).revealWorktree(worktree);
 }

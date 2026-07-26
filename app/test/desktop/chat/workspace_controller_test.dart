@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart' show Axis;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
+import 'package:makit/desktop/chat/selected_worktree.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The single active [Split] of a workspace.
@@ -463,6 +464,40 @@ void main() {
       expect(located, isNotNull);
       expect(located!.$1, active, reason: 'opened in the active split');
       expect(splitById(c, active)!.activeTabId, located.$2);
+      expectIntegrity(c);
+    });
+  });
+
+  group('WorkspaceController revealWorktree', () {
+    const wt = SelectedWorktree(
+      projectId: 'p1',
+      path: '/tmp/wt-a',
+      branch: 'feat/a',
+    );
+
+    test('reuses the active empty placeholder instead of stacking tabs', () {
+      final c = WorkspaceController.ephemeral();
+      final split = c.state.activeSplitId;
+      final starter = activeSplit(c).activeTabId;
+      c.revealWorktree(wt);
+      c.revealWorktree(wt); // second click must not add another placeholder
+      final tabs = splitById(c, split)!.tabs;
+      expect(tabs, hasLength(1), reason: 'no stacked "New" tabs');
+      expect(tabs.single.id, starter, reason: 'reused the starter tab');
+      expect(tabs.single.worktree?.path, '/tmp/wt-a');
+      expect(tabs.single.sessionId, isNull);
+      expectIntegrity(c);
+    });
+
+    test('opens a new hinted tab when the active tab hosts a session', () {
+      final c = WorkspaceController.ephemeral();
+      final split = c.state.activeSplitId;
+      c.revealSession('s-1'); // fills the placeholder with a session
+      c.revealWorktree(wt); // active tab now hosts s-1 → append a hinted tab
+      final tabs = splitById(c, split)!.tabs;
+      expect(tabs, hasLength(2));
+      expect(tabs.last.worktree?.path, '/tmp/wt-a');
+      expect(tabs.last.sessionId, isNull);
       expectIntegrity(c);
     });
   });

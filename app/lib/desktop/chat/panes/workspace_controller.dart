@@ -9,6 +9,7 @@ import 'split_node.dart';
 // Aliased so the controller's own `setRatio`/`moveSplit` methods can still
 // reach the pure tree functions of the same name.
 import 'split_node.dart' as tree;
+import '../selected_worktree.dart';
 
 /// SharedPreferences key holding the whole workspace (the split/tab tree plus
 /// the active split) as a single JSON object.
@@ -441,6 +442,38 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     openTab(
       state.activeSplitId,
       Tab(id: nextNodeId(SplitNodeKind.tab), sessionId: sessionId),
+    );
+  }
+
+  /// Sidebar worktree selection: reuse the active split's EMPTY placeholder tab
+  /// by rebinding its [worktree] hint (instead of stacking another "New" tab on
+  /// every click); otherwise open a fresh hinted tab. Mirrors [revealSession]'s
+  /// placeholder-fill so the two sidebar paths stay consistent.
+  void revealWorktree(SelectedWorktree worktree) {
+    final active = _splitById(state.activeSplitId);
+    final activeTab = active?.tabs
+        .where((t) => t.id == active.activeTabId)
+        .firstOrNull;
+    if (active != null && activeTab != null && activeTab.sessionId == null) {
+      final bound = Tab(id: activeTab.id, worktree: worktree);
+      final root = tree.mapSplits(
+        state.root,
+        (s) => s.id != active.id
+            ? s
+            : Split(
+                id: s.id,
+                tabs: [
+                  for (final t in s.tabs) t.id == activeTab.id ? bound : t,
+                ],
+                activeTabId: activeTab.id,
+              ),
+      );
+      _commit(WorkspaceState(root: root, activeSplitId: active.id));
+      return;
+    }
+    openTab(
+      state.activeSplitId,
+      Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree),
     );
   }
 

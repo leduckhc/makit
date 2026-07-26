@@ -53,6 +53,10 @@ export class CapabilityCache {
   private readonly path: string;
   private readonly prober: Prober;
   private readonly store = new Map<string, CachedCapability>();
+  // Coalesce concurrent probes for the same agent so a reconnect burst (or two
+  // clients hitting a cold/changed fingerprint at once) spawns the harness
+  // ONCE instead of N times — mirrors SessionManager's in-flight promise maps.
+  private readonly inFlight = new Map<string, Promise<SessionConfigOption[]>>();
 
   constructor(opts: { path?: string; prober?: Prober } = {}) {
     this.path = opts.path ?? defaultCachePath();
@@ -83,7 +87,7 @@ export class CapabilityCache {
     if (cached && cached.fingerprint === descriptor.fingerprint) {
       return withOptions(descriptor, cached.configOptions);
     }
-    const configOptions = await this.probeSafe(descriptor);
+    const configOptions = await this.probeDeduped(descriptor);
     this.set(descriptor.id, { fingerprint: descriptor.fingerprint, configOptions });
     return withOptions(descriptor, configOptions);
   }
@@ -94,9 +98,24 @@ export class CapabilityCache {
    */
   async refresh(descriptor: AgentDescriptor): Promise<AgentDescriptor> {
     if (!descriptor.available) return descriptor;
-    const configOptions = await this.probeSafe(descriptor);
+    const configOptions = await this.probeDeduped(descriptor);
     this.set(descriptor.id, { fingerprint: descriptor.fingerprint, configOptions });
     return withOptions(descriptor, configOptions);
+  }
+
+  /**
+   * Probe with in-flight coalescing: a probe already running for this agent id
+   * is shared rather than starting a second child. The entry is cleared once
+   * settled so the next fingerprint change re-probes.
+   */
+  private probeDeduped(descriptor: AgentDescriptor): Promise<SessionConfigOption[]> {
+    const running = this.inFlight.get(descriptor.id);
+    if (running) return running;
+    const p = this.probeSafe(descriptor).finally(() =>
+      this.inFlight.delete(descriptor.id),
+    );
+    this.inFlight.set(descriptor.id, p);
+    return p;
   }
 
   /** Probe best-effort: a failing probe caches an empty catalog (default-only). */
