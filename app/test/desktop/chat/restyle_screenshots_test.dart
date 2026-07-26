@@ -57,16 +57,29 @@ void main() {
         ..addFont(Future.value(bytes.buffer.asByteData()));
       await loader.load();
     }
-    // Load Phosphor icons so glyphs render instead of boxes in headless test.
-    final phosphor = File(
-      '${Platform.environment['HOME']}/.pub-cache/hosted/pub.dev/'
-      'phosphoricons_flutter-1.0.0/lib/fonts/Phosphor-Light.ttf',
-    );
-    if (phosphor.existsSync()) {
-      final loader = FontLoader('packages/phosphoricons_flutter/PhosphorLight')
-        ..addFont(Future.value(phosphor.readAsBytesSync().buffer.asByteData()));
-      await loader.load();
+    // Load Phosphor icon weights + codicon so glyphs render instead of boxes.
+    Future<void> loadFont(String family, String path) async {
+      final f = File(path);
+      if (!f.existsSync()) return;
+      await (FontLoader(family)
+            ..addFont(Future.value(f.readAsBytesSync().buffer.asByteData())))
+          .load();
     }
+
+    final phDir =
+        '${Platform.environment['HOME']}/.pub-cache/hosted/pub.dev/'
+        'phosphoricons_flutter-1.0.0/lib/fonts';
+    for (final (family, file) in const [
+      ('PhosphorLight', 'Phosphor-Light.ttf'),
+      ('PhosphorRegular', 'Phosphor.ttf'),
+      ('PhosphorFill', 'Phosphor-Fill.ttf'),
+      ('PhosphorBold', 'Phosphor-Bold.ttf'),
+      ('PhosphorThin', 'Phosphor-Thin.ttf'),
+      ('PhosphorDuotone', 'Phosphor-Duotone.ttf'),
+    ]) {
+      await loadFont('packages/phosphoricons_flutter/$family', '$phDir/$file');
+    }
+    await loadFont('codicon', 'assets/fonts/codicon.ttf');
   });
 
   // Golden tests are platform-dependent. Regenerate on macOS:
