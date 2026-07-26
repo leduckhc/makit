@@ -11,6 +11,7 @@ import 'connection_endpoint.dart';
 import 'session_status_dot.dart';
 import 'split_view.dart' show SessionDragData;
 import 'title_bar_strip.dart';
+import 'server_profile_badge.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
 import '../../ui/project/folder_browser.dart';
@@ -73,7 +74,13 @@ class _Header extends ConsumerWidget {
     // window's drag handle. Its height clears the macOS traffic-light buttons
     // that overlay the top-left corner. The fold button sits just to the right
     // of the traffic lights and hides the sidebar entirely.
-    return const TitleBarStrip(leading: SidebarToggleButton(collapse: true));
+    return const TitleBarStrip(
+      leading: SidebarToggleButton(collapse: true),
+      trailing: Padding(
+        padding: EdgeInsets.only(right: 8),
+        child: ServerProfileBadge(),
+      ),
+    );
   }
 }
 

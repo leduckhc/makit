@@ -118,4 +118,18 @@ void main() {
     await controller.setPort(0);
     expect(controller.state.port, 7777);
   });
+
+  test('setPort(0) restores the profile default port, not 7777', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final controller = ServerConfigController(
+      prefs,
+      const ServerConfig(port: 7842),
+      defaultPort: 7842,
+    );
+
+    await controller.setPort(0);
+    expect(controller.state.port, 7842);
+    expect(prefs.getInt('desktop_server_port'), 7842);
+  });
 }

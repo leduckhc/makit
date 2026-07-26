@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Signing entitlements for the bundled Node runtime at
+	  Contents/Resources/makit/node. V8 compiles JS to native code at runtime,
+	  so under the hardened runtime (required for notarization) the binary needs
+	  JIT + writable-executable memory, or Gatekeeper kills it on launch.
+	  Applied only to the `node` helper, NOT the main app.
+	-->
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>

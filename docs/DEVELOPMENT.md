@@ -137,6 +137,27 @@ flutter run -d macos
 Pure UI iteration with no server? `flutter run -d macos` uses the in-app
 **FakeServer** — no agent, no pairing.
 
+#### Running two builds at once (main + a worktree)
+
+Each desktop **build** auto-isolates against its own server so a `main` build
+and a worktree build never collide. The profile is derived from the running
+`.app`'s path (`ServerProfile.resolve`, `app/lib/desktop/daemon/server_profile.dart`):
+
+| | Installed app | Dev build (`.../app/build/macos/.../makit.app`) |
+|---|---|---|
+| `MAKIT_HOME` | `~/.makit` | `~/.makit-dev/<hash-of-repo-root>` |
+| Port (default) | `7777` | `7800–7899` (stable per repo path) |
+| Prefs (`NSUserDefaults`) | `flutter.` | `flutter.<hash>.` |
+| Window title / badge | `Makit` | `Makit — <folder>` + colored pill |
+
+So you just run both `makit.app`s and switch by focusing the window (Cmd-Tab);
+the colored badge in the sidebar header + the window title tell them apart.
+Each keeps its own daemon, pairings, sessions, and settings.
+
+To drive a dev build's server from a terminal, point the CLI at the same home,
+e.g. `MAKIT_HOME=~/.makit-dev/<hash> makit status` (the app spawns its bundled
+CLI with this env automatically).
+
 ### Debug on the physical iPhone (attached, hot reload over Wi-Fi)
 
 ```sh

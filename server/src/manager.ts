@@ -8,6 +8,7 @@
 
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
@@ -175,6 +176,8 @@ export class SessionManager extends EventEmitter {
         lastActivityAt: meta.lastActivityAt,
         lastPreview: meta.lastPreview,
         resumeSessionPath: meta.resumeSessionPath,
+        branch: meta.branch,
+        worktreePath: meta.worktreePath,
         hydrateFrom: () => store.read(meta.id),
       });
       this.sessions.set(session.id, session);
@@ -898,9 +901,17 @@ export class SessionManager extends EventEmitter {
       throw new Error(`cannot re-attach agent "${session.agent}" — history only`);
     }
 
-    // cwd: the session's project if still known, else the first project.
+    // cwd: the session's own worktree when it is still an ACTIVE worktree of
+    // the project AND still on disk (so the resumed agent runs on its branch,
+    // not the default, and a pruned-then-recreated path is never trusted),
+    // else the session's project if still known, else the first project.
     const project = this.projects.get(session.projectId) ?? [...this.projects.values()][0];
-    const cwd = project?.dto.path ?? process.cwd();
+    const worktree = session.worktreePath;
+    let cwd = project?.dto.path ?? process.cwd();
+    if (worktree && project && existsSync(worktree)) {
+      const entries = await listWorktrees(project.dto.path);
+      if (entries.some((e) => resolve(e.path) === resolve(worktree))) cwd = worktree;
+    }
 
     const adapter = this.adapterFactory
       ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: "pi" })

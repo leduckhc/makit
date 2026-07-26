@@ -1,25 +1,31 @@
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "app",
-            "cwd": "app",
-            "request": "launch",
-            "type": "dart"
-        },
-        {
-            "name": "app (profile mode)",
-            "cwd": "app",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "profile"
-        },
-        {
-            "name": "app (release mode)",
-            "cwd": "app",
-            "request": "launch",
-            "type": "dart",
-            "flutterMode": "release"
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "makit desktop (debug, worktree server)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/app",
+      "deviceId": "macos",
+      "preLaunchTask": "makit: debug server",
+      "toolArgs": [
+        "--dart-define=MAKIT_WS_URL=wss://127.0.0.1:${input:makitPort}",
+        "--dart-define=MAKIT_FP=${input:makitFp}"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "makitPort",
+      "type": "promptString",
+      "description": "makit debug server port — must match the debug server task; pick a free port per worktree (VS Code remembers your last entry).",
+      "default": "7990"
+    },
+    {
+      "id": "makitFp",
+      "type": "promptString",
+      "description": "makit server cert SHA-256. Get it once with: MAKIT_DEBUG_PORT=<port> scripts/debug-desktop.sh --print-fp   (stable per machine; VSCode remembers your last entry)"
+    }
+  ]
 }

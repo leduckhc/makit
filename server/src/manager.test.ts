@@ -4,11 +4,12 @@ import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { SessionManager } from "./manager.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
 import { fingerprintAgent } from "./adapters/catalog.js";
+import { Session } from "./session.js";
 import type { PersistedProject } from "./project-store.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
@@ -1011,6 +1012,99 @@ test("rehydrates persisted sessions on boot as read-only history", async () => {
   await mgr.getSession("sess-persist")!.sendUserMessage("hi again");
   assert.match(errs[0] ?? "", /re-attach/);
   store.close();
+});
+
+test("branch + worktreePath survive a restart (rehydrated session keeps them)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  // --- first run: a live session gets promoted onto a worktree.
+  const started: SpawnOpts[] = [];
+  const live = new Session({ projectId: "proj-x", agent: "pi", adapter: stubAdapter(started), store });
+  live.markStarted({ branch: "feature-x", worktreePath: "/tmp/wt" });
+
+  // --- restart: a fresh manager over the same store rehydrates it cold.
+  const mgr = new SessionManager({ projects: [], store });
+  const cold = mgr.getSession(live.id)!;
+  assert.equal(cold.branch, "feature-x");
+  assert.equal(cold.worktreePath, "/tmp/wt");
+  assert.equal(cold.toDTO().branch, "feature-x");
+  assert.equal(cold.toDTO().worktreePath, "/tmp/wt");
+  store.close();
+});
+
+test("reattachSession resumes in the session's worktree, not the project root", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const projectDir = makeGitRepo();
+  // realpath: git reports /private/var/... on macOS while mkdtemp returns the
+  // /var/... symlink, and the manager compares resolved (not deref'd) paths.
+  const worktreeParent = realpathSync(mkdtempSync(join(tmpdir(), "makit-wt-")));
+  const worktreeDir = join(worktreeParent, "feature-x");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "feature-x", worktreeDir], { cwd: projectDir });
+  const impostorDir = mkdtempSync(join(tmpdir(), "makit-impostor-"));
+  try {
+    // A prior run left a worktreed pi session with a resume transcript.
+    store.saveSession({
+      id: "sess-wt",
+      projectId: "proj-x",
+      agent: "pi",
+      title: "worktreed",
+      status: "idle",
+      policy: "ask-on-risky",
+      createdAt: 1,
+      lastActivityAt: 2,
+      lastPreview: "",
+      resumeSessionPath: "/tmp/transcript.jsonl",
+      branch: "feature-x",
+      worktreePath: worktreeDir,
+    });
+    // A sibling session whose persisted path exists on disk but is NOT one of
+    // the project's worktrees (e.g. pruned, then the path was recreated).
+    store.saveSession({
+      id: "sess-impostor",
+      projectId: "proj-x",
+      agent: "pi",
+      title: "impostor",
+      status: "idle",
+      policy: "ask-on-risky",
+      createdAt: 1,
+      lastActivityAt: 2,
+      lastPreview: "",
+      resumeSessionPath: "/tmp/transcript.jsonl",
+      branch: "gone",
+      worktreePath: impostorDir,
+    });
+
+    const started: SpawnOpts[] = [];
+    const factoryPaths: string[] = [];
+    const mgr = new SessionManager({
+      projects: [projectDir],
+      store,
+      adapterFactory: (opts) => {
+        factoryPaths.push(opts.projectPath);
+        return stubAdapter(started);
+      },
+    });
+    const live = await mgr.reattachSession("sess-wt");
+    assert.equal(live.worktreePath, worktreeDir);
+    assert.deepEqual(factoryPaths, [worktreeDir]);
+    assert.equal(started[0].cwd, worktreeDir);
+
+    // A path that is not an active worktree of the project is NOT reused as
+    // cwd, even though it exists on disk.
+    await mgr.reattachSession("sess-impostor");
+    assert.equal(started[1].cwd, resolve(projectDir));
+
+    // A vanished worktree falls back to the project path.
+    rmSync(worktreeDir, { recursive: true, force: true });
+    await mgr.reattachSession("sess-wt");
+    assert.equal(started[2].cwd, resolve(projectDir));
+  } finally {
+    rmSync(projectDir, { recursive: true, force: true });
+    rmSync(worktreeParent, { recursive: true, force: true });
+    rmSync(impostorDir, { recursive: true, force: true });
+    store.close();
+  }
 });
 
 test("reattachSession resumes a cold pi session and continues the durable seq space", async () => {
