@@ -9,7 +9,6 @@ import 'new_session_dialog.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
-import 'selected_worktree.dart';
 import 'session_status_dot.dart';
 
 /// Height of a [Split]'s tab strip.
