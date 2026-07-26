@@ -32,21 +32,30 @@ but are otherwise independently implementable. Respect the dependency order.
 | [SPEC-02](./2026-07-05-SPEC-02-cli-client-subcommands.md) | CLI client subcommands | SPEC-01 |
 | [SPEC-03](./2026-07-05-SPEC-03-desktop-control-app.md) | macOS desktop **control** app (Flutter reuse; done — Phase 1 via PR #11, Phase 4 via PR #16) | SPEC-01 |
 | [SPEC-04](./2026-07-05-SPEC-04-multiplexer-adapter-layer.md) | Multiplexer adapter layer + herdr | — (foundation) |
-| [SPEC-05](./2026-07-05-SPEC-05-session-in-pane-spawning.md) | Session-in-pane spawning + lifecycle | SPEC-04 (+ manager/extension) |
+| [SPEC-05](./2026-07-05-SPEC-05-session-in-pane-spawning.md) | Session-in-pane spawning + lifecycle | **Retired — superseded by SPEC-27** (pi-over-ACP, headless) |
 | [SPEC-06](./2026-07-07-SPEC-06-composer-adaptive-input.md) | Composer: adaptive input bar + send-on-content | — |
 | [SPEC-08](./2026-07-08-SPEC-08-actionable-notifications.md) | Slice 1: actionable notifications (approve/reply from lock screen) | **Done** |
 | [SPEC-07](./2026-07-08-SPEC-07-background-wake-notifications.md) | Slice 2: background wake for notifications (force-quit push) | **Done** (requires `push.json`; see [PUSH.md](../PUSH.md)) |
 | [SPEC-10](./2026-07-12-SPEC-10-desktop-chat-app.md) | makit **desktop chat app** (chat-first macOS client; multi-harness; git/PR roadmap) | SPEC-01, SPEC-03, mobile chat stack |
 | [SPEC-11](./2026-07-12-SPEC-11-repo-centric-home.md) | Repo-centric mobile home (worktrees, diff stats, PRs) | SPEC-05, SPEC-06 |
+| [SPEC-20](./2026-07-17-SPEC-20-worktree-scoped-panes.md) | Worktree-scoped pane layouts | **Superseded by SPEC-28** |
+| [SPEC-26](./2026-07-24-SPEC-26-acp-config-options-unified-composer.md) | ACP `configOptions` + unified composer config model (build first) | SPEC-15 |
+| [SPEC-27](./2026-07-24-SPEC-27-new-session-config-at-spawn.md) | New-session config at spawn (worktree · harness · config options; desktop dialog + mobile sheet; **cached capability catalog**; native pi/mux-pane removed — pi over `pi-acp`, codex over `app-server`, projected into one config model) | SPEC-26, SPEC-10 |
+| [SPEC-28](./2026-07-24-SPEC-28-desktop-workspace-tabs.md) | Desktop/iPad workspace: recursive splits + tabs (supersedes SPEC-20) | SPEC-10, SPEC-19, SPEC-27 |
 
-```
+```text
 SPEC-01 ─┬─> SPEC-02 (CLI clients)
          └─> SPEC-03 (desktop app)
-SPEC-04 ───> SPEC-05 (spawn pi in pane)
+SPEC-04 ───> SPEC-05 (spawn pi in pane — RETIRED by SPEC-27)
+
+# Current workspace/config wave (build in order):
+SPEC-26 (ACP configOptions) ──> SPEC-27 (new-session config) ──> SPEC-28 (workspace tabs)
 ```
 
 SPEC-01 and SPEC-04 can start in parallel. SPEC-02/03 need SPEC-01's control
-contract frozen. SPEC-05 needs SPEC-04's adapter interface frozen.
+contract frozen. SPEC-26 → SPEC-27 → SPEC-28 is the required build order for the
+current wave (each depends on the prior). SPEC-05 is retired (pi is now headless
+ACP via `pi-acp`, no mux pane).
 
 ## Next milestones (brainstorm — not yet specced)
 

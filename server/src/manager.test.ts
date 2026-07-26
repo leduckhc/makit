@@ -7,11 +7,13 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { SessionManager } from "./manager.js";
+import { CapabilityCache } from "./adapters/capability_cache.js";
+import { fingerprintAgent } from "./adapters/catalog.js";
 import { Session } from "./session.js";
 import type { PersistedProject } from "./project-store.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
-import type { SessionEvent } from "./protocol.js";
+import type { SessionEvent, SessionConfigOption } from "./protocol.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
@@ -120,7 +122,7 @@ test("listRepos issues its per-worktree shells concurrently, not serially (P3)",
   }
 });
 
-test("native pi fallback keeps agent=pi when no mux", async () => {
+test("pi threads agent=pi through the adapter factory (headless, ACP)", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
   try {
     const agents: string[] = [];
@@ -132,7 +134,7 @@ test("native pi fallback keeps agent=pi when no mux", async () => {
       },
     });
     const projectId = manager.listProjects()[0].id;
-    await manager.spawnSession(projectId, "t", "pi"); // explicit native pi
+    await manager.spawnSession(projectId, "t", "pi"); // explicit pi (ACP via pi-acp)
     assert.deepEqual(agents, ["pi"]);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -153,7 +155,7 @@ test("spawnSession threads the chosen agent id into the adapter factory", async 
     const projectId = manager.listProjects()[0].id;
 
     await manager.spawnSession(projectId, "t", "codex");
-    await manager.spawnSession(projectId, "t"); // default native pi
+    await manager.spawnSession(projectId, "t"); // default agent (pi)
 
     assert.deepEqual(agents, ["codex", "pi"]);
   } finally {
@@ -161,15 +163,34 @@ test("spawnSession threads the chosen agent id into the adapter factory", async 
   }
 });
 
-test("listAgents exposes pi without pi-acp", () => {
+test("listAgents exposes pi (ACP via pi-acp) when both binaries resolve, and never a pi-acp id", () => {
   const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  const binDir = mkdtempSync(join(tmpdir(), "makit-bin-"));
+  const piAcp = join(binDir, "pi-acp");
+  const pi = join(binDir, "pi");
+  writeFileSync(piAcp, "#!/bin/sh\n");
+  writeFileSync(pi, "#!/bin/sh\n");
+  chmodSync(piAcp, 0o755);
+  chmodSync(pi, 0o755);
+  const savedAcp = process.env.MAKIT_PI_ACP_BIN;
+  const savedPi = process.env.MAKIT_PI_BIN;
+  process.env.MAKIT_PI_ACP_BIN = piAcp;
+  process.env.MAKIT_PI_BIN = pi;
   try {
     const manager = new SessionManager({ projects: [cwd] });
-    const ids = manager.listAgents().map((a) => a.id);
-    assert.ok(ids.includes("pi"));
-    assert.ok(!ids.includes("pi-acp"));
+    const agents = manager.listAgents();
+    const entry = agents.find((a) => a.id === "pi");
+    assert.ok(entry, "pi should be listed");
+    assert.equal(entry!.transport, "acp");
+    // pi is the agent id on the wire; there is no separate "pi-acp" id.
+    assert.ok(!agents.some((a) => a.id === "pi-acp"));
   } finally {
+    if (savedAcp === undefined) delete process.env.MAKIT_PI_ACP_BIN;
+    else process.env.MAKIT_PI_ACP_BIN = savedAcp;
+    if (savedPi === undefined) delete process.env.MAKIT_PI_BIN;
+    else process.env.MAKIT_PI_BIN = savedPi;
     rmSync(cwd, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
   }
 });
 
@@ -305,6 +326,112 @@ test("spawnPendingSession is a draft: no worktree, no agent started", async () =
     assert.equal(s.toDTO().branch, undefined);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+/** A stub adapter that records SpawnOpts + configOption actions applied to it. */
+function stubActionAdapter(
+  started: SpawnOpts[],
+  actions: { action: string; args?: Record<string, unknown> }[],
+): AgentAdapter {
+  const e = new EventEmitter() as unknown as AgentAdapter;
+  (e as any).agent = "stub";
+  (e as any).start = async (opts: SpawnOpts) => {
+    started.push(opts);
+  };
+  (e as any).send = async () => {};
+  (e as any).cancel = async () => {};
+  (e as any).kill = async () => {};
+  (e as any).sendAction = async (action: string, args?: Record<string, unknown>) => {
+    actions.push({ action, args });
+  };
+  return e;
+}
+
+/** A capability cache pre-warmed with a fixed catalog for `agentId`. */
+function warmCache(agentId: string, configOptions: SessionConfigOption[]): CapabilityCache {
+  const cache = new CapabilityCache({
+    path: join(mkdtempSync(join(tmpdir(), "makit-capm-")), "cache.json"),
+    prober: async () => configOptions,
+  });
+  cache.set(agentId, { fingerprint: fingerprintAgent(agentId), configOptions });
+  return cache;
+}
+
+const PI_CATALOG: SessionConfigOption[] = [
+  {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select",
+    currentValue: "gpt-5",
+    options: [
+      { value: "gpt-5", name: "GPT-5" },
+      { value: "o3", name: "o3" },
+    ],
+  },
+  { id: "web", name: "Web", category: "_tools", type: "boolean", currentValue: false },
+];
+
+test("startPendingSession applies valid config picks to the real adapter and drops invalid ones", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const actions: { action: string; args?: Record<string, unknown> }[] = [];
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubActionAdapter(started, actions),
+      capabilityCache: warmCache("pi", PI_CATALOG),
+    });
+    const projectId = manager.listProjects()[0].id;
+
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, undefined, undefined, [
+      { id: "model", value: "o3" },
+      { id: "web", value: true },
+      { id: "model", value: "nope" },
+      { id: "ghost", value: "x" },
+    ]);
+    await manager.startPendingSession(draft.id, "Configure the model");
+
+    // Only the two valid picks reached the real adapter, applied AFTER start.
+    assert.equal(started.length, 1);
+    assert.deepEqual(actions, [
+      { action: "configOption", args: { id: "model", value: "o3" } },
+      { action: "configOption", args: { id: "web", value: true } },
+    ]);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a draft with no picks applies no configOption actions at launch", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const actions: { action: string; args?: Record<string, unknown> }[] = [];
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubActionAdapter(started, actions),
+      capabilityCache: warmCache("pi", PI_CATALOG),
+    });
+    const projectId = manager.listProjects()[0].id;
+    const draft = await manager.spawnPendingSession(projectId, "pi");
+    await manager.startPendingSession(draft.id, "Just start");
+    assert.equal(actions.length, 0);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   }
 });
 

@@ -1,22 +1,23 @@
 /**
  * AcpAdapter — drives any Agent Client Protocol (v1) agent as a subprocess and
  * bridges it to makit's `AgentAdapter` seam. makit acts as the ACP *client*;
- * the agent (e.g. `codex-acp`, `claude-agent-acp`) is the server.
+ * the agent (e.g. `pi` via `pi-acp`, `codex-acp`) is the server.
  *
  * Lifecycle: spawn agent → `initialize` → `session/new` → one `session/prompt`
  * per user turn. Streaming `session/update` notifications are normalized by
  * {@link AcpEventMapper}. Tool-permission requests are surfaced to the phone
  * via `askUser` (confirmAction).
  *
- * Only pi's native `PiAdapter` gives full-fidelity pi (extension slash commands,
- * ctx.ui.* transport). This path trades some of that for multi-agent reach.
+ * pi runs through this adapter via the `pi-acp` bridge (SPEC-27), which spawns
+ * `pi --mode rpc` and bridges ACP JSON-RPC over stdio; makit no longer ships a
+ * native pi adapter.
  */
 
-import { readFile, writeFile, mkdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { readFile, writeFile, mkdir, realpath, mkdtemp, rm } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import {
   ClientSideConnection,
-  type Agent as AcpAgent,
   type Client as AcpClient,
   type Stream,
   type RequestPermissionRequest,
@@ -26,6 +27,7 @@ import {
   type WriteTextFileRequest,
   type CreateElicitationRequest,
   type CreateElicitationResponse,
+  type SessionConfigOption as AcpConfigOption,
 } from "@agentclientprotocol/sdk";
 import type { AnyMessage } from "@agentclientprotocol/sdk";
 import type { SpawnOpts, UserInput } from "./adapter.js";
@@ -35,7 +37,14 @@ import { spawnLineProcess } from "./child_transport.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
 import type { AskUser } from "../uicall.js";
+import type { SessionConfigOption, ConfigOptionValue, ConfigOptionGroup } from "../protocol.js";
 import { log } from "../log.js";
+
+/**
+ * Timeout (ms) for ACP harness initialization and session spawn. If the child
+ * process hangs before or after `initialize`/`newSession`, it is aborted.
+ */
+const ACP_HANDSHAKE_TIMEOUT = 15_000;
 
 export interface AcpSpawnSpec {
   /** makit agent label surfaced in the session DTO ("pi", "codex", …). */
@@ -69,7 +78,7 @@ export class AcpAdapter extends SubprocessAdapter {
   private readonly connectFn: (cwd: string, env: Record<string, string>) => AcpTransport;
 
   private transport?: AcpTransport;
-  private conn?: AcpAgent;
+  private conn?: ClientSideConnection;
   private acpSessionId?: string;
   private makitSessionId = "";
   private workspaceRoot = "";
@@ -82,6 +91,15 @@ export class AcpAdapter extends SubprocessAdapter {
    * agent can feed the composer — surfaced as the session-mode selector.
    */
   private modes?: { current: string; available: { id: string; name: string }[] };
+
+  /**
+   * ACP v1 Session Config Options captured from the `session/new` response,
+   * already parsed into makit's wire {@link SessionConfigOption} shape. When
+   * present these SUPERSEDE `modes` (the spec says a client that supports
+   * `configOptions` uses it exclusively); `modes`-only agents get a single
+   * synthesised `category:"mode"` option instead (see {@link buildConfigOptions}).
+   */
+  private configOptions?: SessionConfigOption[];
 
   constructor(opts: AcpAdapterOpts) {
     super();
@@ -112,13 +130,24 @@ export class AcpAdapter extends SubprocessAdapter {
 
     this.conn = new ClientSideConnection(() => this.buildClient(), this.transport.stream);
 
-    await this.conn.initialize({
-      protocolVersion: 1,
-      clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: true },
-        terminal: false,
-      },
-    });
+    await Promise.race([
+      this.conn.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: false,
+          // We support boolean session config options (SPEC-26). Advertising this
+          // lets agents include `type:"boolean"` entries in `configOptions`.
+          session: { configOptions: { boolean: {} } },
+        },
+      }),
+      new Promise<void>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP initialize timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
 
     if (opts.resumeSessionPath) {
       // ACP resume is keyed by an ACP sessionId, not by makit's on-disk path.
@@ -126,9 +155,18 @@ export class AcpAdapter extends SubprocessAdapter {
       log.warn("[makit] AcpAdapter: resumeSessionPath ignored (ACP resume not wired yet)");
     }
 
-    const res = await this.conn.newSession({ cwd, mcpServers: [] });
+    const res = await Promise.race([
+      this.conn.newSession({ cwd, mcpServers: [] }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP newSession timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
     this.acpSessionId = res.sessionId;
     this.captureModes(res.modes);
+    this.captureConfigOptions(res.configOptions);
     this.emit("status", "idle");
     this.emitMeta();
   }
@@ -136,7 +174,7 @@ export class AcpAdapter extends SubprocessAdapter {
   async send(input: UserInput): Promise<void> {
     if (!this.conn || !this.acpSessionId) throw new Error("AcpAdapter: send before start");
 
-    // Echo the user message so transcripts are complete (mirrors PiAdapter).
+    // Echo the user message so transcripts are complete (mirrors the pi adapter).
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: { text: input.text } });
 
     const turnKey = this.turns.enterTurn();
@@ -177,16 +215,54 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 
   /**
-   * Control actions from the app. ACP only supports session-mode switching
-   * (no model/thinking), so `mode` maps to `session/set_session_mode`; other
-   * actions are silently ignored on this transport.
+   * Control actions from the app. `configOption` maps to ACP
+   * `session/set_config_option` (SPEC-26); `mode` maps to
+   * `session/set_session_mode` (legacy, for `modes`-only agents). Other actions
+   * are silently ignored on this transport.
    */
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
-    if (action !== "mode" || !this.conn || !this.acpSessionId) return;
+    if (!this.conn || !this.acpSessionId) return;
+    if (action === "configOption") return this.setConfigOption(args);
+    if (action !== "mode") return;
     const modeId = typeof args?.id === "string" ? args.id : "";
     if (!modeId) return;
-    if (!this.conn.setSessionMode) return;
-    await this.conn.setSessionMode({ sessionId: this.acpSessionId, modeId });
+    await this.applyMode(modeId);
+  }
+
+  /**
+   * Apply a `configOption` control action. Real ACP `configOptions` map to
+   * `session/set_config_option` (our `id` → wire `configId`); the response's
+   * COMPLETE list replaces the cached options (never merged) and re-emits so
+   * dependent options recompute. A `modes`-only agent has only the synthesised
+   * `category:"mode"` option, which routes to `setSessionMode` instead.
+   */
+  private async setConfigOption(args?: Record<string, unknown>): Promise<void> {
+    const id = typeof args?.id === "string" ? args.id : "";
+    if (!id) return;
+    const value = args?.value;
+
+    // modes-only agent: the sole option is the synthesised mode selector.
+    if (!this.configOptions) {
+      if (id === "mode" && typeof value === "string") await this.applyMode(value);
+      return;
+    }
+    if (!this.conn!.setSessionConfigOption) return;
+
+    const target = this.configOptions.find((o) => o.id === id);
+    const req =
+      target?.type === "boolean"
+        ? { sessionId: this.acpSessionId!, configId: id, value: value === true, type: "boolean" as const }
+        : { sessionId: this.acpSessionId!, configId: id, value: String(value ?? "") };
+    const res = await this.conn!.setSessionConfigOption(req);
+    // The COMPLETE list replaces the cache (never merge) so dependent options stay correct.
+    this.captureConfigOptions(res.configOptions);
+    this.emitMeta();
+  }
+
+  /** Route a mode change to `session/set_session_mode` and reflect it locally. */
+  private async applyMode(modeId: string): Promise<void> {
+    if (!this.conn!.setSessionMode) return;
+    await this.conn!.setSessionMode({ sessionId: this.acpSessionId!, modeId });
     // Reflect immediately; the agent may also confirm via current_mode_update.
     if (this.modes) {
       this.modes = { ...this.modes, current: modeId };
@@ -213,13 +289,55 @@ export class AcpAdapter extends SubprocessAdapter {
     };
   }
 
-  /** Emit the ACP session modes as `session.meta` (only when modes exist). */
+  /** Cache the ACP configOptions from a newSession response, parsed to wire shape. */
+  private captureConfigOptions(options: AcpConfigOption[] | null | undefined): void {
+    if (!Array.isArray(options) || options.length === 0) {
+      this.configOptions = undefined;
+      return;
+    }
+    this.configOptions = options.map(parseAcpConfigOption);
+  }
+
+  /**
+   * The `configOptions` to surface on `session.meta`. Agent-supplied options win
+   * (`modes` is ignored per spec); otherwise a `modes`-only agent gets a single
+   * synthesised `category:"mode"` option for back-compat. Undefined when neither.
+   */
+  private buildConfigOptions(): SessionConfigOption[] | undefined {
+    if (this.configOptions) return this.configOptions;
+    if (this.modes) {
+      return [
+        {
+          id: "mode",
+          name: "Mode",
+          category: "mode",
+          type: "select",
+          currentValue: this.modes.current,
+          options: this.modes.available.map((m) => ({ value: m.id, name: m.name })),
+        },
+      ];
+    }
+    return undefined;
+  }
+
+  /**
+   * Emit the session config as `session.meta`. Keeps the legacy
+   * `{model, thinking, models, modes}` fields (migration window) and adds the
+   * unified `configOptions` list (SPEC-26) when the agent supports either.
+   */
   private emitMeta(): void {
-    if (!this.modes) return;
+    const configOptions = this.buildConfigOptions();
+    if (!this.modes && !configOptions) return;
     this.emitEvent({
       ts: Date.now(),
       kind: "session.meta",
-      payload: { model: null, thinking: "", models: [], modes: this.modes },
+      payload: {
+        model: null,
+        thinking: "",
+        models: [],
+        modes: this.modes,
+        ...(configOptions ? { configOptions } : {}),
+      },
     });
   }
 
@@ -235,12 +353,22 @@ export class AcpAdapter extends SubprocessAdapter {
       sessionUpdate: async (params: SessionNotification) => {
         if (params.sessionId !== this.acpSessionId) return;
         // The agent can switch modes autonomously; keep the selector in sync.
-        const u = params.update as { sessionUpdate?: string; currentModeId?: string };
+        const u = params.update as {
+          sessionUpdate?: string;
+          currentModeId?: string;
+          configOptions?: AcpConfigOption[];
+        };
         if (u.sessionUpdate === "current_mode_update") {
           if (this.modes && typeof u.currentModeId === "string") {
             this.modes = { ...this.modes, current: u.currentModeId };
             this.emitMeta();
           }
+          return;
+        }
+        // The agent pushed an updated config-option set; re-emit the complete list.
+        if (u.sessionUpdate === "config_option_update") {
+          this.captureConfigOptions(u.configOptions);
+          this.emitMeta();
           return;
         }
         this.mapper.handle(params.update);
@@ -378,6 +506,96 @@ export function defaultConnect(spec: AcpSpawnSpec) {
   };
 }
 
+// ---------- capability probe (SPEC-27) -------------------------------------
+
+/**
+ * Throwaway capability probe for an ACP harness (pi via `pi-acp`): spawn the
+ * adapter's child in an **empty temp `cwd`**, run `initialize` + `session/new`,
+ * capture the returned `configOptions` (parsed to makit's wire shape), then
+ * clean up. When the agent advertises the `session/delete` capability we call
+ * it to drop the probe session (pi-acp also prunes its
+ * `~/.pi/pi-acp/session-map.json` entry) — tolerating a method-not-found from
+ * agents that lie about it. The child is always killed and the temp dir always
+ * removed, so no ghost sessions/dirs are left behind.
+ *
+ * Standalone (not a full makit {@link Session}): it reuses only the transport
+ * plumbing + config-option parser. Returns `[]` for an option-less harness.
+ */
+export async function probeAcpConfigOptions(
+  spec: AcpSpawnSpec,
+  opts: { connect?: (cwd: string, env: Record<string, string>) => AcpTransport } = {},
+): Promise<SessionConfigOption[]> {
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), "makit-acp-probe-")));
+  const connect = opts.connect ?? defaultConnect(spec);
+  const transport = connect(cwd, spec.env ?? {});
+  try {
+    const conn = new ClientSideConnection(() => probeClient(), transport.stream);
+    const init = await Promise.race([
+      conn.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: false,
+          session: { configOptions: { boolean: {} } },
+        },
+      }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP probe initialize timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
+    const res = await Promise.race([
+      conn.newSession({ cwd, mcpServers: [] }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP probe newSession timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
+    const options =
+      Array.isArray(res.configOptions) && res.configOptions.length > 0
+        ? res.configOptions.map(parseAcpConfigOption)
+        : [];
+
+    // Drop the throwaway session when the agent advertises session/delete.
+    const supportsDelete = Boolean(init.agentCapabilities?.sessionCapabilities?.delete);
+    if (supportsDelete && conn.deleteSession) {
+      try {
+        await conn.deleteSession({ sessionId: res.sessionId });
+      } catch (e) {
+        log.warn(`[makit] ACP probe session/delete failed: ${(e as Error).message}`);
+      }
+    }
+    return options;
+  } finally {
+    transport.dispose();
+    await rm(cwd, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Minimal ACP {@link AcpClient} for the probe: it never runs a turn, so it
+ * needs no real fs/permission handling — filesystem requests are refused and
+ * permission/elicitation requests are cancelled/declined.
+ */
+function probeClient(): AcpClient {
+  return {
+    sessionUpdate: async () => {},
+    requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
+    readTextFile: async () => {
+      throw new Error("ACP probe does not serve files");
+    },
+    writeTextFile: async () => {
+      throw new Error("ACP probe does not serve files");
+    },
+    unstable_createElicitation: async () => ({ action: "decline" }),
+    unstable_completeElicitation: async () => {},
+  };
+}
+
 /**
  * Adapt the shared LF-delimited-JSON line transport to the ACP SDK's
  * {@link Stream} (a duplex of parsed messages). This is the ACP equivalent of
@@ -477,12 +695,46 @@ function permissionPreview(tc: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
-// ---------- production spec helper -----------------------------------------
-/** Resolve the `codex-acp` binary (override via MAKIT_CODEX_ACP_BIN). */
-export function codexAcpSpec(): AcpSpawnSpec {
-  return {
-    agent: "codex",
-    command: process.env.MAKIT_CODEX_ACP_BIN || "codex-acp",
-    args: [],
-  };
+// ---------- ACP config-option parsing (SPEC-26) ----------------------------
+
+/**
+ * Map an ACP v1 {@link AcpConfigOption} into makit's wire
+ * {@link SessionConfigOption}. Boolean options carry a boolean `currentValue`;
+ * select options carry either a flat value list (`options`) or named `groups`
+ * (ACP allows both — grouped choices preserve their group names). Absent
+ * `description`/`category` are omitted rather than emitted as `undefined`.
+ */
+export function parseAcpConfigOption(opt: AcpConfigOption): SessionConfigOption {
+  const base: SessionConfigOption =
+    opt.type === "boolean"
+      ? { id: opt.id, name: opt.name, type: "boolean", currentValue: opt.currentValue }
+      : { id: opt.id, name: opt.name, type: "select", currentValue: opt.currentValue };
+  if (typeof opt.description === "string") base.description = opt.description;
+  if (typeof opt.category === "string") base.category = opt.category;
+
+  if (opt.type === "select") {
+    const raw = Array.isArray(opt.options) ? opt.options : [];
+    if (isGroupedSelect(raw)) {
+      base.groups = raw.map(
+        (g): ConfigOptionGroup => ({ name: g.name, options: g.options.map(parseSelectValue) }),
+      );
+    } else {
+      base.options = raw.map(parseSelectValue);
+    }
+  }
+  return base;
+}
+
+/** ACP grouped selects carry `{group, name, options}`; flat ones carry `{value, name}`. */
+function isGroupedSelect(
+  options: readonly unknown[],
+): options is { group: string; name: string; options: { value: string; name: string; description?: string | null }[] }[] {
+  const first = options[0];
+  return isRecord(first) && "group" in first;
+}
+
+function parseSelectValue(v: { value: string; name: string; description?: string | null }): ConfigOptionValue {
+  const out: ConfigOptionValue = { value: v.value, name: v.name };
+  if (typeof v.description === "string") out.description = v.description;
+  return out;
 }

@@ -12,9 +12,10 @@ import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
-import { listAgents, type AgentDescriptor } from "./adapters/catalog.js";
+import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
+import { CapabilityCache } from "./adapters/capability_cache.js";
 import { Session } from "./session.js";
-import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO } from "./protocol.js";
+import { DEFAULT_SESSION_TITLE, type ProjectDTO, type RepoDTO, type SessionConfigOption } from "./protocol.js";
 import { listPiSessions, parseTranscript, type PiSessionMeta } from "./pi-sessions.js";
 import { DetachedAdapter } from "./adapters/detached.js";
 import { buildAdapter } from "./agent_factory.js";
@@ -71,6 +72,12 @@ export interface ManagerOpts {
    * read-only history so clients can resume after a server restart.
    */
   store?: EventStore;
+  /**
+   * Capability cache for `agents.list`/`agents.refresh` (SPEC-27). Injected in
+   * tests with a stub prober so listing never spawns a probe subprocess; a
+   * default (real-probe) cache is created lazily when omitted.
+   */
+  capabilityCache?: CapabilityCache;
 }
 
 export interface BridgeBinding {
@@ -79,8 +86,9 @@ export interface BridgeBinding {
   /** Absolute paths to connector `.ts` files (loaded via `pi -e`). */
   extensionPaths: string[];
   /**
-   * Present a UICall on the phone and resolve with the answer. Used by the
-   * PiAdapter UI interceptor to transport pi's ctx.ui.* calls to the app.
+   * Present a UICall on the phone and resolve with the answer. Threaded into an
+   * adapter's `start()` so agents can transport interactive prompts (pi's
+   * `ctx.ui.*` over ACP, or ACP permission/elicitation) to the app.
    */
   askUser?: AskUser;
 }
@@ -110,6 +118,7 @@ export class SessionManager extends EventEmitter {
   private readonly defaultModel?: string;
   private readonly defaultAgentId: string;
   private readonly store?: EventStore;
+  private capabilityCache?: CapabilityCache;
   private bridge?: BridgeBinding;
 
   constructor(opts: ManagerOpts) {
@@ -119,6 +128,7 @@ export class SessionManager extends EventEmitter {
     this.defaultModel = opts.defaultModel;
     this.defaultAgentId = "pi";
     this.store = opts.store;
+    this.capabilityCache = opts.capabilityCache;
     for (const entry of opts.projects) {
       // A bare path gets a fresh server-generated id; a restored `{ id, path }`
       // keeps its id so a client's persisted projectId stays valid across a
@@ -229,28 +239,75 @@ export class SessionManager extends EventEmitter {
     return this.sessions.get(id);
   }
 
-  /** Set the loopback bridge + askUser wiring so subsequently-spawned pi
-   *  sessions can transport `ctx.ui.*` calls to the app (PiAdapter interceptor). */
+  /** Set the loopback bridge + askUser wiring so subsequently-spawned
+   *  sessions can transport interactive prompts (`ctx.ui.*` / ACP
+   *  permission/elicitation) to the app. */
   setBridge(bridge: BridgeBinding) {
     this.bridge = bridge;
   }
 
-  /** Spawn a fresh pi session inside `projectId`. */
+  /** Spawn a fresh session inside `projectId` (default agent when unspecified). */
   async spawnPiSession(projectId: string, title?: string, agent?: string): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     return this.createSession(project, { title, agent });
   }
 
-  /** Agents this host can offer for selection in the app. */
+  /** Agents this host can offer for selection in the app (base descriptors). */
   listAgents(): AgentDescriptor[] {
     return listAgents();
   }
 
+  /** Lazily construct the capability cache (default real-probe cache). */
+  private getCapabilityCache(): CapabilityCache {
+    return (this.capabilityCache ??= new CapabilityCache());
+  }
+
   /**
-   * Spawn a session for a chosen agent. Native pi keeps the multiplexer-pane
-   * path (World B/D mirror); ACP-backed agents always run
-   * headless since there's no real TUI to mirror.
+   * Agents enriched with their cached `configOptions` catalog (SPEC-27). Serves
+   * from the capability cache, re-probing an AVAILABLE harness once on a
+   * fingerprint miss/change; a warm cache spawns nothing. Unavailable harnesses
+   * are never probed. This is the `agents.list` serve path.
+   */
+  async listAgentsWithCapabilities(): Promise<AgentDescriptor[]> {
+    const cache = this.getCapabilityCache();
+    return Promise.all(listAgents().map((d) => cache.serve(d)));
+  }
+
+  /**
+   * Force a re-probe of one harness and return its fresh descriptor
+   * (`agents.refresh`). Returns `undefined` for an unknown agent id.
+   */
+  async refreshAgent(agentId: string): Promise<AgentDescriptor | undefined> {
+    const descriptor = listAgents().find((a) => a.id === agentId);
+    if (!descriptor) return undefined;
+    return this.getCapabilityCache().refresh(descriptor);
+  }
+
+  /**
+   * Validate pre-spawn config picks against the AGENT's cached catalog: drop
+   * unknown option ids and values that aren't offered, keep the valid ones
+   * (SPEC-27). When no catalog is cached yet (cold probe), picks pass through
+   * unchanged — apply-at-launch is best-effort and the live session reconciles.
+   */
+  private validateConfigPicks(
+    agentId: string,
+    picks: { id: string; value: string | boolean }[],
+  ): { id: string; value: string | boolean }[] {
+    const fingerprint = fingerprintAgent(agentId);
+    const cache = this.capabilityCache ?? this.getCapabilityCache();
+    const cached = cache.get(agentId);
+    // Only trust the catalog when it matches the current fingerprint.
+    const catalog =
+      cached && cached.fingerprint === fingerprint ? cached.configOptions : undefined;
+    if (!catalog) return picks;
+    return picks.filter((pick) => isValidPick(catalog, pick));
+  }
+
+  /**
+   * Spawn a session for a chosen agent. All sessions run headless (SPEC-27):
+   * pi over ACP via `pi-acp`, codex via `codex app-server`. There is no longer
+   * an attachable multiplexer pane.
    */
   async spawnSession(projectId: string, title?: string, agent?: string): Promise<Session> {
     const agentId = agent ?? this.defaultAgentId;
@@ -264,10 +321,16 @@ export class SessionManager extends EventEmitter {
    * Uses a {@link DetachedAdapter} placeholder so the session wires + shows in
    * snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, baseBranch?: string, worktreePath?: string, branch?: string): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, baseBranch?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
+    // Validate pre-spawn picks against the cached catalog now (drop unknown
+    // ids/values); the survivors ride the draft and apply at launch (SPEC-27).
+    const configPicks =
+      configOptions && configOptions.length > 0
+        ? this.validateConfigPicks(agentId, configOptions)
+        : undefined;
     const session = new Session({
       projectId: project.dto.id,
       agent: this.adapterFactory ? "stub" : agentId,
@@ -275,7 +338,7 @@ export class SessionManager extends EventEmitter {
       adapter: new DetachedAdapter(agentId),
       store: this.store,
     });
-    session.beginDraft({ agent: agentId, baseBranch });
+    session.beginDraft({ agent: agentId, baseBranch, configPicks });
     // Bind to an existing worktree when provided (start-a-session-in-worktree):
     // first message launches the agent there instead of forking a new tree.
     // The path comes from the wire, so verify it is genuinely a worktree of
@@ -296,6 +359,7 @@ export class SessionManager extends EventEmitter {
         baseBranch,
         pendingWorktreePath: match.path,
         branch: match.branch ?? branch,
+        configPicks,
       });
     }
     this.sessions.set(session.id, session);
@@ -537,8 +601,33 @@ export class SessionManager extends EventEmitter {
       built.adapter;
     session.replaceAdapter(adapter);
     await adapter.start(this.startOpts(worktreePath, session.id));
+    // Apply pre-spawn config picks now: AFTER the real session/thread exists
+    // and BEFORE the first prompt (SPEC-27). Best-effort per transport — ACP
+    // routes to session/set_config_option, codex caches model/effort for the
+    // first turn/start; an adapter that can't honour a pick ignores it.
+    await this.applyConfigPicks(adapter, lc.configPicks);
     session.markStarted({ branch, worktreePath, title: humanizeSlug(base) });
     return session;
+  }
+
+  /**
+   * Apply carried config picks to a freshly-started session's REAL adapter via
+   * the shared `configOption` action path. Best-effort: a rejected/ignored pick
+   * never fails the launch (the live session's reported `configOptions` is
+   * authoritative).
+   */
+  private async applyConfigPicks(
+    adapter: AgentAdapter,
+    picks: { id: string; value: string | boolean }[] | undefined,
+  ): Promise<void> {
+    if (!picks || picks.length === 0 || !adapter.sendAction) return;
+    for (const pick of picks) {
+      try {
+        await adapter.sendAction("configOption", { id: pick.id, value: pick.value });
+      } catch (e) {
+        log.warn(`[makit] could not apply config pick ${pick.id}: ${(e as Error).message}`);
+      }
+    }
   }
 
   /**
@@ -734,7 +823,8 @@ export class SessionManager extends EventEmitter {
     // Resolve the concrete agent for this session (falls back to the host default).
     const agentId = opts.agent ?? this.defaultAgentId;
     // Create the session first so we have an id to thread into the bridge.
-    // askUser is threaded through `start()` below (same as PiAdapter), not the
+    // askUser is threaded through `start()` below (uniform across agent types),
+    // not the
     // constructor — keeps the adapter construction uniform across agent types.
     const built = buildAdapter(agentId);
     const adapter = built.adapter;
@@ -843,6 +933,25 @@ export class SessionManager extends EventEmitter {
   allSessions(): Session[] {
     return [...this.sessions.values()];
   }
+}
+
+/**
+ * True when a pick names an option in the catalog AND supplies a value that
+ * option accepts: booleans take any boolean; selects must match one of the
+ * offered values (flat `options` or grouped `groups`).
+ */
+function isValidPick(
+  catalog: SessionConfigOption[],
+  pick: { id: string; value: string | boolean },
+): boolean {
+  const option = catalog.find((o) => o.id === pick.id);
+  if (!option) return false;
+  if (option.type === "boolean") return typeof pick.value === "boolean";
+  if (typeof pick.value !== "string") return false;
+  const flat = option.options?.some((v) => v.value === pick.value) ?? false;
+  const grouped =
+    option.groups?.some((g) => g.options.some((v) => v.value === pick.value)) ?? false;
+  return flat || grouped;
 }
 
 /** Turn a kebab slug into a human title, e.g. "add-login-form" → "Add login form". */

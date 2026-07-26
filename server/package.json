@@ -27,7 +27,7 @@
     "secure:audit": "pnpm audit --prod"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.26.0",
+    "@agentclientprotocol/sdk": "^1.3.0",
     "bonjour-service": "^1.4.2",
     "qrcode-terminal": "^0.12.0",
     "selfsigned": "^5.5.0",

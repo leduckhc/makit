@@ -9,6 +9,7 @@ import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'connection_endpoint.dart';
 import 'session_status_dot.dart';
+import 'split_view.dart' show SessionDragData;
 import 'title_bar_strip.dart';
 import 'server_profile_badge.dart';
 import 'new_session_dialog.dart';
@@ -135,7 +136,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
     try {
       final sid = await store.spawnSession(projectId);
       if (!mounted) return;
-      openDraftSession(ref, projectId, sid);
+      openDraftSession(ref, sid);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(
@@ -923,7 +924,7 @@ class _SessionTile extends StatelessWidget {
         : (session.title.trim().isNotEmpty
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
-    return Padding(
+    final tile = Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: ListTile(
         dense: true,
@@ -952,6 +953,59 @@ class _SessionTile extends StatelessWidget {
           ],
         ),
         onTap: onTap,
+      ),
+    );
+    // Drag a session onto a pane to open/move it there. Horizontal affinity so
+    // a normal vertical drag still scrolls the sidebar; a rightward pull (into
+    // the panes) starts the drag.
+    return Draggable<SessionDragData>(
+      data: SessionDragData(session.id),
+      affinity: Axis.horizontal,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _SessionDragFeedback(title: title, status: session.status),
+      childWhenDragging: Opacity(opacity: 0.4, child: tile),
+      child: tile,
+    );
+  }
+}
+
+/// The chip shown under the pointer while dragging a session out of the
+/// sidebar (a compact title + status dot on the accent surface).
+class _SessionDragFeedback extends StatelessWidget {
+  const _SessionDragFeedback({required this.title, required this.status});
+
+  final String title;
+  final SessionStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        constraints: const BoxConstraints(maxWidth: 220),
+        decoration: BoxDecoration(
+          color: cs.primaryContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (status != SessionStatus.idle) ...[
+              SessionStatusDot(status: status),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: cs.onPrimaryContainer),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

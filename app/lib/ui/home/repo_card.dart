@@ -229,31 +229,79 @@ class RepoCard extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     final store = ref.read(storeControllerProvider.notifier);
     final branches = branchOptionsForRepo(repo);
+    final worktrees = sortWorktreesForDisplay(repo.worktrees);
     try {
       final agents = await store.fetchAgents();
       final selectable = agents.where((a) => a.available).toList();
+      // Open PRs power the "From PR" worktree source; best-effort (an empty or
+      // failed lookup just hides that option). Bounded so a slow `gh` can't
+      // stall opening the sheet.
+      List<OpenPr> openPrs = const [];
+      try {
+        openPrs = await store
+            .listOpenPrs(repo.id)
+            .timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => const <OpenPr>[],
+            );
+      } catch (_) {
+        openPrs = const [];
+      }
+
       String? chosenAgent;
       String? chosenBranch = branches.isEmpty ? null : branches.first;
-      // Only prompt when there's an actual choice to make.
-      if (selectable.length > 1 || branches.length > 1) {
+      String? worktreePath;
+      List<ConfigOptionPick>? picks;
+
+      // Show the sheet whenever there's something to configure: more than one
+      // harness/branch/worktree, any open PRs, or a harness with config options.
+      final hasConfig = selectable.any((a) => a.configOptions.isNotEmpty);
+      final worthPrompting =
+          selectable.length > 1 ||
+          branches.length > 1 ||
+          worktrees.length > 1 ||
+          openPrs.isNotEmpty ||
+          hasConfig;
+      if (worthPrompting) {
         if (!context.mounted) return;
         final choice = await showModalBottomSheet<NewSessionChoice>(
           context: context,
           showDragHandle: true,
+          isScrollControlled: true,
           builder: (ctx) => NewSessionSheet(
-            agents: selectable.length > 1 ? selectable : const [],
-            branches: branches.length > 1 ? branches : const [],
+            agents: selectable,
+            branches: branches,
+            worktrees: worktrees,
+            openPrs: openPrs,
             initialBranch: chosenBranch,
           ),
         );
         if (choice == null) return;
         chosenAgent = choice.agent;
-        chosenBranch = choice.baseBranch ?? chosenBranch;
+        switch (choice.source) {
+          case WorktreeSource.existing:
+            worktreePath = choice.worktreePath;
+          case WorktreeSource.newBranch:
+            chosenBranch = choice.baseBranch ?? chosenBranch;
+          case WorktreeSource.fromPr:
+            if (choice.prNumber != null) {
+              final wt = await store.createWorktreeFromPr(
+                repo.id,
+                choice.prNumber!,
+              );
+              worktreePath = wt.path;
+            }
+        }
+        // Landing on an existing/PR worktree overrides the base-branch fork.
+        if (worktreePath != null) chosenBranch = null;
+        picks = choice.configOptions.isEmpty ? null : choice.configOptions;
       }
       final newId = await store.spawnSession(
         repo.id,
         agent: chosenAgent,
         baseBranch: chosenBranch,
+        worktreePath: worktreePath,
+        configOptions: picks,
       );
       if (!context.mounted) return;
       context.go('/session/$newId');

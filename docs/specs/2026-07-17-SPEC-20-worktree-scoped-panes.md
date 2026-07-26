@@ -1,7 +1,12 @@
 # SPEC-20 — Worktree-scoped pane layouts
 
-**Status:** Proposed · **Priority:** P2 · **Surface:** desktop chat (`app/lib/desktop/chat/`)
+**Status:** Superseded by [SPEC-28](./2026-07-24-SPEC-28-desktop-workspace-tabs.md) · **Priority:** P2 · **Surface:** desktop chat (`app/lib/desktop/chat/`)
 **Depends on:** SPEC-05 (session-in-pane spawning), SPEC-10 (desktop chat app), SPEC-19 (pane decomposition — the files this reshapes)
+
+> **Superseded.** The worktree-owns-the-layout model below is replaced by
+> SPEC-28, which makes one worktree-agnostic **workspace** with recursive
+> **splits** and **tabs** (a split hosts a tab strip; tabs can host sessions
+> from any worktree). See SPEC-28 → "Relationship to SPEC-20".
 
 ---
 

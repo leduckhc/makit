@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en" data-style="flatline" data-mode="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — restyle mockups</title>
+<style>
+  /* ============================================================
+     makit desktop restyle — style options lab
+     One realistic app shell (sidebar · tab strip · chat · composer),
+     switchable across 5 modern/minimal directions + a New-session dialog.
+     Pure mockup — no framework, no build.
+     ============================================================ */
+
+  /* ---- base tokens (overridden per style) ---- */
+  :root {
+    --bg:#0e0e10; --panel:#151517; --panel-2:#1b1b1e; --panel-3:#212125;
+    --text:#f3f3f4; --muted:#9a9aa2; --faint:#6b6b73;
+    --hair:rgba(255,255,255,.06); --hair-strong:rgba(255,255,255,.10);
+    --accent:#4ade80; --accent-ink:#0b0b0b; --accent-soft:rgba(74,222,128,.14);
+    --radius-s:6px; --radius-m:10px; --radius-l:14px;
+    --row:32px; --tabbar:34px; --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+    --fs-base:13px; --fs-meta:11px; --fs-title:13px;
+    --hover:rgba(255,255,255,.05); --active:rgba(255,255,255,.08);
+    --shadow:none; --border:0px; --track:var(--panel-3);
+    --tab-active:var(--panel-3); --send:var(--panel-3); --send-ink:var(--text);
+    --tab-top-radius:0px;
+  }
+
+  /* ============ OPTION 1 · FLATLINE (Linear-ish, cool near-black) ============ */
+  [data-style="flatline"][data-mode="dark"]{
+    --bg:#0d0e11; --panel:#141519; --panel-2:#191a1f; --panel-3:#202128;
+    --text:#eceef2; --muted:#8b8f99; --faint:#5c606b;
+    --hair:rgba(255,255,255,.05); --hair-strong:rgba(255,255,255,.09);
+    --accent:#5ee595; --accent-ink:#08130c; --accent-soft:rgba(94,229,149,.13);
+    --radius-s:6px; --radius-m:9px; --row:31px; --tabbar:34px;
+    --border:0px; --shadow:0 1px 0 rgba(0,0,0,.4);
+    --tab-active:#202128; --send:var(--accent); --send-ink:var(--accent-ink);
+  }
+  [data-style="flatline"][data-mode="light"]{
+    --bg:#fbfbfc; --panel:#ffffff; --panel-2:#f5f6f8; --panel-3:#eceef1;
+    --text:#15161a; --muted:#6a6e78; --faint:#9aa0ab;
+    --hair:rgba(0,0,0,.06); --hair-strong:rgba(0,0,0,.10);
+    --accent:#15954a; --accent-ink:#ffffff; --accent-soft:rgba(21,149,74,.10);
+    --radius-s:6px; --radius-m:9px; --border:0px; --shadow:0 1px 2px rgba(0,0,0,.04);
+    --tab-active:#ffffff; --send:var(--accent); --send-ink:#fff;
+  }
+
+  /* ============ OPTION 2 · GRAPHITE (refined current, warm pure-grey, hairlines) ============ */
+  [data-style="graphite"][data-mode="dark"]{
+    --bg:#171717; --panel:#1c1c1c; --panel-2:#212121; --panel-3:#282828;
+    --text:#f5f5f5; --muted:#9e9e9e; --faint:#6d6d6d;
+    --hair:rgba(255,255,255,.08); --hair-strong:rgba(255,255,255,.13);
+    --accent:#4ade80; --accent-ink:#0b0b0b; --accent-soft:rgba(74,222,128,.15);
+    --radius-s:6px; --radius-m:10px; --row:33px; --border:1px; --shadow:none;
+    --tab-active:#2e2e2e; --send:var(--accent); --send-ink:var(--accent-ink);
+  }
+  [data-style="graphite"][data-mode="light"]{
+    --bg:#fafafa; --panel:#ffffff; --panel-2:#f3f3f3; --panel-3:#ededed;
+    --text:#1b1b1b; --muted:#636363; --faint:#9b9b9b;
+    --hair:rgba(0,0,0,.09); --hair-strong:rgba(0,0,0,.14);
+    --accent:#15803d; --accent-ink:#ffffff; --accent-soft:rgba(21,128,61,.10);
+    --radius-s:6px; --radius-m:10px; --border:1px; --shadow:none;
+    --tab-active:#ffffff; --send:var(--accent); --send-ink:#fff;
+  }
+
+  /* ============ OPTION 3 · TERMINAL (true-black, mono metadata, green present) ============ */
+  [data-style="terminal"]{
+    --bg:#000000; --panel:#080808; --panel-2:#0e0e0e; --panel-3:#161616;
+    --text:#e8ffe8; --muted:#7f9c85; --faint:#4f6653;
+    --hair:rgba(80,255,140,.08); --hair-strong:rgba(80,255,140,.16);
+    --accent:#3ff07f; --accent-ink:#001206; --accent-soft:rgba(63,240,127,.12);
+    --radius-s:4px; --radius-m:6px; --row:30px; --tabbar:32px;
+    --border:1px; --shadow:none; --font:var(--mono);
+    --fs-base:12.5px; --fs-meta:11px; --tab-active:#161616;
+    --send:var(--accent); --send-ink:var(--accent-ink);
+  }
+
+  /* ============ OPTION 4 · SOFT (Raycast-ish, elevated cards + soft shadow) ============ */
+  [data-style="soft"][data-mode="dark"]{
+    --bg:#141416; --panel:#1e1f22; --panel-2:#26272b; --panel-3:#303136;
+    --text:#f4f4f6; --muted:#a6a7ae; --faint:#727481;
+    --hair:rgba(255,255,255,.04); --hair-strong:rgba(255,255,255,.08);
+    --accent:#57e08d; --accent-ink:#08130c; --accent-soft:rgba(87,224,141,.16);
+    --radius-s:8px; --radius-m:12px; --radius-l:16px; --row:34px; --tabbar:38px;
+    --border:0px; --shadow:0 4px 16px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.3);
+    --tab-active:#303136; --send:var(--accent); --send-ink:var(--accent-ink); --tab-top-radius:7px;
+  }
+  [data-style="soft"][data-mode="light"]{
+    --bg:#f2f3f5; --panel:#ffffff; --panel-2:#f7f8fa; --panel-3:#eef0f3;
+    --text:#191a1d; --muted:#6c6e78; --faint:#9c9ea8;
+    --hair:rgba(0,0,0,.05); --hair-strong:rgba(0,0,0,.09);
+    --accent:#12924a; --accent-ink:#ffffff; --accent-soft:rgba(18,146,74,.10);
+    --radius-s:8px; --radius-m:12px; --radius-l:16px; --row:34px; --tabbar:38px;
+    --border:0px; --shadow:0 4px 20px rgba(20,22,28,.08), 0 1px 3px rgba(20,22,28,.06);
+    --tab-active:#ffffff; --send:var(--accent); --send-ink:#fff; --tab-top-radius:7px;
+  }
+
+  /* ============ OPTION 5 · DAYLIGHT (airy light, generous whitespace, hairlines) ============ */
+  [data-style="daylight"]{
+    --bg:#ffffff; --panel:#ffffff; --panel-2:#fafbfc; --panel-3:#f2f4f6;
+    --text:#101317; --muted:#5b6270; --faint:#98a0ad;
+    --hair:rgba(16,19,23,.07); --hair-strong:rgba(16,19,23,.12);
+    --accent:#0f9d58; --accent-ink:#ffffff; --accent-soft:rgba(15,157,88,.09);
+    --radius-s:7px; --radius-m:11px; --row:36px; --tabbar:40px;
+    --border:1px; --shadow:0 1px 2px rgba(16,19,23,.05);
+    --fs-base:13.5px; --tab-active:#eef4f0;
+    --send:var(--accent); --send-ink:#fff; --tab-top-radius:6px;
+  }
+
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body {
+    background:#26272b; color:var(--text); font-family:var(--font);
+    font-size:var(--fs-base); -webkit-font-smoothing:antialiased;
+    letter-spacing:-.1px; display:flex; flex-direction:column; height:100vh;
+  }
+
+  /* ---- switcher toolbar ---- */
+  .lab {
+    display:flex; align-items:center; gap:14px; padding:10px 16px;
+    background:#161618; border-bottom:1px solid rgba(255,255,255,.08); color:#eaeaea;
+    font-family:-apple-system,system-ui,sans-serif; font-size:12.5px; flex:0 0 auto;
+  }
+  .lab b{ font-weight:600; letter-spacing:.2px; }
+  .seg{ display:flex; background:#0d0d0f; border-radius:8px; padding:3px; gap:2px; }
+  .seg button{
+    font:inherit; color:#b6b6bd; background:transparent; border:0; cursor:pointer;
+    padding:5px 11px; border-radius:6px; transition:.12s;
+  }
+  .seg button:hover{ color:#fff; }
+  .seg button[aria-pressed="true"]{ background:#2c2c31; color:#fff; }
+  .lab .spacer{ flex:1; }
+  .lab .hint{ color:#7d7d85; }
+  .lab a{ color:#5ee595; text-decoration:none; }
+
+  /* ---- desktop window frame ---- */
+  .stage{ flex:1; display:flex; align-items:center; justify-content:center; padding:22px; overflow:auto; }
+  .win{
+    width:1180px; height:740px; background:var(--bg); border-radius:12px; overflow:hidden;
+    display:flex; flex-direction:column; box-shadow:0 24px 70px rgba(0,0,0,.5);
+    border:1px solid rgba(255,255,255,.06); position:relative;
+  }
+  .titlebar{
+    height:38px; display:flex; align-items:center; gap:8px; padding:0 14px;
+    background:var(--panel); border-bottom:var(--border) solid var(--hair); flex:0 0 auto;
+  }
+  .traffic{ display:flex; gap:8px; }
+  .traffic i{ width:12px;height:12px;border-radius:50%; display:block; }
+  .traffic i:nth-child(1){ background:#ff5f57; } .traffic i:nth-child(2){ background:#febc2e; } .traffic i:nth-child(3){ background:#28c840; }
+  .titlebar .tt{ color:var(--faint); font-size:var(--fs-meta); margin-left:6px; }
+
+  .body{ flex:1; display:flex; min-height:0; }
+
+  /* ---- sidebar ---- */
+  .sidebar{
+    width:270px; flex:0 0 270px; background:var(--panel); display:flex; flex-direction:column;
+    border-right:var(--border) solid var(--hair); min-height:0;
+  }
+  .side-scroll{ flex:1; overflow:auto; padding:8px 8px; }
+  .repo{ display:flex; align-items:center; gap:7px; padding:6px 8px 3px; color:var(--muted);
+    font-size:var(--fs-meta); font-weight:600; letter-spacing:.4px; text-transform:uppercase; }
+  .repo svg{ width:13px;height:13px; opacity:.7; }
+  .wt{ display:flex; align-items:center; gap:8px; height:var(--row); padding:0 9px; margin:1px 0;
+    border-radius:var(--radius-s); color:var(--text); cursor:default; position:relative; }
+  .wt:hover{ background:var(--hover); }
+  .wt .star{ color:var(--accent); font-size:11px; }
+  .wt .nm{ flex:1; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .wt .diff{ font-family:var(--mono); font-size:10.5px; }
+  .wt .diff .add{ color:#57c98a; } .wt .diff .del{ color:#d98a8a; }
+  .wt .meta{ color:var(--faint); font-size:10px; }
+  .ses{ display:flex; align-items:center; gap:9px; height:var(--row); padding:0 9px 0 22px; margin:1px 0;
+    border-radius:var(--radius-s); color:var(--muted); cursor:default; }
+  .ses:hover{ background:var(--hover); color:var(--text); }
+  .ses.sel{ background:var(--active); color:var(--text); }
+  .ses .dot{ width:6px;height:6px;border-radius:50%; flex:0 0 auto; }
+  .dot.run{ background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .dot.idle{ background:var(--faint); }
+  .ses .nm{ flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sidebar .foot{
+    height:38px; flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:0 12px;
+    border-top:var(--border) solid var(--hair); color:var(--muted); font-size:var(--fs-meta);
+  }
+  .foot .status{ display:flex; align-items:center; gap:6px; }
+  .foot .status .d{ width:7px;height:7px;border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .foot .spacer{ flex:1; }
+  .foot .ic{ width:22px;height:22px; display:grid;place-items:center; border-radius:6px; }
+  .foot .ic:hover{ background:var(--hover); }
+
+  /* ---- workspace (two splits) ---- */
+  .workspace{ flex:1; display:flex; min-width:0; }
+  .split{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  .split + .split{ border-left:1px solid var(--hair); }
+
+  /* VSCode-style seated tabs: squared, flush, active merges with the pane body */
+  .tabbar{ height:var(--tabbar); flex:0 0 auto; display:flex; align-items:stretch; gap:0;
+    background:var(--panel); border-bottom:1px solid var(--hair); }
+  .grip{ display:none; }
+  .tab{ display:flex; align-items:center; gap:7px; padding:0 11px; min-width:0; max-width:190px;
+    color:var(--muted); cursor:default; font-size:12.5px; position:relative;
+    border-right:1px solid var(--hair);
+    border-radius:var(--tab-top-radius) var(--tab-top-radius) 0 0; }
+  .tab:hover{ background:var(--hover); color:var(--text); }
+  /* active tab shares the transcript bg (var(--bg)) so it seats into the pane,
+     with a 2px accent cap on top — reads as a real tab, not a floating pill */
+  .tab.active{ background:var(--bg); color:var(--text); box-shadow:inset 0 2px 0 var(--accent); }
+  .tab .dot{ width:6px;height:6px;border-radius:50%; flex:0 0 auto; }
+  .tab .lbl{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tab .x{ opacity:0; font-size:12px; color:var(--faint); width:16px;height:16px; display:grid;place-items:center; border-radius:4px; flex:0 0 auto; }
+  .tab:hover .x, .tab.active .x{ opacity:1; }
+  .tab .x:hover{ background:var(--hair-strong); color:var(--text); }
+  .tabbar .add{ width:30px; display:grid;place-items:center; color:var(--muted); border-right:1px solid var(--hair); }
+  .tabbar .add:hover{ background:var(--hover); color:var(--text); }
+  /* the empty header area IS the split's drag handle (VSCode: grab here to move the group) */
+  .tabbar .spacer{ flex:1; align-self:stretch; cursor:grab; }
+  .tabbar .spacer:hover{ background:var(--hover); }
+
+  /* ---- chat transcript ---- */
+  .chat{ flex:1; overflow:auto; padding:20px 22px; display:flex; flex-direction:column; gap:14px; }
+  .msg{ max-width:78%; }
+  .msg.user{ align-self:flex-end; background:var(--panel-2); border:var(--border) solid var(--hair);
+    border-radius:var(--radius-m); padding:8px 12px; }
+  .msg.pi .who{ color:var(--faint); font-size:var(--fs-meta); margin-bottom:4px; }
+  .msg.pi p{ margin:0 0 8px; line-height:1.5; }
+  .msg .code{ font-family:var(--mono); font-size:12px; background:var(--panel-2); border-radius:var(--radius-s);
+    padding:1px 6px; color:var(--accent); }
+  .bullets{ margin:6px 0 0; padding-left:18px; color:var(--text); }
+  .bullets li{ margin:3px 0; line-height:1.45; }
+  .time{ color:var(--faint); font-size:10px; margin-top:2px; }
+
+  /* ---- composer ---- */
+  .composer{ flex:0 0 auto; padding:12px 16px 14px; }
+  .inputwrap{ background:var(--panel-2); border:var(--border) solid var(--hair); border-radius:var(--radius-m);
+    padding:11px 12px 9px; box-shadow:var(--shadow); }
+  .inputwrap .ph{ color:var(--faint); min-height:34px; }
+  .pillrow{ display:flex; align-items:center; gap:4px; margin-top:8px; }
+  .pill{ display:flex; align-items:center; gap:6px; height:26px; padding:0 8px; border-radius:var(--radius-s);
+    color:var(--muted); font-size:12px; cursor:default; }
+  .pill:hover{ background:var(--hover); color:var(--text); }
+  .pill .g{ width:13px;height:13px; opacity:.8; }
+  .pill.val{ color:var(--text); }
+  .pillrow .spacer{ flex:1; }
+  .attach{ width:28px;height:28px; display:grid;place-items:center; border-radius:var(--radius-s); color:var(--muted); }
+  .attach:hover{ background:var(--hover); }
+  .send{ width:30px;height:30px; border-radius:50%; background:var(--send); color:var(--send-ink);
+    display:grid; place-items:center; }
+  [data-style="terminal"] .send{ border-radius:var(--radius-s); }
+
+  /* ---- empty placeholder split ---- */
+  .empty{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:var(--faint); }
+  .empty svg{ width:34px;height:34px; opacity:.5; }
+  .empty .t{ font-size:13px; }
+  .cta{ display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 14px; border-radius:var(--radius-s);
+    background:var(--accent); color:var(--accent-ink); font-weight:600; font-size:12.5px; cursor:default; }
+  .cta svg{ width:14px;height:14px; }
+
+  /* ---- new session dialog overlay ---- */
+  .scrim{ position:absolute; inset:0; background:rgba(0,0,0,.42); display:none; align-items:center; justify-content:center; }
+  .scrim.on{ display:flex; }
+  .dialog{ width:560px; background:var(--panel-2); border-radius:var(--radius-m); box-shadow:0 24px 60px rgba(0,0,0,.5);
+    border:var(--border) solid var(--hair); overflow:hidden; }
+  .dialog .dh{ display:flex; align-items:center; padding:16px 18px 8px; }
+  .dialog .dh .t{ font-size:15px; font-weight:600; flex:1; }
+  .dialog .dh .x{ color:var(--muted); width:26px;height:26px;display:grid;place-items:center;border-radius:6px; }
+  .dialog .dh .x:hover{ background:var(--hover); }
+  .dialog .field{ padding:8px 18px; }
+  .dialog .flabel{ color:var(--muted); font-size:var(--fs-meta); font-weight:600; letter-spacing:.3px; margin-bottom:7px; text-transform:uppercase; }
+  .segctl{ display:flex; background:var(--panel-3); border-radius:var(--radius-s); padding:3px; gap:2px; width:fit-content; }
+  .segctl button{ font:inherit; font-size:12px; color:var(--muted); background:transparent; border:0; padding:5px 12px; border-radius:calc(var(--radius-s) - 1px); cursor:default; }
+  .segctl button.on{ background:var(--accent); color:var(--accent-ink); font-weight:600; }
+  .hcards{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+  .hcard{ background:var(--panel-3); border:1.5px solid transparent; border-radius:var(--radius-s); padding:12px 8px; text-align:center; cursor:default; }
+  .hcard .ic{ font-size:18px; } .hcard .n{ font-size:12px; margin-top:5px; font-weight:500; }
+  .hcard .m{ font-size:10px; color:var(--faint); margin-top:1px; }
+  .hcard.sel{ border-color:var(--accent); background:var(--accent-soft); }
+  .hcard.dim{ opacity:.4; }
+  .dcomposer{ margin:10px 18px 18px; background:var(--panel); border:var(--border) solid var(--hair); border-radius:var(--radius-m); padding:10px 12px; }
+  .dcomposer .ph{ color:var(--faint); min-height:30px; }
+  .dcomposer .pillrow{ margin-top:6px; }
+  .openbtn{ cursor:pointer; }
+</style>
+</head>
+<body>
+  <div class="lab">
+    <b>makit restyle</b>
+    <div class="seg" id="styleSeg">
+      <button data-s="flatline" aria-pressed="true">Flatline</button>
+      <button data-s="graphite">Graphite</button>
+      <button data-s="terminal">Terminal</button>
+      <button data-s="soft">Soft</button>
+      <button data-s="daylight">Daylight</button>
+    </div>
+    <div class="seg" id="modeSeg">
+      <button data-m="dark" aria-pressed="true">Dark</button>
+      <button data-m="light">Light</button>
+    </div>
+    <button class="seg openbtn" id="dlgToggle" style="padding:5px 11px;border-radius:8px;color:#b6b6bd;background:#0d0d0f;border:0;cursor:pointer;">New-session dialog ▸</button>
+    <span class="spacer"></span>
+    <span class="hint" id="desc">Linear-style: cool near-black, borderless, tight, green only where it acts.</span>
+  </div>
+
+  <div class="stage">
+    <div class="win">
+      <div class="titlebar">
+        <span class="traffic"><i></i><i></i><i></i></span>
+        <span class="tt">makit — feat/workspace-tabs</span>
+      </div>
+      <div class="body">
+        <!-- SIDEBAR -->
+        <aside class="sidebar">
+          <div class="side-scroll">
+            <div class="repo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg> MAKIT</div>
+            <div class="wt"><span class="star">★</span><span class="nm">main</span><span class="meta">1d</span></div>
+            <div class="ses sel"><span class="dot idle"></span><span class="nm">This is my new tabs</span></div>
+            <div class="ses"><span class="dot idle"></span><span class="nm">Tools concision in chat view</span></div>
+            <div class="ses"><span class="dot idle"></span><span class="nm">Remove tips for the composer</span></div>
+            <div class="ses"><span class="dot run"></span><span class="nm">Make the PR pill with CI</span></div>
+            <div class="ses"><span class="dot idle"></span><span class="nm">Where are you</span></div>
+            <div class="ses"><span class="dot idle"></span><span class="nm">The github PR status is not</span></div>
+            <div class="wt"><span class="star" style="opacity:.35">☆</span><span class="nm">restyle/minimal-visual</span><span class="diff"><span class="add">+11.7k</span> <span class="del">−6.5k</span></span></div>
+            <div class="wt"><span class="star" style="opacity:.35">☆</span><span class="nm">restyle/designer-minimal</span><span class="diff"><span class="add">+11.5k</span> <span class="del">−6.4k</span></span></div>
+            <div class="repo" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg> DIANA</div>
+            <div class="wt"><span class="star">★</span><span class="nm">1922_support_ai_deploy</span><span class="diff"><span class="add">+93k</span></span></div>
+            <div class="ses"><span class="dot idle"></span><span class="nm">Hello with new feature</span></div>
+          </div>
+          <div class="foot">
+            <span class="status"><span class="d"></span>Connected</span>
+            <span class="spacer"></span>
+            <span class="ic">⌕</span><span class="ic">⚙</span>
+          </div>
+        </aside>
+
+        <!-- WORKSPACE -->
+        <main class="workspace">
+          <!-- split 1: chat -->
+          <section class="split">
+            <div class="tabbar">
+              <span class="grip">⠿</span>
+              <div class="tab active"><span class="dot idle" style="background:var(--faint)"></span><span class="lbl">This is my new tabs</span><span class="x">✕</span></div>
+              <div class="tab"><span class="dot run"></span><span class="lbl">Make the PR pill</span><span class="x">✕</span></div>
+              <span class="add">+</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="chat">
+              <div class="msg user">hallo</div>
+              <div class="msg pi">
+                <div class="who">Pi · Claude Opus 4.8</div>
+                <p>Hallo! 👋 I'm Pi, your coding assistant. I see you're working on the <span class="code">nasty-bug-when-i-click-on</span> worktree.</p>
+                <p>What would you like to do?</p>
+                <ul class="bullets">
+                  <li>Debug the "nasty bug when I click on…" issue</li>
+                  <li>Explore or explain part of the codebase</li>
+                  <li>Write or fix code / tests</li>
+                </ul>
+                <div class="time">11:55</div>
+              </div>
+            </div>
+            <div class="composer">
+              <div class="inputwrap">
+                <div class="ph">Message…</div>
+                <div class="pillrow">
+                  <div class="pill val"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>Opus 4.8</div>
+                  <div class="pill"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18h6M4 12h10M4 6h16"/></svg>Thinking: medium</div>
+                  <span class="spacer"></span>
+                  <div class="attach">📎</div>
+                  <div class="send"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M6 11l6-6 6 6"/></svg></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- split 2: empty placeholder -->
+          <section class="split">
+            <div class="tabbar">
+              <span class="grip">⠿</span>
+              <div class="tab active"><span class="lbl" style="color:var(--faint)">New</span><span class="x">✕</span></div>
+              <span class="add">+</span>
+              <span class="spacer"></span>
+            </div>
+            <div class="empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <div class="t">Select a session, or start a new one</div>
+              <div class="cta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>New session</div>
+            </div>
+          </section>
+        </main>
+      </div>
+
+      <!-- NEW SESSION DIALOG -->
+      <div class="scrim" id="scrim">
+        <div class="dialog">
+          <div class="dh"><span class="t">New session</span><span class="x" id="dlgClose">✕</span></div>
+          <div class="field">
+            <div class="flabel">Worktree</div>
+            <div class="segctl"><button class="on">Existing</button><button>New branch</button><button>From PR</button></div>
+          </div>
+          <div class="field">
+            <div class="flabel">Harness</div>
+            <div class="hcards">
+              <div class="hcard sel"><div class="ic">🤖</div><div class="n">pi</div><div class="m">acp</div></div>
+              <div class="hcard"><div class="ic">🧠</div><div class="n">codex</div><div class="m">app-server</div></div>
+              <div class="hcard"><div class="ic">✳️</div><div class="n">claude</div><div class="m">acp</div></div>
+              <div class="hcard dim"><div class="ic">◇</div><div class="n">gemini</div><div class="m">n/a</div></div>
+            </div>
+          </div>
+          <div class="dcomposer">
+            <div class="ph">Describe the first task…</div>
+            <div class="pillrow">
+              <div class="pill val"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>Opus 4.8</div>
+              <div class="pill"><svg class="g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18h6M4 12h10M4 6h16"/></svg>medium</div>
+              <span class="spacer"></span>
+              <div class="send"><svg viewBox="0 0 24 24" width="15" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 19V5M6 11l6-6 6 6"/></svg></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const root = document.documentElement;
+  const descs = {
+    flatline:"Flatline · Linear-style: cool near-black, zero borders, tight density, green only where it acts (send/CTA/active).",
+    graphite:"Graphite · refined take on today's grey — warm pure-grey ramp, subtle hairlines, calm & familiar.",
+    terminal:"Terminal · true-black, monospace metadata, denser rows, green more present. For the CLI-native crowd.",
+    soft:"Soft · Raycast-style: elevated cards, soft shadows, larger radii & touch targets, gentle depth.",
+    daylight:"Daylight · airy light theme: generous whitespace, crisp hairlines, deepened green for contrast."
+  };
+  const modeAware = { flatline:1, graphite:1, soft:1 }; // terminal & daylight are fixed-mode
+  function setStyle(s){
+    root.dataset.style = s;
+    document.querySelectorAll('#styleSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.s===s));
+    document.getElementById('desc').textContent = descs[s];
+    const modeSeg = document.getElementById('modeSeg');
+    modeSeg.style.opacity = modeAware[s] ? 1 : .35;
+    if(!modeAware[s]) root.dataset.mode = (s==='daylight') ? 'light' : 'dark';
+  }
+  function setMode(m){
+    if(!modeAware[root.dataset.style]) return;
+    root.dataset.mode = m;
+    document.querySelectorAll('#modeSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.m===m));
+  }
+  document.getElementById('styleSeg').onclick = e=>{ if(e.target.dataset.s) setStyle(e.target.dataset.s); };
+  document.getElementById('modeSeg').onclick = e=>{ if(e.target.dataset.m){ setMode(e.target.dataset.m); document.querySelectorAll('#modeSeg button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.m===e.target.dataset.m)); } };
+  const scrim = document.getElementById('scrim');
+  document.getElementById('dlgToggle').onclick = ()=> scrim.classList.add('on');
+  document.getElementById('dlgClose').onclick = ()=> scrim.classList.remove('on');
+  scrim.onclick = e=>{ if(e.target===scrim) scrim.classList.remove('on'); };
+</script>
+</body>
+</html>

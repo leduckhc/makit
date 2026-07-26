@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -39,7 +40,7 @@ class _ControllableConnection extends ConnectionController {
   }
 }
 
-Future<void> _pumpPane(
+Future<ProviderContainer> _pumpPane(
   WidgetTester tester, {
   required String sessionId,
   ConnectionController? connection,
@@ -53,25 +54,30 @@ Future<void> _pumpPane(
     policy: ApprovalPolicy.askOnRisky,
   );
 
+  final container = ProviderContainer(
+    overrides: [
+      connectionControllerProvider.overrideWith(
+        (ref) => connection ?? ConnectionController(const _EmptyStorage()),
+      ),
+      sessionsProvider.overrideWithValue(SessionsState([session])),
+      reposProvider.overrideWithValue(ReposState(const [])),
+      chatItemsProvider(sessionId).overrideWithValue(const []),
+      sessionActionErrorProvider(sessionId).overrideWithValue(null),
+      commandsProvider(sessionId).overrideWithValue(const []),
+    ],
+  );
+  addTearDown(container.dispose);
+
   await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        connectionControllerProvider.overrideWith(
-          (ref) => connection ?? ConnectionController(const _EmptyStorage()),
-        ),
-        selectedSessionProvider.overrideWith((ref) => sessionId),
-        sessionsProvider.overrideWithValue(SessionsState([session])),
-        reposProvider.overrideWithValue(ReposState(const [])),
-        chatItemsProvider(sessionId).overrideWithValue(const []),
-        sessionActionErrorProvider(sessionId).overrideWithValue(null),
-        commandsProvider(sessionId).overrideWithValue(const []),
-      ],
+    UncontrolledProviderScope(
+      container: container,
       child: MaterialApp(
         home: Scaffold(body: DesktopChatPane(sessionId: sessionId)),
       ),
     ),
   );
   await tester.pump();
+  return container;
 }
 
 void main() {
@@ -110,7 +116,15 @@ void main() {
     tester,
   ) async {
     final connection = _ControllableConnection();
-    await _pumpPane(tester, sessionId: 's1', connection: connection);
+    final container = await _pumpPane(
+      tester,
+      sessionId: 's1',
+      connection: connection,
+    );
+    // s1 is the visible/selected session (its tab is active in the workspace).
+    container.read(workspaceControllerProvider.notifier).revealSession('s1');
+    await tester.pump();
+    expect(container.read(selectedSessionProvider), 's1');
 
     await tester.tap(find.byTooltip('Session actions'));
     await tester.pumpAndSettle();
@@ -119,15 +133,15 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
     await tester.pump();
 
-    final container = ProviderScope.containerOf(
-      tester.element(find.byType(DesktopChatPane)),
-    );
-    container.read(selectedSessionProvider.notifier).state = 's2';
+    // The user moves on to a newer session while the kill is still in flight.
+    container.read(workspaceControllerProvider.notifier).revealSession('s2');
     await tester.pump();
 
     connection.killCompleted.complete(const {});
     await tester.pump();
 
+    // Quit never writes the selection (it is derived from the active tab), so
+    // the background kill completion cannot stomp the newer selection.
     expect(container.read(selectedSessionProvider), 's2');
   });
 }

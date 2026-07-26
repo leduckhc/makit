@@ -13,7 +13,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
-import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
@@ -32,7 +31,9 @@ const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 
 Widget _app(ProviderContainer c) => UncontrolledProviderScope(
   container: c,
-  child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+  child: const MaterialApp(
+    home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+  ),
 );
 
 void main() {
@@ -55,7 +56,6 @@ void main() {
         ],
       );
       addTearDown(c.dispose);
-      c.read(selectedSessionProvider.notifier).state = 's1';
 
       await tester.pumpWidget(_app(c));
       await tester.pumpAndSettle();
@@ -99,7 +99,7 @@ void main() {
     },
   );
 
-  testWidgets('no session selected: pane shows placeholder and NO composer', (
+  testWidgets('unresolvable session: pane shows placeholder and NO composer', (
     tester,
   ) async {
     final c = ProviderContainer();

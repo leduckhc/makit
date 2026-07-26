@@ -28,7 +28,7 @@ This file is generated from the project's dependency manifests:
 
 | Package | Version | License |
 |---------|---------|---------|
-| `@agentclientprotocol/sdk` | 0.26.0 | Apache-2.0 |
+| `@agentclientprotocol/sdk` | 1.3.0 | Apache-2.0 |
 | `@leichtgewicht/ip-codec` | 2.0.5 | MIT |
 | `@noble/hashes` | 1.4.0 | MIT |
 | `@peculiar/asn1-cms` | 2.8.0 | MIT |

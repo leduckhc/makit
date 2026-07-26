@@ -8,7 +8,7 @@
  * Streaming model: ACP streams `agent_message_chunk` / `agent_thought_chunk`
  * without explicit start/end markers, so we buffer per "run" and finalize on
  * switch (text↔thought), on any tool call, or at turn end. This mirrors the
- * (msgId/thinkId + delta + final) contract the app expects from PiAdapter.
+ * (msgId/thinkId + delta + final) contract the app expects from the pi adapter.
  */
 
 import type { SessionUpdate, ToolKind } from "@agentclientprotocol/sdk";

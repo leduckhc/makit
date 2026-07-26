@@ -9,6 +9,27 @@ import { log } from "../../log.js";
 import type { CommandRouter } from "../command_router.js";
 import type { CommandDeps } from "./deps.js";
 
+/**
+ * Parse the optional `session.spawn` `configOptions` picks from the wire:
+ * an array of `{id, value}` where `value` is a string or boolean. Anything
+ * malformed is dropped here; semantic validation (against the cached catalog)
+ * happens in the manager (SPEC-27).
+ */
+function parseConfigPicks(
+  raw: unknown,
+): { id: string; value: string | boolean }[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const picks: { id: string; value: string | boolean }[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const { id, value } = entry as { id?: unknown; value?: unknown };
+    if (typeof id !== "string" || !id) continue;
+    if (typeof value !== "string" && typeof value !== "boolean") continue;
+    picks.push({ id, value });
+  }
+  return picks.length > 0 ? picks : undefined;
+}
+
 export function register(r: CommandRouter, deps: CommandDeps): void {
   const { manager, broadcastSnapshots, broadcastReposSnapshot } = deps;
 
@@ -105,10 +126,14 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // starts the agent there instead of forking a new one.
     const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
     const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
+    // Optional pre-spawn config picks (SPEC-27): [{id, value}] validated against
+    // the cached catalog by the manager (unknown ids/values dropped) and applied
+    // at first-message launch.
+    const configOptions = parseConfigPicks(ctx.env.configOptions);
     // New sessions are DRAFTS: the worktree + agent are deferred until the
     // first substantive message names the branch (see send.message). The
     // worktree forks off `baseBranch` (default branch when unset).
-    const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch, worktreePath, branch);
+    const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch, worktreePath, branch, configOptions);
     // wireSession is invoked via the manager's "sessionCreated" listener
     // registered above — don't call it explicitly or every event fans out
     // twice.
@@ -138,7 +163,21 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   r.register("agents.list", async (ctx) => {
-    ctx.ack({ agents: manager.listAgents() });
+    ctx.ack({ agents: await manager.listAgentsWithCapabilities() });
+  });
+
+  r.register("agents.refresh", async (ctx) => {
+    const agent = String(ctx.env.agent ?? "");
+    if (!agent) {
+      ctx.err(WireErrorCode.BadRequest, "agents.refresh requires an `agent`");
+      return;
+    }
+    const descriptor = await manager.refreshAgent(agent);
+    if (!descriptor) {
+      ctx.err(WireErrorCode.BadRequest, `unknown agent: ${agent}`);
+      return;
+    }
+    ctx.ack({ agent: descriptor });
   });
 
   r.register("session.setAgent", async (ctx) => {

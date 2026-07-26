@@ -51,6 +51,12 @@ export type SessionLifecycle =
       pendingWorktreePath?: string;
       branch?: string;
       virtualWorktreeId?: string;
+      /**
+       * Pre-spawn config picks (SPEC-27): `{id, value}` requests, validated
+       * against the cached catalog, applied at launch after the real
+       * session/thread starts and before the first prompt.
+       */
+      configPicks?: { id: string; value: string | boolean }[];
     }
   | { phase: "started"; branch?: string; worktreePath?: string };
 
@@ -322,6 +328,7 @@ export class Session extends EventEmitter {
     pendingWorktreePath?: string;
     branch?: string;
     virtualWorktreeId?: string;
+    configPicks?: { id: string; value: string | boolean }[];
   }): void {
     this._lifecycle = { phase: "draft", ...opts };
   }
@@ -391,8 +398,8 @@ export class Session extends EventEmitter {
 
   /**
    * Rename the session. Trims, ignores empty/unchanged titles, and emits
-   * `titleChanged` so the server can re-broadcast the sessions snapshot and
-   * sync the mux pane label. Returns whether the title actually changed.
+   * `titleChanged` so the server can re-broadcast the sessions snapshot.
+   * Returns whether the title actually changed.
    */
   setTitle(title: string): boolean {
     const next = title.trim();

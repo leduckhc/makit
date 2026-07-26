@@ -1,0 +1,188 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/store/secure_store.dart';
+import 'package:makit/store/store.dart';
+import 'package:makit/ui/home/repo_card.dart';
+
+/// In-memory secure storage so ConnectionController boots without platform
+/// channels (mirrors the desktop dialog test).
+class _EmptyStorage implements SecureStore {
+  const _EmptyStorage();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
+
+/// A StoreController that serves a fixed agent catalog and records the args of
+/// the last `spawnSession` so the test can assert the sheet forwarded them.
+class _FakeStore extends StoreController {
+  _FakeStore(super.ref, this.agents);
+
+  final List<AgentDescriptor> agents;
+  int spawnCount = 0;
+  String? spawnedAgent;
+  String? spawnedBaseBranch;
+  String? spawnedWorktreePath;
+  List<ConfigOptionPick>? spawnedPicks;
+
+  @override
+  Future<List<AgentDescriptor>> fetchAgents() async => agents;
+
+  @override
+  Future<List<OpenPr>> listOpenPrs(String projectId) async => const [];
+
+  @override
+  Future<String> spawnSession(
+    String projectId, {
+    String? title,
+    String? agent,
+    String? baseBranch,
+    String? worktreePath,
+    String? branch,
+    List<ConfigOptionPick>? configOptions,
+  }) async {
+    spawnCount++;
+    spawnedAgent = agent;
+    spawnedBaseBranch = baseBranch;
+    spawnedWorktreePath = worktreePath;
+    spawnedPicks = configOptions;
+    return 'new-sess';
+  }
+}
+
+AgentDescriptor _agent(
+  String id, {
+  String transport = 'acp',
+  List<SessionConfigOption> configOptions = const [],
+}) => AgentDescriptor(
+  id: id,
+  label: id,
+  transport: transport,
+  available: true,
+  configOptions: configOptions,
+);
+
+RepoInfo _repo() => const RepoInfo(
+  id: 'p1',
+  name: 'demo',
+  path: '/tmp/demo',
+  pinned: false,
+  lastActivityAt: 0,
+  isGitRepo: true,
+  defaultBranch: 'main',
+  currentBranch: 'main',
+  worktrees: [
+    Worktree(
+      id: '/tmp/demo',
+      path: '/tmp/demo',
+      branch: 'main',
+      isPrimary: true,
+      insertions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      sessionIds: [],
+    ),
+  ],
+);
+
+Future<_FakeStore> _pump(
+  WidgetTester tester, {
+  required List<AgentDescriptor> agents,
+}) async {
+  late _FakeStore store;
+  final repo = _repo();
+  final router = GoRouter(
+    routes: [
+      GoRoute(
+        path: '/',
+        builder: (context, state) => Scaffold(
+          body: ListView(
+            children: [RepoCard(repo: repo, sessions: const [])],
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/session/:id',
+        builder: (context, state) =>
+            Scaffold(body: Text('session ${state.pathParameters['id']}')),
+      ),
+    ],
+  );
+  final container = ProviderContainer(
+    overrides: [
+      connectionControllerProvider.overrideWith(
+        (ref) => ConnectionController(const _EmptyStorage()),
+      ),
+      storeControllerProvider.overrideWith((ref) {
+        store = _FakeStore(ref, agents);
+        return store;
+      }),
+    ],
+  );
+  addTearDown(container.dispose);
+  container.read(storeControllerProvider.notifier);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp.router(routerConfig: router),
+    ),
+  );
+  await tester.pumpAndSettle();
+  return store;
+}
+
+void main() {
+  testWidgets('forwards the config picks chosen in the sheet to spawnSession', (
+    tester,
+  ) async {
+    final store = await _pump(
+      tester,
+      agents: [
+        _agent(
+          'pi',
+          configOptions: [
+            const SessionConfigOption(
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              type: ConfigOptionType.select,
+              currentValue: 'gpt-5',
+              options: [
+                ConfigOptionValue(value: 'gpt-5', name: 'GPT-5'),
+                ConfigOptionValue(value: 'sonnet', name: 'Sonnet'),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    // Open the sheet from the footer's "New session" button.
+    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.pumpAndSettle();
+
+    // Pick a non-default model, then Start.
+    await tester.tap(find.text('GPT-5'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sonnet').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    expect(store.spawnCount, 1);
+    expect(store.spawnedAgent, 'pi');
+    expect(store.spawnedPicks, isNotNull);
+    expect(store.spawnedPicks!.single.id, 'model');
+    expect(store.spawnedPicks!.single.value, 'sonnet');
+    // Landed on the new session.
+    expect(find.text('session new-sess'), findsOneWidget);
+  });
+}

@@ -70,36 +70,59 @@ enum ShortcutAction {
     scope: ShortcutScope.global,
   ),
 
-  /// Split the active pane into a left/right layout.
-  splitPaneVertical(
-    id: 'splitPaneVertical',
-    label: 'Split pane vertically',
-    description: 'Split the active pane into a left/right layout',
+  /// Split the active split into a left/right layout.
+  splitVertical(
+    id: 'splitVertical',
+    label: 'Split vertically',
+    description: 'Split the active split into a left/right layout',
     scope: ShortcutScope.global,
   ),
 
-  /// Split the active pane into a top/bottom layout.
-  splitPaneHorizontal(
-    id: 'splitPaneHorizontal',
-    label: 'Split pane horizontally',
-    description: 'Split the active pane into a top/bottom layout',
+  /// Split the active split into a top/bottom layout.
+  splitHorizontal(
+    id: 'splitHorizontal',
+    label: 'Split horizontally',
+    description: 'Split the active split into a top/bottom layout',
     scope: ShortcutScope.global,
   ),
 
-  /// Start a new session in the active pane (same worktree, harness picker).
-  newPane(
-    id: 'newPane',
-    label: 'New session in pane',
-    description:
-        'Reset the active pane to a new session in the current worktree',
+  /// Open the New session dialog for a new tab in the active split.
+  newTab(
+    id: 'newTab',
+    label: 'New tab',
+    description: 'Open the New session dialog for a tab in the active split',
     scope: ShortcutScope.global,
   ),
 
-  /// Close the active pane's view without ending its session.
-  closePane(
-    id: 'closePane',
-    label: 'Close pane',
-    description: 'Close the active pane (the session keeps running)',
+  /// Close the active split's view without ending its sessions.
+  closeSplit(
+    id: 'closeSplit',
+    label: 'Close split',
+    description: 'Close the active split (its sessions keep running)',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Close the active tab in the active split (the session keeps running).
+  closeTab(
+    id: 'closeTab',
+    label: 'Close tab',
+    description: 'Close the active tab (the session keeps running)',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the next tab in the active split.
+  nextTab(
+    id: 'nextTab',
+    label: 'Next tab',
+    description: 'Switch to the next tab in the active split',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the previous tab in the active split.
+  prevTab(
+    id: 'prevTab',
+    label: 'Previous tab',
+    description: 'Switch to the previous tab in the active split',
     scope: ShortcutScope.global,
   );
 

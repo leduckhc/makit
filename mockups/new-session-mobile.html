@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit · New session (mobile)</title>
+<style>
+  .mode-light {
+    --bg: oklch(0.985 0 0); --surface: oklch(1 0 0); --surface-2: oklch(0.975 0 0);
+    --text: oklch(0.22 0 0); --muted: oklch(0.50 0 0); --hairline: oklch(0.90 0 0);
+    --accent: oklch(0.62 0.17 150); --accent-fg: oklch(1 0 0);
+    --chip: oklch(0.965 0 0); --chip-sel: oklch(0.93 0.05 150);
+  }
+  .mode-dark {
+    --bg: oklch(0.205 0 0); --surface: oklch(0.26 0 0); --surface-2: oklch(0.23 0 0);
+    --text: oklch(0.97 0 0); --muted: oklch(0.70 0 0); --hairline: oklch(0.32 0 0);
+    --accent: oklch(0.80 0.19 150); --accent-fg: oklch(0.24 0.05 150);
+    --chip: oklch(0.30 0 0); --chip-sel: oklch(0.38 0.06 150);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Segoe UI, sans-serif;
+    background: oklch(0.9 0 0); color: var(--text);
+    display: flex; flex-wrap: wrap; gap: 40px; padding: 40px; justify-content: center; align-items: flex-start;
+  }
+  .lab-controls { position: fixed; top: 12px; right: 16px; z-index: 10; }
+  .lab-controls button { font: inherit; padding: 4px 10px; border-radius: 8px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+  .stage { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .stage > h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #555; margin: 0; font-weight: 600; }
+
+  /* phone frame */
+  .phone {
+    width: 390px; height: 720px; background: var(--bg); border-radius: 40px; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35); border: 10px solid #111; position: relative;
+  }
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.35); }
+
+  /* bottom sheet */
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface);
+    border-radius: 22px 22px 0 0; padding: 8px 18px calc(18px + env(safe-area-inset-bottom));
+    max-height: 92%; overflow-y: auto;
+  }
+  .grabber { width: 40px; height: 4px; border-radius: 2px; background: var(--hairline); margin: 6px auto 10px; }
+  .sheet h3 { margin: 2px 2px 12px; font-size: 18px; }
+
+  .field { padding-bottom: 16px; }
+  .field-label { font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+
+  .seg { display: flex; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; padding: 3px; gap: 3px; }
+  .seg button { flex: 1; font: inherit; font-size: 13px; border: none; background: transparent; color: var(--muted); padding: 8px 6px; border-radius: 9px; cursor: pointer; }
+  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); font-weight: 600; }
+
+  .row-select {
+    width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 12px; margin-top: 8px;
+  }
+  .row-select .val { flex: 1; }
+  .row-select .sub { color: var(--muted); font-size: 13px; }
+  .row-select .caret { color: var(--muted); }
+
+  /* harness cards — horizontal scroll */
+  .hscroll { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 2px; margin: 0 -2px; }
+  .hcard { flex: 0 0 auto; width: 118px; padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--hairline); }
+  .hcard.sel { border-color: var(--accent); background: var(--chip-sel); }
+  .hcard .top { display: flex; align-items: center; justify-content: space-between; }
+  .hcard .ic { font-size: 20px; }
+  .hcard .check { color: var(--accent); font-weight: 700; }
+  .hcard .name { font-weight: 600; margin-top: 8px; }
+  .hcard .meta { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .hcard.disabled { opacity: .5; }
+
+  /* reasoning signal */
+  .signal { display: inline-flex; align-items: flex-end; gap: 2.5px; height: 15px; }
+  .signal i { width: 3px; background: var(--muted); opacity: .3; border-radius: 1px; }
+  .signal i.act { background: var(--text); opacity: 1; }
+  .signal i:nth-child(1){height:5px} .signal i:nth-child(2){height:8px}
+  .signal i:nth-child(3){height:10px} .signal i:nth-child(4){height:12px} .signal i:nth-child(5){height:15px}
+
+  .start { width: 100%; margin-top: 6px; padding: 14px; border: none; border-radius: 14px; background: var(--accent); color: var(--accent-fg); font: inherit; font-weight: 600; font-size: 16px; cursor: pointer; }
+  .note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body class="mode-light">
+  <div class="lab-controls">
+    <button onclick="document.body.className = document.body.className==='mode-light'?'mode-dark':'mode-light'">Toggle light/dark</button>
+  </div>
+
+  <!-- Native harness -->
+  <div class="stage">
+    <h2>Mobile · harness config (from cached catalog)</h2>
+    <div class="phone mode-light" style="background:var(--bg)">
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <h3>New session</h3>
+
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg">
+            <button class="on">Existing</button>
+            <button>New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="row-select"><span class="val">feature/tab-system</span><span class="sub">makit</span><span class="caret">▾</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Harness</div>
+          <div class="hscroll">
+            <div class="hcard sel"><div class="top"><span class="ic">🤖</span><span class="check">✓</span></div><div class="name">pi</div><div class="meta">acp (pi-acp)</div></div>
+            <div class="hcard"><div class="top"><span class="ic">🤖</span></div><div class="name">codex</div><div class="meta">app-server</div></div>
+            <div class="hcard"><div class="top"><span class="ic">🤖</span></div><div class="name">claude</div><div class="meta">acp</div></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Model</div>
+          <div class="row-select"><span class="val">GPT-5</span><span class="sub">openai</span><span class="caret">▾</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Reasoning</div>
+          <div class="row-select">
+            <span class="signal"><i class="act"></i><i class="act"></i><i class="act"></i><i></i><i></i></span>
+            <span class="val" style="margin-left:2px">medium</span><span class="caret">▾</span>
+          </div>
+        </div>
+
+        <button class="start">Start</button>
+        <div class="note">Opens the session; type your first message there.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACP harness -->
+  <div class="stage">
+    <h2>Mobile · ACP harness (config from cached catalog, before Start)</h2>
+    <div class="phone mode-light" style="background:var(--bg)">
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grabber"></div>
+        <h3>New session</h3>
+
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg">
+            <button>Existing</button>
+            <button class="on">New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="row-select"><span class="val">Branch from</span><span class="sub">main</span><span class="caret">▾</span></div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Harness</div>
+          <div class="hscroll">
+            <div class="hcard"><div class="top"><span class="ic">🤖</span></div><div class="name">pi</div><div class="meta">acp (pi-acp)</div></div>
+            <div class="hcard sel"><div class="top"><span class="ic">🤖</span><span class="check">✓</span></div><div class="name">claude</div><div class="meta">acp</div></div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Config (from cached ACP catalog)</div>
+          <div class="seg" style="margin-bottom:8px"><button class="opt sel">Sonnet</button><button class="opt">Opus</button><button class="opt">Haiku</button></div>
+          <div class="seg"><button class="opt">think: off</button><button class="opt sel">low</button><button class="opt">high</button></div>
+        </div>
+
+        <div class="note" style="margin:12px 0 16px">Config rows are the harness's cached ACP <code>configOptions</code>, shown <b>before Start</b> and forwarded as pending picks via <code>NewSessionChoice</code> (applied at launch). Same catalog the desktop dialog uses.</div>
+
+        <button class="start">Start</button>
+        <div class="note">Opens the session; type your first message there.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

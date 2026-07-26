@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import type { SessionConfigOption } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
 
 export interface StubAdapterOptions {
@@ -40,6 +41,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   async start(opts: SpawnOpts): Promise<void> {
     this.sessionId = opts.sessionId ?? "";
     this.emit("status", "idle");
+    this.emitMeta();
     this.emitEvent({
       ts: Date.now(),
       kind: "session.commands",
@@ -139,6 +141,54 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   async cancel(): Promise<void> {
     this.emit("status", "idle");
+  }
+
+  /** SPEC-26: a tiny deterministic config catalog so keyless e2e runs can
+   *  exercise the unified `configOptions` render + set round-trip. */
+  private configOptions: SessionConfigOption[] = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      type: "select",
+      currentValue: "stub-normal",
+      options: [
+        { value: "stub-normal", name: "Stub Normal" },
+        { value: "stub-fast", name: "Stub Fast" },
+      ],
+    },
+    {
+      id: "thought_level",
+      name: "Thinking",
+      category: "thought_level",
+      type: "select",
+      currentValue: "low",
+      options: [
+        { value: "off", name: "Off" },
+        { value: "low", name: "Low" },
+        { value: "high", name: "High" },
+      ],
+    },
+  ];
+
+  async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
+    if (action !== "configOption") return;
+    const id = args?.id;
+    const value = args?.value;
+    const target = this.configOptions.find((o) => o.id === id);
+    if (!target || typeof value !== "string") return;
+    this.configOptions = this.configOptions.map((o) =>
+      o.id === id ? { ...o, currentValue: value } : o,
+    );
+    this.emitMeta();
+  }
+
+  private emitMeta(): void {
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "session.meta",
+      payload: { configOptions: this.configOptions },
+    });
   }
 
   async kill(): Promise<void> {

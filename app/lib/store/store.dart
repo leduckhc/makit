@@ -434,7 +434,11 @@ class StoreController extends StateNotifier<StoreState> {
     String? baseBranch,
     String? worktreePath,
     String? branch,
+    List<ConfigOptionPick>? configOptions,
   }) async {
+    final picks = (configOptions != null && configOptions.isNotEmpty)
+        ? configOptions.map((p) => p.toJson()).toList()
+        : null;
     final ack = await _ref
         .read(connectionControllerProvider.notifier)
         .request(MsgType.cmd, {
@@ -445,6 +449,7 @@ class StoreController extends StateNotifier<StoreState> {
           'baseBranch': ?baseBranch,
           'worktreePath': ?worktreePath,
           'branch': ?branch,
+          'configOptions': ?picks,
         });
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');

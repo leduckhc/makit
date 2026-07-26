@@ -1,11 +1,10 @@
 import 'package:flutter/foundation.dart';
 
-/// A sessionless worktree shown in a pane. Puts the pane in "start a session
-/// here" mode (harness cards); the session is spawned in this existing worktree
-/// on the first message. A pane hosts either a session or a [SelectedWorktree]
-/// (or nothing) — never both.
+/// A sessionless worktree hint carried by an empty [Tab]. Used only to pre-fill
+/// the New-session dialog's Worktree field (SPEC-28 decision 4) — never an
+/// inline picker.
 ///
-/// Lives in its own file so the pure pane-tree model ([PaneLeaf]) can bind one
+/// Lives in its own file so the pure workspace-tree model ([Tab]) can carry one
 /// without importing the provider layer (which would form an import cycle).
 @immutable
 class SelectedWorktree {
@@ -29,7 +28,7 @@ class SelectedWorktree {
   @override
   int get hashCode => Object.hash(projectId, path, branch);
 
-  /// JSON for persistence (see [PaneTreeState]).
+  /// JSON for persistence (see [Tab]).
   Map<String, Object?> toJson() => {
     'projectId': projectId,
     'path': path,

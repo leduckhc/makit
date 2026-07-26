@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_shell.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
+import 'package:makit/desktop/chat/panes/split_node.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
+import 'package:makit/desktop/chat/split_tree_view.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
@@ -146,5 +149,95 @@ void main() {
     await tester.pump();
 
     expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth);
+  });
+
+  testWidgets('dragging a sidebar session onto a pane opens it there', (
+    tester,
+  ) async {
+    const model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
+    final session = Session(
+      id: 's1',
+      projectId: 'p1',
+      agent: 'pi',
+      title: 'Alpha',
+      status: SessionStatus.idle,
+      policy: ApprovalPolicy.askOnRisky,
+      lastPreview: '',
+      lastActivityAt: 0,
+      worktreePath: '/tmp/wt-a',
+      branch: 'wt-a',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(
+          ReposState([
+            const RepoInfo(
+              id: 'p1',
+              name: 'proj',
+              path: '/tmp/p1',
+              pinned: false,
+              lastActivityAt: 0,
+              isGitRepo: true,
+              defaultBranch: 'main',
+              currentBranch: 'main',
+              worktrees: [
+                Worktree(
+                  id: 'wt-a',
+                  path: '/tmp/wt/wt-a',
+                  branch: 'feat/x',
+                  isPrimary: false,
+                  insertions: 0,
+                  deletions: 0,
+                  filesChanged: 0,
+                  sessionIds: ['s1'],
+                ),
+              ],
+            ),
+          ]),
+        ),
+        sessionsProvider.overrideWithValue(SessionsState([session])),
+        eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+        sessionMetaProvider('s1').overrideWithValue(
+          const SessionMeta(model: model, thinking: 'medium', models: [model]),
+        ),
+        sidebarCollapsedProvider.overrideWith((ref) => false),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: DesktopChatShell()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The session shows as a sidebar tile and is not yet open in any pane.
+    expect(find.text('Alpha'), findsOneWidget);
+    expect(
+      findTab(container.read(workspaceControllerProvider).root, 's1'),
+      isNull,
+    );
+
+    // Drag it rightward into the pane's body (horizontal affinity starts it).
+    final start = tester.getCenter(find.text('Alpha'));
+    final paneRect = tester.getRect(find.byType(WorkspaceView));
+    final to = paneRect.center;
+    final g = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 30));
+    await g.moveTo(Offset((start.dx + to.dx) / 2, (start.dy + to.dy) / 2));
+    await tester.pump(const Duration(milliseconds: 30));
+    await g.moveTo(to);
+    await tester.pump(const Duration(milliseconds: 30));
+    await g.moveTo(to);
+    await tester.pump(const Duration(milliseconds: 30));
+    await g.up();
+    await tester.pumpAndSettle();
+
+    // The session is now hosted in the workspace (opened by the drop).
+    expect(
+      findTab(container.read(workspaceControllerProvider).root, 's1'),
+      isNotNull,
+    );
   });
 }

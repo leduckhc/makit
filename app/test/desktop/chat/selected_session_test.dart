@@ -1,33 +1,37 @@
-// Unit tests for the ref-based session/worktree selection helpers. These take
-// a [WidgetRef] rather than a [Ref], so tests capture one from a bare
-// [Consumer] button press, mirroring the pattern used in
-// new_session_dialog_test.dart.
-import 'package:flutter/material.dart';
+// Unit tests for the ref-based session/worktree selection helpers on the
+// SPEC-28 workspace model. These take a [WidgetRef] rather than a [Ref], so
+// tests capture one from a bare [Consumer] button press.
+import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/desktop/chat/panes/pane_tree_controller.dart';
+import 'package:makit/desktop/chat/panes/split_node.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
-Session _pendingSession(String id, {String? worktreePath, String? branch}) =>
-    Session(
-      id: id,
-      projectId: 'p1',
-      agent: 'codex',
-      title: '',
-      status: SessionStatus.idle,
-      policy: ApprovalPolicy.askOnRisky,
-      pending: true,
-      branch: branch,
-      worktreePath: worktreePath,
-    );
+Session _session(String id, {String? worktreePath, String? branch}) => Session(
+  id: id,
+  projectId: 'p1',
+  agent: 'codex',
+  title: '',
+  status: SessionStatus.idle,
+  policy: ApprovalPolicy.askOnRisky,
+  branch: branch,
+  worktreePath: worktreePath,
+);
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
 
+WorkspaceController _workspace(ProviderContainer c) =>
+    c.read(workspaceControllerProvider.notifier);
+
+/// The active split's active tab (via the same walk the providers use).
+Tab _activeTab(ProviderContainer c) =>
+    activeTab(c.read(workspaceControllerProvider))!;
+
 /// Pumps a bare button whose press invokes [action] with a real [WidgetRef],
-/// then taps it — the only way to exercise these WidgetRef-based helpers
-/// outside of their production call sites.
+/// then taps it.
 Future<void> _invoke(
   WidgetTester tester,
   ProviderContainer container,
@@ -53,124 +57,85 @@ Future<void> _invoke(
 }
 
 void main() {
-  group('selectSessionExclusive', () {
-    testWidgets('a still-pending session (no worktreePath) binds into its own '
-        'virtual draft tree, not the currently-open tree', (tester) async {
+  setUp(resetNodeIds);
+
+  group('selectSessionExclusive (decision 6 reveal)', () {
+    testWidgets('binds the session into the active split\'s empty tab', (
+      tester,
+    ) async {
       final container = ProviderContainer(
         overrides: [
-          sessionsProvider.overrideWithValue(
-            SessionsState([_pendingSession('s1')]),
-          ),
+          sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
         ],
       );
       addTearDown(container.dispose);
-      // A real worktree tree is already open — the pre-fix behavior would
-      // have bound the pending session into this tree instead.
-      container.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
 
       await _invoke(tester, container, (ref) {
         selectSessionExclusive(ref, 's1');
       });
 
       expect(container.read(selectedSessionProvider), 's1');
-      final current = container.read(paneTreeControllerProvider).current!;
-      expect(current.worktree.path, 'draft:s1');
-      // The previously-open real tree survives untouched, just no longer
-      // current.
-      expect(
-        container.read(paneTreeControllerProvider).trees.containsKey(_wtA.path),
-        isTrue,
-      );
+      expect(_activeTab(container).sessionId, 's1');
     });
 
-    testWidgets('a session with a real worktreePath binds directly into that '
-        'worktree (not a draft tree)', (tester) async {
+    testWidgets('focuses an already-open session instead of duplicating it '
+        '(decision 5)', (tester) async {
       final container = ProviderContainer(
         overrides: [
           sessionsProvider.overrideWithValue(
-            SessionsState([
-              _pendingSession('s1', worktreePath: '/wt/feat', branch: 'feat/x'),
-            ]),
+            SessionsState([_session('s1'), _session('s2')]),
           ),
         ],
       );
       addTearDown(container.dispose);
+      // s1 in the first split; a second split hosts s2 and is active.
+      _workspace(container).revealSession('s1');
+      _workspace(container).divideActive(Axis.horizontal);
+      _workspace(container).revealSession('s2');
+      expect(container.read(selectedSessionProvider), 's2');
 
       await _invoke(tester, container, (ref) {
         selectSessionExclusive(ref, 's1');
       });
 
-      final current = container.read(paneTreeControllerProvider).current!;
-      expect(current.worktree.path, '/wt/feat');
-      expect(current.worktree.branch, 'feat/x');
+      // Reveal focused the existing s1 tab (active selection is s1 again); s1
+      // still appears exactly once in the tree.
+      expect(container.read(selectedSessionProvider), 's1');
+      final located = findTab(
+        container.read(workspaceControllerProvider).root,
+        's1',
+      );
+      expect(located, isNotNull);
     });
+  });
 
-    testWidgets('an unknown session id (not yet in the store) binds into the '
-        'currently-open tree rather than opening a draft tree', (tester) async {
+  group('selectWorktree', () {
+    testWidgets('opens a starter tab hinted with the worktree (no swap)', (
+      tester,
+    ) async {
       final container = ProviderContainer(
         overrides: [
           sessionsProvider.overrideWithValue(SessionsState(const [])),
         ],
       );
       addTearDown(container.dispose);
-      container.read(paneTreeControllerProvider.notifier).selectWorktree(_wtA);
 
       await _invoke(tester, container, (ref) {
-        selectSessionExclusive(ref, 'not-yet-known');
+        selectWorktree(ref, _wtA);
       });
 
-      expect(container.read(selectedSessionProvider), 'not-yet-known');
-      expect(
-        container.read(paneTreeControllerProvider).current!.worktree.path,
-        _wtA.path,
-      );
-    });
-  });
-
-  group('closeActivePane', () {
-    testWidgets('selects the surviving session after closing a split pane', (
-      tester,
-    ) async {
-      final container = ProviderContainer();
-      addTearDown(container.dispose);
-      final panes = container.read(paneTreeControllerProvider.notifier);
-      panes.bindActiveSession('s1', _wtA);
-      panes.splitActive(Axis.horizontal);
-      panes.bindActiveSession('s2', _wtA);
-      container.read(selectedSessionProvider.notifier).state = 's2';
-
-      await _invoke(tester, container, closeActivePane);
-
-      expect(panes.activeLeafSessionId, 's1');
-      expect(container.read(selectedSessionProvider), 's1');
+      final tab = _activeTab(container);
+      expect(tab.sessionId, isNull);
+      expect(tab.worktree, _wtA);
+      expect(container.read(selectedWorktreeProvider), _wtA);
+      expect(container.read(selectedSessionProvider), isNull);
     });
   });
 
   group('openDraftSession', () {
-    testWidgets(
-      'selects the session and binds a virtual draft tree immediately, '
-      'without needing the session to exist in the store yet',
-      (tester) async {
-        final container = ProviderContainer(
-          overrides: [
-            // Deliberately empty: openDraftSession must not read the store.
-            sessionsProvider.overrideWithValue(SessionsState(const [])),
-          ],
-        );
-        addTearDown(container.dispose);
-
-        await _invoke(tester, container, (ref) {
-          openDraftSession(ref, 'p1', 's1');
-        });
-
-        expect(container.read(selectedSessionProvider), 's1');
-        final current = container.read(paneTreeControllerProvider).current!;
-        expect(current.worktree.path, 'draft:s1');
-        expect(current.worktree.projectId, 'p1');
-      },
-    );
-
-    testWidgets('opens a distinct draft tree per session id', (tester) async {
+    testWidgets('reveals a tab for the session without reading the store', (
+      tester,
+    ) async {
       final container = ProviderContainer(
         overrides: [
           sessionsProvider.overrideWithValue(SessionsState(const [])),
@@ -179,19 +144,53 @@ void main() {
       addTearDown(container.dispose);
 
       await _invoke(tester, container, (ref) {
-        openDraftSession(ref, 'p1', 's1');
-      });
-      await _invoke(tester, container, (ref) {
-        openDraftSession(ref, 'p1', 's2');
+        openDraftSession(ref, 's1');
       });
 
-      final trees = container.read(paneTreeControllerProvider).trees;
-      expect(trees.containsKey('draft:s1'), isTrue);
-      expect(trees.containsKey('draft:s2'), isTrue);
-      expect(
-        container.read(paneTreeControllerProvider).current!.worktree.path,
-        'draft:s2',
+      expect(container.read(selectedSessionProvider), 's1');
+      expect(_activeTab(container).sessionId, 's1');
+    });
+  });
+
+  group('closeActiveSplit / closeActiveTab', () {
+    testWidgets('closeActiveTab collapses an emptied split back to a sibling', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(
+            SessionsState([_session('s1'), _session('s2')]),
+          ),
+        ],
       );
+      addTearDown(container.dispose);
+      _workspace(container).revealSession('s1');
+      _workspace(container).divideActive(Axis.horizontal);
+      _workspace(container).revealSession('s2'); // active split hosts s2 only
+
+      await _invoke(tester, container, closeActiveTab);
+
+      // The active split had a single tab (s2) → closing it collapsed the
+      // split into the sibling that hosts s1.
+      expect(container.read(workspaceControllerProvider).root, isA<Split>());
+      expect(container.read(selectedSessionProvider), 's1');
+    });
+
+    testWidgets('closeActiveSplit is a no-op on the sole split', (
+      tester,
+    ) async {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
+        ],
+      );
+      addTearDown(container.dispose);
+      _workspace(container).revealSession('s1');
+      final before = container.read(workspaceControllerProvider);
+
+      await _invoke(tester, container, closeActiveSplit);
+
+      expect(container.read(workspaceControllerProvider), before);
     });
   });
 }

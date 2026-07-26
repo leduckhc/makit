@@ -4,14 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../ui/composer/composer.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
-import 'composer_focus.dart';
-import 'composer_draft.dart';
-import 'panes/pane_header.dart';
-import 'panes/pane_tree_controller.dart';
-import 'pr_bar.dart';
-import 'selected_session.dart';
 
 /// Harness picker shown in the main content while a session is still a draft
 /// (no worktree yet). Selecting a card sets the harness the worktree will
@@ -66,7 +59,7 @@ class HarnessPicker extends ConsumerWidget {
                     runSpacing: 12,
                     children: [
                       for (final a in agents)
-                        _HarnessCard(
+                        HarnessCard(
                           agent: a,
                           selected: a.id == selected,
                           onTap: a.available
@@ -87,8 +80,16 @@ class HarnessPicker extends ConsumerWidget {
   }
 }
 
-class _HarnessCard extends StatelessWidget {
-  const _HarnessCard({required this.agent, required this.selected, this.onTap});
+/// A selectable harness card (icon, label, transport). Selected cards get an
+/// accent ring + check; unavailable agents are dimmed and non-tappable. Reused
+/// by the draft [HarnessPicker] and the New-session dialog's harness grid.
+class HarnessCard extends StatelessWidget {
+  const HarnessCard({
+    super.key,
+    required this.agent,
+    required this.selected,
+    this.onTap,
+  });
 
   final AgentDescriptor agent;
   final bool selected;
@@ -151,243 +152,6 @@ class _HarnessCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Shown when a sessionless worktree is selected in the sidebar: pick a
-/// harness, then send a message to start a session IN that existing worktree.
-/// The session is spawned only on first send (no orphan drafts).
-/// (SPEC-19, moved from desktop_chat_pane.)
-class WorktreeStartView extends ConsumerStatefulWidget {
-  const WorktreeStartView({
-    super.key,
-    required this.worktree,
-    this.composerFocusId,
-  });
-  final SelectedWorktree worktree;
-
-  /// The hosting pane's leaf id, used to key this view's composer [FocusNode]
-  /// via [desktopComposerFocusProvider] so each split pane owns a distinct node
-  /// (and the "focus composer" shortcut can target the active leaf). Null
-  /// (standalone use) lets the [Composer] own its own node.
-  final String? composerFocusId;
-
-  @override
-  ConsumerState<WorktreeStartView> createState() => _WorktreeStartViewState();
-}
-
-class _WorktreeStartViewState extends ConsumerState<WorktreeStartView> {
-  String? _chosenAgent;
-  bool _starting = false;
-
-  /// Owns the composer's text so the PR-actions split button (a sibling) can
-  /// inject a canned prompt into the field before any session exists.
-  final TextEditingController _composerCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _composerCtrl.dispose();
-    super.dispose();
-  }
-
-  /// Insert a canned PR-action [prompt] without sending: set the field (or
-  /// append below existing text so a half-typed message survives), persist the
-  /// worktree-scoped draft, and focus the composer for review.
-  void _insertPrompt(String prompt) {
-    final existing = _composerCtrl.text;
-    final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
-    _composerCtrl.value = TextEditingValue(
-      text: next,
-      selection: TextSelection.collapsed(offset: next.length),
-    );
-    ref
-        .read(composerDraftsProvider.notifier)
-        .set('wt:${widget.worktree.path}', next);
-    final focusId = widget.composerFocusId;
-    if (focusId != null) {
-      ref.read(desktopComposerFocusProvider(focusId)).requestFocus();
-    }
-  }
-
-  String? _defaultAgent(List<AgentDescriptor> agents) {
-    for (final a in agents) {
-      if (a.available) return a.id;
-    }
-    return agents.isEmpty ? null : agents.first.id;
-  }
-
-  Future<void> _start(String text) async {
-    if (_starting) return;
-    final agents = ref.read(agentsProvider).value ?? const <AgentDescriptor>[];
-    final agent = _chosenAgent ?? _defaultAgent(agents);
-    final wt = widget.worktree;
-    setState(() => _starting = true);
-    final store = ref.read(storeControllerProvider.notifier);
-    try {
-      final sid = await store.spawnSession(
-        wt.projectId,
-        agent: agent,
-        worktreePath: wt.path,
-        branch: wt.branch,
-      );
-      // The widget may have unmounted while spawnSession was in flight; bail
-      // before touching providers through a potentially disposed ref.
-      if (!mounted) return;
-      // Bind the new session into the REAL worktree tree the user is already
-      // looking at. We can't route through selectSessionExclusive here: a
-      // not-yet-started draft has no worktreePath, so that helper would misfile
-      // it into a virtual `draft:<id>` tree — even though this session belongs
-      // to an existing worktree on disk. That misfiling bounced the pane onto a
-      // draft tree and, once the session materialized, back to this empty start
-      // view, dropping the just-sent turn from view.
-      ref.read(selectedSessionProvider.notifier).state = sid;
-      ref.read(paneTreeControllerProvider.notifier).bindActiveSession(sid, wt);
-      store.appendOptimisticMessage(sid, text);
-      store.sendMessage(sid, text);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _starting = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not start session: $e')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final agentsAsync = ref.watch(agentsProvider);
-    // The worktree already exists on disk, so it may head an open PR (created
-    // in makit, by another agent, or on GitHub). Read the poller-refreshed
-    // repos snapshot so the pill above the composer updates in place.
-    final pr = ref.watch(reposProvider).prForWorktreePath(widget.worktree.path);
-    final uncommittedFiles = ref
-        .watch(reposProvider)
-        .uncommittedFilesForWorktreePath(widget.worktree.path);
-    final commitsAhead = ref
-        .watch(reposProvider)
-        .aheadCountForWorktreePath(widget.worktree.path);
-    final commitsBehind = ref
-        .watch(reposProvider)
-        .behindCountForWorktreePath(widget.worktree.path);
-    return Column(
-      children: [
-        const UnfoldStrip(),
-        Expanded(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: kReadableContentMaxWidth,
-              ),
-              child: agentsAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(
-                  child: Text(
-                    'Could not load harnesses: $e',
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                ),
-                data: (agents) {
-                  if (agents.isEmpty) {
-                    return Center(
-                      child: Text(
-                        'Using the host default harness. Send a message to '
-                        'start.',
-                        style: TextStyle(color: theme.colorScheme.outline),
-                      ),
-                    );
-                  }
-                  final selected = _chosenAgent ?? _defaultAgent(agents);
-                  return SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Select your harness',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Then send a message to start a session in this '
-                          'worktree.',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.outline,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
-                          children: [
-                            for (final a in agents)
-                              _HarnessCard(
-                                agent: a,
-                                selected: a.id == selected,
-                                onTap: a.available
-                                    ? () => setState(() => _chosenAgent = a.id)
-                                    : null,
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
-        Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: kReadableContentMaxWidth,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // PR status pill (when the worktree heads a PR) + the
-                  // canned-prompt actions split button (always shown — its
-                  // "Create PR" action is the path to getting a PR).
-                  PrComposerBar(
-                    pr: pr,
-                    uncommittedFiles: uncommittedFiles,
-                    commitsAhead: commitsAhead,
-                    commitsBehind: commitsBehind,
-                    onInsertPrompt: _insertPrompt,
-                  ),
-                  Composer(
-                    controller: _composerCtrl,
-                    onSend: _start,
-                    running: _starting,
-                    alwaysExpanded: true,
-                    // A not-yet-started session has no id, so scope the draft to
-                    // the worktree; it survives switching away and back.
-                    initialText: ref.read(
-                      composerDraftsProvider,
-                    )['wt:${widget.worktree.path}'],
-                    onDraftChanged: (text) => ref
-                        .read(composerDraftsProvider.notifier)
-                        .set('wt:${widget.worktree.path}', text),
-                    focusNode: widget.composerFocusId == null
-                        ? null
-                        : ref.watch(
-                            desktopComposerFocusProvider(
-                              widget.composerFocusId!,
-                            ),
-                          ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

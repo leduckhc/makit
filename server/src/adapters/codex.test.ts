@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { CodexAppServerAdapter, defaultConnect, type CodexTransport } from "./codex.js";
+import { CodexAppServerAdapter, defaultConnect, probeCodexConfigOptions, projectCodexModelList, buildCodexConfigOptions, type CodexTransport } from "./codex.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -42,6 +42,42 @@ function fakeAppServer() {
         return { turn: { id: "t1" } };
       case "turn/interrupt":
         return {};
+      case "model/list":
+        return {
+          data: [
+            {
+              id: "gpt-5-codex",
+              model: "gpt-5-codex",
+              displayName: "GPT-5 Codex",
+              description: "",
+              hidden: false,
+              supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "" }],
+              defaultReasoningEffort: "medium",
+              isDefault: true,
+            },
+            {
+              id: "o3",
+              model: "o3",
+              displayName: "o3",
+              description: "reasoning",
+              hidden: false,
+              supportedReasoningEfforts: [{ reasoningEffort: "high", description: "" }],
+              defaultReasoningEffort: "high",
+              isDefault: false,
+            },
+            {
+              id: "hidden-model",
+              model: "hidden-model",
+              displayName: "Hidden",
+              description: "",
+              hidden: true,
+              supportedReasoningEfforts: [],
+              defaultReasoningEffort: "medium",
+              isDefault: false,
+            },
+          ],
+          nextCursor: null,
+        };
       default:
         return undefined;
     }
@@ -259,3 +295,129 @@ function withTimeout<T>(p: Promise<T>, ms: number, msg: string): Promise<T> {
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms).unref()),
   ]);
 }
+
+// ---- SPEC-26: codex app-server config-option projection -------------------
+
+async function collectMeta(events: AdapterEvent[], ms = 1000): Promise<any> {
+  await waitFor(() => events.some((e) => e.kind === "session.meta"), ms);
+  return events.find((e) => e.kind === "session.meta")!.payload as any;
+}
+
+test("projects model/list + reasoning effort into session.meta configOptions", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  const payload = await collectMeta(events);
+
+  const byId = Object.fromEntries(payload.configOptions.map((o: any) => [o.id, o]));
+  // model option — from model/list, hidden models excluded, default is current.
+  assert.deepEqual(byId.model, {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select",
+    currentValue: "gpt-5-codex",
+    options: [
+      { value: "gpt-5-codex", name: "GPT-5 Codex" },
+      { value: "o3", name: "o3", description: "reasoning" },
+    ],
+  });
+  // thought_level option — reasoning effort minimal/low/medium/high.
+  assert.deepEqual(byId.thought_level, {
+    id: "thought_level",
+    name: "Reasoning effort",
+    category: "thought_level",
+    type: "select",
+    currentValue: "medium",
+    options: [
+      { value: "minimal", name: "Minimal" },
+      { value: "low", name: "Low" },
+      { value: "medium", name: "Medium" },
+      { value: "high", name: "High" },
+    ],
+  });
+});
+
+test("configOption model action re-emits meta and overrides the next turn's model", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  await collectMeta(events);
+
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "model", value: "o3" });
+  const payload = await collectMeta(events);
+  assert.equal(payload.configOptions.find((o: any) => o.id === "model").currentValue, "o3");
+
+  await adapter.send({ text: "go" });
+  const turn = fake.sent.filter((m) => m.method === "turn/start").at(-1);
+  assert.equal(turn.params.model, "o3");
+});
+
+test("configOption thought_level action overrides the next turn's reasoning effort", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  await collectMeta(events);
+  await adapter.sendAction!("configOption", { id: "thought_level", value: "high" });
+  await adapter.send({ text: "go" });
+  const turn = fake.sent.filter((m) => m.method === "turn/start").at(-1);
+  assert.equal(turn.params.effort, "high");
+});
+
+// ---------- capability projection + probe (SPEC-27) ------------------------
+
+test("projectCodexModelList maps visible models and picks the default", () => {
+  const projected = projectCodexModelList({
+    data: [
+      { model: "gpt-5-codex", displayName: "GPT-5 Codex", hidden: false, defaultReasoningEffort: "medium", isDefault: true },
+      { model: "o3", displayName: "o3", description: "reasoning", hidden: false, isDefault: false },
+      { model: "hidden-model", hidden: true },
+    ],
+  });
+  assert.deepEqual(
+    projected.models.map((m) => m.value),
+    ["gpt-5-codex", "o3"],
+  );
+  assert.equal(projected.activeModel, "gpt-5-codex");
+  assert.equal(projected.activeEffort, "medium");
+});
+
+test("buildCodexConfigOptions emits model + thought_level, defaulting effort", () => {
+  const options = buildCodexConfigOptions([{ value: "o3", name: "o3" }], "o3", undefined);
+  assert.equal(options[0].id, "model");
+  assert.equal(options[0].currentValue, "o3");
+  assert.equal(options[1].id, "thought_level");
+  assert.equal(options[1].currentValue, "medium");
+});
+
+test("buildCodexConfigOptions omits the model option when the catalog is empty", () => {
+  const options = buildCodexConfigOptions([], undefined, "high");
+  assert.equal(options.length, 1);
+  assert.equal(options[0].id, "thought_level");
+  assert.equal(options[0].currentValue, "high");
+});
+
+test("probeCodexConfigOptions projects the app-server model/list surface (no thread started)", async () => {
+  const fake = fakeAppServer();
+  const options = await probeCodexConfigOptions({ connect: () => fake.transport });
+  // Handshake used initialize + model/list, but NEVER thread/start.
+  const methods = fake.sent.map((m: any) => m.method).filter(Boolean);
+  assert.ok(methods.includes("initialize"));
+  assert.ok(methods.includes("model/list"));
+  assert.ok(!methods.includes("thread/start"), "probe must not start a thread");
+  // Projected into the shared config-option shape.
+  const model = options.find((o) => o.id === "model");
+  assert.ok(model);
+  assert.deepEqual(model!.options!.map((m) => m.value), ["gpt-5-codex", "o3"]);
+  assert.ok(options.some((o) => o.id === "thought_level"));
+});

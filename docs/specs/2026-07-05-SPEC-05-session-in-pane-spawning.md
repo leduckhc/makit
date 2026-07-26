@@ -1,8 +1,18 @@
 # SPEC-05 — Session-in-pane spawning + lifecycle
 
-**Status:** done · **Depends on:** SPEC-04 (mux adapter) · **Touches:**
+**Status:** **Retired** (was: done) — superseded by [SPEC-27](./2026-07-24-SPEC-27-new-session-config-at-spawn.md) · **Depends on:** SPEC-04 (mux adapter) · **Touches:**
 `server/src/manager.ts`, `server/src/server.ts`, `server/extensions/makit-mirror.ts`,
 app session DTO/UI
+
+> **Retired.** SPEC-27 drops the native pi adapter and runs **all harnesses
+> (including pi, via `pi-acp`) headless over ACP**. The attachable **mux-pane**
+> model described here — `manager.spawnPiSessionInPane`, the World-D mirror pane,
+> pane labeling/auto-close, and "the phone shows which pane a session runs in"
+> — is **no longer the spawn path**. Consensus #5 (attachable background panes)
+> is reversed by the pi-over-ACP decision (see SPEC-27 Risks: this also reopens
+> the `pi-acp` file-access topic from PR #25, which is **accepted / not being
+> re-sandboxed** per project decision). Kept for history; the
+> `PaneInfo`/mux-pane concept and this lifecycle should be removed with SPEC-27.
 
 ## Goal
 
