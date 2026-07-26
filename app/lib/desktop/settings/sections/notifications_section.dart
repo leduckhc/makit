@@ -11,11 +11,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../../app/theme.dart';
 import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
+import 'coming_soon.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
-import 'coming_soon.dart';
 import 'settings_reset_button.dart';
 
 /// The reminder-delay choices offered in the dropdown, in whole minutes.
@@ -82,7 +83,9 @@ class _ReminderDelayRow extends ConsumerWidget {
               padding: const EdgeInsets.only(right: 8),
               child: Text(
                 'Modified',
-                style: TextStyle(color: cs.primary, fontSize: 12),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.primary),
               ),
             ),
           DropdownButton<int>(
@@ -97,7 +100,7 @@ class _ReminderDelayRow extends ConsumerWidget {
                 DropdownMenuItem(value: m, child: Text(_minuteLabel(m))),
             ],
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           SettingsResetButton(
             visible: modified,
             onPressed: () =>

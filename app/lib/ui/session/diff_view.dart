@@ -8,8 +8,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../app/theme.dart';
 import 'line_diff.dart';
-import 'tool_renderers.dart' show kMonoFallback;
 
 /// One diff line: a coloured full-width row with a gutter prefix. Removed lines
 /// use the error container, added lines a green wash, context stays muted.
@@ -20,9 +20,7 @@ class DiffLineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
+    final addedText = cs.diffAddText;
     final (
       Color? background,
       Color textColor,
@@ -33,18 +31,15 @@ class DiffLineRow extends StatelessWidget {
         cs.error,
         '\u2212',
       ),
-      DiffKind.added => (Colors.green.withValues(alpha: 0.15), addedText, '+'),
+      DiffKind.added => (kDiffAdd.withValues(alpha: 0.15), addedText, '+'),
       DiffKind.context => (null, cs.onSurfaceVariant, ' '),
     };
-    final style = TextStyle(
-      fontFamily: 'monospace',
-      fontFamilyFallback: kMonoFallback,
-      fontSize: 12,
-      color: textColor,
-    );
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.mono.copyWith(color: textColor);
     return Container(
       color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8, vertical: 1),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -82,27 +77,22 @@ class _DiffTextLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? Colors.green.shade300 : Colors.green.shade800;
+    final addedText = cs.diffAddText;
     final isHeader =
         line.startsWith('[') && line.contains('#') && line.endsWith(']');
     final (Color? background, Color textColor) = isHeader
         ? (cs.surfaceContainerHighest, cs.primary)
         : line.startsWith('+')
-        ? (Colors.green.withValues(alpha: 0.15), addedText)
+        ? (kDiffAdd.withValues(alpha: 0.15), addedText)
         : line.startsWith('-')
         ? (cs.errorContainer.withValues(alpha: 0.35), cs.error)
         : (null, cs.onSurfaceVariant);
     return Container(
       color: background,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8, vertical: 1),
       child: SelectableText(
         line.isEmpty ? ' ' : line,
-        style: TextStyle(
-          fontFamily: 'monospace',
-          fontFamilyFallback: kMonoFallback,
-          fontSize: 12,
+        style: Theme.of(context).textTheme.bodySmall?.mono.copyWith(
           color: textColor,
           fontWeight: isHeader ? FontWeight.w600 : FontWeight.normal,
         ),

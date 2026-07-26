@@ -24,15 +24,19 @@ class SettingsSectionHeader extends StatelessWidget {
         children: [
           Text(
             title.toUpperCase(),
-            style: TextStyle(
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
               color: cs.primary,
-              fontSize: 12,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
             ),
           ),
           if (hint != null)
-            Text(hint!, style: TextStyle(color: cs.outline, fontSize: 12)),
+            Text(
+              hint!,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.outline),
+            ),
         ],
       ),
     );

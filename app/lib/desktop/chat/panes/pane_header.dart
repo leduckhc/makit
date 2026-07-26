@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../../../app/theme.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../../../ui/composer/client_commands.dart';
@@ -45,12 +46,12 @@ class PaneHeader extends ConsumerWidget {
         children: [
           if (collapsed) ...[
             const SidebarToggleButton(collapse: false),
-            const SizedBox(width: 8),
+            const SizedBox(width: kSpace8),
           ],
           if (session != null) ...[
             // Match the sidebar-fold icon scale so the fold icon,
             // title, and actions menu all sit on the traffic-light row.
-            const SizedBox(width: 10),
+            const SizedBox(width: kSpace10),
           ],
           Expanded(
             child: Text(
@@ -62,7 +63,7 @@ class PaneHeader extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: kSpace4),
           SessionActionsMenu(sessionId: fallbackId),
         ],
       ),

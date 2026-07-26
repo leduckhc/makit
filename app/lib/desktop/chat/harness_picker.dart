@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
@@ -40,20 +41,20 @@ class HarnessPicker extends ConsumerWidget {
               );
             }
             return SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(kSpace24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Choose a harness', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: kSpace4),
                   Text(
                     'Then send a message to create the worktree.',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.outline,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: kSpace16),
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -105,14 +106,14 @@ class HarnessCard extends StatelessWidget {
         margin: EdgeInsets.zero,
         color: selected ? cs.primaryContainer : null,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(kRadius12),
           side: BorderSide(
             color: selected ? cs.primary : cs.outlineVariant,
             width: selected ? 1.5 : 1,
           ),
         ),
         child: InkWell(
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(kRadius12),
           onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -135,14 +136,14 @@ class HarnessCard extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: kSpace8),
                 Text(
                   agent.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall,
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: kSpace2),
                 Text(
                   agent.available ? agent.transport : 'unavailable',
                   style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),

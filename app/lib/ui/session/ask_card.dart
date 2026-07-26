@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import 'chat_metrics.dart';
@@ -116,7 +117,7 @@ class _AskCardState extends ConsumerState<AskCard> {
           Row(
             children: [
               Icon(PhosphorIconsLight.question, size: 18, color: cs.primary),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpace8),
               Expanded(
                 child: Text(
                   (header ?? 'Question').toUpperCase(),
@@ -136,17 +137,17 @@ class _AskCardState extends ConsumerState<AskCard> {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: kSpace6),
           Text(
             question,
             style: Theme.of(
               context,
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           if (ask.freeText) ...[
             _FreeTextNote(cs: cs),
-            const SizedBox(height: 4),
+            const SizedBox(height: kSpace4),
             // Keep an escape hatch: the composer is enabled for typing, but a
             // user who changes their mind can still cancel the ask from here.
             Align(
@@ -168,7 +169,7 @@ class _AskCardState extends ConsumerState<AskCard> {
                 multi: _multi,
                 onTap: () => _toggle(i),
               ),
-            const SizedBox(height: 4),
+            const SizedBox(height: kSpace4),
             _actions(cs),
           ],
         ],
@@ -196,7 +197,7 @@ class _AskCardState extends ConsumerState<AskCard> {
               icon: const Icon(PhosphorIconsLight.pencilSimple, size: 15),
               label: const Text('Type a different answer'),
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                padding: const EdgeInsets.symmetric(horizontal: kSpace8),
                 visualDensity: VisualDensity.compact,
               ),
             ),
@@ -236,7 +237,7 @@ class _FreeTextNote extends StatelessWidget {
     return Row(
       children: [
         Icon(PhosphorIconsLight.pencilSimple, size: 15, color: cs.primary),
-        const SizedBox(width: 8),
+        const SizedBox(width: kSpace8),
         Expanded(
           child: Text(
             'Type your answer in the message box below.',
@@ -312,10 +313,8 @@ class _AskOption extends StatelessWidget {
                             Flexible(
                               child: Text(
                                 label,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13.5,
-                                ),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(fontWeight: FontWeight.w600),
                               ),
                             ),
                             if (recommended) ...[
@@ -327,14 +326,12 @@ class _AskOption extends StatelessWidget {
                                 ),
                                 decoration: BoxDecoration(
                                   color: cs.tertiary.withValues(alpha: 0.18),
-                                  borderRadius: BorderRadius.circular(6),
+                                  borderRadius: BorderRadius.circular(kRadius6),
                                 ),
                                 child: Text(
                                   'Recommended',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: cs.tertiary,
-                                  ),
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(color: cs.tertiary),
                                 ),
                               ),
                             ],
@@ -481,7 +478,7 @@ class AnsweredAskCard extends StatelessWidget {
                 size: 16,
                 color: cs.onSurfaceVariant,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpace8),
               Text(
                 cancelled ? 'Skipped' : 'Answered',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -494,7 +491,7 @@ class AnsweredAskCard extends StatelessWidget {
           ),
           // Context (the reasoning behind asking this question).
           if (context_ != null && context_.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: kSpace10),
             Text(
               context_,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -511,9 +508,9 @@ class AnsweredAskCard extends StatelessWidget {
             ),
           // Comment (user's optional note or reasoning).
           if (_comment != null && _comment!.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: kSpace10),
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(kSpace8),
               decoration: BoxDecoration(
                 color: cs.surface,
                 borderRadius: BorderRadius.circular(4),
@@ -566,7 +563,7 @@ class _AnsweredQuestion extends StatelessWidget {
               context,
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpace8),
           for (final opt in options)
             _AnsweredOption(
               label: (opt['label'] ?? opt['title'])?.toString() ?? '',
@@ -599,10 +596,10 @@ class _AnsweredOption extends StatelessWidget {
     // Chosen: highlighted (primaryContainer + filled check). Rest: dimmed.
     final tile = Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(kSpace10),
       decoration: BoxDecoration(
         color: chosen ? cs.primaryContainer : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
         border: Border.all(
           color: chosen
               ? cs.primary.withValues(alpha: 0.5)
@@ -624,9 +621,8 @@ class _AnsweredOption extends StatelessWidget {
               children: [
                 Text(
                   label,
-                  style: TextStyle(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     fontWeight: chosen ? FontWeight.w700 : FontWeight.w500,
-                    fontSize: 13.5,
                   ),
                 ),
                 if (description != null && description!.isNotEmpty)

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/store.dart';
 import '../project/folder_browser.dart';
@@ -104,20 +105,20 @@ class HomeScreen extends ConsumerWidget {
                           if (context.mounted) context.go('/pair');
                         },
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: kSpace6),
                     ],
                     GlassCircleButton(
                       icon: PhosphorIconsLight.folderPlus,
                       tooltip: 'Add repo',
                       onTap: () => showFolderBrowser(context),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: kSpace6),
                     GlassCircleButton(
                       icon: PhosphorIconsLight.gearSix,
                       tooltip: 'Settings',
                       onTap: () => context.go('/settings'),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: kSpace6),
                     const ConnectionChip(circular: true),
                   ],
                 ),
@@ -144,7 +145,7 @@ class _EmptyState extends StatelessWidget {
         SizedBox(height: MediaQuery.of(context).size.height * 0.18),
         Center(
           child: Padding(
-            padding: const EdgeInsets.all(32),
+            padding: const EdgeInsets.all(kSpace32),
             child: GlassSurface(
               borderRadius: 24,
               child: Padding(
@@ -153,12 +154,12 @@ class _EmptyState extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(PhosphorIconsLight.graph, size: 64),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: kSpace12),
                     const Text(
                       'No repos yet.\nAdd a git repo to get started.',
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: kSpace20),
                     FilledButton.icon(
                       onPressed: onAdd,
                       icon: const Icon(PhosphorIconsLight.folderPlus),

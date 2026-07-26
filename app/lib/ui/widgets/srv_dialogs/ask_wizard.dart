@@ -5,6 +5,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../../app/theme.dart';
+
 /// A multi-question wizard. One question per page; Next/Submit advances.
 /// Returns a canonical `{indices, answers}` map (see AskUserQuestionResponse
 /// in uicall.ts), or null when cancelled.
@@ -110,7 +112,7 @@ class _AskWizardState extends State<AskWizard> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(question),
-              const SizedBox(height: 12),
+              const SizedBox(height: kSpace12),
               for (var i = 0; i < opts.length; i++)
                 _OptionTile(
                   label: opts[i]['label']?.toString() ?? '?',
@@ -160,12 +162,12 @@ class _OptionTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
         color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(kRadius8),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(kSpace10),
             child: Row(
               children: [
                 Icon(
@@ -175,7 +177,7 @@ class _OptionTile extends StatelessWidget {
                   size: 18,
                   color: selected ? cs.primary : cs.outline,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpace8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,22 +189,20 @@ class _OptionTile extends StatelessWidget {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           if (recommended) ...[
-                            const SizedBox(width: 6),
+                            const SizedBox(width: kSpace6),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
+                                horizontal: kSpace6,
                                 vertical: 1,
                               ),
                               decoration: BoxDecoration(
                                 color: cs.tertiary.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(6),
+                                borderRadius: BorderRadius.circular(kRadius6),
                               ),
                               child: Text(
                                 'Recommended',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: cs.tertiary,
-                                ),
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: cs.tertiary),
                               ),
                             ),
                           ],

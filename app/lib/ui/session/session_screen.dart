@@ -4,17 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../store/models.dart';
+import '../../app/theme.dart';
 import '../../store/elicitation.dart';
+import '../../store/models.dart';
 import '../../store/store.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
-import 'ask_card.dart';
-import 'chat_transcript.dart';
-import 'chat_metrics.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
+import 'ask_card.dart';
+import 'chat_metrics.dart';
+import 'chat_transcript.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({super.key, required this.sessionId});
@@ -204,7 +205,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                       icon: PhosphorIconsLight.arrowLeft,
                       onTap: () => context.go('/'),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: kSpace12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,9 +240,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: kSpace8),
                     _glassMenu(),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: kSpace6),
                     const ConnectionChip(circular: true),
                   ],
                 ),
@@ -259,7 +260,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 child: GlassSurface(
                   borderRadius: 28,
-                  // Unified design-system glass (see MASTER.md) — same recipe
+                  // Unified design-system glass (see DESIGN.md) — same recipe
                   // as the top bar.
                   child: (pendingAsk != null && pendingAsk.freeText)
                       // Free-text answer mode: a dedicated, empty answer

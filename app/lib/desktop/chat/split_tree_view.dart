@@ -2,6 +2,8 @@ import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
+
 import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
 import 'selected_worktree.dart';
@@ -203,7 +205,7 @@ class _WorktreeTitle extends StatelessWidget {
           size: 16,
           color: theme.colorScheme.outline,
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: kSpace6),
         Flexible(
           child: Text(
             label,

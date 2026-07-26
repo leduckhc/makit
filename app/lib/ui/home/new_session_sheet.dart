@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../widgets/sheet_header.dart';
 import 'repo_chips.dart' show AgentAvatar;
@@ -134,18 +135,18 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text('New session', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 16),
+              const SizedBox(height: kSpace16),
               _worktreeField(theme),
               if (widget.agents.isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: kSpace16),
                 _fieldLabel(theme, 'Harness'),
-                const SizedBox(height: 8),
+                const SizedBox(height: kSpace8),
                 _harnessRow(),
               ],
               if (_options.isNotEmpty) ...[
-                const SizedBox(height: 16),
+                const SizedBox(height: kSpace16),
                 _fieldLabel(theme, 'Config'),
-                const SizedBox(height: 4),
+                const SizedBox(height: kSpace4),
                 for (final option in _options)
                   ConfigRow(
                     option: option,
@@ -155,12 +156,12 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
                         setState(() => _picks[option.id] = value),
                   ),
               ],
-              const SizedBox(height: 20),
+              const SizedBox(height: kSpace20),
               FilledButton(
                 onPressed: _canStart ? _onStart : null,
                 child: const Text('Start'),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpace8),
               Text(
                 'Opens the session; type your first message there.',
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -210,7 +211,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _fieldLabel(theme, 'Worktree'),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpace8),
         SegmentedButton<WorktreeSource>(
           segments: const [
             ButtonSegment(
@@ -227,7 +228,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
           showSelectedIcon: false,
           onSelectionChanged: (s) => setState(() => _source = s.first),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: kSpace8),
         _worktreeSelector(theme),
       ],
     );
@@ -276,7 +277,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
   }
 
   Widget _emptyHint(ThemeData theme, String text) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
+    padding: const EdgeInsets.symmetric(vertical: kSpace8),
     child: Text(
       text,
       style: theme.textTheme.bodySmall?.copyWith(
@@ -291,7 +292,7 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: widget.agents.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        separatorBuilder: (_, _) => const SizedBox(width: kSpace10),
         itemBuilder: (context, i) {
           final agent = widget.agents[i];
           return _HarnessCard(
@@ -394,13 +395,13 @@ class _RowSelect extends StatelessWidget {
     final cs = theme.colorScheme;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(kRadius12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: kSpace12),
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
           border: Border.all(color: cs.outlineVariant),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(kRadius12),
         ),
         child: Row(
           children: [
@@ -412,7 +413,7 @@ class _RowSelect extends StatelessWidget {
                 sub!,
                 style: theme.textTheme.bodySmall?.copyWith(color: cs.outline),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpace8),
             ],
             Icon(PhosphorIconsLight.caretDown, size: 16, color: cs.outline),
           ],
@@ -437,7 +438,7 @@ class _HarnessCard extends StatelessWidget {
     final cs = theme.colorScheme;
     final card = Container(
       width: 120,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(kSpace12),
       decoration: BoxDecoration(
         color: selected ? cs.primaryContainer : cs.surfaceContainerHighest,
         border: Border.all(
@@ -457,7 +458,7 @@ class _HarnessCard extends StatelessWidget {
                 Icon(PhosphorIconsLight.check, size: 16, color: cs.primary),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpace8),
           Text(
             agent.label,
             maxLines: 1,
@@ -522,7 +523,7 @@ class ConfigRow extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(_displayName(value)),
-          const SizedBox(width: 4),
+          const SizedBox(width: kSpace4),
           Icon(
             PhosphorIconsLight.caretDown,
             size: 16,

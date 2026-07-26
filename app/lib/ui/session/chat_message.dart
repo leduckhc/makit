@@ -9,20 +9,8 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../app/theme.dart';
 import 'chat_metrics.dart';
-
-/// Flutter's `'monospace'` logical family only resolves on Android; on Apple
-/// platforms it silently falls back to the default proportional font. Provide
-/// real monospace faces so code renders monospaced everywhere.
-const String _kMonoFont = 'monospace';
-const List<String> _kMonoFallback = [
-  'SF Mono',
-  'Menlo',
-  'Consolas',
-  'Roboto Mono',
-  'Courier New',
-  'monospace',
-];
 
 String _hhmm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
@@ -45,7 +33,12 @@ class _Timestamp extends StatelessWidget {
         left: alignRight ? 0 : 4,
         right: alignRight ? 4 : 0,
       ),
-      child: Text(_hhmm(ts), style: TextStyle(fontSize: 11, color: cs.outline)),
+      child: Text(
+        _hhmm(ts),
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: cs.outline),
+      ),
     );
   }
 }
@@ -60,9 +53,9 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // User bubble is neutral grey (design system) — never the green accent.
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final bubble = dark ? const Color(0xFF2E2E2E) : const Color(0xFFEBEBEB);
-    final onBubble = dark ? const Color(0xFFF5F5F5) : const Color(0xFF1B1B1B);
+    final cs = Theme.of(context).colorScheme;
+    final bubble = cs.surfaceContainerHigh;
+    final onBubble = cs.onSurface;
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -73,7 +66,10 @@ class ChatBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: kSpace10,
+              ),
               decoration: BoxDecoration(
                 color: bubble,
                 borderRadius: const BorderRadius.only(
@@ -235,17 +231,14 @@ class _CodeBlockBuilder extends MarkdownElementBuilder {
     final dark = Theme.of(context).brightness == Brightness.dark;
     final bg = dark ? const Color(0xFF33363E) : const Color(0xFFEBECF0);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace4, vertical: 1),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         code,
-        style: preferredStyle?.copyWith(
-          fontFamily: _kMonoFont,
-          fontFamilyFallback: _kMonoFallback,
-          fontSize: 13,
+        style: preferredStyle?.mono.copyWith(
           backgroundColor: Colors.transparent,
         ),
       ),
@@ -263,7 +256,7 @@ class _CodeBlock extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.symmetric(vertical: kSpace6),
       decoration: BoxDecoration(
         color: dark ? const Color(0xFF282C34) : const Color(0xFFF0F1F4),
         borderRadius: BorderRadius.circular(kChatRadiusSmall),
@@ -279,11 +272,9 @@ class _CodeBlock extends StatelessWidget {
               language: language.isEmpty ? 'plaintext' : language,
               theme: dark ? atomOneDarkTheme : githubTheme,
               padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
-              textStyle: const TextStyle(
-                fontFamily: _kMonoFont,
-                fontFamilyFallback: _kMonoFallback,
-                fontSize: 13,
-              ),
+              textStyle:
+                  (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
+                      .mono,
             ),
           ),
           Positioned(top: 2, right: 2, child: _CopyButton(code: code)),
@@ -319,7 +310,7 @@ class _CopyButtonState extends State<_CopyButton> {
       tooltip: _copied ? 'Copied' : 'Copy',
       iconSize: 16,
       visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(kSpace4),
       constraints: const BoxConstraints(),
       icon: Icon(
         _copied ? PhosphorIconsLight.check : PhosphorIconsLight.copy,
@@ -335,11 +326,7 @@ MarkdownStyleSheet _styleSheet(BuildContext context) {
   final cs = theme.colorScheme;
   // Inline `code`: mono font. Background is applied by _CodeBlockBuilder
   // to allow text selection to render on top.
-  final mono = theme.textTheme.bodyMedium?.copyWith(
-    fontFamily: _kMonoFont,
-    fontFamilyFallback: _kMonoFallback,
-    fontSize: 13,
-  );
+  final mono = theme.textTheme.bodyMedium?.mono;
   // LLMs love emitting h1/h2/h3 headers; render them all as plain bold text at
   // the normal body size instead of oversized headings.
   final heading = theme.textTheme.bodyMedium?.copyWith(

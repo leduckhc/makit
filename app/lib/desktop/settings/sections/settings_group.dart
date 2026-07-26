@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/theme.dart';
+
 /// Groups the rows that sit under a [SettingsSectionHeader] into one rounded,
 /// filled card so they read as a single unit (the macOS System Settings / iOS
 /// grouped-list idiom). Use it between subsection headers in a section body:
@@ -26,7 +28,7 @@ class SettingsGroup extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Material(
         color: cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(kRadius12),
         clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

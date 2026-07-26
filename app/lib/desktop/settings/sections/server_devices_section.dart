@@ -13,6 +13,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../../app/theme.dart';
 import '../../../store/connection.dart'
     show connectionControllerProvider, connectionProvider;
 import '../../desktop_app.dart'
@@ -252,7 +253,7 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: kSpace12),
               ],
               SizedBox(
                 width: 140,
@@ -284,7 +285,9 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
           child: Text(
             'A running server keeps its current settings until restarted.',
-            style: TextStyle(color: cs.outline, fontSize: 12),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.outline),
           ),
         ),
       ],
@@ -334,7 +337,7 @@ class _LifecycleRow extends ConsumerWidget {
                   icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
                   label: const Text('Restart'),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpace8),
                 OutlinedButton.icon(
                   onPressed: () => controller.stop(),
                   icon: const Icon(PhosphorIconsLight.stop, size: 18),

@@ -140,9 +140,8 @@ class _FakeServerRow extends ConsumerWidget {
       ),
       trailing: Text(
         useFake ? 'On' : 'Off',
-        style: TextStyle(
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
           color: useFake ? cs.primary : cs.outline,
-          fontSize: 12,
         ),
       ),
     );

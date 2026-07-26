@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../home/repo_chips.dart' show AgentAvatar;
@@ -33,12 +34,15 @@ class _ComposerPill extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpace8,
+          vertical: kSpace4,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             leading,
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpace6),
             Flexible(
               child: Text(
                 label,

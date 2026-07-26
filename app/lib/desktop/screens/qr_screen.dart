@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../control/control_contract.dart';
 import 'providers.dart';
 import 'time_format.dart';
@@ -124,7 +125,7 @@ class _QrScreenState extends ConsumerState<QrScreen> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Padding(
-                padding: EdgeInsets.all(24),
+                padding: EdgeInsets.all(kSpace24),
                 child: Center(child: CircularProgressIndicator()),
               );
             }
@@ -152,15 +153,15 @@ class _QrBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(kSpace24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(kSpace16),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(kRadius12),
             ),
             child: QrImageView(
               data: pairing.url,
@@ -168,23 +169,21 @@ class _QrBody extends StatelessWidget {
               backgroundColor: Colors.white,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: kSpace24),
           SelectableText(
             pairing.url,
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium,
           ),
           if (pairing.fingerprint != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpace12),
             SelectableText(
               pairing.fingerprint!,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-              ),
+              style: theme.textTheme.bodySmall?.mono,
             ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           Text(
             'Expires in ${formatCountdown(remaining)}',
             style: theme.textTheme.labelLarge,
@@ -209,14 +208,14 @@ class _QrError extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(PhosphorIconsLight.warningCircle, color: cs.error, size: 40),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           Text(
             'Could not load pairing',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: kSpace4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpace16),
           FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
