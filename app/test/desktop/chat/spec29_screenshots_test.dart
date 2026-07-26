@@ -192,9 +192,17 @@ void main() {
       await loader.load();
     }
 
-    // Register real glyphs under the families the app theme uses so golden text
-    // renders as letters, not Ahem boxes. (macOS system fonts.)
-    await load('SF Pro Text', '/System/Library/Fonts/Geneva.ttf');
+    // Register real glyphs under every family the text might resolve to — the
+    // theme asks for 'SF Pro Text' but Material's default typography falls back
+    // to 'Roboto' — so golden text renders as letters, not Ahem boxes.
+    for (final family in const [
+      'Roboto',
+      'SF Pro Text',
+      '.SF Pro Text',
+      'CupertinoSystemText',
+    ]) {
+      await load(family, '/System/Library/Fonts/Geneva.ttf');
+    }
     await load('SF Mono', '/System/Library/Fonts/Monaco.ttf');
     final ttf = File(
       '${Platform.environment['HOME']}/.pub-cache/hosted/pub.dev/'
@@ -211,6 +219,9 @@ void main() {
 
   testWidgets('sidebar — active (fake data)', (tester) async {
     tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(300 * 2, 660 * 2);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(_scene(archived: false));
     // A running session pulses forever, so render a single settled-ish frame
     // instead of pumpAndSettle (which would time out on the animation).
@@ -226,6 +237,9 @@ void main() {
     tester,
   ) async {
     tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(300 * 2, 660 * 2);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(_scene(archived: true));
     await tester.pumpAndSettle();
     await expectLater(
