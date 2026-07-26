@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import 'sidebar_layout.dart' show sidebarCollapsedProvider;
+import 'open_in_ide.dart';
+import 'selected_session.dart' show selectedWorktreeProvider;
+import 'selected_worktree.dart';
+import 'sidebar_layout.dart' show sidebarCollapsedProvider, kTrafficLightInset;
 import 'split_view.dart';
 import 'title_bar_strip.dart';
 import 'panes/split_node.dart';
@@ -21,6 +25,10 @@ class WorkspaceView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(workspaceControllerProvider);
     final collapsed = ref.watch(sidebarCollapsedProvider);
+    // The active tab's worktree (its session's worktree, or an empty tab's
+    // hint) drives the window-title context label + IDE launcher, mirroring
+    // the pre-SPEC-28 pane title bar.
+    final worktree = ref.watch(selectedWorktreeProvider);
     return Column(
       children: [
         // The OS titlebar is hidden, so this strip is the macOS window-drag
@@ -32,6 +40,18 @@ class WorkspaceView extends ConsumerWidget {
             leading: collapsed
                 ? const SidebarToggleButton(collapse: false)
                 : null,
+            // The active tab's worktree/branch, on the traffic-light row above
+            // the tabs. Folded sidebar → the strip overlaps the traffic lights
+            // + unfold button, so inset past them; otherwise a small gutter.
+            title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
+            titleInset: collapsed ? kTrafficLightInset + 34 : 12,
+            // "Open in editor", only for a real on-disk worktree (a still-
+            // virtual draft has no path to open yet).
+            trailing:
+                worktree == null ||
+                    worktree.path.startsWith(kDraftWorktreePrefix)
+                ? null
+                : OpenInIdeButton(path: worktree.path),
           ),
         ),
         const Divider(height: 1),
@@ -152,6 +172,47 @@ class _SplitterDivider extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The active tab's worktree/branch label on the window title strip: a fork
+/// icon + branch name (or "New worktree" while the worktree is still a virtual
+/// draft that hasn't materialised on disk). A quiet muted context label so the
+/// worktree reads as context beneath which the session title is primary.
+class _WorktreeTitle extends StatelessWidget {
+  const _WorktreeTitle({required this.worktree});
+
+  final SelectedWorktree worktree;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = worktree.path.startsWith(kDraftWorktreePrefix)
+        ? 'New worktree'
+        : (worktree.branch ?? worktree.path);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          PhosphorIconsLight.gitBranch,
+          size: 16,
+          color: theme.colorScheme.outline,
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.outline,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
+import 'package:makit/desktop/chat/open_in_ide.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -460,6 +461,39 @@ void main() {
 
       expect(c.read(workspaceControllerProvider).root, isA<Split>());
       expect(sessionOrder(c, first), ['s2', 's1']);
+    });
+  });
+
+  group('window title bar (worktree + IDE launcher)', () {
+    testWidgets(
+      'shows the active worktree branch and an Open-in-IDE launcher',
+      (tester) async {
+        final c = _container(
+          sessions: [_session('s1', 'Alpha', worktree: '/tmp/wt-a')],
+        );
+        addTearDown(c.dispose);
+        _ws(c).revealSession('s1');
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('wt-a'),
+          findsOneWidget,
+          reason: 'branch context label',
+        );
+        expect(find.byType(OpenInIdeButton), findsOneWidget);
+      },
+    );
+
+    testWidgets('empty starter tab shows no worktree title or IDE launcher', (
+      tester,
+    ) async {
+      final c = _container();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(OpenInIdeButton), findsNothing);
     });
   });
 
