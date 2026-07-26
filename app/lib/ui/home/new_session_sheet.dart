@@ -5,8 +5,9 @@ import '../../store/models.dart';
 import '../widgets/sheet_header.dart';
 import 'repo_chips.dart' show AgentAvatar;
 
-/// Which worktree a new session lands on (SPEC-27, decision 2). Mirrors the
-/// desktop dialog's `Existing · New branch · From PR` source toggle.
+/// Which worktree a new session lands on (SPEC-27, decision 2): an
+/// already-checked-out worktree, a fresh fork off a base branch, or a fork on
+/// an open PR's head branch. Shared by the mobile sheet and the desktop dialog.
 enum WorktreeSource { existing, newBranch, fromPr }
 
 /// Choice returned by [NewSessionSheet]: the harness, the worktree source and

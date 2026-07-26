@@ -10,13 +10,9 @@ import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_selectors.dart' show ConfigOptionPickRow;
 import '../../ui/home/repo_chips.dart'
     show branchOptionsForRepo, sortWorktreesForDisplay;
+import '../../ui/home/new_session_sheet.dart' show WorktreeSource;
 import 'harness_picker.dart' show HarnessCard;
 import 'selected_session.dart';
-
-/// Where the new session's worktree comes from (SPEC-27 decision 2): an
-/// already-checked-out worktree, a fresh fork off a base branch, or a fork on
-/// an open PR's head branch.
-enum _WorktreeSource { existing, newBranch, fromPr }
 
 /// Opens the New-session dialog (SPEC-27): configure the worktree, harness, and
 /// the harness's cached config options, then start the session with the first
@@ -49,7 +45,7 @@ class _NewSessionDialog extends ConsumerStatefulWidget {
 
 class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   String? _projectId;
-  _WorktreeSource _source = _WorktreeSource.existing;
+  WorktreeSource _source = WorktreeSource.existing;
   String? _baseBranch;
   String? _existingPath;
   int? _prNumber;
@@ -146,16 +142,16 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   ) async {
     final store = ref.read(storeControllerProvider.notifier);
     switch (_source) {
-      case _WorktreeSource.existing:
+      case WorktreeSource.existing:
         final wt = _selectedExistingWorktree();
         return (path: wt?.path ?? _existingPath, branch: wt?.branch);
-      case _WorktreeSource.newBranch:
+      case WorktreeSource.newBranch:
         final r = await store.createWorktree(
           projectId,
           baseBranch: _effectiveBaseBranch(projectId),
         );
         return (path: r.path, branch: r.branch);
-      case _WorktreeSource.fromPr:
+      case WorktreeSource.fromPr:
         final pr = _prNumber;
         if (pr == null) throw StateError('Select a pull request first.');
         final r = await store.createWorktreeFromPr(projectId, pr);
@@ -208,7 +204,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     String? createdWorktree;
     try {
       final (:path, :branch) = await _resolveWorktree(projectId);
-      createdWorktree = _source == _WorktreeSource.existing ? null : path;
+      createdWorktree = _source == WorktreeSource.existing ? null : path;
       final picks = [
         for (final e in _picks.entries)
           ConfigOptionPick(id: e.key, value: e.value),
@@ -330,35 +326,32 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _fieldLabel(theme, 'Worktree'),
-        SegmentedButton<_WorktreeSource>(
+        SegmentedButton<WorktreeSource>(
           showSelectedIcon: false,
           segments: const [
             ButtonSegment(
-              value: _WorktreeSource.existing,
+              value: WorktreeSource.existing,
               label: Text('Existing'),
             ),
             ButtonSegment(
-              value: _WorktreeSource.newBranch,
+              value: WorktreeSource.newBranch,
               label: Text('New branch'),
             ),
-            ButtonSegment(
-              value: _WorktreeSource.fromPr,
-              label: Text('From PR'),
-            ),
+            ButtonSegment(value: WorktreeSource.fromPr, label: Text('From PR')),
           ],
           selected: {_source},
           onSelectionChanged: _spawning
               ? null
               : (s) => setState(() {
                   _source = s.first;
-                  if (_source == _WorktreeSource.fromPr) _loadPrs();
+                  if (_source == WorktreeSource.fromPr) _loadPrs();
                 }),
         ),
         const SizedBox(height: 10),
         switch (_source) {
-          _WorktreeSource.existing => _existingPanel(theme),
-          _WorktreeSource.newBranch => _newBranchPanel(theme),
-          _WorktreeSource.fromPr => _fromPrPanel(theme),
+          WorktreeSource.existing => _existingPanel(theme),
+          WorktreeSource.newBranch => _newBranchPanel(theme),
+          WorktreeSource.fromPr => _fromPrPanel(theme),
         },
       ],
     );
