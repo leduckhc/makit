@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme.dart';
 import '../../../shortcuts/key_chord.dart';
 import '../../../shortcuts/keymap.dart';
 import '../../../shortcuts/keymap_controller.dart';
@@ -108,11 +109,13 @@ class _ShortcutRow extends ConsumerWidget {
               padding: const EdgeInsets.only(right: 8),
               child: Text(
                 'Modified',
-                style: TextStyle(color: cs.primary, fontSize: 12),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.primary),
               ),
             ),
           _ChordChip(label: chord.label),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           SettingsResetButton(
             visible: modified,
             onPressed: () => ref.read(keymapProvider.notifier).reset(action),
@@ -166,10 +169,10 @@ class _ChordChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8, vertical: 3),
       decoration: BoxDecoration(
         color: cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(kRadius6),
       ),
       child: Text(
         label,
@@ -248,7 +251,7 @@ class _RecordChordDialogState extends State<_RecordChordDialog> {
         autofocus: true,
         onKeyEvent: _onKey,
         child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8),
+          padding: EdgeInsets.symmetric(vertical: kSpace8),
           child: Text('Press the new shortcut…\n\nEsc to cancel.'),
         ),
       ),

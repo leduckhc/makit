@@ -21,6 +21,7 @@ import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'chat_metrics.dart';
 import 'diff_view.dart';
@@ -31,10 +32,10 @@ import 'tool_result_text.dart';
 // `tool_renderers.dart` keep resolving them after the SPEC-19 split.
 export 'tool_result_text.dart' show extractToolResultText, valueString;
 
-/// Monospace font stack for tool views. iOS does not resolve the generic
-/// `monospace` family, so we fall back to Menlo (present on all Apple
-/// platforms); Android resolves `monospace` directly.
-const List<String> kMonoFallback = ['Menlo', 'monospace'];
+// Canonical monospace stack lives in `app/theme.dart`; re-exported here so the
+// existing tool-view importers keep resolving `kMonoFallback`.
+export '../../app/theme.dart'
+    show kMonoFallback, kMonoFontFamily, MakitMonoText;
 
 /// Max width for the readable content column. On wide (desktop) windows the
 /// transcript, composer and tool body are centered within this width instead of
@@ -125,20 +126,14 @@ class ToolSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              fontFamily: 'monospace',
-              fontFamilyFallback: kMonoFallback,
-            ),
-          ),
-          const SizedBox(height: 6),
+          Text(title, style: Theme.of(context).textTheme.titleSmall?.mono),
+          const SizedBox(height: kSpace6),
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(kSpace12),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(kRadius10),
             ),
             child: child,
           ),
@@ -157,12 +152,8 @@ class MonoText extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SelectableText(
     text,
-    style: TextStyle(
-      fontFamily: 'monospace',
-      fontFamilyFallback: kMonoFallback,
-      fontSize: 12.5,
-      color: error ? Theme.of(context).colorScheme.error : null,
-    ),
+    style: (Theme.of(context).textTheme.bodySmall ?? const TextStyle()).mono
+        .copyWith(color: error ? Theme.of(context).colorScheme.error : null),
   );
 }
 
@@ -202,12 +193,10 @@ class ToolCodeBlock extends StatelessWidget {
               language: language.isEmpty ? 'plaintext' : language,
               theme: dark ? atomOneDarkTheme : githubTheme,
               padding: const EdgeInsets.fromLTRB(12, 12, 40, 12),
-              textStyle: TextStyle(
-                fontFamily: 'monospace',
-                fontFamilyFallback: kMonoFallback,
-                fontSize: 12.5,
-                color: error ? cs.error : null,
-              ),
+              textStyle:
+                  (Theme.of(context).textTheme.bodySmall ?? const TextStyle())
+                      .mono
+                      .copyWith(color: error ? cs.error : null),
             ),
           ),
           Positioned(top: 2, right: 2, child: _CopyButton(code: code)),
@@ -243,7 +232,7 @@ class _CopyButtonState extends State<_CopyButton> {
       tooltip: _copied ? 'Copied' : 'Copy',
       iconSize: 16,
       visualDensity: VisualDensity.compact,
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(kSpace4),
       constraints: const BoxConstraints(),
       icon: Icon(
         _copied ? PhosphorIconsLight.check : PhosphorIconsLight.copy,
@@ -271,9 +260,7 @@ class ParamRow extends StatelessWidget {
             width: 72,
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                fontFamily: 'monospace',
-                fontFamilyFallback: kMonoFallback,
+              style: Theme.of(context).textTheme.bodySmall?.mono.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),
             ),
@@ -281,11 +268,7 @@ class ParamRow extends StatelessWidget {
           Expanded(
             child: SelectableText(
               value,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontFamilyFallback: kMonoFallback,
-                fontSize: 12.5,
-              ),
+              style: Theme.of(context).textTheme.bodySmall?.mono,
             ),
           ),
         ],
@@ -741,7 +724,7 @@ class _AskUserQuestionRenderer extends ToolRenderer {
                     q['question']?.toString() ?? '',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: kSpace10),
                   for (final opt in options)
                     _AnswerOption(
                       label: opt['label']?.toString() ?? '',
@@ -780,10 +763,10 @@ class _AnswerOption extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(kSpace10),
       decoration: BoxDecoration(
         color: chosen ? cs.primaryContainer : cs.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
         border: chosen ? Border.all(color: cs.primary) : null,
       ),
       child: Row(
@@ -794,7 +777,7 @@ class _AnswerOption extends StatelessWidget {
             size: 18,
             color: chosen ? cs.primary : cs.outline,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

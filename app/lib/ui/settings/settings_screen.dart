@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/connection.dart';
+import '../../app/theme.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
@@ -19,7 +20,8 @@ class SettingsScreen extends ConsumerWidget {
     final projects = ref.watch(projectsProvider).projects;
     final sessions = ref.watch(sessionsProvider).sessions;
     final server = conn.server;
-    final (statusLabel, statusColor) = _status(conn);
+    final cs = Theme.of(context).colorScheme;
+    final (statusLabel, statusColor) = _status(conn, cs);
 
     return Scaffold(
       appBar: AppBar(
@@ -132,11 +134,11 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: _leadingIcon(
               conn.useFake ? PhosphorIconsLight.x : PhosphorIconsLight.signOut,
-              color: Colors.red,
+              color: cs.error,
             ),
             title: Text(
               conn.useFake ? 'Exit demo' : 'Unpair this device',
-              style: const TextStyle(color: Colors.red),
+              style: TextStyle(color: cs.error),
             ),
             subtitle: conn.useFake
                 ? const Text('Leave fake data and return to pairing')
@@ -151,14 +153,14 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  (String, Color) _status(MakitConnState conn) {
-    if (conn.useFake) return ('Dev fake server', Colors.orange);
+  (String, Color) _status(MakitConnState conn, ColorScheme cs) {
+    if (conn.useFake) return ('Dev fake server', kStatusWarning);
     return switch (conn.wsState) {
-      WsState.connected => ('Connected', Colors.green),
-      WsState.connecting => ('Connecting…', Colors.blue),
-      WsState.reconnecting => ('Reconnecting…', Colors.orange),
-      WsState.idle => ('Idle', Colors.grey),
-      WsState.closed => ('Offline', Colors.red),
+      WsState.connected => ('Connected', cs.primary),
+      WsState.connecting => ('Connecting…', cs.primary),
+      WsState.reconnecting => ('Reconnecting…', kStatusWarning),
+      WsState.idle => ('Idle', cs.outline),
+      WsState.closed => ('Offline', cs.error),
     };
   }
 }
@@ -188,9 +190,8 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
       child: Text(
         label.toUpperCase(),
-        style: TextStyle(
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
           color: cs.primary,
-          fontSize: 12,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.8,
         ),

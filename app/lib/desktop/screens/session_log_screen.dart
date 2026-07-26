@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../control/control_contract.dart';
+import '../../app/theme.dart';
 import 'providers.dart';
 
 /// Tails the daemon log, auto-scrolling to follow new lines.
@@ -100,7 +101,7 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(PhosphorIconsLight.cloudSlash, color: cs.error, size: 40),
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpace12),
             const Text('Connection lost'),
           ],
         ),
@@ -111,15 +112,13 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
     }
     return ListView.builder(
       controller: _scroll,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(kSpace12),
       itemCount: _lines.length,
       itemBuilder: (context, i) => Text(
         _lines[i],
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontSize: 13,
-          height: 1.4,
-        ),
+        style: (Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
+            .mono
+            .copyWith(height: 1.4),
       ),
     );
   }

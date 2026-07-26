@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 
@@ -159,7 +160,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
     if (_error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(kSpace24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -168,13 +169,13 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
                 size: 40,
                 color: theme.colorScheme.error,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: kSpace12),
               Text(
                 "Couldn't read this folder.",
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: kSpace12),
               OutlinedButton(
                 onPressed: () => _browse(_result?.path),
                 child: const Text('Retry'),
@@ -191,7 +192,7 @@ class _FolderBrowserState extends ConsumerState<FolderBrowser> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: kSpace4),
       itemCount: entries.length,
       itemBuilder: (context, i) {
         final entry = entries[i];
@@ -251,7 +252,7 @@ class _Header extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Add a project', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 2),
+                const SizedBox(height: kSpace2),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   reverse: true,

@@ -14,10 +14,11 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
+import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
-import 'ask_card.dart';
 import 'tool_call_card.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
@@ -107,9 +108,8 @@ class _ThinkingLineState extends State<ThinkingLine> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final style = TextStyle(
+    final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: cs.onSurfaceVariant.withValues(alpha: 0.65),
-      fontSize: 13,
       fontStyle: FontStyle.italic,
       height: 1.3,
     );
@@ -152,7 +152,7 @@ class _ThinkingLineState extends State<ThinkingLine> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         leading,
-        const SizedBox(width: 6),
+        const SizedBox(width: kSpace6),
         Expanded(child: textWidget),
       ],
     );
@@ -173,7 +173,7 @@ class ErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(kSpace12),
       decoration: BoxDecoration(
         color: cs.errorContainer,
         borderRadius: BorderRadius.circular(kChatRadiusMedium),
@@ -185,7 +185,7 @@ class ErrorBanner extends StatelessWidget {
             size: 18,
             color: cs.onErrorContainer,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           Expanded(
             child: Text(message, style: TextStyle(color: cs.onErrorContainer)),
           ),
@@ -268,11 +268,9 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
       },
       child: Text(
         _word,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          fontStyle: FontStyle.italic,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.labelLarge?.copyWith(fontStyle: FontStyle.italic),
       ),
     );
   }

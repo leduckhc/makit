@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
 
@@ -157,12 +158,12 @@ class OpenInIdeButton extends ConsumerWidget {
 }
 
 /// A Material 3 *split button* (Expressive, XS size) for the title bar. The
-/// caret segment (menu toggle, whose icon rotates 180° while the menu is open)
-/// sits on the left; the preferred editor's logo sits on the right and opens it
-/// directly. Both segments share one shape: outer corners fully rounded (50%),
-/// inner corners squared (4dp) with a 2dp gap between them. It fills with `surfaceContainer` so it blends
-/// into the chat background it sits on, lifting a tone (to
-/// `surfaceContainerHighest`) while the caret's menu is open.
+/// preferred editor's logo sits on the left and opens it directly; the caret
+/// segment (menu toggle, whose icon rotates 180° while the menu is open) sits
+/// on the right. Both segments share one shape: outer corners fully rounded
+/// (50%), inner corners squared (4dp) with a 2dp gap between them. It fills with
+/// `surfaceContainer` so it blends into the chat background it sits on, lifting
+/// a tone (to `surfaceContainerHighest`) while the caret's menu is open.
 class _IdeSplitButton extends StatelessWidget {
   const _IdeSplitButton({
     required this.preferred,
@@ -193,26 +194,7 @@ class _IdeSplitButton extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Leading: the menu toggle. Lifts a tone while open; the caret rotates.
-        _Segment(
-          tooltip: 'Choose editor',
-          onTap: onToggleMenu,
-          background: menuOpen ? cs.surfaceContainerHighest : surface,
-          foreground: fg,
-          height: _height,
-          outerRadius: _outer,
-          innerRadius: _inner,
-          leadingEdge: true,
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: AnimatedRotation(
-            turns: menuOpen ? 0.5 : 0,
-            duration: const Duration(milliseconds: 150),
-            child: const Icon(PhosphorIconsLight.caretDown, size: 14),
-          ),
-        ),
-        // 2dp gap between segments (fixed across all sizes per the spec).
-        const SizedBox(width: 2),
-        // Trailing: the primary action — open the preferred editor directly.
+        // Leading: the primary action — open the preferred editor directly.
         _Segment(
           tooltip: actionTooltip,
           onTap: onAction,
@@ -221,9 +203,28 @@ class _IdeSplitButton extends StatelessWidget {
           height: _height,
           outerRadius: _outer,
           innerRadius: _inner,
-          leadingEdge: false,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          leadingEdge: true,
+          padding: const EdgeInsets.symmetric(horizontal: kSpace10),
           child: ideLogo(context, preferred, size: 16),
+        ),
+        // 2dp gap between segments (fixed across all sizes per the spec).
+        const SizedBox(width: kSpace2),
+        // Trailing: the menu toggle. Lifts a tone while open; the caret rotates.
+        _Segment(
+          tooltip: 'Choose editor',
+          onTap: onToggleMenu,
+          background: menuOpen ? cs.surfaceContainerHighest : surface,
+          foreground: fg,
+          height: _height,
+          outerRadius: _outer,
+          innerRadius: _inner,
+          leadingEdge: false,
+          padding: const EdgeInsets.symmetric(horizontal: kSpace6),
+          child: AnimatedRotation(
+            turns: menuOpen ? 0.5 : 0,
+            duration: const Duration(milliseconds: 150),
+            child: const Icon(PhosphorIconsLight.caretDown, size: 14),
+          ),
         ),
       ],
     );

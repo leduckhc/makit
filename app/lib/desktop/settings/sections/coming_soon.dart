@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../../app/theme.dart';
+
 import 'section_header.dart';
 import 'settings_group.dart';
 
@@ -31,10 +33,12 @@ class ComingSoonRow extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(PhosphorIconsLight.clock, size: 16, color: cs.outline),
-          const SizedBox(width: 6),
+          const SizedBox(width: kSpace6),
           Text(
             'Coming soon',
-            style: TextStyle(color: cs.outline, fontSize: 12),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.outline),
           ),
         ],
       ),

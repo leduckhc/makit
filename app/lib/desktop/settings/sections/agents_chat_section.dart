@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme.dart';
 import '../../chat/pr_actions.dart';
 import '../prefs/preference.dart';
 import '../prefs/preferences_providers.dart';
@@ -94,7 +95,7 @@ class _PrPromptRowState extends ConsumerState<_PrPromptRow> {
           Row(
             children: [
               widget.action.icon.build(size: 16),
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpace8),
               Text(
                 widget.action.label,
                 style: const TextStyle(fontWeight: FontWeight.w600),
@@ -106,7 +107,7 @@ class _PrPromptRowState extends ConsumerState<_PrPromptRow> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: kSpace8),
           TextField(
             controller: _ctrl,
             minLines: 2,

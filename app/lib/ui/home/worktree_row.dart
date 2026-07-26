@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'repo_chips.dart';
 import 'session_tile.dart';
@@ -44,7 +45,7 @@ class WorktreeRow extends StatelessWidget {
                     ? theme.colorScheme.outline
                     : theme.colorScheme.primary,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: kSpace6),
               Flexible(
                 child: Text(
                   branch,
@@ -57,24 +58,24 @@ class WorktreeRow extends StatelessWidget {
               ),
               if (isCurrent) ...[
                 const SizedBox(width: 5),
-                const Icon(
+                Icon(
                   PhosphorIconsFill.star,
                   size: 15,
-                  color: Colors.amber,
+                  color: theme.colorScheme.primary,
                 ),
               ],
               if (isDefault) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: kSpace6),
                 TagChip(label: 'default', color: theme.colorScheme.outline),
               ],
-              const SizedBox(width: 8),
+              const SizedBox(width: kSpace8),
               if (worktree.hasChanges)
                 DiffChip(
                   insertions: worktree.insertions,
                   deletions: worktree.deletions,
                 ),
               if (worktree.pr != null) ...[
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpace8),
                 PrPill(pr: worktree.pr!),
               ],
             ],

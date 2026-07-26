@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+import '../../app/theme.dart';
+import '../../store/connection.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../../store/connection.dart';
 import '../../ui/home/repo_chips.dart';
-import '../../ui/widgets/connection_chip.dart';
 import '../../ui/project/folder_browser.dart';
+import '../../ui/widgets/connection_chip.dart';
+import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
+import 'new_session_dialog.dart';
+import 'selected_session.dart';
+import 'server_profile_badge.dart';
 import 'session_status_dot.dart';
 import 'split_view.dart' show SessionDragData;
 import 'title_bar_strip.dart';
-import 'server_profile_badge.dart';
-import 'new_session_dialog.dart';
-import 'archived_sidebar_view.dart';
-import 'selected_session.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
@@ -48,7 +50,7 @@ class DesktopSidebar extends ConsumerWidget {
                 : repos.isEmpty
                 ? const _EmptySidebar()
                 : ListView(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    padding: const EdgeInsets.symmetric(vertical: kSpace8),
                     children: [
                       for (final repo in repos)
                         _RepoGroup(
@@ -186,7 +188,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
               // the hover background spans folder + name + caret + the actions,
               // instead of covering only the name.
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(kRadius10),
                 onTap: () => setState(() => _expanded = !_expanded),
                 onFocusChange: (f) => setState(() => _repoFocused = f),
                 child: Padding(
@@ -198,7 +200,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                         size: 16,
                         color: theme.colorScheme.outline,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: kSpace8),
                       Expanded(
                         child: Text(
                           repo.name.toUpperCase(),
@@ -224,7 +226,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const SizedBox(width: 2),
+                            const SizedBox(width: kSpace2),
                             _RepoMenuButton(repo: repo),
                             IconButton(
                               tooltip: 'New worktree',
@@ -273,10 +275,10 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                 alignment: Alignment.centerLeft,
                 child: InkWell(
                   onTap: () => setState(() => _showAll = !_showAll),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(kRadius10),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
+                      horizontal: kSpace8,
                       vertical: 3,
                     ),
                     child: Text(
@@ -480,11 +482,14 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
           onEnter: (_) => setState(() => _hovering = true),
           onExit: (_) => setState(() => _hovering = false),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+            padding: const EdgeInsets.symmetric(
+              horizontal: kSpace8,
+              vertical: 1,
+            ),
             child: Material(
               type: MaterialType.transparency,
               child: InkWell(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(kRadius10),
                 onFocusChange: (f) => setState(() => _focused = f),
                 onTap: () {
                   if (selectable) {
@@ -505,7 +510,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                     color: worktreeSelected
                         ? theme.colorScheme.surfaceContainerHighest
                         : null,
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(kRadius10),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -530,7 +535,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                 size: 16,
                                 color: theme.colorScheme.outline,
                               ),
-                            const SizedBox(width: 6),
+                            const SizedBox(width: kSpace6),
                             Expanded(
                               child: Row(
                                 children: [
@@ -552,7 +557,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: kSpace8),
                             // On hover or keyboard focus the diff pill is replaced
                             // by the worktree overflow menu (rename / delete), so
                             // the actions are reachable without a pointer. Otherwise
@@ -600,7 +605,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                       fontWeight: FontWeight.w300,
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
+                                  const SizedBox(width: kSpace4),
                                   Text(
                                     '•',
                                     style: theme.textTheme.labelSmall?.copyWith(
@@ -608,7 +613,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                       fontWeight: FontWeight.w300,
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
+                                  const SizedBox(width: kSpace4),
                                 ],
                                 Text(
                                   _branchAgeLabel(worktree.committedAt),
@@ -839,18 +844,18 @@ class _DraftWorktreeTile extends StatelessWidget {
         ? DateTime.fromMillisecondsSinceEpoch(session.lastActivityAt)
         : null;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8, vertical: 1),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(kRadius10),
           onTap: onTap,
           child: Ink(
             decoration: BoxDecoration(
               color: selected
                   ? theme.colorScheme.surfaceContainerHighest
                   : null,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(kRadius10),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -864,7 +869,7 @@ class _DraftWorktreeTile extends StatelessWidget {
                         size: 16,
                         color: theme.colorScheme.outline,
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: kSpace6),
                       Flexible(
                         child: Text(
                           'new worktree',
@@ -935,13 +940,15 @@ class _SessionTile extends StatelessWidget {
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
     final tile = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       child: ListTile(
         dense: true,
         visualDensity: VisualDensity.compact,
         selected: selected,
         selectedTileColor: theme.colorScheme.surfaceContainerHighest,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(kRadius10),
+        ),
         contentPadding: EdgeInsets.only(left: indented ? 24 : 8, right: 12),
         title: Row(
           children: [
@@ -956,7 +963,7 @@ class _SessionTile extends StatelessWidget {
                     : SessionStatusDot(status: session.status),
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpace6),
             Expanded(
               child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
@@ -993,18 +1000,21 @@ class _SessionDragFeedback extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kSpace10,
+          vertical: kSpace6,
+        ),
         constraints: const BoxConstraints(maxWidth: 220),
         decoration: BoxDecoration(
           color: cs.primaryContainer,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(kRadius8),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (status != SessionStatus.idle) ...[
               SessionStatusDot(status: status),
-              const SizedBox(width: 6),
+              const SizedBox(width: kSpace6),
             ],
             Flexible(
               child: Text(
@@ -1037,7 +1047,7 @@ class _Footer extends ConsumerWidget {
       child: Row(
         children: [
           const ConnectionChip(),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           if (endpoint != null)
             Expanded(
               child: Text(
@@ -1096,7 +1106,7 @@ class _EmptySidebar extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(kSpace24),
         child: Text(
           'No repos yet.\nUse the + button below\nto add a git repo.',
           textAlign: TextAlign.center,

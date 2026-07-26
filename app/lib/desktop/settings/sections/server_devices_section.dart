@@ -13,11 +13,14 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../../app/theme.dart';
 import '../../../store/connection.dart'
     show connectionControllerProvider, connectionProvider;
 import '../../desktop_app.dart'
     show desktopControllerProvider, makitInstallCommand;
 import '../../screens/devices_screen.dart';
+import '../../screens/providers.dart'
+    show bundledCliPathProvider, cliInstallerProvider;
 import '../../screens/qr_screen.dart';
 import '../../screens/sessions_screen.dart';
 import '../../tray/tray_controller.dart' show DaemonState;
@@ -250,7 +253,7 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: kSpace12),
               ],
               SizedBox(
                 width: 140,
@@ -282,7 +285,9 @@ class _EndpointRowState extends ConsumerState<_EndpointRow> {
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
           child: Text(
             'A running server keeps its current settings until restarted.',
-            style: TextStyle(color: cs.outline, fontSize: 12),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.outline),
           ),
         ),
       ],
@@ -332,7 +337,7 @@ class _LifecycleRow extends ConsumerWidget {
                   icon: const Icon(PhosphorIconsLight.arrowClockwise, size: 18),
                   label: const Text('Restart'),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: kSpace8),
                 OutlinedButton.icon(
                   onPressed: () => controller.stop(),
                   icon: const Icon(PhosphorIconsLight.stop, size: 18),
@@ -396,6 +401,28 @@ class _CliRowState extends ConsumerState<_CliRow> {
     );
   }
 
+  /// One-click install of the app-bundled CLI into `~/.local/bin/makit`,
+  /// then re-resolve so the CLI row reflects the newly installed binary.
+  Future<void> _installCli() async {
+    final result = await ref.read(cliInstallerProvider).install();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.ok
+              ? 'Installed makit CLI to ${result.installedPath}. If your '
+                    'terminal can’t find `makit`, add ~/.local/bin to your PATH.'
+              : 'Install failed: ${result.error}',
+        ),
+      ),
+    );
+    if (result.ok) {
+      setState(() {
+        _resolved = _refreshResolved();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -425,6 +452,15 @@ class _CliRowState extends ConsumerState<_CliRow> {
                 onPressed: _copyInstallCommand,
               ),
             ),
+            if (ref.read(bundledCliPathProvider) != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: OutlinedButton.icon(
+                  onPressed: () => unawaited(_installCli()),
+                  icon: const Icon(PhosphorIconsLight.downloadSimple, size: 18),
+                  label: const Text('Install CLI'),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
               child: TextField(

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../control/control_contract.dart';
 import 'providers.dart';
 import 'time_format.dart';
@@ -97,7 +98,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     // First load: nothing fetched yet.
     if (_devices == null && _error == null) {
       return const Padding(
-        padding: EdgeInsets.all(24),
+        padding: EdgeInsets.all(kSpace24),
         child: Center(child: CircularProgressIndicator()),
       );
     }
@@ -108,7 +109,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> {
     final devices = _devices!;
     if (devices.isEmpty) {
       return const Padding(
-        padding: EdgeInsets.all(24),
+        padding: EdgeInsets.all(kSpace24),
         child: Center(child: Text('No paired devices')),
       );
     }
@@ -137,7 +138,7 @@ class _DeviceTile extends StatelessWidget {
       leading: Icon(
         PhosphorIconsFill.circle,
         size: 12,
-        color: device.connected ? Colors.green : cs.outline,
+        color: device.connected ? cs.primary : cs.outline,
       ),
       title: Text(device.label),
       subtitle: Text(
@@ -166,14 +167,14 @@ class _DevicesError extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(PhosphorIconsLight.warningCircle, color: cs.error, size: 40),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           Text(
             'Could not load devices',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: kSpace4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpace16),
           FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),

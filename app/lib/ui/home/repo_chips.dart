@@ -2,11 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
-
-/// Git additions (green) / deletions (red).
-const kDiffAdd = Color(0xFF3FB950);
-const kDiffDel = Color(0xFFF85149);
 
 /// Branch name pill with a git branch glyph.
 class BranchChip extends StatelessWidget {
@@ -19,24 +16,26 @@ class BranchChip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final color = subtle ? cs.outline : cs.primary;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsLight.gitCommit, size: 12, color: color),
-          const SizedBox(width: 4),
+          Icon(PhosphorIconsLight.gitCommit, size: kPillIconSize, color: color),
+          const SizedBox(width: kSpace4),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 120),
             child: Text(
               branch,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+              style: Theme.of(context).textTheme.labelXs?.copyWith(
                 color: color,
-                fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -65,22 +64,18 @@ class DiffChip extends StatelessWidget {
         if (insertions > 0)
           Text(
             '+$insertions',
-            style: const TextStyle(
-              color: kDiffAdd,
-              fontSize: 12,
+            style: Theme.of(context).textTheme.labelXs?.mono.copyWith(
+              color: Theme.of(context).colorScheme.diffAddText,
               fontWeight: FontWeight.w400,
-              fontFamily: 'monospace',
             ),
           ),
         if (insertions > 0 && deletions > 0) const SizedBox(width: 5),
         if (deletions > 0)
           Text(
             '−$deletions',
-            style: const TextStyle(
-              color: kDiffDel,
-              fontSize: 12,
+            style: Theme.of(context).textTheme.labelXs?.mono.copyWith(
+              color: Theme.of(context).colorScheme.diffDelText,
               fontWeight: FontWeight.w400,
-              fontFamily: 'monospace',
             ),
           ),
       ],
@@ -96,23 +91,29 @@ class PrPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = pr.isDraft ? Colors.grey : cs.primary;
+    final color = pr.isDraft ? cs.outline : cs.primary;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(PhosphorIconsLight.gitPullRequest, size: 12, color: color),
+          Icon(
+            PhosphorIconsLight.gitPullRequest,
+            size: kPillIconSize,
+            color: color,
+          ),
           const SizedBox(width: 3),
           Text(
             'PR #${pr.number}',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.labelXs?.copyWith(
               color: color,
-              fontSize: 8,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -131,16 +132,18 @@ class TagChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
       ),
       child: Text(
         label,
-        style: TextStyle(
+        style: Theme.of(context).textTheme.labelXs?.copyWith(
           color: color,
-          fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -158,23 +161,31 @@ class SessionStatusChip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final (label, color) = switch (status) {
       SessionStatus.running => ('running', cs.primary),
-      SessionStatus.awaitingInput => ('you', Colors.orange),
-      SessionStatus.awaitingApproval => ('approve', Colors.deepOrange),
-      SessionStatus.error => ('error', Colors.red),
-      SessionStatus.exited => ('exited', Colors.grey),
-      SessionStatus.idle => ('idle', Colors.grey),
+      SessionStatus.awaitingInput => ('you', kStatusWarning),
+      SessionStatus.awaitingApproval => ('approve', kStatusCaution),
+      SessionStatus.error => ('error', cs.error),
+      SessionStatus.exited => ('exited', cs.outline),
+      SessionStatus.idle => ('idle', cs.outline),
+    };
+    // Vivid hue tints the pill; label uses an AA-safe foreground on light.
+    final textColor = switch (status) {
+      SessionStatus.awaitingInput => cs.statusWarningText,
+      SessionStatus.awaitingApproval => cs.statusCautionText,
+      _ => color,
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(kRadius8),
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
+        style: Theme.of(context).textTheme.labelXs?.copyWith(
+          color: textColor,
           fontWeight: FontWeight.w600,
         ),
       ),

@@ -2,13 +2,15 @@ import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/store.dart';
 import 'desktop_chat_pane.dart';
 import 'new_session_dialog.dart';
-import 'selected_session.dart';
-import 'session_status_dot.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
+import 'selected_session.dart';
+import 'selected_worktree.dart';
+import 'session_status_dot.dart';
 
 /// Height of a [Split]'s tab strip.
 const double _kTabBarHeight = 30;
@@ -443,7 +445,7 @@ class _TabChip extends ConsumerWidget {
         children: [
           if (session != null) ...[
             SessionStatusDot(status: session.status),
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpace6),
           ],
           Flexible(
             child: Text(
