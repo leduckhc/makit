@@ -61,9 +61,9 @@ void main() {
     Future<void> loadFont(String family, String path) async {
       final f = File(path);
       if (!f.existsSync()) return;
-      await (FontLoader(family)
-            ..addFont(Future.value(f.readAsBytesSync().buffer.asByteData())))
-          .load();
+      await (FontLoader(
+        family,
+      )..addFont(Future.value(f.readAsBytesSync().buffer.asByteData()))).load();
     }
 
     final phDir =
