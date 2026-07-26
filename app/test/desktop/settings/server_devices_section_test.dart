@@ -1,13 +1,16 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemChannels;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/daemon/cli_installer.dart';
 import 'package:makit/desktop/daemon/daemon_lifecycle.dart';
 import 'package:makit/desktop/desktop_app.dart' show desktopControllerProvider;
 import 'package:makit/desktop/desktop_controller.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/screens/providers.dart'
-    show controlClientProvider;
+    show cliInstallerProvider, controlClientProvider;
 import 'package:makit/desktop/settings/sections/server_devices_section.dart';
 import 'package:makit/desktop/settings/server_config.dart';
 import 'package:makit/store/connection.dart';
@@ -39,6 +42,7 @@ Future<void> _pump(
   required ServerConfigController config,
   DesktopController? controller,
   MakitConnState? connection,
+  CliInstaller? installer,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -48,6 +52,8 @@ Future<void> _pump(
           controller ?? _controller(),
         ),
         connectionProvider.overrideWithValue(connection ?? MakitConnState()),
+        if (installer != null)
+          cliInstallerProvider.overrideWithValue(installer),
       ],
       child: const MaterialApp(home: Scaffold(body: ServerDevicesSection())),
     ),
@@ -310,5 +316,60 @@ void main() {
     // Opening Sessions collapses the previously-open Devices row.
     expect(find.text('No running sessions'), findsOneWidget);
     expect(find.text('No paired devices'), findsNothing);
+  });
+
+  group('Install CLI button', () {
+    late Directory tmp;
+    setUp(() => tmp = Directory.systemTemp.createTempSync('cli_install_ui'));
+    tearDown(() => tmp.deleteSync(recursive: true));
+
+    CliInstaller installerWithBundle({required bool bundled}) {
+      final path = '${tmp.path}/Resources/makit/makit';
+      if (bundled) {
+        File(path).createSync(recursive: true);
+      }
+      return CliInstaller(bundledCliPath: () => path, homeDir: () => tmp.path);
+    }
+
+    Future<void> scrollToCli(WidgetTester tester) async {
+      await tester.scrollUntilVisible(
+        find.text('CLI'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump();
+    }
+
+    testWidgets('shown when the app bundles a CLI; installs on tap', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        installer: installerWithBundle(bundled: true),
+      );
+      await scrollToCli(tester);
+
+      final button = find.text('Install CLI');
+      expect(button, findsOneWidget);
+
+      await tester.tap(button);
+      await tester.pump();
+      await tester.pump();
+
+      expect(File('${tmp.path}/.local/bin/makit').existsSync(), isTrue);
+      expect(find.textContaining('Installed makit CLI'), findsOneWidget);
+    });
+
+    testWidgets('hidden when the build has no bundled CLI', (tester) async {
+      await _pump(
+        tester,
+        config: await makeConfig(),
+        installer: installerWithBundle(bundled: false),
+      );
+      await scrollToCli(tester);
+
+      expect(find.text('Install CLI'), findsNothing);
+    });
   });
 }
