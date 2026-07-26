@@ -299,6 +299,7 @@ class _TabBar extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 0,
                     children: [
                       for (var i = 0; i < split.tabs.length; i++)
                         _TabChip(
@@ -437,7 +438,7 @@ class _TabChip extends ConsumerWidget {
             color: active ? cs.primary : Colors.transparent,
             width: 2,
           ),
-          right: BorderSide(color: cs.outlineVariant, width: 1),
+          right: active ? BorderSide(color: cs.outlineVariant, width: 1) : BorderSide.none,
         ),
       ),
       child: Row(
