@@ -18,7 +18,8 @@ import '../../../store/connection.dart'
 import '../../desktop_app.dart'
     show desktopControllerProvider, makitInstallCommand;
 import '../../screens/devices_screen.dart';
-import '../../screens/providers.dart' show cliInstallerProvider;
+import '../../screens/providers.dart'
+    show bundledCliPathProvider, cliInstallerProvider;
 import '../../screens/qr_screen.dart';
 import '../../screens/sessions_screen.dart';
 import '../../tray/tray_controller.dart' show DaemonState;
@@ -448,7 +449,7 @@ class _CliRowState extends ConsumerState<_CliRow> {
                 onPressed: _copyInstallCommand,
               ),
             ),
-            if (ref.read(cliInstallerProvider).bundledCli != null)
+            if (ref.read(bundledCliPathProvider) != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
                 child: OutlinedButton.icon(

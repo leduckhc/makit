@@ -47,8 +47,8 @@ done
 MODE_DIR="$(tr '[:lower:]' '[:upper:]' <<< "${MODE:0:1}")${MODE:1}"
 APP="$ROOT/app/build/macos/Build/Products/$MODE_DIR/makit.app"
 
-FLUTTER="${FLUTTER:-/Users/le/Work/Vibe/flutter/bin/flutter}"
-[[ -x "$FLUTTER" ]] || FLUTTER="$(command -v flutter)" || {
+FLUTTER="${FLUTTER:-$(command -v flutter)}"
+[[ -x "$FLUTTER" ]] || {
   echo "macos-app: flutter not found (set \$FLUTTER)" >&2; exit 1; }
 
 # --- 1. Build the Flutter app ----------------------------------------------------

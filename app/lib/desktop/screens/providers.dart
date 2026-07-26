@@ -19,3 +19,9 @@ final controlClientProvider = Provider<ControlClient>(
 /// one-click "Install CLI" action. The default targets the running .app's
 /// bundled CLI; tests override it with temp-dir paths.
 final cliInstallerProvider = Provider<CliInstaller>((ref) => CliInstaller());
+
+/// Cached query for whether a bundled CLI exists. Avoids repeated file-stats
+/// during widget rebuilds; computed once and memoized by Riverpod.
+final bundledCliPathProvider = Provider<String?>((ref) {
+  return ref.watch(cliInstallerProvider).bundledCli;
+});
