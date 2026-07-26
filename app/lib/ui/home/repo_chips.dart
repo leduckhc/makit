@@ -65,7 +65,7 @@ class DiffChip extends StatelessWidget {
           Text(
             '+$insertions',
             style: Theme.of(context).textTheme.labelXs?.mono.copyWith(
-              color: kDiffAdd,
+              color: Theme.of(context).colorScheme.diffAddText,
               fontWeight: FontWeight.w400,
             ),
           ),
@@ -74,7 +74,7 @@ class DiffChip extends StatelessWidget {
           Text(
             '−$deletions',
             style: Theme.of(context).textTheme.labelXs?.mono.copyWith(
-              color: kDiffDel,
+              color: Theme.of(context).colorScheme.diffDelText,
               fontWeight: FontWeight.w400,
             ),
           ),
@@ -167,6 +167,12 @@ class SessionStatusChip extends StatelessWidget {
       SessionStatus.exited => ('exited', cs.outline),
       SessionStatus.idle => ('idle', cs.outline),
     };
+    // Vivid hue tints the pill; label uses an AA-safe foreground on light.
+    final textColor = switch (status) {
+      SessionStatus.awaitingInput => cs.statusWarningText,
+      SessionStatus.awaitingApproval => cs.statusCautionText,
+      _ => color,
+    };
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kSpace8,
@@ -179,7 +185,7 @@ class SessionStatusChip extends StatelessWidget {
       child: Text(
         label,
         style: Theme.of(context).textTheme.labelXs?.copyWith(
-          color: color,
+          color: textColor,
           fontWeight: FontWeight.w600,
         ),
       ),

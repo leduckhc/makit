@@ -20,9 +20,7 @@ class DiffLineRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? kDiffAdd.withValues(alpha: 0.8) : kDiffAdd;
+    final addedText = cs.diffAddText;
     final (
       Color? background,
       Color textColor,
@@ -79,9 +77,7 @@ class _DiffTextLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    // Lighter green text in dark mode so it clears 4.5:1 on the faint wash.
-    final addedText = dark ? kDiffAdd.withValues(alpha: 0.8) : kDiffAdd;
+    final addedText = cs.diffAddText;
     final isHeader =
         line.startsWith('[') && line.contains('#') && line.endsWith(']');
     final (Color? background, Color textColor) = isHeader

@@ -58,8 +58,15 @@ pure grey in `theme.dart`. Values below are `light` / `dark`.
   - `--tool-destructive`: `#E5544B` · `oklch(63.9% 0.182 27.0)` — destructive tool-call icon.
   - Diff add / delete: `#3FB950` · `oklch(69.5% 0.181 145.6)` /
     `#F85149` · `oklch(66.5% 0.205 27.0)`.
+- **Contrast-safe text variants (light theme).** The vivid status/diff hues
+  above are correct for dots, icons, and washes, but as small *text* on the
+  `#FAFAFA` surface they only reach ~2–3:1 (below WCAG AA). Labels use darker,
+  AA-passing foregrounds on light (dark keeps the vivid hues): resolved via the
+  `ColorScheme` getters `diffAddText`/`diffDelText`/`statusWarningText`/
+  `statusCautionText` in `theme.dart`.
 
 ### Neutral surface ramp (chroma-0)
+
 | Token | Role | Light (hex · oklch) | Dark (hex · oklch) |
 |-------|------|---------------------|--------------------|
 | `--surface` | scaffold background | `#FAFAFA` · `oklch(98.5% 0 0)` | `#171717` · `oklch(20.5% 0 0)` |
@@ -91,6 +98,7 @@ applied to both themes. Widgets read roles via
   the `.mono` extension: `theme.textTheme.bodyMedium?.mono`.
 
 ### Scale
+
 | Role | Size | Weight | Use case |
 |------|------|--------|----------|
 | `titleLarge` | `20` | `600` | screen / dialog titles |

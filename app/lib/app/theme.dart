@@ -87,6 +87,29 @@ const Color kStatusCaution = Color(0xFFE07B39);
 const Color kDiffAdd = Color(0xFF3FB950);
 const Color kDiffDel = Color(0xFFF85149);
 
+// Contrast-safe TEXT variants for the semantic/diff hues on the LIGHT surface.
+// The vivid tokens above are correct for dots, icons, and washes, but as small
+// *text* on #FAFAFA they only reach ~2–3:1 — below WCAG AA (4.5:1). These darker
+// variants clear AA as light-theme label text; dark mode keeps the vivid hues
+// (they already clear AA on the #171717 surface). See DESIGN.md → Colors.
+const Color _diffAddTextLight = Color(0xFF1A7F37); // 4.9:1 on #FAFAFA
+const Color _diffDelTextLight = Color(0xFFC7331F); // 5.1:1
+const Color _statusWarningTextLight = Color(0xFF7E5C00); // 5.9:1
+const Color _statusCautionTextLight = Color(0xFFA64B1E); // 5.5:1
+
+/// WCAG-AA foregrounds for semantic/diff *labels*, resolved per brightness.
+/// Use these for text; keep the vivid `kDiffAdd`/`kStatus*` tokens for dots,
+/// icons, and background washes.
+extension MakitSemanticText on ColorScheme {
+  bool get _light => brightness == Brightness.light;
+  Color get diffAddText => _light ? _diffAddTextLight : kDiffAdd;
+  Color get diffDelText => _light ? _diffDelTextLight : kDiffDel;
+  Color get statusWarningText =>
+      _light ? _statusWarningTextLight : kStatusWarning;
+  Color get statusCautionText =>
+      _light ? _statusCautionTextLight : kStatusCaution;
+}
+
 // ─── Spacing ───────────────────────────────────────────────────────────
 // The layout rhythm (see DESIGN.md → Spacing). Prefer these over raw literals
 // for padding, gaps, and `SizedBox` spacers so the scale stays consistent.
