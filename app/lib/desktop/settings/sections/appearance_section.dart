@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../../app/theme.dart';
 import '../../chat/sidebar_layout.dart';
 import '../prefs/preference_entries.dart';
 import '../prefs/preferences_providers.dart';
+import 'coming_soon.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
-import 'coming_soon.dart';
 import 'settings_reset_button.dart';
 
 /// Lowest UI text scale offered by the slider.
@@ -72,7 +73,7 @@ class _ThemeRow extends ConsumerWidget {
             onSelectionChanged: (selection) =>
                 controller.set(themeModePreference, selection.first),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           SettingsResetButton(
             visible: modified,
             onPressed: () => controller.reset(themeModePreference),
@@ -148,7 +149,7 @@ class _StartCollapsedRow extends ConsumerWidget {
             onChanged: (value) =>
                 ref.read(sidebarCollapsedProvider.notifier).state = value,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           SettingsResetButton(
             visible: modified,
             onPressed: () =>

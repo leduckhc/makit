@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../transport/ws_client.dart';
 
@@ -48,7 +49,7 @@ class ConnectionChip extends ConsumerWidget {
       case WsState.reconnecting:
         return _chip(
           context,
-          color: Colors.orange,
+          color: kStatusWarning,
           icon: PhosphorIconsLight.cloudWarning,
           label: 'Reconnecting',
           onTap: () => ref.read(connectionControllerProvider.notifier).retry(),
@@ -67,7 +68,7 @@ class ConnectionChip extends ConsumerWidget {
         // earlier). Show a soft warning until the user dismisses by tapping.
         return _chip(
           context,
-          color: Colors.orange,
+          color: kStatusWarning,
           icon: PhosphorIconsLight.warning,
           label: 'Issue',
           onTap: () => _showError(context, conn.lastError ?? 'Unknown error'),
@@ -94,7 +95,10 @@ class ConnectionChip extends ConsumerWidget {
     }
 
     final child = Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace10,
+        vertical: kSpace6,
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -106,14 +110,12 @@ class ConnectionChip extends ConsumerWidget {
             )
           else
             Icon(icon, size: 14, color: color),
-          const SizedBox(width: 6),
+          const SizedBox(width: kSpace6),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 12,
-              color: color,
-              fontWeight: FontWeight.w500,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: color),
           ),
         ],
       ),
@@ -123,11 +125,11 @@ class ConnectionChip extends ConsumerWidget {
         padding: const EdgeInsets.only(right: 4),
         child: Material(
           color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(kRadius16),
           child: onTap == null
               ? child
               : InkWell(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(kRadius16),
                   onTap: onTap,
                   child: child,
                 ),

@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import '../desktop_app.dart' show serverProfileProvider;
 
 /// The title-bar profile badge. Reads [serverProfileProvider].
@@ -24,10 +25,13 @@ class ServerProfileBadge extends ConsumerWidget {
 
     final color = _hueFor(profile.id);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace2,
+      ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(kRadius8),
         border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Row(
@@ -38,11 +42,10 @@ class ServerProfileBadge extends ConsumerWidget {
             height: 7,
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: kSpace6),
           Text(
             profile.label,
-            style: TextStyle(
-              fontSize: 12,
+            style: Theme.of(context).textTheme.labelXs?.copyWith(
               fontWeight: FontWeight.w600,
               color: color,
             ),

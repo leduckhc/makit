@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
@@ -125,7 +126,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
             child: SingleChildScrollView(
               child: Text(
                 lines.join('\n'),
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                style: Theme.of(context).textTheme.bodySmall?.mono,
               ),
             ),
           ),

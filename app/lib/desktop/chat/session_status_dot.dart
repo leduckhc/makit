@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 
 /// A tiny session-status indicator dot. Active states (running / awaiting)
@@ -83,8 +84,8 @@ class _SessionStatusDotState extends State<SessionStatusDot>
     // states so they sit with the neutral panel instead of shouting.
     final color = switch (widget.status) {
       SessionStatus.running => cs.primary,
-      SessionStatus.awaitingInput => const Color(0xFFE0A72E),
-      SessionStatus.awaitingApproval => const Color(0xFFE07B39),
+      SessionStatus.awaitingInput => kStatusWarning,
+      SessionStatus.awaitingApproval => kStatusCaution,
       SessionStatus.error => cs.error,
       SessionStatus.exited => cs.outline,
       SessionStatus.idle => cs.outline,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/glass.dart';
@@ -62,7 +63,7 @@ class RepoCard extends ConsumerWidget {
       child: Row(
         children: [
           const Icon(PhosphorIconsLight.folderStar, size: 20),
-          const SizedBox(width: 10),
+          const SizedBox(width: kSpace10),
           Flexible(
             child: Text(
               repo.name,
@@ -214,7 +215,7 @@ class RepoCard extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 14, color: c),
-        const SizedBox(width: 4),
+        const SizedBox(width: kSpace4),
         Text(
           text,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
@@ -378,7 +379,7 @@ class RepoCard extends ConsumerWidget {
           m.attached
               ? PhosphorIconsLight.lightning
               : PhosphorIconsLight.arrowCounterClockwise,
-          color: m.attached ? Colors.green : null,
+          color: m.attached ? Theme.of(context).colorScheme.primary : null,
         ),
         title: Text(
           m.name.isEmpty ? '(untitled)' : m.name,
@@ -393,16 +394,20 @@ class RepoCard extends ConsumerWidget {
         ),
         trailing: m.attached
             ? Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace8,
+                  vertical: kSpace2,
                 ),
-                child: const Text(
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(kRadius10),
+                ),
+                child: Text(
                   'live',
-                  style: TextStyle(
-                    color: Colors.green,
-                    fontSize: 11,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),

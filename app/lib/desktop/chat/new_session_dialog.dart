@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../app/theme.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/models.dart';
@@ -289,12 +290,12 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _worktreeField(theme),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: kSpace16),
                       _harnessField(theme, agentsAsync, selectedAgentId),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: kSpace16),
                       _firstMessageField(theme, selectedAgent, selectedAgentId),
                       if (_error != null) ...[
-                        const SizedBox(height: 12),
+                        const SizedBox(height: kSpace12),
                         Text(
                           _error!,
                           style: TextStyle(color: theme.colorScheme.error),
@@ -347,7 +348,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
                   if (_source == WorktreeSource.fromPr) _loadPrs();
                 }),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: kSpace10),
         switch (_source) {
           WorktreeSource.existing => _existingPanel(theme),
           WorktreeSource.newBranch => _newBranchPanel(theme),
@@ -429,7 +430,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.symmetric(vertical: kSpace8),
             child: LinearProgressIndicator(),
           );
         }
@@ -482,7 +483,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         agentsAsync.when(
           loading: () => const Center(
             child: Padding(
-              padding: EdgeInsets.all(8),
+              padding: EdgeInsets.all(kSpace8),
               child: CircularProgressIndicator(),
             ),
           ),

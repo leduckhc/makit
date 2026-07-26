@@ -143,9 +143,9 @@ void main() {
 
     testWidgets('caret opens a menu listing every editor', (tester) async {
       await pump(tester);
-      // Tap the leading caret segment (first InkWell) to open the menu; the
-      // trailing segment is the primary action (opens the editor directly).
-      await tester.tap(find.byType(InkWell).first);
+      // Tap the trailing caret segment (last InkWell) to open the menu; the
+      // leading segment is the primary action (opens the editor directly).
+      await tester.tap(find.byType(InkWell).last);
       await tester.pumpAndSettle();
       // Every target is offered, with VS Code (the default) shown too.
       expect(find.text('Open in VS Code'), findsWidgets);

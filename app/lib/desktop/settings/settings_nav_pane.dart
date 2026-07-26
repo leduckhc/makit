@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../chat/sidebar_layout.dart' show kTitleBarStripHeight;
 import 'registry/settings_item.dart';
 import 'registry/settings_registry.dart';
@@ -101,7 +102,7 @@ class _Header extends StatelessWidget {
             icon: const Icon(PhosphorIconsLight.x),
             onPressed: onClose,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: kSpace4),
           Text('Settings', style: Theme.of(context).textTheme.titleMedium),
         ],
       ),
@@ -123,7 +124,7 @@ class _SectionList extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       children: [
         for (final section in sections)
           ListTile(
@@ -131,7 +132,7 @@ class _SectionList extends StatelessWidget {
             selectedColor: cs.primary,
             selectedTileColor: cs.surfaceContainerHighest,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(kRadius8),
             ),
             leading: Icon(section.icon),
             title: Text(section.title),
@@ -153,13 +154,13 @@ class _SearchResults extends StatelessWidget {
     final results = searchSettings(query);
     if (results.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(kSpace16),
         child: Text('No matches', style: TextStyle(color: cs.outline)),
       );
     }
     final sectionTitles = {for (final s in kSettingsSections) s.id: s.title};
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       children: [
         for (final result in results)
           ListTile(
@@ -170,7 +171,9 @@ class _SearchResults extends StatelessWidget {
                 result.item.availability == SettingsAvailability.comingSoon
                 ? Text(
                     'Coming soon',
-                    style: TextStyle(color: cs.outline, fontSize: 11),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelSmall?.copyWith(color: cs.outline),
                   )
                 : null,
             onTap: () => onSelectResult(result.sectionId, result.item.id),

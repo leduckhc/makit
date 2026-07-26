@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import 'repo_chips.dart';
@@ -23,12 +24,12 @@ class SessionTile extends ConsumerWidget {
       background: Container(
         alignment: Alignment.centerRight,
         color: cs.errorContainer,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: kSpace24),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(PhosphorIconsLight.power, color: cs.onErrorContainer),
-            const SizedBox(width: 8),
+            const SizedBox(width: kSpace8),
             Text(
               'Quit',
               style: TextStyle(
@@ -56,7 +57,7 @@ class SessionTile extends ConsumerWidget {
               ),
             ),
             if (session.pending)
-              const TagChip(label: 'draft', color: Colors.amber)
+              TagChip(label: 'draft', color: cs.outline)
             else if (session.status != SessionStatus.idle)
               SessionStatusChip(status: session.status),
           ],

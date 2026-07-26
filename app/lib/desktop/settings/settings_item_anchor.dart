@@ -11,6 +11,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import '../../app/theme.dart';
+
 /// The id of the settings item a search deep-link is pointing at, or `null`
 /// when the user navigated by section (no specific item to reveal).
 final settingsTargetItemProvider = StateProvider<String?>((_) => null);
@@ -89,7 +91,7 @@ class _SettingsItemAnchorState extends ConsumerState<SettingsItemAnchor> {
       builder: (context, t, child) => DecoratedBox(
         decoration: BoxDecoration(
           color: cs.primary.withValues(alpha: _highlightAlpha * t),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(kRadius8),
         ),
         child: child,
       ),

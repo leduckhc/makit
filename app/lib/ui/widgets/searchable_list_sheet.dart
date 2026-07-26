@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
+
 import 'sheet_header.dart';
 
 /// Fraction of the screen height that a searchable sheet may grow to. Keeps a
@@ -157,7 +159,7 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
               ),
             if (filtered.isEmpty)
               Padding(
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(kSpace24),
                 child: Text(
                   'No matches for “$_query”',
                   textAlign: TextAlign.center,
@@ -173,7 +175,7 @@ class _SearchableListSheetState<T> extends State<_SearchableListSheet<T>> {
                   itemBuilder: (c, i) => widget.tileBuilder(c, filtered[i]),
                 ),
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: kSpace8),
           ],
         ),
       ),

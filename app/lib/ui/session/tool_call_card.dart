@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'chat_metrics.dart';
 import 'tool_renderers.dart';
@@ -62,7 +63,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
         onTap: _toggle,
         onHover: (h) => setState(() => _hovered = h),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: kSpace6),
           child: _buildRow(riskIcon, riskColor),
         ),
       ),
@@ -76,7 +77,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         header,
-        const SizedBox(height: 4),
+        const SizedBox(height: kSpace4),
         ConstrainedBox(
           constraints: const BoxConstraints(maxHeight: kToolExpandedMaxHeight),
           child: Scrollbar(
@@ -140,24 +141,21 @@ class _ToolCallCardState extends State<ToolCallCard> {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Icon(riskIcon, size: 16, color: riskColor),
-        const SizedBox(width: 8),
+        const SizedBox(width: kSpace8),
         Expanded(
           child: Text(
             _expanded ? toolLabel(item) : toolSummaryLine(item),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.mono.copyWith(
               color: cs.onSurfaceVariant,
-              fontSize: 13,
-              fontFamily: 'monospace',
-              fontFamilyFallback: kMonoFallback,
               height: 1.3,
             ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: kSpace8),
         status,
-        const SizedBox(width: 8),
+        const SizedBox(width: kSpace8),
         caret,
       ],
     );

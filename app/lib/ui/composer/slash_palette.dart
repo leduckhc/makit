@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'client_commands.dart';
 
@@ -62,7 +63,7 @@ class SlashPalette extends StatelessWidget {
         child: Material(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           child: const Padding(
-            padding: EdgeInsets.all(12),
+            padding: EdgeInsets.all(kSpace12),
             child: Text(
               'No matching commands. Skills appear once pi finishes loading.',
             ),
@@ -107,15 +108,17 @@ class _CmdTile extends StatelessWidget {
           Flexible(
             child: Text(
               cmd.invocation,
-              style: const TextStyle(fontFamily: 'monospace'),
+              style: Theme.of(context).textTheme.bodyMedium?.mono,
               overflow: TextOverflow.ellipsis,
             ),
           ),
           if (cmd.location != null) ...[
-            const SizedBox(width: 6),
+            const SizedBox(width: kSpace6),
             Text(
               cmd.location!,
-              style: TextStyle(color: cs.outline, fontSize: 10),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: cs.outline),
             ),
           ],
         ],
@@ -133,12 +136,13 @@ class _SourceBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final (label, color, icon) = switch (source) {
-      'skill' => ('skill', Colors.purple, PhosphorIconsLight.sparkle),
-      'prompt' => ('prompt', Colors.teal, PhosphorIconsLight.fileText),
-      'extension' => ('ext', Colors.blue, PhosphorIconsLight.puzzlePiece),
-      'builtin' => ('app', Colors.grey, PhosphorIconsLight.lightning),
-      _ => (source, Colors.grey, PhosphorIconsLight.terminalWindow),
+      'skill' => ('skill', cs.outline, PhosphorIconsLight.sparkle),
+      'prompt' => ('prompt', cs.outline, PhosphorIconsLight.fileText),
+      'extension' => ('ext', cs.outline, PhosphorIconsLight.puzzlePiece),
+      'builtin' => ('app', cs.outline, PhosphorIconsLight.lightning),
+      _ => (source, cs.outline, PhosphorIconsLight.terminalWindow),
     };
     return Tooltip(
       message: label,
@@ -148,7 +152,7 @@ class _SourceBadge extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(kRadius6),
         ),
         child: Icon(icon, size: 16, color: color),
       ),

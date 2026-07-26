@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/router.dart';
+import '../../app/theme.dart';
 import '../../notifications/notification_observer.dart';
 import '../../notifications/notification_request.dart';
 import '../../store/connection.dart';
@@ -340,16 +341,16 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
           children: [
             Text(body['message']?.toString() ?? ''),
             if (body['preview'] != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: kSpace8),
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(kSpace8),
                 decoration: BoxDecoration(
                   color: Theme.of(dctx).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(kRadius6),
                 ),
                 child: SelectableText(
                   body['preview'].toString(),
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  style: Theme.of(dctx).textTheme.bodySmall?.mono,
                 ),
               ),
             ],
@@ -431,7 +432,7 @@ class _SrvRequestHandlerState extends ConsumerState<SrvRequestHandler>
                   env.body['kind']?.toString() ??
                   '',
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: kSpace12),
             TextField(
               controller: controller,
               autofocus: true,

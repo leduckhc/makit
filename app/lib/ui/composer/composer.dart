@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../shortcuts/key_chord.dart';
 import '../../store/models.dart';
 import 'slash_palette.dart';
@@ -207,9 +208,12 @@ class _ComposerState extends State<Composer> {
               child: Container(
                 decoration: BoxDecoration(
                   color: boxColor,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(kRadius16),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace4,
+                  vertical: kSpace4,
+                ),
                 child: !widget.enabled
                     ? _buildDisabled(cs)
                     : (_expanded ? _buildExpanded(cs) : _buildCompact(cs)),
@@ -225,15 +229,20 @@ class _ComposerState extends State<Composer> {
   /// answer): a muted hint in place of the field + send.
   Widget _buildDisabled(ColorScheme cs) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace12,
+        vertical: kSpace12,
+      ),
       child: Row(
         children: [
           Icon(PhosphorIconsLight.chatCircleDots, size: 16, color: cs.primary),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           Expanded(
             child: Text(
               widget.disabledHint ?? 'Answer the question above to continue…',
-              style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             ),
           ),
         ],
@@ -436,7 +445,10 @@ class _ComposerState extends State<Composer> {
               hintText: 'Message…',
               filled: false,
               border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: kSpace8,
+                vertical: kSpace10,
+              ),
             ),
           ),
         ),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../control/control_contract.dart';
 import 'providers.dart';
 import 'time_format.dart';
@@ -79,14 +80,14 @@ class _StatusError extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(PhosphorIconsLight.warningCircle, color: cs.error, size: 40),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           Text(
             'Could not load status',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: kSpace4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpace16),
           FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),
@@ -102,7 +103,7 @@ class _StatusBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(kSpace16),
       children: [
         Card(
           child: Column(
@@ -154,7 +155,7 @@ class _StatusRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final valueStyle = monospace
-        ? theme.textTheme.bodyMedium?.copyWith(fontFamily: 'monospace')
+        ? theme.textTheme.bodyMedium?.mono
         : theme.textTheme.bodyMedium;
     return ListTile(
       title: Text(label, style: theme.textTheme.labelLarge),

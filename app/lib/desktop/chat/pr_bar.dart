@@ -3,9 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../app/theme.dart';
+import '../../store/models.dart';
 import '../../ui/widgets/codicons.dart';
 import '../../ui/widgets/icon_glyph.dart';
-import '../../store/models.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
 import 'pr_actions.dart';
@@ -70,7 +71,7 @@ class PrComposerBar extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: kSpace8),
           PrActionsSplitButton(
             onInsertPrompt: onInsertPrompt,
             hasPr: pr != null,
@@ -178,21 +179,23 @@ class _CountLabel extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final fill = Color.alphaBlend(color.withValues(alpha: 0.12), cs.surface);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace4,
+      ),
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          icon.build(size: 12, color: color),
+          icon.build(size: kPillIconSize, color: color),
           const SizedBox(width: 5),
           Text(
             text,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.labelXs?.copyWith(
               color: color,
-              fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -299,32 +302,43 @@ class _PrStatusPillState extends State<PrStatusPill> {
     final fill = Color.alphaBlend(color.withValues(alpha: 0.14), cs.surface);
     final pill = Material(
       color: fill,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(kRadius8),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(kRadius8),
         onTap: _open,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          padding: const EdgeInsets.symmetric(
+            horizontal: kSpace8,
+            vertical: kSpace4,
+          ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(PhosphorIconsLight.gitPullRequest, size: 13, color: color),
+              Icon(
+                PhosphorIconsLight.gitPullRequest,
+                size: kPillIconSize,
+                color: color,
+              ),
               const SizedBox(width: 5),
               Text(
                 'PR #${pr.number}',
-                style: TextStyle(
+                style: Theme.of(context).textTheme.labelXs?.copyWith(
                   color: color,
-                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               if (pr.checks.isNotEmpty) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: kSpace6),
                 Icon(Icons.circle, size: 8, color: color),
               ],
               if (pr.isDraft) ...[
-                const SizedBox(width: 6),
-                Text('draft', style: TextStyle(color: color, fontSize: 11)),
+                const SizedBox(width: kSpace6),
+                Text(
+                  'draft',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelXs?.copyWith(color: color),
+                ),
               ],
             ],
           ),
@@ -392,13 +406,16 @@ class _ChecksPopover extends StatelessWidget {
       elevation: 3,
       shadowColor: Colors.black.withValues(alpha: 0.2),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(kRadius10),
         side: BorderSide(color: cs.outlineVariant),
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 340),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(
+            horizontal: kSpace10,
+            vertical: kSpace8,
+          ),
           child: IntrinsicWidth(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -407,13 +424,12 @@ class _ChecksPopover extends StatelessWidget {
                 Text(
                   header,
                   style: base.copyWith(
-                    fontSize: 11,
                     color: cs.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 if (checks.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: kSpace4),
                   for (final c in checks) _CheckRow(check: c),
                 ],
               ],
@@ -445,23 +461,19 @@ class _CheckRow extends StatelessWidget {
       child: Row(
         children: [
           Icon(_bucketIcon(check.bucket), size: 12, color: color),
-          const SizedBox(width: 6),
+          const SizedBox(width: kSpace6),
           Expanded(
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: base.copyWith(fontSize: 11, color: cs.onSurface),
+              style: base.copyWith(color: cs.onSurface),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: kSpace12),
           Text(
             _bucketLabel(check.bucket),
-            style: base.copyWith(
-              fontSize: 11,
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
+            style: base.copyWith(color: color, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -563,7 +575,7 @@ class _SplitButton extends StatelessWidget {
   final VoidCallback onToggleMenu;
 
   static const double _height = 28;
-  static const Radius _radius = Radius.circular(8);
+  static const Radius _radius = Radius.circular(kRadius8);
 
   @override
   Widget build(BuildContext context) {
@@ -586,17 +598,16 @@ class _SplitButton extends StatelessWidget {
               child: SizedBox(
                 height: _height,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: kSpace12),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      icon.build(size: 15, color: cs.onSecondaryContainer),
-                      const SizedBox(width: 6),
+                      icon.build(size: 13, color: cs.onSecondaryContainer),
+                      const SizedBox(width: kSpace6),
                       Text(
                         label,
-                        style: TextStyle(
+                        style: Theme.of(context).textTheme.labelXs?.copyWith(
                           color: cs.onSecondaryContainer,
-                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

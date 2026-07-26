@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import '../../app/theme.dart';
+
 /// Shared layout + color tokens for the chat transcript, used by BOTH the
 /// mobile [SessionScreen] and the desktop `DesktopChatPane` so every row
 /// (messages, tool cards, thinking/error lines, working indicator) shares one
@@ -18,10 +20,10 @@ const double kChatGutter = 20;
 const double kChatRowGap = 10;
 
 /// Corner-radius scale. Small = code blocks; medium = tool cards + error
-/// banners; large = message bubbles.
-const double kChatRadiusSmall = 8;
-const double kChatRadiusMedium = 12;
-const double kChatRadiusLarge = 16;
+/// banners; large = message bubbles. Aliases of the shared radius tokens.
+const double kChatRadiusSmall = kRadius8;
+const double kChatRadiusMedium = kRadius12;
+const double kChatRadiusLarge = kRadius16;
 
 /// Max height (logical px) of an expanded tool row's body before it scrolls
 /// internally — roughly 20 monospace lines plus section chrome. Keeps a long

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../control/control_contract.dart';
 import '../../store/models.dart' show SessionStatus;
 import 'providers.dart';
@@ -63,7 +64,7 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Padding(
-                padding: EdgeInsets.all(24),
+                padding: EdgeInsets.all(kSpace24),
                 child: Center(child: CircularProgressIndicator()),
               );
             }
@@ -73,7 +74,7 @@ class _SessionsScreenState extends ConsumerState<SessionsScreen> {
             final sessions = snapshot.requireData.where(_isActive).toList();
             if (sessions.isEmpty) {
               return const Padding(
-                padding: EdgeInsets.all(24),
+                padding: EdgeInsets.all(kSpace24),
                 child: Center(child: Text('No running sessions')),
               );
             }
@@ -117,11 +118,12 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final color = switch (status) {
-      'running' => Colors.green,
-      'error' => Colors.red,
-      'done' => Colors.grey,
-      _ => Colors.grey,
+      'running' => cs.primary,
+      'error' => cs.error,
+      'done' => cs.outline,
+      _ => cs.outline,
     };
     return Chip(
       label: Text(status),
@@ -147,14 +149,14 @@ class _SessionsError extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(PhosphorIconsLight.warningCircle, color: cs.error, size: 40),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           Text(
             'Could not load sessions',
             style: Theme.of(context).textTheme.titleMedium,
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: kSpace4),
           Text('$error', style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpace16),
           FilledButton.tonal(onPressed: onRetry, child: const Text('Retry')),
         ],
       ),

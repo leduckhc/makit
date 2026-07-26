@@ -2,25 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/theme.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
-import '../../store/models.dart';
 import '../../store/elicitation.dart';
+import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
+import '../../ui/composer/composer_selectors.dart';
 import '../../ui/session/ask_card.dart';
-import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/chat_metrics.dart';
+import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
-import 'composer_focus.dart';
 import 'composer_draft.dart';
+import 'composer_focus.dart';
 import 'harness_picker.dart';
 import 'new_session_dialog.dart';
-import 'pr_bar.dart';
 import 'panes/pane_header.dart';
+import 'pr_bar.dart';
 import 'selected_session.dart';
-import '../../ui/composer/composer_selectors.dart';
 
 // Re-export the pane-header + harness widgets so existing importers of
 // `desktop_chat_pane.dart` (e.g. pane_tree_view, widget tests) keep resolving
@@ -238,7 +239,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // message: opens pinned to the latest, older rows build
                   // lazily as the user scrolls up.
                   reverse: true,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: kSpace12),
                   itemCount: items.length + (hasTrailer ? 1 : 0),
                   itemBuilder: (context, i) {
                     // Reversed: i counts up from the bottom. The trailing row
@@ -425,12 +426,12 @@ class EmptyPaneStarter extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(PhosphorIconsLight.chats, size: 40, color: cs.outline),
-          const SizedBox(height: 12),
+          const SizedBox(height: kSpace12),
           Text(
             'Select a session, or start a new one',
             style: TextStyle(color: cs.outline),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: kSpace16),
           FilledButton.icon(
             icon: const Icon(PhosphorIconsLight.plus, size: 16),
             label: const Text('New session'),
