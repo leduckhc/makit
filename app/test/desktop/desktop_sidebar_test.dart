@@ -123,6 +123,7 @@ Session _session(
   bool pending = false,
   SessionStatus status = SessionStatus.idle,
   String lastPreview = '',
+  bool resumable = false,
 }) => Session(
   id: id,
   projectId: projectId,
@@ -132,6 +133,7 @@ Session _session(
   policy: ApprovalPolicy.askOnRisky,
   pending: pending,
   lastPreview: lastPreview,
+  resumable: resumable,
 );
 
 Future<ProviderContainer> _pump(
@@ -856,6 +858,81 @@ void main() {
     expect(find.byTooltip('running'), findsOneWidget);
   });
 
+  testWidgets('exited sessions are hidden from the repo groups', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['live', 'dead']),
+          ],
+        ),
+      ],
+      sessions: [
+        _session(
+          'live',
+          'p1',
+          'Live one',
+          'codex',
+          status: SessionStatus.running,
+        ),
+        _session(
+          'dead',
+          'p1',
+          'Exited one',
+          'codex',
+          status: SessionStatus.exited,
+        ),
+      ],
+    );
+    // The live session shows; the exited one is filtered out (it lives in the
+    // Archive surface instead).
+    expect(find.text('Live one'), findsOneWidget);
+    expect(find.text('Exited one'), findsNothing);
+  });
+
+  testWidgets('cold resumable (exited) sessions stay visible in repo groups', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-main', branch: 'main', sessionIds: ['dead', 'cold']),
+          ],
+        ),
+      ],
+      sessions: [
+        _session(
+          'dead',
+          'p1',
+          'Dead one',
+          'codex',
+          status: SessionStatus.exited,
+        ),
+        // Resumable cold session (e.g. right after a server restart) must remain
+        // discoverable so it can be reopened — it auto-attaches on subscribe.
+        _session(
+          'cold',
+          'p1',
+          'Resumable cold',
+          'codex',
+          status: SessionStatus.exited,
+          resumable: true,
+        ),
+      ],
+    );
+    expect(find.text('Dead one'), findsNothing);
+    expect(find.text('Resumable cold'), findsOneWidget);
+  });
+
   testWidgets('idle sessions render no status dot', (tester) async {
     await _pump(
       tester,
@@ -909,14 +986,16 @@ void main() {
     );
     expect(find.byTooltip('running'), findsOneWidget);
 
-    // running → exited: the pulsing controller must stop (pumpAndSettle would
-    // hang otherwise) and the dot must re-label.
-    container.read(mutable.notifier).state = state(SessionStatus.exited);
+    // running → error: the pulsing controller must stop (pumpAndSettle would
+    // hang otherwise) and the dot must re-label. (exited is used elsewhere but
+    // exited sessions are now hidden from the sidebar, so use a visible
+    // non-pulsing status here.)
+    container.read(mutable.notifier).state = state(SessionStatus.error);
     await tester.pumpAndSettle();
     expect(find.byTooltip('running'), findsNothing);
-    expect(find.byTooltip('exited'), findsOneWidget);
+    expect(find.byTooltip('error'), findsOneWidget);
 
-    // exited → running: pulsing resumes on the reused State object.
+    // error → running: pulsing resumes on the reused State object.
     container.read(mutable.notifier).state = state(SessionStatus.running);
     await tester.pump();
     expect(find.byTooltip('running'), findsOneWidget);
@@ -926,7 +1005,6 @@ void main() {
     SessionStatus.awaitingInput: 'awaiting input',
     SessionStatus.awaitingApproval: 'awaiting approval',
     SessionStatus.error: 'error',
-    SessionStatus.exited: 'exited',
   }.entries) {
     testWidgets('status dot tooltip for ${entry.key} reads "${entry.value}"', (
       tester,

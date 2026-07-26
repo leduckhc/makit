@@ -12,10 +12,11 @@
  * field. Lines are newline-delimited JSON.
  */
 
-import type { SpawnOpts, UserInput } from "./adapter.js";
+import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from "./adapter.js";
 import { mkdtemp, rm } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
@@ -74,6 +75,14 @@ export interface CodexAdapterOpts {
 export class CodexAppServerAdapter extends SubprocessAdapter {
   readonly agent = "codex";
 
+  /**
+   * codex `app-server` always exposes the full thread lifecycle
+   * (`thread/resume`, `thread/list`, `thread/delete`, `thread/fork`) — SPEC-29.
+   * `load` is false: codex resume does not replay history (nor does makit need
+   * it to; the event log is authoritative).
+   */
+  readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: true, archive: true };
+
   private readonly command: string;
   private readonly args: string[];
   private readonly extraEnv: Record<string, string>;
@@ -127,12 +136,15 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     });
     this.notify("initialized", {});
 
-    const started = (await this.request("thread/start", {
-      cwd: opts.cwd,
-      ...(this.model ? { model: this.model } : {}),
-    })) as { thread?: { id?: string } };
-    this.threadId = started?.thread?.id;
+    const started = (await this.request(
+      opts.resumeAgentSessionId ? "thread/resume" : "thread/start",
+      opts.resumeAgentSessionId
+        ? { threadId: opts.resumeAgentSessionId, cwd: opts.cwd }
+        : { cwd: opts.cwd, ...(this.model ? { model: this.model } : {}) },
+    )) as { thread?: { id?: string } };
+    this.threadId = started?.thread?.id ?? opts.resumeAgentSessionId;
     if (!this.threadId) throw new Error("codex app-server: thread/start returned no thread id");
+    this.agentSessionId = this.threadId;
     this.activeModel = this.model;
     await this.captureModelCatalog();
     this.emit("status", "idle");
@@ -587,6 +599,106 @@ export async function probeCodexConfigOptions(
     transport.dispose();
     await rm(cwd, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+// ---------- session listing (SPEC-29) --------------------------------------
+
+/**
+ * List a cwd's prior codex threads via a throwaway `codex app-server`
+ * connection (SPEC-29). Mirrors {@link probeCodexConfigOptions}: spawn,
+ * `initialize`, call `thread/list {}`, keep the threads whose `cwd` matches the
+ * target, and normalize to {@link AgentSessionInfo}. No thread is started, so
+ * there is nothing to clean up. Never throws — logs + returns `[]` on error.
+ */
+export async function listCodexThreads(
+  cwd: string,
+  opts: {
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    connect?: (cwd: string, env: Record<string, string>) => CodexTransport;
+  } = {},
+): Promise<AgentSessionInfo[]> {
+  const command = opts.command ?? process.env.MAKIT_CODEX_BIN ?? "codex";
+  const args = opts.args ?? ["app-server"];
+  const connect = opts.connect ?? defaultConnect(command, args);
+  const transport = connect(cwd, opts.env ?? {});
+
+  const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
+  let nextId = 1;
+  transport.onLine((line) => {
+    const msg = parseJsonLine(line);
+    if (!isRecord(msg) || msg.id === undefined) return;
+    if (msg.result === undefined && msg.error === undefined) return;
+    const p = pending.get(msg.id as number);
+    if (!p) return;
+    pending.delete(msg.id as number);
+    if (msg.error !== undefined) p.reject(new Error(String(msg.error)));
+    else p.resolve(msg.result);
+  });
+  transport.onExit(() => {
+    for (const [, p] of pending) p.reject(new Error("codex app-server exited during list"));
+    pending.clear();
+  });
+  const request = (method: string, params: unknown): Promise<unknown> => {
+    const id = nextId++;
+    transport.send(JSON.stringify({ method, id, params }));
+    return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+  };
+
+  try {
+    await withDeadline(
+      request("initialize", {
+        clientInfo: { name: "makit", title: "makit", version: "0.1.0" },
+        capabilities: { experimentalApi: true, requestAttestation: false },
+      }),
+      CODEX_HANDSHAKE_TIMEOUT,
+      "codex list initialize",
+    );
+    transport.send(JSON.stringify({ method: "initialized", params: {} }));
+    const res = await withDeadline(request("thread/list", {}), CODEX_HANDSHAKE_TIMEOUT, "codex thread/list");
+    return projectCodexThreadList(res, cwd);
+  } catch (e) {
+    log.warn(`[makit] codex thread/list failed: ${(e as Error).message}`);
+    return [];
+  } finally {
+    transport.dispose();
+  }
+}
+
+/**
+ * Project a codex `thread/list` result into {@link AgentSessionInfo}s, filtered
+ * to threads whose `cwd` matches [cwd] and excluding ephemeral threads. codex
+ * timestamps (`updatedAt`/`recencyAt`) are epoch SECONDS — scaled to ms. Pure so
+ * it is unit-testable without a live subprocess.
+ */
+export function projectCodexThreadList(res: unknown, cwd: string): AgentSessionInfo[] {
+  const data = isRecord(res) && Array.isArray(res.data) ? res.data.filter(isRecord) : [];
+  // Canonicalize cwd so symlinked project roots don't cause spurious mismatches.
+  // realpathSync throws on a path that no longer exists (e.g. a removed
+  // worktree's thread), so fall back to a plain resolve rather than letting the
+  // whole listing reject.
+  const canon = (p: string): string => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  };
+  const target = canon(cwd);
+  const out: AgentSessionInfo[] = [];
+  for (const t of data) {
+    if (t.ephemeral === true) continue;
+    if (typeof t.cwd === "string" && canon(t.cwd) !== target) continue;
+    const id = String(t.id ?? t.sessionId ?? "");
+    if (!id) continue;
+    const info: AgentSessionInfo = { id, cwd: typeof t.cwd === "string" ? t.cwd : target };
+    if (typeof t.preview === "string") info.preview = t.preview;
+    const secs = typeof t.recencyAt === "number" ? t.recencyAt : typeof t.updatedAt === "number" ? t.updatedAt : undefined;
+    if (typeof secs === "number") info.updatedAt = secs * 1000;
+    out.push(info);
+  }
+  return out;
 }
 
 // ---------- default subprocess transport -----------------------------------

@@ -139,7 +139,7 @@ class SessionActionsMenu extends ConsumerWidget {
               sessionId: sessionId,
             );
           case 'quit':
-            _confirmQuit(context, ref);
+            _confirmArchive(context, ref);
         }
       },
       itemBuilder: (context) {
@@ -157,8 +157,8 @@ class SessionActionsMenu extends ConsumerWidget {
           PopupMenuItem(
             value: 'quit',
             child: ListTile(
-              leading: Icon(PhosphorIconsLight.power, color: cs.error),
-              title: Text('Quit session', style: TextStyle(color: cs.error)),
+              leading: Icon(PhosphorIconsLight.archiveBox, color: cs.onSurface),
+              title: const Text('Archive session'),
               contentPadding: EdgeInsets.zero,
             ),
           ),
@@ -167,14 +167,14 @@ class SessionActionsMenu extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmQuit(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmArchive(BuildContext context, WidgetRef ref) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (dctx) => AlertDialog(
-        title: const Text('Quit session?'),
+        title: const Text('Archive session?'),
         content: const Text(
-          'This stops the agent process and removes the session. '
-          'The transcript stays on disk and can be re-attached later.',
+          'This removes the session from the active list and stops its agent. '
+          'The transcript is kept and the session can be restored later.',
         ),
         actions: [
           TextButton(
@@ -183,7 +183,7 @@ class SessionActionsMenu extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dctx, true),
-            child: const Text('Quit'),
+            child: const Text('Archive'),
           ),
         ],
       ),
@@ -195,25 +195,21 @@ class SessionActionsMenu extends ConsumerWidget {
     final store = ref.read(storeControllerProvider.notifier);
     final workspace = ref.read(workspaceControllerProvider.notifier);
 
-    // Optimistic: close the tab now, don't wait on the server. Quit = close
-    // this tab + kill the session. Closing the last tab collapses the split
-    // into its sibling (or resets the sole split to an empty starter tab).
-    if (splitId != null && tabId != null) {
-      workspace.closeTab(splitId!, tabId!);
-    }
-    // Drop any *other* tab still hosting the session so it never lingers in the
-    // layout. The sidebar highlight (selectedSessionProvider) is derived from
-    // the active tab, so it follows the surviving layout automatically.
-    workspace.unbindSession(sessionId);
-
-    // Fire the kill in the background. The sidebar reconciles from server
-    // snapshots, so on failure the session simply stays/reappears there; just
-    // surface the error.
+    // Archive first, then drop the session's tabs — only mutate the workspace
+    // once the archive is acknowledged, so a failed archive leaves the active
+    // session and its tabs intact (no orphaned layout).
     try {
-      await store.killSession(sessionId);
+      await store.archiveSession(sessionId);
+      if (splitId != null && tabId != null) {
+        workspace.closeTab(splitId!, tabId!);
+      }
+      // Drop any *other* tab still hosting the session so it never lingers.
+      workspace.unbindSession(sessionId);
     } catch (e) {
       if (messenger.mounted) {
-        messenger.showSnackBar(SnackBar(content: Text('Could not quit: $e')));
+        messenger.showSnackBar(
+          SnackBar(content: Text('Could not archive: $e')),
+        );
       }
     }
   }

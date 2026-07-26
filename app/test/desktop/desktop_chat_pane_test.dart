@@ -307,7 +307,7 @@ void main() {
   });
 
   testWidgets(
-    'session actions menu offers Rename + Quit only (no model/thinking)',
+    'session actions menu offers Rename + Archive only (no model/thinking)',
     (tester) async {
       final session = Session(
         id: 's1',
@@ -344,7 +344,7 @@ void main() {
       // Model + thinking moved into the composer footer; the overflow menu keeps
       // only rename + quit.
       expect(find.text('Rename session'), findsOneWidget);
-      expect(find.text('Quit session'), findsOneWidget);
+      expect(find.text('Archive session'), findsOneWidget);
       expect(find.text('Model'), findsNothing);
       expect(find.text('Thinking'), findsNothing);
     },

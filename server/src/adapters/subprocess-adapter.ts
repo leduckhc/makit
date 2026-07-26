@@ -15,11 +15,21 @@
  */
 
 import { EventEmitter } from "node:events";
-import type { AdapterEvent, AgentAdapter, SpawnOpts, UserInput } from "./adapter.js";
+import { NO_SESSION_CAPABILITIES, type AdapterEvent, type AgentAdapter, type SessionCapabilities, type SpawnOpts, type UserInput } from "./adapter.js";
 import { TurnStatusTracker } from "./turn-status.js";
 
 export abstract class SubprocessAdapter extends EventEmitter implements AgentAdapter {
   abstract readonly agent: string;
+
+  /**
+   * Session-lifecycle capabilities (SPEC-29). Subclasses overwrite this: codex
+   * sets a static value; ACP populates it from the `initialize` response. The
+   * safe default is all-false so a subclass that forgets degrades gracefully.
+   */
+  capabilities: SessionCapabilities = { ...NO_SESSION_CAPABILITIES };
+
+  /** Native session/thread id, set by the subclass once `start()` resolves. */
+  agentSessionId?: string;
 
   /** Set once the subprocess has terminated; suppresses further transitions. */
   protected exited = false;

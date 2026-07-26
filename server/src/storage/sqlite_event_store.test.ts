@@ -172,3 +172,23 @@ test("deleteSession removes the session and its events", () => {
   assert.deepEqual(store.read("s1"), []);
   store.close();
 });
+
+test("saveSession round-trips the agentSessionId resume handle (SPEC-29)", () => {
+  const store = new SqliteEventStore();
+  store.saveSession(meta("s1", { agentSessionId: "acp-abc-123" }));
+  store.saveSession(meta("s2")); // no handle → undefined, not null
+  const loaded = store.loadSessions();
+  const s1 = loaded.find((s) => s.id === "s1")!;
+  const s2 = loaded.find((s) => s.id === "s2")!;
+  assert.equal(s1.agentSessionId, "acp-abc-123");
+  assert.equal(s2.agentSessionId, undefined);
+});
+
+test("saveSession round-trips the archived flag (SPEC-29)", () => {
+  const store = new SqliteEventStore();
+  store.saveSession(meta("s1", { archived: true }));
+  store.saveSession(meta("s2"));
+  const loaded = store.loadSessions();
+  assert.equal(loaded.find((s) => s.id === "s1")!.archived, true);
+  assert.equal(loaded.find((s) => s.id === "s2")!.archived, false);
+});

@@ -31,12 +31,24 @@ export interface SessionMeta {
    */
   resumeSessionPath?: string;
   /**
+   * Native agent session/thread id (ACP `sessionId`, codex `threadId`).
+   * Persisted so a cold (rehydrated) session can be resumed on the live agent
+   * after a server restart (SPEC-29). Null/absent for drafts + agents that
+   * never produced one.
+   */
+  agentSessionId?: string;
+  /**
    * Git branch + worktree the session runs in (set on markStarted). Persisted
    * so a rehydrated session still reports its branch/worktree after a server
    * restart instead of falling back to the project's default branch.
    */
   branch?: string;
   worktreePath?: string;
+  /**
+   * Archived (SPEC-29): hidden from the active session list but kept + resumable
+   * and restorable via `session.unarchive`. Persisted so it survives a restart.
+   */
+  archived?: boolean;
 }
 
 /** A new event to append: seq + sessionId are assigned/owned by the store. */

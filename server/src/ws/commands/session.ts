@@ -118,6 +118,41 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
+  // Archive (SPEC-29): hide from the active list but keep it resumable. The
+  // fresh snapshot omits archived sessions; unarchive restores it.
+  r.register("session.archive", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    try {
+      await manager.archiveSession(sid);
+    } catch {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    broadcastSnapshots();
+    void broadcastReposSnapshot();
+    ctx.ack();
+  });
+
+  r.register("session.unarchive", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    try {
+      await manager.unarchiveSession(sid);
+    } catch {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    broadcastSnapshots();
+    void broadcastReposSnapshot();
+    ctx.ack();
+  });
+
+  // Return the archived sessions (SPEC-29) for the "Show archived" list. Unlike
+  // the active `sessions.snapshot` (which omits them), this is an explicit
+  // request/ack so archived sessions only load when the user asks.
+  r.register("session.listArchived", async (ctx) => {
+    ctx.ack({ sessions: await manager.listArchivedSessions() });
+  });
+
   r.register("session.spawn", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
@@ -204,11 +239,10 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       return;
     }
     try {
-      // Omit the server-internal filesystem `path` from the wire — the app
-      // attaches by piSessionId and never needs the transcript path.
-      const sessions = manager.listPiSessions(projectId).map(
-        ({ path: _path, ...meta }) => meta,
-      );
+      // Adapter-native discovery (SPEC-29): ask each available agent over its
+      // own protocol (ACP `session/list`, codex `thread/list`) instead of
+      // scraping pi transcript files. Already omits the server-internal path.
+      const sessions = await manager.listAgentSessions(projectId);
       ctx.ack({ sessions });
     } catch (e) {
       ctx.err(WireErrorCode.BadRequest, (e as Error).message);

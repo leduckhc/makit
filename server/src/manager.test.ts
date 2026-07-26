@@ -13,15 +13,21 @@ import { Session } from "./session.js";
 import type { PersistedProject } from "./project-store.js";
 import { piSessionsDir } from "./pi-sessions.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
-import type { SessionEvent, SessionConfigOption } from "./protocol.js";
+import type { SessionEvent, SessionConfigOption, SessionDTO } from "./protocol.js";
+import { SqliteEventStore } from "./storage/sqlite_event_store.js";
 import type { AgentAdapter, SpawnOpts } from "./adapters/adapter.js";
 
 /** A stub adapter that records the SpawnOpts it was started with. */
 function stubAdapter(started: SpawnOpts[]): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as any).agent = "stub";
+  (e as any).capabilities = { resume: true, load: false, list: true, delete: true, fork: false };
+  (e as any).agentSessionId = undefined;
   (e as any).start = async (opts: SpawnOpts) => {
     started.push(opts);
+    // Adopt (or mint) a native id so the manager persists a resume handle,
+    // mirroring the real adapters (SPEC-29).
+    (e as any).agentSessionId = opts.resumeAgentSessionId ?? `stub-${opts.sessionId ?? "x"}`;
   };
   (e as any).send = async () => {};
   (e as any).cancel = async () => {};
@@ -247,6 +253,55 @@ test("removeWorktree deletes the worktree from disk", async () => {
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
     rmSync(cwd, { recursive: true, force: true });
     rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("removeWorktree preserves archived sessions and auto-archives live ones (SPEC-29)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+
+    // Two sessions bound to the worktree: one already archived, one live.
+    const draftA = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    await manager.promotePendingSession(draftA, "archived one");
+    await manager.archiveSession(draftA.id);
+
+    const draftB = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    await manager.promotePendingSession(draftB, "live one");
+    assert.equal(manager.getSession(draftB.id)!.archived, false);
+
+    await manager.removeWorktree(projectId, wt.path);
+
+    // Neither was destroyed: both survive as archived sessions.
+    assert.equal(manager.getSession(draftA.id)!.archived, true); // preserved
+    assert.equal(manager.getSession(draftB.id)!.archived, true); // auto-archived
+    // Both are hidden from the active list.
+    const active = manager.listSessions().map((d) => d.id);
+    assert.ok(!active.includes(draftA.id));
+    assert.ok(!active.includes(draftB.id));
+    // Both appear in the archived list, flagged orphaned (worktree removed).
+    const archived = await manager.listArchivedSessions();
+    const a = archived.find((d) => d.id === draftA.id)!;
+    const b = archived.find((d) => d.id === draftB.id)!;
+    assert.equal(a.orphaned, true);
+    assert.equal(b.orphaned, true);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+    store.close();
   }
 });
 
@@ -1055,6 +1110,7 @@ test("reattachSession resumes in the session's worktree, not the project root", 
       lastActivityAt: 2,
       lastPreview: "",
       resumeSessionPath: "/tmp/transcript.jsonl",
+      agentSessionId: "acp-sess-wt",
       branch: "feature-x",
       worktreePath: worktreeDir,
     });
@@ -1071,6 +1127,7 @@ test("reattachSession resumes in the session's worktree, not the project root", 
       lastActivityAt: 2,
       lastPreview: "",
       resumeSessionPath: "/tmp/transcript.jsonl",
+      agentSessionId: "acp-sess-impostor",
       branch: "gone",
       worktreePath: impostorDir,
     });
@@ -1142,7 +1199,7 @@ test("reattachSession resumes a cold pi session and continues the durable seq sp
       const live = await mgr2.reattachSession(sessionId);
       assert.equal(live.id, sessionId);
       assert.equal(started.length, 1); // adapter really started
-      assert.equal(started[0].resumeSessionPath !== undefined, true); // resumed via transcript
+      assert.equal(started[0].resumeAgentSessionId !== undefined, true); // resumed via native id (SPEC-29)
 
       // A new event must get the NEXT seq (no reset / collision).
       live.adapter.emit("event", { ts: 20, kind: "user.message", payload: { text: "after reattach" } });
@@ -1315,6 +1372,78 @@ test("promotePendingSession routes a draft-promotion failure through the session
     const last = persisted.at(-1)!;
     assert.equal(last.kind, "session.error");
     assert.equal(last.seq, errEvent.seq, "the persisted error carries the emitted seq");
+  } finally {
+    store.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("archiveSession hides a session from the active list but keeps it (SPEC-29)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = mkdtempSync(join(tmpdir(), "makit-arch-"));
+  try {
+    const mgr = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = mgr.listProjects()[0].id;
+    const s = await mgr.spawnPiSession(projectId, "archive me", "pi");
+    const sid = s.id;
+    assert.equal(s.agentSessionId !== undefined, true);
+    assert.ok(mgr.listSessions().some((d) => d.id === sid)); // active
+
+    await mgr.archiveSession(sid);
+    // Gone from the ACTIVE list, but still in the registry + resumable.
+    assert.ok(!mgr.listSessions().some((d) => d.id === sid));
+    // …and present in the archived list.
+    assert.ok((await mgr.listArchivedSessions()).some((d) => d.id === sid && d.archived));
+    const arch = mgr.getSession(sid)!;
+    assert.equal(arch.archived, true);
+    assert.equal(arch.agentSessionId !== undefined, true); // resume handle kept
+
+    // Persisted archived: a fresh manager over the same store keeps it hidden.
+    const mgr2 = new SessionManager({ projects: [{ id: projectId, path: cwd }], store });
+    assert.equal(mgr2.getSession(sid)!.archived, true);
+    assert.ok(!mgr2.listSessions().some((d) => d.id === sid));
+
+    // Unarchive restores it to the active list.
+    await mgr2.unarchiveSession(sid);
+    assert.ok(mgr2.listSessions().some((d) => d.id === sid));
+    assert.ok(!(await mgr2.listArchivedSessions()).some((d) => d.id === sid));
+    assert.equal(mgr2.getSession(sid)!.archived, false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+test('listArchivedSessions omits sessions whose project was removed (SPEC-29)', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'makit-mgr-'));
+  const store = new SqliteEventStore(join(cwd, '.makit.db'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd });
+    const mgr = new SessionManager({
+      projects: [{ id: 'p1', path: cwd }],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = mgr.listProjects()[0].id;
+
+    // Two archived sessions in the project root (not orphaned — no worktree).
+    const s1 = await mgr.spawnPiSession(projectId, 's1', 'pi');
+    const s2 = await mgr.spawnPiSession(projectId, 's2', 'pi');
+    await mgr.archiveSession(s1.id);
+    await mgr.archiveSession(s2.id);
+    const archived = await mgr.listArchivedSessions();
+    assert.ok(archived.some((d: SessionDTO) => d.id === s1.id && !d.orphaned));
+    assert.ok(archived.some((d: SessionDTO) => d.id === s2.id && !d.orphaned));
+
+    // Remove the project → its archived sessions are unreachable and hidden.
+    mgr.removeProject(projectId);
+    const after = await mgr.listArchivedSessions();
+    assert.equal(after.length, 0, 'removed-project sessions are filtered out');
   } finally {
     store.close();
     rmSync(cwd, { recursive: true, force: true });

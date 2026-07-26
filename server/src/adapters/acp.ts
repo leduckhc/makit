@@ -30,7 +30,7 @@ import {
   type SessionConfigOption as AcpConfigOption,
 } from "@agentclientprotocol/sdk";
 import type { AnyMessage } from "@agentclientprotocol/sdk";
-import type { SpawnOpts, UserInput } from "./adapter.js";
+import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from "./adapter.js";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
 import { spawnLineProcess } from "./child_transport.js";
@@ -81,6 +81,12 @@ export class AcpAdapter extends SubprocessAdapter {
   private conn?: ClientSideConnection;
   private acpSessionId?: string;
   private makitSessionId = "";
+  /**
+   * True while a `session/load` replay is in flight (SPEC-29). The session/update
+   * client handler drops notifications during this window so the agent's
+   * replayed history is NOT re-appended to makit's authoritative event log.
+   */
+  private loading = false;
   private workspaceRoot = "";
   private askUser?: AskUser;
   private mapper: AcpEventMapper;
@@ -130,7 +136,7 @@ export class AcpAdapter extends SubprocessAdapter {
 
     this.conn = new ClientSideConnection(() => this.buildClient(), this.transport.stream);
 
-    await Promise.race([
+    const init = await Promise.race([
       this.conn.initialize({
         protocolVersion: 1,
         clientCapabilities: {
@@ -141,32 +147,69 @@ export class AcpAdapter extends SubprocessAdapter {
           session: { configOptions: { boolean: {} } },
         },
       }),
-      new Promise<void>((_, reject) =>
+      new Promise<any>((_, reject) =>
         setTimeout(
           () => reject(new Error(`ACP initialize timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
           ACP_HANDSHAKE_TIMEOUT,
         ),
       ),
     ]);
+    // Negotiate session-lifecycle capabilities from the initialize response
+    // (SPEC-29) so resume/list/delete/fork are gated on what the agent advertises.
+    this.capabilities = deriveAcpCapabilities(init);
 
-    if (opts.resumeSessionPath) {
-      // ACP resume is keyed by an ACP sessionId, not by makit's on-disk path.
-      // Cross-world resume is a separate concern; start fresh for now.
-      log.warn("[makit] AcpAdapter: resumeSessionPath ignored (ACP resume not wired yet)");
-    }
-
-    const res = await Promise.race([
-      this.conn.newSession({ cwd, mcpServers: [] }),
-      new Promise<any>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`ACP newSession timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
-          ACP_HANDSHAKE_TIMEOUT,
+    // Resume an existing session by its native ACP id when requested, preferring
+    // a no-replay resume; else a silent replay-load; else fall back to a fresh
+    // session (degraded, but live). makit owns the transcript, so a load's
+    // replay is consumed silently (see `loading` + the sessionUpdate guard).
+    const resumeId = opts.resumeAgentSessionId;
+    const withTimeout = <T>(p: Promise<T>, label: string): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`${label} timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)), ACP_HANDSHAKE_TIMEOUT),
         ),
-      ),
-    ]);
-    this.acpSessionId = res.sessionId;
-    this.captureModes(res.modes);
-    this.captureConfigOptions(res.configOptions);
+      ]);
+
+    if (resumeId && this.capabilities.resume && this.conn.resumeSession) {
+      this.acpSessionId = resumeId;
+      const res: any = await withTimeout(
+        this.conn.resumeSession({ sessionId: resumeId, cwd, mcpServers: [] }),
+        "ACP session/resume",
+      );
+      this.captureModes(res?.modes);
+      this.captureConfigOptions(res?.configOptions);
+    } else if (resumeId && this.capabilities.load && this.conn.loadSession) {
+      // session/load replays the whole conversation as session/update
+      // notifications before responding. makit's event log is authoritative, so
+      // drop those replays (silent mode) to avoid duplicating history. Set the
+      // session id first so the replayed updates are recognised (right session)
+      // AND suppressed (loading flag).
+      this.acpSessionId = resumeId;
+      this.loading = true;
+      let res: any;
+      try {
+        res = await withTimeout(
+          this.conn.loadSession({ sessionId: resumeId, cwd, mcpServers: [] }),
+          "ACP session/load",
+        );
+      } finally {
+        this.loading = false;
+      }
+      this.captureModes(res?.modes);
+      this.captureConfigOptions(res?.configOptions);
+    } else {
+      if (resumeId) {
+        log.warn(
+          `[makit] AcpAdapter: resume requested but ${this.agent} supports neither session/resume nor session/load — starting fresh`,
+        );
+      }
+      const res = await withTimeout(this.conn.newSession({ cwd, mcpServers: [] }), "ACP newSession");
+      this.acpSessionId = res.sessionId;
+      this.captureModes(res.modes);
+      this.captureConfigOptions(res.configOptions);
+    }
+    this.agentSessionId = this.acpSessionId;
     this.emit("status", "idle");
     this.emitMeta();
   }
@@ -352,6 +395,10 @@ export class AcpAdapter extends SubprocessAdapter {
     return {
       sessionUpdate: async (params: SessionNotification) => {
         if (params.sessionId !== this.acpSessionId) return;
+        // Silent-load: during a session/load replay, drop every update so the
+        // agent's historical turns are not duplicated into makit's event log
+        // (SPEC-29). makit's SQLite log is the source of truth for the client.
+        if (this.loading) return;
         // The agent can switch modes autonomously; keep the selector in sync.
         const u = params.update as {
           sessionUpdate?: string;
@@ -487,6 +534,27 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 }
 
+// ---------- capability negotiation (SPEC-29) -------------------------------
+
+/**
+ * Derive makit's {@link SessionCapabilities} from an ACP `initialize` response.
+ * `loadSession` is a top-level agent capability; resume/list/delete/fork live
+ * under `sessionCapabilities`. Anything absent is `false` (the safe default).
+ */
+export function deriveAcpCapabilities(init: unknown): SessionCapabilities {
+  const caps = isRecord(init) && isRecord(init.agentCapabilities) ? init.agentCapabilities : {};
+  const sc = isRecord(caps.sessionCapabilities) ? caps.sessionCapabilities : {};
+  const has = (v: unknown) => v !== undefined && v !== null && v !== false;
+  return {
+    load: caps.loadSession === true,
+    resume: has(sc.resume),
+    list: has(sc.list),
+    delete: has(sc.delete),
+    fork: has(sc.fork),
+    archive: has(sc.archive),
+  };
+}
+
 // ---------- default subprocess transport -----------------------------------
 
 export function defaultConnect(spec: AcpSpawnSpec) {
@@ -574,6 +642,83 @@ export async function probeAcpConfigOptions(
     transport.dispose();
     await rm(cwd, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/**
+ * List a cwd's prior ACP sessions via a throwaway connection (SPEC-29). Mirrors
+ * {@link probeAcpConfigOptions}: spawn the adapter's child in the target `cwd`,
+ * `initialize`, and — only when the agent advertises `sessionCapabilities.list`
+ * — call `session/list { cwd }`, normalizing each `SessionInfo` to
+ * {@link AgentSessionInfo}. Returns `[]` for an agent without the capability.
+ * The child is always killed. Never throws on a listing error — logs + returns
+ * what it has (boundary rule: discovery must degrade, not crash the server).
+ */
+export async function listAcpSessions(
+  spec: AcpSpawnSpec,
+  cwd: string,
+  opts: { connect?: (cwd: string, env: Record<string, string>) => AcpTransport } = {},
+): Promise<AgentSessionInfo[]> {
+  const root = await realpath(cwd);
+  const connect = opts.connect ?? defaultConnect(spec);
+  const transport = connect(root, spec.env ?? {});
+  try {
+    const conn = new ClientSideConnection(() => probeClient(), transport.stream);
+    const init = await Promise.race([
+      conn.initialize({
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+          terminal: false,
+          session: { configOptions: { boolean: {} } },
+        },
+      }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP list initialize timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
+    const caps = deriveAcpCapabilities(init);
+    if (!caps.list || !conn.listSessions) return [];
+    const res = await Promise.race([
+      conn.listSessions({ cwd: root }),
+      new Promise<any>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`ACP session/list timed out after ${ACP_HANDSHAKE_TIMEOUT}ms`)),
+          ACP_HANDSHAKE_TIMEOUT,
+        ),
+      ),
+    ]);
+    const sessions = Array.isArray(res?.sessions) ? res.sessions : [];
+    return sessions.map(parseAcpSessionInfo);
+  } catch (e) {
+    log.warn(`[makit] ACP session/list failed: ${(e as Error).message}`);
+    return [];
+  } finally {
+    transport.dispose();
+  }
+}
+
+/** Normalize an ACP `SessionInfo` to makit's {@link AgentSessionInfo}. */
+function parseAcpSessionInfo(s: {
+  sessionId: string;
+  cwd?: string;
+  title?: string | null;
+  updatedAt?: string | null;
+  _meta?: Record<string, unknown> | null;
+}): AgentSessionInfo {
+  const info: AgentSessionInfo = { id: s.sessionId, cwd: typeof s.cwd === "string" ? s.cwd : "" };
+  if (typeof s.title === "string") info.title = s.title;
+  // `updatedAt` is an ISO 8601 string per the session-list RFD.
+  if (typeof s.updatedAt === "string") {
+    const ms = Date.parse(s.updatedAt);
+    if (!Number.isNaN(ms)) info.updatedAt = ms;
+  }
+  const meta = s._meta && typeof s._meta === "object" ? s._meta : undefined;
+  const count = meta?.messageCount;
+  if (typeof count === "number") info.messageCount = count;
+  return info;
 }
 
 /**

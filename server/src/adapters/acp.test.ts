@@ -14,7 +14,7 @@ import {
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
-import { AcpAdapter, defaultConnect, probeAcpConfigOptions, type AcpTransport } from "./acp.js";
+import { AcpAdapter, defaultConnect, probeAcpConfigOptions, listAcpSessions, deriveAcpCapabilities, type AcpTransport } from "./acp.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
 
@@ -875,4 +875,114 @@ test("probeAcpConfigOptions returns [] for an option-less harness and skips dele
   assert.deepEqual(options, []);
   // No delete capability advertised → probe does not call session/delete.
   assert.equal(deleteCalls.length, 0);
+});
+
+test("listAcpSessions returns normalized sessions when the agent advertises list (SPEC-29)", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "makit-acp-list-")));
+  try {
+    const { transport } = pair((_conn) => ({
+      async initialize(_p: InitializeRequest) {
+        return {
+          protocolVersion: 1 as const,
+          agentCapabilities: { loadSession: true, sessionCapabilities: { list: {} } },
+        };
+      },
+      async newSession(_p: NewSessionRequest) {
+        return { sessionId: "s1" };
+      },
+      async authenticate() {},
+      async prompt(): Promise<PromptResponse> {
+        return { stopReason: "end_turn" };
+      },
+      async listSessions(_p: unknown) {
+        return {
+          sessions: [
+            { sessionId: "a", cwd: dir, title: "First", updatedAt: "2026-07-26T10:00:00Z", _meta: { messageCount: 4 } },
+            { sessionId: "b", cwd: dir, updatedAt: "not-a-date" },
+          ],
+        };
+      },
+    }) as unknown as Agent);
+
+    const out = await listAcpSessions({ agent: "pi", command: "x" }, dir, { connect: () => transport });
+    assert.equal(out.length, 2);
+    assert.deepEqual(out[0], { id: "a", cwd: dir, title: "First", updatedAt: Date.parse("2026-07-26T10:00:00Z"), messageCount: 4 });
+    // Unparseable updatedAt is dropped rather than NaN.
+    assert.equal(out[1].id, "b");
+    assert.equal(out[1].updatedAt, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("listAcpSessions returns [] when the agent does not advertise list", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "makit-acp-nolist-")));
+  try {
+    const { transport } = pair(() => ({
+      async initialize(_p: InitializeRequest) {
+        return { protocolVersion: 1 as const, agentCapabilities: { loadSession: false } };
+      },
+      async newSession(_p: NewSessionRequest) {
+        return { sessionId: "s1" };
+      },
+      async authenticate() {},
+      async prompt(): Promise<PromptResponse> {
+        return { stopReason: "end_turn" };
+      },
+    }) as unknown as Agent);
+    const out = await listAcpSessions({ agent: "pi", command: "x" }, dir, { connect: () => transport });
+    assert.deepEqual(out, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("deriveAcpCapabilities reads loadSession + sessionCapabilities (SPEC-29)", () => {
+  assert.deepEqual(
+    deriveAcpCapabilities({ agentCapabilities: { loadSession: true, sessionCapabilities: { list: {}, delete: {} } } }),
+    { resume: false, load: true, list: true, delete: true, fork: false, archive: false },
+  );
+  assert.deepEqual(
+    deriveAcpCapabilities({ agentCapabilities: { sessionCapabilities: { resume: {}, fork: {} } } }),
+    { resume: true, load: false, list: false, delete: false, fork: true, archive: false },
+  );
+  // Missing / malformed → all false.
+  assert.deepEqual(deriveAcpCapabilities({}), { resume: false, load: false, list: false, delete: false, fork: false, archive: false });
+  assert.deepEqual(deriveAcpCapabilities(null), { resume: false, load: false, list: false, delete: false, fork: false, archive: false });
+});
+
+test("start({resumeAgentSessionId}) loads and drops the replayed history (silent mode, SPEC-29)", async () => {
+  let loadArgs: any;
+  const { transport } = pair((conn) => ({
+    async initialize(_p: InitializeRequest) {
+      return { protocolVersion: 1 as const, agentCapabilities: { loadSession: true } };
+    },
+    async newSession(_p: NewSessionRequest) {
+      return { sessionId: "should-not-be-called" };
+    },
+    async loadSession(p: any) {
+      loadArgs = p;
+      // Replay a historical turn DURING load — the client must drop it.
+      await conn.sessionUpdate({
+        sessionId: p.sessionId,
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "OLD HISTORY" } },
+      });
+      return {};
+    },
+    async authenticate() {},
+    async prompt(): Promise<PromptResponse> {
+      return { stopReason: "end_turn" };
+    },
+  }) as unknown as Agent);
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1", resumeAgentSessionId: "acp-prev" });
+
+  // Resumed by native id via session/load — never session/new.
+  assert.equal(loadArgs.sessionId, "acp-prev");
+  assert.equal(adapter.agentSessionId, "acp-prev");
+  // The replayed history was dropped (not appended to makit's log).
+  assert.ok(!events.some((e) => e.kind === "agent.message" && (e.payload as any)?.text === "OLD HISTORY"));
 });

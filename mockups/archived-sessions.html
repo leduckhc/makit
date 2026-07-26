@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>makit · Archived sessions — placement & grouping mockups</title>
+<style>
+  :root{
+    /* makit dark ramp (app/lib/app/theme.dart) */
+    --surface:#171717; --c-lowest:#121212; --c-low:#1E1E1E; --c:#242424;
+    --c-high:#2E2E2E; --c-highest:#383838;
+    --on:#F5F5F5; --muted:#9E9E9E; --hair:#333333;
+    --accent:#4ADE80; --pi:#4ADE80; --codex:#7AA2F7;
+    --add:#3FB950; --del:#F85149; --risky:#E8A33D;
+    --radius:10px;
+    font-synthesis:none; -webkit-font-smoothing:antialiased;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 700px at 20% -10%, #1c1c1c, var(--surface));
+    color:var(--on);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
+    line-height:1.45; padding:40px 32px 80px;
+  }
+  h1{font-size:22px;font-weight:650;letter-spacing:-.02em}
+  h1 .sub{color:var(--muted);font-weight:450}
+  .lead{color:var(--muted);max-width:820px;margin-top:8px;font-size:13.5px}
+  .rec{
+    margin:22px 0 34px;padding:14px 16px;border:1px solid #2b6b3f;border-radius:var(--radius);
+    background:linear-gradient(90deg,rgba(74,222,128,.10),rgba(74,222,128,.02));
+    display:flex;gap:12px;align-items:flex-start;max-width:980px;
+  }
+  .rec b{color:var(--accent)}
+  .rec .pill{flex:none;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:#0b1f12;background:var(--accent);padding:3px 8px;border-radius:999px;margin-top:1px}
+  .opt-label{display:flex;align-items:baseline;gap:10px;margin:38px 0 12px}
+  .opt-label .tag{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted);
+    border:1px solid var(--hair);border-radius:6px;padding:2px 8px;text-transform:uppercase}
+  .opt-label h2{font-size:16px;font-weight:600}
+  .opt-label .best{color:var(--accent);border-color:#2b6b3f}
+  .opt-label p{color:var(--muted);font-size:12.5px;margin-left:auto;max-width:520px;text-align:right}
+
+  /* ---- app frame ---- */
+  .frame{
+    border:1px solid var(--hair);border-radius:14px;overflow:hidden;
+    box-shadow:0 24px 60px -20px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.02) inset;
+    background:var(--surface);display:grid;grid-template-columns:264px 1fr;max-width:1120px;
+  }
+  .frame.tall{min-height:560px}
+  .titlebar{grid-column:1/3;height:38px;background:var(--c-low);border-bottom:1px solid var(--hair);
+    display:flex;align-items:center;padding:0 14px;gap:8px}
+  .lights{display:flex;gap:7px}
+  .lights i{width:11px;height:11px;border-radius:50%}
+  .lights i:nth-child(1){background:#ff5f57}.lights i:nth-child(2){background:#febc2e}.lights i:nth-child(3){background:#28c840}
+  .tb-title{color:var(--muted);font-size:12px;margin-left:8px}
+
+  /* ---- sidebar ---- */
+  .sidebar{background:var(--c);border-right:1px solid var(--hair);display:flex;flex-direction:column;min-height:0}
+  .sb-scroll{padding:10px 8px;overflow:auto;flex:1}
+  .sb-foot{border-top:1px solid var(--hair);padding:8px 10px;display:flex;align-items:center;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px rgba(74,222,128,.14)}
+  .dot.idle{background:#6b6b6b;box-shadow:none}
+  .sb-icons{margin-left:auto;display:flex;gap:2px}
+  .sb-icons button{all:unset;width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted);cursor:pointer}
+  .sb-icons button:hover{background:var(--c-high);color:var(--on)}
+  .sb-icons button.on{color:var(--accent);background:rgba(74,222,128,.12)}
+  .repo{font-size:12px;font-weight:600;color:var(--on);padding:6px 8px;display:flex;align-items:center;gap:8px;border-radius:7px}
+  .repo .count{margin-left:auto;color:var(--muted);font-weight:500;font-size:11px}
+  .wt{font-size:11.5px;color:var(--muted);padding:4px 8px 4px 22px;display:flex;gap:7px;align-items:center}
+  .ses{font-size:12px;padding:6px 8px 6px 30px;display:flex;gap:8px;align-items:center;border-radius:7px;color:#d8d8d8}
+  .ses:hover{background:var(--c-high)}
+  .ses.sel{background:rgba(74,222,128,.10);color:#fff}
+  .ses .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,monospace;font-size:10.5px}
+
+  /* segmented control */
+  .seg{display:inline-flex;background:var(--c-low);border:1px solid var(--hair);border-radius:9px;padding:3px;gap:2px}
+  .seg button{all:unset;cursor:pointer;font-size:12px;color:var(--muted);padding:5px 12px;border-radius:6px;font-weight:520}
+  .seg button.on{background:var(--c-high);color:var(--on);box-shadow:0 1px 0 rgba(0,0,0,.3)}
+  .seg.sm button{font-size:11.5px;padding:4px 10px}
+
+  /* ---- main pane ---- */
+  .main{display:flex;flex-direction:column;min-height:0;background:var(--surface)}
+  .arc-head{padding:16px 20px 12px;border-bottom:1px solid var(--hair)}
+  .arc-title{display:flex;align-items:center;gap:10px}
+  .arc-title h3{font-size:15px;font-weight:640;letter-spacing:-.01em}
+  .arc-title .n{color:var(--muted);font-size:12px;font-weight:500}
+  .arc-title .close{margin-left:auto;color:var(--muted);cursor:pointer}
+  .arc-controls{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+  .search{flex:1;min-width:160px;display:flex;align-items:center;gap:8px;background:var(--c-low);
+    border:1px solid var(--hair);border-radius:9px;padding:7px 11px;color:var(--muted);font-size:12.5px}
+  .search input{all:unset;flex:1;color:var(--on);font-size:12.5px}
+  .groupby-label{font-size:11.5px;color:var(--muted)}
+  .arc-body{overflow:auto;padding:8px 12px 24px;flex:1}
+
+  /* group section */
+  .grp{margin-top:14px}
+  .grp-h{position:sticky;top:0;background:linear-gradient(var(--surface),var(--surface) 70%,transparent);
+    display:flex;align-items:center;gap:9px;padding:8px 8px 7px;z-index:2}
+  .grp-h .gi{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--c-high);color:var(--muted);font-size:12px}
+  .grp-h .gt{font-size:12.5px;font-weight:640}
+  .grp-h .gsub{font-family:"SF Mono",ui-monospace,monospace;font-size:10.5px;color:var(--muted)}
+  .grp-h .gc{margin-left:auto;font-size:11px;color:var(--muted);background:var(--c);border:1px solid var(--hair);padding:1px 8px;border-radius:999px}
+  .grp-h .line{flex:1;height:1px;background:var(--hair);margin-left:2px;opacity:.5}
+
+  /* session card row */
+  .row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:10px;margin:4px 2px;
+    border:1px solid transparent;transition:.12s}
+  .row:hover{background:var(--c-low);border-color:var(--hair)}
+  .glyph{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;flex:none;font-size:13px;font-weight:700}
+  .glyph.pi{background:rgba(74,222,128,.14);color:var(--pi)}
+  .glyph.codex{background:rgba(122,162,247,.16);color:var(--codex)}
+  .rc{min-width:0;flex:1}
+  .rc .top{display:flex;align-items:center;gap:8px}
+  .rc .name{font-size:13px;font-weight:560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rc .prev{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .meta{display:flex;gap:6px;align-items:center;flex:none}
+  .mchip{font-size:10.5px;color:var(--muted);border:1px solid var(--hair);border-radius:6px;padding:2px 7px;display:inline-flex;gap:5px;align-items:center}
+  .mchip.branch{font-family:"SF Mono",ui-monospace,monospace}
+  .mchip.pi{color:var(--pi);border-color:rgba(74,222,128,.35)}
+  .mchip.codex{color:var(--codex);border-color:rgba(122,162,247,.35)}
+  .age{font-size:11px;color:var(--muted);flex:none;width:52px;text-align:right}
+  .actions{display:flex;gap:6px;flex:none;opacity:0;transition:.12s}
+  .row:hover .actions{opacity:1}
+  .btn{all:unset;cursor:pointer;font-size:11.5px;font-weight:560;padding:5px 11px;border-radius:7px;display:inline-flex;gap:6px;align-items:center}
+  .btn.restore{color:#0b1f12;background:var(--accent)}
+  .btn.restore:hover{filter:brightness(1.08)}
+  .btn.ghost{color:var(--muted);border:1px solid var(--hair)}
+  .btn.ghost:hover{color:var(--on);background:var(--c-high)}
+
+  .note{color:var(--muted);font-size:12px;margin-top:8px;max-width:1120px}
+  .hidden{display:none}
+
+  /* right rail (option D) */
+  .rail{width:340px;border-left:1px solid var(--hair);background:var(--c-low);display:flex;flex-direction:column}
+  .frame.d{grid-template-columns:264px 1fr 340px}
+
+  /* bottom drawer (option C) */
+  .drawer{grid-column:1/3;border-top:1px solid var(--hair);background:var(--c-low);max-height:230px;display:flex;flex-direction:column}
+  .drawer .dh{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--hair);font-size:12.5px;font-weight:600}
+  .drawer .dh .chev{color:var(--muted)}
+  .mini{color:var(--muted);font-size:11px;font-weight:500;margin-left:6px}
+</style>
+</head>
+<body>
+
+<h1>makit · Archived sessions <span class="sub">— placement & grouping explorations</span></h1>
+<p class="lead">No dialogs. The archive is a browsable, first-class surface. Below are four placements (interactive where it matters), then the grouping model. The hero is the recommended one — try the <b>Group by</b> and search controls.</p>
+
+<div class="rec">
+  <span class="pill">Recommended</span>
+  <div><b>Option A — a full "Archive" surface opened as a workspace tab.</b> Sessions already live in tabs/panes, so the archive opening <i>as a tab</i> feels native (⌘⇧A, or the footer archive icon). It's the only placement roomy enough for real <b>Group by · search · sort</b> across Repo / Branch / Age / Harness, and it never blocks the app like a dialog. Pair it with <b>Option B</b> (a lightweight Active⇄Archived toggle in the sidebar) for one-click peeking.</div>
+</div>
+
+<!-- ============================ OPTION A (HERO) ============================ -->
+<div class="opt-label">
+  <span class="tag best">Option A · best</span>
+  <h2>Full-pane Archive surface (opens as a tab)</h2>
+  <p>Roomy, non-blocking, supports every grouping + search. Reuses the pane/tab model users already know.</p>
+</div>
+
+<div class="frame tall">
+  <div class="titlebar">
+    <span class="lights"><i></i><i></i><i></i></span>
+    <span class="tb-title">makit — Archive</span>
+  </div>
+
+  <!-- sidebar (active) -->
+  <aside class="sidebar">
+    <div class="sb-scroll">
+      <div class="repo">▾ makit <span class="count">4</span></div>
+      <div class="wt"><span class="mono">▸ feat/resume-sessions</span></div>
+      <div class="ses sel"><span class="dot"></span><span class="t">Adapter-native resume</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">SPEC-29 archive UX</span></div>
+      <div class="wt"><span class="mono">▸ main</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">PR status pill</span></div>
+      <div class="repo" style="margin-top:8px">▾ cmux <span class="count">1</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">Ghostty rebuild</span></div>
+    </div>
+    <div class="sb-foot">
+      <span class="chip"><span class="dot"></span> connected</span>
+      <span class="sb-icons">
+        <button title="Add repo">＋</button>
+        <button class="on" title="Archive">🗄</button>
+        <button title="Settings">⚙</button>
+      </span>
+    </div>
+  </aside>
+
+  <!-- main: archive surface -->
+  <section class="main">
+    <div class="arc-head">
+      <div class="arc-title">
+        <span style="color:var(--muted)">🗄</span>
+        <h3>Archive</h3><span class="n" id="count">· 7 sessions</span>
+        <span class="close">✕</span>
+      </div>
+      <div class="arc-controls">
+        <div class="search">🔎 <input placeholder="Search archived sessions…" oninput="search(this.value)"/></div>
+        <span class="groupby-label">Group by</span>
+        <div class="seg" id="seg">
+          <button class="on" onclick="group('repo',this)">Repo</button>
+          <button onclick="group('branch',this)">Branch</button>
+          <button onclick="group('age',this)">Age</button>
+          <button onclick="group('harness',this)">Harness</button>
+        </div>
+      </div>
+    </div>
+    <div class="arc-body" id="body"><!-- grouped rows injected --></div>
+  </section>
+</div>
+<p class="note">Group headers are sticky; each session row reveals <b>Restore</b> + <b>Open</b> (and an overflow → “Delete permanently”) on hover. Restore animates the row out and it reappears in the sidebar’s active tree.</p>
+
+<!-- ============================ OPTION B ============================ -->
+<div class="opt-label">
+  <span class="tag">Option B</span>
+  <h2>Sidebar toggle · Active ⇄ Archived</h2>
+  <p>Lowest-friction peek. Reuses the repo → worktree → session tree; grouping = the tree itself. Great companion to A.</p>
+</div>
+<div class="frame">
+  <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span><span class="tb-title">makit</span></div>
+  <aside class="sidebar" style="grid-column:1/3">
+    <div style="padding:10px 10px 4px"><div class="seg sm" style="width:100%;display:flex">
+      <button style="flex:1">Active</button><button class="on" style="flex:1">Archived · 7</button>
+    </div></div>
+    <div class="sb-scroll" style="max-height:280px">
+      <div class="repo">▾ makit <span class="count">5</span></div>
+      <div class="wt"><span class="mono">▸ feat/resume-sessions</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">Silent-load replay dedup</span><span class="age" style="margin-left:auto">2d</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">Capability negotiation</span><span class="age" style="margin-left:auto">3d</span></div>
+      <div class="wt"><span class="mono">▸ main</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">Push wake coordinator</span><span class="age" style="margin-left:auto">1w</span></div>
+      <div class="repo" style="margin-top:8px">▾ cmux <span class="count">2</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">Sidebar ExtensionKit</span><span class="age" style="margin-left:auto">3w</span></div>
+    </div>
+    <div class="sb-foot"><span class="chip" style="color:var(--muted)">↩ Restore on hover · full Archive ⌘⇧A</span></div>
+  </aside>
+</div>
+
+<!-- ============================ OPTION C ============================ -->
+<div class="opt-label">
+  <span class="tag">Option C</span>
+  <h2>Collapsible “Archived” drawer (bottom of sidebar)</h2>
+  <p>Always in reach, expands upward over the tree. Good for glanceable recents; cramped for heavy grouping.</p>
+</div>
+<div class="frame">
+  <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span><span class="tb-title">makit</span></div>
+  <aside class="sidebar">
+    <div class="sb-scroll" style="opacity:.5"><div class="repo">▾ makit <span class="count">4</span></div>
+      <div class="ses"><span class="dot"></span><span class="t">Adapter-native resume</span></div>
+      <div class="ses"><span class="dot idle"></span><span class="t">SPEC-29 archive UX</span></div></div>
+  </aside>
+  <section class="main"><div style="margin:auto;color:var(--muted);font-size:13px">chat pane</div></section>
+  <div class="drawer">
+    <div class="dh"><span class="chev">▾</span>🗄 Archived <span class="mini">7 · grouped by age</span>
+      <span style="margin-left:auto" class="mini">Group ▾ &nbsp; ⌘⇧A ↗</span></div>
+    <div class="arc-body" style="padding:6px 12px">
+      <div class="grp-h"><span class="gi">☀</span><span class="gt">This week</span><span class="line"></span><span class="gc">3</span></div>
+      <div class="row"><span class="glyph pi">π</span><div class="rc"><div class="top"><span class="name">Silent-load replay dedup</span></div><div class="prev">verify no duplicate events on resume…</div></div><span class="mchip branch">feat/resume</span><span class="age">2d</span><span class="actions"><button class="btn restore">↩ Restore</button></span></div>
+      <div class="row"><span class="glyph codex">⌥</span><div class="rc"><div class="top"><span class="name">PR status pill</span></div><div class="prev">CI checks rollup + inline actions…</div></div><span class="mchip branch">main</span><span class="age">5d</span><span class="actions"><button class="btn restore">↩ Restore</button></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================ OPTION D ============================ -->
+<div class="opt-label">
+  <span class="tag">Option D</span>
+  <h2>Right inspector rail (slides in, non-modal)</h2>
+  <p>Keeps chat visible beside it. Narrow — grouping works but rows get tight; better as a “recently archived” peek.</p>
+</div>
+<div class="frame d">
+  <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span><span class="tb-title">makit</span></div>
+  <aside class="sidebar"><div class="sb-scroll" style="opacity:.5"><div class="repo">▾ makit</div><div class="ses"><span class="dot"></span><span class="t">Adapter-native resume</span></div></div></aside>
+  <section class="main"><div style="margin:auto;color:var(--muted);font-size:13px">chat pane (stays visible)</div></section>
+  <aside class="rail">
+    <div class="arc-head" style="padding:14px 16px 10px"><div class="arc-title"><span style="color:var(--muted)">🗄</span><h3 style="font-size:14px">Archived</h3><span class="n">· 7</span><span class="close">✕</span></div>
+      <div class="arc-controls" style="margin-top:10px"><div class="seg sm"><button class="on">Age</button><button>Repo</button><button>Harness</button></div></div></div>
+    <div class="arc-body" style="padding:6px 10px">
+      <div class="grp-h"><span class="gt">Today</span><span class="line"></span><span class="gc">1</span></div>
+      <div class="row" style="padding:9px 8px"><span class="glyph pi" style="width:26px;height:26px">π</span><div class="rc"><div class="name" style="font-size:12.5px">Adapter-native resume</div><div class="prev">reattach across restart…</div></div><span class="actions" style="opacity:1"><button class="btn restore">↩</button></span></div>
+      <div class="grp-h"><span class="gt">This week</span><span class="line"></span><span class="gc">3</span></div>
+      <div class="row" style="padding:9px 8px"><span class="glyph codex" style="width:26px;height:26px">⌥</span><div class="rc"><div class="name" style="font-size:12.5px">PR status pill</div><div class="prev">CI checks rollup…</div></div><span class="actions" style="opacity:1"><button class="btn restore">↩</button></span></div>
+    </div>
+  </aside>
+</div>
+
+<p class="note" style="margin-top:34px"><b>Grouping model (applies to A/B/D):</b>
+&nbsp;<b>Repo</b> → repo header, worktree sub-label.&nbsp;
+<b>Branch</b> → one section per worktree/branch (monospace).&nbsp;
+<b>Age</b> → Today · This week · Last 30 days · Older.&nbsp;
+<b>Harness</b> → Pi (green) · Codex (blue), with a count each. Secondary sort inside every group = most-recent first.</p>
+
+<script>
+// realistic archived dataset
+const S = [
+  {n:"Adapter-native resume", p:"reattach a cold session across a server restart", repo:"makit", br:"feat/resume-sessions", h:"pi", d:0, days:"Today", ms:214},
+  {n:"SPEC-29 archive UX", p:"grouped archive surface, restore flow", repo:"makit", br:"feat/resume-sessions", h:"pi", d:1, days:"This week", ms:88},
+  {n:"Silent-load replay dedup", p:"drop replayed history so the log stays authoritative", repo:"makit", br:"feat/resume-sessions", h:"pi", d:2, days:"This week", ms:132},
+  {n:"PR status pill", p:"CI checks rollup + inline PR actions", repo:"makit", br:"main", h:"codex", d:5, days:"This week", ms:76},
+  {n:"Push wake coordinator", p:"force-quit background wake for notifications", repo:"makit", br:"main", h:"pi", d:9, days:"Last 30 days", ms:301},
+  {n:"Ghostty rebuild", p:"GhosttyKit.xcframework + submodule pointer", repo:"cmux", br:"feat/ghostty", h:"codex", d:20, days:"Last 30 days", ms:44},
+  {n:"Sidebar ExtensionKit", p:"tagged debug builds, hot reload", repo:"cmux", br:"feat/sidebar-ext", h:"codex", d:63, days:"Older", ms:158},
+];
+const glyph = h => h==="pi" ? '<span class="glyph pi">π</span>' : '<span class="glyph codex">⌥</span>';
+const age = d => d===0?"today":(d<7?d+"d":(d<30?Math.round(d/7)+"w":Math.round(d/30)+"mo"));
+const gicon = {repo:"◆", branch:"⑂", age:"☀", harness:"◇"};
+let mode="repo", q="";
+
+function row(s){
+  return `<div class="row">
+    ${glyph(s.h)}
+    <div class="rc"><div class="top"><span class="name">${s.n}</span></div><div class="prev">${s.p}</div></div>
+    <div class="meta">
+      ${mode!=="branch"?`<span class="mchip branch">${s.br}</span>`:""}
+      ${mode!=="harness"?`<span class="mchip ${s.h}">${s.h==="pi"?"Pi":"Codex"}</span>`:""}
+      <span class="mchip">${s.ms} msgs</span>
+    </div>
+    <span class="age">${age(s.d)}</span>
+    <span class="actions">
+      <button class="btn restore">↩ Restore</button>
+      <button class="btn ghost">Open</button>
+    </span>
+  </div>`;
+}
+function keyOf(s){
+  if(mode==="repo")   return {k:s.repo, t:s.repo, sub:""};
+  if(mode==="branch") return {k:s.repo+"/"+s.br, t:s.br, sub:s.repo};
+  if(mode==="age")    return {k:s.days, t:s.days, sub:""};
+  return {k:s.h, t:s.h==="pi"?"Pi":"Codex", sub:""};
+}
+const ORDER = {age:["Today","This week","Last 30 days","Older"]};
+function render(){
+  const items = S.filter(s => (s.n+s.p+s.br+s.repo).toLowerCase().includes(q.toLowerCase()));
+  const groups = {};
+  items.forEach(s=>{const g=keyOf(s); (groups[g.k] ||= {t:g.t,sub:g.sub,items:[]}).items.push(s);});
+  let keys = Object.keys(groups);
+  if(mode==="age") keys.sort((a,b)=>ORDER.age.indexOf(a)-ORDER.age.indexOf(b));
+  else keys.sort();
+  document.getElementById("count").textContent = "· "+items.length+" session"+(items.length!==1?"s":"");
+  document.getElementById("body").innerHTML = keys.map(k=>{
+    const g=groups[k]; g.items.sort((a,b)=>a.d-b.d);
+    return `<div class="grp">
+      <div class="grp-h"><span class="gi">${gicon[mode]}</span>
+        <span class="gt">${g.t}</span>${g.sub?`<span class="gsub">${g.sub}</span>`:""}
+        <span class="line"></span><span class="gc">${g.items.length}</span></div>
+      ${g.items.map(row).join("")}
+    </div>`;
+  }).join("") || `<div style="color:var(--muted);text-align:center;padding:60px 0">No archived sessions match “${q}”.</div>`;
+}
+function group(m,btn){mode=m;[...document.querySelectorAll("#seg button")].forEach(b=>b.classList.remove("on"));btn.classList.add("on");render();}
+function search(v){q=v;render();}
+render();
+</script>
+</body>
+</html>
