@@ -406,7 +406,8 @@ class _CliRowState extends ConsumerState<_CliRow> {
       SnackBar(
         content: Text(
           result.ok
-              ? 'Installed makit CLI to ${result.installedPath}'
+              ? 'Installed makit CLI to ${result.installedPath}. If your '
+                    'terminal can’t find `makit`, add ~/.local/bin to your PATH.'
               : 'Install failed: ${result.error}',
         ),
       ),

@@ -55,7 +55,7 @@ void main() {
       expect(wrapper.existsSync(), isTrue);
       final content = wrapper.readAsStringSync();
       expect(content, startsWith('#!/bin/sh'));
-      expect(content, contains('exec "$bundled"'));
+      expect(content, contains("exec '$bundled'"));
       // Owner execute bit set.
       expect(wrapper.statSync().mode & 0x40, isNot(0));
       // The wrapper actually runs the bundled CLI.
@@ -90,6 +90,24 @@ void main() {
       expect(result.ok, isFalse);
       expect(result.error, contains('bundled'));
       expect(File('${tmp.path}/.local/bin/makit').existsSync(), isFalse);
+    });
+
+    test('install handles a bundle path with shell metacharacters', () async {
+      // A bundle path containing a space and a `$` must not break the wrapper.
+      final dir = Directory('${tmp.path}/o d\$dir')..createSync();
+      final bundled = File('${dir.path}/makit')
+        ..writeAsStringSync('#!/bin/sh\necho bundled\n');
+      Process.runSync('chmod', ['+x', bundled.path]);
+      final installer = CliInstaller(
+        bundledCliPath: () => bundled.path,
+        homeDir: () => tmp.path,
+      );
+
+      final result = await installer.install();
+
+      expect(result.ok, isTrue);
+      final run = Process.runSync(result.installedPath!, []);
+      expect((run.stdout as String).trim(), 'bundled');
     });
 
     test('install surfaces filesystem errors instead of throwing', () async {

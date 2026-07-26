@@ -3,8 +3,9 @@
 /// Release builds ship a self-contained CLI inside the app bundle at
 /// `Contents/Resources/makit/makit` (see `scripts/bundle-makit-cli.sh`). This
 /// service installs a tiny wrapper at `~/.local/bin/makit` that execs the
-/// bundled copy, so the CLI resolver (and the user's terminal) can find it
-/// without any manual setup.
+/// bundled copy. The in-app CLI resolver looks there directly, so the app finds
+/// it with no further setup; a terminal only finds `makit` if `~/.local/bin` is
+/// on the user's `PATH` (not guaranteed by default on macOS).
 ///
 /// A symlink would not work: the bundled shim locates its sibling `node` and
 /// `dist/` via `dirname "$0"`, which for a symlink resolves to the *link's*
@@ -66,7 +67,7 @@ class CliInstaller {
       File(target).writeAsStringSync(
         '#!/bin/sh\n'
         '# Installed by the Makit app — execs the CLI bundled inside the .app.\n'
-        'exec "$bundled" "\$@"\n',
+        'exec ${_shellSingleQuote(bundled)} "\$@"\n',
       );
       final chmod = Process.runSync('chmod', ['755', target]);
       if (chmod.exitCode != 0) {
@@ -77,6 +78,12 @@ class CliInstaller {
       return CliInstallResult.failure(e.message);
     }
   }
+
+  /// Single-quote-escapes [s] for safe embedding in a POSIX shell script,
+  /// so a bundle path containing spaces, `$`, `"`, backticks, or `\` can't
+  /// break the generated `exec` line.
+  static String _shellSingleQuote(String s) =>
+      "'${s.replaceAll("'", r"'\''")}'";
 
   static String _defaultBundledCliPath() {
     final exeDir = File(Platform.resolvedExecutable).parent.path;

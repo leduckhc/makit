@@ -328,10 +328,7 @@ void main() {
       if (bundled) {
         File(path).createSync(recursive: true);
       }
-      return CliInstaller(
-        bundledCliPath: () => path,
-        homeDir: () => tmp.path,
-      );
+      return CliInstaller(bundledCliPath: () => path, homeDir: () => tmp.path);
     }
 
     Future<void> scrollToCli(WidgetTester tester) async {
@@ -360,14 +357,8 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(
-        File('${tmp.path}/.local/bin/makit').existsSync(),
-        isTrue,
-      );
-      expect(
-        find.textContaining('Installed makit CLI'),
-        findsOneWidget,
-      );
+      expect(File('${tmp.path}/.local/bin/makit').existsSync(), isTrue);
+      expect(find.textContaining('Installed makit CLI'), findsOneWidget);
     });
 
     testWidgets('hidden when the build has no bundled CLI', (tester) async {
