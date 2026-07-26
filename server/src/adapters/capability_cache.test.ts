@@ -46,6 +46,28 @@ test("serve probes once on a cold cache and enriches the descriptor", async () =
   assert.equal(served.configOptions?.[0].id, "model");
 });
 
+test("concurrent serve() calls coalesce into a single in-flight probe", async () => {
+  let calls = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const prober: Prober = async () => {
+    calls += 1;
+    await gate; // hold both callers inside the probe simultaneously
+    return [MODEL_OPTION];
+  };
+  const cache = new CapabilityCache({ path: tmpCachePath(), prober });
+  const a = cache.serve(piDescriptor("fp1"));
+  const b = cache.serve(piDescriptor("fp1"));
+  release();
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.equal(calls, 1, "the harness is probed once, not per caller");
+  assert.equal(ra.configOptions?.[0].id, "model");
+  assert.equal(rb.configOptions?.[0].id, "model");
+  // A later call after the in-flight entry cleared still re-probes on change.
+  await cache.serve(piDescriptor("fp2"));
+  assert.equal(calls, 2);
+});
+
 test("serve does NOT re-probe when the fingerprint is unchanged (warm cache)", async () => {
   const { prober, calls } = countingProber();
   const cache = new CapabilityCache({ path: tmpCachePath(), prober });
