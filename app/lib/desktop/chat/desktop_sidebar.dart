@@ -37,7 +37,8 @@ class DesktopSidebar extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Material(
-      color: cs.surfaceContainer,
+      // Recessed chrome floor — darker than the surface-1 chat content (DESIGN §5).
+      color: cs.surfaceContainerLowest,
       child: Column(
         children: [
           const _Header(),
@@ -493,7 +494,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                 child: Ink(
                   decoration: BoxDecoration(
                     color: worktreeSelected
-                        ? theme.colorScheme.surfaceContainerHighest
+                        ? theme.colorScheme.surfaceContainer
                         : null,
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -838,7 +839,7 @@ class _DraftWorktreeTile extends StatelessWidget {
           child: Ink(
             decoration: BoxDecoration(
               color: selected
-                  ? theme.colorScheme.surfaceContainerHighest
+                  ? theme.colorScheme.surfaceContainer
                   : null,
               borderRadius: BorderRadius.circular(6),
             ),
@@ -930,7 +931,7 @@ class _SessionTile extends StatelessWidget {
         dense: true,
         visualDensity: VisualDensity.compact,
         selected: selected,
-        selectedTileColor: theme.colorScheme.surfaceContainerHighest,
+        selectedTileColor: theme.colorScheme.surfaceContainer,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         contentPadding: EdgeInsets.only(left: indented ? 24 : 8, right: 12),
         title: Row(

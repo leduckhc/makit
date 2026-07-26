@@ -25,7 +25,9 @@ class SettingsGroup extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Material(
-        color: cs.surfaceContainerHigh,
+        // Settings rows on the lifted (surface-1) detail column bump to
+        // surface-2 for contrast (DESIGN §5).
+        color: cs.surfaceContainerLow,
         borderRadius: BorderRadius.circular(12),
         clipBehavior: Clip.antiAlias,
         child: Column(

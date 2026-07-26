@@ -66,13 +66,13 @@ class _SidebarResizeHandle extends ConsumerWidget {
             children: [
               // Title-band fill, right of the sidebar divider, so the top band
               // stays continuous with the sidebar + pane title
-              // (surfaceContainer) with no gap.
+              // (canvas chrome) with no gap.
               Positioned(
                 left: 1,
                 right: 0,
                 top: 0,
                 height: kTitleBarStripHeight,
-                child: ColoredBox(color: cs.surfaceContainer),
+                child: ColoredBox(color: cs.surfaceContainerLowest),
               ),
               // Titlebar bottom hairline — right of the sidebar divider only,
               // so it meets but never crosses the sidebar; it continues into

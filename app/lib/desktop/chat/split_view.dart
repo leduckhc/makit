@@ -283,7 +283,9 @@ class _TabBar extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     return Container(
       height: _kTabBarHeight,
-      color: cs.surfaceContainerLow,
+      // Tab strip is chrome — canvas, so the active tab (surface-1) seats up
+      // into the lifted content body below (DESIGN §5).
+      color: cs.surfaceContainerLowest,
       child: Stack(
         children: [
           // The empty header area is the split's drag handle (VSCode-style):

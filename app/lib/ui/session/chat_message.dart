@@ -59,10 +59,11 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // User bubble is neutral grey (design system) — never the green accent.
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final bubble = dark ? const Color(0xFF2E2E2E) : const Color(0xFFEBEBEB);
-    final onBubble = dark ? const Color(0xFFF5F5F5) : const Color(0xFF1B1B1B);
+    // User bubble sits on surface-3 with a 1px hairline (DESIGN §6) — never
+    // the green accent.
+    final cs = Theme.of(context).colorScheme;
+    final bubble = cs.surfaceContainer;
+    final onBubble = cs.onSurface;
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -76,6 +77,7 @@ class ChatBubble extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: bubble,
+                border: Border.all(color: cs.outlineVariant),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(kChatRadiusLarge),
                   topRight: Radius.circular(kChatRadiusLarge),

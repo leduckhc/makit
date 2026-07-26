@@ -35,7 +35,7 @@ class WorkspaceView extends ConsumerWidget {
         // zone; when the sidebar is folded it also owns the only "show sidebar"
         // affordance.
         ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainer,
+          color: Theme.of(context).colorScheme.surfaceContainerLowest,
           child: TitleBarStrip(
             leading: collapsed
                 ? const SidebarToggleButton(collapse: false)

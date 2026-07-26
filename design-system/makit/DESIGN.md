@@ -89,36 +89,51 @@ shouting.
 
 ## 3. Typography
 
+makit ships **two type scales**: a **landing/marketing** scale (large hero
+display) and the **product (dashboard/chat) scale** used by the app itself. The
+values below are the **product scale** — dense and information-first, anchored
+at a **13px body**. (The marketing scale — display 40–56, body 16 — lives only
+in landing pages, never in the client.)
+
 - **Display / Text:** system font — SF Pro on Apple platforms; **Inter**
   (500/600/700) is the cross-platform substitute.
 - **Mono:** `ui-monospace` / SF Mono; **JetBrains Mono** as substitute. Code,
   diffs, IDs, repo paths only.
-- Aggressive **negative tracking on display** (≈-1.0px at 40px, -1.8px at 56px);
-  body holds ≈-0.05px. Eyebrows use **positive** tracking (+0.4px).
-- Display weight 600 paired with body weight 400 — resist 700+ on display.
-- Body ≥ 15–16px, line-height ~1.5.
+- Titles carry **negative tracking** (-0.1 at 13px → -0.4 at 24px); body holds
+  ≈-0.05px. Tiny meta (`caption`) gets **positive** tracking (+0.2px) for
+  legibility.
+- Titles weight 600, body 400, labels 500 — resist heavier display weights at
+  these small sizes.
+- Body is **13px**, line-height ~1.45. A dashboard rarely needs hero type, so
+  `display`/`headline` stay small (20–24px).
 
-| Role | Size / weight | Notes |
-|------|---------------|-------|
-| display | 40–56px / 600 | screen titles, marketing |
-| headline | 28px / 600 | section headings |
-| card-title | 22px / 500 | project name, screen title |
-| body | 16px / 400 | default |
-| body-sm | 14px / 400 | list rows, buttons |
-| caption | 12px / 400 | meta, status |
-| button | 14px / 500 | all button labels |
-| eyebrow | 13px / 500 · +0.4px | section eyebrow |
-| mono | 13px / 400 | code, diffs, IDs |
+| Role | Material slot | Size / weight | Track | Use |
+|------|---------------|---------------|-------|-----|
+| display | `displaySmall` | 24 / 600 | -0.4 | empty-state hero (rare) |
+| headline | `headlineSmall` | 20 / 600 | -0.3 | screen / onboarding hero |
+| title-lg | `titleLarge` | 17 / 600 | -0.3 | dialog & settings titles |
+| title | `titleMedium` | 15 / 600 | -0.2 | card / section titles |
+| subtitle | `titleSmall` | 13 / 600 | -0.1 | row / pane titles, session name |
+| body-lg | `bodyLarge` | 14 / 400 | -0.1 | emphasized body |
+| **body** | `bodyMedium` | **13 / 400** | -0.05 | default text, chat |
+| body-sm | `bodySmall` | 12 / 400 | 0 | secondary text, previews, meta |
+| button | `labelLarge` | 13 / 500 | -0.1 | button labels |
+| label | `labelMedium` | 12 / 500 | 0 | small controls |
+| caption | `labelSmall` | 11 / 500 | +0.2 | timestamps, status, footnotes |
+| mono | — | 12–13 / 400 | 0 | code, diffs, IDs, paths |
 
 ---
 
 ## 4. Spacing, radius, layout
 
 - **Base unit 4px.** Tokens: `xxs 4 · xs 8 · sm 12 · md 16 · lg 24 · xl 32 · xxl 48`.
-- Card padding `lg 24`; button padding `8×14`; input padding `8×12`.
-- **Radius:** `xs 4` (chips/badges) · `sm 6` (tags) · `md 8` (**buttons, inputs**)
-  · `lg 12` (cards) · `xl 16` (screenshot/phone/window frames) · `pill 9999`
-  (status pills, toggles) · `full 9999` (avatars). **Never pill-round CTAs.**
+- **Product density is tighter than the landing page.** In the dashboard/chat
+  client: card / group padding `sm 12`–`md 16` (landing uses `lg 24`); button
+  padding `8×14`; input padding `9×10`; compact list rows ~30–34px high.
+- **Radius:** `xs 4` (chips/badges) · `sm 6` (tags) · `md 8` (**buttons, inputs,
+  tabs, segmented knobs**) · `lg 12` (**cards, dialogs, menus**) · `xl 16`
+  (screenshot/phone/window frames) · `pill 9999` (status pills, toggles) ·
+  `full 9999` (avatars). **Never pill-round CTAs.**
 - Desktop content max ~1280px; readable chat column capped ~720px.
 
 ### Chat transcript tokens (from `app/lib/ui/session/chat_metrics.dart`)

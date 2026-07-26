@@ -50,8 +50,14 @@ class SettingsNavPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final searching = query.trim().isNotEmpty;
-    return Column(
+    // Nav pane is recessed chrome (canvas), darker than the surface-1 detail
+    // pane it sits beside (DESIGN §5). Material (not ColoredBox) so the
+    // section ListTiles can paint their ink/selection on it.
+    return Material(
+      color: cs.surfaceContainerLowest,
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Clear the macOS traffic-light buttons that overlay the top-left
@@ -82,6 +88,7 @@ class SettingsNavPane extends StatelessWidget {
                 ),
         ),
       ],
+      ),
     );
   }
 }
@@ -129,7 +136,7 @@ class _SectionList extends StatelessWidget {
           ListTile(
             selected: section.id == selectedId,
             selectedColor: cs.primary,
-            selectedTileColor: cs.surfaceContainerHighest,
+            selectedTileColor: cs.surfaceContainer,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),

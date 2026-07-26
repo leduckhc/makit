@@ -1,57 +1,69 @@
 import 'package:flutter/material.dart';
 
 // ---------------------------------------------------------------------------
-// makit design tokens — modern & minimalistic.
+// makit design tokens — Linear-based flat surface system (see DESIGN.md).
 //
-// One green accent on a monochrome neutral ramp. Chrome is borderless by
-// default (background steps + whitespace do the separating), hairlines only
-// where structure demands them. Two radii: 6 for controls/pills/inputs, 10
-// for cards/dialogs/menus. Type is a tight 13/12/11 desktop ramp with subtle
-// negative tracking on titles.
+// Dark-first, flat depth via a surface ladder + 1px hairlines (no shadows in
+// dark). A single green accent used scarcely. Desktop chrome (sidebar/topbar)
+// is DARKER than content in both modes: canvas → surface-1 (content) →
+// surface-2/3/4 for bubbles/cards. Two radii: 8 for controls (buttons/inputs),
+// 12 for surfaces (cards/dialogs/menus). Type keeps a compact 13/12/11 desktop
+// ramp (DESIGN.md §6 documents the desktop density) with negative tracking.
+//
+// M3-slot → DESIGN-ladder mapping (dark values shown):
+//   surface                = surface-1 #0c0d10  (lifted chat content, active tab)
+//   surfaceContainerLowest = canvas    #010102  (recessed chrome: sidebar/topbar/tab strip)
+//   surfaceContainerLow    = surface-2 #16171b  (agent bubble, settings rows)
+//   surfaceContainer       = surface-3 #1d1f24  (user bubble, active nav, tool card)
+//   surfaceContainerHigh   = surface-4 #25272d  (composer field, pr bar)
+//   surfaceContainerHighest= deepest   #2b2d34  (selected/hover states)
 // ---------------------------------------------------------------------------
 
-/// makit brand green — the single accent. Used sparingly: the primary CTA,
-/// active/status signals. Fills always carry dark ink text ([kMakitInk]).
+/// makit brand-mark green — decorative only: the `makit` logo mark and the
+/// connection dot. NOT the CTA fill (that is `primary`, deepened for contrast).
 const kMakitAccent = Color(0xFF4ADE80);
 
-/// Near-black ink used on accent fills (and as light-mode onSurface).
-const kMakitInk = Color(0xFF0B0B0B);
+/// Near-black ink (light-mode onSurface headline color).
+const kMakitInk = Color(0xFF0B0D0F);
 
-/// Radius for small controls: pills, inputs, buttons, tabs, segmented knobs.
-const kRadiusControl = 6.0;
+/// Radius for small controls: buttons, inputs, tabs, segmented knobs (DESIGN md 8).
+const kRadiusControl = 8.0;
 
-/// Radius for surfaces: cards, dialogs, menus.
-const kRadiusSurface = 10.0;
+/// Radius for surfaces: cards, dialogs, menus (DESIGN lg 12).
+const kRadiusSurface = 12.0;
 
-// ----- Neutral (chroma-0) surface ramp -------------------------------------
-// Pure grey steps — no M3 seed tint — while keeping the M3 Lowest → Highest
-// elevation stepping so existing `surfaceContainer*` call sites keep working.
-const _surfaceLight = Color(0xFFFAFAFA); // scaffold background
-const _containerLowestLight = Color(0xFFFFFFFF);
-const _containerLowLight = Color(0xFFF4F4F4);
-const _containerLight = Color(0xFFEDEDED);
-const _containerHighLight = Color(0xFFE7E7E7);
-const _containerHighestLight = Color(0xFFE0E0E0);
-const _onSurfaceLight = kMakitInk;
-const _mutedLight = Color(0xFF6B6B6B);
-const _hairlineLight = Color(0xFFE2E2E2);
+// ----- Surface ladder (DESIGN.md §2) ---------------------------------------
+// Dark is a deep, faintly blue-tinted near-black (never #000). Light floors on
+// an off-white canvas with white lifted content. `surfaceContainerLowest` is
+// repurposed as the recessed *canvas* (darkest chrome), so chrome reads darker
+// than the `surface` (surface-1) content column in both modes.
+const _canvasLight = Color(0xFFF7F8FA); // surfaceContainerLowest — chrome floor
+const _surface1Light = Color(0xFFFFFFFF); // surface — lifted content
+const _surface2Light = Color(0xFFF0F1F4); // surfaceContainerLow
+const _surface3Light = Color(0xFFE8EAEE); // surfaceContainer
+const _surface4Light = Color(0xFFDFE1E7); // surfaceContainerHigh
+const _surfaceTopLight = Color(0xFFD7D9E0); // surfaceContainerHighest
+const _onSurfaceLight = Color(0xFF0B0D0F);
+const _mutedLight = Color(0xFF6B7280);
+const _hairlineLight = Color(0xFFE4E5EA);
 
-const _surfaceDark = Color(0xFF161616); // scaffold background
-const _containerLowestDark = Color(0xFF101010);
-const _containerLowDark = Color(0xFF1C1C1C);
-const _containerDark = Color(0xFF222222);
-const _containerHighDark = Color(0xFF292929);
-const _containerHighestDark = Color(0xFF323232);
-const _onSurfaceDark = Color(0xFFF2F2F2);
-const _mutedDark = Color(0xFF9C9C9C);
-const _hairlineDark = Color(0xFF2E2E2E);
+const _canvasDark = Color(0xFF010102); // surfaceContainerLowest — chrome floor
+const _surface1Dark = Color(0xFF0C0D10); // surface — lifted content
+const _surface2Dark = Color(0xFF16171B); // surfaceContainerLow
+const _surface3Dark = Color(0xFF1D1F24); // surfaceContainer
+const _surface4Dark = Color(0xFF25272D); // surfaceContainerHigh
+const _surfaceTopDark = Color(0xFF2B2D34); // surfaceContainerHighest
+const _onSurfaceDark = Color(0xFFF7F8F8);
+const _mutedDark = Color(0xFF8A8F98);
+const _hairlineDark = Color(0xFF23252A);
 
-// ----- Accent bindings ------------------------------------------------------
-// The raw brand green is too light to read as text/icon on white, so light
-// mode gets a deepened green for `primary` (links, active icons, status dots)
-// while *fills* stay brand green + ink via the button themes below.
-const _primaryLight = Color(0xFF15803D);
-const _primaryDark = kMakitAccent;
+// ----- Accent bindings (DESIGN.md §2) --------------------------------------
+// `primary` is the deepened CTA/active/focus green — distinct from the bright
+// decorative brand-mark ([kMakitAccent]). Light darkens further so white
+// `on-primary` text clears 4.5:1.
+const _primaryLight = Color(0xFF1F9D63);
+const _primaryDark = Color(0xFF4CB782);
+const _onPrimaryDark = Color(0xFF04130B);
 
 ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
@@ -61,7 +73,7 @@ ThemeData _build(Brightness brightness) {
         brightness: brightness,
       ).copyWith(
         primary: dark ? _primaryDark : _primaryLight,
-        onPrimary: dark ? kMakitInk : Colors.white,
+        onPrimary: dark ? _onPrimaryDark : Colors.white,
         primaryContainer: dark
             ? const Color(0xFF1E3A29)
             : const Color(0xFFDCF5E4),
@@ -71,27 +83,23 @@ ThemeData _build(Brightness brightness) {
         // Secondary/tertiary collapse to neutrals/accent so no stray M3
         // pastel tints survive (chips, tonal buttons, status glyphs).
         secondary: dark ? _mutedDark : _mutedLight,
-        onSecondary: dark ? _surfaceDark : Colors.white,
-        secondaryContainer: dark ? _containerHighDark : _containerHighLight,
+        onSecondary: dark ? _canvasDark : Colors.white,
+        secondaryContainer: dark ? _surface4Dark : _surface4Light,
         onSecondaryContainer: dark ? _onSurfaceDark : _onSurfaceLight,
         tertiary: dark ? _primaryDark : _primaryLight,
-        tertiaryContainer: dark ? _containerHighDark : _containerHighLight,
+        tertiaryContainer: dark ? _surface4Dark : _surface4Light,
         onTertiaryContainer: dark ? _onSurfaceDark : _onSurfaceLight,
-        // Neutral (C=0) surface ramp — M3 elevation stepping, no tint.
-        surface: dark ? _surfaceDark : _surfaceLight,
+        // Neutral surface ladder — blue-tinted near-black in dark (DESIGN §2).
+        surface: dark ? _surface1Dark : _surface1Light,
         onSurface: dark ? _onSurfaceDark : _onSurfaceLight,
         onSurfaceVariant: dark ? _mutedDark : _mutedLight,
         outline: dark ? _mutedDark : _mutedLight,
         outlineVariant: dark ? _hairlineDark : _hairlineLight,
-        surfaceContainerLowest: dark
-            ? _containerLowestDark
-            : _containerLowestLight,
-        surfaceContainerLow: dark ? _containerLowDark : _containerLowLight,
-        surfaceContainer: dark ? _containerDark : _containerLight,
-        surfaceContainerHigh: dark ? _containerHighDark : _containerHighLight,
-        surfaceContainerHighest: dark
-            ? _containerHighestDark
-            : _containerHighestLight,
+        surfaceContainerLowest: dark ? _canvasDark : _canvasLight,
+        surfaceContainerLow: dark ? _surface2Dark : _surface2Light,
+        surfaceContainer: dark ? _surface3Dark : _surface3Light,
+        surfaceContainerHigh: dark ? _surface4Dark : _surface4Light,
+        surfaceContainerHighest: dark ? _surfaceTopDark : _surfaceTopLight,
         surfaceTint: Colors.transparent,
       );
 
@@ -100,21 +108,36 @@ ThemeData _build(Brightness brightness) {
   final hover = scheme.onSurface.withValues(alpha: dark ? 0.06 : 0.05);
   final pressed = scheme.onSurface.withValues(alpha: dark ? 0.10 : 0.08);
 
-  // ----- Typography: tight desktop ramp — 13 UI / 12 body-s / 11 metadata --
-  // Titles 600 with -0.1..-0.2 tracking, body 400, labels 500.
+  // ----- Typography: dashboard/chat ramp anchored at 13px body -----------
+  // A dense product scale (NOT the landing-page scale in DESIGN.md §3):
+  // body 13, meta 12/11, titles 15/17 with negative tracking; display/headline
+  // stay small (20–24) since a dashboard rarely needs hero type. Titles 600,
+  // body 400, labels 500.
   const family = 'SF Pro Text';
   final textTheme =
       TextTheme(
+        displaySmall: const TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.4,
+          height: 1.2,
+        ),
+        headlineSmall: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.3,
+          height: 1.25,
+        ),
         titleLarge: const TextStyle(
           fontSize: 17,
           fontWeight: FontWeight.w600,
-          letterSpacing: -0.2,
+          letterSpacing: -0.3,
           height: 1.3,
         ),
         titleMedium: const TextStyle(
-          fontSize: 14,
+          fontSize: 15,
           fontWeight: FontWeight.w600,
-          letterSpacing: -0.15,
+          letterSpacing: -0.2,
           height: 1.3,
         ),
         titleSmall: const TextStyle(
@@ -132,6 +155,7 @@ ThemeData _build(Brightness brightness) {
         bodyMedium: const TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w400,
+          letterSpacing: -0.05,
           height: 1.45,
         ),
         bodySmall: const TextStyle(
@@ -153,6 +177,7 @@ ThemeData _build(Brightness brightness) {
         labelSmall: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w500,
+          letterSpacing: 0.2,
           height: 1.2,
           color: muted,
         ),
@@ -190,8 +215,8 @@ ThemeData _build(Brightness brightness) {
     // ----- Buttons: quiet by default; one filled green CTA -----------------
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        backgroundColor: kMakitAccent,
-        foregroundColor: kMakitInk,
+        backgroundColor: scheme.primary,
+        foregroundColor: scheme.onPrimary,
         disabledBackgroundColor: scheme.onSurface.withValues(alpha: 0.08),
         disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.35),
         elevation: 0,
@@ -201,7 +226,7 @@ ThemeData _build(Brightness brightness) {
         textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
       ).copyWith(
         overlayColor: WidgetStatePropertyAll(
-          kMakitInk.withValues(alpha: 0.08),
+          scheme.onPrimary.withValues(alpha: 0.10),
         ),
       ),
     ),
