@@ -501,7 +501,12 @@ class _TabChip extends ConsumerWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => controller.setActiveTab(split.id, tab.id),
-              child: chip,
+              // Inactive tabs are dimmed so only the active tab reads at full
+              // strength (its green status dot / label stands out); inactive
+              // tabs recede as muted context.
+              child: active
+                  ? chip
+                  : Opacity(opacity: 0.55, child: chip),
             ),
           ),
         );

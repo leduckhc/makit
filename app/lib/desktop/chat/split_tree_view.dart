@@ -109,11 +109,11 @@ class _SplitterView extends ConsumerWidget {
     final horizontal = splitter.axis == Axis.horizontal;
     final firstFlex = (splitter.ratio * 1000).round();
     final secondFlex = 1000 - firstFlex;
-    final first = Flexible(
+    final first = Expanded(
       flex: firstFlex,
       child: _NodeView(node: splitter.first, activeSplitId: activeSplitId),
     );
-    final second = Flexible(
+    final second = Expanded(
       flex: secondFlex,
       child: _NodeView(node: splitter.second, activeSplitId: activeSplitId),
     );
@@ -122,6 +122,15 @@ class _SplitterView extends ConsumerWidget {
         final extent = horizontal
             ? constraints.maxWidth
             : constraints.maxHeight;
+        final children = [first, second];
+        // The two children abut with no gap so a tab strip's edge touches the
+        // seam; the draggable divider is overlaid on the seam (straddling both
+        // panes) rather than occupying layout space, which would push the
+        // panes apart and leave an empty strip beside the tabs.
+        final content = horizontal
+            ? Row(children: children)
+            : Column(children: children);
+        final boundary = splitter.ratio * extent;
         final divider = _SplitterDivider(
           axis: splitter.axis,
           onDrag: (delta) {
@@ -133,10 +142,20 @@ class _SplitterView extends ConsumerWidget {
                 .adjustRatio(splitter.id, delta / extent);
           },
         );
-        final children = [first, divider, second];
-        return horizontal
-            ? Row(children: children)
-            : Column(children: children);
+        return Stack(
+          children: [
+            content,
+            Positioned(
+              left: horizontal ? boundary - _kDividerExtent / 2 : 0,
+              right: horizontal ? null : 0,
+              top: horizontal ? 0 : boundary - _kDividerExtent / 2,
+              bottom: horizontal ? 0 : null,
+              width: horizontal ? _kDividerExtent : null,
+              height: horizontal ? null : _kDividerExtent,
+              child: divider,
+            ),
+          ],
+        );
       },
     );
   }
