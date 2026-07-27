@@ -262,8 +262,10 @@ export class SessionManager extends EventEmitter {
   /** The archived sessions (SPEC-29), for the "Show archived" list. Newest first.
    *  Each is tagged `orphaned` when its recorded worktree is no longer an active
    *  worktree of the project (e.g. the worktree was removed) so the UI can flag
-   *  it and offer a recreate-or-run-at-root resume. Sessions whose project has
-   *  been removed are omitted entirely — they're unreachable (no repo/cwd). */
+   *  it with a "worktree removed" chip. Restoring such a session runs it at the
+   *  repo root (see {@link unarchiveSession}) — there is no recreate-worktree
+   *  path. Sessions whose project has been removed are omitted entirely —
+   *  they're unreachable (no repo/cwd). */
   async listArchivedSessions(): Promise<SessionDTO[]> {
     const archived = [...this.sessions.values()].filter((s) => s.archived);
     // Resolve each project's live worktree paths once (git shell), cached.
@@ -956,6 +958,20 @@ export class SessionManager extends EventEmitter {
   async unarchiveSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
+    // If the worktree was deleted while archived, its recorded path matches no
+    // live worktree, so the session would bucket under a phantom worktree and
+    // render in no view. Detach it to the repo root (SPEC-29: run at repo root
+    // on restore) so it's visible + resumable there. reattachSession already
+    // falls back to the repo root for a missing worktree, so resume is unaffected.
+    const wt = session.worktreePath;
+    if (wt) {
+      const project = this.projects.get(session.projectId);
+      if (project) {
+        const entries = await listWorktrees(project.dto.path).catch(() => []);
+        const live = entries.some((e) => resolve(e.path) === resolve(wt));
+        if (!live) session.detachToRoot();
+      }
+    }
     session.setArchived(false);
   }
 

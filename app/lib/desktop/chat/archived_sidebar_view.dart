@@ -39,7 +39,17 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
   Future<List<Session>> _load() =>
       ref.read(storeControllerProvider.notifier).listArchivedSessions();
 
-  void _refresh() => setState(() => _future = _load());
+  // Guard for the live-sync listener below: the set of active session ids the
+  // last snapshot carried, so routine activity/status churn doesn't trigger a
+  // reload — only an actual archive/restore (which adds/removes an id) does.
+  String? _lastActiveIds;
+
+  void _refresh() {
+    if (!mounted) return;
+    setState(() {
+      _future = _load();
+    });
+  }
 
   Future<void> _restore(String id) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
@@ -54,6 +64,15 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
 
   @override
   Widget build(BuildContext context) {
+    // Live-sync: archiving/restoring a session elsewhere (e.g. from a chat
+    // pane) changes the ACTIVE session set the server broadcasts. Reload the
+    // archived list on that transition so it stays fresh without the user
+    // toggling the view. Keyed on ids to skip pure activity/status updates.
+    ref.listen<SessionsState>(sessionsProvider, (_, next) {
+      final ids = (next.sessions.map((s) => s.id).toList()..sort()).join(',');
+      if (_lastActiveIds != null && ids != _lastActiveIds) _refresh();
+      _lastActiveIds = ids;
+    });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -63,7 +82,8 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
           child: FutureBuilder<List<Session>>(
             future: _future,
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
+              if (snap.connectionState == ConnectionState.waiting &&
+                  !snap.hasData) {
                 return const Center(
                   child: Padding(
                     padding: EdgeInsets.all(24),

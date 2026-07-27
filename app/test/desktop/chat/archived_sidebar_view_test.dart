@@ -143,6 +143,30 @@ void main() {
     expect(u['sessionId'], 's1');
   });
 
+  testWidgets('Restore reloads the list without surfacing an error', (
+    tester,
+  ) async {
+    final conn = await _pumpArchived(tester, [_arch('s1', 'Adapter resume')]);
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('Adapter resume')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Restore'));
+    await tester.pumpAndSettle();
+
+    // The buggy `setState(() => _future = _load())` returned a Future, whose
+    // assertion was caught by _restore and shown as a "Could not restore"
+    // snackbar even though the unarchive succeeded. Guard against regressing.
+    expect(find.textContaining('Could not restore'), findsNothing);
+    // And the list refetches so the restored row drops out of the archive.
+    final reloads = conn.sent
+        .where((b) => b['kind'] == 'session.listArchived')
+        .length;
+    expect(reloads, greaterThanOrEqualTo(2));
+  });
+
   testWidgets('footer toggle flips into the archived view', (tester) async {
     final conn = _ArchiveConn(const []);
     final container = ProviderContainer(
