@@ -967,9 +967,17 @@ export class SessionManager extends EventEmitter {
     if (wt) {
       const project = this.projects.get(session.projectId);
       if (project) {
-        const entries = await listWorktrees(project.dto.path).catch(() => []);
-        const live = entries.some((e) => resolve(e.path) === resolve(wt));
-        if (!live) session.detachToRoot();
+        // A healthy repo always lists its primary worktree, so listWorktrees
+        // returns [] ONLY when git failed (code !=0) or the repo is gone — not
+        // when a worktree is legitimately absent. Detaching persists an
+        // irreversible unbind, so only do it when we have a real (non-empty)
+        // list that proves the recorded path is no longer a live worktree.
+        // On the ambiguous empty case we keep the binding and let a later
+        // restore/subscribe retry once git recovers.
+        const entries = await listWorktrees(project.dto.path);
+        if (entries.length > 0 && !entries.some((e) => resolve(e.path) === resolve(wt))) {
+          session.detachToRoot();
+        }
       }
     }
     session.setArchived(false);

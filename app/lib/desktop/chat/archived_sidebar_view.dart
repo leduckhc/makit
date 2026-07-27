@@ -56,6 +56,10 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
     try {
       await ref.read(storeControllerProvider.notifier).unarchiveSession(id);
       if (!mounted) return;
+      // Refresh immediately for snappy local feedback. The sessionsProvider
+      // listener in build() also fires once the server re-broadcasts the active
+      // set (the cross-pane path), so a local restore reloads twice — harmless
+      // and intentional: the listener alone isn't guaranteed same-frame.
       _refresh();
     } catch (e) {
       messenger?.showSnackBar(SnackBar(content: Text('Could not restore: $e')));
