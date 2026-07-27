@@ -131,7 +131,7 @@ class OpenInIdeButton extends ConsumerWidget {
         menuChildren: [
           for (final target in IdeTarget.values)
             MenuItemButton(
-              leadingIcon: ideLogo(context, target, size: 20),
+              leadingIcon: ideLogo(context, target, size: 13),
               trailingIcon: target == preferred
                   ? const Icon(PhosphorIconsLight.check, size: 16)
                   : null,
@@ -141,7 +141,10 @@ class OpenInIdeButton extends ConsumerWidget {
                     .set(preferredIdePreference, target.name);
                 _open(context, target);
               },
-              child: Text(_actionLabel(target)),
+              child: Text(
+                _actionLabel(target),
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
             ),
         ],
         builder: (context, controller, _) => _IdeSplitButton(
@@ -180,7 +183,7 @@ class _IdeSplitButton extends StatelessWidget {
   final VoidCallback onToggleMenu;
 
   // XS split-button metrics (M3 tokens, scaled to fit the 32dp title strip).
-  static const double _height = 28;
+  static const double _height = 24;
   static const double _outer = _height / 2; // 50% → fully rounded outer corner.
   static const double _inner = 4; // XS inner corner size.
 
@@ -204,8 +207,8 @@ class _IdeSplitButton extends StatelessWidget {
           outerRadius: _outer,
           innerRadius: _inner,
           leadingEdge: true,
-          padding: const EdgeInsets.symmetric(horizontal: kSpace10),
-          child: ideLogo(context, preferred, size: 16),
+          padding: const EdgeInsets.symmetric(horizontal: kSpace8),
+          child: ideLogo(context, preferred, size: 15),
         ),
         // 2dp gap between segments (fixed across all sizes per the spec).
         const SizedBox(width: kSpace2),
@@ -219,11 +222,11 @@ class _IdeSplitButton extends StatelessWidget {
           outerRadius: _outer,
           innerRadius: _inner,
           leadingEdge: false,
-          padding: const EdgeInsets.symmetric(horizontal: kSpace6),
+          padding: const EdgeInsets.symmetric(horizontal: kSpace4),
           child: AnimatedRotation(
             turns: menuOpen ? 0.5 : 0,
             duration: const Duration(milliseconds: 150),
-            child: const Icon(PhosphorIconsLight.caretDown, size: 14),
+            child: const Icon(PhosphorIconsLight.caretDown, size: kPillIconSize),
           ),
         ),
       ],
@@ -233,7 +236,8 @@ class _IdeSplitButton extends StatelessWidget {
 
 /// One tonal segment of the [_IdeSplitButton]: a [Material] + [InkWell] carrying
 /// M3 state layers (hover/press ripple) with an asymmetric shape — [outerRadius]
-/// on its outer edge and [innerRadius] on the edge that faces the gap. The
+/// on its outer edge and [innerRadius] on the edge that faces the gap, ringed by
+/// a 1px `outlineVariant` hairline (the design system's border token). The
 /// [foreground] drives the ambient [IconTheme] so a monochrome logo
 /// ([IdeTarget.cursor]/[IdeTarget.iterm]) tints to match; colour logos ignore
 /// it.
@@ -279,14 +283,17 @@ class _Segment extends StatelessWidget {
         height: height,
         child: Material(
           color: background,
-          shape: RoundedRectangleBorder(borderRadius: radius),
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             child: Padding(
               padding: padding,
               child: IconTheme.merge(
-                data: IconThemeData(color: foreground, size: 16),
+                data: IconThemeData(color: foreground, size: 15),
                 child: Center(widthFactor: 1, child: child),
               ),
             ),
