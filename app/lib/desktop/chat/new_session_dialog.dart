@@ -461,7 +461,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         const SizedBox(height: kSpace10),
         _labeledRow(
           theme,
-          'Name',
+          'Branch',
           TextField(
             controller: _branchNameCtrl,
             enabled: !_spawning,
@@ -471,7 +471,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
             decoration: const InputDecoration(
               isDense: true,
               border: OutlineInputBorder(),
-              hintText: 'auto — or e.g. feat/new-ui',
+              hintText: 'Leave blank to auto-generate',
             ),
           ),
         ),
