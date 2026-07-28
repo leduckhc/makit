@@ -51,6 +51,7 @@ test("events.json covers every EventKind exactly once", () => {
   assert.deepEqual(
     [...seen].sort(),
     [
+      "agent.media",
       "agent.message",
       "agent.message.delta",
       "agent.thinking",

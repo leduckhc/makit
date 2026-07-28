@@ -74,6 +74,14 @@ export function renderEvent(
         st: {},
       };
 
+    // A terminal can't show the bytes; name the medium so `pi attach` doesn't
+    // silently omit that the assistant showed something.
+    case "agent.media":
+      return {
+        out: `${nl}${C.dim}  ▣ ${str(p.mime)}${p.alt ? ` — ${oneLine(str(p.alt))}` : ""}${C.reset}\n`,
+        st: {},
+      };
+
     case "tool.call.start": {
       const name = str(p.name);
       return { out: `${nl}${C.yellow}⚙ ${name}${C.reset}\n`, st: {} };

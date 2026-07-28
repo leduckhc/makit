@@ -193,3 +193,122 @@ test("maps user_message_chunk to user.message (history replay)", () => {
   const um = events.find((e) => e.kind === "user.message");
   assert.equal((um!.payload as { text: string }).text, "hi there");
 });
+
+// ---------------------------------------------------------------------------
+// Assistant display media (SPEC-22). The shapes below are copied from a real
+// pi-acp 0.0.32 wire capture ("read /tmp/probe-shot.png"): the image bytes are
+// in `rawOutput.content[]`, NOT in the normalized ACP `content[]` (which only
+// carries the "Read image file [image/png]" summary text).
+// ---------------------------------------------------------------------------
+
+/** Mapper + a fake media store recording what was ingested. */
+function collectWithMedia() {
+  const puts: Array<{ data: string; mime: string }> = [];
+  const events: AdapterEvent[] = [];
+  const mapper = new AcpEventMapper({
+    emit: (e) => events.push(e),
+    putMedia: (data, mime) => {
+      puts.push({ data, mime });
+      // Deterministic fake id per payload, mirroring content addressing.
+      return { mediaId: `sha-${data}`, mime, sizeBytes: data.length };
+    },
+  });
+  return { puts, events, mapper };
+}
+
+const imageToolResult = (callId: string, data = "AAAA"): SessionUpdate =>
+  ({
+    sessionUpdate: "tool_call_update",
+    toolCallId: callId,
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "Read image file [image/png]" } }],
+    rawOutput: {
+      content: [
+        { type: "text", text: "Read image file [image/png]" },
+        { type: "image", data, mimeType: "image/png" },
+      ],
+    },
+  }) as unknown as SessionUpdate;
+
+test("an image in a tool result's rawOutput is ingested and emitted as agent.media", () => {
+  const { puts, events, mapper } = collectWithMedia();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "c1",
+    title: "read",
+    kind: "read",
+    status: "pending",
+  } as SessionUpdate);
+  mapper.handle(imageToolResult("c1"));
+
+  assert.deepEqual(puts, [{ data: "AAAA", mime: "image/png" }]);
+  const media = events.filter((e) => e.kind === "agent.media");
+  assert.equal(media.length, 1);
+  assert.deepEqual(media[0].payload, {
+    mediaId: "sha-AAAA",
+    mime: "image/png",
+    kind: "image",
+    sizeBytes: 4,
+    callId: "c1",
+  });
+  // The media event precedes the tool's end so the transcript stays in order.
+  const kinds = events.map((e) => e.kind);
+  assert.ok(kinds.indexOf("agent.media") < kinds.indexOf("tool.call.end"));
+  // The text summary still drives the collapsed tool card.
+  const end = events.find((e) => e.kind === "tool.call.end")!.payload as { output: string };
+  assert.match(end.output, /Read image file/);
+});
+
+test("an image block in the normalized ACP content[] is ingested too", () => {
+  const { puts, events, mapper } = collectWithMedia();
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "c2",
+    status: "completed",
+    content: [{ type: "content", content: { type: "image", data: "BBBB", mimeType: "image/gif" } }],
+  } as unknown as SessionUpdate);
+
+  assert.deepEqual(puts, [{ data: "BBBB", mime: "image/gif" }]);
+  assert.equal(events.filter((e) => e.kind === "agent.media").length, 1);
+});
+
+test("the same image seen on repeated updates is emitted once per tool call", () => {
+  const { puts, events, mapper } = collectWithMedia();
+  // Cumulative updates re-send rawOutput; content addressing must not produce
+  // a duplicate bubble in the transcript.
+  mapper.handle(imageToolResult("c3"));
+  mapper.handle(imageToolResult("c3"));
+
+  assert.equal(events.filter((e) => e.kind === "agent.media").length, 1);
+  assert.equal(puts.length, 1);
+});
+
+test("an image in an agent message chunk is ingested and does not break text", () => {
+  const { events, mapper } = collectWithMedia();
+  mapper.handle({
+    sessionUpdate: "agent_message_chunk",
+    content: { type: "image", data: "CCCC", mimeType: "image/png" },
+  } as unknown as SessionUpdate);
+  mapper.handle(text("after"));
+  mapper.endTurn();
+
+  assert.equal(events.filter((e) => e.kind === "agent.media").length, 1);
+  const final = events.find((e) => e.kind === "agent.message")!.payload as { text: string };
+  assert.equal(final.text, "after");
+});
+
+test("with no media hook (or a rejected blob) nothing is emitted and text is unaffected", () => {
+  const events: AdapterEvent[] = [];
+  const mapper = new AcpEventMapper({ emit: (e) => events.push(e) }); // no putMedia
+  mapper.handle(imageToolResult("c4"));
+  assert.equal(events.some((e) => e.kind === "agent.media"), false);
+
+  const rejected: AdapterEvent[] = [];
+  const strict = new AcpEventMapper({
+    emit: (e) => rejected.push(e),
+    putMedia: () => null, // over cap / disallowed mime
+  });
+  strict.handle(imageToolResult("c5"));
+  assert.equal(rejected.some((e) => e.kind === "agent.media"), false);
+  assert.equal(rejected.some((e) => e.kind === "tool.call.end"), true, "the tool still completes");
+});

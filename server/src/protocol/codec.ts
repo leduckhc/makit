@@ -45,6 +45,7 @@ const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "user.message",
   "agent.message",
   "agent.message.delta",
+  "agent.media",
   "agent.thinking",
   "agent.thinking.delta",
   "tool.call.start",
