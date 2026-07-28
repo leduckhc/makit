@@ -34,6 +34,7 @@ import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
+import { LocalMediaResolver, rewriteMarkdownImages } from "../media/local.js";
 import { spawnLineProcess } from "./child_transport.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
@@ -126,7 +127,23 @@ export class AcpAdapter extends SubprocessAdapter {
       // Sync + before the event is emitted: the blob is durable by the time the
       // referencing `agent.media` reaches the (authoritative) event log.
       putMedia: (data, mime) => media.putBase64(data, mime),
+      // `![](/abs/shot.png)` in prose: pull the bytes in here (the phone has no
+      // access to this filesystem) and hand the app a `makit-media:` URI.
+      rewriteMedia: (text) =>
+        rewriteMarkdownImages(text, (ref) =>
+          new LocalMediaResolver({ store: media, roots: this.mediaRoots() }).resolve(ref),
+        ),
     });
+  }
+
+  private mediaRoots(): string[] {
+    // The session's worktree, plus the temp dirs where screenshot/record tools
+    // write. Containment is about stopping the agent from casually piping
+    // arbitrary local files (`~/.ssh/…`) into the phone-visible media store —
+    // not a sandbox: the agent already runs with the user's privileges.
+    const roots = [this.workspaceRoot, tmpdir()];
+    if (process.platform !== "win32") roots.push("/tmp");
+    return roots.filter((r) => r.length > 0);
   }
 
   async start(opts: SpawnOpts): Promise<void> {

@@ -128,6 +128,11 @@ export class MediaStore {
     }
   }
 
+  /** The per-blob size cap, so callers can bail before reading a huge file. */
+  get maxBlobBytes(): number {
+    return this.maxBytes;
+  }
+
   /** Absolute blob path for a **validated** id (see {@link stat}). */
   pathOf(mediaId: string): string {
     if (!SHA256_RE.test(mediaId)) throw new Error("invalid mediaId");

@@ -312,3 +312,19 @@ test("with no media hook (or a rejected blob) nothing is emitted and text is una
   assert.equal(rejected.some((e) => e.kind === "agent.media"), false);
   assert.equal(rejected.some((e) => e.kind === "tool.call.end"), true, "the tool still completes");
 });
+
+test("a local image path in the final agent message is rewritten to a media URI", () => {
+  const events: AdapterEvent[] = [];
+  const mapper = new AcpEventMapper({
+    emit: (e) => events.push(e),
+    rewriteMedia: (t) => t.replace("/tmp/out2.png)", "makit-media:deadbeef)"),
+  });
+  mapper.handle(text("see ![shot](/tmp/out2.png)"));
+  mapper.endTurn();
+
+  const final = events.find((e) => e.kind === "agent.message")!.payload as { text: string };
+  assert.equal(final.text, "see ![shot](makit-media:deadbeef)");
+  // Deltas stream raw (nothing is buffered for a rewrite that may never apply).
+  const delta = events.find((e) => e.kind === "agent.message.delta")!.payload as { chunk: string };
+  assert.equal(delta.chunk, "see ![shot](/tmp/out2.png)");
+});

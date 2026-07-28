@@ -17,6 +17,7 @@ import {
 import { AcpAdapter, defaultConnect, probeAcpConfigOptions, listAcpSessions, deriveAcpCapabilities, type AcpTransport } from "./acp.js";
 import type { AdapterEvent } from "./adapter.js";
 import type { UICall, UIResponse } from "../uicall.js";
+import { MediaStore } from "../media/store.js";
 
 /**
  * Build a paired in-memory transport: makit's AcpAdapter (client) on one end,
@@ -985,4 +986,68 @@ test("start({resumeAgentSessionId}) loads and drops the replayed history (silent
   assert.equal(adapter.agentSessionId, "acp-prev");
   // The replayed history was dropped (not appended to makit's log).
   assert.ok(!events.some((e) => e.kind === "agent.message" && (e.payload as any)?.text === "OLD HISTORY"));
+});
+
+test("ingests a tool-result image and rewrites a local markdown image path", async () => {
+  // Real MediaStore in a temp dir — this exercises the whole SPEC-22 server
+  // path: base64 tool output → blob, and `![](abs path)` → makit-media URI.
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), "makit-acp-media-")));
+  const png = Buffer.from(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000050001",
+    "hex",
+  );
+  writeFileSync(join(cwd, "shot.png"), png);
+  const store = new MediaStore({ dir: join(cwd, ".media") });
+
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      await agentRef.update(sessionId, {
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        title: "read",
+        kind: "read",
+        status: "pending",
+      } as never);
+      await agentRef.update(sessionId, {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "Read image file [image/png]" } }],
+        rawOutput: { content: [{ type: "image", data: png.toString("base64"), mimeType: "image/png" }] },
+      } as never);
+      await agentRef.update(sessionId, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: `here it is ![shot](${join(cwd, "shot.png")})` },
+      });
+    });
+    return agentRef;
+  });
+
+  const adapter = new AcpAdapter({
+    spec: { agent: "pi", command: "x" },
+    connect: () => transport,
+    media: store,
+  });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd, sessionId: "makit-media-1" });
+  await adapter.send({ text: "read the png and show me" });
+  await collectUntil(events, "agent.message");
+
+  // 1. Tool-result bytes became a servable blob + an agent.media event.
+  const media = events.find((e) => e.kind === "agent.media")!.payload as {
+    mediaId: string;
+    mime: string;
+    callId: string;
+  };
+  assert.equal(media.mime, "image/png");
+  assert.equal(media.callId, "t1");
+  assert.equal(store.stat(media.mediaId)?.sizeBytes, png.length);
+
+  // 2. The local path in prose became a makit-media URI for the same bytes
+  //    (content addressing ⇒ identical file ⇒ identical id).
+  const text = (events.find((e) => e.kind === "agent.message")!.payload as { text: string }).text;
+  assert.equal(text, `here it is ![shot](makit-media:${media.mediaId})`);
 });

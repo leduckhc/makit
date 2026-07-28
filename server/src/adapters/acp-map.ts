@@ -29,6 +29,14 @@ export interface AcpMapperHooks {
    * blob must be durable *before* the `agent.media` event that references it.
    */
   putMedia?: (data: string, mime: string) => MediaDescriptor | null;
+  /**
+   * Rewrite markdown image references in a finalized agent message, ingesting
+   * any local files they point at (SPEC-22 phase 1b: agents commonly write a
+   * file and then show it with `![](\/abs\/path.png)`, which the phone cannot
+   * resolve). Injected for the same reason as {@link putMedia} — it touches the
+   * filesystem. Applied only to the final message, never to streamed deltas.
+   */
+  rewriteMedia?: (text: string) => string;
 }
 
 export class AcpEventMapper {
@@ -198,7 +206,8 @@ export class AcpEventMapper {
 
   private flushText(): void {
     if (this.textId && this.textBuf.length > 0) {
-      this.emit("agent.message", { text: this.textBuf, msgId: this.textId });
+      const text = this.hooks.rewriteMedia?.(this.textBuf) ?? this.textBuf;
+      this.emit("agent.message", { text, msgId: this.textId });
     }
     this.textId = undefined;
     this.textBuf = "";
