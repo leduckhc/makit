@@ -67,18 +67,21 @@ void main() {
       }
     });
 
-    test(
-      'ask_user: no tool row — the question renders as an inline ask card',
-      () {
-        // pi-acp emits BOTH an `ask_user` tool call and a separate permission
-        // request carrying the question; the app shows the latter as an inline
-        // ask card (SPEC-25), so a tool row would just duplicate it.
-        final tools = toolsOf(foldFixture('ask-user'));
-        expect(tools.map((t) => t.name), isNot(contains('ask_user')));
-        // And the suppressed call must not leave a headless row behind.
-        expect(tools, isEmpty);
-      },
-    );
+    test('ask_user: the answered call persists as a resolved ask row', () {
+      // While the question is open pi-acp's tool call is held back (the live
+      // inline ask card carries it, SPEC-25). Once answered the row lands, so
+      // the question stays in the transcript as the quiet resolved card.
+      final tools = toolsOf(foldFixture('ask-user'));
+      expect(tools, hasLength(1));
+      final t = tools.single;
+      expect(t.name, 'ask_user');
+      expect(t.ended, isTrue);
+      expect(t.args['question'], 'Which language do you prefer?');
+      expect(t.details?['response'], {
+        'kind': 'selection',
+        'selections': ['TypeScript'],
+      });
+    });
 
     test('subagent: Agent tool carries its description and completes', () {
       final tools = toolsOf(foldFixture('subagent'));
