@@ -493,7 +493,8 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Create a fresh worktree off `baseBranch` (default branch when unset) with
-   * an auto-generated branch name, WITHOUT a session (the + New worktree flow).
+   * an auto-generated branch name (or a slugified `branchName` when supplied),
+   * WITHOUT a session (the + New worktree flow).
    * The worktree exists immediately; the session is started later once the
    * user picks a harness and sends the first message (see spawnPendingSession
    * with a bound worktreePath). For a non-git project, returns the repo dir.
@@ -501,6 +502,7 @@ export class SessionManager extends EventEmitter {
   async createWorktree(
     projectId: string,
     baseBranch?: string,
+    branchName?: string,
   ): Promise<{ path: string; branch: string | null }> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
@@ -513,9 +515,13 @@ export class SessionManager extends EventEmitter {
     // Unborn HEAD (no commits yet): `git worktree add -b` would fail, so run
     // the session in the repo dir instead of forking a worktree.
     if (!base) return { path: repoPath, branch: null };
+    // A user-supplied name is slugified to a git-safe ref; blank/invalid names
+    // fall back to the auto-generated `worktree-<uuid>`. Either way
+    // `uniqueBranch` guards against collisions.
+    const requested = branchName ? slugify(branchName) : "";
     const branch = await this.uniqueBranch(
       repoPath,
-      `worktree-${randomUUID().slice(0, 6)}`,
+      requested || `worktree-${randomUUID().slice(0, 6)}`,
     );
     const path = await addWorktree({
       repoPath,
