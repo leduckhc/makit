@@ -192,16 +192,6 @@ test("slugifyBranch preserves slashes, sanitizes segments, and caps length", () 
   assert.equal(slugifyBranch("feat/" + "x".repeat(200), 8), "feat/xxx");
 });
 
-test("slugifyBranch preserves slashes and caps length", () => {
-  assert.equal(slugifyBranch("feat/new-ui"), "feat/new-ui");
-  assert.equal(slugifyBranch("fix/critical bug"), "fix/critical-bug");
-  assert.equal(slugifyBranch("/feat//new ui/"), "feat/new-ui");
-  // Very long names truncate to 250 chars
-  const longName = "a/b/c/d/e/f/g/h/i/j/" + "x".repeat(300);
-  const result = slugifyBranch(longName);
-  assert(result.length <= 250, `expected ≤250 chars, got ${result.length}`);
-});
-
 test("read helpers degrade gracefully on a non-repo path", async () => {
   const plain = mkdtempSync(join(tmpdir(), "makit-plain-"));
   try {

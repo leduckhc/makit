@@ -465,6 +465,9 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
           TextField(
             controller: _branchNameCtrl,
             enabled: !_spawning,
+            // Mirror the server's slugifyBranch length cap (80) so the field
+            // can't hold more than will survive, avoiding surprise truncation.
+            inputFormatters: [LengthLimitingTextInputFormatter(80)],
             decoration: const InputDecoration(
               isDense: true,
               border: OutlineInputBorder(),

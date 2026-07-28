@@ -324,7 +324,9 @@ void main() {
     await _open(tester, agents: [_pi]);
 
     final longMessage = List.generate(14, (i) => 'line $i').join('\n');
-    await tester.enterText(find.byType(TextField), longMessage);
+    // Default panel is "Existing worktree", so the composer is the only
+    // TextField; `.last` is explicit and stays correct if more fields appear.
+    await tester.enterText(find.byType(TextField).last, longMessage);
     await tester.pumpAndSettle();
 
     // No RenderFlex/overflow exception was thrown while laying it out.
