@@ -241,6 +241,190 @@ test("routes a permission request to askUser and honors approval", async () => {
   assert.equal(permissionResolved, "ok");
 });
 
+test("routes a multiple-choice select to an inline askUserQuestion", async () => {
+  let agentRef: ScriptedAgent;
+  let selectedOptionId: string | undefined;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      // pi-acp surfaces `ctx.ui.select` as a permission whose options ARE the
+      // choices (all allow_once, no reject), with the question in rawInput.
+      const res = await conn.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "pi-ui-1",
+          title: "Pick a branch",
+          kind: "other",
+          status: "pending",
+          rawInput: { method: "select", title: "Pick a branch", message: "Which branch?" },
+        } as any,
+        options: [
+          { optionId: "choice-0", name: "main", kind: "allow_once" },
+          { optionId: "choice-1", name: "develop", kind: "allow_once" },
+          { optionId: "choice-2", name: "release", kind: "allow_once" },
+        ],
+      });
+      selectedOptionId = res.outcome.outcome === "selected" ? res.outcome.optionId : "cancelled";
+    });
+    return agentRef;
+  });
+
+  const asked: UICall[] = [];
+  const askUser = async (call: UICall): Promise<UIResponse> => {
+    asked.push(call);
+    // User picks the second option ("develop").
+    return { kind: "askUserQuestion", indices: [1], answers: ["develop"], answer: "develop" };
+  };
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1", askUser });
+  await adapter.send({ text: "choose" });
+
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && selectedOptionId === undefined) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].kind, "askUserQuestion");
+  const q = (asked[0] as any).questions[0];
+  assert.equal(q.question, "Which branch?");
+  assert.deepEqual(q.options.map((o: any) => o.label), ["main", "develop", "release"]);
+  // The chosen label maps back to its optionId.
+  assert.equal(selectedOptionId, "choice-1");
+});
+
+test("select maps the chosen option by index, not label (labels can collide)", async () => {
+  let agentRef: ScriptedAgent;
+  let selectedOptionId: string | undefined;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      const res = await conn.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "pi-ui-2",
+          title: "Overwrite?",
+          kind: "other",
+          status: "pending",
+          rawInput: { method: "select", title: "Overwrite?" },
+        } as any,
+        // Two options share the SAME label but map to different optionIds.
+        options: [
+          { optionId: "opt-a", name: "Keep", kind: "allow_once" },
+          { optionId: "opt-b", name: "Keep", kind: "allow_once" },
+        ],
+      });
+      selectedOptionId = res.outcome.outcome === "selected" ? res.outcome.optionId : "cancelled";
+    });
+    return agentRef;
+  });
+
+  const askUser = async (): Promise<UIResponse> =>
+    // User picked the SECOND "Keep" (index 1).
+    ({ kind: "askUserQuestion", indices: [1], answers: ["Keep"], answer: "Keep" });
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1", askUser });
+  await adapter.send({ text: "choose" });
+
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && selectedOptionId === undefined) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  // Index-based mapping must pick opt-b; a label match would wrongly pick opt-a.
+  assert.equal(selectedOptionId, "opt-b");
+});
+
+test("select trims the question and drops a header that only differs by whitespace", async () => {
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      await conn.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "pi-ui-3",
+          title: "Pick one",
+          kind: "other",
+          status: "pending",
+          // title and message are the same text but differ only by whitespace.
+          rawInput: { method: "select", title: "Pick one", message: "Pick one  " },
+        } as any,
+        options: [
+          { optionId: "choice-0", name: "a", kind: "allow_once" },
+          { optionId: "choice-1", name: "b", kind: "allow_once" },
+        ],
+      });
+    });
+    return agentRef;
+  });
+
+  const asked: UICall[] = [];
+  const askUser = async (call: UICall): Promise<UIResponse> => {
+    asked.push(call);
+    return { kind: "askUserQuestion", indices: [0], answers: ["a"], answer: "a" };
+  };
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1", askUser });
+  await adapter.send({ text: "choose" });
+
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && asked.length === 0) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  const q = (asked[0] as any).questions[0];
+  assert.equal(q.question, "Pick one"); // trimmed
+  assert.equal(q.header, undefined); // no redundant header for a whitespace-only diff
+});
+
+test("routes a pi ctx.ui.confirm (allow+reject) to an inline askUserQuestion", async () => {
+  let agentRef: ScriptedAgent;
+  let selectedOptionId: string | undefined;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      // pi-acp surfaces ctx.ui.confirm as a pi-ui permission with a reject option.
+      const res = await conn.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "pi-ui-confirm-1",
+          title: "Proceed?",
+          kind: "other",
+          status: "pending",
+          rawInput: { method: "confirm", title: "Proceed?" },
+        } as any,
+        options: [
+          { optionId: "yes", name: "Yes", kind: "allow_once" },
+          { optionId: "no", name: "No", kind: "reject_once" },
+        ],
+      });
+      selectedOptionId = res.outcome.outcome === "selected" ? res.outcome.optionId : "cancelled";
+    });
+    return agentRef;
+  });
+
+  const asked: UICall[] = [];
+  const askUser = async (call: UICall): Promise<UIResponse> => {
+    asked.push(call);
+    // User picks "No" (index 1) — the reject option, presented as a normal choice.
+    return { kind: "askUserQuestion", indices: [1], answers: ["No"], answer: "No" };
+  };
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1", askUser });
+  await adapter.send({ text: "confirm" });
+
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && selectedOptionId === undefined) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].kind, "askUserQuestion");
+  // Both Yes AND No are offered as inline options (not a modal approve/deny).
+  assert.deepEqual((asked[0] as any).questions[0].options.map((o: any) => o.label), ["Yes", "No"]);
+  assert.equal(selectedOptionId, "no");
+});
+
 test("exposes an ACP permission as awaiting-approval status + rich confirmAction payload", async () => {
   let agentRef: ScriptedAgent;
   const { transport } = pair((conn) => {

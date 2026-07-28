@@ -1,0 +1,231 @@
+[
+  {
+    "seq": 0,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "session.commands",
+    "payload": {
+      "commands": [
+        {
+          "name": "pr-review",
+          "description": "Review the GitHub PR of the current worktree/branch and file findings as sc review threads",
+          "source": "command"
+        },
+        {
+          "name": "lgtm",
+          "description": "Approve and proceed with the suggested approach",
+          "source": "command"
+        },
+        {
+          "name": "compact",
+          "description": "Manually compact the session context",
+          "source": "command"
+        },
+        {
+          "name": "autocompact",
+          "description": "Toggle automatic context compaction",
+          "source": "command"
+        },
+        {
+          "name": "export",
+          "description": "Export session to an HTML file in the session cwd",
+          "source": "command"
+        },
+        {
+          "name": "session",
+          "description": "Show session stats (messages, tokens, cost, session file)",
+          "source": "command"
+        },
+        {
+          "name": "name",
+          "description": "Set session display name",
+          "source": "command"
+        },
+        {
+          "name": "steering",
+          "description": "Get/set pi steering message delivery mode (how queued steering messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "follow-up",
+          "description": "Get/set pi follow-up message delivery mode (how queued follow-up messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "changelog",
+          "description": "Show pi changelog",
+          "source": "command"
+        }
+      ]
+    }
+  },
+  {
+    "seq": 1,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-0",
+      "chunk": "I'll create the file"
+    }
+  },
+  {
+    "seq": 2,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-0",
+      "chunk": " and then ed"
+    }
+  },
+  {
+    "seq": 3,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-0",
+      "chunk": "it it."
+    }
+  },
+  {
+    "seq": 4,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message",
+    "payload": {
+      "text": "I'll create the file and then edit it.",
+      "msgId": "am-ms4okr00-0"
+    }
+  },
+  {
+    "seq": 5,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "tool.call.start",
+    "payload": {
+      "callId": "tooluse_0thyHcHKFUlDcJdq8GIjiH",
+      "name": "write",
+      "args": {
+        "path": "/tmp/makit-demo.txt",
+        "content": "hello"
+      },
+      "risk": "risky"
+    }
+  },
+  {
+    "seq": 6,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_0thyHcHKFUlDcJdq8GIjiH",
+      "chunk": "/tmp/makit-demo.txt\nhello"
+    }
+  },
+  {
+    "seq": 7,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "tool.call.end",
+    "payload": {
+      "callId": "tooluse_0thyHcHKFUlDcJdq8GIjiH",
+      "exitCode": 0,
+      "summary": "/tmp/makit-demo.txt",
+      "output": "/tmp/makit-demo.txt\nhello"
+    }
+  },
+  {
+    "seq": 8,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "tool.call.start",
+    "payload": {
+      "callId": "tooluse_jMIsXVqYB8csu1VqcauBeP",
+      "name": "edit",
+      "args": {
+        "path": "/tmp/makit-demo.txt",
+        "edits": [
+          {
+            "oldText": "hello",
+            "newText": "hello world"
+          }
+        ]
+      },
+      "risk": "risky"
+    }
+  },
+  {
+    "seq": 9,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_jMIsXVqYB8csu1VqcauBeP",
+      "chunk": "/tmp/makit-demo.txt\nhello world"
+    }
+  },
+  {
+    "seq": 10,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "tool.call.end",
+    "payload": {
+      "callId": "tooluse_jMIsXVqYB8csu1VqcauBeP",
+      "exitCode": 0,
+      "summary": "/tmp/makit-demo.txt",
+      "output": "/tmp/makit-demo.txt\nhello world"
+    }
+  },
+  {
+    "seq": 11,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-1",
+      "chunk": "Done. `"
+    }
+  },
+  {
+    "seq": 12,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-1",
+      "chunk": "/tmp/makit-"
+    }
+  },
+  {
+    "seq": 13,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-1",
+      "chunk": "demo.txt` now cont"
+    }
+  },
+  {
+    "seq": 14,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr00-1",
+      "chunk": "ains `hello world`."
+    }
+  },
+  {
+    "seq": 15,
+    "sessionId": "replay",
+    "ts": 1785244659120,
+    "kind": "agent.message",
+    "payload": {
+      "text": "Done. `/tmp/makit-demo.txt` now contains `hello world`.",
+      "msgId": "am-ms4okr00-1"
+    }
+  }
+]

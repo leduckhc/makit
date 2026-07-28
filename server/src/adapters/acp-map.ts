@@ -45,8 +45,17 @@ export class AcpEventMapper {
   private thinkId?: string;
   private thinkBuf = "";
 
-  /** Tool-call ids we've already emitted a `tool.call.start` for. */
-  private startedTools = new Set<string>();
+  /**
+   * Accumulated per-tool state. ACP agents (pi-acp) stream a tool call as a
+   * `tool_call` with empty `rawInput` followed by several `tool_call_update`s
+   * that progressively fill in the arguments (path/pattern) or, for bash, the
+   * command in `title`. We therefore DEFER `tool.call.start` until the args are
+   * ready (status `in_progress`/`completed`/`failed`, or the first output),
+   * accumulating the best title/kind/rawInput seen so far. The app sets a tool
+   * row's args once at start, so emitting too early (empty args) is what made
+   * `read`/`grep`/`ls` render with no target and bash show "Ran bash".
+   */
+  private tools = new Map<string, { title: string; kind?: ToolKind; rawInput: unknown; started: boolean }>();
   /** Last cumulative output text seen per tool call (to diff into deltas). */
   private toolText = new Map<string, string>();
   /** mediaIds already announced this turn (updates re-send cumulative output). */
@@ -101,26 +110,12 @@ export class AcpEventMapper {
 
       case "tool_call": {
         this.flushAll();
-        this.ensureToolStart(
-          update.toolCallId,
-          update.title || update.kind || "tool",
-          update.kind ?? undefined,
-          (update as { rawInput?: unknown }).rawInput,
-        );
-        this.applyToolContent(update.toolCallId, update);
-        this.maybeEndTool(update.toolCallId, update.status, update);
+        this.trackTool(update);
         return;
       }
 
       case "tool_call_update": {
-        this.ensureToolStart(
-          update.toolCallId,
-          update.title || "tool",
-          update.kind ?? undefined,
-          (update as { rawInput?: unknown }).rawInput,
-        );
-        this.applyToolContent(update.toolCallId, update);
-        this.maybeEndTool(update.toolCallId, update.status, update);
+        this.trackTool(update);
         return;
       }
 
@@ -150,7 +145,10 @@ export class AcpEventMapper {
   /** Finalize any buffered text/thinking at the end of an agent turn. */
   endTurn(): void {
     this.flushAll();
-    this.startedTools.clear();
+    // Surface any tool that streamed args but never reached in_progress/output
+    // (e.g. an aborted turn) so it isn't silently dropped.
+    for (const id of this.tools.keys()) this.ensureToolStart(id);
+    this.tools.clear();
     this.toolText.clear();
     this.seenMedia.clear();
     this.ingestedPayloads.clear();
@@ -158,14 +156,49 @@ export class AcpEventMapper {
 
   // ---- internals ----------------------------------------------------------
 
-  private ensureToolStart(id: string, name: string, kind: ToolKind | undefined, args: unknown): void {
-    if (this.startedTools.has(id)) return;
-    this.startedTools.add(id);
+  /**
+   * Merge a `tool_call`/`tool_call_update` into the accumulated per-tool state,
+   * then decide whether to emit `tool.call.start` yet. pi-acp fills args over
+   * several updates, so we keep the LATEST non-empty title/kind/rawInput and
+   * only start once the args are ready (status advanced past `pending`, or the
+   * first output arrives) — after which content deltas and completion apply.
+   */
+  private trackTool(update: Extract<SessionUpdate, { sessionUpdate: "tool_call" | "tool_call_update" }>): void {
+    const id = update.toolCallId;
+    const cur = this.tools.get(id) ?? { title: "", kind: undefined as ToolKind | undefined, rawInput: undefined as unknown, started: false };
+    const title = (update as { title?: unknown }).title;
+    if (typeof title === "string" && title.trim()) cur.title = title;
+    const kind = (update as { kind?: ToolKind }).kind;
+    if (kind) cur.kind = kind;
+    const raw = (update as { rawInput?: unknown }).rawInput;
+    if (raw && typeof raw === "object" && Object.keys(raw as object).length > 0) cur.rawInput = raw;
+    this.tools.set(id, cur);
+
+    const status = update.status;
+    const argsReady =
+      status === "in_progress" || status === "completed" || status === "failed" || hasToolContent(update);
+    if (argsReady) this.ensureToolStart(id);
+    if (cur.started) {
+      this.applyToolContent(id, update);
+      this.maybeEndTool(id, status, update);
+    }
+  }
+
+  /** Emit `tool.call.start` from the accumulated state, exactly once per tool. */
+  private ensureToolStart(id: string): void {
+    const t = this.tools.get(id);
+    if (!t || t.started) return;
+    t.started = true;
+    const { name, args } = canonicalizeTool(t.title, t.kind, t.rawInput);
+    // Skip UI-control tools (ask_user, Agent) — they don't render as tool rows.
+    // ask_user is handled via a separate permission request → inline card (SPEC-25).
+    // Agent (subagent) is handled by the app's subagent renderer (SPEC-31).
+    if (name === "ask_user" || name === "Agent") return;
     this.emit("tool.call.start", {
       callId: id,
       name,
-      args: args ?? {},
-      risk: riskFromKind(kind),
+      args,
+      risk: riskFromKind(t.kind),
     });
   }
 
@@ -192,6 +225,15 @@ export class AcpEventMapper {
 
   private maybeEndTool(id: string, status: unknown, update: SessionUpdate): void {
     if (status !== "completed" && status !== "failed") return;
+    const t = this.tools.get(id);
+    if (!t) return;
+    const { name } = canonicalizeTool(t.title, t.kind, t.rawInput);
+    // Skip UI-control tools (ask_user, Agent) — they don't emit tool.call.end.
+    if (name === "ask_user" || name === "Agent") {
+      this.toolText.delete(id);
+      this.tools.delete(id);
+      return;
+    }
     const output = this.toolText.get(id) ?? "";
     const exitCode = status === "failed" ? 1 : terminalExitCode(update) ?? 0;
     this.emit("tool.call.end", {
@@ -201,7 +243,7 @@ export class AcpEventMapper {
       output,
     });
     this.toolText.delete(id);
-    this.startedTools.delete(id);
+    this.tools.delete(id);
   }
 
   private flushText(): void {
@@ -306,12 +348,54 @@ function imageBlocksIn(v: unknown): ImageBlock[] {
   return [];
 }
 
+/**
+ * Derive the makit tool `name` + `args` the app's renderer registry keys on
+ * from an ACP tool call. The app matches renderers by canonical name (`bash`,
+ * `read`, `edit`, `grep`, …); ACP identifies tools by `kind` + a human `title`
+ * instead. Only `execute` needs remapping: ACP execute tools are shell commands
+ * that must render via the `bash` renderer (terminal icon + `Ran <cmd>`), and
+ * some agents (pi-acp) carry the command in `title` rather than `rawInput`.
+ * Every other kind already arrives with a canonical tool name in `title`
+ * (read/edit/write/grep/…), so it is passed through unchanged.
+ */
+function canonicalizeTool(
+  title: string,
+  kind: ToolKind | undefined,
+  rawInput: unknown,
+): { name: string; args: Record<string, unknown> } {
+  const args: Record<string, unknown> =
+    rawInput && typeof rawInput === "object" && !Array.isArray(rawInput) ? { ...(rawInput as Record<string, unknown>) } : {};
+  if (kind === "execute") {
+    if (typeof args.command !== "string" || !args.command.trim()) {
+      const cmd = extractCommand(rawInput) ?? (title.trim() ? title : undefined);
+      if (cmd) args.command = cmd;
+    }
+    return { name: "bash", args };
+  }
+  return { name: title || kind || "tool", args };
+}
+
+/** Pull a shell command out of an ACP `rawInput` object, if present. */
+function extractCommand(rawInput: unknown): string | undefined {
+  if (!rawInput || typeof rawInput !== "object") return undefined;
+  const r = rawInput as Record<string, unknown>;
+  const isNonBlank = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
+  if (isNonBlank(r.command)) return r.command;
+  if (isNonBlank(r.cmd)) return r.cmd;
+  return undefined;
+}
+
 function contentBlockText(block: unknown): string {
   if (block && typeof block === "object" && (block as { type?: unknown }).type === "text") {
     const t = (block as { text?: unknown }).text;
     if (typeof t === "string") return t;
   }
   return "";
+}
+
+/** True when this update carries renderable tool output (terminal or content). */
+function hasToolContent(update: SessionUpdate): boolean {
+  return terminalOutput(update) !== undefined || toolContentText((update as { content?: unknown }).content) !== "";
 }
 
 /** Extract human-readable text from a ToolCallContent[] (text + diff blocks). */

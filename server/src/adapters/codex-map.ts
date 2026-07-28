@@ -123,7 +123,7 @@ export class CodexEventMapper {
       case "commandExecution":
         return {
           callId: item.id,
-          name: typeof item.command === "string" && item.command ? item.command : "bash",
+          name: "bash",
           args: { command: item.command, cwd: item.cwd },
           risk: "risky" as Risk,
         };

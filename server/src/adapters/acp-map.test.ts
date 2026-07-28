@@ -95,8 +95,10 @@ test("maps a tool call lifecycle: start, output delta, end", () => {
 
 test("classifies risk by tool kind", () => {
   const { events, mapper } = collect();
+  // `in_progress` (not `pending`) so the mapper commits the deferred
+  // `tool.call.start` (args are considered ready once the tool starts running).
   const start = (id: string, kind: string): SessionUpdate =>
-    ({ sessionUpdate: "tool_call", toolCallId: id, title: id, kind, status: "pending" }) as SessionUpdate;
+    ({ sessionUpdate: "tool_call", toolCallId: id, title: id, kind, status: "in_progress" }) as SessionUpdate;
   mapper.handle(start("r", "read"));
   mapper.handle(start("e", "edit"));
   mapper.handle(start("x", "execute"));
@@ -107,6 +109,40 @@ test("classifies risk by tool kind", () => {
       .map((e) => [(e.payload as { callId: string }).callId, (e.payload as { risk: string }).risk]),
   );
   assert.deepEqual(risks, { r: "safe", e: "risky", x: "risky", d: "destructive" });
+});
+
+// Regression: pi-acp streams a tool call as an initial `tool_call` with empty
+// rawInput, then fills the args in over later `tool_call_update`s. The mapper
+// must DEFER `tool.call.start` until the args are ready so the app receives the
+// real path/pattern (not empty args → "Read (no path)").
+test("defers tool.call.start until streamed args are ready", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r1",
+    title: "read",
+    kind: "read",
+    status: "pending",
+    rawInput: {},
+  } as unknown as SessionUpdate);
+  // No start yet — args not ready.
+  assert.equal(events.filter((e) => e.kind === "tool.call.start").length, 0);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "r1",
+    status: "pending",
+    rawInput: { path: "pack" },
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "r1",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const starts = events.filter((e) => e.kind === "tool.call.start");
+  assert.equal(starts.length, 1);
+  assert.equal((starts[0]!.payload as { name: string }).name, "read");
+  assert.deepEqual((starts[0]!.payload as { args: unknown }).args, { path: "package.json" });
 });
 
 test("reads bash output and exit code from terminal _meta", () => {
@@ -137,6 +173,102 @@ test("reads bash output and exit code from terminal _meta", () => {
   assert.equal((delta!.payload as { chunk: string }).chunk, "total 0\n");
   const end = events.find((e) => e.kind === "tool.call.end");
   assert.equal((end!.payload as { exitCode: number }).exitCode, 0);
+});
+
+test("canonicalizes an execute tool to `bash` with the command in args (command in title)", () => {
+  const { events, mapper } = collect();
+  // pi-acp carries the shell command in `title` and sends no rawInput for bash.
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b1",
+    title: "cd repo && pnpm test",
+    kind: "execute",
+    status: "in_progress",
+    content: [{ type: "terminal", terminalId: "b1" }],
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "bash");
+  assert.deepEqual((start!.payload as { args: unknown }).args, { command: "cd repo && pnpm test" });
+});
+
+test("canonicalizes an execute tool to `bash`, preferring rawInput.command over title", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b2",
+    title: "Run command",
+    kind: "execute",
+    status: "in_progress",
+    rawInput: { command: "ls -la" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "bash");
+  assert.deepEqual((start!.payload as { args: unknown }).args, { command: "ls -la" });
+});
+
+test("canonicalizes execute preferring a non-blank rawInput.cmd over an empty command", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b3",
+    title: "Run command",
+    kind: "execute",
+    status: "in_progress",
+    // command is present but blank; the valid `cmd` must not be dropped.
+    rawInput: { command: "", cmd: "ls -la" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "bash");
+  assert.equal((start!.payload as { args: { command: string } }).args.command, "ls -la");
+});
+
+// The app's renderer registry keys the one-liner off (name, args): `edit`→
+// "Edited <path>", `write`→"Wrote <path>", `grep`→"Grep <pattern>". pi-acp
+// sends these non-bash tools with title=<toolName> + rawInput=<args>, so the
+// mapper must pass the canonical name and args straight through.
+test("passes an edit tool through as name `edit` with the path in args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "e1",
+    title: "edit",
+    kind: "edit",
+    status: "in_progress",
+    rawInput: { path: "lib/foo.dart", edits: [{ oldText: "a", newText: "b" }] },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "edit");
+  assert.equal((start!.payload as { args: { path: string } }).args.path, "lib/foo.dart");
+});
+
+test("passes a write tool through as name `write` with the path in args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "w1",
+    title: "write",
+    kind: "edit",
+    status: "in_progress",
+    rawInput: { path: "out.txt", text: "hello" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "write");
+  assert.equal((start!.payload as { args: { path: string } }).args.path, "out.txt");
+});
+
+test("passes a grep tool through as name `grep` with the pattern in args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "g1",
+    title: "grep",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { pattern: "TODO", glob: "*.ts" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "grep");
+  assert.equal((start!.payload as { args: { pattern: string } }).args.pattern, "TODO");
 });
 
 test("emits a failed tool call with exitCode 1", () => {

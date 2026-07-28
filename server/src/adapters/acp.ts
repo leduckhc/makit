@@ -474,6 +474,14 @@ export class AcpAdapter extends SubprocessAdapter {
 
   private async handlePermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const options = params.options ?? [];
+
+    // A multiple-choice pick (pi's `ctx.ui.select`, surfaced by pi-acp as a
+    // permission whose options are the choices) is a question, not a binary
+    // approval. Render it inline as askUserQuestion and map the chosen label
+    // back to its optionId, instead of collapsing it to approve/deny.
+    const selected = await this.maybeSelectViaUser(params, options);
+    if (selected) return selected;
+
     const allow = options.find((o) => o.kind === "allow_once") ?? options.find((o) => o.kind === "allow_always");
     const reject = options.find((o) => o.kind === "reject_once") ?? options.find((o) => o.kind === "reject_always");
 
@@ -500,6 +508,79 @@ export class AcpAdapter extends SubprocessAdapter {
       }
     } catch (e) {
       log.warn(`[makit] AcpAdapter permission error: ${(e as Error).message}`);
+    } finally {
+      this.turns.leaveApproval();
+    }
+    return { outcome: { outcome: "cancelled" } };
+  }
+
+  /**
+   * If [params] is a multiple-choice selection (a set of choice options with no
+   * reject affordance, e.g. pi's `ctx.ui.select` bridged by pi-acp), present it
+   * as an inline askUserQuestion and map the chosen label back to its optionId.
+   * Returns undefined for a binary approve/deny permission so the caller falls
+   * through to its confirmAction path.
+   */
+  /**
+   * pi surfaces its interactive UI (pi-ask-user's `ctx.ui.select`/`ctx.ui.confirm`)
+   * as an ACP `requestPermission` whose `toolCall` is synthetic (`pi-ui-*`) and
+   * whose `rawInput.method` is `select`/`confirm`. These are QUESTIONS and must
+   * render as an inline askUserQuestion, not a modal approve/deny. We present
+   * every option (including a confirm's "No") as a choice and map the picked
+   * index back to its optionId. A GENUINE tool-approval permission (real tool
+   * call, no `pi-ui-` id / method) returns undefined so the caller shows the
+   * confirmAction modal.
+   */
+  private async maybeSelectViaUser(
+    params: RequestPermissionRequest,
+    options: RequestPermissionRequest["options"],
+  ): Promise<RequestPermissionResponse | undefined> {
+    const opts = options ?? [];
+    const tc: Record<string, unknown> = isRecord(params.toolCall) ? params.toolCall : {};
+    const rawInput = isRecord(tc.rawInput) ? tc.rawInput : {};
+    const method = str(rawInput.method);
+    const isPiUi =
+      (typeof tc.toolCallId === "string" && tc.toolCallId.startsWith("pi-ui-")) ||
+      method === "select" ||
+      method === "confirm";
+    // Not a pi UI question, or nothing to pick → let the confirmAction modal path handle it.
+    if (!isPiUi || opts.length < 2) return undefined;
+    if (!this.askUser) return undefined;
+    log.info(`[makit] ACP pi-ui "${method ?? "?"}" → inline askUserQuestion (${opts.length} options)`);
+
+    const question = str(rawInput.message) ?? str(rawInput.title) ?? str(tc.title) ?? "Pick one";
+    // Only add a header when it wouldn't just duplicate the question (a select
+    // with a title but no message uses the title as the question).
+    const titleText = str(rawInput.title) ?? str(tc.title);
+    const header = titleText && titleText !== question ? titleText : undefined;
+
+    this.turns.enterApproval("awaiting-approval");
+    try {
+      const resp = await this.askUser({
+        kind: "askUserQuestion",
+        sessionId: this.makitSessionId,
+        questions: [
+          {
+            ...(header ? { header } : {}),
+            question,
+            // Present EVERY option (allow + reject) as a selectable choice.
+            options: opts.map((o) => ({ label: o.name })),
+          },
+        ],
+      });
+      if (resp.kind === "askUserQuestion" && !(resp as { cancelled?: boolean }).cancelled) {
+        // Prefer the authoritative option index; fall back to a label match
+        // (labels can collide, so the index wins when present and in range).
+        const idx = resp.indices?.[0];
+        const answer = resp.answer ?? resp.answers?.[0];
+        const pick =
+          typeof idx === "number" && idx >= 0 && idx < opts.length
+            ? opts[idx]
+            : opts.find((o) => o.name === answer);
+        if (pick) return { outcome: { outcome: "selected", optionId: pick.optionId } };
+      }
+    } catch (e) {
+      log.warn(`[makit] AcpAdapter select error: ${(e as Error).message}`);
     } finally {
       this.turns.leaveApproval();
     }
@@ -818,6 +899,13 @@ function sliceByLines(content: string, line: number | null, limit: number | null
   const start = line != null && line > 0 ? line - 1 : 0;
   const end = limit != null ? start + limit : lines.length;
   return lines.slice(start, end).join("\n");
+}
+
+/** Return a trimmed non-empty string, or undefined. */
+function str(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const trimmed = v.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 /**

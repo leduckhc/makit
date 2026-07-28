@@ -1,0 +1,256 @@
+[
+  {
+    "seq": 0,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "session.commands",
+    "payload": {
+      "commands": [
+        {
+          "name": "pr-review",
+          "description": "Review the GitHub PR of the current worktree/branch and file findings as sc review threads",
+          "source": "command"
+        },
+        {
+          "name": "lgtm",
+          "description": "Approve and proceed with the suggested approach",
+          "source": "command"
+        },
+        {
+          "name": "compact",
+          "description": "Manually compact the session context",
+          "source": "command"
+        },
+        {
+          "name": "autocompact",
+          "description": "Toggle automatic context compaction",
+          "source": "command"
+        },
+        {
+          "name": "export",
+          "description": "Export session to an HTML file in the session cwd",
+          "source": "command"
+        },
+        {
+          "name": "session",
+          "description": "Show session stats (messages, tokens, cost, session file)",
+          "source": "command"
+        },
+        {
+          "name": "name",
+          "description": "Set session display name",
+          "source": "command"
+        },
+        {
+          "name": "steering",
+          "description": "Get/set pi steering message delivery mode (how queued steering messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "follow-up",
+          "description": "Get/set pi follow-up message delivery mode (how queued follow-up messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "changelog",
+          "description": "Show pi changelog",
+          "source": "command"
+        }
+      ]
+    }
+  },
+  {
+    "seq": 1,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": "The"
+    }
+  },
+  {
+    "seq": 2,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": " user"
+    }
+  },
+  {
+    "seq": 3,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": " wants"
+    }
+  },
+  {
+    "seq": 4,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": " me to present"
+    }
+  },
+  {
+    "seq": 5,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": " two"
+    }
+  },
+  {
+    "seq": 6,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": " options using"
+    }
+  },
+  {
+    "seq": 7,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "th-ms4okr2i-0",
+      "chunk": " the ask_user function."
+    }
+  },
+  {
+    "seq": 8,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.thinking",
+    "payload": {
+      "text": "The user wants me to present two options using the ask_user function.",
+      "thinkId": "th-ms4okr2i-0"
+    }
+  },
+  {
+    "seq": 9,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "tool.call.start",
+    "payload": {
+      "callId": "tooluse_9zSGFA1fOdihLQEk9FxjHJ",
+      "name": "ask_user",
+      "args": {
+        "question": "Which language do you prefer?",
+        "options": [
+          {
+            "title": "TypeScript"
+          },
+          {
+            "title": "Python"
+          }
+        ]
+      },
+      "risk": "safe"
+    }
+  },
+  {
+    "seq": 10,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_9zSGFA1fOdihLQEk9FxjHJ",
+      "chunk": "Waiting for user input..."
+    }
+  },
+  {
+    "seq": 11,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_9zSGFA1fOdihLQEk9FxjHJ",
+      "chunk": "User answered: TypeScript"
+    }
+  },
+  {
+    "seq": 12,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "tool.call.end",
+    "payload": {
+      "callId": "tooluse_9zSGFA1fOdihLQEk9FxjHJ",
+      "exitCode": 0,
+      "summary": "User answered: TypeScript",
+      "output": "User answered: TypeScript"
+    }
+  },
+  {
+    "seq": 13,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr2i-1",
+      "chunk": "You"
+    }
+  },
+  {
+    "seq": 14,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr2i-1",
+      "chunk": " prefer **"
+    }
+  },
+  {
+    "seq": 15,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr2i-1",
+      "chunk": "TypeScript**."
+    }
+  },
+  {
+    "seq": 16,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr2i-1",
+      "chunk": " "
+    }
+  },
+  {
+    "seq": 17,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr2i-1",
+      "chunk": "👍"
+    }
+  },
+  {
+    "seq": 18,
+    "sessionId": "replay",
+    "ts": 1785244659210,
+    "kind": "agent.message",
+    "payload": {
+      "text": "You prefer **TypeScript**. 👍",
+      "msgId": "am-ms4okr2i-1"
+    }
+  }
+]

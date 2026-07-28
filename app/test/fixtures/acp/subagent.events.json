@@ -1,0 +1,220 @@
+[
+  {
+    "seq": 0,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "session.commands",
+    "payload": {
+      "commands": [
+        {
+          "name": "pr-review",
+          "description": "Review the GitHub PR of the current worktree/branch and file findings as sc review threads",
+          "source": "command"
+        },
+        {
+          "name": "lgtm",
+          "description": "Approve and proceed with the suggested approach",
+          "source": "command"
+        },
+        {
+          "name": "compact",
+          "description": "Manually compact the session context",
+          "source": "command"
+        },
+        {
+          "name": "autocompact",
+          "description": "Toggle automatic context compaction",
+          "source": "command"
+        },
+        {
+          "name": "export",
+          "description": "Export session to an HTML file in the session cwd",
+          "source": "command"
+        },
+        {
+          "name": "session",
+          "description": "Show session stats (messages, tokens, cost, session file)",
+          "source": "command"
+        },
+        {
+          "name": "name",
+          "description": "Set session display name",
+          "source": "command"
+        },
+        {
+          "name": "steering",
+          "description": "Get/set pi steering message delivery mode (how queued steering messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "follow-up",
+          "description": "Get/set pi follow-up message delivery mode (how queued follow-up messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "changelog",
+          "description": "Show pi changelog",
+          "source": "command"
+        }
+      ]
+    }
+  },
+  {
+    "seq": 1,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-0",
+      "chunk": "I'll sp"
+    }
+  },
+  {
+    "seq": 2,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-0",
+      "chunk": "awn a subagent to count"
+    }
+  },
+  {
+    "seq": 3,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-0",
+      "chunk": " the .ts files."
+    }
+  },
+  {
+    "seq": 4,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message",
+    "payload": {
+      "text": "I'll spawn a subagent to count the .ts files.",
+      "msgId": "am-ms4okr53-0"
+    }
+  },
+  {
+    "seq": 5,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "tool.call.start",
+    "payload": {
+      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "name": "Agent",
+      "args": {
+        "description": "Count .ts files in src",
+        "subagent_type": "Explore",
+        "prompt": "Count how many .ts files exist in the src directory of the current working directory (/repo/server). Use a command like `find src -name '*.ts' | wc -l`. Report just the number."
+      },
+      "risk": "safe"
+    }
+  },
+  {
+    "seq": 6,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "chunk": "0 tool uses..."
+    }
+  },
+  {
+    "seq": 7,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "chunk": "1 tool uses..."
+    }
+  },
+  {
+    "seq": 8,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "chunk": "Agent completed in 7.0s (1 tool uses, 24.9k token).\n\n**104**"
+    }
+  },
+  {
+    "seq": 9,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "tool.call.end",
+    "payload": {
+      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "exitCode": 0,
+      "summary": "Agent completed in 7.0s (1 tool uses, 24.9k token).",
+      "output": "Agent completed in 7.0s (1 tool uses, 24.9k token).\n\n**104**"
+    }
+  },
+  {
+    "seq": 10,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-1",
+      "chunk": "The"
+    }
+  },
+  {
+    "seq": 11,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-1",
+      "chunk": " subagent coun"
+    }
+  },
+  {
+    "seq": 12,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-1",
+      "chunk": "ted **104** `.ts"
+    }
+  },
+  {
+    "seq": 13,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-1",
+      "chunk": "` files in the `src` direct"
+    }
+  },
+  {
+    "seq": 14,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "am-ms4okr53-1",
+      "chunk": "ory."
+    }
+  },
+  {
+    "seq": 15,
+    "sessionId": "replay",
+    "ts": 1785244659303,
+    "kind": "agent.message",
+    "payload": {
+      "text": "The subagent counted **104** `.ts` files in the `src` directory.",
+      "msgId": "am-ms4okr53-1"
+    }
+  }
+]
