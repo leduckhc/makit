@@ -80,8 +80,10 @@ class DesktopChatPane extends ConsumerStatefulWidget {
 
 class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   final _scroll = ScrollController();
+  final _anchor = TranscriptAnchor();
   String? _subscribed;
   int _lastSeq = 0;
+  List<ChatItem>? _lastItems;
 
   /// Caller-owned composer controllers, one per bound session, so the PR-actions
   /// split button (a sibling of the composer) can inject prompt text into the
@@ -202,6 +204,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     final items = ref.watch(chatItemsProvider(sessionId));
 
+    if (!identical(items, _lastItems)) {
+      _lastItems = items;
+      // A real content change (new item or streamed delta): let the transcript
+      // physics absorb the growth so history stays put under the user's eyes.
+      _anchor.arm();
+    }
     // Keep the transcript pinned to the newest message as items stream in,
     // but only when the user is already near the bottom so scrolling up to read
     // history is never yanked away. Reversed list: newest is at offset 0.
@@ -233,52 +241,71 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               // scrolls the transcript anywhere in the pane, not just over the
               // centered content column. Each row keeps the readable-width cap
               // via its own centered ConstrainedBox, so the layout is unchanged.
-              : ListView.builder(
-                  controller: _scroll,
-                  // Reversed so the resting position (offset 0) is the newest
-                  // message: opens pinned to the latest, older rows build
-                  // lazily as the user scrolls up.
-                  reverse: true,
-                  padding: const EdgeInsets.symmetric(vertical: kSpace12),
-                  itemCount: items.length + (hasTrailer ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    // Reversed: i counts up from the bottom. The trailing row
-                    // (i == 0) is the inline ask card when awaiting (priority —
-                    // Pi stays running while asking), else the "working…"
-                    // indicator while running.
-                    final bool isTrailer = hasTrailer && i == 0;
-                    final ChatItem? item = isTrailer
-                        ? null
-                        : items[items.length - 1 - (hasTrailer ? i - 1 : i)];
-                    final Widget child = !isTrailer
-                        ? chatItemWidget(item!)
-                        : (trailer == TranscriptTrailer.ask
-                              ? AskCard(ask: pendingAsk!)
-                              : const WorkingIndicator());
-                    // Center each row within the same readable-width cap as
-                    // the composer, so the transcript column lines up with the
-                    // input instead of stretching edge-to-edge. The ListView
-                    // itself stays full width so the mouse wheel scrolls
-                    // anywhere in the pane; only the row *content* is capped.
-                    // Key item rows by identity (via KeyedSubtree) so inline
-                    // expand/collapse state stays with the right call as the
-                    // reversed list reorders.
-                    return KeyedSubtree(
-                      key: !isTrailer
-                          ? chatItemKey(item!)
-                          : (trailer == TranscriptTrailer.ask
-                                ? ValueKey('ask-${pendingAsk!.requestId}')
-                                : null),
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(
-                            maxWidth: kReadableContentMaxWidth,
+              : Stack(
+                  children: [
+                    ListView.builder(
+                      controller: _scroll,
+                      // Reversed so the resting position (offset 0) is the newest
+                      // message: opens pinned to the latest, older rows build
+                      // lazily as the user scrolls up.
+                      reverse: true,
+                      // Absorb extent changes (streamed tokens, new items, an
+                      // expanded row) into the offset once the user has scrolled
+                      // into history, so the row being read never slides. See
+                      // [TranscriptScrollPhysics].
+                      physics: TranscriptScrollPhysics(anchor: _anchor),
+                      padding: const EdgeInsets.symmetric(vertical: kSpace12),
+                      itemCount: items.length + (hasTrailer ? 1 : 0),
+                      itemBuilder: (context, i) {
+                        // Reversed: i counts up from the bottom. The trailing row
+                        // (i == 0) is the inline ask card when awaiting (priority —
+                        // Pi stays running while asking), else the "working…"
+                        // indicator while running.
+                        final bool isTrailer = hasTrailer && i == 0;
+                        final ChatItem? item = isTrailer
+                            ? null
+                            : items[items.length -
+                                  1 -
+                                  (hasTrailer ? i - 1 : i)];
+                        final Widget child = !isTrailer
+                            ? chatItemWidget(item!)
+                            : (trailer == TranscriptTrailer.ask
+                                  ? AskCard(ask: pendingAsk!)
+                                  : const WorkingIndicator());
+                        // Center each row within the same readable-width cap as
+                        // the composer, so the transcript column lines up with the
+                        // input instead of stretching edge-to-edge. The ListView
+                        // itself stays full width so the mouse wheel scrolls
+                        // anywhere in the pane; only the row *content* is capped.
+                        // Key item rows by identity (via KeyedSubtree) so inline
+                        // expand/collapse state stays with the right call as the
+                        // reversed list reorders.
+                        return KeyedSubtree(
+                          key: !isTrailer
+                              ? chatItemKey(item!)
+                              : (trailer == TranscriptTrailer.ask
+                                    ? ValueKey('ask-${pendingAsk!.requestId}')
+                                    : null),
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxWidth: kReadableContentMaxWidth,
+                              ),
+                              child: transcriptRow(child),
+                            ),
                           ),
-                          child: transcriptRow(child),
-                        ),
-                      ),
-                    );
-                  },
+                        );
+                      },
+                    ),
+                    // Floating "jump to newest" affordance over the transcript,
+                    // just above the composer — the same widget as mobile.
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: kSpace8,
+                      child: Center(child: JumpToNewestButton(scroll: _scroll)),
+                    ),
+                  ],
                 ),
         ),
         Center(

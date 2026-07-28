@@ -16,6 +16,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../widgets/glass.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
@@ -40,6 +41,166 @@ void anchorToNewestIfNearBottom(ScrollController scroll) {
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (scroll.hasClients) scroll.jumpTo(0);
   });
+}
+
+/// Keeps the rows the user is *reading* nailed to the same screen position when
+/// the transcript's extent changes underneath them.
+///
+/// The transcript is `reverse: true`, so scroll offsets are measured from the
+/// newest message. That makes the newest end stable (good: the session opens
+/// pinned to the latest) but every offset *above* it shifts whenever content
+/// grows — which is constantly, in a live session: streamed tokens extend the
+/// tail, new items arrive, a tool row expands. At a fixed pixel offset the user
+/// therefore sees the transcript slide, and an expanded row grows upward off
+/// the top of the viewport instead of downward.
+///
+/// Once the user has scrolled into history (beyond [kAnchorNearBottomPx]) this
+/// physics absorbs the extent delta into the offset, which re-anchors the
+/// viewport to the content instead of to the newest message: streaming below is
+/// then invisible. Within the near-bottom band nothing is compensated, so the
+/// transcript stays glued to the newest message as before. Folding a row is
+/// handled by [retainRowPosition] instead.
+class TranscriptScrollPhysics extends ScrollPhysics {
+  /// Creates transcript physics that compensate when [anchor] is armed.
+  const TranscriptScrollPhysics({required this.anchor, super.parent});
+
+  /// Says which extent changes are real content changes — see [TranscriptAnchor].
+  final TranscriptAnchor anchor;
+
+  @override
+  TranscriptScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      TranscriptScrollPhysics(anchor: anchor, parent: buildParent(ancestor));
+
+  @override
+  double adjustPositionForNewDimensions({
+    required ScrollMetrics oldPosition,
+    required ScrollMetrics newPosition,
+    required bool isScrolling,
+    required double velocity,
+  }) {
+    final pixels = super.adjustPositionForNewDimensions(
+      oldPosition: oldPosition,
+      newPosition: newPosition,
+      isScrolling: isScrolling,
+      velocity: velocity,
+    );
+    if (oldPosition.pixels <= kAnchorNearBottomPx) return pixels;
+    final delta = newPosition.maxScrollExtent - oldPosition.maxScrollExtent;
+    if (delta == 0 || !anchor.claim()) return pixels;
+    return (pixels + delta).clamp(
+      newPosition.minScrollExtent,
+      newPosition.maxScrollExtent,
+    );
+  }
+}
+
+/// Tells [TranscriptScrollPhysics] which extent changes are worth compensating.
+///
+/// Armed by the surface when the item list actually changes (a new item, a
+/// streamed delta). Every *other* extent change is the lazy list refining its
+/// estimate for unbuilt rows — correcting the offset builds more rows, which
+/// changes the estimate again, so compensating those drifts the viewport and
+/// can make it correct itself every layout pass until it throws. Row folds are
+/// handled separately and exactly by [retainRowPosition].
+class TranscriptAnchor {
+  bool _armed = false;
+
+  /// Marks the next extent change as a real content change.
+  void arm() => _armed = true;
+
+  /// Consumes the armed state; true at most once per [arm].
+  bool claim() {
+    if (!_armed) return false;
+    _armed = false;
+    return true;
+  }
+}
+
+/// Runs [change] (a fold/unfold that resizes the row at [context]) while keeping
+/// that row anchored to its current screen position.
+///
+/// Needed because the transcript is `reverse: true`: scroll offsets are measured
+/// from the newest message, so a row's *bottom* edge is the fixed one and it
+/// grows upward — unfolding a long tool body would shoot the header the user
+/// just tapped off the top of the viewport. The row's own before/after screen
+/// position is measured (rather than the list's extent delta) because a lazy
+/// list also re-estimates the extent of its unbuilt rows when one row grows,
+/// which would over-correct.
+void retainRowPosition(BuildContext context, VoidCallback change) {
+  double? topOf() =>
+      (context.findRenderObject() as RenderBox?)?.localToGlobal(Offset.zero).dy;
+  final position = Scrollable.maybeOf(context)?.position;
+  final before = topOf();
+  change();
+  if (position == null || before == null) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted || !position.hasContentDimensions) return;
+    final after = topOf();
+    if (after == null) return;
+    // Positive drift = the row moved up; push the content back down by it. In a
+    // reversed viewport (axis direction up) a larger offset moves content down.
+    final drift = before - after;
+    if (drift.abs() < 0.5) return;
+    final sign = position.axisDirection == AxisDirection.up ? 1 : -1;
+    position.jumpTo(
+      (position.pixels + sign * drift).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      ),
+    );
+  });
+}
+
+/// Glass "jump to newest" affordance shown above the composer once the newest
+/// message has scrolled off (i.e. the transcript stopped following the tail past
+/// [kAnchorNearBottomPx]). Tapping it *jumps* — no long scroll animation through
+/// a history that may be thousands of rows.
+///
+/// Sized like the composer's send button (36pt circle, 18pt glyph) and tinted
+/// lighter than the bars so the transcript stays readable behind it.
+class JumpToNewestButton extends StatelessWidget {
+  /// Creates the affordance for the transcript driven by [scroll].
+  const JumpToNewestButton({super.key, required this.scroll});
+
+  /// The transcript controller (a `reverse: true` list: newest is offset 0).
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: scroll,
+      builder: (context, _) {
+        final visible =
+            scroll.hasClients &&
+            scroll.position.hasPixels &&
+            scroll.position.pixels > kAnchorNearBottomPx;
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          // Hidden state builds no glass at all (the shader is not free).
+          child: visible
+              ? GlassSurface(
+                  key: const ValueKey('jump-to-newest'),
+                  borderRadius: 18,
+                  tint: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0x40181818)
+                      : const Color(0x40FFFFFF),
+                  child: SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: IconButton(
+                      tooltip: 'Jump to newest',
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      icon: const Icon(PhosphorIconsLight.arrowDown),
+                      onPressed: () => scroll.jumpTo(0),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey('jump-to-newest-hidden')),
+        );
+      },
+    );
+  }
 }
 
 /// Maps a folded [ChatItem] to its transcript widget. Tool calls render as
@@ -106,18 +267,31 @@ class ThinkingLine extends StatefulWidget {
   State<ThinkingLine> createState() => _ThinkingLineState();
 }
 
-class _ThinkingLineState extends State<ThinkingLine> {
+class _ThinkingLineState extends State<ThinkingLine>
+    with AutomaticKeepAliveClientMixin {
   bool _expanded = false;
+
+  // An expansion is user state, so the row must survive being scrolled out of
+  // the lazy list's cache — otherwise it silently re-folds itself.
+  @override
+  bool get wantKeepAlive => _expanded;
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final cs = Theme.of(context).colorScheme;
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: cs.onSurfaceVariant.withValues(alpha: 0.65),
       fontStyle: FontStyle.italic,
       height: 1.3,
     );
-    void toggle() => setState(() => _expanded = !_expanded);
+    void toggle() => retainRowPosition(
+      context,
+      () => setState(() {
+        _expanded = !_expanded;
+        updateKeepAlive();
+      }),
+    );
     final textWidget = _expanded
         ? SelectableText(widget.text.trim(), style: style, onTap: toggle)
         : Text(
