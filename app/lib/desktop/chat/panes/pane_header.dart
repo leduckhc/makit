@@ -125,9 +125,13 @@ class SessionActionsMenu extends ConsumerWidget {
       // Use `child` (not `icon`): `icon` builds an internal IconButton that
       // enforces a 48px min tap target, which inflates the header row and
       // pushes the centered row content below the traffic-light line.
-      child: const Padding(
-        padding: EdgeInsets.all(3),
-        child: Icon(PhosphorIconsLight.dotsThree, size: 18),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Icon(
+          PhosphorIconsRegular.dotsThree,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
       ),
       onSelected: (value) {
         switch (value) {
@@ -144,22 +148,43 @@ class SessionActionsMenu extends ConsumerWidget {
       },
       itemBuilder: (context) {
         final cs = Theme.of(context).colorScheme;
+        final textTheme = Theme.of(context).textTheme;
         return [
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'rename',
-            child: ListTile(
-              leading: Icon(PhosphorIconsLight.pencilSimple),
-              title: Text('Rename session'),
-              contentPadding: EdgeInsets.zero,
+            height: 36,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  PhosphorIconsLight.pencilSimple,
+                  size: 16,
+                  color: cs.onSurface,
+                ),
+                const SizedBox(width: kSpace8),
+                Flexible(
+                  child: Text('Rename session', style: textTheme.bodyMedium),
+                ),
+              ],
             ),
           ),
           const PopupMenuDivider(),
           PopupMenuItem(
             value: 'quit',
-            child: ListTile(
-              leading: Icon(PhosphorIconsLight.archiveBox, color: cs.onSurface),
-              title: const Text('Archive session'),
-              contentPadding: EdgeInsets.zero,
+            height: 36,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  PhosphorIconsLight.archiveBox,
+                  size: 16,
+                  color: cs.onSurface,
+                ),
+                const SizedBox(width: kSpace8),
+                Flexible(
+                  child: Text('Archive session', style: textTheme.bodyMedium),
+                ),
+              ],
             ),
           ),
         ];

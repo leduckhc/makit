@@ -325,7 +325,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           tooltip: 'Session actions',
           popUpAnimationStyle: AnimationStyle.noAnimation,
           padding: EdgeInsets.zero,
-          icon: const Icon(PhosphorIconsLight.dotsThree, size: 20),
+          icon: Icon(
+            PhosphorIconsRegular.dotsThree,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           onSelected: (value) {
             switch (value) {
               case 'rename':
@@ -354,38 +358,67 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             }
           },
           itemBuilder: (context) {
+            final textTheme = Theme.of(context).textTheme;
             return [
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'rename',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.pencilSimple),
-                  title: Text('Rename session'),
-                  contentPadding: EdgeInsets.zero,
+                height: 36,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(PhosphorIconsLight.pencilSimple, size: 16),
+                    const SizedBox(width: kSpace8),
+                    Flexible(
+                      child: Text(
+                        'Rename session',
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'model',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.robot),
-                  title: Text('Model'),
-                  contentPadding: EdgeInsets.zero,
+                height: 36,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(PhosphorIconsLight.robot, size: 16),
+                    const SizedBox(width: kSpace8),
+                    Flexible(child: Text('Model', style: textTheme.bodyMedium)),
+                  ],
                 ),
               ),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'thinking',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.brain),
-                  title: Text('Thinking'),
-                  contentPadding: EdgeInsets.zero,
+                height: 36,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(PhosphorIconsLight.brain, size: 16),
+                    const SizedBox(width: kSpace8),
+                    Flexible(
+                      child: Text('Thinking', style: textTheme.bodyMedium),
+                    ),
+                  ],
                 ),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'archive',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.archiveBox),
-                  title: Text('Archive session'),
-                  contentPadding: EdgeInsets.zero,
+                height: 36,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(PhosphorIconsLight.archiveBox, size: 16),
+                    const SizedBox(width: kSpace8),
+                    Flexible(
+                      child: Text(
+                        'Archive session',
+                        style: textTheme.bodyMedium,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ];

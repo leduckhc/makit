@@ -31,12 +31,18 @@ class _KillConnection extends ConnectionController {
 
   final killCompleted = Completer<Map<String, dynamic>>();
 
+  /// Set once a `session.archive` request is dispatched (the ✕ close path).
+  bool archiveRequested = false;
+
   @override
   Future<Map<String, dynamic>> request(
     MsgType type,
     Map<String, dynamic> body,
   ) {
-    if (body['kind'] == 'session.archive') return killCompleted.future;
+    if (body['kind'] == 'session.archive') {
+      archiveRequested = true;
+      return killCompleted.future;
+    }
     return Future.value(const {});
   }
 }
@@ -341,9 +347,7 @@ void main() {
   });
 
   group('quit', () {
-    testWidgets('Archive closes the tab and archives the session', (
-      tester,
-    ) async {
+    testWidgets('closing a tab via ✕ archives its session', (tester) async {
       final conn = _KillConnection();
       final c = _container(
         sessions: [_session('s1', 'Wire up pairing')],
@@ -354,23 +358,21 @@ void main() {
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Session actions'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Archive session'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, 'Archive'));
+      await tester.tap(find.byTooltip('Close tab'));
       await tester.pumpAndSettle();
 
-      // Tabs are dropped only AFTER the archive is acknowledged, so a failed
-      // archive can't orphan the layout. Before completion the tab is intact.
-      expect(conn.killCompleted.isCompleted, isFalse);
-      expect(find.byType(EmptyPaneStarter), findsNothing);
+      // The ✕ closes the tab immediately (not gated on the archive ack): the
+      // sole split resets to an empty starter tab and drops the selection.
+      expect(c.read(selectedSessionProvider), isNull);
+      expect(find.byType(EmptyPaneStarter), findsOneWidget);
 
+      // closeTabAndArchive fires a soft, fire-and-forget session.archive.
+      expect(conn.archiveRequested, isTrue);
+
+      // Completing the archive later is harmless (fire-and-forget) and leaves
+      // the starter tab in place.
       conn.killCompleted.complete(const {});
       await tester.pumpAndSettle();
-
-      // Once archived, the sole split reset to an empty starter tab.
-      expect(c.read(selectedSessionProvider), isNull);
       expect(find.byType(EmptyPaneStarter), findsOneWidget);
     });
   });

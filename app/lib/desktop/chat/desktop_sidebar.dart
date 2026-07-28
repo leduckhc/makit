@@ -232,6 +232,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                               tooltip: 'New worktree',
                               padding: EdgeInsets.zero,
                               iconSize: 16,
+                              color: Theme.of(context).colorScheme.onSurface,
                               visualDensity: VisualDensity.compact,
                               constraints: const BoxConstraints(
                                 minWidth: 22,
@@ -368,6 +369,7 @@ class _CompactMenuButton extends StatelessWidget {
       // staying within the row's leading-icon height.
       padding: EdgeInsets.zero,
       iconSize: 16,
+      color: Theme.of(context).colorScheme.onSurface,
       constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
       icon: Icon(icon, size: 16),
       onPressed: () => _open(context),
@@ -387,7 +389,7 @@ class _RepoMenuButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return _CompactMenuButton(
       tooltip: 'Repo actions',
-      icon: PhosphorIconsLight.dotsThree,
+      icon: PhosphorIconsRegular.dotsThree,
       onSelected: (value) {
         switch (value) {
           case 'hide':
@@ -397,16 +399,23 @@ class _RepoMenuButton extends ConsumerWidget {
         }
       },
       itemBuilder: (context) => [
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'new-worktree',
-          child: Text('New worktree from…'),
+          height: 36,
+          child: Text(
+            'New worktree from…',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'hide',
+          height: 36,
           child: Text(
             'Hide the repo',
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.error,
+            ),
           ),
         ),
       ],
@@ -733,7 +742,7 @@ class _WorktreeMenuButton extends StatelessWidget {
     final canRename = !_hasOpenPr && !isPrimary && !isDetached;
     return _CompactMenuButton(
       tooltip: 'Worktree actions',
-      icon: PhosphorIconsLight.dotsThree,
+      icon: PhosphorIconsRegular.dotsThree,
       onOpened: onMenuOpened,
       // A cancelled menu resolves to null → forward '' so the parent's
       // "keep mounted while open" flag is cleared just like a real selection.
@@ -742,6 +751,7 @@ class _WorktreeMenuButton extends StatelessWidget {
         PopupMenuItem(
           value: 'rename',
           enabled: canRename,
+          height: 36,
           child: Tooltip(
             message: isPrimary
                 ? "Can't rename the primary worktree's branch"
@@ -750,22 +760,34 @@ class _WorktreeMenuButton extends StatelessWidget {
                 : _hasOpenPr
                 ? "Can't rename a branch with an open pull request"
                 : '',
-            child: const Text('Rename branch'),
+            child: Text(
+              'Rename branch',
+              // Match PopupMenuItem's disabled greying (it tints the child's
+              // DefaultTextStyle with disabledColor): keep bodyMedium's size
+              // but hand the color back to the disabled default when disabled.
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: canRename ? null : Theme.of(context).disabledColor,
+              ),
+            ),
           ),
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
           value: 'delete',
           enabled: !isPrimary,
+          height: 36,
           child: Tooltip(
             message: isPrimary ? "Can't delete the primary worktree" : '',
             child: Text(
               'Delete worktree',
-              // Destructive: tint red, but only when actually enabled so a
-              // disabled item keeps its greyed-out affordance.
-              style: isPrimary
-                  ? null
-                  : TextStyle(color: Theme.of(context).colorScheme.error),
+              // Destructive: tint red when enabled; when disabled (primary),
+              // fall back to disabledColor so it greys like PopupMenuItem's
+              // default disabled child rather than reading as an active item.
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: isPrimary
+                    ? Theme.of(context).disabledColor
+                    : Theme.of(context).colorScheme.error,
+              ),
             ),
           ),
         ),

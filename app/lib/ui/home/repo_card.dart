@@ -75,7 +75,11 @@ class RepoCard extends ConsumerWidget {
           ),
           const Spacer(),
           PopupMenuButton<String>(
-            icon: const Icon(PhosphorIconsLight.dotsThreeVertical, size: 20),
+            icon: Icon(
+              PhosphorIconsRegular.dotsThreeVertical,
+              size: 20,
+              color: theme.colorScheme.onSurface,
+            ),
             tooltip: 'Repo actions',
             popUpAnimationStyle: AnimationStyle.noAnimation,
             onSelected: (value) {
@@ -90,33 +94,60 @@ class RepoCard extends ConsumerWidget {
             },
             itemBuilder: (context) {
               final cs = Theme.of(context).colorScheme;
+              final textTheme = Theme.of(context).textTheme;
               return [
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'new',
-                  child: ListTile(
-                    leading: Icon(PhosphorIconsLight.plus),
-                    title: Text('New session'),
-                    contentPadding: EdgeInsets.zero,
+                  height: 36,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(PhosphorIconsLight.plus, size: 16),
+                      const SizedBox(width: kSpace8),
+                      Flexible(
+                        child: Text('New session', style: textTheme.bodyMedium),
+                      ),
+                    ],
                   ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'attach',
-                  child: ListTile(
-                    leading: Icon(PhosphorIconsLight.arrowCounterClockwise),
-                    title: Text('Resume session'),
-                    contentPadding: EdgeInsets.zero,
+                  height: 36,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        PhosphorIconsLight.arrowCounterClockwise,
+                        size: 16,
+                      ),
+                      const SizedBox(width: kSpace8),
+                      Flexible(
+                        child: Text(
+                          'Resume session',
+                          style: textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const PopupMenuDivider(),
                 PopupMenuItem(
                   value: 'remove',
-                  child: ListTile(
-                    leading: Icon(PhosphorIconsLight.trash, color: cs.error),
-                    title: Text(
-                      'Remove from makit',
-                      style: TextStyle(color: cs.error),
-                    ),
-                    contentPadding: EdgeInsets.zero,
+                  height: 36,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(PhosphorIconsLight.trash, size: 16, color: cs.error),
+                      const SizedBox(width: kSpace8),
+                      Flexible(
+                        child: Text(
+                          'Remove from makit',
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: cs.error,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ];
