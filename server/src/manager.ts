@@ -36,6 +36,7 @@ import {
   findOpenPr,
   branchExists,
   slugify,
+  slugifyBranch,
   type OpenPr,
 } from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
@@ -516,16 +517,20 @@ export class SessionManager extends EventEmitter {
     // the session in the repo dir instead of forking a worktree.
     if (!base) return { path: repoPath, branch: null };
     // A user-supplied name is slugified to a git-safe ref; blank/invalid names
-    // fall back to the auto-generated `worktree-<uuid>`. Either way
+    // fall back to the auto-generated `worktree-<uuid>`. `slugifyBranch` keeps
+    // `/` so hierarchical names like `feat/new-ui` survive as-is; either way
     // `uniqueBranch` guards against collisions.
-    const requested = branchName ? slugify(branchName) : "";
+    const requested = branchName ? slugifyBranch(branchName) : "";
     const branch = await this.uniqueBranch(
       repoPath,
       requested || `worktree-${randomUUID().slice(0, 6)}`,
     );
+    // The worktree DIRECTORY can't contain `/` (it would nest a subfolder), so
+    // flatten it while the branch keeps its slashes: `feat/new-ui` on disk
+    // becomes `feat-new-ui`.
     const path = await addWorktree({
       repoPath,
-      name: branch,
+      name: branch.replace(/\//g, "-"),
       branch,
       baseBranch: base,
     });

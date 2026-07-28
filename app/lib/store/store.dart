@@ -575,15 +575,14 @@ class StoreController extends StateNotifier<StoreState> {
     String? baseBranch,
     String? branchName,
   }) async {
-    final ack = await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {
-        'kind': 'worktree.create',
-        'projectId': projectId,
-        'baseBranch': ?baseBranch,
-        'branchName': ?branchName,
-      },
-    );
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.create',
+          'projectId': projectId,
+          'baseBranch': ?baseBranch,
+          'branchName': ?branchName,
+        });
     final path = ack['path'] as String?;
     if (path == null) throw StateError('server did not return a worktree path');
     return (path: path, branch: ack['branch'] as String?);

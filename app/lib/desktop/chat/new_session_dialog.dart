@@ -468,7 +468,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
             decoration: const InputDecoration(
               isDense: true,
               border: OutlineInputBorder(),
-              hintText: 'auto — or type a branch name',
+              hintText: 'auto — or e.g. feat/new-ui',
             ),
           ),
         ),

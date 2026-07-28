@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, basename } from "node:path";
 
 import { SessionManager } from "./manager.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
@@ -250,6 +250,51 @@ test("createWorktree uses a sanitized branch name when one is supplied", async (
       .toString()
       .trim();
     assert.equal(branch, "my-feature");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("createWorktree keeps every word of an explicit branch name", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    // Seven words: the 6-word cap for message-derived names must not truncate
+    // a name the user typed on purpose.
+    const wt = await manager.createWorktree(projectId, undefined, "add user auth flow with oauth jwt");
+    assert.equal(wt.branch, "add-user-auth-flow-with-oauth-jwt");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("createWorktree preserves slashes in the branch but flattens the directory", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/new-ui");
+    // Branch keeps its hierarchy...
+    assert.equal(wt.branch, "feat/new-ui");
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt.path })
+      .toString()
+      .trim();
+    assert.equal(branch, "feat/new-ui");
+    // ...but the worktree directory is flattened (no nested subfolder).
+    assert.equal(basename(wt.path), "feat-new-ui");
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
