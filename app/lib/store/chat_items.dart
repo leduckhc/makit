@@ -59,6 +59,33 @@ class AgentMessageItem extends ChatItem {
       );
 }
 
+/// An image or GIF the agent produced (a tool result, or a local file it
+/// referenced) — SPEC-22. Carries only the descriptor: the bytes are fetched
+/// lazily from the server's `/media/<mediaId>` route, so replaying a long
+/// transcript costs nothing until a row scrolls into view.
+class AgentMediaItem extends ChatItem {
+  AgentMediaItem({
+    required super.seq,
+    required super.ts,
+    required this.mediaId,
+    required this.mime,
+    this.sizeBytes = 0,
+    this.alt,
+    this.callId,
+  });
+
+  /// sha256 of the bytes — both the fetch path and the cache key.
+  final String mediaId;
+  final String mime;
+  final int sizeBytes;
+
+  /// Description/filename for a11y and the failure placeholder.
+  final String? alt;
+
+  /// The tool call this came out of, when it came from one.
+  final String? callId;
+}
+
 class ThinkingItem extends ChatItem {
   ThinkingItem({
     required super.seq,
@@ -230,6 +257,23 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ),
           (cur) => cur.copyWith(text: cur.text + chunk),
         );
+      case EventKind.agentMedia:
+        // Defensive: a descriptor with no fetchable id would render a permanent
+        // broken placeholder, so drop it instead.
+        final mediaId = e.payload['mediaId'];
+        if (mediaId is String && mediaId.isNotEmpty) {
+          items.add(
+            AgentMediaItem(
+              seq: e.seq,
+              ts: e.ts,
+              mediaId: mediaId,
+              mime: e.payload['mime'] as String? ?? 'image/png',
+              sizeBytes: (e.payload['sizeBytes'] as num?)?.toInt() ?? 0,
+              alt: e.payload['alt'] as String?,
+              callId: e.payload['callId'] as String?,
+            ),
+          );
+        }
       case EventKind.agentThinkingDelta:
         // Streaming reasoning token. Append to the card for this thinkId,
         // creating it on the first delta so it is anchored at the point

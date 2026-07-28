@@ -10,7 +10,9 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
+import '../../store/chat_items.dart';
 import 'chat_metrics.dart';
+import 'media_view.dart';
 
 String _hhmm(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
@@ -137,6 +139,7 @@ class _AgentMessageState extends State<AgentMessage> {
                 styleSheet: _styleSheet(context),
                 onTapLink: _openLink,
                 builders: {'code': _CodeBlockBuilder(context)},
+                imageBuilder: _mediaImageBuilder,
               ),
             ),
           ),
@@ -145,6 +148,40 @@ class _AgentMessageState extends State<AgentMessage> {
       ),
     );
   }
+}
+
+/// Renders markdown images in agent prose.
+///
+/// `makit-media:<mediaId>` is what the server rewrites the agent's
+/// `![](/local/path.png)` into (server/src/media/local.ts ingests the bytes,
+/// because the phone has no access to that filesystem) — those load through the
+/// pinned media client. `http(s)` keeps flutter_markdown_plus's pre-existing
+/// network behaviour; hardening remote images is a separate phase of SPEC-22.
+/// Anything else — a `file://` or a raw path that was NOT rewritten (outside
+/// the allowed roots, or a still-streaming delta) — is unfetchable from the
+/// phone, so it gets a placeholder instead of a red decode error.
+Widget _mediaImageBuilder(Uri uri, String? title, String? alt) {
+  final label = alt?.isNotEmpty == true ? alt! : (title ?? uri.toString());
+  if (uri.scheme == kMediaUriScheme) {
+    // `makit-media:<id>` has no authority, so the id lands in `path`.
+    final mediaId = uri.path.isNotEmpty ? uri.path : uri.host;
+    return AgentMediaView(
+      item: AgentMediaItem(
+        seq: 0,
+        ts: 0,
+        mediaId: mediaId,
+        mime: 'image/png',
+        alt: alt ?? title,
+      ),
+    );
+  }
+  if (uri.scheme == 'http' || uri.scheme == 'https') {
+    return Image.network(
+      uri.toString(),
+      errorBuilder: (_, _, _) => MediaPlaceholder(label: label),
+    );
+  }
+  return MediaPlaceholder(label: label);
 }
 
 /// Joins the selected content of markdown blocks with a newline so a

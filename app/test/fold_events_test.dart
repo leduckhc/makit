@@ -202,5 +202,46 @@ void main() {
         expect((items[1] as AgentMessageItem).text, 'answer');
       },
     );
+    test('agent.media folds into a media item with its descriptor', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {
+          'mediaId': 'a' * 64,
+          'mime': 'image/png',
+          'kind': 'image',
+          'sizeBytes': 7281,
+          'alt': 'shot.png',
+          'callId': 'c1',
+        }),
+      ]);
+      expect(items.single, isA<AgentMediaItem>());
+      final m = items.single as AgentMediaItem;
+      expect(m.mediaId, 'a' * 64);
+      expect(m.mime, 'image/png');
+      expect(m.sizeBytes, 7281);
+      expect(m.alt, 'shot.png');
+      expect(m.callId, 'c1');
+    });
+
+    test('agent.media without a usable mediaId is dropped, not rendered', () {
+      // Defensive boundary: a descriptor we cannot fetch must not become an
+      // item that renders a permanent broken placeholder.
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {'mime': 'image/png'}),
+        _ev(2, EventKind.agentMedia, {'mediaId': '', 'mime': 'image/png'}),
+        _ev(3, EventKind.agentMedia, {'mediaId': 42, 'mime': 'image/png'}),
+      ]);
+      expect(items, isEmpty);
+    });
+
+    test('agent.media tolerates a missing mime/size/alt', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {'mediaId': 'b' * 64}),
+      ]);
+      final m = items.single as AgentMediaItem;
+      expect(m.mime, 'image/png', reason: 'a sane default keeps it renderable');
+      expect(m.sizeBytes, 0);
+      expect(m.alt, isNull);
+      expect(m.callId, isNull);
+    });
   });
 }

@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' show sha256;
 import 'package:ulid/ulid.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'pinned_http.dart';
 import 'protocol.dart';
 import 'transport.dart';
 // WsState now lives in transport.dart (breaks the interface↔impl import cycle);
@@ -180,18 +178,12 @@ class WsClient implements Transport {
   Future<WebSocketChannel> _openChannel(String url) async {
     final uri = Uri.parse(url);
     if (uri.scheme == 'wss' && _pinnedFingerprint != null) {
-      // Custom HttpClient that pins the server cert fingerprint instead of
-      // requiring CA trust. dart:io exposes the X.509 DER via `cert.der`.
-      final client = HttpClient(
-        context: SecurityContext(withTrustedRoots: false),
+      // Pin the server cert fingerprint instead of requiring CA trust. Shared
+      // with the media loader so both transports make the same trust decision.
+      return IOWebSocketChannel.connect(
+        uri,
+        customClient: pinnedHttpClient(_pinnedFingerprint!),
       );
-      client.badCertificateCallback =
-          (X509Certificate cert, String host, int port) {
-            final fp = _hexSha256(cert.der);
-            return fp == _pinnedFingerprint;
-          };
-      // Allow short-lived connection upgrade.
-      return IOWebSocketChannel.connect(uri, customClient: client);
     }
     return WebSocketChannel.connect(uri);
   }
@@ -248,9 +240,3 @@ class WsClient implements Transport {
     _retry = Timer(delay, _open);
   }
 }
-
-String _hexSha256(Uint8List bytes) => sha256
-    .convert(bytes)
-    .bytes
-    .map((b) => b.toRadixString(16).padLeft(2, '0'))
-    .join();
