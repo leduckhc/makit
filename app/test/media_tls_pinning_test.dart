@@ -10,7 +10,7 @@ import 'package:makit/transport/pinned_http.dart';
 /// fingerprint match is the entire identity check (see pinned_http.dart).
 ///
 /// This exercises it against a real `HttpServer.bindSecure` over a throwaway
-/// self-signed cert in `test/fixtures/tls/` (generated with openssl, valid for
+/// self-signed cert in `test/tls/` (generated with openssl, valid for
 /// 100 years, private key intentionally public — it guards nothing). It covers
 /// the case a WS-only test cannot: a plain HTTPS GET, which is how media loads
 /// on both the phone and the macOS desktop app.
@@ -20,8 +20,8 @@ void main() {
 
   setUp(() async {
     final context = SecurityContext()
-      ..useCertificateChain('test/fixtures/tls/cert.pem')
-      ..usePrivateKey('test/fixtures/tls/key.pem');
+      ..useCertificateChain('test/tls/cert.pem')
+      ..usePrivateKey('test/tls/key.pem');
     server = await HttpServer.bindSecure(
       InternetAddress.loopbackIPv4,
       0,
@@ -37,7 +37,7 @@ void main() {
       await req.response.close();
     });
     // The fingerprint the app would have captured at pairing time.
-    final der = File('test/fixtures/tls/cert.pem').readAsStringSync();
+    final der = File('test/tls/cert.pem').readAsStringSync();
     final b64 = der
         .split('\n')
         .where((l) => !l.startsWith('-----') && l.trim().isNotEmpty)
