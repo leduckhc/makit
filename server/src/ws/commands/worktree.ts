@@ -14,12 +14,13 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   r.register("worktree.create", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+    const branchName = ctx.env.branchName ? String(ctx.env.branchName) : undefined;
     if (!projectId) {
       ctx.err(WireErrorCode.BadRequest, "worktree.create requires a projectId");
       return;
     }
     try {
-      const wt = await manager.createWorktree(projectId, baseBranch);
+      const wt = await manager.createWorktree(projectId, baseBranch, branchName);
       void broadcastReposSnapshot();
       ctx.ack({ projectId, path: wt.path, branch: wt.branch });
     } catch (e) {

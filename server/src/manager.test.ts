@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, basename } from "node:path";
 
 import { SessionManager } from "./manager.js";
 import { CapabilityCache } from "./adapters/capability_cache.js";
@@ -213,7 +213,10 @@ function makeGitRepo(): string {
   return dir;
 }
 
-test("createWorktree then renameWorktreeBranch renames the branch", async () => {
+/** Run a worktree-creation test with isolated MAKIT_WORKTREE_DIR. Cleans up automatically. */
+async function withWorktreeEnv(
+  fn: (opts: { manager: SessionManager; projectId: string }) => Promise<void>,
+): Promise<void> {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
   const prevBase = process.env.MAKIT_WORKTREE_DIR;
@@ -221,6 +224,17 @@ test("createWorktree then renameWorktreeBranch renames the branch", async () => 
   try {
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
     const projectId = manager.listProjects()[0].id;
+    await fn({ manager, projectId });
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+}
+
+test("createWorktree then renameWorktreeBranch renames the branch", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
     const wt = await manager.createWorktree(projectId);
     assert.ok(wt.branch);
     await manager.renameWorktreeBranch(projectId, wt.path, "renamed-branch");
@@ -228,12 +242,82 @@ test("createWorktree then renameWorktreeBranch renames the branch", async () => 
       .toString()
       .trim();
     assert.equal(branch, "renamed-branch");
-  } finally {
-    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
-    else process.env.MAKIT_WORKTREE_DIR = prevBase;
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(base, { recursive: true, force: true });
-  }
+  });
+});
+
+test("createWorktree uses a sanitized branch name when one is supplied", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "My Feature!");
+    assert.equal(wt.branch, "my-feature");
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt.path })
+      .toString()
+      .trim();
+    assert.equal(branch, "my-feature");
+  });
+});
+
+test("createWorktree keeps every word of an explicit branch name", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    // Seven words: the 6-word cap for message-derived names must not truncate
+    // a name the user typed on purpose.
+    const wt = await manager.createWorktree(projectId, undefined, "add user auth flow with oauth jwt");
+    assert.equal(wt.branch, "add-user-auth-flow-with-oauth-jwt");
+  });
+});
+
+test("createWorktree preserves slashes in the branch but flattens the directory", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "feat/new-ui");
+    // Branch keeps its hierarchy...
+    assert.equal(wt.branch, "feat/new-ui");
+    const branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: wt.path })
+      .toString()
+      .trim();
+    assert.equal(branch, "feat/new-ui");
+    // ...but the worktree directory is flattened (no nested subfolder).
+    assert.equal(basename(wt.path), "feat-new-ui");
+  });
+});
+
+test("createWorktree disambiguates a flattened dir that collides with an existing worktree", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    // Branch `feat-new-ui` claims dir `feat-new-ui`.
+    const first = await manager.createWorktree(projectId, undefined, "feat-new-ui");
+    assert.equal(first.branch, "feat-new-ui");
+    assert.equal(basename(first.path), "feat-new-ui");
+    // Branch `feat/new-ui` is unique as a ref but flattens to the SAME dir; the
+    // dir must be disambiguated so `git worktree add` doesn't fail.
+    const second = await manager.createWorktree(projectId, undefined, "feat/new-ui");
+    assert.equal(second.branch, "feat/new-ui");
+    assert.notEqual(basename(second.path), "feat-new-ui");
+    assert.match(basename(second.path), /^feat-new-ui-\d+$/);
+  });
+});
+
+test("concurrent createWorktree calls never collide (serialized per repo)", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    // Fire several creations for the SAME requested name at once. Without the
+    // per-repo lock, they'd race between the uniqueness check and `git worktree
+    // add` and some would throw; serialized, each gets a distinct branch + dir.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => manager.createWorktree(projectId, undefined, "feat/new-ui")),
+    );
+    const branches = results.map((r) => r.branch);
+    const dirs = results.map((r) => basename(r.path));
+    assert.equal(new Set(branches).size, 6, `branches not unique: ${branches.join(", ")}`);
+    assert.equal(new Set(dirs).size, 6, `dirs not unique: ${dirs.join(", ")}`);
+    // First keeps the base name; the rest are suffixed.
+    assert.ok(branches.includes("feat/new-ui"));
+    assert.ok(dirs.includes("feat-new-ui"));
+  });
+});
+
+test("createWorktree falls back to an auto name when the supplied name is blank", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "   ");
+    assert.ok(wt.branch);
+    assert.match(wt.branch as string, /^worktree-/);
+  });
 });
 
 test("removeWorktree deletes the worktree from disk", async () => {

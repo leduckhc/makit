@@ -566,21 +566,23 @@ class StoreController extends StateNotifier<StoreState> {
   }
 
   /// Create a new worktree up front (the + New worktree flow) with an
-  /// auto-generated branch off [baseBranch]. Returns the new worktree's path +
-  /// branch; the caller then lands on it to pick a harness. The server
-  /// broadcasts a repos.snapshot so the sidebar shows the new worktree.
+  /// auto-generated branch off [baseBranch], or a slugified [branchName] when
+  /// supplied. Returns the new worktree's path + branch; the caller then lands
+  /// on it to pick a harness. The server broadcasts a repos.snapshot so the
+  /// sidebar shows the new worktree.
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
     String? baseBranch,
+    String? branchName,
   }) async {
-    final ack = await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {
-        'kind': 'worktree.create',
-        'projectId': projectId,
-        'baseBranch': ?baseBranch,
-      },
-    );
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.create',
+          'projectId': projectId,
+          'baseBranch': ?baseBranch,
+          'branchName': ?branchName,
+        });
     final path = ack['path'] as String?;
     if (path == null) throw StateError('server did not return a worktree path');
     return (path: path, branch: ack['branch'] as String?);

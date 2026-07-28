@@ -613,6 +613,36 @@ export function slugify(text: string, maxWords = 6): string {
 }
 
 /**
+ * Slugify a user-typed branch name into a git-safe ref, PRESERVING `/` so
+ * hierarchical names like `feat/new-ui` survive. Each `/`-separated segment is
+ * slugified like {@link slugify} (lowercase, non-`[a-z0-9-]` runs → `-`); empty
+ * segments are dropped, which also strips leading/trailing/duplicate slashes.
+ * The result is capped at `maxLength` chars (trailing `/`/`-` trimmed) so a
+ * pasted string can't produce an oversized git ref or an over-long worktree
+ * directory path. Returns `""` when nothing usable remains (caller falls back
+ * to an auto name). The worktree DIRECTORY name is derived separately by
+ * flattening `/` → `-`, since a slash in the dir path would nest a subfolder.
+ */
+export function slugifyBranch(text: string, maxLength = 80): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s/-]/g, " ")
+    .split("/")
+    .map((seg) =>
+      seg
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .join("-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, ""),
+    )
+    .filter(Boolean)
+    .join("/");
+  return slug.slice(0, maxLength).replace(/[/-]+$/g, "");
+}
+
+/**
  * Create a new worktree at `<worktreeBaseDir()>/<repoName>/<name>` on a fresh
  * branch `branch`, based off `baseBranch`. Returns the absolute worktree path,
  * canonicalized (symlinks resolved) so it matches what `git worktree list`

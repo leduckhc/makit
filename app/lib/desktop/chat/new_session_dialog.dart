@@ -52,6 +52,10 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   int? _prNumber;
   Future<List<OpenPr>>? _prsFuture;
 
+  /// Optional name for the branch a `newBranch` spawn forks (SPEC-27 follow-up).
+  /// Empty means the server auto-generates one.
+  final TextEditingController _branchNameCtrl = TextEditingController();
+
   /// The user-picked harness id; null falls back to the first available agent.
   String? _chosenAgentId;
 
@@ -80,6 +84,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   @override
   void dispose() {
     _composerCtrl.dispose();
+    _branchNameCtrl.dispose();
     super.dispose();
   }
 
@@ -147,9 +152,11 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         final wt = _selectedExistingWorktree();
         return (path: wt?.path ?? _existingPath, branch: wt?.branch);
       case WorktreeSource.newBranch:
+        final name = _branchNameCtrl.text.trim();
         final r = await store.createWorktree(
           projectId,
           baseBranch: _effectiveBaseBranch(projectId),
+          branchName: name.isEmpty ? null : name,
         );
         return (path: r.path, branch: r.branch);
       case WorktreeSource.fromPr:
@@ -322,6 +329,24 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     ),
   );
 
+  /// A worktree-panel row: a fixed-width inline label (e.g. "Open", "From",
+  /// "Name") followed by its control, so the panels read as short sentences.
+  Widget _labeledRow(ThemeData theme, String label, Widget child) => Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      SizedBox(
+        width: 52,
+        child: Text(
+          label,
+          style: theme.textTheme.labelLarge?.copyWith(
+            color: theme.colorScheme.outline,
+          ),
+        ),
+      ),
+      Expanded(child: child),
+    ],
+  );
+
   Widget _worktreeField(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -378,18 +403,22 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
         if (mounted) setState(() => _existingPath = value);
       });
     }
-    return DropdownButtonFormField<String>(
-      key: ValueKey('existing-$_projectId'),
-      initialValue: value,
-      isExpanded: true,
-      items: [
-        for (final w in worktrees)
-          DropdownMenuItem(
-            value: w.path,
-            child: Text(w.branch ?? w.path, overflow: TextOverflow.ellipsis),
-          ),
-      ],
-      onChanged: _spawning ? null : (v) => setState(() => _existingPath = v),
+    return _labeledRow(
+      theme,
+      'Open',
+      DropdownButtonFormField<String>(
+        key: ValueKey('existing-$_projectId'),
+        initialValue: value,
+        isExpanded: true,
+        items: [
+          for (final w in worktrees)
+            DropdownMenuItem(
+              value: w.path,
+              child: Text(w.branch ?? w.path, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: _spawning ? null : (v) => setState(() => _existingPath = v),
+      ),
     );
   }
 
@@ -401,26 +430,52 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     final options = repo == null
         ? const <String>[]
         : branchOptionsForRepo(repo);
-    if (options.isEmpty) {
-      return Text(
-        'Forks a fresh worktree off the repo’s default branch.',
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.outline,
-        ),
-      );
-    }
-    return DropdownButtonFormField<String>(
-      key: ValueKey('branch-$_projectId'),
-      initialValue: options.contains(_baseBranch) ? _baseBranch : options.first,
-      isExpanded: true,
-      items: [
-        for (final b in options)
-          DropdownMenuItem(
-            value: b,
-            child: Text(b, overflow: TextOverflow.ellipsis),
+    final Widget fromControl = options.isEmpty
+        ? Text(
+            'the repo’s default branch',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          )
+        : DropdownButtonFormField<String>(
+            key: ValueKey('branch-$_projectId'),
+            initialValue: options.contains(_baseBranch)
+                ? _baseBranch
+                : options.first,
+            isExpanded: true,
+            items: [
+              for (final b in options)
+                DropdownMenuItem(
+                  value: b,
+                  child: Text(b, overflow: TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: _spawning
+                ? null
+                : (v) => setState(() => _baseBranch = v),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _labeledRow(theme, 'From', fromControl),
+        const SizedBox(height: kSpace10),
+        _labeledRow(
+          theme,
+          'Branch',
+          TextField(
+            controller: _branchNameCtrl,
+            enabled: !_spawning,
+            // Mirror the server's slugifyBranch length cap (80) so the field
+            // can't hold more than will survive, avoiding surprise truncation.
+            inputFormatters: [LengthLimitingTextInputFormatter(80)],
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              hintText: 'Leave blank to auto-generate',
+            ),
           ),
+        ),
       ],
-      onChanged: _spawning ? null : (v) => setState(() => _baseBranch = v),
     );
   }
 
@@ -536,22 +591,34 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _fieldLabel(theme, 'First message'),
-        Composer(
-          controller: _composerCtrl,
-          onSend: _start,
-          running: _spawning,
-          alwaysExpanded: true,
-          sendChord: keymap.chordFor(ShortcutAction.sendMessage),
-          newlineChord: keymap.chordFor(ShortcutAction.composerNewline),
-          footerActions: [
-            if (options.isNotEmpty)
-              ConfigOptionPickRow(
-                options: options,
-                values: _picks,
-                agent: selectedAgentId ?? '',
-                onPick: (id, value) => setState(() => _picks[id] = value),
-              ),
-          ],
+        // The composer sits directly inside the dialog surface. We drop its own
+        // opaque backdrop (glass: true) and wrap it in a single bordered panel
+        // so it reads as one clean input box instead of the composer's default
+        // surface frame, which looked like an ugly white border in the dialog.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(kRadius12),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          child: Composer(
+            controller: _composerCtrl,
+            onSend: _start,
+            running: _spawning,
+            alwaysExpanded: true,
+            glass: true,
+            sendChord: keymap.chordFor(ShortcutAction.sendMessage),
+            newlineChord: keymap.chordFor(ShortcutAction.composerNewline),
+            footerActions: [
+              if (options.isNotEmpty)
+                ConfigOptionPickRow(
+                  options: options,
+                  values: _picks,
+                  agent: selectedAgentId ?? '',
+                  onPick: (id, value) => setState(() => _picks[id] = value),
+                ),
+            ],
+          ),
         ),
       ],
     );

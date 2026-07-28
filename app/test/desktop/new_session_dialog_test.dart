@@ -39,6 +39,7 @@ class _FakeStore extends StoreController {
   final List<String> sent = [];
   final List<int> createdFromPr = [];
   final List<String?> createdWorktreeBases = [];
+  final List<String?> createdWorktreeNames = [];
 
   @override
   Future<List<OpenPr>> listOpenPrs(String projectId) async =>
@@ -48,8 +49,10 @@ class _FakeStore extends StoreController {
   Future<({String path, String? branch})> createWorktree(
     String projectId, {
     String? baseBranch,
+    String? branchName,
   }) async {
     createdWorktreeBases.add(baseBranch);
+    createdWorktreeNames.add(branchName);
     return (path: '/tmp/wt/new-$baseBranch', branch: 'auto/$baseBranch');
   }
 
@@ -281,14 +284,54 @@ void main() {
     await tester.tap(find.text('New branch'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'fork it');
+    // Two fields now (branch name + composer); the composer is the last one.
+    await tester.enterText(find.byType(TextField).last, 'fork it');
     await tester.pump();
     await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
     await tester.pumpAndSettle();
 
     expect(store.createdWorktreeBases, ['main']);
+    expect(store.createdWorktreeNames, [null]);
     expect(store.spawnWorktreePath, '/tmp/wt/new-main');
     expect(store.spawnCount, 1);
+  });
+
+  testWidgets('New branch send forwards a typed branch name', (tester) async {
+    final store = await _open(tester, agents: [_pi]);
+
+    await tester.tap(find.text('New branch'));
+    await tester.pumpAndSettle();
+
+    // First field is the branch-name input; the composer is the last field.
+    await tester.enterText(find.byType(TextField).first, 'my-feature');
+    await tester.enterText(find.byType(TextField).last, 'fork it');
+    await tester.pump();
+    await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
+    await tester.pumpAndSettle();
+
+    expect(store.createdWorktreeBases, ['main']);
+    expect(store.createdWorktreeNames, ['my-feature']);
+    expect(store.spawnCount, 1);
+  });
+
+  testWidgets('a long first message never overflows the dialog', (
+    tester,
+  ) async {
+    // A realistic small desktop window: the dialog is capped at 640 tall.
+    tester.view.physicalSize = const Size(1000, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await _open(tester, agents: [_pi]);
+
+    final longMessage = List.generate(14, (i) => 'line $i').join('\n');
+    // Default panel is "Existing worktree", so the composer is the only
+    // TextField; `.last` is explicit and stays correct if more fields appear.
+    await tester.enterText(find.byType(TextField).last, longMessage);
+    await tester.pumpAndSettle();
+
+    // No RenderFlex/overflow exception was thrown while laying it out.
+    expect(tester.takeException(), isNull);
+    expect(find.text('New session'), findsOneWidget);
   });
 
   testWidgets('✕ closes the dialog without spawning', (tester) async {

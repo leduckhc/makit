@@ -70,6 +70,19 @@
   .select .caret { color: var(--muted); }
   .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
+  /* inline lead label that prefixes a selector ("Open" / "From") */
+  .lead-label { color: var(--muted); font-size: 12px; font-weight: 600; min-width: 40px; }
+  /* stacked rows inside a worktree panel */
+  .rows { display: flex; flex-direction: column; gap: 8px; }
+  .row-inline { display: flex; align-items: center; gap: 8px; }
+  .row-inline .select { flex: 1; }
+  /* plain text input (new branch name) */
+  .tinput {
+    flex: 1; padding: 9px 12px; background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: 10px; color: var(--text); font: inherit; outline: none;
+  }
+  .tinput::placeholder { color: var(--muted); }
+
   /* harness chips */
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
@@ -146,6 +159,118 @@
 <body class="mode-light">
   <div class="lab-controls">
     <button onclick="document.body.className = document.body.className==='mode-light'?'mode-dark':'mode-light'">Toggle light/dark</button>
+  </div>
+
+  <!-- ===================== REQUESTED CHANGES (worktree labels + composer fix + overflow) ===================== -->
+  <div class="stage">
+    <h2>🆕 Requested — Existing=“Open”, New branch=“From” + name, clean composer</h2>
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="title">New session</div>
+        <button class="close" title="Cancel">✕</button>
+      </div>
+      <div class="dialog-sub">Configure the session, then start it with your first message.</div>
+      <div class="dialog-body">
+
+        <!-- Worktree · Existing state — inline “Open” label -->
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg" style="margin-bottom:10px">
+            <button class="on">Existing</button>
+            <button>New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="row-inline">
+            <span class="lead-label">Open</span>
+            <div class="select">
+              <span class="val">feature/tab-system</span>
+              <span class="sub">makit</span>
+              <span class="caret">▾</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- First message — composer sits directly on the dialog surface (no white box) -->
+        <div class="field" style="border-bottom:none;padding-bottom:4px">
+          <div class="field-label">First message</div>
+          <div class="composer">
+            <div class="cpills">
+              <span class="cpill ghost"><span class="lead">◆</span>GPT-5 <span class="caret">▾</span></span>
+              <span class="cpill ghost">
+                <span class="signal"><i class="act"></i><i class="act"></i><i class="act"></i><i></i><i></i></span>
+                medium <span class="caret">▾</span>
+              </span>
+            </div>
+            <div class="divider"></div>
+            <textarea placeholder="Describe the task to start the session…">Add a tab strip to each split and wire up reveal-on-click.</textarea>
+            <div class="row">
+              <span class="sub" style="color:var(--muted);font-size:12px">⏎ to send · ⇧⏎ for newline</span>
+              <span class="spacer"></span>
+              <button class="send" title="Start session">↑</button>
+            </div>
+          </div>
+          <div class="hint">Fix: the composer's own opaque backdrop is dropped inside the dialog — no ugly white frame around it.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Second dialog: New branch state -->
+    <div class="dialog">
+      <div class="dialog-header">
+        <div class="title">New session</div>
+        <button class="close" title="Cancel">✕</button>
+      </div>
+      <div class="dialog-sub">Configure the session, then start it with your first message.</div>
+      <div class="dialog-body">
+
+        <!-- Worktree · New branch state — “From” base-branch selector + branch-name input -->
+        <div class="field">
+          <div class="field-label">Worktree</div>
+          <div class="seg" style="margin-bottom:10px">
+            <button>Existing</button>
+            <button class="on">New branch</button>
+            <button>From PR</button>
+          </div>
+          <div class="rows">
+            <div class="row-inline">
+              <span class="lead-label">From</span>
+              <div class="select">
+                <span class="val">main</span>
+                <span class="sub">makit</span>
+                <span class="caret">▾</span>
+              </div>
+            </div>
+            <div class="row-inline">
+              <span class="lead-label">Branch</span>
+              <input class="tinput" placeholder="Leave blank to auto-generate" />
+            </div>
+          </div>
+          <div class="hint">Forks a fresh worktree off <b>From</b>. Leave <b>Branch</b> blank for an auto-generated name.</div>
+        </div>
+
+        <!-- First message — tall (10-line) case: body scrolls, composer never spills past the edge -->
+        <div class="field" style="border-bottom:none;padding-bottom:4px">
+          <div class="field-label">First message</div>
+          <div class="composer">
+            <textarea placeholder="Describe the task to start the session…" style="min-height:150px">Line 1
+Line 2
+Line 3
+Line 4
+Line 5
+Line 6
+Line 7… (grows to 10 lines, then the field scrolls internally so the dialog body stays put)</textarea>
+            <div class="row">
+              <span class="sub" style="color:var(--muted);font-size:12px">⏎ to send · ⇧⏎ for newline</span>
+              <span class="spacer"></span>
+              <button class="send" title="Start session">↑</button>
+            </div>
+          </div>
+          <div class="hint">Fix: dialog body scrolls and the field caps its own height, so a long first message never overflows the dialog edge.</div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- ===================== ACP CONFIG CATALOG (model/reasoning/mode) ===================== -->
