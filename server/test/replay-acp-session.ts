@@ -13,7 +13,7 @@
  *   node_modules/.bin/tsx test/replay-acp-session.ts --write bash       # just one
  */
 
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AcpEventMapper } from "../src/adapters/acp-map.js";
@@ -85,21 +85,24 @@ export function renderFixture(name: string): string {
   return JSON.stringify(toAppEvents(replayFixture(jsonl)), null, 2) + "\n";
 }
 
-function printSummary(events: AdapterEvent[]): void {
-  for (const e of events) {
-    const p = e.payload as Record<string, unknown>;
-    const detail =
-      e.kind === "tool.call.start"
-        ? `name=${JSON.stringify(p.name)} args=${JSON.stringify(p.args)}`
-        : e.kind === "tool.call.end"
-          ? `exit=${p.exitCode} summary=${JSON.stringify(p.summary)}`
-          : e.kind === "tool.call.delta"
-            ? `chunk=${JSON.stringify(p.chunk)}`
-            : e.kind.startsWith("agent.")
-              ? JSON.stringify(String(p.text ?? p.chunk ?? "").slice(0, 60))
-              : "";
-    console.log(e.kind.padEnd(22), detail);
+/** One-line description of an event, for the human-readable dump. */
+function describe(e: AdapterEvent): string {
+  const p = e.payload as Record<string, unknown>;
+  switch (e.kind) {
+    case "tool.call.start":
+      return `name=${JSON.stringify(p.name)} args=${JSON.stringify(p.args)}`;
+    case "tool.call.end":
+      return `exit=${p.exitCode} summary=${JSON.stringify(p.summary)}`;
+    case "tool.call.delta":
+      return `chunk=${JSON.stringify(p.chunk)}`;
+    default:
+      if (e.kind.startsWith("agent.")) return JSON.stringify(String(p.text ?? p.chunk ?? "").slice(0, 60));
+      return "";
   }
+}
+
+function printSummary(events: AdapterEvent[]): void {
+  for (const e of events) console.log(e.kind.padEnd(22), describe(e));
 }
 
 if (process.argv[1]?.endsWith("replay-acp-session.ts")) {
@@ -108,7 +111,10 @@ if (process.argv[1]?.endsWith("replay-acp-session.ts")) {
     const wanted = args.filter((a) => a !== "--write");
     for (const name of wanted.length > 0 ? wanted : sessionNames()) {
       const body = renderFixture(name);
-      for (const dir of fixtureDirs) writeFileSync(join(dir, `${name}.events.json`), body);
+      for (const dir of fixtureDirs) {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, `${name}.events.json`), body);
+      }
       console.error(`[replay] wrote ${name}.events.json → ${fixtureDirs.length} fixture dirs`);
     }
   } else {

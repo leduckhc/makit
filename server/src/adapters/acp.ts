@@ -532,10 +532,14 @@ export class AcpAdapter extends SubprocessAdapter {
     const tc: Record<string, unknown> = isRecord(params.toolCall) ? params.toolCall : {};
     const rawInput = isRecord(tc.rawInput) ? tc.rawInput : {};
     const method = str(rawInput.method);
+    // The `pi-ui-` id is the authoritative signal. `method` alone is not: a
+    // GENUINE tool approval whose rawInput happens to carry a `method: "select"`
+    // field would otherwise skip the confirmAction modal (and its command
+    // preview), so it must also carry the generic `other` kind that pi's
+    // synthetic UI calls use — never `execute`/`edit`/`delete`.
     const isPiUi =
       (typeof tc.toolCallId === "string" && tc.toolCallId.startsWith("pi-ui-")) ||
-      method === "select" ||
-      method === "confirm";
+      ((method === "select" || method === "confirm") && tc.kind === "other");
     // Not a pi UI question, or nothing to pick → let the confirmAction modal path handle it.
     if (!isPiUi || opts.length < 2) return undefined;
     if (!this.askUser) return undefined;
@@ -571,6 +575,10 @@ export class AcpAdapter extends SubprocessAdapter {
             ? opts[idx]
             : opts.find((o) => o.name === answer);
         if (pick) return { outcome: { outcome: "selected", optionId: pick.optionId } };
+        // A valid answer that matches nothing would otherwise cancel silently.
+        log.warn(
+          `[makit] AcpAdapter select: answer matched no option (idx=${String(idx)}, answer=${JSON.stringify(answer)}) — cancelling`,
+        );
       }
     } catch (e) {
       log.warn(`[makit] AcpAdapter select error: ${(e as Error).message}`);

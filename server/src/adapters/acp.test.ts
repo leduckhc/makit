@@ -1235,3 +1235,50 @@ test("ingests a tool-result image and rewrites a local markdown image path", asy
   const text = (events.find((e) => e.kind === "agent.message")!.payload as { text: string }).text;
   assert.equal(text, `here it is ![shot](makit-media:${media.mediaId})`);
 });
+
+test("a genuine tool approval is not hijacked by a rawInput.method field", async () => {
+  let agentRef: ScriptedAgent;
+  let outcome: string | undefined;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      // A REAL execute-tool approval that happens to carry `method: "confirm"`
+      // in its arguments must still get the confirmAction modal (with its
+      // command preview), not an inline pick list.
+      const res = await conn.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "tool-42",
+          title: "rm -rf build",
+          kind: "execute",
+          status: "pending",
+          rawInput: { command: "rm -rf build", method: "confirm" },
+        } as any,
+        options: [
+          { optionId: "ok", name: "Allow", kind: "allow_once" },
+          { optionId: "no", name: "Reject", kind: "reject_once" },
+        ],
+      });
+      outcome = res.outcome.outcome === "selected" ? res.outcome.optionId : "cancelled";
+    });
+    return agentRef;
+  });
+
+  const asked: UICall[] = [];
+  const askUser = async (call: UICall): Promise<UIResponse> => {
+    asked.push(call);
+    return { kind: "confirmAction", approved: true };
+  };
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1", askUser });
+  await adapter.send({ text: "danger" });
+
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && outcome === undefined) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].kind, "confirmAction");
+  assert.equal(outcome, "ok");
+});

@@ -634,3 +634,76 @@ test("endTurn drops a tool that never got args, keeps one that did", () => {
     ],
   );
 });
+
+// Output can arrive before args. `tool.call.start` is immutable in the app, so
+// starting on output alone would pin an empty-args row ("Read (no path)") that a
+// later rawInput can never amend. The buffered output must survive the wait.
+test("output before args does not start the row, and is replayed after it", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "o1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: {},
+    content: [{ type: "content", content: { type: "text", text: "early output" } }],
+  } as unknown as SessionUpdate);
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "o1",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const tool = events.filter((e) => e.kind.startsWith("tool."));
+  assert.deepEqual(tool.map((e) => e.kind), ["tool.call.start", "tool.call.delta"]);
+  assert.deepEqual((tool[0]!.payload as { args: unknown }).args, { path: "package.json" });
+  assert.equal((tool[1]!.payload as { chunk: string }).chunk, "early output");
+
+  // …and the output is not duplicated when the same cumulative text repeats.
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "o1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "early output" } }],
+  } as unknown as SessionUpdate);
+  const end = events.find((e) => e.kind === "tool.call.end");
+  assert.equal((end!.payload as { output: string }).output, "early output");
+  assert.equal(events.filter((e) => e.kind === "tool.call.delta").length, 1);
+});
+
+// A tool that only ever produced output (no args, no terminal status) must still
+// be surfaced and closed when the turn ends, not dropped.
+test("endTurn keeps an args-less tool that produced output", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "o2",
+    title: "mystery",
+    kind: "other",
+    status: "pending",
+    content: [{ type: "content", content: { type: "text", text: "some output" } }],
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  assert.deepEqual(
+    events.filter((e) => e.kind.startsWith("tool.")).map((e) => e.kind),
+    ["tool.call.start", "tool.call.delta", "tool.call.end"],
+  );
+});
+
+// An array rawInput yields `{}` from canonicalizeTool, so it must not count as
+// usable args — otherwise the row starts empty, the bug this defers to avoid.
+test("an array rawInput does not count as usable args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "arr",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: ["package.json"],
+  } as unknown as SessionUpdate);
+  assert.deepEqual(events.filter((e) => e.kind === "tool.call.start"), []);
+});

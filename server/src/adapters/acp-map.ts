@@ -149,12 +149,12 @@ export class AcpEventMapper {
   endTurn(): void {
     this.flushAll();
     // A tool still tracked here never reported `completed`/`failed` (an aborted
-    // or refused turn). Surface the ones that got as far as real args, but always
-    // CLOSE them: a `tool.call.start` with no matching end leaves the row
-    // spinning forever. A tool still waiting on its args never ran, so showing
-    // it as "Read (no path) — failed" would be noise; drop it instead.
+    // or refused turn). Surface the ones that got as far as real args or real
+    // output, but always CLOSE them: a `tool.call.start` with no matching end
+    // leaves the row spinning forever. A tool still waiting on its args never
+    // ran, so showing it as "Read (no path) — failed" would be noise; drop it.
     for (const [id, t] of [...this.tools]) {
-      if (!t.started && !hasUsableArgs(t)) continue;
+      if (!t.started && !hasUsableArgs(t) && !this.toolText.has(id)) continue;
       this.ensureToolStart(id);
       if (this.tools.get(id)?.suppressed) continue;
       const output = this.toolText.get(id) ?? "";
@@ -189,13 +189,18 @@ export class AcpEventMapper {
     this.tools.set(id, cur);
 
     const status = update.status;
+    // Output can precede args, so stash it rather than letting it force a start:
+    // `tool.call.start` is immutable in the app, and starting with `{}` args is
+    // exactly the "Read (no path)" bug. Buffered text is flushed as the first
+    // delta once the row starts.
+    if (!cur.started) this.stashToolContent(id, update);
     // Start once the args are USABLE, not merely once the tool starts running:
     // pi-acp happens to finish streaming `rawInput` before `in_progress`, but
     // that is emitter ordering, not an ACP guarantee. Requiring args keeps the
     // "Read (no path)" bug fixed for agents that flip to `in_progress` first.
-    // A terminal status or real output always starts it, so nothing is dropped.
+    // A terminal status always starts it, so nothing is ever dropped.
     const terminal = status === "completed" || status === "failed";
-    const argsReady = terminal || hasToolContent(update) || (status === "in_progress" && hasUsableArgs(cur));
+    const argsReady = terminal || (status === "in_progress" && hasUsableArgs(cur));
     if (argsReady) this.ensureToolStart(id);
     if (!cur.started) return;
     if (cur.suppressed) {
@@ -231,6 +236,25 @@ export class AcpEventMapper {
       args,
       risk: riskFromKind(t.kind),
     });
+    // Replay whatever output arrived before the row existed.
+    const buffered = this.toolText.get(id);
+    if (buffered) this.emit("tool.call.delta", { callId: id, chunk: buffered });
+  }
+
+  /**
+   * Accumulate output for a tool that has not started yet, WITHOUT emitting:
+   * see {@link trackTool}. Media is deliberately not ingested here, since an
+   * `agent.media` event would reference a tool row that does not exist yet; it
+   * is picked up by {@link applyToolContent} once the row starts.
+   */
+  private stashToolContent(id: string, update: SessionUpdate): void {
+    const metaDelta = terminalOutput(update);
+    if (metaDelta) {
+      this.toolText.set(id, (this.toolText.get(id) ?? "") + metaDelta);
+      return;
+    }
+    const full = toolContentText((update as { content?: unknown }).content);
+    if (full) this.toolText.set(id, full);
   }
 
   /** Emit a `tool.call.delta` for any new output text on this update. */
@@ -420,19 +444,15 @@ function contentBlockText(block: unknown): string {
   return "";
 }
 
-/** True when this update carries renderable tool output (terminal or content). */
-function hasToolContent(update: SessionUpdate): boolean {
-  return terminalOutput(update) !== undefined || toolContentText((update as { content?: unknown }).content) !== "";
-}
-
 /**
  * True once we have something worth putting in a tool row's args: any streamed
- * `rawInput`, or — for an `execute` tool, whose command pi-acp carries in the
- * title — a non-blank title.
+ * `rawInput` object, or — for an `execute` tool, whose command pi-acp carries in
+ * the title — a non-blank title. Arrays are excluded to match
+ * {@link canonicalizeTool}, which would turn one into empty args.
  */
 function hasUsableArgs(t: { title: string; kind?: ToolKind; rawInput: unknown }): boolean {
   const raw = t.rawInput;
-  if (raw && typeof raw === "object" && Object.keys(raw as object).length > 0) return true;
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw as object).length > 0) return true;
   return t.kind === "execute" && t.title.trim().length > 0;
 }
 

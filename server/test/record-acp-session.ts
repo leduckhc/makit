@@ -47,7 +47,8 @@ async function main() {
   writeFileSync(out, "");
   const rec = (line: unknown) => appendFileSync(out, JSON.stringify(line) + "\n");
 
-  const transport = defaultConnect(piAcpSpec())(cwd, { ...process.env } as Record<string, string>);
+  // spawnLineProcess already merges `process.env`; no overrides needed here.
+  const transport = defaultConnect(piAcpSpec())(cwd, {});
   let done = false;
   transport.onExit((code) => {
     if (!done) console.error(`[record] pi-acp exited early: ${code}`);
@@ -90,10 +91,10 @@ async function main() {
   const sess = await conn.newSession({ cwd, mcpServers: [] });
 
   rec({ t: "prompt", text: prompt });
-  const res: any = await conn.prompt({
+  const res = (await conn.prompt({
     sessionId: sess.sessionId,
     prompt: [{ type: "text", text: prompt }],
-  });
+  })) as { stopReason?: string };
   rec({ t: "stopReason", reason: res?.stopReason ?? "unknown" });
 
   done = true;

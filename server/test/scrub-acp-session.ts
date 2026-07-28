@@ -42,6 +42,9 @@ function isBanner(update: Record<string, unknown>): boolean {
 /** Returns the scrubbed line object, or null to drop the line entirely. */
 export function scrubLine(obj: Record<string, unknown>): Record<string, unknown> | null {
   if (obj.t !== "update") return obj;
+  // A recording with a malformed/absent `update` should pass through untouched
+  // rather than crash the whole scrub run.
+  if (!obj.update || typeof obj.update !== "object") return obj;
   const update = obj.update as Record<string, unknown>;
   if (isBanner(update)) return null;
   if (update.sessionUpdate === "available_commands_update") {
@@ -54,9 +57,17 @@ export function scrubLine(obj: Record<string, unknown>): Record<string, unknown>
 export function scrubJsonl(jsonl: string, root: string): string {
   const rewrites = pathRewrites(root);
   const out: string[] = [];
+  let lineNo = 0;
   for (const line of jsonl.split("\n")) {
+    lineNo += 1;
     if (!line.trim()) continue;
-    const obj = scrubLine(JSON.parse(line) as Record<string, unknown>);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch (e) {
+      throw new Error(`malformed JSONL at line ${lineNo}: ${(e as Error).message}`);
+    }
+    const obj = scrubLine(parsed);
     if (!obj) continue;
     let text = JSON.stringify(obj);
     for (const [from, to] of rewrites) text = text.split(from).join(to);
@@ -68,6 +79,7 @@ export function scrubJsonl(jsonl: string, root: string): string {
 if (process.argv[1]?.endsWith("scrub-acp-session.ts")) {
   const args = process.argv.slice(2);
   const repoIdx = args.indexOf("--repo");
+  if (repoIdx >= 0 && !args[repoIdx + 1]) throw new Error("--repo requires a path");
   const root = repoRoot(repoIdx >= 0 ? args[repoIdx + 1] : undefined);
   const files = args.filter((_, i) => repoIdx < 0 || (i !== repoIdx && i !== repoIdx + 1));
   if (files.length === 0) throw new Error("usage: scrub-acp-session.ts [--repo <path>] <session.jsonl…>");
