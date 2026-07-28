@@ -13,6 +13,7 @@ import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
+import '../widgets/menu_item.dart';
 import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
@@ -325,7 +326,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
           tooltip: 'Session actions',
           popUpAnimationStyle: AnimationStyle.noAnimation,
           padding: EdgeInsets.zero,
-          icon: const Icon(PhosphorIconsLight.dotsThree, size: 20),
+          icon: Icon(
+            PhosphorIconsRegular.dotsThree,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           onSelected: (value) {
             switch (value) {
               case 'rename':
@@ -353,43 +358,29 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 _confirmArchive();
             }
           },
-          itemBuilder: (context) {
-            return [
-              const PopupMenuItem(
-                value: 'rename',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.pencilSimple),
-                  title: Text('Rename session'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'model',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.robot),
-                  title: Text('Model'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'thinking',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.brain),
-                  title: Text('Thinking'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-              const PopupMenuDivider(),
-              const PopupMenuItem(
-                value: 'archive',
-                child: ListTile(
-                  leading: Icon(PhosphorIconsLight.archiveBox),
-                  title: Text('Archive session'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ];
-          },
+          itemBuilder: (context) => [
+            themedMenuItem(
+              value: 'rename',
+              icon: PhosphorIconsLight.pencilSimple,
+              label: 'Rename session',
+            ),
+            themedMenuItem(
+              value: 'model',
+              icon: PhosphorIconsLight.robot,
+              label: 'Model',
+            ),
+            themedMenuItem(
+              value: 'thinking',
+              icon: PhosphorIconsLight.brain,
+              label: 'Thinking',
+            ),
+            const PopupMenuDivider(),
+            themedMenuItem(
+              value: 'archive',
+              icon: PhosphorIconsLight.archiveBox,
+              label: 'Archive session',
+            ),
+          ],
         ),
       ),
     );

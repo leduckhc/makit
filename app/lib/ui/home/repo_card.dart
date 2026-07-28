@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/glass.dart';
+import '../widgets/menu_item.dart';
 import '../widgets/searchable_list_sheet.dart';
 import 'new_session_sheet.dart';
 import 'repo_chips.dart';
@@ -75,7 +76,11 @@ class RepoCard extends ConsumerWidget {
           ),
           const Spacer(),
           PopupMenuButton<String>(
-            icon: const Icon(PhosphorIconsLight.dotsThreeVertical, size: 20),
+            icon: Icon(
+              PhosphorIconsRegular.dotsThreeVertical,
+              size: 20,
+              color: theme.colorScheme.onSurface,
+            ),
             tooltip: 'Repo actions',
             popUpAnimationStyle: AnimationStyle.noAnimation,
             onSelected: (value) {
@@ -91,33 +96,22 @@ class RepoCard extends ConsumerWidget {
             itemBuilder: (context) {
               final cs = Theme.of(context).colorScheme;
               return [
-                const PopupMenuItem(
+                themedMenuItem(
                   value: 'new',
-                  child: ListTile(
-                    leading: Icon(PhosphorIconsLight.plus),
-                    title: Text('New session'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
+                  icon: PhosphorIconsLight.plus,
+                  label: 'New session',
                 ),
-                const PopupMenuItem(
+                themedMenuItem(
                   value: 'attach',
-                  child: ListTile(
-                    leading: Icon(PhosphorIconsLight.arrowCounterClockwise),
-                    title: Text('Resume session'),
-                    contentPadding: EdgeInsets.zero,
-                  ),
+                  icon: PhosphorIconsLight.arrowCounterClockwise,
+                  label: 'Resume session',
                 ),
                 const PopupMenuDivider(),
-                PopupMenuItem(
+                themedMenuItem(
                   value: 'remove',
-                  child: ListTile(
-                    leading: Icon(PhosphorIconsLight.trash, color: cs.error),
-                    title: Text(
-                      'Remove from makit',
-                      style: TextStyle(color: cs.error),
-                    ),
-                    contentPadding: EdgeInsets.zero,
-                  ),
+                  icon: PhosphorIconsLight.trash,
+                  label: 'Remove from makit',
+                  color: cs.error,
                 ),
               ];
             },

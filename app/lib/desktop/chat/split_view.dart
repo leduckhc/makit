@@ -4,6 +4,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/store.dart';
+import '../../ui/composer/client_commands.dart';
+import '../../ui/widgets/menu_item.dart';
 import 'desktop_chat_pane.dart';
 import 'new_session_dialog.dart';
 import 'panes/split_node.dart';
@@ -346,7 +348,7 @@ class _TabBar extends ConsumerWidget {
                     minHeight: 24,
                   ),
                   tooltip: 'New session',
-                  color: cs.onSurfaceVariant,
+                  color: cs.onSurface,
                   icon: const Icon(PhosphorIconsLight.plus),
                   onPressed: () {
                     ref
@@ -488,7 +490,7 @@ class _TabChip extends ConsumerWidget {
             SessionStatusDot(status: session.status),
             const SizedBox(width: kSpace6),
           ],
-          Flexible(
+          Expanded(
             child: Text(
               label,
               maxLines: 1,
@@ -499,19 +501,13 @@ class _TabChip extends ConsumerWidget {
               ),
             ),
           ),
-          if (sessionId != null)
-            SessionActionsMenu(
-              sessionId: sessionId,
-              splitId: split.id,
-              tabId: tab.id,
-            ),
           IconButton(
             iconSize: 12,
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
             tooltip: 'Close tab',
-            color: cs.onSurfaceVariant.withValues(alpha: 0.6),
+            color: active ? cs.onSurface : cs.onSurfaceVariant,
             icon: const Icon(PhosphorIconsLight.x),
             onPressed: () =>
                 closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
@@ -543,6 +539,25 @@ class _TabChip extends ConsumerWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => controller.setActiveTab(split.id, tab.id),
+              // Right-click (desktop) / long-press (touch) opens the tab
+              // context menu. Only a real session can be renamed, so the
+              // menu is suppressed for the empty "New" tab.
+              onSecondaryTapDown: sessionId == null
+                  ? null
+                  : (d) => _showContextMenu(
+                      context,
+                      ref,
+                      d.globalPosition,
+                      sessionId,
+                    ),
+              onLongPressStart: sessionId == null
+                  ? null
+                  : (d) => _showContextMenu(
+                      context,
+                      ref,
+                      d.globalPosition,
+                      sessionId,
+                    ),
               // Inactive tabs are dimmed so only the active tab reads at full
               // strength (its green status dot / label stands out); inactive
               // tabs recede as muted context.
@@ -551,6 +566,43 @@ class _TabChip extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Tab context menu (right-click / long-press). One item — "Rename session"
+  /// — styled to the design system's primary body scale (`bodyMedium` text
+  /// with a matching 16px glyph).
+  Future<void> _showContextMenu(
+    BuildContext context,
+    WidgetRef ref,
+    Offset globalPosition,
+    String sessionId,
+  ) async {
+    final overlayState = Navigator.of(context).overlay;
+    if (overlayState == null) return;
+    final overlayBox = overlayState.context.findRenderObject();
+    if (overlayBox is! RenderBox) return;
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(globalPosition, globalPosition),
+        Offset.zero & overlayBox.size,
+      ),
+      popUpAnimationStyle: AnimationStyle.noAnimation,
+      items: [
+        themedMenuItem(
+          value: 'rename',
+          icon: PhosphorIconsLight.pencilSimple,
+          label: 'Rename session',
+        ),
+      ],
+    );
+    if (selected != 'rename' || !context.mounted) return;
+    await handleClientCommand(
+      '/name',
+      context: context,
+      ref: ref,
+      sessionId: sessionId,
     );
   }
 }

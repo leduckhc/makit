@@ -5,6 +5,7 @@
 //
 // ignore_for_file: depend_on_referenced_packages
 import 'package:flutter/material.dart' hide Tab, Split;
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
@@ -234,6 +235,78 @@ void main() {
           .map((o) => o.opacity);
       expect(opacitiesOf('First'), contains(0.55));
       expect(opacitiesOf('Second'), isNot(contains(0.55)));
+    });
+  });
+
+  group('tab context menu', () {
+    // A single split with two tabs: s2 ("Second") active, s1 ("First")
+    // inactive. The inactive tab's session pane is not built, so its label
+    // appears only in the tab strip — an unambiguous right-click / long-press
+    // target.
+    Future<ProviderContainer> twoTabs(WidgetTester tester) async {
+      final c = _container(
+        sessions: [_session('s1', 'First'), _session('s2', 'Second')],
+      );
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      _ws(c).revealSession('s2');
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('right-click on a session tab opens the Rename menu', (
+      tester,
+    ) async {
+      await twoTabs(tester);
+
+      expect(find.text('Rename session'), findsNothing);
+      await tester.tap(_chip(tester, 'First'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Rename session'), findsOneWidget);
+    });
+
+    testWidgets('long-press on a session tab opens the Rename menu', (
+      tester,
+    ) async {
+      await twoTabs(tester);
+
+      await tester.longPress(_chip(tester, 'First'));
+      await tester.pumpAndSettle();
+      expect(find.text('Rename session'), findsOneWidget);
+    });
+
+    testWidgets('selecting Rename opens the rename dialog seeded with the '
+        'current title', (tester) async {
+      await twoTabs(tester);
+
+      await tester.tap(_chip(tester, 'First'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      // After right-click, the popup menu is open. Tap the Rename item.
+      expect(find.text('Rename session'), findsOneWidget);
+      await tester.tap(find.text('Rename session'));
+      await tester.pumpAndSettle();
+
+      // The /name client command shows a text dialog prefilled with the title.
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Rename'), findsOneWidget);
+      final dialogField = find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(dialogField).controller?.text, 'First');
+    });
+
+    testWidgets('the empty New tab has no context menu', (tester) async {
+      final c = _container();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.text('New'), findsOneWidget);
+      await tester.tap(_chip(tester, 'New'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Rename session'), findsNothing);
     });
   });
 }

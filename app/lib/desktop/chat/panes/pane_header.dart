@@ -7,6 +7,7 @@ import '../../../app/theme.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../../../ui/composer/client_commands.dart';
+import '../../../ui/widgets/menu_item.dart';
 import '../sidebar_layout.dart';
 import '../title_bar_strip.dart';
 import 'workspace_controller.dart';
@@ -125,9 +126,13 @@ class SessionActionsMenu extends ConsumerWidget {
       // Use `child` (not `icon`): `icon` builds an internal IconButton that
       // enforces a 48px min tap target, which inflates the header row and
       // pushes the centered row content below the traffic-light line.
-      child: const Padding(
-        padding: EdgeInsets.all(3),
-        child: Icon(PhosphorIconsLight.dotsThree, size: 18),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Icon(
+          PhosphorIconsRegular.dotsThree,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
       ),
       onSelected: (value) {
         switch (value) {
@@ -142,28 +147,19 @@ class SessionActionsMenu extends ConsumerWidget {
             _confirmArchive(context, ref);
         }
       },
-      itemBuilder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        return [
-          const PopupMenuItem(
-            value: 'rename',
-            child: ListTile(
-              leading: Icon(PhosphorIconsLight.pencilSimple),
-              title: Text('Rename session'),
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'quit',
-            child: ListTile(
-              leading: Icon(PhosphorIconsLight.archiveBox, color: cs.onSurface),
-              title: const Text('Archive session'),
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-        ];
-      },
+      itemBuilder: (context) => [
+        themedMenuItem(
+          value: 'rename',
+          icon: PhosphorIconsLight.pencilSimple,
+          label: 'Rename session',
+        ),
+        const PopupMenuDivider(),
+        themedMenuItem(
+          value: 'quit',
+          icon: PhosphorIconsLight.archiveBox,
+          label: 'Archive session',
+        ),
+      ],
     );
   }
 

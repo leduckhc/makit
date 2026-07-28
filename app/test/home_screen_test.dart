@@ -266,7 +266,7 @@ void main() {
 
     expect(find.text('Resume session'), findsNothing);
 
-    await tester.tap(find.byIcon(PhosphorIconsLight.dotsThreeVertical));
+    await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThreeVertical));
     await tester.pumpAndSettle();
 
     expect(find.text('New session'), findsWidgets);

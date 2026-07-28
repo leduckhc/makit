@@ -485,7 +485,11 @@ class _GroupByMenu extends StatelessWidget {
       position: PopupMenuPosition.under,
       itemBuilder: (context) => [
         for (final v in ArchiveGroupBy.values)
-          PopupMenuItem(value: v, height: 36, child: Text(v.label)),
+          PopupMenuItem(
+            value: v,
+            height: 36,
+            child: Text(v.label, style: Theme.of(context).textTheme.bodyMedium),
+          ),
       ],
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

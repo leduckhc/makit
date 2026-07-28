@@ -534,12 +534,15 @@ class PrActionsSplitButton extends ConsumerWidget {
       menuChildren: [
         for (final action in _actions)
           MenuItemButton(
-            leadingIcon: action.icon.build(size: 18),
+            leadingIcon: action.icon.build(size: 16),
             trailingIcon: action == last
                 ? const Icon(PhosphorIconsLight.check, size: 16)
                 : null,
             onPressed: () => _run(ref, action),
-            child: Text(action.label),
+            child: Text(
+              action.label,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
       ],
       builder: (context, controller, _) => _SplitButton(
