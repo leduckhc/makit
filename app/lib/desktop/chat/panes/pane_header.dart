@@ -7,6 +7,7 @@ import '../../../app/theme.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../../../ui/composer/client_commands.dart';
+import '../../../ui/widgets/menu_item.dart';
 import '../sidebar_layout.dart';
 import '../title_bar_strip.dart';
 import 'workspace_controller.dart';
@@ -146,49 +147,19 @@ class SessionActionsMenu extends ConsumerWidget {
             _confirmArchive(context, ref);
         }
       },
-      itemBuilder: (context) {
-        final cs = Theme.of(context).colorScheme;
-        final textTheme = Theme.of(context).textTheme;
-        return [
-          PopupMenuItem(
-            value: 'rename',
-            height: 36,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  PhosphorIconsLight.pencilSimple,
-                  size: 16,
-                  color: cs.onSurface,
-                ),
-                const SizedBox(width: kSpace8),
-                Flexible(
-                  child: Text('Rename session', style: textTheme.bodyMedium),
-                ),
-              ],
-            ),
-          ),
-          const PopupMenuDivider(),
-          PopupMenuItem(
-            value: 'quit',
-            height: 36,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  PhosphorIconsLight.archiveBox,
-                  size: 16,
-                  color: cs.onSurface,
-                ),
-                const SizedBox(width: kSpace8),
-                Flexible(
-                  child: Text('Archive session', style: textTheme.bodyMedium),
-                ),
-              ],
-            ),
-          ),
-        ];
-      },
+      itemBuilder: (context) => [
+        themedMenuItem(
+          value: 'rename',
+          icon: PhosphorIconsLight.pencilSimple,
+          label: 'Rename session',
+        ),
+        const PopupMenuDivider(),
+        themedMenuItem(
+          value: 'quit',
+          icon: PhosphorIconsLight.archiveBox,
+          label: 'Archive session',
+        ),
+      ],
     );
   }
 

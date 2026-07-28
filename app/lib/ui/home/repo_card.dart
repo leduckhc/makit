@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/glass.dart';
+import '../widgets/menu_item.dart';
 import '../widgets/searchable_list_sheet.dart';
 import 'new_session_sheet.dart';
 import 'repo_chips.dart';
@@ -94,61 +95,23 @@ class RepoCard extends ConsumerWidget {
             },
             itemBuilder: (context) {
               final cs = Theme.of(context).colorScheme;
-              final textTheme = Theme.of(context).textTheme;
               return [
-                PopupMenuItem(
+                themedMenuItem(
                   value: 'new',
-                  height: 36,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(PhosphorIconsLight.plus, size: 16),
-                      const SizedBox(width: kSpace8),
-                      Flexible(
-                        child: Text('New session', style: textTheme.bodyMedium),
-                      ),
-                    ],
-                  ),
+                  icon: PhosphorIconsLight.plus,
+                  label: 'New session',
                 ),
-                PopupMenuItem(
+                themedMenuItem(
                   value: 'attach',
-                  height: 36,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        PhosphorIconsLight.arrowCounterClockwise,
-                        size: 16,
-                      ),
-                      const SizedBox(width: kSpace8),
-                      Flexible(
-                        child: Text(
-                          'Resume session',
-                          style: textTheme.bodyMedium,
-                        ),
-                      ),
-                    ],
-                  ),
+                  icon: PhosphorIconsLight.arrowCounterClockwise,
+                  label: 'Resume session',
                 ),
                 const PopupMenuDivider(),
-                PopupMenuItem(
+                themedMenuItem(
                   value: 'remove',
-                  height: 36,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(PhosphorIconsLight.trash, size: 16, color: cs.error),
-                      const SizedBox(width: kSpace8),
-                      Flexible(
-                        child: Text(
-                          'Remove from makit',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: cs.error,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  icon: PhosphorIconsLight.trash,
+                  label: 'Remove from makit',
+                  color: cs.error,
                 ),
               ];
             },

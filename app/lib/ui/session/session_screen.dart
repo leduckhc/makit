@@ -13,6 +13,7 @@ import '../composer/composer.dart';
 import '../composer/composer_selectors.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
+import '../widgets/menu_item.dart';
 import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
@@ -357,72 +358,29 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 _confirmArchive();
             }
           },
-          itemBuilder: (context) {
-            final textTheme = Theme.of(context).textTheme;
-            return [
-              PopupMenuItem(
-                value: 'rename',
-                height: 36,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(PhosphorIconsLight.pencilSimple, size: 16),
-                    const SizedBox(width: kSpace8),
-                    Flexible(
-                      child: Text(
-                        'Rename session',
-                        style: textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'model',
-                height: 36,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(PhosphorIconsLight.robot, size: 16),
-                    const SizedBox(width: kSpace8),
-                    Flexible(child: Text('Model', style: textTheme.bodyMedium)),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'thinking',
-                height: 36,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(PhosphorIconsLight.brain, size: 16),
-                    const SizedBox(width: kSpace8),
-                    Flexible(
-                      child: Text('Thinking', style: textTheme.bodyMedium),
-                    ),
-                  ],
-                ),
-              ),
-              const PopupMenuDivider(),
-              PopupMenuItem(
-                value: 'archive',
-                height: 36,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(PhosphorIconsLight.archiveBox, size: 16),
-                    const SizedBox(width: kSpace8),
-                    Flexible(
-                      child: Text(
-                        'Archive session',
-                        style: textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ];
-          },
+          itemBuilder: (context) => [
+            themedMenuItem(
+              value: 'rename',
+              icon: PhosphorIconsLight.pencilSimple,
+              label: 'Rename session',
+            ),
+            themedMenuItem(
+              value: 'model',
+              icon: PhosphorIconsLight.robot,
+              label: 'Model',
+            ),
+            themedMenuItem(
+              value: 'thinking',
+              icon: PhosphorIconsLight.brain,
+              label: 'Thinking',
+            ),
+            const PopupMenuDivider(),
+            themedMenuItem(
+              value: 'archive',
+              icon: PhosphorIconsLight.archiveBox,
+              label: 'Archive session',
+            ),
+          ],
         ),
       ),
     );

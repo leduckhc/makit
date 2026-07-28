@@ -5,6 +5,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
+import '../../ui/widgets/menu_item.dart';
 import 'desktop_chat_pane.dart';
 import 'new_session_dialog.dart';
 import 'panes/split_node.dart';
@@ -581,7 +582,6 @@ class _TabChip extends ConsumerWidget {
     if (overlayState == null) return;
     final overlayBox = overlayState.context.findRenderObject();
     if (overlayBox is! RenderBox) return;
-    final theme = Theme.of(context);
     final selected = await showMenu<String>(
       context: context,
       position: RelativeRect.fromRect(
@@ -590,17 +590,10 @@ class _TabChip extends ConsumerWidget {
       ),
       popUpAnimationStyle: AnimationStyle.noAnimation,
       items: [
-        PopupMenuItem<String>(
+        themedMenuItem(
           value: 'rename',
-          height: 36,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(PhosphorIconsLight.pencilSimple, size: 16),
-              const SizedBox(width: kSpace8),
-              Text('Rename session', style: theme.textTheme.bodyMedium),
-            ],
-          ),
+          icon: PhosphorIconsLight.pencilSimple,
+          label: 'Rename session',
         ),
       ],
     );
