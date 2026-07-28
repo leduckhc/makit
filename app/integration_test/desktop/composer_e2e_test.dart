@@ -15,7 +15,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
-import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 Session _session() => Session(
   id: 's1',
@@ -93,7 +92,7 @@ void main() {
         reason: 'input must accept text on tap',
       );
       expect(
-        find.byIcon(PhosphorIconsLight.arrowUp),
+        find.byKey(const ValueKey('send')),
         findsOneWidget,
         reason: 'send appears once text is entered',
       );
