@@ -42,7 +42,7 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
   // Guard for the live-sync listener below: the set of active session ids the
   // last snapshot carried, so routine activity/status churn doesn't trigger a
   // reload — only an actual archive/restore (which adds/removes an id) does.
-  String? _lastActiveIds;
+  Set<String>? _lastActiveIds;
 
   void _refresh() {
     if (!mounted) return;
@@ -71,10 +71,16 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
     // Live-sync: archiving/restoring a session elsewhere (e.g. from a chat
     // pane) changes the ACTIVE session set the server broadcasts. Reload the
     // archived list on that transition so it stays fresh without the user
-    // toggling the view. Keyed on ids to skip pure activity/status updates.
+    // toggling the view. Keyed on the id SET (order-independent, no sort/join)
+    // so this stays allocation-light under frequent broadcasts from many live
+    // sessions and only fires on a real add/remove, not activity/status churn.
     ref.listen<SessionsState>(sessionsProvider, (_, next) {
-      final ids = (next.sessions.map((s) => s.id).toList()..sort()).join(',');
-      if (_lastActiveIds != null && ids != _lastActiveIds) _refresh();
+      final ids = {for (final s in next.sessions) s.id};
+      final prev = _lastActiveIds;
+      if (prev != null &&
+          (ids.length != prev.length || !ids.containsAll(prev))) {
+        _refresh();
+      }
       _lastActiveIds = ids;
     });
     return Column(
