@@ -92,8 +92,9 @@ void main() {
     tester,
   ) async {
     final container = await pumpShell(tester);
-    // The 8px handle sits immediately right of the sidebar.
-    const handleX = kSidebarDefaultWidth + 4;
+    // The 8px handle straddles the sidebar|pane seam, centred on the current
+    // width.
+    const handleX = kSidebarDefaultWidth;
     final handleY = tester.getSize(find.byType(DesktopChatShell)).height / 2;
 
     await tester.dragFrom(Offset(handleX, handleY), const Offset(50, 0));
@@ -101,14 +102,14 @@ void main() {
     expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth + 50);
 
     await tester.dragFrom(
-      Offset(kSidebarDefaultWidth + 50 + 4, handleY),
+      Offset(kSidebarDefaultWidth + 50, handleY),
       const Offset(-500, 0),
     );
     await tester.pump();
     expect(container.read(sidebarWidthProvider), kSidebarMinWidth);
 
     await tester.dragFrom(
-      Offset(kSidebarMinWidth + 4, handleY),
+      Offset(kSidebarMinWidth, handleY),
       const Offset(500, 0),
     );
     await tester.pump();
@@ -119,7 +120,7 @@ void main() {
     tester,
   ) async {
     final container = await pumpShell(tester);
-    const handleX = kSidebarDefaultWidth + 4;
+    const handleX = kSidebarDefaultWidth;
     final handleY = tester.getSize(find.byType(DesktopChatShell)).height / 2;
 
     // Two small, in-bounds drags should accumulate additively rather than
@@ -129,7 +130,7 @@ void main() {
     expect(container.read(sidebarWidthProvider), kSidebarDefaultWidth + 20);
 
     await tester.dragFrom(
-      Offset(kSidebarDefaultWidth + 20 + 4, handleY),
+      Offset(kSidebarDefaultWidth + 20, handleY),
       const Offset(15, 0),
     );
     await tester.pump();
