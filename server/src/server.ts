@@ -58,6 +58,8 @@ import { throttleTrailing } from "./ws/throttle.js";
 import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
 import { fetchOpenPr } from "./git.js";
+import { attachMediaRoute } from "./media/route.js";
+import { sharedMediaStore } from "./media/store.js";
 
 export interface ServerOpts {
   host: string;
@@ -149,6 +151,18 @@ export function startWsServer(opts: ServerOpts) {
   };
   forwardUpgrade(https);
   if (localHttps) forwardUpgrade(localHttps);
+
+  // Assistant display media (SPEC-22): `GET/HEAD /media/<sha256>`, bearer in an
+  // Authorization header. Installed on BOTH listeners — the phone fetches over
+  // the external one, the `flutter run -d macos` dev loop over loopback — and
+  // `request` does not interfere with the `noServer` upgrade forwarding above.
+  const mediaDeps = {
+    store: sharedMediaStore(),
+    registry,
+    trustLoopback: trustLocalhost,
+  };
+  attachMediaRoute(https, mediaDeps);
+  if (localHttps) attachMediaRoute(localHttps, mediaDeps);
 
   https.on("tlsClientError", (err: Error, sock) => {
     log.warn(`[makit] TLS client error from ${sock.remoteAddress ?? "?"}: ${err.message}`);
