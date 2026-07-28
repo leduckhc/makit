@@ -3,6 +3,7 @@ import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../e2e_helpers.dart';
 
@@ -29,7 +30,7 @@ void main() {
 
     // Fenced code block → syntax-highlighted view with a copy button.
     expect(find.byType(HighlightView), findsOneWidget);
-    expect(find.byIcon(Icons.copy), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.copy), findsOneWidget);
 
     // Message timestamp gutter (HH:mm) is present under the turns.
     final hhmm = RegExp(r'^\d{2}:\d{2}$');

@@ -15,6 +15,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 Session _session() => Session(
   id: 's1',
@@ -92,7 +93,7 @@ void main() {
         reason: 'input must accept text on tap',
       );
       expect(
-        find.byIcon(Icons.arrow_upward),
+        find.byIcon(PhosphorIconsLight.arrowUp),
         findsOneWidget,
         reason: 'send appears once text is entered',
       );
@@ -107,7 +108,9 @@ void main() {
     await tester.pumpWidget(_app(c));
     await tester.pumpAndSettle();
 
-    expect(find.text('Select or start a session'), findsOneWidget);
+    // Assert on the placeholder widget, not its copy — wording churn (SPEC-27)
+    // is what silently rotted this test before.
+    expect(find.byType(EmptyPaneStarter), findsOneWidget);
     expect(
       find.byType(TextField),
       findsNothing,

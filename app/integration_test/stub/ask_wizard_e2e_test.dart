@@ -17,14 +17,14 @@ void main() {
     // (single-select then multi-select).
     await sendComposerText(tester, 'ASK_MULTI');
 
-    await pumpUntil(tester, find.text('1/2'));
+    await pumpUntil(tester, find.text('1 / 2'));
     expect(find.text('Which language?'), findsOneWidget);
     await tester.tap(find.text('Dart'));
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Next'));
     await tester.pumpAndSettle();
 
-    expect(find.text('2/2'), findsOneWidget);
+    expect(find.text('2 / 2'), findsOneWidget);
     expect(find.text('Which tools?'), findsOneWidget);
     await tester.tap(find.text('Simulator'));
     await tester.pump();
