@@ -118,6 +118,9 @@ class TranscriptAnchor {
     _armed = false;
     return true;
   }
+
+  /// Resets to a clean state. Used when switching to a new session.
+  void reset() => _armed = false;
 }
 
 /// Runs [change] (a fold/unfold that resizes the row at [context]) while keeping

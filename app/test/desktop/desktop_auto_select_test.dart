@@ -114,6 +114,43 @@ void main() {
     expect(container.read(selectedSessionProvider), isNull);
   });
 
+  test(
+    'output in another split does not pull focus off an empty split',
+    () async {
+      final container = _container([_session('b', 200)]);
+      addTearDown(container.dispose);
+      final ctrl = container.read(workspaceControllerProvider.notifier);
+
+      // Split 1 hosts the live session 'b'; the user then splits and works in the
+      // fresh (empty) split 2, which divideActive makes active.
+      ctrl.revealSession('b');
+      ctrl.divideActive(Axis.vertical);
+      final emptySplitId = container
+          .read(workspaceControllerProvider)
+          .activeSplitId;
+      final emptyTabId = activeTab(
+        container.read(workspaceControllerProvider),
+      )?.id;
+      expect(container.read(selectedSessionProvider), isNull);
+
+      container.listen(
+        desktopAutoSelectSessionProvider,
+        (_, _) {},
+        fireImmediately: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+      // 'b' streams output in the other split: a fresh snapshot with a later
+      // lastActivityAt. The empty split the user is in must keep focus.
+      _pushSessions(container, [_session('b', 900)]);
+      await Future<void>.delayed(Duration.zero);
+
+      final state = container.read(workspaceControllerProvider);
+      expect(state.activeSplitId, emptySplitId);
+      expect(activeTab(state)?.id, emptyTabId);
+      expect(container.read(selectedSessionProvider), isNull);
+    },
+  );
+
   test('does not steal focus from an unfocused split', () async {
     final container = _container([_session('a', 100), _session('b', 200)]);
     addTearDown(container.dispose);

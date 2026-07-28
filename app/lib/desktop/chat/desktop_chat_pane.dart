@@ -119,6 +119,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     if (sessionId == null || sessionId == _subscribed) return;
     _subscribed = sessionId;
     _lastSeq = 0;
+    // A different transcript: forget the previous one so its item list can't be
+    // mistaken for this one's. (A tab keys the pane, so today the only rebind is
+    // placeholder → session, where no ListView existed yet — this keeps the
+    // reset honest if another rebind path appears.)
+    _lastItems = null;
+    _anchor.reset();
     // Defer the subscribe (and its history replay) to after the first frame so
     // the sidebar paints first — the conversation fills in immediately after.
     WidgetsBinding.instance.addPostFrameCallback((_) {
