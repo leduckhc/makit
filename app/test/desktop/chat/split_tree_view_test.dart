@@ -16,7 +16,7 @@ import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
-import 'package:makit/desktop/chat/split_view.dart' show TabDragData;
+import 'package:makit/desktop/chat/split_view.dart' show SplitView, TabDragData;
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -247,6 +247,10 @@ void main() {
   });
 
   group('divider', () {
+    final resizeGrip = find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == 'Resize split',
+    );
+
     testWidgets('dragging the divider updates the splitter ratio', (
       tester,
     ) async {
@@ -266,6 +270,73 @@ void main() {
           (c.read(workspaceControllerProvider).root as Splitter).ratio;
       expect(ratio, lessThan(0.5));
       expect(ratio, greaterThanOrEqualTo(kMinPaneRatio));
+    });
+
+    testWidgets('dragging a vertical splitter\'s divider updates its ratio', (
+      tester,
+    ) async {
+      // Tall surface so two stacked chat panes fit without overflow.
+      tester.view.physicalSize = const Size(1000, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _container(sessions: [_session('s1', 'One')]);
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      _ws(c).divideActive(Axis.vertical);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect((c.read(workspaceControllerProvider).root as Splitter).ratio, 0.5);
+
+      await tester.drag(resizeGrip, const Offset(0, -80));
+      await tester.pumpAndSettle();
+
+      final ratio =
+          (c.read(workspaceControllerProvider).root as Splitter).ratio;
+      expect(ratio, lessThan(0.5));
+      expect(ratio, greaterThanOrEqualTo(kMinPaneRatio));
+    });
+
+    testWidgets('panes abut at the seam; the divider overlays it without '
+        'consuming layout space', (tester) async {
+      final c = _container(sessions: [_session('s1', 'One')]);
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      _ws(c).divideActive(Axis.horizontal);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      final left = tester.getRect(find.byType(SplitView).first);
+      final right = tester.getRect(find.byType(SplitView).last);
+      final workspace = tester.getRect(find.byType(WorkspaceView));
+
+      // No gap: the panes touch at the seam and together fill the full width.
+      expect(right.left, moreOrLessEquals(left.right));
+      expect(left.left, moreOrLessEquals(workspace.left));
+      expect(right.right, moreOrLessEquals(workspace.right));
+
+      // The draggable strip straddles the seam (centred on it) instead of
+      // sitting beside the panes.
+      expect(tester.getCenter(resizeGrip).dx, moreOrLessEquals(left.right));
+    });
+
+    testWidgets('a vertical splitter\'s panes abut with the divider centred '
+        'on the seam', (tester) async {
+      tester.view.physicalSize = const Size(1000, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final c = _container(sessions: [_session('s1', 'One')]);
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      _ws(c).divideActive(Axis.vertical);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      final top = tester.getRect(find.byType(SplitView).first);
+      final bottom = tester.getRect(find.byType(SplitView).last);
+
+      expect(bottom.top, moreOrLessEquals(top.bottom));
+      expect(tester.getCenter(resizeGrip).dy, moreOrLessEquals(top.bottom));
     });
   });
 

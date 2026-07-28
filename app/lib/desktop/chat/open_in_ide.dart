@@ -183,6 +183,7 @@ class _IdeSplitButton extends StatelessWidget {
   final VoidCallback onToggleMenu;
 
   static const double _height = 24;
+  static const double _logoSize = 15;
   static const Radius _radius = Radius.circular(kRadius8);
 
   @override
@@ -214,10 +215,10 @@ class _IdeSplitButton extends StatelessWidget {
                   // The ambient IconTheme tints monochrome logos
                   // (cursor/iterm) to match; colour logos ignore it.
                   child: IconTheme.merge(
-                    data: IconThemeData(color: fg, size: 15),
+                    data: IconThemeData(color: fg, size: _logoSize),
                     child: Center(
                       widthFactor: 1,
-                      child: ideLogo(context, preferred, size: 15),
+                      child: ideLogo(context, preferred, size: _logoSize),
                     ),
                   ),
                 ),
@@ -227,9 +228,12 @@ class _IdeSplitButton extends StatelessWidget {
           // 1px divider between the segments (no gap), matching the border.
           Container(width: 1, height: _height, color: cs.outlineVariant),
           // Trailing: the menu toggle. Lifts a tone while open; caret rotates.
+          // Ink (not a nested Material) paints the open-state tone as an ink
+          // feature on the outer Material, keeping a single Material layer
+          // while the InkWell's splashes still render above the colour.
           Tooltip(
             message: 'Choose editor',
-            child: Material(
+            child: Ink(
               color: menuOpen ? cs.surfaceContainerHighest : surface,
               child: InkWell(
                 onTap: onToggleMenu,
