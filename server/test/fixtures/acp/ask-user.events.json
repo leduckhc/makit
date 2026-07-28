@@ -143,30 +143,62 @@
     "seq": 9,
     "sessionId": "replay",
     "ts": 9,
-    "kind": "agent.message.delta",
+    "kind": "tool.call.start",
     "payload": {
-      "msgId": "msg-1",
-      "chunk": "You"
+      "callId": "call-1",
+      "name": "ask_user",
+      "args": {
+        "question": "Which language do you prefer?",
+        "options": [
+          {
+            "title": "TypeScript"
+          },
+          {
+            "title": "Python"
+          }
+        ]
+      },
+      "risk": "safe"
     }
   },
   {
     "seq": 10,
     "sessionId": "replay",
     "ts": 10,
-    "kind": "agent.message.delta",
+    "kind": "tool.call.delta",
     "payload": {
-      "msgId": "msg-1",
-      "chunk": " prefer **"
+      "callId": "call-1",
+      "chunk": "User answered: TypeScript"
     }
   },
   {
     "seq": 11,
     "sessionId": "replay",
     "ts": 11,
-    "kind": "agent.message.delta",
+    "kind": "tool.call.end",
     "payload": {
-      "msgId": "msg-1",
-      "chunk": "TypeScript**."
+      "callId": "call-1",
+      "exitCode": 0,
+      "summary": "User answered: TypeScript",
+      "output": "User answered: TypeScript",
+      "details": {
+        "question": "Which language do you prefer?",
+        "options": [
+          {
+            "title": "TypeScript"
+          },
+          {
+            "title": "Python"
+          }
+        ],
+        "response": {
+          "kind": "selection",
+          "selections": [
+            "TypeScript"
+          ]
+        },
+        "cancelled": false
+      }
     }
   },
   {
@@ -176,7 +208,7 @@
     "kind": "agent.message.delta",
     "payload": {
       "msgId": "msg-1",
-      "chunk": " "
+      "chunk": "You"
     }
   },
   {
@@ -186,13 +218,43 @@
     "kind": "agent.message.delta",
     "payload": {
       "msgId": "msg-1",
-      "chunk": "👍"
+      "chunk": " prefer **"
     }
   },
   {
     "seq": 14,
     "sessionId": "replay",
     "ts": 14,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "TypeScript**."
+    }
+  },
+  {
+    "seq": 15,
+    "sessionId": "replay",
+    "ts": 15,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": " "
+    }
+  },
+  {
+    "seq": 16,
+    "sessionId": "replay",
+    "ts": 16,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "👍"
+    }
+  },
+  {
+    "seq": 17,
+    "sessionId": "replay",
+    "ts": 17,
     "kind": "agent.message",
     "payload": {
       "text": "You prefer **TypeScript**. 👍",

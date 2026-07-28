@@ -153,9 +153,10 @@ test("defers tool.call.start until streamed args are ready", () => {
 });
 
 // `ask_user` is answered through a separate ACP permission request that the app
-// renders as an inline ask card (SPEC-25), so its tool call must produce NO
-// events at all — not even the deltas/end that would orphan without a start.
-test("suppresses the ask_user tool row entirely (no orphan delta/end)", () => {
+// renders as a live inline ask card (SPEC-25), so no tool row may appear WHILE
+// the question is open (it would duplicate the card) — but once answered the row
+// must land, because the app's persisted "answered ask" card is that tool call.
+test("defers the ask_user tool row until it is answered", () => {
   const { events, mapper } = collect();
   mapper.handle({
     sessionUpdate: "tool_call",
@@ -163,21 +164,51 @@ test("suppresses the ask_user tool row entirely (no orphan delta/end)", () => {
     title: "ask_user",
     kind: "other",
     status: "in_progress",
-    rawInput: { question: "Which language?" },
+    rawInput: { question: "Which language?", options: [{ title: "TypeScript" }] },
   } as unknown as SessionUpdate);
+  // Question still open: nothing yet, not even the "Waiting for user input..." output.
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+
   mapper.handle({
     sessionUpdate: "tool_call_update",
     toolCallId: "a1",
     status: "completed",
-    content: [{ type: "content", content: { type: "text", text: "TypeScript" } }],
+    content: [{ type: "content", content: { type: "text", text: "User answered: TypeScript" } }],
+    rawOutput: {
+      content: [{ type: "text", text: "User answered: TypeScript" }],
+      details: {
+        question: "Which language?",
+        options: [{ title: "TypeScript" }],
+        response: { kind: "selection", selections: ["TypeScript"] },
+        cancelled: false,
+      },
+    },
   } as unknown as SessionUpdate);
   mapper.endTurn();
-  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+
+  const tools = events.filter((e) => e.kind.startsWith("tool."));
+  assert.deepEqual(tools.map((e) => e.kind), ["tool.call.start", "tool.call.delta", "tool.call.end"]);
+  const start = tools[0]!.payload as { name: string; args: unknown };
+  assert.equal(start.name, "ask_user");
+  assert.deepEqual(start.args, {
+    question: "Which language?",
+    options: [{ title: "TypeScript" }],
+  });
+  const end = tools[2]!.payload as { output: string; details: unknown };
+  assert.equal(end.output, "User answered: TypeScript");
+  // The app's answered-ask card prefers the structured `details` (cancelled
+  // state, selections, comments) over parsing the output text.
+  assert.deepEqual(end.details, {
+    question: "Which language?",
+    options: [{ title: "TypeScript" }],
+    response: { kind: "selection", selections: ["TypeScript"] },
+    cancelled: false,
+  });
 });
 
-// The app matches renderers case-insensitively, so suppression must too — a
-// title like " Ask_User " must not slip through as a second row beside the card.
-test("suppresses ask_user regardless of title casing or padding", () => {
+// The app matches renderers case-insensitively, so deferral must too — a title
+// like " Ask_User " must not slip through as a second row beside the live card.
+test("defers ask_user regardless of title casing or padding", () => {
   const { events, mapper } = collect();
   mapper.handle({
     sessionUpdate: "tool_call",
@@ -187,7 +218,6 @@ test("suppresses ask_user regardless of title casing or padding", () => {
     status: "in_progress",
     rawInput: { question: "Which language?" },
   } as unknown as SessionUpdate);
-  mapper.endTurn();
   assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
 });
 

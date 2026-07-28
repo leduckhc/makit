@@ -57,7 +57,7 @@ export class AcpEventMapper {
    */
   private tools = new Map<
     string,
-    { title: string; kind?: ToolKind; rawInput: unknown; started: boolean; suppressed?: boolean }
+    { title: string; kind?: ToolKind; rawInput: unknown; started: boolean }
   >();
   /** Last cumulative output text seen per tool call (to diff into deltas). */
   private toolText = new Map<string, string>();
@@ -156,7 +156,6 @@ export class AcpEventMapper {
     for (const [id, t] of [...this.tools]) {
       if (!t.started && !hasUsableArgs(t) && !this.toolText.has(id)) continue;
       this.ensureToolStart(id);
-      if (this.tools.get(id)?.suppressed) continue;
       const output = this.toolText.get(id) ?? "";
       this.emit("tool.call.end", { callId: id, exitCode: 1, summary: summarizeLine(output), output });
     }
@@ -201,17 +200,14 @@ export class AcpEventMapper {
     // A terminal status always starts it, so nothing is ever dropped.
     const terminal = status === "completed" || status === "failed";
     const argsReady = terminal || (status === "in_progress" && hasUsableArgs(cur));
-    if (argsReady) this.ensureToolStart(id);
+    // `ask_user` is answered through a separate ACP permission request that the
+    // app renders as a live inline ask card (SPEC-25), so its row must not
+    // appear WHILE the question is open — that would duplicate the question (and
+    // show a useless "Waiting for user input..." body). Hold it until the call
+    // finishes: the app's persisted "answered ask" card IS this tool call, so
+    // dropping it entirely makes the question vanish from history once answered.
+    if (argsReady && (terminal || !isAskUser(cur.title))) this.ensureToolStart(id);
     if (!cur.started) return;
-    if (cur.suppressed) {
-      // Nothing was started for this call, so emitting deltas/end would be
-      // orphan events. Just release its state once the call finishes.
-      if (terminal) {
-        this.toolText.delete(id);
-        this.tools.delete(id);
-      }
-      return;
-    }
     this.applyToolContent(id, update);
     this.maybeEndTool(id, status, update);
   }
@@ -222,14 +218,6 @@ export class AcpEventMapper {
     if (!t || t.started) return;
     t.started = true;
     const { name, args } = canonicalizeTool(t.title, t.kind, t.rawInput);
-    // `ask_user` never renders as a tool row: pi-acp emits the tool call AND a
-    // separate permission request carrying the question, which the app shows as
-    // an inline ask card (SPEC-25). A row would duplicate that card. Matched
-    // case-insensitively, like the app's own renderer lookup.
-    if (name.toLowerCase() === "ask_user") {
-      t.suppressed = true;
-      return;
-    }
     this.emit("tool.call.start", {
       callId: id,
       name,
@@ -282,11 +270,16 @@ export class AcpEventMapper {
     if (status !== "completed" && status !== "failed") return;
     const output = this.toolText.get(id) ?? "";
     const exitCode = status === "failed" ? 1 : terminalExitCode(update) ?? 0;
+    // `ask_user` is the only consumer of `details` in the app (its answered card
+    // reads the selections / free-text / cancelled flag from there), so other
+    // tools' raw result metadata stays out of the persisted event log.
+    const details = isAskUser(this.tools.get(id)?.title ?? "") ? resultDetails(update) : undefined;
     this.emit("tool.call.end", {
       callId: id,
       exitCode,
       summary: summarizeLine(output),
       output,
+      ...(details ? { details } : {}),
     });
     this.toolText.delete(id);
     this.tools.delete(id);
@@ -454,6 +447,26 @@ function hasUsableArgs(t: { title: string; kind?: ToolKind; rawInput: unknown })
   const raw = t.rawInput;
   if (raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw as object).length > 0) return true;
   return t.kind === "execute" && t.title.trim().length > 0;
+}
+
+/**
+ * True for the `ask_user` tool, matched case-insensitively (and padding-free)
+ * like the app's own renderer lookup, so `" Ask_User "` cannot slip through.
+ */
+function isAskUser(title: string): boolean {
+  return title.trim().toLowerCase() === "ask_user";
+}
+
+/**
+ * The structured result an agent attaches to a finished tool call
+ * (`rawOutput.details`). Forwarded on an `ask_user` `tool.call.end` because the
+ * app's answered ask card prefers it (selections, free-text answers, comments,
+ * cancellation) over parsing the `"User answered: …"` output text.
+ */
+function resultDetails(update: SessionUpdate): Record<string, unknown> | undefined {
+  const details = (update as { rawOutput?: { details?: unknown } }).rawOutput?.details;
+  if (!details || typeof details !== "object" || Array.isArray(details)) return undefined;
+  return details as Record<string, unknown>;
 }
 
 /** Extract human-readable text from a ToolCallContent[] (text + diff blocks). */
