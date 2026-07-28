@@ -92,7 +92,7 @@ void main() {
         reason: 'input must accept text on tap',
       );
       expect(
-        find.byIcon(Icons.arrow_upward),
+        find.byKey(const ValueKey('send')),
         findsOneWidget,
         reason: 'send appears once text is entered',
       );
@@ -107,7 +107,9 @@ void main() {
     await tester.pumpWidget(_app(c));
     await tester.pumpAndSettle();
 
-    expect(find.text('Select or start a session'), findsOneWidget);
+    // Assert on the placeholder widget, not its copy — wording churn (SPEC-27)
+    // is what silently rotted this test before.
+    expect(find.byType(EmptyPaneStarter), findsOneWidget);
     expect(
       find.byType(TextField),
       findsNothing,
