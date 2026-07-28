@@ -10,8 +10,11 @@ import 'package:makit/transport/pinned_http.dart';
 /// fingerprint match is the entire identity check (see pinned_http.dart).
 ///
 /// This exercises it against a real `HttpServer.bindSecure` over a throwaway
-/// self-signed cert in `test/tls/` (generated with openssl, valid for
-/// 100 years, private key intentionally public — it guards nothing). It covers
+/// self-signed cert in `test/tls/` — deliberately NOT `test/fixtures/`, which
+/// the `fixture-sync` CI job requires to stay byte-identical with
+/// `server/test/fixtures/`; this cert is Dart-only, so putting it there breaks
+/// that check. Generated with openssl, valid for 100 years, private key
+/// intentionally public — it guards nothing. It covers
 /// the case a WS-only test cannot: a plain HTTPS GET, which is how media loads
 /// on both the phone and the macOS desktop app.
 void main() {
