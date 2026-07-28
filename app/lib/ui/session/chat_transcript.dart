@@ -19,6 +19,7 @@ import '../../store/models.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
+import 'media_view.dart';
 import 'tool_call_card.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
@@ -49,6 +50,9 @@ void anchorToNewestIfNearBottom(ScrollController scroll) {
 Widget chatItemWidget(ChatItem item) => switch (item) {
   UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
+  // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
+  // client can't show. Rendered inline, tap for fullscreen.
+  AgentMediaItem() => AgentMediaView(item: item),
   ThinkingItem() => ThinkingLine(text: item.text),
   // An answered askUserQuestion settles into a quiet resolved card (chosen
   // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).

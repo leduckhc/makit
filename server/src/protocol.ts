@@ -36,6 +36,13 @@ export type EventKind =
   | "user.message"
   | "agent.message"
   | "agent.message.delta"
+  /**
+   * Assistant display media (SPEC-22): an image/GIF the agent produced or
+   * referenced. Carries only a descriptor — the bytes are fetched from
+   * `GET /media/<mediaId>`, never inlined, because the event log is replayed
+   * in full on every resume.
+   */
+  | "agent.media"
   | "agent.thinking"
   | "agent.thinking.delta"
   | "tool.call.start"

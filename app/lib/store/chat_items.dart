@@ -59,6 +59,33 @@ class AgentMessageItem extends ChatItem {
       );
 }
 
+/// An image or GIF the agent produced (a tool result, or a local file it
+/// referenced) — SPEC-22. Carries only the descriptor: the bytes are fetched
+/// lazily from the server's `/media/<mediaId>` route, so replaying a long
+/// transcript costs nothing until a row scrolls into view.
+class AgentMediaItem extends ChatItem {
+  AgentMediaItem({
+    required super.seq,
+    required super.ts,
+    required this.mediaId,
+    required this.mime,
+    this.sizeBytes = 0,
+    this.alt,
+    this.callId,
+  });
+
+  /// sha256 of the bytes — both the fetch path and the cache key.
+  final String mediaId;
+  final String mime;
+  final int sizeBytes;
+
+  /// Description/filename for a11y and the failure placeholder.
+  final String? alt;
+
+  /// The tool call this came out of, when it came from one.
+  final String? callId;
+}
+
 class ThinkingItem extends ChatItem {
   ThinkingItem({
     required super.seq,
@@ -230,6 +257,25 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           ),
           (cur) => cur.copyWith(text: cur.text + chunk),
         );
+      case EventKind.agentMedia:
+        // Defensive: only a well-formed content hash is fetchable (the server's
+        // /media route and MediaEndpoint.urlFor both require exactly this
+        // shape), and an id that fails at fetch time renders the permanent
+        // broken placeholder this guard exists to avoid.
+        final mediaId = e.payload['mediaId'];
+        if (mediaId is String && isMediaId(mediaId)) {
+          items.add(
+            AgentMediaItem(
+              seq: e.seq,
+              ts: e.ts,
+              mediaId: mediaId,
+              mime: e.payload['mime'] as String? ?? 'image/png',
+              sizeBytes: (e.payload['sizeBytes'] as num?)?.toInt() ?? 0,
+              alt: e.payload['alt'] as String?,
+              callId: e.payload['callId'] as String?,
+            ),
+          );
+        }
       case EventKind.agentThinkingDelta:
         // Streaming reasoning token. Append to the card for this thinkId,
         // creating it on the first delta so it is anchored at the point
@@ -325,5 +371,37 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         break;
     }
   }
-  return items;
+  return _dropMediaShownInProse(items);
 }
+
+/// Drops a media bubble whose bytes a message already displays inline.
+///
+/// A real turn produces both: the agent reads an image (→ `agent.media`) and
+/// then shows it with markdown, which the server rewrote to
+/// `makit-media:<mediaId>`. Rendering both puts the same screenshot in the
+/// transcript twice. `mediaId` is a content hash, so an identical id is
+/// provably identical bytes — and a *different* id is a genuinely different
+/// image (a harness may hand the model a downscaled copy of a huge screenshot),
+/// which stays visible.
+List<ChatItem> _dropMediaShownInProse(List<ChatItem> items) {
+  final shown = <String>{};
+  for (final item in items) {
+    if (item is! AgentMessageItem) continue;
+    for (final m in _mediaUriPattern.allMatches(item.text)) {
+      shown.add(m.group(1)!);
+    }
+  }
+  if (shown.isEmpty) return items;
+  return items
+      .where((i) => i is! AgentMediaItem || !shown.contains(i.mediaId))
+      .toList(growable: false);
+}
+
+/// `makit-media:<sha256>` as the server writes it into rewritten markdown.
+final RegExp _mediaUriPattern = RegExp(r'makit-media:([a-f0-9]{64})');
+
+/// A media id is the sha256 of the bytes, lowercase hex — the only shape the
+/// server's `/media` route serves. Shared by the event fold and the markdown
+/// image builder so an unfetchable id is rejected at every entry point.
+bool isMediaId(String value) => _mediaIdPattern.hasMatch(value);
+final RegExp _mediaIdPattern = RegExp(r'^[a-f0-9]{64}$');

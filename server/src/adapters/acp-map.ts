@@ -13,6 +13,7 @@
 
 import type { SessionUpdate, ToolKind } from "@agentclientprotocol/sdk";
 import type { AdapterEvent } from "./adapter.js";
+import type { MediaDescriptor } from "../media/store.js";
 import { summarizeLine } from "./summarize.js";
 import { newId } from "../protocol.js";
 
@@ -20,6 +21,22 @@ export interface AcpMapperHooks {
   emit: (e: AdapterEvent) => void;
   /** Agent-driven session rename (ACP `session_info_update.title`). */
   onTitle?: (title: string) => void;
+  /**
+   * Persist an image payload (SPEC-22) and return its descriptor, or `null`
+   * when it is refused (disallowed mime, over the size cap, malformed base64).
+   * Injected so this module stays I/O-free and unit-testable; the adapter wires
+   * it to the content-addressed {@link MediaStore}. Synchronous on purpose: the
+   * blob must be durable *before* the `agent.media` event that references it.
+   */
+  putMedia?: (data: string, mime: string) => MediaDescriptor | null;
+  /**
+   * Rewrite markdown image references in a finalized agent message, ingesting
+   * any local files they point at (SPEC-22 phase 1b: agents commonly write a
+   * file and then show it with `![](\/abs\/path.png)`, which the phone cannot
+   * resolve). Injected for the same reason as {@link putMedia} — it touches the
+   * filesystem. Applied only to the final message, never to streamed deltas.
+   */
+  rewriteMedia?: (text: string) => string;
 }
 
 export class AcpEventMapper {
@@ -32,6 +49,16 @@ export class AcpEventMapper {
   private startedTools = new Set<string>();
   /** Last cumulative output text seen per tool call (to diff into deltas). */
   private toolText = new Map<string, string>();
+  /** mediaIds already announced this turn (updates re-send cumulative output). */
+  private seenMedia = new Set<string>();
+  /**
+   * Cheap identity of image payloads already ingested this turn, so a
+   * cumulative `tool_call_update` that re-sends the same base64 is not decoded
+   * and re-hashed again. Keyed on call + length + a short prefix rather than a
+   * real digest: colliding would require the same call to carry two images of
+   * identical length sharing their first 64 base64 chars.
+   */
+  private ingestedPayloads = new Set<string>();
 
   constructor(private readonly hooks: AcpMapperHooks) {}
 
@@ -39,6 +66,7 @@ export class AcpEventMapper {
     switch (update.sessionUpdate) {
       case "agent_message_chunk": {
         this.flushThinking();
+        this.ingestMedia(update.content);
         const chunk = contentBlockText(update.content);
         if (!chunk) return;
         if (!this.textId) {
@@ -124,6 +152,8 @@ export class AcpEventMapper {
     this.flushAll();
     this.startedTools.clear();
     this.toolText.clear();
+    this.seenMedia.clear();
+    this.ingestedPayloads.clear();
   }
 
   // ---- internals ----------------------------------------------------------
@@ -141,6 +171,10 @@ export class AcpEventMapper {
 
   /** Emit a `tool.call.delta` for any new output text on this update. */
   private applyToolContent(id: string, update: SessionUpdate): void {
+    // Images ride along tool results (a `read` of a PNG, an MCP screenshot).
+    // Announce them before any terminal event so the transcript order matches
+    // what happened.
+    this.ingestToolMedia(id, update);
     // Some ACP adapters stream bash output as an already-computed delta in `_meta`.
     const metaDelta = terminalOutput(update);
     if (metaDelta) {
@@ -172,10 +206,53 @@ export class AcpEventMapper {
 
   private flushText(): void {
     if (this.textId && this.textBuf.length > 0) {
-      this.emit("agent.message", { text: this.textBuf, msgId: this.textId });
+      const text = this.hooks.rewriteMedia?.(this.textBuf) ?? this.textBuf;
+      this.emit("agent.message", { text, msgId: this.textId });
     }
     this.textId = undefined;
     this.textBuf = "";
+  }
+
+  /**
+   * Store every image block attached to a tool update and emit one
+   * `agent.media` per new blob.
+   *
+   * Both locations are scanned because pi-acp puts the bytes in **`rawOutput`**
+   * (the raw MCP tool result) while the normalized ACP `content[]` keeps only a
+   * text summary — verified against a pi-acp 0.0.32 capture. Other ACP agents
+   * may do the reverse, so neither location is assumed.
+   */
+  private ingestToolMedia(callId: string, update: SessionUpdate): void {
+    if (!this.hooks.putMedia) return;
+    const u = update as { content?: unknown; rawOutput?: { content?: unknown } };
+    for (const block of [...imageBlocksIn(u.content), ...imageBlocksIn(u.rawOutput?.content)]) {
+      this.storeMedia(block, callId);
+    }
+  }
+
+  /** Same, for an image carried directly as an agent-message content block. */
+  private ingestMedia(block: unknown): void {
+    if (!this.hooks.putMedia) return;
+    for (const image of imageBlocksIn(block)) this.storeMedia(image);
+  }
+
+  private storeMedia(block: ImageBlock, callId?: string): void {
+    const key = `${callId ?? ""}:${block.data.length}:${block.data.slice(0, 64)}`;
+    if (this.ingestedPayloads.has(key)) return;
+    this.ingestedPayloads.add(key);
+    const stored = this.hooks.putMedia?.(block.data, block.mimeType);
+    // null = refused (bad mime / over cap / malformed). Drop it silently: the
+    // tool's text result still lands, so the turn is never blocked by media.
+    if (!stored) return;
+    if (this.seenMedia.has(stored.mediaId)) return;
+    this.seenMedia.add(stored.mediaId);
+    this.emit("agent.media", {
+      mediaId: stored.mediaId,
+      mime: stored.mime,
+      kind: "image",
+      sizeBytes: stored.sizeBytes,
+      ...(callId ? { callId } : {}),
+    });
   }
 
   private flushThinking(): void {
@@ -197,6 +274,37 @@ export class AcpEventMapper {
 }
 
 // ---------- helpers ---------------------------------------------------------
+
+/** An MCP/ACP image content block: base64 `data` + its `mimeType`. */
+interface ImageBlock {
+  data: string;
+  mimeType: string;
+}
+
+function asImageBlock(v: unknown): ImageBlock | null {
+  if (!v || typeof v !== "object") return null;
+  const b = v as { type?: unknown; data?: unknown; mimeType?: unknown };
+  if (b.type !== "image") return null;
+  if (typeof b.data !== "string" || typeof b.mimeType !== "string") return null;
+  return { data: b.data, mimeType: b.mimeType };
+}
+
+/**
+ * Every image block reachable from `v`, which may be a single content block, a
+ * `ContentBlock[]`, or an ACP `ToolCallContent[]` (whose items wrap the real
+ * block under `.content`).
+ */
+function imageBlocksIn(v: unknown): ImageBlock[] {
+  if (Array.isArray(v)) return v.flatMap(imageBlocksIn);
+  const direct = asImageBlock(v);
+  if (direct) return [direct];
+  if (v && typeof v === "object" && "content" in v) {
+    const inner = (v as { content?: unknown }).content;
+    // Guard against self-reference; only descend into a different value.
+    if (inner !== v) return imageBlocksIn(inner);
+  }
+  return [];
+}
 
 function contentBlockText(block: unknown): string {
   if (block && typeof block === "object" && (block as { type?: unknown }).type === "text") {

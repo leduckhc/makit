@@ -202,5 +202,92 @@ void main() {
         expect((items[1] as AgentMessageItem).text, 'answer');
       },
     );
+    test('agent.media folds into a media item with its descriptor', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {
+          'mediaId': 'a' * 64,
+          'mime': 'image/png',
+          'kind': 'image',
+          'sizeBytes': 7281,
+          'alt': 'shot.png',
+          'callId': 'c1',
+        }),
+      ]);
+      expect(items.single, isA<AgentMediaItem>());
+      final m = items.single as AgentMediaItem;
+      expect(m.mediaId, 'a' * 64);
+      expect(m.mime, 'image/png');
+      expect(m.sizeBytes, 7281);
+      expect(m.alt, 'shot.png');
+      expect(m.callId, 'c1');
+    });
+
+    test('agent.media without a usable mediaId is dropped, not rendered', () {
+      // Defensive boundary: a descriptor we cannot fetch must not become an
+      // item that renders a permanent broken placeholder. The id must be a
+      // sha256 — the same shape MediaEndpoint.urlFor will accept — because a
+      // malformed one fails at fetch time, i.e. exactly the broken placeholder
+      // this guard exists to avoid.
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {'mime': 'image/png'}),
+        _ev(2, EventKind.agentMedia, {'mediaId': '', 'mime': 'image/png'}),
+        _ev(3, EventKind.agentMedia, {'mediaId': 42, 'mime': 'image/png'}),
+        _ev(4, EventKind.agentMedia, {'mediaId': 'not-a-hash'}),
+        _ev(5, EventKind.agentMedia, {'mediaId': 'a' * 63}),
+        _ev(6, EventKind.agentMedia, {'mediaId': 'A' * 64}),
+        _ev(7, EventKind.agentMedia, {'mediaId': '${'a' * 63}?'}),
+      ]);
+      expect(items, isEmpty);
+    });
+
+    test('agent.media tolerates a missing mime/size/alt', () {
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {'mediaId': 'b' * 64}),
+      ]);
+      final m = items.single as AgentMediaItem;
+      expect(m.mime, 'image/png', reason: 'a sane default keeps it renderable');
+      expect(m.sizeBytes, 0);
+      expect(m.alt, isNull);
+      expect(m.callId, isNull);
+    });
+    test(
+      'a media bubble is dropped when the prose displays the same bytes',
+      () {
+        // Real pi turn: the agent reads an image (→ agent.media) and then shows
+        // it with markdown, which the server rewrote to makit-media:<id>. The
+        // mediaId is a content hash, so an identical id means identical bytes —
+        // rendering both would show the screenshot twice in a row.
+        final items = foldEvents([
+          _ev(1, EventKind.agentMedia, {
+            'mediaId': 'a' * 64,
+            'mime': 'image/png',
+            'callId': 'c1',
+          }),
+          _ev(2, EventKind.agentMessage, {
+            'text': "here it is\n\n![shot](makit-media:${'a' * 64})",
+          }),
+        ]);
+        expect(items.length, 1);
+        expect(items.single, isA<AgentMessageItem>());
+      },
+    );
+
+    test('a media bubble survives when the prose never shows those bytes', () {
+      // The common case: the agent looked at an image but did not display it.
+      // Different bytes hash differently, so a *different* id is a different
+      // image (pi hands the model a downscaled copy of a large screenshot) and
+      // both are legitimately shown.
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {
+          'mediaId': 'a' * 64,
+          'mime': 'image/png',
+        }),
+        _ev(2, EventKind.agentMessage, {
+          'text': "shown below\n\n![other](makit-media:${'b' * 64})",
+        }),
+        _ev(3, EventKind.agentMessage, {'text': 'no image at all'}),
+      ]);
+      expect(items.whereType<AgentMediaItem>().length, 1);
+    });
   });
 }

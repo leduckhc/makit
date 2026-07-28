@@ -204,6 +204,29 @@ test("an oversized unterminated frame is dropped instead of growing buf unbounde
   assert.deepEqual(lines, ['{"ok":1}'], "oversized frame dropped; subsequent line delivered");
 });
 
+test("a multi-MB frame (base64 image block in a tool result) is delivered, not dropped", () => {
+  const { spawn, children } = fakeSpawn();
+  // Default cap — this is the real production path, not a test override.
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  const lines: string[] = [];
+  t.onLine((l) => lines.push(l));
+
+  // An ACP `tool_call_update {status:"completed"}` carrying a screenshot as
+  // base64 in `rawOutput.content[]`. Dropping it doesn't just lose the image:
+  // the terminal status update is lost too, so the tool call never ends.
+  const payload = "A".repeat(8 * 1024 * 1024);
+  const frame = JSON.stringify({ sessionUpdate: "tool_call_update", data: payload });
+  const child = children[0]!;
+  // Arrives in chunks, as a real stdout stream does.
+  for (let i = 0; i < frame.length; i += 64 * 1024) {
+    child.stdout.emit("data", frame.slice(i, i + 64 * 1024));
+  }
+  child.stdout.emit("data", "\n");
+
+  assert.equal(lines.length, 1, "the multi-MB frame must be delivered");
+  assert.equal(lines[0], frame);
+});
+
 test("a throwing onLine listener cannot escape and crash the process", () => {
   const { spawn, children } = fakeSpawn();
   const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
@@ -230,4 +253,28 @@ test("a throwing onExit listener cannot escape and crash the process", () => {
   });
   assert.doesNotThrow(() => children[0]!.emit("exit", 0, null));
   assert.equal(reached, true, "a later exit listener still fires after an earlier one throws");
+});
+
+test("a newline-terminated frame over the cap is dropped, not delivered", () => {
+  // The cap previously only guarded an *unterminated* buffer: a line whose
+  // trailing newline arrived in the chunk that crossed the limit was still
+  // dispatched, so a runaway child could push a frame past the stated bound.
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({
+    command: "x",
+    cwd: "/tmp",
+    label: "t",
+    spawn,
+    maxFrameBytes: 1024,
+  });
+  const lines: string[] = [];
+  t.onLine((l) => lines.push(l));
+
+  const child = children[0]!;
+  // Arrives complete, in one chunk, newline included.
+  child.stdout.emit("data", `${"a".repeat(4096)}\n`);
+  // A well-formed frame after it must still be delivered.
+  child.stdout.emit("data", '{"ok":1}\n');
+
+  assert.deepEqual(lines, ['{"ok":1}']);
 });

@@ -45,7 +45,9 @@ test("SPEC-22 front-matter block declares Status, Depends on, and Blocks", () =>
   // The front-matter paragraph wraps across two lines, so join it before
   // asserting on the fields it declares.
   const frontMatter = content.slice(0, content.indexOf("## Goal"));
-  assert.match(frontMatter, /\*\*Status:\*\*\s*proposed/);
+  // Phases 1–3 shipped (images/GIF + local file refs); phase 4 (video/audio)
+  // has not. Pinned so a status change is a deliberate edit, not drift.
+  assert.match(frontMatter, /\*\*Status:\*\*\s*phases 1–3 implemented/);
   assert.match(frontMatter, /\*\*Depends on:\*\*/);
   assert.match(frontMatter, /\*\*Blocks:\*\*\s*—/);
 });

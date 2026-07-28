@@ -29,7 +29,21 @@ const STDERR_TAIL_BYTES = 8192;
  * cap the in-progress frame is dropped and we resync at the next LF. A few MB
  * is far larger than any legitimate JSON-RPC line.
  */
-const DEFAULT_MAX_FRAME_BYTES = 4 * 1024 * 1024;
+/**
+ * Cap on a single stdout frame from an agent child, measured in JS string
+ * length (UTF-16 code units — identical to bytes for the ASCII JSON-RPC frames
+ * this guards, and the right order of magnitude otherwise).
+ *
+ * Sized for **media**, not prose: an ACP `tool_call_update` that completes an
+ * image-returning tool carries the bytes base64-encoded inside one JSON line
+ * (`rawOutput.content[] {type:"image",data}` — see the pi-acp wire probe in
+ * SPEC-22), so a multi-MB screenshot is a *legitimate* frame. At the old 4 MB
+ * cap such a frame was dropped, which lost the terminal `status:"completed"`
+ * with it and left the tool card spinning forever.
+ *
+ * Still bounded so a runaway child can't OOM the daemon.
+ */
+const DEFAULT_MAX_FRAME_BYTES = 32 * 1024 * 1024;
 
 /** Invoke each listener defensively — a throwing consumer must never escape
  *  into a stream/exit event handler and take the whole daemon down. */
@@ -59,9 +73,10 @@ export interface SpawnLineOptions {
   /** Injectable spawn (tests provide a fake); defaults to node's child_process. */
   spawn?: typeof nodeSpawn;
   /**
-   * Cap on a single unterminated stdout frame (bytes). Defaults to
-   * {@link DEFAULT_MAX_FRAME_BYTES}. An in-progress frame that exceeds this is
-   * dropped (resync at the next LF) so a runaway child can't OOM the daemon.
+   * Cap on a single stdout frame (JS string length). Defaults to
+   * {@link DEFAULT_MAX_FRAME_BYTES}. A frame that exceeds this is dropped —
+   * mid-frame the buffer resyncs at the next LF — so a runaway child can't OOM
+   * the daemon.
    */
   maxFrameBytes?: number;
 }
@@ -166,6 +181,15 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
         continue;
       }
       if (line.endsWith("\r")) line = line.slice(0, -1);
+      // Enforce the cap on complete frames too. Checking only the pending
+      // buffer (below) let a line through when its newline happened to arrive
+      // in the same chunk that crossed the limit.
+      if (line.length > maxFrameBytes) {
+        process.stderr.write(
+          `[${opts.label}] dropping oversized stdout frame (> ${maxFrameBytes} chars)\n`,
+        );
+        continue;
+      }
       safeInvoke(opts.label, "line", lineCbs, line);
     }
     // No LF yet and the pending frame is over the cap: drop it (and keep
