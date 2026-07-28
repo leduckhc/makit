@@ -145,6 +145,52 @@ test("defers tool.call.start until streamed args are ready", () => {
   assert.deepEqual((starts[0]!.payload as { args: unknown }).args, { path: "package.json" });
 });
 
+// `ask_user` is answered through a separate ACP permission request that the app
+// renders as an inline ask card (SPEC-25), so its tool call must produce NO
+// events at all — not even the deltas/end that would orphan without a start.
+test("suppresses the ask_user tool row entirely (no orphan delta/end)", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "a1",
+    title: "ask_user",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { question: "Which language?" },
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "a1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "TypeScript" } }],
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+});
+
+// A subagent has no bespoke renderer; it must still reach the app so the generic
+// tool body can show its description/prompt and result.
+test("keeps the Agent (subagent) tool call, args and completion", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "s1",
+    title: "Agent",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { description: "Count files", subagent_type: "Explore" },
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "s1",
+    status: "completed",
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "Agent");
+  assert.equal((start!.payload as { args: { subagent_type: string } }).args.subagent_type, "Explore");
+  assert.ok(events.some((e) => e.kind === "tool.call.end"));
+});
+
 test("reads bash output and exit code from terminal _meta", () => {
   const { events, mapper } = collect();
   mapper.handle({
@@ -459,4 +505,23 @@ test("a local image path in the final agent message is rewritten to a media URI"
   // Deltas stream raw (nothing is buffered for a rewrite that may never apply).
   const delta = events.find((e) => e.kind === "agent.message.delta")!.payload as { chunk: string };
   assert.equal(delta.chunk, "see ![shot](/tmp/out2.png)");
+});
+
+// A start with no end leaves the app's tool row spinning forever, so a turn that
+// dies mid-tool (abort/refusal) must still close every tool it opened.
+test("endTurn closes a tool that never completed instead of leaving it running", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "t1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  const kinds = events.filter((e) => e.kind.startsWith("tool.")).map((e) => e.kind);
+  assert.deepEqual(kinds, ["tool.call.start", "tool.call.end"]);
+  const end = events.find((e) => e.kind === "tool.call.end");
+  assert.equal((end!.payload as { exitCode: number }).exitCode, 1);
 });

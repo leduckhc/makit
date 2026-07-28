@@ -515,13 +515,6 @@ export class AcpAdapter extends SubprocessAdapter {
   }
 
   /**
-   * If [params] is a multiple-choice selection (a set of choice options with no
-   * reject affordance, e.g. pi's `ctx.ui.select` bridged by pi-acp), present it
-   * as an inline askUserQuestion and map the chosen label back to its optionId.
-   * Returns undefined for a binary approve/deny permission so the caller falls
-   * through to its confirmAction path.
-   */
-  /**
    * pi surfaces its interactive UI (pi-ask-user's `ctx.ui.select`/`ctx.ui.confirm`)
    * as an ACP `requestPermission` whose `toolCall` is synthetic (`pi-ui-*`) and
    * whose `rawInput.method` is `select`/`confirm`. These are QUESTIONS and must

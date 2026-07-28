@@ -11,8 +11,12 @@
  *   { t: "stopReason", reason }                     // prompt result
  *
  * Usage:
- *   pnpm exec tsx test/record-acp-session.ts --out test/fixtures/acp/<name>.jsonl \
+ *   pnpm exec tsx test/record-acp-session.ts --out test/acp-sessions/<name>.jsonl \
  *     --prompt "use the bash tool to run: echo hi"
+ *
+ * Then sanitize and regenerate the shared event fixtures:
+ *   pnpm exec tsx test/scrub-acp-session.ts test/acp-sessions/<name>.jsonl
+ *   pnpm exec tsx test/replay-acp-session.ts --write <name>
  *
  * Requires a working, authenticated `pi` on PATH (real LLM calls).
  */
@@ -34,7 +38,7 @@ function arg(name: string, fallback?: string): string | undefined {
   return i >= 0 && i + 1 < process.argv.length ? process.argv[i + 1] : fallback;
 }
 
-const out = arg("out", "test/fixtures/acp/session.jsonl")!;
+const out = arg("out", "test/acp-sessions/session.jsonl")!;
 const prompt = arg("prompt", "Use the bash tool to run: echo hello-from-pi")!;
 const cwd = arg("cwd", process.cwd())!;
 

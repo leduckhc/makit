@@ -1,13 +1,13 @@
 /// Replay tests — fold REAL recorded pi-acp sessions (captured via
-/// server/test/record-acp-session.ts → replayed to app-format events via
-/// replay-acp-session.ts) through [foldEvents] and assert the UI-facing tool
-/// one-liners. This is the deterministic seam for testing UI changes against
-/// the actual wire behavior of pi (edit/write/read/grep/ls/bash/ask_user/
-/// subagents) without spinning up a device or the LLM.
+/// server/test/record-acp-session.ts, mapped to app-format events via
+/// server/test/replay-acp-session.ts) through [foldEvents] and assert the
+/// UI-facing tool one-liners. This is the deterministic seam for testing UI
+/// changes against the actual wire behavior of pi (edit/write/read/grep/ls/
+/// bash/ask_user/subagents) without spinning up a device or the LLM.
 ///
-/// Fixtures live in test/fixtures/acp/*.events.json. Regenerate them with:
-///   (cd server && node_modules/.bin/tsx test/replay-acp-session.ts \
-///      test/fixtures/acp/NAME.jsonl --events ../app/test/fixtures/acp/NAME.events.json)
+/// Fixtures live in test/fixtures/acp/*.events.json and are byte-identical to
+/// server/test/fixtures/acp (enforced by Protocol Contract CI). Regenerate with:
+///   (cd server && node_modules/.bin/tsx test/replay-acp-session.ts --write)
 library;
 
 import 'dart:convert';
@@ -68,12 +68,15 @@ void main() {
     });
 
     test(
-      'ask_user: tool call carries the question + options and completes',
+      'ask_user: no tool row — the question renders as an inline ask card',
       () {
+        // pi-acp emits BOTH an `ask_user` tool call and a separate permission
+        // request carrying the question; the app shows the latter as an inline
+        // ask card (SPEC-25), so a tool row would just duplicate it.
         final tools = toolsOf(foldFixture('ask-user'));
-        final ask = tools.firstWhere((t) => t.name == 'ask_user');
-        expect(ask.args['question'], 'Which language do you prefer?');
-        expect(ask.ended, isTrue);
+        expect(tools.map((t) => t.name), isNot(contains('ask_user')));
+        // And the suppressed call must not leave a headless row behind.
+        expect(tools, isEmpty);
       },
     );
 

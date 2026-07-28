@@ -55,7 +55,10 @@ export class AcpEventMapper {
    * row's args once at start, so emitting too early (empty args) is what made
    * `read`/`grep`/`ls` render with no target and bash show "Ran bash".
    */
-  private tools = new Map<string, { title: string; kind?: ToolKind; rawInput: unknown; started: boolean }>();
+  private tools = new Map<
+    string,
+    { title: string; kind?: ToolKind; rawInput: unknown; started: boolean; suppressed?: boolean }
+  >();
   /** Last cumulative output text seen per tool call (to diff into deltas). */
   private toolText = new Map<string, string>();
   /** mediaIds already announced this turn (updates re-send cumulative output). */
@@ -145,9 +148,15 @@ export class AcpEventMapper {
   /** Finalize any buffered text/thinking at the end of an agent turn. */
   endTurn(): void {
     this.flushAll();
-    // Surface any tool that streamed args but never reached in_progress/output
-    // (e.g. an aborted turn) so it isn't silently dropped.
-    for (const id of this.tools.keys()) this.ensureToolStart(id);
+    // A tool still tracked here never reported `completed`/`failed` (an aborted
+    // or refused turn). Surface it rather than dropping it, but always CLOSE it:
+    // a `tool.call.start` with no matching end leaves the row spinning forever.
+    for (const id of [...this.tools.keys()]) {
+      this.ensureToolStart(id);
+      if (this.tools.get(id)?.suppressed) continue;
+      const output = this.toolText.get(id) ?? "";
+      this.emit("tool.call.end", { callId: id, exitCode: 1, summary: summarizeLine(output), output });
+    }
     this.tools.clear();
     this.toolText.clear();
     this.seenMedia.clear();
@@ -178,10 +187,18 @@ export class AcpEventMapper {
     const argsReady =
       status === "in_progress" || status === "completed" || status === "failed" || hasToolContent(update);
     if (argsReady) this.ensureToolStart(id);
-    if (cur.started) {
-      this.applyToolContent(id, update);
-      this.maybeEndTool(id, status, update);
+    if (!cur.started) return;
+    if (cur.suppressed) {
+      // Nothing was started for this call, so emitting deltas/end would be
+      // orphan events. Just release its state once the call finishes.
+      if (status === "completed" || status === "failed") {
+        this.toolText.delete(id);
+        this.tools.delete(id);
+      }
+      return;
     }
+    this.applyToolContent(id, update);
+    this.maybeEndTool(id, status, update);
   }
 
   /** Emit `tool.call.start` from the accumulated state, exactly once per tool. */
@@ -190,10 +207,13 @@ export class AcpEventMapper {
     if (!t || t.started) return;
     t.started = true;
     const { name, args } = canonicalizeTool(t.title, t.kind, t.rawInput);
-    // Skip UI-control tools (ask_user, Agent) — they don't render as tool rows.
-    // ask_user is handled via a separate permission request → inline card (SPEC-25).
-    // Agent (subagent) is handled by the app's subagent renderer (SPEC-31).
-    if (name === "ask_user" || name === "Agent") return;
+    // `ask_user` never renders as a tool row: pi-acp emits the tool call AND a
+    // separate permission request carrying the question, which the app shows as
+    // an inline ask card (SPEC-25). A row would duplicate that card.
+    if (name === "ask_user") {
+      t.suppressed = true;
+      return;
+    }
     this.emit("tool.call.start", {
       callId: id,
       name,
@@ -225,15 +245,6 @@ export class AcpEventMapper {
 
   private maybeEndTool(id: string, status: unknown, update: SessionUpdate): void {
     if (status !== "completed" && status !== "failed") return;
-    const t = this.tools.get(id);
-    if (!t) return;
-    const { name } = canonicalizeTool(t.title, t.kind, t.rawInput);
-    // Skip UI-control tools (ask_user, Agent) — they don't emit tool.call.end.
-    if (name === "ask_user" || name === "Agent") {
-      this.toolText.delete(id);
-      this.tools.delete(id);
-      return;
-    }
     const output = this.toolText.get(id) ?? "";
     const exitCode = status === "failed" ? 1 : terminalExitCode(update) ?? 0;
     this.emit("tool.call.end", {

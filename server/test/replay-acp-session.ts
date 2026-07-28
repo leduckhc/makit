@@ -1,19 +1,41 @@
 /**
- * replay-acp-session — feed a recorded ACP fixture (see record-acp-session.ts)
+ * replay-acp-session — feed a recorded ACP session (see record-acp-session.ts)
  * through the REAL {@link AcpEventMapper} and emit the normalized makit
  * `AdapterEvent`s. This is the deterministic seam for testing UI changes: the
  * app consumes exactly these events (over the WS transport → foldEvents).
  *
- *   node_modules/.bin/tsx test/replay-acp-session.ts <fixture.jsonl> [--events out.json]
+ *   node_modules/.bin/tsx test/replay-acp-session.ts test/acp-sessions/bash.jsonl
  *
- * With --events it writes the normalized event list as a JSON fixture the app
- * can replay through foldEvents in a widget test.
+ * Add `--write` to (re)generate the shared `*.events.json` fixture that both
+ * server (acp-fixtures.test.ts) and app (acp_replay_test.dart) replay:
+ *
+ *   node_modules/.bin/tsx test/replay-acp-session.ts --write            # all sessions
+ *   node_modules/.bin/tsx test/replay-acp-session.ts --write bash       # just one
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { AcpEventMapper } from "../src/adapters/acp-map.js";
 import type { AdapterEvent } from "../src/adapters/adapter.js";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
+
+const here = dirname(fileURLToPath(import.meta.url));
+/** Raw `pi-acp` wire recordings (server-only input). */
+export const sessionsDir = resolve(here, "acp-sessions");
+/**
+ * The generated `*.events.json` fixtures, duplicated byte-identically into the
+ * app so both sides replay the same events (enforced by Protocol Contract CI).
+ */
+export const fixtureDirs = [resolve(here, "fixtures/acp"), resolve(here, "../../app/test/fixtures/acp")];
+
+/** Names of every recorded session, e.g. `["ask-user", "bash", …]`. */
+export function sessionNames(): string[] {
+  return readdirSync(sessionsDir)
+    .filter((f) => f.endsWith(".jsonl"))
+    .map((f) => f.replace(/\.jsonl$/, ""))
+    .sort();
+}
 
 export function replayFixture(jsonl: string): AdapterEvent[] {
   const events: AdapterEvent[] = [];
@@ -27,10 +49,37 @@ export function replayFixture(jsonl: string): AdapterEvent[] {
   return events;
 }
 
-if (process.argv[1]?.endsWith("replay-acp-session.ts")) {
-  const path = process.argv[2];
-  if (!path) throw new Error("usage: replay-acp-session.ts <fixture.jsonl> [--events out.json]");
-  const events = replayFixture(readFileSync(path, "utf8"));
+/**
+ * Project mapper output into the app-facing `SessionEvent` shape
+ * (`{seq, sessionId, ts, kind, payload}`), with every wall-clock timestamp and
+ * generated id replaced by a stable counter. Without that the output changes on
+ * every run (`Date.now()`, `am-<random>-0`) and the fixture could never be
+ * byte-compared to catch staleness.
+ */
+export function toAppEvents(events: AdapterEvent[]): unknown[] {
+  const ids = new Map<string, string>();
+  const stableId = (raw: string, prefix: string): string => {
+    const seen = ids.get(raw);
+    if (seen) return seen;
+    const next = `${prefix}-${ids.size + 1}`;
+    ids.set(raw, next);
+    return next;
+  };
+  return events.map((e, i) => {
+    const payload: Record<string, unknown> = { ...(e.payload as Record<string, unknown>) };
+    if (typeof payload.msgId === "string") payload.msgId = stableId(payload.msgId, "msg");
+    if (typeof payload.thinkId === "string") payload.thinkId = stableId(payload.thinkId, "think");
+    return { seq: i, sessionId: "replay", ts: i, kind: e.kind, payload };
+  });
+}
+
+/** The exact bytes a `<name>.events.json` fixture must contain. */
+export function renderFixture(name: string): string {
+  const jsonl = readFileSync(join(sessionsDir, `${name}.jsonl`), "utf8");
+  return JSON.stringify(toAppEvents(replayFixture(jsonl)), null, 2) + "\n";
+}
+
+function printSummary(events: AdapterEvent[]): void {
   for (const e of events) {
     const p = e.payload as Record<string, unknown>;
     const detail =
@@ -45,18 +94,20 @@ if (process.argv[1]?.endsWith("replay-acp-session.ts")) {
               : "";
     console.log(e.kind.padEnd(22), detail);
   }
-  const outIdx = process.argv.indexOf("--events");
-  if (outIdx >= 0 && process.argv[outIdx + 1]) {
-    // Emit app-ready SessionEvent JSON ({seq, sessionId, ts, kind, payload}) so
-    // the Flutter app can replay it through foldEvents in a widget test.
-    const appEvents = events.map((e, i) => ({
-      seq: i,
-      sessionId: "replay",
-      ts: e.ts,
-      kind: e.kind,
-      payload: e.payload,
-    }));
-    writeFileSync(process.argv[outIdx + 1], JSON.stringify(appEvents, null, 2));
-    console.error(`[replay] wrote ${events.length} events → ${process.argv[outIdx + 1]}`);
+}
+
+if (process.argv[1]?.endsWith("replay-acp-session.ts")) {
+  const args = process.argv.slice(2);
+  if (args.includes("--write")) {
+    const wanted = args.filter((a) => a !== "--write");
+    for (const name of wanted.length > 0 ? wanted : sessionNames()) {
+      const body = renderFixture(name);
+      for (const dir of fixtureDirs) writeFileSync(join(dir, `${name}.events.json`), body);
+      console.error(`[replay] wrote ${name}.events.json → ${fixtureDirs.length} fixture dirs`);
+    }
+  } else {
+    const path = args[0];
+    if (!path) throw new Error("usage: replay-acp-session.ts <session.jsonl> | --write [name…]");
+    printSummary(replayFixture(readFileSync(path, "utf8")));
   }
 }
