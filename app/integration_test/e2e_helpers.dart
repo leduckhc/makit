@@ -59,7 +59,11 @@ Future<void> openFirstSession(WidgetTester tester) async {
 Future<void> sendComposerText(WidgetTester tester, String text) async {
   await tester.enterText(find.byType(TextField).last, text);
   await tester.pump();
-  await tester.tap(find.byIcon(Icons.arrow_upward));
+  // Target the send button by key, not by icon. Two arrowUp icons exist in the
+  // composer's AnimatedSwitcher (ValueKey('send') and ValueKey('send-disabled'),
+  // the latter a no-op with onPressed: null) and they overlap mid-crossfade, so
+  // an icon finder is both ambiguous and render-order dependent.
+  await tester.tap(find.byKey(const ValueKey('send')));
   await tester.pump(const Duration(milliseconds: 100));
 }
 
