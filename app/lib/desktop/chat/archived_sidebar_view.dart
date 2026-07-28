@@ -39,13 +39,27 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
   Future<List<Session>> _load() =>
       ref.read(storeControllerProvider.notifier).listArchivedSessions();
 
-  void _refresh() => setState(() => _future = _load());
+  // Guard for the live-sync listener below: the set of active session ids the
+  // last snapshot carried, so routine activity/status churn doesn't trigger a
+  // reload — only an actual archive/restore (which adds/removes an id) does.
+  Set<String>? _lastActiveIds;
+
+  void _refresh() {
+    if (!mounted) return;
+    setState(() {
+      _future = _load();
+    });
+  }
 
   Future<void> _restore(String id) async {
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
       await ref.read(storeControllerProvider.notifier).unarchiveSession(id);
       if (!mounted) return;
+      // Refresh immediately for snappy local feedback. The sessionsProvider
+      // listener in build() also fires once the server re-broadcasts the active
+      // set (the cross-pane path), so a local restore reloads twice — harmless
+      // and intentional: the listener alone isn't guaranteed same-frame.
       _refresh();
     } catch (e) {
       messenger?.showSnackBar(SnackBar(content: Text('Could not restore: $e')));
@@ -54,6 +68,21 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
 
   @override
   Widget build(BuildContext context) {
+    // Live-sync: archiving/restoring a session elsewhere (e.g. from a chat
+    // pane) changes the ACTIVE session set the server broadcasts. Reload the
+    // archived list on that transition so it stays fresh without the user
+    // toggling the view. Keyed on the id SET (order-independent, no sort/join)
+    // so this stays allocation-light under frequent broadcasts from many live
+    // sessions and only fires on a real add/remove, not activity/status churn.
+    ref.listen<SessionsState>(sessionsProvider, (_, next) {
+      final ids = {for (final s in next.sessions) s.id};
+      final prev = _lastActiveIds;
+      if (prev != null &&
+          (ids.length != prev.length || !ids.containsAll(prev))) {
+        _refresh();
+      }
+      _lastActiveIds = ids;
+    });
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -63,7 +92,8 @@ class _ArchivedSidebarViewState extends ConsumerState<ArchivedSidebarView> {
           child: FutureBuilder<List<Session>>(
             future: _future,
             builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
+              if (snap.connectionState == ConnectionState.waiting &&
+                  !snap.hasData) {
                 return const Center(
                   child: Padding(
                     padding: EdgeInsets.all(24),

@@ -820,7 +820,8 @@ class Session {
 
   /// Orphaned (SPEC-29): an archived session whose worktree was removed. Only
   /// set on the `session.listArchived` result; drives the "worktree removed"
-  /// affordance in the archive view.
+  /// chip in the archive view. Restoring an orphaned session runs it at the
+  /// repo root (no recreate-worktree path).
   final bool orphaned;
 
   Session copyWith({

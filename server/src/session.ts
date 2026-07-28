@@ -312,6 +312,23 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Drop the recorded worktree/branch so the session buckets under the repo
+   * ROOT again (SPEC-29: restoring a session whose worktree was deleted runs it
+   * at the repo root). Without this the stale path matches no live worktree, so
+   * the session renders in no view. No-op for a draft or an already-root
+   * session. Persists + emits so the active snapshot re-broadcasts.
+   */
+  detachToRoot(): void {
+    if (this._lifecycle.phase !== "started") return;
+    if (this._lifecycle.branch === undefined && this._lifecycle.worktreePath === undefined) {
+      return;
+    }
+    this._lifecycle = { phase: "started", branch: undefined, worktreePath: undefined };
+    this.persistMeta();
+    this.emit("metaChanged");
+  }
+
+  /**
    * Record and emit a `session.error` through the normal event pipeline, so it
    * gets a real monotonic seq and is persisted (like any adapter event) rather
    * than being hand-built by a caller. Used e.g. when draft promotion fails.

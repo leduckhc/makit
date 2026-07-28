@@ -305,6 +305,97 @@ test("removeWorktree preserves archived sessions and auto-archives live ones (SP
   }
 });
 
+test("unarchive of an orphaned session detaches it to the repo root (SPEC-29)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = realpathSync(makeGitRepo());
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    await manager.promotePendingSession(draft, "orphan me");
+    assert.equal(manager.getSession(draft.id)!.worktreePath !== undefined, true);
+
+    // Deleting the worktree auto-archives the session, flagged orphaned.
+    await manager.removeWorktree(projectId, wt.path);
+    assert.equal((await manager.listArchivedSessions()).find((d) => d.id === draft.id)!.orphaned, true);
+
+    // Restore: it returns to the ACTIVE list, detached to the repo root — its
+    // stale worktree path is cleared so it renders under the primary worktree.
+    await manager.unarchiveSession(draft.id);
+    const restored = manager.getSession(draft.id)!;
+    assert.equal(restored.archived, false);
+    assert.equal(restored.worktreePath, undefined, "orphaned worktree path is cleared");
+    assert.equal(restored.branch, undefined, "orphaned branch is cleared");
+    assert.ok(manager.listSessions().some((d) => d.id === draft.id), "back in active list");
+
+    // The repo snapshot buckets it under the repo root (primary worktree), so
+    // the sidebar can render it (it was previously in no worktree's sessionIds).
+    const repos = await manager.listRepos();
+    const snap = repos.find((r) => r.id === projectId)!;
+    const primary = snap.worktrees.find((w) => w.isPrimary)!;
+    assert.ok(primary.sessionIds.includes(draft.id), "restored session buckets under repo root");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+    store.close();
+  }
+});
+
+test("unarchive of a session whose worktree is still live preserves its binding (SPEC-29)", async () => {
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = realpathSync(makeGitRepo());
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    await manager.promotePendingSession(draft, "keep me");
+    const before = manager.getSession(draft.id)!;
+    const boundPath = before.worktreePath;
+    const boundBranch = before.branch;
+    assert.ok(boundPath !== undefined, "session is bound to the worktree");
+
+    // Archive WITHOUT removing the worktree, so the recorded path stays live.
+    await manager.archiveSession(draft.id);
+    assert.equal((await manager.listArchivedSessions()).find((d) => d.id === draft.id)!.orphaned, false);
+
+    // Restore must NOT detach: the worktree is still a live worktree, so the
+    // binding is preserved (only a genuinely-absent worktree detaches to root).
+    await manager.unarchiveSession(draft.id);
+    const restored = manager.getSession(draft.id)!;
+    assert.equal(restored.archived, false);
+    assert.equal(restored.worktreePath, boundPath, "live worktree path is preserved");
+    assert.equal(restored.branch, boundBranch, "live branch is preserved");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+    store.close();
+  }
+});
+
 test("renameWorktreeBranch refuses the repo's primary worktree", async () => {
   const cwd = makeGitRepo();
   try {
