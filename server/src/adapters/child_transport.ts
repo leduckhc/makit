@@ -29,7 +29,19 @@ const STDERR_TAIL_BYTES = 8192;
  * cap the in-progress frame is dropped and we resync at the next LF. A few MB
  * is far larger than any legitimate JSON-RPC line.
  */
-const DEFAULT_MAX_FRAME_BYTES = 4 * 1024 * 1024;
+/**
+ * Cap on a single unterminated stdout frame from an agent child.
+ *
+ * Sized for **media**, not prose: an ACP `tool_call_update` that completes an
+ * image-returning tool carries the bytes base64-encoded inside one JSON line
+ * (`rawOutput.content[] {type:"image",data}` — see the pi-acp wire probe in
+ * SPEC-22), so a multi-MB screenshot is a *legitimate* frame. At the old 4 MB
+ * cap such a frame was dropped, which lost the terminal `status:"completed"`
+ * with it and left the tool card spinning forever.
+ *
+ * Still bounded so a runaway child can't OOM the daemon.
+ */
+const DEFAULT_MAX_FRAME_BYTES = 32 * 1024 * 1024;
 
 /** Invoke each listener defensively — a throwing consumer must never escape
  *  into a stream/exit event handler and take the whole daemon down. */
