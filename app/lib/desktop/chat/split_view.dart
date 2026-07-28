@@ -312,6 +312,7 @@ class _TabBar extends ConsumerWidget {
                           tab: split.tabs[i],
                           index: i,
                           active: split.tabs[i].id == split.activeTabId,
+                          splitActive: active,
                         ),
                     ],
                   ),
@@ -410,12 +411,19 @@ class _TabChip extends ConsumerWidget {
     required this.tab,
     required this.index,
     required this.active,
+    required this.splitActive,
   });
 
   final Split split;
   final Tab tab;
   final int index;
+
+  /// This tab is the selected tab within its split.
   final bool active;
+
+  /// This tab's split is the focused split. Only the selected tab of the
+  /// focused split gets the green cap; every other tab's cap is a dim neutral.
+  final bool splitActive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -440,7 +448,10 @@ class _TabChip extends ConsumerWidget {
         color: active ? cs.surface : Colors.transparent,
         border: Border(
           top: BorderSide(
-            color: active ? cs.primary : Colors.transparent,
+            // Brand green (design: primary = active state) only for the
+            // selected tab of the focused split; every other tab's cap is a
+            // dim neutral using outlineVariant (the sanctioned borders token).
+            color: active && splitActive ? cs.primary : cs.outlineVariant,
             width: 2,
           ),
           right: BorderSide(color: cs.outlineVariant, width: 1),
