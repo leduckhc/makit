@@ -617,12 +617,14 @@ export function slugify(text: string, maxWords = 6): string {
  * hierarchical names like `feat/new-ui` survive. Each `/`-separated segment is
  * slugified like {@link slugify} (lowercase, non-`[a-z0-9-]` runs → `-`); empty
  * segments are dropped, which also strips leading/trailing/duplicate slashes.
- * Returns `""` when nothing usable remains (caller falls back to an auto name).
- * The worktree DIRECTORY name is derived separately by flattening `/` → `-`,
- * since a slash in the dir path would nest a subfolder.
+ * The result is capped at `maxLength` chars (trailing `/`/`-` trimmed) so a
+ * pasted string can't produce an oversized git ref or an over-long worktree
+ * directory path. Returns `""` when nothing usable remains (caller falls back
+ * to an auto name). The worktree DIRECTORY name is derived separately by
+ * flattening `/` → `-`, since a slash in the dir path would nest a subfolder.
  */
-export function slugifyBranch(text: string): string {
-  return text
+export function slugifyBranch(text: string, maxLength = 80): string {
+  const slug = text
     .toLowerCase()
     .replace(/[^a-z0-9\s/-]/g, " ")
     .split("/")
@@ -637,6 +639,7 @@ export function slugifyBranch(text: string): string {
     )
     .filter(Boolean)
     .join("/");
+  return slug.slice(0, maxLength).replace(/[/-]+$/g, "");
 }
 
 /**

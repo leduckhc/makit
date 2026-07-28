@@ -303,6 +303,32 @@ test("createWorktree preserves slashes in the branch but flattens the directory"
   }
 });
 
+test("createWorktree disambiguates a flattened dir that collides with an existing worktree", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    // Branch `feat-new-ui` claims dir `feat-new-ui`.
+    const first = await manager.createWorktree(projectId, undefined, "feat-new-ui");
+    assert.equal(first.branch, "feat-new-ui");
+    assert.equal(basename(first.path), "feat-new-ui");
+    // Branch `feat/new-ui` is unique as a ref but flattens to the SAME dir; the
+    // dir must be disambiguated so `git worktree add` doesn't fail.
+    const second = await manager.createWorktree(projectId, undefined, "feat/new-ui");
+    assert.equal(second.branch, "feat/new-ui");
+    assert.notEqual(basename(second.path), "feat-new-ui");
+    assert.match(basename(second.path), /^feat-new-ui-\d+$/);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("createWorktree falls back to an auto name when the supplied name is blank", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

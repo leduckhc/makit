@@ -9,7 +9,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { basename, resolve, join } from "node:path";
 import type { AgentAdapter } from "./adapters/adapter.js";
 import type { AskUser } from "./uicall.js";
 import { listAgents, fingerprintAgent, type AgentDescriptor } from "./adapters/catalog.js";
@@ -37,6 +37,7 @@ import {
   branchExists,
   slugify,
   slugifyBranch,
+  worktreeBaseDir,
   type OpenPr,
 } from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
@@ -527,10 +528,13 @@ export class SessionManager extends EventEmitter {
     );
     // The worktree DIRECTORY can't contain `/` (it would nest a subfolder), so
     // flatten it while the branch keeps its slashes: `feat/new-ui` on disk
-    // becomes `feat-new-ui`.
+    // becomes `feat-new-ui`. Because distinct branches can flatten to the same
+    // dir (`feat/new-ui` vs an existing `feat-new-ui`), disambiguate the dir
+    // separately — branch uniqueness alone no longer guarantees a free path.
+    const dirName = this.uniqueWorktreeDir(repoPath, branch.replace(/\//g, "-"));
     const path = await addWorktree({
       repoPath,
-      name: branch.replace(/\//g, "-"),
+      name: dirName,
       branch,
       baseBranch: base,
     });
@@ -803,6 +807,24 @@ export class SessionManager extends EventEmitter {
     let candidate = base;
     let n = 1;
     while (await branchExists(repoPath, candidate)) {
+      n += 1;
+      candidate = `${base}-${n}`;
+    }
+    return candidate;
+  }
+
+  /**
+   * Find an unused worktree directory name under `<worktreeBaseDir>/<repoName>`,
+   * appending `-2`, `-3`, … on collision. Needed because two distinct branches
+   * can flatten to the same dir name (`feat/new-ui` → `feat-new-ui`), so a
+   * unique branch is not enough to guarantee `git worktree add`'s target path
+   * is free. Mirrors {@link addWorktree}'s target layout.
+   */
+  private uniqueWorktreeDir(repoPath: string, base: string): string {
+    const parent = join(worktreeBaseDir(), basename(resolve(repoPath)));
+    let candidate = base;
+    let n = 1;
+    while (existsSync(join(parent, candidate))) {
       n += 1;
       candidate = `${base}-${n}`;
     }

@@ -11,6 +11,7 @@ import {
   listWorktrees,
   diffStat,
   slugify,
+  slugifyBranch,
   addWorktree,
   removeWorktree,
   renameBranch,
@@ -176,6 +177,29 @@ test("slugify produces git-safe kebab-case and caps words", () => {
   assert.equal(slugify("   Fix   the:: BUG  "), "fix-the-bug");
   assert.equal(slugify("!!! ???"), "");
   assert.equal(slugify("hi"), "hi");
+});
+
+test("slugifyBranch preserves slashes, sanitizes segments, and caps length", () => {
+  // Hierarchy is kept; each segment is kebab-cased.
+  assert.equal(slugifyBranch("feat/New UI"), "feat/new-ui");
+  // Leading/trailing/duplicate slashes and stray punctuation are cleaned up.
+  assert.equal(slugifyBranch("/feat//new::ui/"), "feat/new-ui");
+  // Nothing usable -> empty (caller falls back to an auto name).
+  assert.equal(slugifyBranch("!!! ///"), "");
+  // Length cap trims an oversized paste and any partial trailing segment.
+  const long = "a".repeat(200);
+  assert.equal(slugifyBranch(long).length, 80);
+  assert.equal(slugifyBranch("feat/" + "x".repeat(200), 8), "feat/xxx");
+});
+
+test("slugifyBranch preserves slashes and caps length", () => {
+  assert.equal(slugifyBranch("feat/new-ui"), "feat/new-ui");
+  assert.equal(slugifyBranch("fix/critical bug"), "fix/critical-bug");
+  assert.equal(slugifyBranch("/feat//new ui/"), "feat/new-ui");
+  // Very long names truncate to 250 chars
+  const longName = "a/b/c/d/e/f/g/h/i/j/" + "x".repeat(300);
+  const result = slugifyBranch(longName);
+  assert(result.length <= 250, `expected ≤250 chars, got ${result.length}`);
 });
 
 test("read helpers degrade gracefully on a non-repo path", async () => {
