@@ -12,7 +12,6 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha256;
 
-
 /// An [HttpClient] that trusts **only** the cert matching [fingerprint].
 ///
 /// `withTrustedRoots: false` removes the OS trust store, so a valid CA-signed
@@ -21,9 +20,10 @@ import 'package:crypto/crypto.dart' show sha256;
 HttpClient pinnedHttpClient(String fingerprint) {
   final expected = fingerprint.toLowerCase();
   final client = HttpClient(context: SecurityContext(withTrustedRoots: false));
-  client.badCertificateCallback = (X509Certificate cert, String host, int port) {
-    return hexSha256(cert.der) == expected;
-  };
+  client.badCertificateCallback =
+      (X509Certificate cert, String host, int port) {
+        return hexSha256(cert.der) == expected;
+      };
   return client;
 }
 

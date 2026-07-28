@@ -49,7 +49,9 @@ void main() {
     await tester.runAsync(() async {
       await tester.pumpWidget(
         _host(
-          AgentMediaView(item: _item(alt: 'shot.png', id: 'b')),
+          AgentMediaView(
+            item: _item(alt: 'shot.png', id: 'b'),
+          ),
           fetcher: (id) async => throw MediaNotFoundException(id),
         ),
       );
@@ -74,10 +76,15 @@ void main() {
     expect(find.byType(MediaPlaceholder), findsOneWidget);
   });
 
-  testWidgets('tapping the thumbnail opens a fullscreen viewer', (tester) async {
+  testWidgets('tapping the thumbnail opens a fullscreen viewer', (
+    tester,
+  ) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        _host(AgentMediaView(item: _item(id: 'd')), fetcher: (_) async => kPng),
+        _host(
+          AgentMediaView(item: _item(id: 'd')),
+          fetcher: (_) async => kPng,
+        ),
       );
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -99,7 +106,10 @@ void main() {
     // read as the top strip of the page instead.
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        _host(AgentMediaView(item: _item(id: 'e')), fetcher: (_) async => kPng),
+        _host(
+          AgentMediaView(item: _item(id: 'e')),
+          fetcher: (_) async => kPng,
+        ),
       );
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -116,7 +126,10 @@ void main() {
   ) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(
-        _host(AgentMediaView(item: _item(id: 'f')), fetcher: (_) async => kPng),
+        _host(
+          AgentMediaView(item: _item(id: 'f')),
+          fetcher: (_) async => kPng,
+        ),
       );
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 50));

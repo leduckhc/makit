@@ -22,7 +22,11 @@ void main() {
     final context = SecurityContext()
       ..useCertificateChain('test/fixtures/tls/cert.pem')
       ..usePrivateKey('test/fixtures/tls/key.pem');
-    server = await HttpServer.bindSecure(InternetAddress.loopbackIPv4, 0, context);
+    server = await HttpServer.bindSecure(
+      InternetAddress.loopbackIPv4,
+      0,
+      context,
+    );
     server.listen((req) async {
       if (req.headers.value(HttpHeaders.authorizationHeader) != 'Bearer tok') {
         req.response.statusCode = 401;
@@ -49,32 +53,44 @@ void main() {
     fingerprint: fp ?? fingerprint,
   );
 
-  test('the pinned client accepts a self-signed cert whose fingerprint matches', () async {
-    final bytes = await httpMediaFetcher(endpoint())('a' * 64);
-    expect(utf8.decode(bytes), 'pinned-ok');
-  });
+  test(
+    'the pinned client accepts a self-signed cert whose fingerprint matches',
+    () async {
+      final bytes = await httpMediaFetcher(endpoint())('a' * 64);
+      expect(utf8.decode(bytes), 'pinned-ok');
+    },
+  );
 
-  test('it rejects a mismatching fingerprint instead of trusting the cert', () async {
-    // The failure mode this guards: dropping `badCertificateCallback` (or
-    // returning true from it) would make every cert acceptable.
-    await expectLater(
-      httpMediaFetcher(endpoint(fp: 'f' * 64))('a' * 64),
-      throwsA(isA<MediaFetchException>()),
-    );
-  });
+  test(
+    'it rejects a mismatching fingerprint instead of trusting the cert',
+    () async {
+      // The failure mode this guards: dropping `badCertificateCallback` (or
+      // returning true from it) would make every cert acceptable.
+      await expectLater(
+        httpMediaFetcher(endpoint(fp: 'f' * 64))('a' * 64),
+        throwsA(isA<MediaFetchException>()),
+      );
+    },
+  );
 
-  test('it still enforces the bearer over a correctly pinned connection', () async {
-    // Pinning authenticates the *server*; the bearer authenticates the device.
-    await expectLater(
-      httpMediaFetcher(endpoint(bearer: null))('a' * 64),
-      throwsA(isA<MediaFetchException>()),
-    );
-  });
+  test(
+    'it still enforces the bearer over a correctly pinned connection',
+    () async {
+      // Pinning authenticates the *server*; the bearer authenticates the device.
+      await expectLater(
+        httpMediaFetcher(endpoint(bearer: null))('a' * 64),
+        throwsA(isA<MediaFetchException>()),
+      );
+    },
+  );
 
   test('an unpinned client rejects the same cert (no OS trust for it)', () async {
     // Sanity check on the fixture: the cert really is untrusted, so the passing
     // test above proves pinning did the work rather than OS trust.
-    final endpointNoFp = MediaEndpoint(base: 'https://127.0.0.1:${server.port}', bearer: 'tok');
+    final endpointNoFp = MediaEndpoint(
+      base: 'https://127.0.0.1:${server.port}',
+      bearer: 'tok',
+    );
     await expectLater(
       httpMediaFetcher(endpointNoFp)('a' * 64),
       throwsA(isA<MediaFetchException>()),

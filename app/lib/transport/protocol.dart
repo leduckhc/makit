@@ -90,6 +90,7 @@ enum EventKind {
   userMessage,
   agentMessage,
   agentMessageDelta,
+
   /// Assistant display media (SPEC-22) — a descriptor for an image/GIF the
   /// agent produced. The bytes are fetched from the server's `/media/<mediaId>`
   /// route, never carried on this socket (the event log is replayed in full on

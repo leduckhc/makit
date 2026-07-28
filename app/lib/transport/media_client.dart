@@ -19,7 +19,6 @@ import 'dart:typed_data';
 
 import 'pinned_http.dart';
 
-
 /// A sha256, lowercase hex — the only id shape the route accepts.
 final RegExp _mediaIdPattern = RegExp(r'^[a-f0-9]{64}$');
 
@@ -93,12 +92,15 @@ MediaFetcher httpMediaFetcher(MediaEndpoint endpoint) {
         await res.drain<void>();
         throw MediaNotFoundException(mediaId);
       }
-      if (res.statusCode != HttpStatus.ok && res.statusCode != HttpStatus.partialContent) {
+      if (res.statusCode != HttpStatus.ok &&
+          res.statusCode != HttpStatus.partialContent) {
         await res.drain<void>();
         throw MediaFetchException('HTTP ${res.statusCode}');
       }
       final chunks = await res.toList().timeout(_timeout);
-      return Uint8List.fromList(chunks.expand((c) => c).toList(growable: false));
+      return Uint8List.fromList(
+        chunks.expand((c) => c).toList(growable: false),
+      );
     } on MediaNotFoundException {
       rethrow;
     } on MediaFetchException {

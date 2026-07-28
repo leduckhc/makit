@@ -59,7 +59,10 @@ class MakitMediaImage extends ImageProvider<MakitMediaImage> {
     );
   }
 
-  Future<ui.Codec> _load(MakitMediaImage key, ImageDecoderCallback decode) async {
+  Future<ui.Codec> _load(
+    MakitMediaImage key,
+    ImageDecoderCallback decode,
+  ) async {
     final bytes = await key.fetch(key.mediaId);
     if (bytes.isEmpty) throw const MediaFetchException('empty body');
     return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
@@ -151,7 +154,11 @@ String _failureLabel(AgentMediaItem item, Object error) {
 /// Stand-in for media that is loading, gone, or unreachable. Quiet by design:
 /// an outlined tile with the description, never an image-shaped surprise.
 class MediaPlaceholder extends StatelessWidget {
-  const MediaPlaceholder({super.key, required this.label, this.loading = false});
+  const MediaPlaceholder({
+    super.key,
+    required this.label,
+    this.loading = false,
+  });
 
   final String label;
   final bool loading;
@@ -193,7 +200,11 @@ class MediaPlaceholder extends StatelessWidget {
   }
 }
 
-void _openFullscreen(BuildContext context, AgentMediaItem item, MediaFetcher fetch) {
+void _openFullscreen(
+  BuildContext context,
+  AgentMediaItem item,
+  MediaFetcher fetch,
+) {
   Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: false,
@@ -220,7 +231,9 @@ class _FullscreenMedia extends StatelessWidget {
             child: InteractiveViewer(
               minScale: 1,
               maxScale: 8,
-              child: Center(child: _MediaImage(item: item, fetch: fetch)),
+              child: Center(
+                child: _MediaImage(item: item, fetch: fetch),
+              ),
             ),
           ),
           Positioned(

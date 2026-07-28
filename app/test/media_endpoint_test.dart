@@ -25,17 +25,23 @@ ProviderContainer _container(MakitConnState state) {
 }
 
 void main() {
-  test('a loopback self-paired desktop gets a pinned, bearer-authed endpoint', () {
-    final c = _container(MakitConnState(server: _server()));
-    final endpoint = c.read(mediaEndpointProvider)!;
+  test(
+    'a loopback self-paired desktop gets a pinned, bearer-authed endpoint',
+    () {
+      final c = _container(MakitConnState(server: _server()));
+      final endpoint = c.read(mediaEndpointProvider)!;
 
-    expect(endpoint.base, 'https://127.0.0.1:9787');
-    expect(endpoint.bearer, 'device-bearer');
-    expect(endpoint.fingerprint, 'ab12cd34');
-    // Same origin as the WS, which is where the /media route is attached.
-    expect(endpoint.urlFor('a' * 64).toString(), 'https://127.0.0.1:9787/media/${'a' * 64}');
-    expect(c.read(mediaFetcherProvider), isNotNull);
-  });
+      expect(endpoint.base, 'https://127.0.0.1:9787');
+      expect(endpoint.bearer, 'device-bearer');
+      expect(endpoint.fingerprint, 'ab12cd34');
+      // Same origin as the WS, which is where the /media route is attached.
+      expect(
+        endpoint.urlFor('a' * 64).toString(),
+        'https://127.0.0.1:9787/media/${'a' * 64}',
+      );
+      expect(c.read(mediaFetcherProvider), isNotNull);
+    },
+  );
 
   test('a phone paired over Tailscale/LAN derives the same shape', () {
     final c = _container(MakitConnState(server: _server(host: '100.64.0.7')));
