@@ -1,7 +1,54 @@
 # SPEC-22 — Assistant display media (images, video, gifs)
 
-**Status:** proposed · **Depends on:** SPEC-15 (adapter consolidation), SPEC-16
-(app chat), ACP transition · **Blocks:** —
+**Status:** phases 1–3 implemented (images + GIF + local file refs); phase 4
+(video/audio) not started · **Depends on:** SPEC-15 (adapter consolidation),
+SPEC-16 (app chat), ACP transition · **Blocks:** —
+
+> ## Implementation notes (post-build corrections)
+>
+> Three things in this document turned out to be wrong or unnecessary once the
+> wire was actually measured (`server/test/e2e-media.ts`, and the raw pi-acp
+> capture that drove it). The build follows the notes, not the prose below.
+>
+> 1. **Images are in `rawOutput`, not `content[]`.** A pi-acp 0.0.32 capture of
+>    `read /tmp/shot.png` puts the bytes in
+>    `tool_call_update.rawOutput.content[] {type:"image",data,mimeType}`; the
+>    normalized ACP `content[]` carries only the text `"Read image file
+>    [image/png]"`. `acp-map.ts` scans **both** locations. An ingester written
+>    against the table below (which says `contentBlockText()`/`content[]`) finds
+>    nothing.
+> 2. **No HMAC capability tokens, no `media.token.mint` RPC, no revocation
+>    generation.** That design exists only to serve loaders that cannot set
+>    headers. makit's app fetches media through its *own* pinned `HttpClient`
+>    (it must, for TLS), so it can send `Authorization: Bearer <deviceBearer>`
+>    — verified against the same `DeviceRegistry` as the WS handshake. Strictly
+>    less surface than a token in a URL, which this document rightly notes gets
+>    persisted into the replayed event log. `trustLoopback` mirrors the WS
+>    `--no-auth` dev rule.
+> 3. **`file://` / local paths shipped in phase 1, not phase 5.** Deferring them
+>    left the *most common* real case unhandled: agents write a file and then
+>    write `![](/tmp/out2.png)` in prose. Copying the bytes into the
+>    content-addressed store **at ingestion** collapses the deferred
+>    symlink/TOCTOU concern (the phone fetches an immutable hash-keyed snapshot,
+>    never a path re-read at serve time); what is left is disclosure, handled by
+>    `realpath` containment to the session worktree + temp dirs plus an
+>    extension/mime allowlist that excludes SVG. The server rewrites the
+>    finalized `agent.message` text to `makit-media:<mediaId>`, which the app's
+>    markdown `imageBuilder` resolves. See `server/src/media/local.ts`.
+>
+> Also note: the pi *native* adapter this document's source table refers to
+> (`server/src/adapters/pi.ts`) no longer exists — the ACP transition removed
+> it, so `acp-map.ts` is the only ingestion point. And the 4 MB frame cap in
+> `child_transport.ts` was a **blocking bug**, not a footnote: a base64
+> screenshot exceeds it, the frame was silently dropped, and because the bytes
+> ride on the `status:"completed"` update the tool card hung forever. Raised to
+> 32 MB with a regression test.
+>
+> Not built: video/audio (phase 4), remote-markdown-image hardening (phase 3's
+> *policy* half — remote `http(s)` images keep their pre-existing behaviour),
+> media GC/refcounting, and user→agent uploads (pi advertises
+> `promptCapabilities.image: true`, so the input side is available for a
+> follow-up spec).
 
 ## Goal
 
