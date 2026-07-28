@@ -268,33 +268,42 @@ export class SessionManager extends EventEmitter {
    *  they're unreachable (no repo/cwd). */
   async listArchivedSessions(): Promise<SessionDTO[]> {
     const archived = [...this.sessions.values()].filter((s) => s.archived);
-    // Resolve each project's live worktree paths once (git shell), cached.
-    const worktreePaths = new Map<string, Set<string>>();
+    const liveByProject = new Map<string, Set<string>>();
     const out: SessionDTO[] = [];
     for (const session of archived) {
       const project = this.projects.get(session.projectId);
       if (!project) continue; // project removed → unreachable, hide it
-      let paths = worktreePaths.get(session.projectId);
-      if (!paths) {
-        // .catch(()=>[]) here is cosmetic-safe: the orphaned flag is recomputed
-        // every call, so a transient git failure just mislabels a chip for one
-        // refresh. Do NOT copy this into unarchiveSession, whose detach is a
-        // persisted, irreversible unbind — it deliberately treats an empty list
-        // as "unproven" and keeps the binding.
-        const entries = await listWorktrees(project.dto.path).catch(() => []);
-        paths = new Set(entries.map((e) => resolve(e.path)));
-        worktreePaths.set(session.projectId, paths);
+      let live = liveByProject.get(session.projectId);
+      if (!live) {
+        live = await this.liveWorktreePaths(project.dto.path);
+        liveByProject.set(session.projectId, live);
       }
-      // A session running in the repo root (non-git / unborn HEAD) is never
-      // orphaned; otherwise it's orphaned when its worktree is no longer listed.
-      const wt = session.worktreePath;
-      const orphaned =
-        wt != null && resolve(wt) !== resolve(project.dto.path)
-          ? !paths.has(resolve(wt))
-          : false;
+      const orphaned = this.isOrphaned(session.worktreePath, project.dto.path, live);
       out.push({ ...session.toDTO(), orphaned });
     }
     return out.sort((a, b) => b.lastActivityAt - a.lastActivityAt);
+  }
+
+  /** A project's live worktree paths (one git shell), each resolved for
+   *  comparison. Empty ONLY when git failed or the repo is gone — a healthy
+   *  repo always lists its primary worktree — so callers treat empty as
+   *  "unproven", never as "no worktrees". */
+  private async liveWorktreePaths(projectPath: string): Promise<Set<string>> {
+    const entries = await listWorktrees(projectPath).catch(() => []);
+    return new Set(entries.map((e) => resolve(e.path)));
+  }
+
+  /** SPEC-29 "orphaned": the session's recorded worktree is no longer a live
+   *  worktree of its project. A repo-root session (no distinct worktree) is
+   *  never orphaned; an empty {@link liveWorktreePaths} set is unproven (git
+   *  failure) → not orphaned. This single predicate drives BOTH the archive
+   *  view's "worktree removed" chip and the detach-to-root on unarchive, so the
+   *  flag a user sees and the action a restore takes can never diverge. */
+  private isOrphaned(worktreePath: string | undefined, projectPath: string, live: Set<string>): boolean {
+    if (worktreePath == null) return false;
+    const wt = resolve(worktreePath);
+    if (wt === resolve(projectPath)) return false; // repo root is never orphaned
+    return live.size > 0 && !live.has(wt);
   }
 
   getSession(id: string): Session | undefined {
@@ -963,26 +972,17 @@ export class SessionManager extends EventEmitter {
   async unarchiveSession(id: string): Promise<void> {
     const session = this.sessions.get(id);
     if (!session) throw new Error(`no such session: ${id}`);
-    // If the worktree was deleted while archived, its recorded path matches no
-    // live worktree, so the session would bucket under a phantom worktree and
-    // render in no view. Detach it to the repo root (SPEC-29: run at repo root
-    // on restore) so it's visible + resumable there. reattachSession already
-    // falls back to the repo root for a missing worktree, so resume is unaffected.
-    const wt = session.worktreePath;
-    if (wt) {
-      const project = this.projects.get(session.projectId);
-      if (project) {
-        // A healthy repo always lists its primary worktree, so listWorktrees
-        // returns [] ONLY when git failed (code !=0) or the repo is gone — not
-        // when a worktree is legitimately absent. Detaching persists an
-        // irreversible unbind, so only do it when we have a real (non-empty)
-        // list that proves the recorded path is no longer a live worktree.
-        // On the ambiguous empty case we keep the binding and let a later
-        // restore/subscribe retry once git recovers.
-        const entries = await listWorktrees(project.dto.path);
-        if (entries.length > 0 && !entries.some((e) => resolve(e.path) === resolve(wt))) {
-          session.detachToRoot();
-        }
+    // If the worktree was deleted while archived, restoring must detach the
+    // session to the repo root (SPEC-29) — otherwise its stale path matches no
+    // live worktree and it renders in no view. Uses the same orphaned predicate
+    // as the archive-list chip, so the flag and the action never diverge;
+    // reattachSession already falls back to the repo root for a missing
+    // worktree, so resume is unaffected.
+    const project = session.worktreePath ? this.projects.get(session.projectId) : undefined;
+    if (project) {
+      const live = await this.liveWorktreePaths(project.dto.path);
+      if (this.isOrphaned(session.worktreePath, project.dto.path, live)) {
+        session.detachToRoot();
       }
     }
     session.setArchived(false);
