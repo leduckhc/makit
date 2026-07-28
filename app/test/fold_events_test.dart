@@ -243,5 +243,38 @@ void main() {
       expect(m.alt, isNull);
       expect(m.callId, isNull);
     });
+    test('a media bubble is dropped when the prose displays the same bytes', () {
+      // Real pi turn: the agent reads an image (→ agent.media) and then shows
+      // it with markdown, which the server rewrote to makit-media:<id>. The
+      // mediaId is a content hash, so an identical id means identical bytes —
+      // rendering both would show the screenshot twice in a row.
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {
+          'mediaId': 'a' * 64,
+          'mime': 'image/png',
+          'callId': 'c1',
+        }),
+        _ev(2, EventKind.agentMessage, {
+          'text': "here it is\n\n![shot](makit-media:${'a' * 64})",
+        }),
+      ]);
+      expect(items.length, 1);
+      expect(items.single, isA<AgentMessageItem>());
+    });
+
+    test('a media bubble survives when the prose never shows those bytes', () {
+      // The common case: the agent looked at an image but did not display it.
+      // Different bytes hash differently, so a *different* id is a different
+      // image (pi hands the model a downscaled copy of a large screenshot) and
+      // both are legitimately shown.
+      final items = foldEvents([
+        _ev(1, EventKind.agentMedia, {'mediaId': 'a' * 64, 'mime': 'image/png'}),
+        _ev(2, EventKind.agentMessage, {
+          'text': "shown below\n\n![other](makit-media:${'b' * 64})",
+        }),
+        _ev(3, EventKind.agentMessage, {'text': 'no image at all'}),
+      ]);
+      expect(items.whereType<AgentMediaItem>().length, 1);
+    });
   });
 }

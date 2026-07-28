@@ -135,10 +135,18 @@ async function main() {
     check(authed.status === 200, `GET /media/<id> with bearer → 200 (got ${authed.status})`);
     const digest = createHash("sha256").update(authed.body).digest("hex");
     check(digest === id, "served bytes hash to the mediaId (content-addressed)");
-    check(
-      authed.body.equals(readFileSync(IMAGE)),
-      "served bytes are byte-identical to the file the agent read",
-    );
+    // NOT necessarily the file on disk: pi downscales a large image before
+    // handing it to the model, so the tool-result blob is a *derived* copy
+    // (observed: a 6.3MB full-page screenshot arrived as 242KB). Byte identity
+    // is only expected when the harness passed the original through.
+    const source = readFileSync(IMAGE);
+    if (authed.body.length === source.length) {
+      check(authed.body.equals(source), "served bytes are byte-identical to the source file");
+    } else {
+      console.log(
+        `INFO  the harness re-encoded the image: ${source.length}B on disk → ${authed.body.length}B served`,
+      );
+    }
     const anon = await fetchMedia(id, undefined);
     check(anon.status === 401, `GET /media/<id> without bearer → 401 (got ${anon.status})`);
     const missing = await fetchMedia("f".repeat(64), BEARER);
@@ -150,11 +158,30 @@ async function main() {
   }
   // The markdown rewrite only applies when the agent actually used image
   // markdown, so report rather than assert.
-  console.log(
-    finalText.includes("makit-media:")
-      ? "PASS  the final message carries a makit-media: URI (markdown rewrite)"
-      : `INFO  no markdown image in the reply (nothing to rewrite): ${JSON.stringify(finalText).slice(0, 160)}`,
-  );
+  const inlineIds = [...finalText.matchAll(/makit-media:([a-f0-9]{64})/g)].map((m) => m[1]!);
+  if (inlineIds.length === 0) {
+    console.log(
+      `INFO  no markdown image in the reply (nothing to rewrite): ${JSON.stringify(finalText).slice(0, 160)}`,
+    );
+  } else {
+    check(true, "the final message carries a makit-media: URI (markdown rewrite)");
+    // The prose path ingests the file itself (not a harness-derived copy), so
+    // this is where a multi-MB original round-trips through the route.
+    for (const id of inlineIds) {
+      const res = await fetchMedia(id, BEARER);
+      check(res.status === 200, `inline media ${id.slice(0, 8)}… serves 200 (got ${res.status})`);
+      check(
+        createHash("sha256").update(res.body).digest("hex") === id,
+        `inline media ${id.slice(0, 8)}… hashes to its id (${res.body.length}B)`,
+      );
+      if (id !== mediaPayload?.mediaId) {
+        check(
+          res.body.equals(readFileSync(IMAGE)),
+          `inline media ${id.slice(0, 8)}… is the original file byte-for-byte`,
+        );
+      }
+    }
+  }
 
   console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}`);
   process.exit(failures === 0 ? 0 : 1);

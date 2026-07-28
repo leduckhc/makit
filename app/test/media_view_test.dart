@@ -90,6 +90,49 @@ void main() {
     expect(find.byType(InteractiveViewer), findsOneWidget);
   });
 
+  testWidgets('a thumbnail fills the row width and anchors to the top', (
+    tester,
+  ) async {
+    // Regression: with BoxFit.contain a full-page screenshot (1280×26313) was
+    // shrunk to fit the 280px height cap and rendered as a ~14px-wide sliver.
+    // Filling the width and letting the height overflow into the clip makes it
+    // read as the top strip of the page instead.
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        _host(AgentMediaView(item: _item(id: 'e')), fetcher: (_) async => kPng),
+      );
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.fit, BoxFit.fitWidth);
+    expect(image.alignment, Alignment.topCenter);
+    expect(image.width, double.infinity);
+  });
+
+  testWidgets('the fullscreen view shows the whole image, not a crop', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        _host(AgentMediaView(item: _item(id: 'f')), fetcher: (_) async => kPng),
+      );
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+      await tester.tap(find.byType(AgentMediaView));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pumpAndSettle();
+    });
+    final inViewer = find.descendant(
+      of: find.byType(InteractiveViewer),
+      matching: find.byType(Image),
+    );
+    expect(tester.widget<Image>(inViewer).fit, BoxFit.contain);
+  });
+
   test('the media provider caches by mediaId, so a scroll-back is free', () {
     // Content-addressed bytes are immutable, so identity is the id alone —
     // Flutter's ImageCache then dedupes across rebuilds and list recycling.

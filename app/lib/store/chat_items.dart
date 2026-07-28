@@ -369,5 +369,31 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
         break;
     }
   }
-  return items;
+  return _dropMediaShownInProse(items);
 }
+
+/// Drops a media bubble whose bytes a message already displays inline.
+///
+/// A real turn produces both: the agent reads an image (→ `agent.media`) and
+/// then shows it with markdown, which the server rewrote to
+/// `makit-media:<mediaId>`. Rendering both puts the same screenshot in the
+/// transcript twice. `mediaId` is a content hash, so an identical id is
+/// provably identical bytes — and a *different* id is a genuinely different
+/// image (a harness may hand the model a downscaled copy of a huge screenshot),
+/// which stays visible.
+List<ChatItem> _dropMediaShownInProse(List<ChatItem> items) {
+  final shown = <String>{};
+  for (final item in items) {
+    if (item is! AgentMessageItem) continue;
+    for (final m in _mediaUriPattern.allMatches(item.text)) {
+      shown.add(m.group(1)!);
+    }
+  }
+  if (shown.isEmpty) return items;
+  return items
+      .where((i) => i is! AgentMediaItem || !shown.contains(i.mediaId))
+      .toList(growable: false);
+}
+
+/// `makit-media:<sha256>` as the server writes it into rewritten markdown.
+final RegExp _mediaUriPattern = RegExp(r'makit-media:([a-f0-9]{64})');

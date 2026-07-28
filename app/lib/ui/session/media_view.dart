@@ -26,8 +26,8 @@ import '../../transport/media_client.dart';
 /// markdown image builder is the only consumer.
 const String kMediaUriScheme = 'makit-media';
 
-/// Tallest an inline thumbnail may be. A full-page screenshot is often much
-/// taller than the viewport; capping keeps the transcript scannable, and a tap
+/// Tallest an inline thumbnail may be. A full-page screenshot is often ten
+/// times the viewport height; capping keeps the transcript scannable, and a tap
 /// opens the real thing.
 const double kMediaThumbMaxHeight = 280;
 
@@ -91,11 +91,11 @@ class AgentMediaView extends ConsumerWidget {
       label: item.alt ?? 'image',
       child: GestureDetector(
         onTap: () => _openFullscreen(context, item, fetch),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: kMediaThumbMaxHeight),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(kRadius12),
-            child: _MediaImage(item: item, fetch: fetch),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(kRadius12),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: kMediaThumbMaxHeight),
+            child: _MediaImage(item: item, thumbnail: true, fetch: fetch),
           ),
         ),
       ),
@@ -106,17 +106,31 @@ class AgentMediaView extends ConsumerWidget {
 /// The decoded image, with the loading/failed states both resolved to
 /// same-shaped placeholders so a row never jumps or spins forever.
 class _MediaImage extends StatelessWidget {
-  const _MediaImage({required this.item, required this.fetch});
+  const _MediaImage({
+    required this.item,
+    required this.fetch,
+    this.thumbnail = false,
+  });
 
   final AgentMediaItem item;
   final MediaFetcher fetch;
+
+  /// Inline (capped) rendering rather than the fullscreen view.
+  final bool thumbnail;
 
   @override
   Widget build(BuildContext context) {
     return Image(
       image: MakitMediaImage(item.mediaId, fetch),
-      fit: BoxFit.contain,
-      alignment: Alignment.centerLeft,
+      // Thumbnails scale to the row's width and let the height overflow into
+      // the caller's clip: a full-page screenshot then reads as its top strip
+      // instead of the ~14px-wide sliver `contain` would shrink it to. The
+      // tradeoff is that a very small image is upscaled to the row width; the
+      // event carries no dimensions to distinguish the two, and markdown-inline
+      // media carries none at all, so one rule serves both paths.
+      fit: thumbnail ? BoxFit.fitWidth : BoxFit.contain,
+      alignment: thumbnail ? Alignment.topCenter : Alignment.center,
+      width: thumbnail ? double.infinity : null,
       // GIFs animate through the default multi-frame path; nothing to opt into.
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) return child;
