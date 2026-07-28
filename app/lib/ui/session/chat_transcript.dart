@@ -85,6 +85,10 @@ class TranscriptScrollPhysics extends ScrollPhysics {
       velocity: velocity,
     );
     if (oldPosition.pixels <= kAnchorNearBottomPx) return pixels;
+    // While the user drags/flings, the gesture owns the offset and the lazy list
+    // is constantly re-estimating the extent of the rows it builds on the way.
+    // Compensating then would add a jump mid-drag, so leave scrolling alone.
+    if (isScrolling) return pixels;
     final delta = newPosition.maxScrollExtent - oldPosition.maxScrollExtent;
     if (delta == 0 || !anchor.claim()) return pixels;
     return (pixels + delta).clamp(

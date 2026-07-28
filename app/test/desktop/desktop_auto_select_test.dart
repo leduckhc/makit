@@ -128,10 +128,13 @@ void main() {
     ctrl.selectSplit('a');
     expect(container.read(selectedSessionProvider), 'a');
 
-    // Simulate session 'b' getting new output (lastActivityAt changes).
-    // This should NOT steal focus back to split B.
     final workspace1 = container.read(workspaceControllerProvider);
     container.read(desktopAutoSelectSessionProvider);
+    await Future<void>.delayed(Duration.zero);
+
+    // Session 'b' produces output: a fresh snapshot with a later
+    // lastActivityAt, which must NOT steal focus back to split B.
+    _pushSessions(container, [_session('a', 100), _session('b', 900)]);
     await Future<void>.delayed(Duration.zero);
 
     // Split A should still be active.

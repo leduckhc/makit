@@ -303,6 +303,32 @@ void main() {
     );
   });
 
+  testWidgets('an incoming message mid-drag does not jump the offset', (
+    tester,
+  ) async {
+    final items = longTranscript();
+    final (controller, push) = await pumpStreaming(tester, initial: items);
+    controller.jumpTo(300);
+    await tester.pump();
+
+    // The user is dragging through history: the gesture owns the offset, and
+    // the lazy list re-estimates the extent of every row it builds on the way,
+    // so nothing may be compensated into the offset until the drag settles.
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byType(ListView)),
+    );
+    await drag.moveBy(const Offset(0, 40));
+    await tester.pump();
+    final dragged = controller.position.pixels;
+
+    push([...items, AgentMessageItem(seq: 999, ts: 0, text: 'incoming')]);
+    await tester.pump();
+    expect(controller.position.pixels, moreOrLessEquals(dragged, epsilon: 0.5));
+
+    await drag.up();
+    await tester.pumpAndSettle();
+  });
+
   List<ChatItem> transcriptWithTool() => [
     for (var i = 1; i <= 20; i++)
       UserMessageItem(seq: i, ts: 0, text: 'message #$i'),
