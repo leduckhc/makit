@@ -224,11 +224,18 @@ void main() {
 
     test('agent.media without a usable mediaId is dropped, not rendered', () {
       // Defensive boundary: a descriptor we cannot fetch must not become an
-      // item that renders a permanent broken placeholder.
+      // item that renders a permanent broken placeholder. The id must be a
+      // sha256 — the same shape MediaEndpoint.urlFor will accept — because a
+      // malformed one fails at fetch time, i.e. exactly the broken placeholder
+      // this guard exists to avoid.
       final items = foldEvents([
         _ev(1, EventKind.agentMedia, {'mime': 'image/png'}),
         _ev(2, EventKind.agentMedia, {'mediaId': '', 'mime': 'image/png'}),
         _ev(3, EventKind.agentMedia, {'mediaId': 42, 'mime': 'image/png'}),
+        _ev(4, EventKind.agentMedia, {'mediaId': 'not-a-hash'}),
+        _ev(5, EventKind.agentMedia, {'mediaId': 'a' * 63}),
+        _ev(6, EventKind.agentMedia, {'mediaId': 'A' * 64}),
+        _ev(7, EventKind.agentMedia, {'mediaId': '${'a' * 63}?'}),
       ]);
       expect(items, isEmpty);
     });

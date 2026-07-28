@@ -165,6 +165,9 @@ Widget _mediaImageBuilder(Uri uri, String? title, String? alt) {
   if (uri.scheme == kMediaUriScheme) {
     // `makit-media:<id>` has no authority, so the id lands in `path`.
     final mediaId = uri.path.isNotEmpty ? uri.path : uri.host;
+    // Same gate as the event fold: only a real content hash is fetchable, and
+    // a malformed one would render a permanent broken image.
+    if (!isMediaId(mediaId)) return MediaPlaceholder(label: label);
     return AgentMediaView(
       item: AgentMediaItem(
         seq: 0,

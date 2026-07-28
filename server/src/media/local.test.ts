@@ -74,6 +74,21 @@ test("refuses a file over the size cap without reading it", () => {
   assert.equal(resolver.resolve(join(root, "shot.png")), null);
 });
 
+test("a Windows drive letter is treated as a path, not a URI scheme", () => {
+  // `C:\\Users\\me\\shot.png` matches a naive scheme regex, so the scheme check
+  // must not run before the absolute-path check or every Windows path is
+  // rejected as "remote". On POSIX such a path is simply not contained, so the
+  // observable contract here is "no crash, and file:/absolute still work".
+  const { root, resolver } = fixture();
+  assert.equal(resolver.resolve("C:\\Users\\me\\shot.png"), null);
+  assert.equal(resolver.resolve("c:/Users/me/shot.png"), null);
+  // The reorder must not regress the paths that DO resolve.
+  assert.notEqual(resolver.resolve(join(root, "shot.png")), null);
+  assert.notEqual(resolver.resolve(`file://${join(root, "shot.png")}`), null);
+  // ...and a real remote scheme is still refused.
+  assert.equal(resolver.resolve("https://example.com/shot.png"), null);
+});
+
 test("resolve() never throws on hostile input", () => {
   const { resolver } = fixture();
   for (const bad of ["", "   ", "http://x/y.png", "data:image/png;base64,AAA", "\u0000", "file://"]) {

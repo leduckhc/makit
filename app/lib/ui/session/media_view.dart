@@ -123,8 +123,37 @@ class _MediaImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Decode thumbnails at the row's pixel width instead of full resolution.
+    // A 3024x1964 retina screenshot costs ~24MB of RGBA decoded natively but
+    // ~3.6MB at a 1180px-wide target, and the thumbnail can never show more
+    // detail than the row is wide. `allowUpscaling: false` keeps a small image
+    // at its own resolution rather than inflating the decode.
+    //
+    // Known residual cost: an extreme aspect ratio (a 1280x26313 full-page
+    // capture) is still ~114MB at row width, because bounding its height too
+    // would decode a ~13px-wide strip and smear it across the row. Fixing that
+    // properly needs the server-side thumbnail SPEC-22 sketches
+    // (`thumbMediaId`), which is out of scope here.
+    final full = MakitMediaImage(item.mediaId, fetch);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final ImageProvider provider = thumbnail && width.isFinite
+            ? ResizeImage(
+                full,
+                width: (width * MediaQuery.devicePixelRatioOf(context)).round(),
+                allowUpscaling: false,
+                policy: ResizeImagePolicy.fit,
+              )
+            : full;
+        return _buildImage(provider);
+      },
+    );
+  }
+
+  Widget _buildImage(ImageProvider provider) {
     return Image(
-      image: MakitMediaImage(item.mediaId, fetch),
+      image: provider,
       // Thumbnails scale to the row's width and let the height overflow into
       // the caller's clip: a full-page screenshot then reads as its top strip
       // instead of the ~14px-wide sliver `contain` would shrink it to. The

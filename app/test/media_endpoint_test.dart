@@ -53,4 +53,62 @@ void main() {
     expect(c.read(mediaEndpointProvider), isNull);
     expect(c.read(mediaFetcherProvider), isNull);
   });
+
+  group('dev MAKIT_WS_URL override (no pairing)', () {
+    // The media origin must keep the socket's transport security instead of
+    // assuming TLS, so a plaintext override fails the same way for both.
+    test('wss:// derives an https origin, ws:// derives http', () {
+      expect(
+        mediaEndpointFor(
+          server: null,
+          devWsUrl: 'wss://127.0.0.1:7777',
+          devFingerprint: 'ab12',
+        )!.base,
+        'https://127.0.0.1:7777',
+      );
+      expect(
+        mediaEndpointFor(server: null, devWsUrl: 'ws://127.0.0.1:7777')!.base,
+        'http://127.0.0.1:7777',
+      );
+    });
+
+    test('carries the pinned fingerprint and never a bearer', () {
+      final e = mediaEndpointFor(
+        server: null,
+        devWsUrl: 'wss://127.0.0.1:7777',
+        devFingerprint: 'ab12',
+      )!;
+      expect(e.fingerprint, 'ab12');
+      // --no-auth dev mode: the server trusts the loopback socket instead.
+      expect(e.bearer, isNull);
+    });
+
+    test(
+      'an unsupported, portless or unparseable override yields no endpoint',
+      () {
+        for (final url in [
+          'file:///tmp/x',
+          'wss://127.0.0.1',
+          'not a url',
+          '::::',
+        ]) {
+          expect(
+            mediaEndpointFor(server: null, devWsUrl: url),
+            isNull,
+            reason: url,
+          );
+        }
+      },
+    );
+
+    test('a paired server wins over the dev override', () {
+      expect(
+        mediaEndpointFor(
+          server: _server(),
+          devWsUrl: 'ws://10.0.0.1:1234',
+        )!.base,
+        'https://127.0.0.1:9787',
+      );
+    });
+  });
 }

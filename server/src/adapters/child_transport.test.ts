@@ -254,3 +254,27 @@ test("a throwing onExit listener cannot escape and crash the process", () => {
   assert.doesNotThrow(() => children[0]!.emit("exit", 0, null));
   assert.equal(reached, true, "a later exit listener still fires after an earlier one throws");
 });
+
+test("a newline-terminated frame over the cap is dropped, not delivered", () => {
+  // The cap previously only guarded an *unterminated* buffer: a line whose
+  // trailing newline arrived in the chunk that crossed the limit was still
+  // dispatched, so a runaway child could push a frame past the stated bound.
+  const { spawn, children } = fakeSpawn();
+  const t = spawnLineProcess({
+    command: "x",
+    cwd: "/tmp",
+    label: "t",
+    spawn,
+    maxFrameBytes: 1024,
+  });
+  const lines: string[] = [];
+  t.onLine((l) => lines.push(l));
+
+  const child = children[0]!;
+  // Arrives complete, in one chunk, newline included.
+  child.stdout.emit("data", `${"a".repeat(4096)}\n`);
+  // A well-formed frame after it must still be delivered.
+  child.stdout.emit("data", '{"ok":1}\n');
+
+  assert.deepEqual(lines, ['{"ok":1}']);
+});

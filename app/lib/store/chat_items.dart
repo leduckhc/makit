@@ -258,10 +258,12 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
           (cur) => cur.copyWith(text: cur.text + chunk),
         );
       case EventKind.agentMedia:
-        // Defensive: a descriptor with no fetchable id would render a permanent
-        // broken placeholder, so drop it instead.
+        // Defensive: only a well-formed content hash is fetchable (the server's
+        // /media route and MediaEndpoint.urlFor both require exactly this
+        // shape), and an id that fails at fetch time renders the permanent
+        // broken placeholder this guard exists to avoid.
         final mediaId = e.payload['mediaId'];
-        if (mediaId is String && mediaId.isNotEmpty) {
+        if (mediaId is String && isMediaId(mediaId)) {
           items.add(
             AgentMediaItem(
               seq: e.seq,
@@ -397,3 +399,9 @@ List<ChatItem> _dropMediaShownInProse(List<ChatItem> items) {
 
 /// `makit-media:<sha256>` as the server writes it into rewritten markdown.
 final RegExp _mediaUriPattern = RegExp(r'makit-media:([a-f0-9]{64})');
+
+/// A media id is the sha256 of the bytes, lowercase hex — the only shape the
+/// server's `/media` route serves. Shared by the event fold and the markdown
+/// image builder so an unfetchable id is rejected at every entry point.
+bool isMediaId(String value) => _mediaIdPattern.hasMatch(value);
+final RegExp _mediaIdPattern = RegExp(r'^[a-f0-9]{64}$');

@@ -18,7 +18,26 @@ const _wsFp = String.fromEnvironment('MAKIT_FP');
 
 /// Where media is fetched from, or null when nothing is paired/attached.
 final mediaEndpointProvider = Provider<MediaEndpoint?>((ref) {
-  final server = ref.watch(connectionProvider).server;
+  return mediaEndpointFor(
+    server: ref.watch(connectionProvider).server,
+    devWsUrl: _wsUrl,
+    devFingerprint: _wsFp,
+  );
+});
+
+/// Pure derivation of the media endpoint, so both inputs are testable (the
+/// dart-defines above are compile-time constants a test cannot set).
+///
+/// A paired server wins; otherwise the dev override is used. The media origin
+/// keeps the WS override's transport security — `wss:` → `https:`, `ws:` →
+/// `http:` — rather than assuming TLS: makit's server only ever serves `wss`
+/// today, so an `ws:` override is already unusable for the socket, and silently
+/// pointing media at `https` would hide that instead of failing the same way.
+MediaEndpoint? mediaEndpointFor({
+  required PairedServer? server,
+  String devWsUrl = '',
+  String devFingerprint = '',
+}) {
   if (server != null) {
     return MediaEndpoint(
       // Same host:port as the WS — the blob route lives on that listener.
@@ -27,17 +46,22 @@ final mediaEndpointProvider = Provider<MediaEndpoint?>((ref) {
       fingerprint: server.fingerprint,
     );
   }
-  if (_wsUrl.isNotEmpty) {
-    final ws = Uri.parse(_wsUrl);
-    // No bearer in this mode: the server trusts the loopback socket
-    // (`trustLoopback` in server/src/media/route.ts).
-    return MediaEndpoint(
-      base: 'https://${ws.host}:${ws.port}',
-      fingerprint: _wsFp.isEmpty ? null : _wsFp,
-    );
-  }
-  return null;
-});
+  if (devWsUrl.isEmpty) return null;
+  final ws = Uri.tryParse(devWsUrl);
+  final scheme = switch (ws?.scheme) {
+    'wss' || 'https' => 'https',
+    'ws' || 'http' => 'http',
+    _ =>
+      null, // unsupported/unparseable override → no media rather than a guess
+  };
+  if (ws == null || scheme == null || !ws.hasPort) return null;
+  // No bearer in this mode: the server trusts the loopback socket
+  // (`trustLoopback` in server/src/media/route.ts).
+  return MediaEndpoint(
+    base: '$scheme://${ws.host}:${ws.port}',
+    fingerprint: devFingerprint.isEmpty ? null : devFingerprint,
+  );
+}
 
 /// Loads media bytes, or null when there is no endpoint to load them from.
 final mediaFetcherProvider = Provider<MediaFetcher?>((ref) {

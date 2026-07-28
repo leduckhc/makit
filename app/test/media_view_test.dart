@@ -146,6 +146,63 @@ void main() {
     expect(tester.widget<Image>(inViewer).fit, BoxFit.contain);
   });
 
+  testWidgets('a thumbnail decodes at the row width, not full resolution', (
+    tester,
+  ) async {
+    // A full-resolution decode of a retina screenshot costs ~24MB of RGBA for a
+    // row that can never show more than its own width of detail.
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        _host(
+          SizedBox(
+            width: 400,
+            child: AgentMediaView(item: _item(id: '9')),
+          ),
+          fetcher: (_) async => kPng,
+        ),
+      );
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+    });
+    final provider = tester.widget<Image>(find.byType(Image)).image;
+    expect(provider, isA<ResizeImage>());
+    final resize = provider as ResizeImage;
+    // 400 logical px at the test view's devicePixelRatio.
+    expect(resize.width, (400 * tester.view.devicePixelRatio).round());
+    expect(
+      resize.allowUpscaling,
+      isFalse,
+      reason: 'never inflate a small image',
+    );
+    expect((resize.imageProvider as MakitMediaImage).mediaId, '9' * 64);
+  });
+
+  testWidgets('the fullscreen view decodes at full resolution (zoomable)', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await tester.pumpWidget(
+        _host(
+          AgentMediaView(item: _item(id: '8')),
+          fetcher: (_) async => kPng,
+        ),
+      );
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pump();
+      await tester.tap(find.byType(AgentMediaView));
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await tester.pumpAndSettle();
+    });
+    final inViewer = find.descendant(
+      of: find.byType(InteractiveViewer),
+      matching: find.byType(Image),
+    );
+    expect(tester.widget<Image>(inViewer).image, isA<MakitMediaImage>());
+  });
+
   test('the media provider caches by mediaId, so a scroll-back is free', () {
     // Content-addressed bytes are immutable, so identity is the id alone —
     // Flutter's ImageCache then dedupes across rebuilds and list recycling.

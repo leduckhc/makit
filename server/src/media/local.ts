@@ -75,16 +75,19 @@ export class LocalMediaResolver {
   private toContainedPath(ref: string): string | null {
     const raw = ref.trim();
     if (!raw || raw.includes("\u0000")) return null;
-    // Only local references. Anything with a scheme other than file: is remote
-    // (or a data: URI, which carries its own bytes and is not our business).
-    if (/^[a-z][a-z0-9+.-]*:/i.test(raw) && !raw.startsWith("file:")) return null;
-
     const roots = this.opts.roots;
     let candidate: string;
     if (raw.startsWith("file:")) {
       candidate = fileURLToPath(raw); // throws on a malformed URL → caught
     } else if (isAbsolute(raw)) {
+      // Before the scheme check: on Windows `C:\\path\\shot.png` matches a
+      // scheme regex, so testing for a scheme first would reject every absolute
+      // Windows path as "remote".
       candidate = raw;
+    } else if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+      // A non-file scheme is remote (or a data: URI, which carries its own
+      // bytes and is not our business).
+      return null;
     } else {
       if (roots.length === 0) return null;
       candidate = join(roots[0]!, raw);
