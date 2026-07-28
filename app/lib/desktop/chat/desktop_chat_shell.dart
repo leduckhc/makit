@@ -20,31 +20,63 @@ class DesktopChatShell extends ConsumerWidget {
     final collapsed = ref.watch(sidebarCollapsedProvider);
     final width = ref.watch(sidebarWidthProvider);
 
+    if (collapsed) {
+      return const Scaffold(body: WorkspaceView());
+    }
     return Scaffold(
-      body: Row(
+      body: Stack(
         children: [
-          if (!collapsed) ...[
-            SizedBox(
-              width: width,
-              child: DesktopSidebar(onOpenSettings: onOpenSettings),
-            ),
-            const _SidebarResizeHandle(),
-          ],
-          const Expanded(child: WorkspaceView()),
+          Row(
+            children: [
+              SizedBox(
+                width: width,
+                child: DesktopSidebar(onOpenSettings: onOpenSettings),
+              ),
+              // 1px hairline flush against the sidebar; the panes abut it
+              // directly so there's no gap between the sidebar and pane A.
+              const _SidebarDivider(),
+              const Expanded(child: WorkspaceView()),
+            ],
+          ),
+          // The resize strip is overlaid on the sidebar|pane seam (straddling
+          // it) rather than occupying layout width — which would push the panes
+          // right and leave an empty gap between the sidebar and pane A.
+          Positioned(
+            left: width - 4,
+            top: 0,
+            bottom: 0,
+            width: 8,
+            child: const _SidebarResizeHandle(),
+          ),
         ],
       ),
     );
   }
 }
 
-/// A thin draggable strip that doubles as the sidebar/pane divider. Dragging it
-/// resizes the sidebar within [kSidebarMinWidth]–[kSidebarMaxWidth].
+/// The 1px hairline between the sidebar and the pane area, flush against the
+/// sidebar's edge so the leftmost pane seats directly against it.
+class _SidebarDivider extends StatelessWidget {
+  const _SidebarDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.outlineVariant,
+      child: const SizedBox(width: 1, height: double.infinity),
+    );
+  }
+}
+
+/// A thin draggable strip overlaid on the sidebar/pane seam. Dragging it
+/// resizes the sidebar within [kSidebarMinWidth]–[kSidebarMaxWidth]. It's
+/// transparent (the visible divider is [_SidebarDivider]) and translucent to
+/// hit-testing, so only a horizontal drag is claimed here.
 class _SidebarResizeHandle extends ConsumerWidget {
   const _SidebarResizeHandle();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
       child: GestureDetector(
@@ -59,44 +91,6 @@ class _SidebarResizeHandle extends ConsumerWidget {
                 ),
               );
         },
-        child: SizedBox(
-          width: 8,
-          height: double.infinity,
-          child: Stack(
-            children: [
-              // Title-band fill, right of the sidebar divider, so the top band
-              // stays continuous with the sidebar + pane title
-              // (surfaceContainer) with no gap.
-              Positioned(
-                left: 1,
-                right: 0,
-                top: 0,
-                height: kTitleBarStripHeight,
-                child: ColoredBox(color: cs.surfaceContainer),
-              ),
-              // Titlebar bottom hairline — right of the sidebar divider only,
-              // so it meets but never crosses the sidebar; it continues into
-              // the pane title strip's own divider.
-              Positioned(
-                left: 1,
-                right: 0,
-                top: kTitleBarStripHeight,
-                height: 1,
-                child: ColoredBox(color: cs.outlineVariant),
-              ),
-              // The sidebar divider: a full-height hairline flush against the
-              // sidebar's edge, separating it from the title band and the chat
-              // body below.
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 1,
-                child: ColoredBox(color: cs.outlineVariant),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

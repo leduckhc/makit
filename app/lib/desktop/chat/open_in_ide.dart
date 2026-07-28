@@ -160,13 +160,13 @@ class OpenInIdeButton extends ConsumerWidget {
   }
 }
 
-/// A Material 3 *split button* (Expressive, XS size) for the title bar. The
-/// preferred editor's logo sits on the left and opens it directly; the caret
-/// segment (menu toggle, whose icon rotates 180° while the menu is open) sits
-/// on the right. Both segments share one shape: outer corners fully rounded
-/// (50%), inner corners squared (4dp) with a 2dp gap between them. It fills with
-/// `surfaceContainer` so it blends into the chat background it sits on, lifting
-/// a tone (to `surfaceContainerHighest`) while the caret's menu is open.
+/// A compact split button for the title bar, styled to match [PrStatusPill] /
+/// the PR-actions split button: a single `surfaceContainer` fill (the window-
+/// title background it sits on) with a uniform [kRadius8] radius and a 1px
+/// `outlineVariant` hairline border. A leading logo segment opens the preferred
+/// editor; a trailing caret segment (menu toggle, whose icon rotates 180° while
+/// open) is separated by a 1px divider — no gap. The caret lifts a tone
+/// (`surfaceContainerHighest`) while its menu is open.
 class _IdeSplitButton extends StatelessWidget {
   const _IdeSplitButton({
     required this.preferred,
@@ -182,123 +182,76 @@ class _IdeSplitButton extends StatelessWidget {
   final VoidCallback onAction;
   final VoidCallback onToggleMenu;
 
-  // XS split-button metrics (M3 tokens, scaled to fit the 32dp title strip).
   static const double _height = 24;
-  static const double _outer = _height / 2; // 50% → fully rounded outer corner.
-  static const double _inner = 4; // XS inner corner size.
+  static const Radius _radius = Radius.circular(kRadius8);
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    // Rest on the chat-content surface so the control blends into the title
-    // strip; the caret lifts a tone while its menu is open (neutral active).
+    // Rest on the window-title background so the control blends into the strip;
+    // the caret lifts a tone while its menu is open (neutral active).
     final surface = cs.surfaceContainer;
     final fg = cs.onSurface;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Leading: the primary action — open the preferred editor directly.
-        _Segment(
-          tooltip: actionTooltip,
-          onTap: onAction,
-          background: surface,
-          foreground: fg,
-          height: _height,
-          outerRadius: _outer,
-          innerRadius: _inner,
-          leadingEdge: true,
-          padding: const EdgeInsets.symmetric(horizontal: kSpace8),
-          child: ideLogo(context, preferred, size: 15),
-        ),
-        // 2dp gap between segments (fixed across all sizes per the spec).
-        const SizedBox(width: kSpace2),
-        // Trailing: the menu toggle. Lifts a tone while open; the caret rotates.
-        _Segment(
-          tooltip: 'Choose editor',
-          onTap: onToggleMenu,
-          background: menuOpen ? cs.surfaceContainerHighest : surface,
-          foreground: fg,
-          height: _height,
-          outerRadius: _outer,
-          innerRadius: _inner,
-          leadingEdge: false,
-          padding: const EdgeInsets.symmetric(horizontal: kSpace4),
-          child: AnimatedRotation(
-            turns: menuOpen ? 0.5 : 0,
-            duration: const Duration(milliseconds: 150),
-            child: const Icon(PhosphorIconsLight.caretDown, size: kPillIconSize),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-/// One tonal segment of the [_IdeSplitButton]: a [Material] + [InkWell] carrying
-/// M3 state layers (hover/press ripple) with an asymmetric shape — [outerRadius]
-/// on its outer edge and [innerRadius] on the edge that faces the gap, ringed by
-/// a 1px `outlineVariant` hairline (the design system's border token). The
-/// [foreground] drives the ambient [IconTheme] so a monochrome logo
-/// ([IdeTarget.cursor]/[IdeTarget.iterm]) tints to match; colour logos ignore
-/// it.
-class _Segment extends StatelessWidget {
-  const _Segment({
-    required this.child,
-    required this.onTap,
-    required this.background,
-    required this.foreground,
-    required this.height,
-    required this.outerRadius,
-    required this.innerRadius,
-    required this.leadingEdge,
-    required this.padding,
-    required this.tooltip,
-  });
-
-  final Widget child;
-  final VoidCallback onTap;
-  final Color background;
-  final Color foreground;
-  final double height;
-  final double outerRadius;
-  final double innerRadius;
-
-  /// True for the leading segment (outer corner on the left, inner on the
-  /// right); false mirrors it for the trailing segment.
-  final bool leadingEdge;
-  final EdgeInsets padding;
-  final String tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final outer = Radius.circular(outerRadius);
-    final inner = Radius.circular(innerRadius);
-    final radius = leadingEdge
-        ? BorderRadius.horizontal(left: outer, right: inner)
-        : BorderRadius.horizontal(left: inner, right: outer);
-
-    return Tooltip(
-      message: tooltip,
-      child: SizedBox(
-        height: height,
-        child: Material(
-          color: background,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: padding,
-              child: IconTheme.merge(
-                data: IconThemeData(color: foreground, size: 15),
-                child: Center(widthFactor: 1, child: child),
+    return Material(
+      color: surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.all(_radius),
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Leading: the primary action — open the preferred editor directly.
+          Tooltip(
+            message: actionTooltip,
+            child: InkWell(
+              onTap: onAction,
+              child: SizedBox(
+                height: _height,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: kSpace8),
+                  // The ambient IconTheme tints monochrome logos
+                  // (cursor/iterm) to match; colour logos ignore it.
+                  child: IconTheme.merge(
+                    data: IconThemeData(color: fg, size: 15),
+                    child: Center(
+                      widthFactor: 1,
+                      child: ideLogo(context, preferred, size: 15),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
-        ),
+          // 1px divider between the segments (no gap), matching the border.
+          Container(width: 1, height: _height, color: cs.outlineVariant),
+          // Trailing: the menu toggle. Lifts a tone while open; caret rotates.
+          Tooltip(
+            message: 'Choose editor',
+            child: Material(
+              color: menuOpen ? cs.surfaceContainerHighest : surface,
+              child: InkWell(
+                onTap: onToggleMenu,
+                child: SizedBox(
+                  height: _height,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: kSpace4),
+                    child: AnimatedRotation(
+                      turns: menuOpen ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 150),
+                      child: Icon(
+                        PhosphorIconsLight.caretDown,
+                        size: kPillIconSize,
+                        color: fg,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

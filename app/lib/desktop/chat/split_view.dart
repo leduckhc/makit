@@ -290,8 +290,14 @@ class _TabBar extends ConsumerWidget {
           // The empty header area is the split's drag handle (VSCode-style):
           // grab anywhere without a tab/button to re-dock the whole split.
           Positioned.fill(child: _SplitHeaderDragHandle(split: split)),
-          Row(
-            children: [
+          // Fill the bar's full height so tab chips stretch edge-to-edge (the
+          // active chip's surface then seats flush against the top/bottom with
+          // no recessed-bar gap); a bare Row would only take its intrinsic
+          // height and float centred, leaving a gap above/below the chips.
+          Positioned.fill(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               Flexible(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -332,7 +338,8 @@ class _TabBar extends ConsumerWidget {
                   );
                 },
               ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
