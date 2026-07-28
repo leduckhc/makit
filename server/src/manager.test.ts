@@ -329,6 +329,35 @@ test("createWorktree disambiguates a flattened dir that collides with an existin
   }
 });
 
+test("concurrent createWorktree calls never collide (serialized per repo)", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
+    const projectId = manager.listProjects()[0].id;
+    // Fire several creations for the SAME requested name at once. Without the
+    // per-repo lock, they'd race between the uniqueness check and `git worktree
+    // add` and some would throw; serialized, each gets a distinct branch + dir.
+    const results = await Promise.all(
+      Array.from({ length: 6 }, () => manager.createWorktree(projectId, undefined, "feat/new-ui")),
+    );
+    const branches = results.map((r) => r.branch);
+    const dirs = results.map((r) => basename(r.path));
+    assert.equal(new Set(branches).size, 6, `branches not unique: ${branches.join(", ")}`);
+    assert.equal(new Set(dirs).size, 6, `dirs not unique: ${dirs.join(", ")}`);
+    // First keeps the base name; the rest are suffixed.
+    assert.ok(branches.includes("feat/new-ui"));
+    assert.ok(dirs.includes("feat-new-ui"));
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("createWorktree falls back to an auto name when the supplied name is blank", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

@@ -134,6 +134,8 @@ export class SessionManager extends EventEmitter {
   /** In-flight virtual-worktree materializations, keyed by virtual-worktree id,
    *  so two sibling drafts racing to send first fork ONE tree, not two. */
   private readonly vwInFlight = new Map<string, Promise<{ path: string; branch: string }>>();
+  /** Tail of the per-repo worktree-creation chain (see withWorktreeCreateLock). */
+  private readonly worktreeCreateLock = new Map<string, Promise<unknown>>();
   private readonly adapterFactory?: AdapterFactory;
   private readonly onProjectsChanged?: (projects: PersistedProject[]) => void;
   private readonly defaultModel?: string;
@@ -522,23 +524,29 @@ export class SessionManager extends EventEmitter {
     // `/` so hierarchical names like `feat/new-ui` survive as-is; either way
     // `uniqueBranch` guards against collisions.
     const requested = branchName ? slugifyBranch(branchName) : "";
-    const branch = await this.uniqueBranch(
-      repoPath,
-      requested || `worktree-${randomUUID().slice(0, 6)}`,
-    );
-    // The worktree DIRECTORY can't contain `/` (it would nest a subfolder), so
-    // flatten it while the branch keeps its slashes: `feat/new-ui` on disk
-    // becomes `feat-new-ui`. Because distinct branches can flatten to the same
-    // dir (`feat/new-ui` vs an existing `feat-new-ui`), disambiguate the dir
-    // separately — branch uniqueness alone no longer guarantees a free path.
-    const dirName = this.uniqueWorktreeDir(repoPath, branch.replace(/\//g, "-"));
-    const path = await addWorktree({
-      repoPath,
-      name: dirName,
-      branch,
-      baseBranch: base,
+    // Serialize per repo so the pick-unique-name → `git worktree add` sequence
+    // is atomic against other concurrent creations (avoids a TOCTOU race on
+    // both the branch ref and the flattened directory).
+    return this.withWorktreeCreateLock(repoPath, async () => {
+      const branch = await this.uniqueBranch(
+        repoPath,
+        requested || `worktree-${randomUUID().slice(0, 6)}`,
+      );
+      // The worktree DIRECTORY can't contain `/` (it would nest a subfolder),
+      // so flatten it while the branch keeps its slashes: `feat/new-ui` on disk
+      // becomes `feat-new-ui`. Because distinct branches can flatten to the
+      // same dir (`feat/new-ui` vs an existing `feat-new-ui`), disambiguate the
+      // dir separately — branch uniqueness alone no longer guarantees a free
+      // path.
+      const dirName = this.uniqueWorktreeDir(repoPath, branch.replace(/\//g, "-"));
+      const path = await addWorktree({
+        repoPath,
+        name: dirName,
+        branch,
+        baseBranch: base,
+      });
+      return { path, branch };
     });
-    return { path, branch };
   }
 
   /** Open PRs for a project, for the "New worktree from PR" picker. */
@@ -683,8 +691,13 @@ export class SessionManager extends EventEmitter {
       // Unborn HEAD (no base commit): skip worktree creation, run in the repo
       // dir — `git worktree add -b` would otherwise fail.
       if (baseBranch) {
-        branch = await this.uniqueBranch(repoPath, base);
-        worktreePath = await addWorktree({ repoPath, name: branch, branch, baseBranch });
+        const created = await this.withWorktreeCreateLock(repoPath, async () => {
+          const b = await this.uniqueBranch(repoPath, base);
+          const p = await addWorktree({ repoPath, name: b, branch: b, baseBranch });
+          return { p, b };
+        });
+        branch = created.b;
+        worktreePath = created.p;
       }
     }
 
@@ -786,8 +799,13 @@ export class SessionManager extends EventEmitter {
             ? requestedBase
             : await detectDefaultBranch(repoPath);
         if (baseBranch) {
-          branch = await this.uniqueBranch(repoPath, fallbackBranch);
-          path = await addWorktree({ repoPath, name: branch, branch, baseBranch });
+          const created = await this.withWorktreeCreateLock(repoPath, async () => {
+            const b = await this.uniqueBranch(repoPath, fallbackBranch);
+            const p = await addWorktree({ repoPath, name: b, branch: b, baseBranch });
+            return { p, b };
+          });
+          branch = created.b;
+          path = created.p;
         }
       }
       const result = { path, branch };
@@ -800,6 +818,22 @@ export class SessionManager extends EventEmitter {
     } finally {
       this.vwInFlight.delete(virtualWorktreeId);
     }
+  }
+
+  /**
+   * Serialize worktree creation per repo. Picking a unique branch/dir name and
+   * then running `git worktree add` is a check-then-act sequence: two concurrent
+   * creations can choose the same name between the existence check and the add,
+   * making git fail (a TOCTOU race). Chaining each repo's creations one after
+   * another keeps the whole pick-then-add step atomic relative to other
+   * creations. The stored tail swallows rejections so one failed creation does
+   * not reject the next caller; the returned promise still surfaces real errors.
+   */
+  private withWorktreeCreateLock<T>(repoPath: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.worktreeCreateLock.get(repoPath) ?? Promise.resolve();
+    const run = prev.catch(() => {}).then(fn);
+    this.worktreeCreateLock.set(repoPath, run.catch(() => {}));
+    return run;
   }
 
   /** Find an unused branch name, appending `-2`, `-3`, … on collision. */
