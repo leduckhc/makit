@@ -276,6 +276,11 @@ export class SessionManager extends EventEmitter {
       if (!project) continue; // project removed → unreachable, hide it
       let paths = worktreePaths.get(session.projectId);
       if (!paths) {
+        // .catch(()=>[]) here is cosmetic-safe: the orphaned flag is recomputed
+        // every call, so a transient git failure just mislabels a chip for one
+        // refresh. Do NOT copy this into unarchiveSession, whose detach is a
+        // persisted, irreversible unbind — it deliberately treats an empty list
+        // as "unproven" and keeps the binding.
         const entries = await listWorktrees(project.dto.path).catch(() => []);
         paths = new Set(entries.map((e) => resolve(e.path)));
         worktreePaths.set(session.projectId, paths);

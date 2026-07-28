@@ -1,4 +1,6 @@
 // SPEC-29: sidebar Active⇄Archived toggle + grouped archived view.
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +35,26 @@ class _NoStore implements SecureStore {
   Future<void> write({required String key, required String? value}) async {}
   @override
   Future<void> delete({required String key}) async {}
+}
+
+// A connection whose `session.listArchived` responses are completed manually,
+// so a test can observe the in-flight reload window (old rows must stay visible,
+// no spinner) before the new list arrives.
+class _DeferredArchiveConn extends ConnectionController {
+  _DeferredArchiveConn() : super(const _NoStore());
+  final pending = <Completer<Map<String, dynamic>>>[];
+  @override
+  Future<Map<String, dynamic>> request(MsgType t, Map<String, dynamic> body) {
+    if (body['kind'] == 'session.listArchived') {
+      final c = Completer<Map<String, dynamic>>();
+      pending.add(c);
+      return c.future;
+    }
+    return Future.value(const {});
+  }
+
+  void resolveLatest(List<Map<String, dynamic>> archived) =>
+      pending.last.complete({'sessions': archived});
 }
 
 Map<String, dynamic> _arch(
@@ -165,6 +187,55 @@ void main() {
         .where((b) => b['kind'] == 'session.listArchived')
         .length;
     expect(reloads, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('reload keeps prior rows visible instead of flashing a spinner', (
+    tester,
+  ) async {
+    final conn = _DeferredArchiveConn();
+    final container = ProviderContainer(
+      overrides: [
+        connectionControllerProvider.overrideWith((_) => conn),
+        reposProvider.overrideWithValue(ReposState([_repo()])),
+        sidebarArchivedProvider.overrideWith((_) => true),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: SizedBox(width: 300, child: DesktopSidebar())),
+        ),
+      ),
+    );
+    // First load is in flight: no data yet, so the spinner IS shown.
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    conn.resolveLatest([_arch('s1', 'Adapter resume')]);
+    await tester.pumpAndSettle();
+    expect(find.text('Adapter resume'), findsOneWidget);
+
+    // Restore triggers a reload; its listArchived stays pending.
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await gesture.addPointer(location: Offset.zero);
+    addTearDown(gesture.removePointer);
+    await gesture.moveTo(tester.getCenter(find.text('Adapter resume')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Restore'));
+    await tester.pump(); // unarchive resolves; reload now in flight
+    await tester.pump();
+
+    // Guards the `&& !snap.hasData` clause: mid-reload the old row stays put and
+    // no spinner appears (a bare `== waiting` check would blank the list).
+    expect(find.text('Adapter resume'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    // Reload completes with the row gone — now it drops out.
+    conn.resolveLatest(const []);
+    await tester.pumpAndSettle();
+    expect(find.text('Adapter resume'), findsNothing);
+    expect(find.text('No archived sessions.'), findsOneWidget);
   });
 
   testWidgets('footer toggle flips into the archived view', (tester) async {
