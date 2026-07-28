@@ -1,0 +1,202 @@
+[
+  {
+    "seq": 0,
+    "sessionId": "replay",
+    "ts": 0,
+    "kind": "session.commands",
+    "payload": {
+      "commands": [
+        {
+          "name": "pr-review",
+          "description": "Review the GitHub PR of the current worktree/branch and file findings as sc review threads",
+          "source": "command"
+        },
+        {
+          "name": "lgtm",
+          "description": "Approve and proceed with the suggested approach",
+          "source": "command"
+        },
+        {
+          "name": "compact",
+          "description": "Manually compact the session context",
+          "source": "command"
+        },
+        {
+          "name": "autocompact",
+          "description": "Toggle automatic context compaction",
+          "source": "command"
+        },
+        {
+          "name": "export",
+          "description": "Export session to an HTML file in the session cwd",
+          "source": "command"
+        },
+        {
+          "name": "session",
+          "description": "Show session stats (messages, tokens, cost, session file)",
+          "source": "command"
+        },
+        {
+          "name": "name",
+          "description": "Set session display name",
+          "source": "command"
+        },
+        {
+          "name": "steering",
+          "description": "Get/set pi steering message delivery mode (how queued steering messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "follow-up",
+          "description": "Get/set pi follow-up message delivery mode (how queued follow-up messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "changelog",
+          "description": "Show pi changelog",
+          "source": "command"
+        }
+      ]
+    }
+  },
+  {
+    "seq": 1,
+    "sessionId": "replay",
+    "ts": 1,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": "The"
+    }
+  },
+  {
+    "seq": 2,
+    "sessionId": "replay",
+    "ts": 2,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": " user"
+    }
+  },
+  {
+    "seq": 3,
+    "sessionId": "replay",
+    "ts": 3,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": " wants"
+    }
+  },
+  {
+    "seq": 4,
+    "sessionId": "replay",
+    "ts": 4,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": " me to present"
+    }
+  },
+  {
+    "seq": 5,
+    "sessionId": "replay",
+    "ts": 5,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": " two"
+    }
+  },
+  {
+    "seq": 6,
+    "sessionId": "replay",
+    "ts": 6,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": " options using"
+    }
+  },
+  {
+    "seq": 7,
+    "sessionId": "replay",
+    "ts": 7,
+    "kind": "agent.thinking.delta",
+    "payload": {
+      "thinkId": "think-1",
+      "chunk": " the ask_user function."
+    }
+  },
+  {
+    "seq": 8,
+    "sessionId": "replay",
+    "ts": 8,
+    "kind": "agent.thinking",
+    "payload": {
+      "text": "The user wants me to present two options using the ask_user function.",
+      "thinkId": "think-1"
+    }
+  },
+  {
+    "seq": 9,
+    "sessionId": "replay",
+    "ts": 9,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "You"
+    }
+  },
+  {
+    "seq": 10,
+    "sessionId": "replay",
+    "ts": 10,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": " prefer **"
+    }
+  },
+  {
+    "seq": 11,
+    "sessionId": "replay",
+    "ts": 11,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "TypeScript**."
+    }
+  },
+  {
+    "seq": 12,
+    "sessionId": "replay",
+    "ts": 12,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": " "
+    }
+  },
+  {
+    "seq": 13,
+    "sessionId": "replay",
+    "ts": 13,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "👍"
+    }
+  },
+  {
+    "seq": 14,
+    "sessionId": "replay",
+    "ts": 14,
+    "kind": "agent.message",
+    "payload": {
+      "text": "You prefer **TypeScript**. 👍",
+      "msgId": "msg-1"
+    }
+  }
+]

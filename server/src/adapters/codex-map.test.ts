@@ -43,7 +43,8 @@ test("maps a command execution lifecycle to tool.call.* with exit code", () => {
   });
 
   const start = events.find((e) => e.kind === "tool.call.start")!;
-  assert.equal((start.payload as any).name, "ls -la");
+  assert.equal((start.payload as any).name, "bash");
+  assert.deepEqual((start.payload as any).args, { command: "ls -la", cwd: "/tmp" });
   assert.equal((start.payload as any).risk, "risky");
   assert.equal((events.find((e) => e.kind === "tool.call.delta")!.payload as any).chunk, "total 0\n");
   const end = events.find((e) => e.kind === "tool.call.end")!;

@@ -390,7 +390,7 @@ class _EditRenderer extends ToolRenderer {
   @override
   String get name => 'edit';
   @override
-  IconData get icon => PhosphorIconsLight.gitDiff;
+  IconData get icon => PhosphorIconsLight.pencil;
 
   @override
   String summaryLine(ToolCallItem item) =>
@@ -453,6 +453,60 @@ class _EditRenderer extends ToolRenderer {
             'No diff details provided by the agent.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+        ),
+    ];
+  }
+}
+
+/// Codex's `apply_patch` (app-server `fileChange`) — a patch that can touch one
+/// or more files. Rendered like the edit tool: same pencil icon and "Edited"
+/// verb, with each file's unified diff colour-coded in its own section. `args`
+/// carries `changes: [{ path, kind, diff }]` (see server `codex-map.ts`).
+class _ApplyPatchRenderer extends ToolRenderer {
+  const _ApplyPatchRenderer();
+  @override
+  String get name => 'apply_patch';
+  @override
+  String get displayName => 'Edited';
+  @override
+  IconData get icon => PhosphorIconsLight.pencil;
+
+  List<Map<String, dynamic>> _changes(ToolCallItem item) {
+    final raw = item.args['changes'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<dynamic, dynamic>>()
+        .map(Map<String, dynamic>.from)
+        .toList();
+  }
+
+  @override
+  String summaryLine(ToolCallItem item) {
+    final changes = _changes(item);
+    if (changes.length == 1) {
+      return 'Edited ${changes.first['path'] ?? '(no path)'}';
+    }
+    if (changes.isEmpty) return 'Edited';
+    return 'Edited ${changes.length} files';
+  }
+
+  @override
+  String label(ToolCallItem item) => 'Edited';
+
+  @override
+  List<Widget> body(BuildContext context, ToolCallItem item) {
+    final changes = _changes(item);
+    if (changes.isEmpty) return genericToolBody(context, item);
+    return [
+      for (final change in changes)
+        ToolSection(
+          title: change['path']?.toString() ?? '(no path)',
+          child: (change['diff']?.toString() ?? '').isEmpty
+              ? Text(
+                  'No diff details provided by the agent.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                )
+              : DiffText(change['diff'].toString()),
         ),
     ];
   }
@@ -629,6 +683,7 @@ const List<ToolRenderer> toolRenderers = [
   _ReadRenderer(),
   _WriteRenderer(),
   _EditRenderer(),
+  _ApplyPatchRenderer(),
   _BashRenderer(),
   _GrepRenderer(),
   _MemoryRenderer(),

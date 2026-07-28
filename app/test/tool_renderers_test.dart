@@ -104,6 +104,35 @@ void main() {
     test('unknown tools fall back to the raw name', () {
       expect(toolSummaryLine(_tool('lint', {})), 'lint');
     });
+    test('apply_patch summarises like an edit (single vs multiple files)', () {
+      expect(
+        toolSummaryLine(
+          _tool('apply_patch', {
+            'changes': [
+              {'path': 'lib/foo.dart', 'kind': 'update', 'diff': ''},
+            ],
+          }),
+        ),
+        'Edited lib/foo.dart',
+      );
+      expect(
+        toolSummaryLine(
+          _tool('apply_patch', {
+            'changes': [
+              {'path': 'a.dart', 'kind': 'update', 'diff': ''},
+              {'path': 'b.dart', 'kind': 'add', 'diff': ''},
+            ],
+          }),
+        ),
+        'Edited 2 files',
+      );
+      expect(
+        toolSummaryLine(
+          _tool('apply_patch', {'changes': <Map<String, dynamic>>[]}),
+        ),
+        'Edited',
+      );
+    });
   });
 
   group('label — the short header shown when expanded', () {
@@ -378,6 +407,62 @@ void main() {
       expect(find.text('[lib/foo.dart#AB12]'), findsOneWidget);
       expect(find.text('-11:final x = 1;'), findsOneWidget);
       expect(find.text('+11:final x = 2;'), findsOneWidget);
+    });
+  });
+
+  group('apply_patch renders each file like an edit diff', () {
+    testWidgets('shows a DiffText per changed file, headed by its path', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c1',
+        name: 'apply_patch',
+        args: const {
+          'changes': [
+            {
+              'path': 'lib/foo.dart',
+              'kind': 'update',
+              'diff': '@@ -1 +1 @@\n-final x = 1;\n+final x = 2;',
+            },
+            {'path': 'lib/new.dart', 'kind': 'add', 'diff': '+hello'},
+          ],
+        },
+        ended: true,
+      );
+      await _pumpBody(tester, item);
+
+      expect(find.byType(DiffText), findsNWidgets(2));
+      expect(find.text('lib/foo.dart'), findsOneWidget);
+      expect(find.text('lib/new.dart'), findsOneWidget);
+      expect(find.text('-final x = 1;'), findsOneWidget);
+      expect(find.text('+final x = 2;'), findsOneWidget);
+    });
+
+    testWidgets('falls back to a placeholder when a change has no diff', (
+      tester,
+    ) async {
+      final item = ToolCallItem(
+        seq: 1,
+        ts: 0,
+        callId: 'c2',
+        name: 'apply_patch',
+        args: const {
+          'changes': [
+            {'path': 'lib/no_diff.dart', 'kind': 'add', 'diff': ''},
+          ],
+        },
+        ended: true,
+      );
+      await _pumpBody(tester, item);
+
+      expect(find.byType(DiffText), findsNothing);
+      expect(find.text('lib/no_diff.dart'), findsOneWidget);
+      expect(
+        find.text('No diff details provided by the agent.'),
+        findsOneWidget,
+      );
     });
   });
 

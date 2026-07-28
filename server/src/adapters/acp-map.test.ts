@@ -95,8 +95,17 @@ test("maps a tool call lifecycle: start, output delta, end", () => {
 
 test("classifies risk by tool kind", () => {
   const { events, mapper } = collect();
+  // `in_progress` + args present, so the mapper commits the deferred
+  // `tool.call.start` (it waits for usable args before starting a row).
   const start = (id: string, kind: string): SessionUpdate =>
-    ({ sessionUpdate: "tool_call", toolCallId: id, title: id, kind, status: "pending" }) as SessionUpdate;
+    ({
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      title: id,
+      kind,
+      status: "in_progress",
+      rawInput: { path: "x" },
+    }) as SessionUpdate;
   mapper.handle(start("r", "read"));
   mapper.handle(start("e", "edit"));
   mapper.handle(start("x", "execute"));
@@ -107,6 +116,118 @@ test("classifies risk by tool kind", () => {
       .map((e) => [(e.payload as { callId: string }).callId, (e.payload as { risk: string }).risk]),
   );
   assert.deepEqual(risks, { r: "safe", e: "risky", x: "risky", d: "destructive" });
+});
+
+// Regression: pi-acp streams a tool call as an initial `tool_call` with empty
+// rawInput, then fills the args in over later `tool_call_update`s. The mapper
+// must DEFER `tool.call.start` until the args are ready so the app receives the
+// real path/pattern (not empty args → "Read (no path)").
+test("defers tool.call.start until streamed args are ready", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r1",
+    title: "read",
+    kind: "read",
+    status: "pending",
+    rawInput: {},
+  } as unknown as SessionUpdate);
+  // No start yet — args not ready.
+  assert.equal(events.filter((e) => e.kind === "tool.call.start").length, 0);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "r1",
+    status: "pending",
+    rawInput: { path: "pack" },
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "r1",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const starts = events.filter((e) => e.kind === "tool.call.start");
+  assert.equal(starts.length, 1);
+  assert.equal((starts[0]!.payload as { name: string }).name, "read");
+  assert.deepEqual((starts[0]!.payload as { args: unknown }).args, { path: "package.json" });
+});
+
+// `ask_user` is answered through a separate ACP permission request that the app
+// renders as an inline ask card (SPEC-25), so its tool call must produce NO
+// events at all — not even the deltas/end that would orphan without a start.
+test("suppresses the ask_user tool row entirely (no orphan delta/end)", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "a1",
+    title: "ask_user",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { question: "Which language?" },
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "a1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "TypeScript" } }],
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+});
+
+// The app matches renderers case-insensitively, so suppression must too — a
+// title like " Ask_User " must not slip through as a second row beside the card.
+test("suppresses ask_user regardless of title casing or padding", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "a2",
+    title: "  Ask_User  ",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { question: "Which language?" },
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+});
+
+// A padded title would otherwise become the tool `name` verbatim and match no
+// renderer, dropping the tool to the generic body.
+test("trims a padded title so the app's renderer lookup still matches", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r9",
+    title: "  read  ",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "read");
+});
+
+// A subagent has no bespoke renderer; it must still reach the app so the generic
+// tool body can show its description/prompt and result.
+test("keeps the Agent (subagent) tool call, args and completion", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "s1",
+    title: "Agent",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { description: "Count files", subagent_type: "Explore" },
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "s1",
+    status: "completed",
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "Agent");
+  assert.equal((start!.payload as { args: { subagent_type: string } }).args.subagent_type, "Explore");
+  assert.ok(events.some((e) => e.kind === "tool.call.end"));
 });
 
 test("reads bash output and exit code from terminal _meta", () => {
@@ -137,6 +258,102 @@ test("reads bash output and exit code from terminal _meta", () => {
   assert.equal((delta!.payload as { chunk: string }).chunk, "total 0\n");
   const end = events.find((e) => e.kind === "tool.call.end");
   assert.equal((end!.payload as { exitCode: number }).exitCode, 0);
+});
+
+test("canonicalizes an execute tool to `bash` with the command in args (command in title)", () => {
+  const { events, mapper } = collect();
+  // pi-acp carries the shell command in `title` and sends no rawInput for bash.
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b1",
+    title: "cd repo && pnpm test",
+    kind: "execute",
+    status: "in_progress",
+    content: [{ type: "terminal", terminalId: "b1" }],
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "bash");
+  assert.deepEqual((start!.payload as { args: unknown }).args, { command: "cd repo && pnpm test" });
+});
+
+test("canonicalizes an execute tool to `bash`, preferring rawInput.command over title", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b2",
+    title: "Run command",
+    kind: "execute",
+    status: "in_progress",
+    rawInput: { command: "ls -la" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "bash");
+  assert.deepEqual((start!.payload as { args: unknown }).args, { command: "ls -la" });
+});
+
+test("canonicalizes execute preferring a non-blank rawInput.cmd over an empty command", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "b3",
+    title: "Run command",
+    kind: "execute",
+    status: "in_progress",
+    // command is present but blank; the valid `cmd` must not be dropped.
+    rawInput: { command: "", cmd: "ls -la" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "bash");
+  assert.equal((start!.payload as { args: { command: string } }).args.command, "ls -la");
+});
+
+// The app's renderer registry keys the one-liner off (name, args): `edit`→
+// "Edited <path>", `write`→"Wrote <path>", `grep`→"Grep <pattern>". pi-acp
+// sends these non-bash tools with title=<toolName> + rawInput=<args>, so the
+// mapper must pass the canonical name and args straight through.
+test("passes an edit tool through as name `edit` with the path in args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "e1",
+    title: "edit",
+    kind: "edit",
+    status: "in_progress",
+    rawInput: { path: "lib/foo.dart", edits: [{ oldText: "a", newText: "b" }] },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "edit");
+  assert.equal((start!.payload as { args: { path: string } }).args.path, "lib/foo.dart");
+});
+
+test("passes a write tool through as name `write` with the path in args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "w1",
+    title: "write",
+    kind: "edit",
+    status: "in_progress",
+    rawInput: { path: "out.txt", text: "hello" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "write");
+  assert.equal((start!.payload as { args: { path: string } }).args.path, "out.txt");
+});
+
+test("passes a grep tool through as name `grep` with the pattern in args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "g1",
+    title: "grep",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { pattern: "TODO", glob: "*.ts" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "grep");
+  assert.equal((start!.payload as { args: { pattern: string } }).args.pattern, "TODO");
 });
 
 test("emits a failed tool call with exitCode 1", () => {
@@ -327,4 +544,166 @@ test("a local image path in the final agent message is rewritten to a media URI"
   // Deltas stream raw (nothing is buffered for a rewrite that may never apply).
   const delta = events.find((e) => e.kind === "agent.message.delta")!.payload as { chunk: string };
   assert.equal(delta.chunk, "see ![shot](/tmp/out2.png)");
+});
+
+// A start with no end leaves the app's tool row spinning forever, so a turn that
+// dies mid-tool (abort/refusal) must still close every tool it opened.
+test("endTurn closes a tool that never completed instead of leaving it running", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "t1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  const kinds = events.filter((e) => e.kind.startsWith("tool.")).map((e) => e.kind);
+  assert.deepEqual(kinds, ["tool.call.start", "tool.call.end"]);
+  const end = events.find((e) => e.kind === "tool.call.end");
+  assert.equal((end!.payload as { exitCode: number }).exitCode, 1);
+});
+
+// Regression for the ordering assumption: an agent that flips to `in_progress`
+// BEFORE it finishes streaming rawInput must still produce a row with real args,
+// not the empty-args "Read (no path)" render this PR set out to kill.
+test("waits for args even when in_progress arrives before them", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r2",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: {},
+  } as unknown as SessionUpdate);
+  assert.equal(events.filter((e) => e.kind === "tool.call.start").length, 0);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "r2",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const starts = events.filter((e) => e.kind === "tool.call.start");
+  assert.equal(starts.length, 1);
+  assert.deepEqual((starts[0]!.payload as { args: unknown }).args, { path: "package.json" });
+});
+
+// …but a tool that never gets args must never be lost: completion always starts it.
+test("still emits a tool that completes without ever streaming args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "n1",
+    title: "pwd_tool",
+    kind: "other",
+    status: "completed",
+  } as unknown as SessionUpdate);
+  const kinds = events.filter((e) => e.kind.startsWith("tool.")).map((e) => e.kind);
+  assert.deepEqual(kinds, ["tool.call.start", "tool.call.end"]);
+});
+
+// A turn that dies while a tool is still waiting on its args: the tool never ran,
+// so an empty-args "failed" row would be pure noise.
+test("endTurn drops a tool that never got args, keeps one that did", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "p1",
+    title: "read",
+    kind: "read",
+    status: "pending",
+    rawInput: {},
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "p2",
+    title: "read",
+    kind: "read",
+    status: "pending",
+    rawInput: { path: "lib/foo.dart" },
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  const tools = events.filter((e) => e.kind.startsWith("tool."));
+  assert.deepEqual(
+    tools.map((e) => [e.kind, (e.payload as { callId: string }).callId]),
+    [
+      ["tool.call.start", "p2"],
+      ["tool.call.end", "p2"],
+    ],
+  );
+});
+
+// Output can arrive before args. `tool.call.start` is immutable in the app, so
+// starting on output alone would pin an empty-args row ("Read (no path)") that a
+// later rawInput can never amend. The buffered output must survive the wait.
+test("output before args does not start the row, and is replayed after it", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "o1",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: {},
+    content: [{ type: "content", content: { type: "text", text: "early output" } }],
+  } as unknown as SessionUpdate);
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "o1",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const tool = events.filter((e) => e.kind.startsWith("tool."));
+  assert.deepEqual(tool.map((e) => e.kind), ["tool.call.start", "tool.call.delta"]);
+  assert.deepEqual((tool[0]!.payload as { args: unknown }).args, { path: "package.json" });
+  assert.equal((tool[1]!.payload as { chunk: string }).chunk, "early output");
+
+  // …and the output is not duplicated when the same cumulative text repeats.
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "o1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "early output" } }],
+  } as unknown as SessionUpdate);
+  const end = events.find((e) => e.kind === "tool.call.end");
+  assert.equal((end!.payload as { output: string }).output, "early output");
+  assert.equal(events.filter((e) => e.kind === "tool.call.delta").length, 1);
+});
+
+// A tool that only ever produced output (no args, no terminal status) must still
+// be surfaced and closed when the turn ends, not dropped.
+test("endTurn keeps an args-less tool that produced output", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "o2",
+    title: "mystery",
+    kind: "other",
+    status: "pending",
+    content: [{ type: "content", content: { type: "text", text: "some output" } }],
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  assert.deepEqual(
+    events.filter((e) => e.kind.startsWith("tool.")).map((e) => e.kind),
+    ["tool.call.start", "tool.call.delta", "tool.call.end"],
+  );
+});
+
+// An array rawInput yields `{}` from canonicalizeTool, so it must not count as
+// usable args — otherwise the row starts empty, the bug this defers to avoid.
+test("an array rawInput does not count as usable args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "arr",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: ["package.json"],
+  } as unknown as SessionUpdate);
+  assert.deepEqual(events.filter((e) => e.kind === "tool.call.start"), []);
 });

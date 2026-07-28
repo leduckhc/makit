@@ -1,0 +1,138 @@
+[
+  {
+    "seq": 0,
+    "sessionId": "replay",
+    "ts": 0,
+    "kind": "session.commands",
+    "payload": {
+      "commands": [
+        {
+          "name": "pr-review",
+          "description": "Review the GitHub PR of the current worktree/branch and file findings as sc review threads",
+          "source": "command"
+        },
+        {
+          "name": "lgtm",
+          "description": "Approve and proceed with the suggested approach",
+          "source": "command"
+        },
+        {
+          "name": "compact",
+          "description": "Manually compact the session context",
+          "source": "command"
+        },
+        {
+          "name": "autocompact",
+          "description": "Toggle automatic context compaction",
+          "source": "command"
+        },
+        {
+          "name": "export",
+          "description": "Export session to an HTML file in the session cwd",
+          "source": "command"
+        },
+        {
+          "name": "session",
+          "description": "Show session stats (messages, tokens, cost, session file)",
+          "source": "command"
+        },
+        {
+          "name": "name",
+          "description": "Set session display name",
+          "source": "command"
+        },
+        {
+          "name": "steering",
+          "description": "Get/set pi steering message delivery mode (how queued steering messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "follow-up",
+          "description": "Get/set pi follow-up message delivery mode (how queued follow-up messages are delivered)",
+          "source": "command"
+        },
+        {
+          "name": "changelog",
+          "description": "Show pi changelog",
+          "source": "command"
+        }
+      ]
+    }
+  },
+  {
+    "seq": 1,
+    "sessionId": "replay",
+    "ts": 1,
+    "kind": "tool.call.start",
+    "payload": {
+      "callId": "call-1",
+      "name": "bash",
+      "args": {
+        "command": "echo hello-from-pi"
+      },
+      "risk": "risky"
+    }
+  },
+  {
+    "seq": 2,
+    "sessionId": "replay",
+    "ts": 2,
+    "kind": "tool.call.delta",
+    "payload": {
+      "callId": "call-1",
+      "chunk": "hello-from-pi\n"
+    }
+  },
+  {
+    "seq": 3,
+    "sessionId": "replay",
+    "ts": 3,
+    "kind": "tool.call.end",
+    "payload": {
+      "callId": "call-1",
+      "exitCode": 0,
+      "summary": "hello-from-pi",
+      "output": "hello-from-pi\n"
+    }
+  },
+  {
+    "seq": 4,
+    "sessionId": "replay",
+    "ts": 4,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "Output"
+    }
+  },
+  {
+    "seq": 5,
+    "sessionId": "replay",
+    "ts": 5,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": ": `hello-from-p"
+    }
+  },
+  {
+    "seq": 6,
+    "sessionId": "replay",
+    "ts": 6,
+    "kind": "agent.message.delta",
+    "payload": {
+      "msgId": "msg-1",
+      "chunk": "i`"
+    }
+  },
+  {
+    "seq": 7,
+    "sessionId": "replay",
+    "ts": 7,
+    "kind": "agent.message",
+    "payload": {
+      "text": "Output: `hello-from-pi`",
+      "msgId": "msg-1"
+    }
+  }
+]
