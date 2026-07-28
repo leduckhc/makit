@@ -14,6 +14,18 @@ import 'session_status_dot.dart';
 /// Height of a [Split]'s tab strip.
 const double _kTabBarHeight = 30;
 
+/// The flat body background for a pane. The focused pane sits one tonal step up
+/// the neutral ramp (lighter in *both* themes — Material treats elevated
+/// surfaces as lighter, so "lighter = active" holds in dark mode too); the
+/// unfocused panes recede to the base [ColorScheme.surface]. Subtle by design:
+/// one ramp step, so it dims focus context without dimming chat legibility.
+Color _paneBackground(ColorScheme cs, {required bool focused}) {
+  if (cs.brightness == Brightness.dark) {
+    return focused ? cs.surfaceContainerLow : cs.surface;
+  }
+  return focused ? cs.surface : cs.surfaceContainerLow;
+}
+
 /// A dragged tab: which [Split] and [Tab] it came from, so a drop can reorder
 /// within the bar or move it to another bar (`WorkspaceController.moveTab`).
 @immutable
@@ -236,6 +248,13 @@ class _SplitViewState extends ConsumerState<SplitView> {
           onPointerDown: (_) => controller.setActiveSplit(widget.split.id),
           child: Container(
             key: _key,
+            // Focused pane sits one tonal step lighter; unfocused panes recede
+            // so the active pane reads as "in focus" (the tab bar keeps its own
+            // recessed colour on top of this).
+            color: _paneBackground(
+              Theme.of(context).colorScheme,
+              focused: widget.active,
+            ),
             child: Stack(
               children: [
                 Positioned.fill(
@@ -298,47 +317,50 @@ class _TabBar extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-              Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < split.tabs.length; i++)
-                        _TabChip(
-                          key: ValueKey(split.tabs[i].id),
-                          split: split,
-                          tab: split.tabs[i],
-                          index: i,
-                          active: split.tabs[i].id == split.activeTabId,
-                          splitActive: active,
-                        ),
-                    ],
+                Flexible(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (var i = 0; i < split.tabs.length; i++)
+                          _TabChip(
+                            key: ValueKey(split.tabs[i].id),
+                            split: split,
+                            tab: split.tabs[i],
+                            index: i,
+                            active: split.tabs[i].id == split.activeTabId,
+                            splitActive: active,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              IconButton(
-                iconSize: 14,
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-                tooltip: 'New session',
-                color: cs.onSurfaceVariant,
-                icon: const Icon(PhosphorIconsLight.plus),
-                onPressed: () {
-                  ref
-                      .read(workspaceControllerProvider.notifier)
-                      .setActiveSplit(split.id);
-                  final worktree = _prefillWorktree(ref, split);
-                  showNewSessionDialog(
-                    context,
-                    ref,
-                    projectId: worktree?.projectId,
-                    worktree: worktree,
-                  );
-                },
-              ),
+                IconButton(
+                  iconSize: 14,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 28,
+                    minHeight: 24,
+                  ),
+                  tooltip: 'New session',
+                  color: cs.onSurfaceVariant,
+                  icon: const Icon(PhosphorIconsLight.plus),
+                  onPressed: () {
+                    ref
+                        .read(workspaceControllerProvider.notifier)
+                        .setActiveSplit(split.id);
+                    final worktree = _prefillWorktree(ref, split);
+                    showNewSessionDialog(
+                      context,
+                      ref,
+                      projectId: worktree?.projectId,
+                      worktree: worktree,
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -442,10 +464,12 @@ class _TabChip extends ConsumerWidget {
       constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
       padding: const EdgeInsets.only(left: 10, right: 4),
       decoration: BoxDecoration(
-        // Active tab uses the pane's own surface so it "seats" into the body
-        // below; a 2px primary cap marks it. Inactive tabs are flush and
-        // transparent (reading the recessed bar). Right divider separates tabs.
-        color: active ? cs.surface : Colors.transparent,
+        // Active tab uses its pane's own body surface so it "seats" into the
+        // body below (focused panes are a step lighter, so their active tab is
+        // too); a 2px cap marks it. Inactive tabs are flush and transparent.
+        color: active
+            ? _paneBackground(cs, focused: splitActive)
+            : Colors.transparent,
         border: Border(
           top: BorderSide(
             // Brand green (design: primary = active state) only for the
@@ -522,9 +546,7 @@ class _TabChip extends ConsumerWidget {
               // Inactive tabs are dimmed so only the active tab reads at full
               // strength (its green status dot / label stands out); inactive
               // tabs recede as muted context.
-              child: active
-                  ? chip
-                  : Opacity(opacity: 0.55, child: chip),
+              child: active ? chip : Opacity(opacity: 0.55, child: chip),
             ),
           ),
         );
