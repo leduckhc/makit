@@ -95,10 +95,17 @@ test("maps a tool call lifecycle: start, output delta, end", () => {
 
 test("classifies risk by tool kind", () => {
   const { events, mapper } = collect();
-  // `in_progress` (not `pending`) so the mapper commits the deferred
-  // `tool.call.start` (args are considered ready once the tool starts running).
+  // `in_progress` + args present, so the mapper commits the deferred
+  // `tool.call.start` (it waits for usable args before starting a row).
   const start = (id: string, kind: string): SessionUpdate =>
-    ({ sessionUpdate: "tool_call", toolCallId: id, title: id, kind, status: "in_progress" }) as SessionUpdate;
+    ({
+      sessionUpdate: "tool_call",
+      toolCallId: id,
+      title: id,
+      kind,
+      status: "in_progress",
+      rawInput: { path: "x" },
+    }) as SessionUpdate;
   mapper.handle(start("r", "read"));
   mapper.handle(start("e", "edit"));
   mapper.handle(start("x", "execute"));
@@ -166,6 +173,38 @@ test("suppresses the ask_user tool row entirely (no orphan delta/end)", () => {
   } as unknown as SessionUpdate);
   mapper.endTurn();
   assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+});
+
+// The app matches renderers case-insensitively, so suppression must too — a
+// title like " Ask_User " must not slip through as a second row beside the card.
+test("suppresses ask_user regardless of title casing or padding", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "a2",
+    title: "  Ask_User  ",
+    kind: "other",
+    status: "in_progress",
+    rawInput: { question: "Which language?" },
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  assert.deepEqual(events.filter((e) => e.kind.startsWith("tool.")), []);
+});
+
+// A padded title would otherwise become the tool `name` verbatim and match no
+// renderer, dropping the tool to the generic body.
+test("trims a padded title so the app's renderer lookup still matches", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r9",
+    title: "  read  ",
+    kind: "read",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const start = events.find((e) => e.kind === "tool.call.start");
+  assert.equal((start!.payload as { name: string }).name, "read");
 });
 
 // A subagent has no bespoke renderer; it must still reach the app so the generic
@@ -524,4 +563,74 @@ test("endTurn closes a tool that never completed instead of leaving it running",
   assert.deepEqual(kinds, ["tool.call.start", "tool.call.end"]);
   const end = events.find((e) => e.kind === "tool.call.end");
   assert.equal((end!.payload as { exitCode: number }).exitCode, 1);
+});
+
+// Regression for the ordering assumption: an agent that flips to `in_progress`
+// BEFORE it finishes streaming rawInput must still produce a row with real args,
+// not the empty-args "Read (no path)" render this PR set out to kill.
+test("waits for args even when in_progress arrives before them", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "r2",
+    title: "read",
+    kind: "read",
+    status: "in_progress",
+    rawInput: {},
+  } as unknown as SessionUpdate);
+  assert.equal(events.filter((e) => e.kind === "tool.call.start").length, 0);
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "r2",
+    status: "in_progress",
+    rawInput: { path: "package.json" },
+  } as unknown as SessionUpdate);
+  const starts = events.filter((e) => e.kind === "tool.call.start");
+  assert.equal(starts.length, 1);
+  assert.deepEqual((starts[0]!.payload as { args: unknown }).args, { path: "package.json" });
+});
+
+// …but a tool that never gets args must never be lost: completion always starts it.
+test("still emits a tool that completes without ever streaming args", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "n1",
+    title: "pwd_tool",
+    kind: "other",
+    status: "completed",
+  } as unknown as SessionUpdate);
+  const kinds = events.filter((e) => e.kind.startsWith("tool.")).map((e) => e.kind);
+  assert.deepEqual(kinds, ["tool.call.start", "tool.call.end"]);
+});
+
+// A turn that dies while a tool is still waiting on its args: the tool never ran,
+// so an empty-args "failed" row would be pure noise.
+test("endTurn drops a tool that never got args, keeps one that did", () => {
+  const { events, mapper } = collect();
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "p1",
+    title: "read",
+    kind: "read",
+    status: "pending",
+    rawInput: {},
+  } as unknown as SessionUpdate);
+  mapper.handle({
+    sessionUpdate: "tool_call",
+    toolCallId: "p2",
+    title: "read",
+    kind: "read",
+    status: "pending",
+    rawInput: { path: "lib/foo.dart" },
+  } as unknown as SessionUpdate);
+  mapper.endTurn();
+  const tools = events.filter((e) => e.kind.startsWith("tool."));
+  assert.deepEqual(
+    tools.map((e) => [e.kind, (e.payload as { callId: string }).callId]),
+    [
+      ["tool.call.start", "p2"],
+      ["tool.call.end", "p2"],
+    ],
+  );
 });

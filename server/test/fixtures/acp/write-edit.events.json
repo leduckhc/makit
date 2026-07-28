@@ -105,7 +105,7 @@
     "ts": 5,
     "kind": "tool.call.start",
     "payload": {
-      "callId": "tooluse_0thyHcHKFUlDcJdq8GIjiH",
+      "callId": "call-1",
       "name": "write",
       "args": {
         "path": "/tmp/makit-demo.txt",
@@ -120,7 +120,7 @@
     "ts": 6,
     "kind": "tool.call.delta",
     "payload": {
-      "callId": "tooluse_0thyHcHKFUlDcJdq8GIjiH",
+      "callId": "call-1",
       "chunk": "/tmp/makit-demo.txt\nhello"
     }
   },
@@ -130,7 +130,7 @@
     "ts": 7,
     "kind": "tool.call.end",
     "payload": {
-      "callId": "tooluse_0thyHcHKFUlDcJdq8GIjiH",
+      "callId": "call-1",
       "exitCode": 0,
       "summary": "/tmp/makit-demo.txt",
       "output": "/tmp/makit-demo.txt\nhello"
@@ -142,7 +142,7 @@
     "ts": 8,
     "kind": "tool.call.start",
     "payload": {
-      "callId": "tooluse_jMIsXVqYB8csu1VqcauBeP",
+      "callId": "call-2",
       "name": "edit",
       "args": {
         "path": "/tmp/makit-demo.txt",
@@ -162,7 +162,7 @@
     "ts": 9,
     "kind": "tool.call.delta",
     "payload": {
-      "callId": "tooluse_jMIsXVqYB8csu1VqcauBeP",
+      "callId": "call-2",
       "chunk": "/tmp/makit-demo.txt\nhello world"
     }
   },
@@ -172,7 +172,7 @@
     "ts": 10,
     "kind": "tool.call.end",
     "payload": {
-      "callId": "tooluse_jMIsXVqYB8csu1VqcauBeP",
+      "callId": "call-2",
       "exitCode": 0,
       "summary": "/tmp/makit-demo.txt",
       "output": "/tmp/makit-demo.txt\nhello world"

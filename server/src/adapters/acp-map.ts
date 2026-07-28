@@ -149,9 +149,12 @@ export class AcpEventMapper {
   endTurn(): void {
     this.flushAll();
     // A tool still tracked here never reported `completed`/`failed` (an aborted
-    // or refused turn). Surface it rather than dropping it, but always CLOSE it:
-    // a `tool.call.start` with no matching end leaves the row spinning forever.
-    for (const id of [...this.tools.keys()]) {
+    // or refused turn). Surface the ones that got as far as real args, but always
+    // CLOSE them: a `tool.call.start` with no matching end leaves the row
+    // spinning forever. A tool still waiting on its args never ran, so showing
+    // it as "Read (no path) — failed" would be noise; drop it instead.
+    for (const [id, t] of [...this.tools]) {
+      if (!t.started && !hasUsableArgs(t)) continue;
       this.ensureToolStart(id);
       if (this.tools.get(id)?.suppressed) continue;
       const output = this.toolText.get(id) ?? "";
@@ -176,7 +179,9 @@ export class AcpEventMapper {
     const id = update.toolCallId;
     const cur = this.tools.get(id) ?? { title: "", kind: undefined as ToolKind | undefined, rawInput: undefined as unknown, started: false };
     const title = (update as { title?: unknown }).title;
-    if (typeof title === "string" && title.trim()) cur.title = title;
+    // Trim: the title becomes the tool `name` the app's renderer registry keys
+    // on, and a padded name matches nothing (falls back to the generic body).
+    if (typeof title === "string" && title.trim()) cur.title = title.trim();
     const kind = (update as { kind?: ToolKind }).kind;
     if (kind) cur.kind = kind;
     const raw = (update as { rawInput?: unknown }).rawInput;
@@ -184,14 +189,19 @@ export class AcpEventMapper {
     this.tools.set(id, cur);
 
     const status = update.status;
-    const argsReady =
-      status === "in_progress" || status === "completed" || status === "failed" || hasToolContent(update);
+    // Start once the args are USABLE, not merely once the tool starts running:
+    // pi-acp happens to finish streaming `rawInput` before `in_progress`, but
+    // that is emitter ordering, not an ACP guarantee. Requiring args keeps the
+    // "Read (no path)" bug fixed for agents that flip to `in_progress` first.
+    // A terminal status or real output always starts it, so nothing is dropped.
+    const terminal = status === "completed" || status === "failed";
+    const argsReady = terminal || hasToolContent(update) || (status === "in_progress" && hasUsableArgs(cur));
     if (argsReady) this.ensureToolStart(id);
     if (!cur.started) return;
     if (cur.suppressed) {
       // Nothing was started for this call, so emitting deltas/end would be
       // orphan events. Just release its state once the call finishes.
-      if (status === "completed" || status === "failed") {
+      if (terminal) {
         this.toolText.delete(id);
         this.tools.delete(id);
       }
@@ -209,8 +219,9 @@ export class AcpEventMapper {
     const { name, args } = canonicalizeTool(t.title, t.kind, t.rawInput);
     // `ask_user` never renders as a tool row: pi-acp emits the tool call AND a
     // separate permission request carrying the question, which the app shows as
-    // an inline ask card (SPEC-25). A row would duplicate that card.
-    if (name === "ask_user") {
+    // an inline ask card (SPEC-25). A row would duplicate that card. Matched
+    // case-insensitively, like the app's own renderer lookup.
+    if (name.toLowerCase() === "ask_user") {
       t.suppressed = true;
       return;
     }
@@ -368,6 +379,11 @@ function imageBlocksIn(v: unknown): ImageBlock[] {
  * some agents (pi-acp) carry the command in `title` rather than `rawInput`.
  * Every other kind already arrives with a canonical tool name in `title`
  * (read/edit/write/grep/…), so it is passed through unchanged.
+ *
+ * NOTE: that pass-through assumes an agent whose titles ARE tool names, which is
+ * true of pi-acp. An agent that titles calls in prose ("Read package.json")
+ * matches no renderer and falls back to the generic args/output body — degraded,
+ * not broken. Map such an agent's `kind`s here when one ships.
  */
 function canonicalizeTool(
   title: string,
@@ -407,6 +423,17 @@ function contentBlockText(block: unknown): string {
 /** True when this update carries renderable tool output (terminal or content). */
 function hasToolContent(update: SessionUpdate): boolean {
   return terminalOutput(update) !== undefined || toolContentText((update as { content?: unknown }).content) !== "";
+}
+
+/**
+ * True once we have something worth putting in a tool row's args: any streamed
+ * `rawInput`, or — for an `execute` tool, whose command pi-acp carries in the
+ * title — a non-blank title.
+ */
+function hasUsableArgs(t: { title: string; kind?: ToolKind; rawInput: unknown }): boolean {
+  const raw = t.rawInput;
+  if (raw && typeof raw === "object" && Object.keys(raw as object).length > 0) return true;
+  return t.kind === "execute" && t.title.trim().length > 0;
 }
 
 /** Extract human-readable text from a ToolCallContent[] (text + diff blocks). */

@@ -52,16 +52,19 @@ export function replayFixture(jsonl: string): AdapterEvent[] {
 /**
  * Project mapper output into the app-facing `SessionEvent` shape
  * (`{seq, sessionId, ts, kind, payload}`), with every wall-clock timestamp and
- * generated id replaced by a stable counter. Without that the output changes on
- * every run (`Date.now()`, `am-<random>-0`) and the fixture could never be
- * byte-compared to catch staleness.
+ * agent-generated id replaced by a stable per-kind counter. Without that the
+ * output changes on every run (`Date.now()`, `am-<random>-0`, `tooluse_<random>`)
+ * and the fixture could never be byte-compared to catch staleness.
  */
 export function toAppEvents(events: AdapterEvent[]): unknown[] {
   const ids = new Map<string, string>();
+  const counters = new Map<string, number>();
   const stableId = (raw: string, prefix: string): string => {
     const seen = ids.get(raw);
     if (seen) return seen;
-    const next = `${prefix}-${ids.size + 1}`;
+    const n = (counters.get(prefix) ?? 0) + 1;
+    counters.set(prefix, n);
+    const next = `${prefix}-${n}`;
     ids.set(raw, next);
     return next;
   };
@@ -69,6 +72,9 @@ export function toAppEvents(events: AdapterEvent[]): unknown[] {
     const payload: Record<string, unknown> = { ...(e.payload as Record<string, unknown>) };
     if (typeof payload.msgId === "string") payload.msgId = stableId(payload.msgId, "msg");
     if (typeof payload.thinkId === "string") payload.thinkId = stableId(payload.thinkId, "think");
+    // callId is an agent-generated `tooluse_<random>`; a stable alias keeps
+    // start/delta/end correlated without churning the fixture on re-record.
+    if (typeof payload.callId === "string") payload.callId = stableId(payload.callId, "call");
     return { seq: i, sessionId: "replay", ts: i, kind: e.kind, payload };
   });
 }

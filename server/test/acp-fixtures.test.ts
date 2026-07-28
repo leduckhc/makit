@@ -9,7 +9,7 @@
  *   node_modules/.bin/tsx test/replay-acp-session.ts --write
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -19,6 +19,18 @@ const names = sessionNames();
 
 test("there is at least one recorded ACP session", () => {
   assert.ok(names.length > 0, "no *.jsonl recordings in test/acp-sessions");
+});
+
+// A renamed or deleted recording would otherwise leave its generated fixture
+// behind, and the app would keep replaying a scenario nothing can regenerate.
+test("no generated fixture is orphaned by a missing recording", () => {
+  for (const dir of fixtureDirs) {
+    const generated = readdirSync(dir)
+      .filter((f) => f.endsWith(".events.json"))
+      .map((f) => f.replace(/\.events\.json$/, ""))
+      .sort();
+    assert.deepEqual(generated, names, `${dir} does not match test/acp-sessions/*.jsonl`);
+  }
 });
 
 for (const name of names) {

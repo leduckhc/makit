@@ -105,7 +105,7 @@
     "ts": 5,
     "kind": "tool.call.start",
     "payload": {
-      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "callId": "call-1",
       "name": "Agent",
       "args": {
         "description": "Count .ts files in src",
@@ -121,7 +121,7 @@
     "ts": 6,
     "kind": "tool.call.delta",
     "payload": {
-      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "callId": "call-1",
       "chunk": "0 tool uses..."
     }
   },
@@ -131,7 +131,7 @@
     "ts": 7,
     "kind": "tool.call.delta",
     "payload": {
-      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "callId": "call-1",
       "chunk": "1 tool uses..."
     }
   },
@@ -141,7 +141,7 @@
     "ts": 8,
     "kind": "tool.call.delta",
     "payload": {
-      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "callId": "call-1",
       "chunk": "Agent completed in 7.0s (1 tool uses, 24.9k token).\n\n**104**"
     }
   },
@@ -151,7 +151,7 @@
     "ts": 9,
     "kind": "tool.call.end",
     "payload": {
-      "callId": "tooluse_fj9TsrAZxsMCWgNEvAdTDO",
+      "callId": "call-1",
       "exitCode": 0,
       "summary": "Agent completed in 7.0s (1 tool uses, 24.9k token).",
       "output": "Agent completed in 7.0s (1 tool uses, 24.9k token).\n\n**104**"

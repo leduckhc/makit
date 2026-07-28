@@ -145,7 +145,7 @@
     "ts": 9,
     "kind": "agent.message.delta",
     "payload": {
-      "msgId": "msg-2",
+      "msgId": "msg-1",
       "chunk": "You"
     }
   },
@@ -155,7 +155,7 @@
     "ts": 10,
     "kind": "agent.message.delta",
     "payload": {
-      "msgId": "msg-2",
+      "msgId": "msg-1",
       "chunk": " prefer **"
     }
   },
@@ -165,7 +165,7 @@
     "ts": 11,
     "kind": "agent.message.delta",
     "payload": {
-      "msgId": "msg-2",
+      "msgId": "msg-1",
       "chunk": "TypeScript**."
     }
   },
@@ -175,7 +175,7 @@
     "ts": 12,
     "kind": "agent.message.delta",
     "payload": {
-      "msgId": "msg-2",
+      "msgId": "msg-1",
       "chunk": " "
     }
   },
@@ -185,7 +185,7 @@
     "ts": 13,
     "kind": "agent.message.delta",
     "payload": {
-      "msgId": "msg-2",
+      "msgId": "msg-1",
       "chunk": "👍"
     }
   },
@@ -196,7 +196,7 @@
     "kind": "agent.message",
     "payload": {
       "text": "You prefer **TypeScript**. 👍",
-      "msgId": "msg-2"
+      "msgId": "msg-1"
     }
   }
 ]

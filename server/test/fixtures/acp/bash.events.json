@@ -65,7 +65,7 @@
     "ts": 1,
     "kind": "tool.call.start",
     "payload": {
-      "callId": "tooluse_tHdE6YCWJ7rkYK46hmmPCg",
+      "callId": "call-1",
       "name": "bash",
       "args": {
         "command": "echo hello-from-pi"
@@ -79,7 +79,7 @@
     "ts": 2,
     "kind": "tool.call.delta",
     "payload": {
-      "callId": "tooluse_tHdE6YCWJ7rkYK46hmmPCg",
+      "callId": "call-1",
       "chunk": "hello-from-pi\n"
     }
   },
@@ -89,7 +89,7 @@
     "ts": 3,
     "kind": "tool.call.end",
     "payload": {
-      "callId": "tooluse_tHdE6YCWJ7rkYK46hmmPCg",
+      "callId": "call-1",
       "exitCode": 0,
       "summary": "hello-from-pi",
       "output": "hello-from-pi\n"
