@@ -29,9 +29,12 @@ class _FakeStore extends StoreController {
   final List<AgentDescriptor> agents;
   int spawnCount = 0;
   String? spawnedAgent;
-  String? spawnedBaseBranch;
   String? spawnedWorktreePath;
+  String? spawnedBranch;
   List<ConfigOptionPick>? spawnedPicks;
+
+  /// Recorded `createWorktree` calls: the base branch each fork asked for.
+  final List<String?> createdFrom = [];
 
   @override
   Future<List<AgentDescriptor>> fetchAgents() async => agents;
@@ -40,19 +43,28 @@ class _FakeStore extends StoreController {
   Future<List<OpenPr>> listOpenPrs(String projectId) async => const [];
 
   @override
+  Future<({String path, String? branch})> createWorktree(
+    String projectId, {
+    String? baseBranch,
+    String? branchName,
+  }) async {
+    createdFrom.add(baseBranch);
+    return (path: '/tmp/demo-wt', branch: 'forked');
+  }
+
+  @override
   Future<String> spawnSession(
     String projectId, {
     String? title,
     String? agent,
-    String? baseBranch,
     String? worktreePath,
     String? branch,
     List<ConfigOptionPick>? configOptions,
   }) async {
     spawnCount++;
     spawnedAgent = agent;
-    spawnedBaseBranch = baseBranch;
     spawnedWorktreePath = worktreePath;
+    spawnedBranch = branch;
     spawnedPicks = configOptions;
     return 'new-sess';
   }
@@ -184,5 +196,36 @@ void main() {
     expect(store.spawnedPicks!.single.value, 'sonnet');
     // Landed on the new session.
     expect(find.text('session new-sess'), findsOneWidget);
+  });
+
+  testWidgets('always opens the sheet, even with nothing to configure', (
+    tester,
+  ) async {
+    final store = await _pump(tester, agents: [_agent('pi')]);
+
+    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.pumpAndSettle();
+
+    // One harness, one branch, one worktree, no PRs, no config options: the
+    // sheet still opens instead of silently spawning.
+    expect(find.text('New session'), findsWidgets);
+    expect(find.text('Start'), findsOneWidget);
+    expect(store.spawnCount, 0);
+  });
+
+  testWidgets('forks the worktree before spawning into it', (tester) async {
+    final store = await _pump(tester, agents: [_agent('pi')]);
+
+    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.pumpAndSettle();
+    // "New branch" is the default source, so Start forks off the base branch
+    // client-side and spawns INTO the created worktree.
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    expect(store.createdFrom, ['main']);
+    expect(store.spawnCount, 1);
+    expect(store.spawnedWorktreePath, '/tmp/demo-wt');
+    expect(store.spawnedBranch, 'forked');
   });
 }

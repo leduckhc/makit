@@ -20,9 +20,8 @@ import 'title_bar_strip.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
-/// sessions running in each worktree, plus pending draft sessions that
-/// haven't named a branch yet. Footer shows the connection status + a hook for
-/// the Settings/Server section.
+/// sessions bound to each worktree. Footer shows the connection status + a hook
+/// for the Settings/Server section.
 class DesktopSidebar extends ConsumerWidget {
   /// Creates the sidebar.
   const DesktopSidebar({super.key, this.onOpenSettings});
@@ -114,7 +113,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   bool _showAll = false;
 
   /// Whether the repo group is expanded. Clicking the header row toggles it;
-  /// when collapsed the worktrees, "show more" pill, and drafts are hidden.
+  /// when collapsed the worktrees and the "show more" pill are hidden.
   bool _expanded = true;
 
   /// Whether the pointer is over the repo header row. Gates the repo actions
@@ -125,32 +124,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   /// the repo actions menu so it stays reachable without a pointer (keyboard /
   /// non-hover input), mirroring the worktree row's `_focused` handling.
   bool _repoFocused = false;
-
-  /// True while a draft spawn is in flight, so rapid clicks on the + button
-  /// can't issue concurrent `spawnSession` calls (duplicate pending worktrees).
-  bool _spawningDraft = false;
-
-  /// The sidebar + button: spawn a pending draft (no worktree on disk yet) and
-  /// open it in its own virtual pane tree, landing on the harness picker. The
-  /// real worktree materializes on the draft's first message. No dialog — the
-  /// richer "New worktree from…" picker lives in the repo overflow menu.
-  Future<void> _startDraftWorktree(String projectId) async {
-    if (_spawningDraft) return;
-    setState(() => _spawningDraft = true);
-    final store = ref.read(storeControllerProvider.notifier);
-    try {
-      final sid = await store.spawnSession(projectId);
-      if (!mounted) return;
-      openDraftSession(ref, sid);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('New worktree failed: $e')));
-    } finally {
-      if (mounted) setState(() => _spawningDraft = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +139,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
         .toList();
     final selectedId = widget.selectedId;
     final onSelect = widget.onSelect;
-    final drafts = sessions.where((s) => s.pending).toList();
     final byId = {for (final s in sessions) s.id: s};
     final worktrees = sortWorktreesForDisplay(repo.worktrees);
     final showMore = worktrees.length > _maxCollapsed;
@@ -242,9 +214,14 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                                 PhosphorIconsLight.plus,
                                 size: 16,
                               ),
-                              onPressed: _spawningDraft
-                                  ? null
-                                  : () => _startDraftWorktree(repo.id),
+                              // One door for every new session: configure the
+                              // worktree (a fresh branch by default), harness,
+                              // and first message, then start.
+                              onPressed: () => showNewSessionDialog(
+                                context,
+                                ref,
+                                projectId: repo.id,
+                              ),
                             ),
                           ],
                         ),
@@ -294,12 +271,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                   ),
                 ),
               ),
-            ),
-          for (final s in drafts)
-            _DraftWorktreeTile(
-              session: s,
-              selected: s.id == selectedId,
-              onTap: () => onSelect(s.id),
             ),
         ],
       ],
@@ -378,8 +349,7 @@ class _CompactMenuButton extends StatelessWidget {
 }
 
 /// The repo header's overflow menu (the triple-dots left of +). Hosts repo-
-/// scoped actions: hide the repo (untrack it) and open the richer
-/// "New worktree from…" dialog. More items land here later.
+/// scoped actions: hide the repo (untrack it). More items land here later.
 class _RepoMenuButton extends ConsumerWidget {
   const _RepoMenuButton({required this.repo});
 
@@ -394,20 +364,9 @@ class _RepoMenuButton extends ConsumerWidget {
         switch (value) {
           case 'hide':
             _hideRepo(context, ref);
-          case 'new-worktree':
-            showNewSessionDialog(context, ref, projectId: repo.id);
         }
       },
       itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'new-worktree',
-          height: 36,
-          child: Text(
-            'New worktree from…',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'hide',
           height: 36,
@@ -840,89 +799,6 @@ class _RenameBranchDialogState extends State<_RenameBranchDialog> {
           child: const Text('Rename'),
         ),
       ],
-    );
-  }
-}
-
-/// A pending draft rendered to match a worktree row. The worktree doesn't
-/// exist yet, so it shows "new worktree" in place of the branch name and its
-/// age counts from when the user clicked New worktree (the draft's creation),
-/// since the real worktree creation is postponed until the first message.
-class _DraftWorktreeTile extends StatelessWidget {
-  const _DraftWorktreeTile({
-    required this.session,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final Session session;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final createdAt = session.lastActivityAt > 0
-        ? DateTime.fromMillisecondsSinceEpoch(session.lastActivityAt)
-        : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: kSpace8, vertical: 1),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(kRadius10),
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              color: selected
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : null,
-              borderRadius: BorderRadius.circular(kRadius10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
-                  child: Row(
-                    children: [
-                      Icon(
-                        PhosphorIconsLight.gitBranch,
-                        size: 16,
-                        color: theme.colorScheme.outline,
-                      ),
-                      const SizedBox(width: kSpace6),
-                      Flexible(
-                        child: Text(
-                          'new worktree',
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
-                  child: SizedBox(
-                    height: 16,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _branchAgeLabel(createdAt),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.outline,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

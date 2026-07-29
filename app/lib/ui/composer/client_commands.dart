@@ -66,15 +66,35 @@ Future<bool> handleClientCommand(
 final List<ClientCommand> clientCommands = <ClientCommand>[
   ClientCommand(
     name: 'new',
-    description: 'Start a fresh agent session in the same project',
+    description: 'Start a fresh agent in this worktree',
     handler: (context, ref, {required sessionId, required arg}) async {
       final session = ref.read(sessionsProvider).byId(sessionId);
       if (session == null) return;
       final messenger = ScaffoldMessenger.of(context);
+      // SPEC-30 decision 18: the new agent runs in THIS pane's worktree, so no
+      // dialog is needed. A session with no worktree on disk yet cannot answer
+      // "where does it run?" — spawning bare would silently land the agent in
+      // the repo's primary checkout, so refuse and say why.
+      final worktreePath = session.worktreePath;
+      if (worktreePath == null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This session has no worktree yet — send a message '
+              'first, or start one from the sidebar.',
+            ),
+          ),
+        );
+        return;
+      }
       try {
         final newId = await ref
             .read(storeControllerProvider.notifier)
-            .spawnSession(session.projectId);
+            .spawnSession(
+              session.projectId,
+              worktreePath: worktreePath,
+              branch: session.branch,
+            );
         if (!context.mounted) return;
         context.go('/session/$newId');
       } catch (e) {

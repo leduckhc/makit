@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/harness_picker.dart' show HarnessCard;
+import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/desktop/chat/composer_draft.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -15,6 +17,76 @@ import 'package:makit/ui/session/tool_renderers.dart'
     show kReadableContentMaxWidth;
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
+
+/// Records what the in-pane starter spawns/sends so the tests can assert it.
+class _StarterStore extends StoreController {
+  _StarterStore(super.ref);
+
+  int spawnCount = 0;
+  String? spawnAgent;
+  String? spawnWorktreePath;
+  String? spawnBranch;
+  List<ConfigOptionPick>? spawnPicks;
+  final List<String> sent = [];
+
+  @override
+  Future<String> spawnSession(
+    String projectId, {
+    String? title,
+    String? agent,
+    String? worktreePath,
+    String? branch,
+    List<ConfigOptionPick>? configOptions,
+  }) async {
+    spawnCount++;
+    spawnAgent = agent;
+    spawnWorktreePath = worktreePath;
+    spawnBranch = branch;
+    spawnPicks = configOptions;
+    return 'spawned';
+  }
+
+  @override
+  void appendOptimisticMessage(String sessionId, String text) {}
+
+  @override
+  void sendMessage(String sessionId, String text, {List<String>? mediaPaths}) {
+    sent.add(text);
+  }
+}
+
+/// A harness advertising a model + reasoning-effort catalog (what the pills
+/// render from before any session exists).
+AgentDescriptor _codex() => const AgentDescriptor(
+  id: 'codex',
+  label: 'Codex',
+  transport: 'native',
+  available: true,
+  configOptions: [
+    SessionConfigOption(
+      id: 'model',
+      name: 'Model',
+      category: 'model',
+      type: ConfigOptionType.select,
+      currentValue: 'gpt-5',
+      options: [
+        ConfigOptionValue(value: 'gpt-5', name: 'GPT-5'),
+        ConfigOptionValue(value: 'gpt-5-codex', name: 'GPT-5 Codex'),
+      ],
+    ),
+    SessionConfigOption(
+      id: 'effort',
+      name: 'Reasoning effort',
+      category: 'thought_level',
+      type: ConfigOptionType.select,
+      currentValue: 'medium',
+      options: [
+        ConfigOptionValue(value: 'medium', name: 'Medium'),
+        ConfigOptionValue(value: 'high', name: 'High'),
+      ],
+    ),
+  ],
+);
 
 Session _session() => Session(
   id: 's1',
@@ -246,9 +318,6 @@ void main() {
       overrides: [
         sessionsProvider.overrideWithValue(SessionsState([session])),
         eventsProvider.overrideWithValue(EventsState(const {}, const {})),
-        // Pending sessions now show the harness picker, which reads the agent
-        // list; stub it so the widget test doesn't hit the network.
-        agentsProvider.overrideWith((ref) => const <AgentDescriptor>[]),
       ],
     );
     addTearDown(container.dispose);
@@ -490,61 +559,125 @@ void main() {
       return container;
     }
 
-    testWidgets(
-      'a real worktree with no session shows the starter pre-filled with '
-      'that worktree',
-      (tester) async {
-        await pumpPane(tester, worktree: _wtA);
+    testWidgets('a real worktree with no session starts in place', (
+      tester,
+    ) async {
+      await pumpPane(tester, worktree: _wtA);
 
-        final starter = tester.widget<EmptyPaneStarter>(
-          find.byType(EmptyPaneStarter),
-        );
-        expect(starter.worktree, _wtA);
-        expect(find.text('New session'), findsOneWidget);
-      },
-    );
+      final starter = tester.widget<WorktreeStarter>(
+        find.byType(WorktreeStarter),
+      );
+      expect(starter.worktree, _wtA);
+      expect(find.byType(EmptyPaneStarter), findsNothing);
+    });
 
     testWidgets(
       'a real worktree with a dead (persisted, now-missing) session id '
-      'still shows the starter pre-filled with that worktree',
+      'also starts in place',
       (tester) async {
         await pumpPane(tester, sessionId: 'dead-session', worktree: _wtA);
 
-        final starter = tester.widget<EmptyPaneStarter>(
-          find.byType(EmptyPaneStarter),
+        final starter = tester.widget<WorktreeStarter>(
+          find.byType(WorktreeStarter),
         );
         expect(starter.worktree, _wtA);
       },
     );
 
-    testWidgets(
-      "a draft's virtual worktree with no (or a dead) session shows the "
-      'starter with NO pre-fill (nothing on disk to land on)',
-      (tester) async {
-        final draft = draftWorktreeFor('p1', 's1');
-        await pumpPane(tester, sessionId: 'dead-session', worktree: draft);
+  });
 
-        final starter = tester.widget<EmptyPaneStarter>(
-          find.byType(EmptyPaneStarter),
-        );
-        expect(starter.worktree, isNull);
-        expect(
-          find.text('Select a session, or start a new one'),
-          findsOneWidget,
-        );
-      },
-    );
-
-    testWidgets('a draft worktree with no session id also shows the starter '
-        'with no pre-fill', (tester) async {
-      final draft = draftWorktreeFor('p1', 's1');
-      await pumpPane(tester, worktree: draft);
-
-      final starter = tester.widget<EmptyPaneStarter>(
-        find.byType(EmptyPaneStarter),
+  group('in-pane starter (harness picker page)', () {
+    Future<_StarterStore> pumpStarter(
+      WidgetTester tester, {
+      SelectedWorktree? worktree,
+      List<AgentDescriptor> agents = const [],
+    }) async {
+      late _StarterStore store;
+      tester.view.physicalSize = const Size(1200, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => agents),
+          storeControllerProvider.overrideWith((ref) {
+            store = _StarterStore(ref);
+            return store;
+          }),
+        ],
       );
-      expect(starter.worktree, isNull);
-      expect(find.text('Select a session, or start a new one'), findsOneWidget);
+      addTearDown(container.dispose);
+      container.read(storeControllerProvider.notifier);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(body: DesktopChatPane(worktree: worktree)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return store;
+    }
+
+    testWidgets('a pane with a worktree shows harness cards + model and '
+        'reasoning pills + a composer', (tester) async {
+      await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
+
+      expect(find.byType(HarnessCard), findsOneWidget);
+      // The selected harness's catalog drives the composer pills before any
+      // session exists.
+      expect(find.text('GPT-5'), findsOneWidget);
+      expect(find.text('Medium'), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('sending the first message spawns in the pane worktree with '
+        'the chosen picks', (tester) async {
+      final store = await pumpStarter(
+        tester,
+        worktree: _wtA,
+        agents: [_codex()],
+      );
+
+      // Change the reasoning-effort pill, then send.
+      await tester.tap(find.text('Medium'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('High').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'start here');
+      await tester.pump();
+      await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
+      await tester.pumpAndSettle();
+
+      expect(store.spawnCount, 1);
+      expect(store.spawnAgent, 'codex');
+      expect(store.spawnWorktreePath, '/tmp/wt-a');
+      expect(store.spawnBranch, 'a');
+      expect(store.spawnPicks!.single.id, 'effort');
+      expect(store.spawnPicks!.single.value, 'high');
+      expect(store.sent, ['start here']);
+    });
+
+    testWidgets('no available harnesses falls back to the host default hint', (
+      tester,
+    ) async {
+      await pumpStarter(tester, worktree: _wtA);
+
+      expect(find.byType(HarnessCard), findsNothing);
+      expect(find.text('Using the host default harness.'), findsOneWidget);
+      // Still startable: the server picks its default harness.
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('a pane with NO worktree keeps the New session button', (
+      tester,
+    ) async {
+      await pumpStarter(tester, agents: [_codex()]);
+
+      expect(find.byType(HarnessCard), findsNothing);
+      expect(find.text('New session'), findsOneWidget);
     });
   });
 

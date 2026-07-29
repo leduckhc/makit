@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/new_session_dialog.dart';
+import 'package:makit/desktop/chat/selected_worktree.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
@@ -70,7 +71,6 @@ class _FakeStore extends StoreController {
     String projectId, {
     String? title,
     String? agent,
-    String? baseBranch,
     String? worktreePath,
     String? branch,
     List<ConfigOptionPick>? configOptions,
@@ -170,6 +170,7 @@ Future<_FakeStore> _open(
   WidgetTester tester, {
   List<AgentDescriptor> agents = const [],
   Map<String, List<OpenPr>> prs = const {},
+  SelectedWorktree? worktree,
 }) async {
   late _FakeStore store;
   // The dialog is tall (worktree + harness grid + composer); give the test
@@ -199,7 +200,12 @@ Future<_FakeStore> _open(
         home: Scaffold(
           body: Consumer(
             builder: (ctx, ref, _) => TextButton(
-              onPressed: () => showNewSessionDialog(ctx, ref, projectId: 'p1'),
+              onPressed: () => showNewSessionDialog(
+                ctx,
+                ref,
+                projectId: 'p1',
+                worktree: worktree,
+              ),
               child: const Text('open'),
             ),
           ),
@@ -217,14 +223,14 @@ void main() {
   testWidgets('the worktree source toggle switches panels', (tester) async {
     await _open(tester, agents: [_pi]);
 
-    // Existing is the default source: its worktree dropdown is shown.
-    expect(find.byKey(const ValueKey('existing-p1')), findsOneWidget);
-    expect(find.byKey(const ValueKey('branch-p1')), findsNothing);
-
-    await tester.tap(find.text('New branch'));
-    await tester.pumpAndSettle();
+    // New branch is the default source: its base-branch picker is shown.
     expect(find.byKey(const ValueKey('branch-p1')), findsOneWidget);
     expect(find.byKey(const ValueKey('existing-p1')), findsNothing);
+
+    await tester.tap(find.text('Existing'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('existing-p1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('branch-p1')), findsNothing);
 
     await tester.tap(find.text('From PR'));
     await tester.pumpAndSettle();
@@ -233,6 +239,30 @@ void main() {
       find.text('No open pull requests (or GitHub CLI is unavailable).'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a pre-filled worktree selects the Existing source', (
+    tester,
+  ) async {
+    final store = await _open(
+      tester,
+      agents: [_pi],
+      worktree: const SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt/main',
+        branch: 'main',
+      ),
+    );
+
+    // Opening from a pane that already has a worktree reuses it rather than
+    // forking: the default flips to Existing.
+    expect(find.byKey(const ValueKey('existing-p1')), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'reuse it');
+    await tester.pump();
+    await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
+    await tester.pumpAndSettle();
+    expect(store.createdWorktreeBases, isEmpty);
+    expect(store.spawnWorktreePath, '/tmp/wt/main');
   });
 
   testWidgets('selecting a harness card swaps the config pills', (
@@ -259,6 +289,8 @@ void main() {
     await tester.tap(find.text('Web search'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Existing'));
+    await tester.pumpAndSettle();
     // The default existing worktree is the primary (first) worktree.
     await tester.enterText(find.byType(TextField), 'start me up');
     await tester.pump();
@@ -281,10 +313,8 @@ void main() {
   ) async {
     final store = await _open(tester, agents: [_pi]);
 
-    await tester.tap(find.text('New branch'));
-    await tester.pumpAndSettle();
-
-    // Two fields now (branch name + composer); the composer is the last one.
+    // "New branch" is already the default source.
+    // Two fields (branch name + composer); the composer is the last one.
     await tester.enterText(find.byType(TextField).last, 'fork it');
     await tester.pump();
     await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
@@ -298,9 +328,6 @@ void main() {
 
   testWidgets('New branch send forwards a typed branch name', (tester) async {
     final store = await _open(tester, agents: [_pi]);
-
-    await tester.tap(find.text('New branch'));
-    await tester.pumpAndSettle();
 
     // First field is the branch-name input; the composer is the last field.
     await tester.enterText(find.byType(TextField).first, 'my-feature');
@@ -324,8 +351,8 @@ void main() {
     await _open(tester, agents: [_pi]);
 
     final longMessage = List.generate(14, (i) => 'line $i').join('\n');
-    // Default panel is "Existing worktree", so the composer is the only
-    // TextField; `.last` is explicit and stays correct if more fields appear.
+    // The default "New branch" panel adds a branch-name field, so `.last`
+    // targets the composer.
     await tester.enterText(find.byType(TextField).last, longMessage);
     await tester.pumpAndSettle();
 

@@ -2,13 +2,14 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show Axis;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'split_node.dart';
 // Aliased so the controller's own `setRatio`/`moveSplit` methods can still
 // reach the pure tree functions of the same name.
 import 'split_node.dart' as tree;
+import '../groups/groups_controller.dart';
 import '../selected_worktree.dart';
 
 /// SharedPreferences key holding the whole workspace (the split/tab tree plus
@@ -57,27 +58,35 @@ class WorkspaceState {
   int get hashCode => Object.hash(root, activeSplitId);
 }
 
-/// Holds and mutates the single desktop/iPad workspace. There is exactly one
-/// layout, worktree-agnostic (SPEC-28 decision 3, reverting SPEC-20's
-/// per-worktree map). Mirrors the [PreferencesController]/[KeymapController]
-/// pattern: nullable prefs make the controller ephemeral (provider default +
-/// tests); every mutation writes the whole workspace back through as one JSON
-/// blob.
+/// Notified with the whole workspace after every mutation, so an owner can
+/// persist it. **Must not throw and must not be awaited** — a failed write may
+/// never crash the app or surface as an unhandled async error (SPEC-30 Lane 2).
+typedef WorkspaceCommit = void Function(WorkspaceState next);
+
+/// Holds and mutates **one** split/tab tree.
+///
+/// Since SPEC-30 there are many trees — one per group — so this controller no
+/// longer owns persistence: it reports every mutation through a
+/// [WorkspaceCommit] sink and the groups layer decides what is written. All
+/// tree operations below are unchanged; only the plumbing moved.
 class WorkspaceController extends StateNotifier<WorkspaceState> {
-  /// Creates a controller over [prefs], seeded from [initial]. When [prefs] is
-  /// null the controller is ephemeral (mutations update state but are not
-  /// persisted).
-  WorkspaceController(this._prefs, WorkspaceState initial) : super(initial);
+  /// Creates a controller seeded from [initial], reporting mutations to
+  /// [_onCommit]. A null sink makes the controller ephemeral.
+  WorkspaceController(this._onCommit, WorkspaceState initial) : super(initial);
 
   /// A non-persisting controller seeded with the starter workspace.
-  WorkspaceController.ephemeral() : this(null, _seed());
+  WorkspaceController.ephemeral() : this(null, seedWorkspace());
 
-  /// Builds a controller from the persisted workspace. Corrupt or absent JSON
-  /// yields the starter workspace (single empty [Split]).
-  static WorkspaceController load(SharedPreferences prefs) =>
-      WorkspaceController(prefs, _decode(prefs.getString(kWorkspacePrefsKey)));
+  final WorkspaceCommit? _onCommit;
 
-  final SharedPreferences? _prefs;
+  /// The starter workspace, exposed so the groups layer can seed a new group's
+  /// tree with the same shape a fresh workspace has.
+  static WorkspaceState seedWorkspace() => _seed();
+
+  /// Decodes a persisted workspace blob, falling back to the starter workspace
+  /// for absent/corrupt/unusable JSON. Exposed for the SPEC-30 migration, which
+  /// must read the legacy single-workspace key.
+  static WorkspaceState decodeWorkspace(String? raw) => _decode(raw);
 
   /// The starter workspace: a single [Split] holding one empty (sessionless)
   /// starter [Tab], active (decision 7).
@@ -129,8 +138,13 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
 
   /// Splits the active [Split] along [axis]. The new [Split] is seeded with one
   /// empty starter [Tab] and becomes active; the original keeps its tabs.
-  void divideActive(Axis axis) {
-    final tab = Tab(id: nextNodeId(SplitNodeKind.tab));
+  ///
+  /// [worktree] seeds that starter tab's hint (SPEC-30 decision 17) so a split
+  /// lands on the in-pane starter for the branch you were already in. The
+  /// caller supplies it: resolving a bound tab's worktree needs the session
+  /// list, which this controller deliberately knows nothing about.
+  void divideActive(Axis axis, {SelectedWorktree? worktree}) {
+    final tab = Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree);
     final newSplit = Split(
       id: nextNodeId(SplitNodeKind.split),
       tabs: [tab],
@@ -595,26 +609,35 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
 
   void _commit(WorkspaceState next) {
     state = next;
-    _persist();
-  }
-
-  Future<void> _persist() async {
-    final prefs = _prefs;
-    if (prefs == null) return;
+    // Best-effort: a sink that throws must not take the app down with it. The
+    // in-memory tree is already correct and the next mutation retries.
     try {
-      await prefs.setString(kWorkspacePrefsKey, jsonEncode(state.toJson()));
-    } catch (_) {
-      // Best-effort persistence: a failed write must not crash the app or
-      // surface as an unhandled async error — the in-memory workspace is intact
-      // and the next mutation retries the write.
-    }
+      _onCommit?.call(next);
+    } catch (_) {}
   }
 }
 
-/// The single desktop/iPad workspace. Defaults to a non-persisting controller
-/// seeded with the starter workspace; `runDesktopApp` overrides it with a
-/// [SharedPreferences]-backed one, and tests may override it too.
+/// The **active group's** split/tab tree (SPEC-30). Derived, not owned: it is
+/// rebuilt whenever the active group changes, seeded with that group's stored
+/// tree, and every mutation is reported straight back to the groups layer, which
+/// owns persistence. Switching groups therefore costs one controller rebuild and
+/// loses nothing, because the trees live in the groups.
+///
+/// Tests that want a bare tree can still override this with
+/// `WorkspaceController.ephemeral()`.
 final workspaceControllerProvider =
-    StateNotifierProvider<WorkspaceController, WorkspaceState>(
-      (ref) => WorkspaceController.ephemeral(),
-    );
+    StateNotifierProvider<WorkspaceController, WorkspaceState>((ref) {
+      final groups = ref.watch(groupsControllerProvider.notifier);
+      // Only the identity of the active group should rebuild this controller —
+      // not every tree mutation it makes, which would be a rebuild loop.
+      final activeId = ref.watch<String>(
+        groupsControllerProvider.select<String>((s) => s.active.id),
+      );
+      final tree =
+          groups.groupById(activeId)?.tree ??
+          WorkspaceController.seedWorkspace();
+      return WorkspaceController(
+        (next) => groups.commitTree(activeId, next),
+        tree,
+      );
+    });

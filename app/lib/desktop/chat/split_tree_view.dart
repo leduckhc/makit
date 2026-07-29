@@ -47,11 +47,7 @@ class WorkspaceView extends ConsumerWidget {
             // + unfold button, so inset past them; otherwise a small gutter.
             title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
             titleInset: collapsed ? kTrafficLightInset + 34 : 12,
-            // "Open in editor", only for a real on-disk worktree (a still-
-            // virtual draft has no path to open yet).
-            trailing:
-                worktree == null ||
-                    worktree.path.startsWith(kDraftWorktreePrefix)
+            trailing: worktree == null
                 ? null
                 : OpenInIdeButton(path: worktree.path),
           ),
@@ -202,9 +198,8 @@ class _SplitterDivider extends StatelessWidget {
 }
 
 /// The active tab's worktree/branch label on the window title strip: a fork
-/// icon + branch name (or "New worktree" while the worktree is still a virtual
-/// draft that hasn't materialised on disk). A quiet muted context label so the
-/// worktree reads as context beneath which the session title is primary.
+/// icon + branch name. A quiet muted context label so the worktree reads as
+/// context beneath which the session title is primary.
 class _WorktreeTitle extends StatelessWidget {
   const _WorktreeTitle({required this.worktree});
 
@@ -213,9 +208,7 @@ class _WorktreeTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final label = worktree.path.startsWith(kDraftWorktreePrefix)
-        ? 'New worktree'
-        : (worktree.branch ?? worktree.path);
+    final label = worktree.branch ?? worktree.path;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

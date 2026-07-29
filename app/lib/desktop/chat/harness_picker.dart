@@ -1,89 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
-import '../../store/store.dart';
-import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
-
-/// Harness picker shown in the main content while a session is still a draft
-/// (no worktree yet). Selecting a card sets the harness the worktree will
-/// start with; the user then sends a message to create the worktree.
-/// (SPEC-19, moved from desktop_chat_pane.)
-class HarnessPicker extends ConsumerWidget {
-  const HarnessPicker({super.key, required this.session});
-  final Session session;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final agentsAsync = ref.watch(agentsProvider);
-    final selected = session.pendingAgent ?? session.agent;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: kReadableContentMaxWidth),
-        child: agentsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(
-            child: Text(
-              'Could not load harnesses: $e',
-              style: TextStyle(color: theme.colorScheme.error),
-            ),
-          ),
-          data: (agents) {
-            if (agents.isEmpty) {
-              return Center(
-                child: Text(
-                  'Using the host default harness.',
-                  style: TextStyle(color: theme.colorScheme.outline),
-                ),
-              );
-            }
-            return SingleChildScrollView(
-              padding: const EdgeInsets.all(kSpace24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Choose a harness', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: kSpace4),
-                  Text(
-                    'Then send a message to create the worktree.',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline,
-                    ),
-                  ),
-                  const SizedBox(height: kSpace16),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 12,
-                    children: [
-                      for (final a in agents)
-                        HarnessCard(
-                          agent: a,
-                          selected: a.id == selected,
-                          onTap: a.available
-                              ? () => ref
-                                    .read(storeControllerProvider.notifier)
-                                    .setSessionAgent(session.id, a.id)
-                              : null,
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
 
 /// A selectable harness card (icon, label, transport). Selected cards get an
 /// accent ring + check; unavailable agents are dimmed and non-tappable. Reused
-/// by the draft [HarnessPicker] and the New-session dialog's harness grid.
+/// by the New-session dialog's harness grid.
 class HarnessCard extends StatelessWidget {
   const HarnessCard({
     super.key,

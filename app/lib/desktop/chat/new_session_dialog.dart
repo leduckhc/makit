@@ -14,6 +14,7 @@ import '../../ui/home/repo_chips.dart'
 import '../../ui/home/new_session_sheet.dart' show WorktreeSource;
 import 'harness_picker.dart' show HarnessCard;
 import 'selected_session.dart';
+import 'start_session.dart';
 
 /// Opens the New-session dialog (SPEC-27): configure the worktree, harness, and
 /// the harness's cached config options, then start the session with the first
@@ -46,7 +47,7 @@ class _NewSessionDialog extends ConsumerStatefulWidget {
 
 class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
   String? _projectId;
-  WorktreeSource _source = WorktreeSource.existing;
+  WorktreeSource _source = WorktreeSource.newBranch;
   String? _baseBranch;
   String? _existingPath;
   int? _prNumber;
@@ -79,6 +80,9 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     _existingPath =
         widget.initialWorktree?.path ??
         (worktrees.isEmpty ? null : worktrees.first.path);
+    // Forking a fresh branch is the default; opening from a pane that already
+    // has a worktree reuses that one instead.
+    if (widget.initialWorktree != null) _source = WorktreeSource.existing;
   }
 
   @override
@@ -213,22 +217,17 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     try {
       final (:path, :branch) = await _resolveWorktree(projectId);
       createdWorktree = _source == WorktreeSource.existing ? null : path;
-      final picks = [
-        for (final e in _picks.entries)
-          ConfigOptionPick(id: e.key, value: e.value),
-      ];
-      final sid = await store.spawnSession(
-        projectId,
+      await startSessionInWorktree(
+        ref,
+        projectId: projectId,
+        text: text,
         agent: agentId,
         worktreePath: path,
         branch: branch,
-        configOptions: picks.isEmpty ? null : picks,
+        picks: _picks,
       );
       createdWorktree = null; // spawned — the worktree now hosts a session.
       if (!mounted) return;
-      store.appendOptimisticMessage(sid, text);
-      store.sendMessage(sid, text);
-      selectSessionExclusive(ref, sid);
       Navigator.of(context).pop();
     } catch (e) {
       if (createdWorktree != null) {

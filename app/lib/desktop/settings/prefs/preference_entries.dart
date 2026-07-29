@@ -140,6 +140,17 @@ const PreferenceEntry<String> prPullPromptPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+/// How many agents a group opens side by side before it starts placing new ones
+/// as tabs (SPEC-30 decision 9). A **placement policy**, not a rendering mode:
+/// changing it never re-arranges a group the user already arranged — it only
+/// decides where the *next* session lands in groups with no manual override.
+const PreferenceEntry<int> autoSplitThresholdPreference = PreferenceEntry(
+  id: 'layout.autoSplitThreshold',
+  defaultValue: 3,
+  encode: _encodeInt,
+  decode: _decodeInt,
+);
+
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
@@ -148,6 +159,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   lastSectionPreference,
   sidebarWidthPreference,
   sidebarStartCollapsedPreference,
+  autoSplitThresholdPreference,
   textScalePreference,
   preferredIdePreference,
   lastPrActionPreference,

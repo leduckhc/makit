@@ -43,7 +43,6 @@ class _FakeStore extends StoreController {
     String projectId, {
     String? title,
     String? agent,
-    String? baseBranch,
     String? worktreePath,
     String? branch,
     List<ConfigOptionPick>? configOptions,
@@ -293,7 +292,7 @@ void main() {
     expect(container.read(selectedSessionProvider), 's1');
   });
 
-  testWidgets('drafts render as a worktree row (no DRAFTS section)', (
+  testWidgets('a pending session renders under its worktree row', (
     tester,
   ) async {
     await _pump(
@@ -302,17 +301,23 @@ void main() {
         _repo(
           'p1',
           'alpha',
-          worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+          worktrees: [
+            _worktree(
+              'wt-main',
+              branch: 'main',
+              isPrimary: true,
+              sessionIds: ['s1'],
+            ),
+          ],
         ),
       ],
-      sessions: [_session('s1', 'p1', '', 'pi', pending: true)],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'pi', pending: true)],
     );
 
-    // The DRAFTS section header + `draft` tag were removed; a pending draft now
-    // renders as a worktree-style row labelled "new worktree".
+    // Its worktree is known at spawn time, so there is no separate draft row.
     expect(find.text('DRAFTS'), findsNothing);
-    expect(find.text('new worktree'), findsOneWidget);
-    expect(find.text('draft'), findsNothing);
+    expect(find.text('new worktree'), findsNothing);
+    expect(find.text('Fix login bug'), findsOneWidget);
   });
 
   testWidgets('open PR renders a PR pill on its worktree row', (tester) async {
@@ -461,7 +466,7 @@ void main() {
     expect(find.text('feat/login'), findsOneWidget);
   });
 
-  testWidgets('repo header overflow menu lists Hide + New worktree', (
+  testWidgets('repo header overflow menu lists only Hide', (
     tester,
   ) async {
     await _pump(
@@ -479,10 +484,11 @@ void main() {
     // Repo actions surface only on hover, so move the pointer over the header.
     await _openRepoMenu(tester, 'alpha');
     expect(find.text('Hide the repo'), findsOneWidget);
-    expect(find.text('New worktree from…'), findsOneWidget);
+    // The new-worktree picker moved to the + button: one door, not two.
+    expect(find.text('New worktree from…'), findsNothing);
   });
 
-  testWidgets('the + button spawns a pending draft without a dialog', (
+  testWidgets('the + button opens the New session dialog (no bare spawn)', (
     tester,
   ) async {
     final store = await _pumpWithStore(
@@ -499,34 +505,10 @@ void main() {
 
     await _tapNewWorktree(tester, 'alpha');
 
-    // A bare spawn (pending draft, no worktree on disk) is issued for the repo.
-    expect(store.spawned, ['p1']);
-    // No dialog opens: the richer picker only lives in the repo overflow menu.
-    expect(find.text('New worktree from…'), findsNothing);
+    // The dialog configures the worktree first; nothing spawns until Start.
+    expect(find.text('New session'), findsWidgets);
+    expect(store.spawned, isEmpty);
   });
-
-  testWidgets(
-    'a failed + spawn shows an error snackbar (no worktree materializes)',
-    (tester) async {
-      final store = await _pumpWithStore(
-        tester,
-        repos: [
-          _repo(
-            'p1',
-            'alpha',
-            worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
-          ),
-        ],
-        sessions: const [],
-        fail: true,
-      );
-
-      await _tapNewWorktree(tester, 'alpha');
-
-      expect(store.spawned, ['p1']);
-      expect(find.textContaining('New worktree failed'), findsOneWidget);
-    },
-  );
 
   testWidgets(
     'the repo actions button is present but inert (ignores taps) until '

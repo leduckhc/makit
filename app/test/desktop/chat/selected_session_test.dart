@@ -163,26 +163,6 @@ void main() {
     });
   });
 
-  group('openDraftSession', () {
-    testWidgets('reveals a tab for the session without reading the store', (
-      tester,
-    ) async {
-      final container = ProviderContainer(
-        overrides: [
-          sessionsProvider.overrideWithValue(SessionsState(const [])),
-        ],
-      );
-      addTearDown(container.dispose);
-
-      await _invoke(tester, container, (ref) {
-        openDraftSession(ref, 's1');
-      });
-
-      expect(container.read(selectedSessionProvider), 's1');
-      expect(_activeTab(container).sessionId, 's1');
-    });
-  });
-
   group('closeActiveSplit / closeActiveTab', () {
     testWidgets('closeActiveTab collapses an emptied split back to a sibling', (
       tester,

@@ -176,13 +176,9 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
       case ShortcutAction.splitVertical:
-        ref
-            .read(workspaceControllerProvider.notifier)
-            .divideActive(Axis.horizontal);
+        _divide(ref, Axis.horizontal);
       case ShortcutAction.splitHorizontal:
-        ref
-            .read(workspaceControllerProvider.notifier)
-            .divideActive(Axis.vertical);
+        _divide(ref, Axis.vertical);
       case ShortcutAction.newTab:
         // A tab with only a New-session button is a dead end for a keyboard
         // action, so "New tab" opens the dialog directly, pre-filled with the
@@ -206,6 +202,15 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.composerNewline:
         break;
     }
+  }
+
+  /// Splits the active split, carrying the active tab's worktree onto the new
+  /// starter tab (SPEC-30 decision 17) so a split lands on the in-pane starter
+  /// for the branch you were already in — matching the tab-strip `+`.
+  void _divide(WidgetRef ref, Axis axis) {
+    ref
+        .read(workspaceControllerProvider.notifier)
+        .divideActive(axis, worktree: activeRealWorktree(ref));
   }
 
   /// Cycles the active split's active tab by [delta] (wrapping). No-op when the

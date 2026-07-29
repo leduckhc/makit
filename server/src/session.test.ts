@@ -133,8 +133,8 @@ test("lifecycle models draft → started as a discriminated union (P4)", () => {
   assert.equal(initial.phase, "started");
   assert.equal(session.pending, false);
 
-  // Entering the draft phase records the deferred agent/base branch.
-  session.beginDraft({ agent: "codex", baseBranch: "dev" });
+  // Entering the draft phase records the deferred agent + bound worktree.
+  session.beginDraft({ agent: "codex", pendingWorktreePath: "/tmp/wt" });
   assert.equal(session.pending, true);
   assert.equal(session.pendingAgent, "codex");
   const draft: SessionLifecycle = session.lifecycle;
@@ -142,7 +142,7 @@ test("lifecycle models draft → started as a discriminated union (P4)", () => {
     assert.fail("expected a draft lifecycle");
   } else {
     assert.equal(draft.agent, "codex");
-    assert.equal(draft.baseBranch, "dev");
+    assert.equal(draft.pendingWorktreePath, "/tmp/wt");
   }
 
   // setPendingAgent only mutates a draft.

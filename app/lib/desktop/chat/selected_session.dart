@@ -122,13 +122,6 @@ void closeActiveSplit(WidgetRef ref) {
   ref.read(workspaceControllerProvider.notifier).closeActiveSplit();
 }
 
-/// Reveal a freshly spawned pending draft ([sessionId]) as a tab and focus it
-/// (the sidebar + button). Unlike [selectSessionExclusive] this is the same
-/// reveal path, kept as a named call site so the sidebar reads intently.
-void openDraftSession(WidgetRef ref, String sessionId) {
-  ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
-}
-
 /// Select a sessionless worktree from the sidebar: open a starter tab hinted
 /// with [worktree] in the active split (SPEC-28 — no layout swap). The New
 /// session dialog opened from that tab pre-fills with the worktree.

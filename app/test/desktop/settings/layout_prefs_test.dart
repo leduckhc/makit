@@ -8,6 +8,27 @@ import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  group('auto-split threshold (SPEC-30 decision 9)', () {
+    test('defaults to 3 and round-trips through the store', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final controller = PreferencesController.load(prefs);
+
+      expect(controller.get(autoSplitThresholdPreference), 3);
+      expect(controller.isModified(autoSplitThresholdPreference), isFalse);
+
+      await controller.set(autoSplitThresholdPreference, 5);
+
+      final reloaded = PreferencesController.load(prefs);
+      expect(reloaded.get(autoSplitThresholdPreference), 5);
+      expect(reloaded.isModified(autoSplitThresholdPreference), isTrue);
+    });
+
+    test('is registered, so it persists without controller changes', () {
+      expect(kPreferenceEntries, contains(autoSplitThresholdPreference));
+    });
+  });
+
   group('sidebar layout providers persist through the preferences store', () {
     test('width seeds from the default and writes through on change', () async {
       SharedPreferences.setMockInitialValues({});

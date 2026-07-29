@@ -17,18 +17,17 @@ import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_draft.dart';
 import 'composer_focus.dart';
-import 'harness_picker.dart';
 import 'new_session_dialog.dart';
 import 'panes/pane_header.dart';
 import 'pr_bar.dart';
 import 'selected_session.dart';
+import 'worktree_starter.dart';
 
 // Re-export the pane-header + harness widgets so existing importers of
 // `desktop_chat_pane.dart` (e.g. pane_tree_view, widget tests) keep resolving
 // them after the SPEC-19 split.
 export 'panes/pane_header.dart'
     show PaneHeader, SessionActionsMenu, UnfoldStrip, sessionPaneTitle;
-export 'harness_picker.dart' show HarnessPicker;
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -42,11 +41,8 @@ export 'harness_picker.dart' show HarnessPicker;
 class DesktopChatPane extends ConsumerStatefulWidget {
   /// Creates the desktop chat pane. When [sessionId] resolves to an existing
   /// session the pane shows its transcript; otherwise (no [sessionId], or a
-  /// persisted id that no longer resolves) it shows the harness picker for
-  /// [worktree] — the enclosing tree's worktree — but only when that is a
-  /// *real* worktree. A draft's virtual worktree (`draft:<id>`) has nothing on
-  /// disk, so a missing/dead session there falls back to the empty placeholder
-  /// (as does a null [worktree]).
+  /// persisted id that no longer resolves) it shows the starter placeholder,
+  /// pre-filled with [worktree] — the enclosing tree's worktree — when known.
   const DesktopChatPane({
     super.key,
     this.sessionId,
@@ -59,8 +55,7 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   final String? sessionId;
 
   /// The enclosing tree's worktree; a null-session (or dead-session) leaf
-  /// renders this worktree's harness picker when it is a real worktree. A draft
-  /// virtual worktree (or null) falls back to the empty placeholder instead.
+  /// pre-fills the New-session dialog with it.
   final SelectedWorktree? worktree;
 
   /// Whether to render the in-pane session header (title + actions menu). The
@@ -175,20 +170,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         ? null
         : ref.watch(sessionsProvider).byId(sessionId);
     if (sessionId == null || session == null) {
+      // A pane that knows its worktree starts a session in place: harness +
+      // model/reasoning pills + composer. Without one there is nothing to start
+      // in, so it falls back to the placeholder that opens the dialog (which
+      // picks the worktree). Either way no pane is a dead end (SPEC-27).
       final worktree = widget.worktree;
-      // A real worktree with no (or a dead) session pre-fills the New-session
-      // dialog with it. A draft's virtual worktree (`draft:<id>`) has nothing
-      // on disk, so it (and a null worktree) offers the dialog with no
-      // pre-fill. Every sessionless pane reaches the same placeholder + button
-      // (SPEC-27) — no dead-end panes.
-      final prefill =
-          (worktree != null && !worktree.path.startsWith(kDraftWorktreePrefix))
-          ? worktree
-          : null;
       return Column(
         children: [
           if (widget.showHeader) const UnfoldStrip(),
-          Expanded(child: EmptyPaneStarter(worktree: prefill)),
+          Expanded(
+            child: worktree == null
+                ? const EmptyPaneStarter()
+                : WorktreeStarter(worktree: worktree),
+          ),
         ],
       );
     }
@@ -239,9 +233,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         if (widget.showHeader)
           PaneHeader(session: session, fallbackId: sessionId),
         Expanded(
-          child: (session.pending == true && session.branch == null)
-              ? HarnessPicker(session: session)
-              : items.isEmpty
+          child: items.isEmpty
               ? const _EmptyTranscript()
               // The ListView fills the full pane width so the mouse wheel
               // scrolls the transcript anywhere in the pane, not just over the
@@ -439,17 +431,13 @@ class _EmptyTranscript extends StatelessWidget {
   }
 }
 
-/// The unified sessionless-pane placeholder (SPEC-27): a short prompt plus a
-/// "New session" button that opens the New-session dialog, pre-filling the
-/// Worktree field with [worktree] when it is a real on-disk worktree. Replaces
-/// both the old `WorktreeStartView` and the button-less `_NoSelection` so every
-/// empty pane state reaches the one starter (no dead-end panes).
+/// The placeholder for a sessionless pane with NO worktree (SPEC-27): a short
+/// prompt plus a "New session" button that opens the New-session dialog, where
+/// the worktree is chosen. A pane that already has a worktree starts in place
+/// via [WorktreeStarter] instead, so no empty pane is a dead end.
 class EmptyPaneStarter extends ConsumerWidget {
-  /// Creates the placeholder; [worktree] pre-fills the dialog when known.
-  const EmptyPaneStarter({super.key, this.worktree});
-
-  /// The real worktree to pre-fill the dialog with, or null for no pre-fill.
-  final SelectedWorktree? worktree;
+  /// Creates the placeholder.
+  const EmptyPaneStarter({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -468,12 +456,7 @@ class EmptyPaneStarter extends ConsumerWidget {
           FilledButton.icon(
             icon: const Icon(PhosphorIconsLight.plus, size: 16),
             label: const Text('New session'),
-            onPressed: () => showNewSessionDialog(
-              context,
-              ref,
-              projectId: worktree?.projectId,
-              worktree: worktree,
-            ),
+            onPressed: () => showNewSessionDialog(context, ref),
           ),
         ],
       ),

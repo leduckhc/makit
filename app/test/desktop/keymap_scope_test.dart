@@ -220,6 +220,35 @@ void main() {
     expect(container.read(selectedSessionProvider), isNull);
   });
 
+  testWidgets('Ctrl+D carries the active session\'s worktree into the new split', (
+    tester,
+  ) async {
+    // SPEC-30 decision 17: ⌘D must agree with the tab-strip +, which pre-fills
+    // the worktree you are already working in.
+    final keymap = await controller();
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        sessionsProvider.overrideWithValue(SessionsState([session('s1')])),
+      ],
+    );
+    addTearDown(container.dispose);
+    workspace(container).revealSession('s1');
+
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+    await pressCtrl(tester, LogicalKeyboardKey.keyD);
+
+    final tab = activeTab(container.read(workspaceControllerProvider))!;
+    expect(tab.sessionId, isNull, reason: 'a fresh starter tab');
+    expect(tab.worktree?.path, '/tmp/wt-x');
+    expect(tab.worktree?.branch, 'feature-x');
+  });
+
   testWidgets('Ctrl+T opens the New session dialog', (tester) async {
     final keymap = await controller();
     final container = ProviderContainer(
