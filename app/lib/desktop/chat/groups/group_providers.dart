@@ -12,6 +12,7 @@ import '../../settings/prefs/preference_entries.dart';
 import '../../settings/prefs/preferences_providers.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
+import '../panes/split_node.dart';
 import 'group.dart';
 import 'groups_controller.dart';
 
@@ -94,6 +95,16 @@ final autoSplitThresholdProvider = Provider<int>((ref) {
       .get(autoSplitThresholdPreference);
 });
 
+/// Whether [group]'s stored tree already has a tab bound to [sessionId].
+bool _treeHosts(Group group, String sessionId) =>
+    firstSplitWhere<bool>(group.tree.root, (split) {
+      for (final tab in split.tabs) {
+        if (tab.sessionId == sessionId) return true;
+      }
+      return null;
+    }) ??
+    false;
+
 /// Where [session] runs, for the membership rules. Null-safe on purpose: a
 /// session with no worktree yet cannot be in any worktree group's scope.
 SessionLocation locationOf(Session session) => SessionLocation(
@@ -115,6 +126,14 @@ String? groupHolding(
 ) {
   final active = groups.active;
   if (membersOf(active.id).contains(session.id)) return active.id;
+  // (a′) Already on screen somewhere. This catches the session the New-session
+  // dialog just spawned: the server has not reported its worktree yet, so it is
+  // in no group's *membership*, but its tab exists in the group it was started
+  // from. Without this, clicking it would fall through to (d) and drag the user
+  // into a different group than the one they are looking at.
+  for (final g in groups.groups) {
+    if (_treeHosts(g, session.id)) return g.id;
+  }
   for (final g in groups.groups) {
     if (g.isScopedTo(
       projectId: session.projectId,

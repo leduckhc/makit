@@ -101,13 +101,22 @@ void reconcileInto(
   required int threshold,
   LayoutMode? layoutOverride,
   SelectedWorktree? emptyHint,
+  Set<String> unlocated = const {},
 }) {
   final memberSet = members.toSet();
 
   // (b) Drop tabs whose session is no longer a member. Done first so their
   // splits collapse before we measure how many panes are shown.
+  //
+  // [unlocated] sessions are exempt: a session the server has not placed in a
+  // worktree yet (a freshly spawned draft, before its first message promotes
+  // it) is *pending placement*, not out-of-scope. Dropping it would make the
+  // tab the New-session dialog just opened vanish on the next snapshot and
+  // reappear a moment later — the user would see a flicker and lose their
+  // composer text. It is left alone until the server says where it lives.
   for (final id in boundSessionIds(controller.state)) {
-    if (!memberSet.contains(id)) controller.unbindSession(id);
+    if (memberSet.contains(id) || unlocated.contains(id)) continue;
+    controller.unbindSession(id);
   }
 
   // (a) Place members not yet shown, honouring the group's override or, absent
@@ -123,8 +132,11 @@ void reconcileInto(
   }
 
   // (decision 20) An empty worktree group renders the in-pane starter, which
-  // needs its scope on the placeholder tab.
-  if (memberSet.isEmpty && emptyHint != null) {
+  // needs its scope on the placeholder tab. A pending tab still counts as
+  // occupied, so the starter does not replace a session you just started.
+  if (memberSet.isEmpty &&
+      emptyHint != null &&
+      !_hasBoundTab(controller.state)) {
     _seedEmptyHint(controller, emptyHint);
   }
 }

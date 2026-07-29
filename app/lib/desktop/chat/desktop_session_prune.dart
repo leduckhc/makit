@@ -48,6 +48,13 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
         ref.read(groupMembersProvider(active.id)),
         threshold: ref.read(autoSplitThresholdProvider),
         layoutOverride: active.layoutOverride,
+        // A session the server has not located yet (a draft before its first
+        // message) belongs to no scope, so it must not be mistaken for a
+        // foreign tab and dropped from under the user.
+        unlocated: {
+          for (final s in next.sessions)
+            if (s.worktreePath == null) s.id,
+        },
         emptyHint: SelectedWorktree(
           projectId: active.projectId!,
           path: active.worktreePath!,
@@ -67,12 +74,22 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
   /// (UI-owned) delete flow; guarded by the repo being known, so a not-yet-
   /// loaded repo list can never close a group on startup.
   void reconcileWorktrees(ReposState repos) {
-    final active = ref.read(activeGroupProvider);
-    if (active.kind != GroupKind.worktree) return;
-    final repo = repos.byId(active.projectId!);
-    if (repo == null) return; // not loaded yet — say nothing
-    if (repo.worktrees.any((w) => w.path == active.worktreePath)) return;
-    ref.read(groupsControllerProvider.notifier).closeGroup(active.id);
+    final groupsCtrl = ref.read(groupsControllerProvider.notifier);
+    // Decision 7 is unconditional — "its worktree group disappears with its
+    // scope" — so every worktree group is checked, not just the active one. Only
+    // the *focus* rule is active-scoped, and closeGroup already handles that by
+    // falling to the neighbour.
+    for (final g in ref.read(groupsControllerProvider).groups) {
+      if (g.kind != GroupKind.worktree) continue;
+      final repo = repos.byId(g.projectId!);
+      if (repo == null) continue; // not loaded yet — say nothing
+      // A repo mid-refresh can report an empty worktree list; closing on that
+      // would delete groups the user still has. Only an otherwise-populated
+      // list is evidence that this particular worktree is gone.
+      if (repo.worktrees.isEmpty) continue;
+      if (repo.worktrees.any((w) => w.path == g.worktreePath)) continue;
+      groupsCtrl.closeGroup(g.id);
+    }
   }
 
   ref.listen(sessionsProvider, (_, next) => prune(next));

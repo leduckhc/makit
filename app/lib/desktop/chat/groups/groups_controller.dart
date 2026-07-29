@@ -328,6 +328,11 @@ class GroupsController extends StateNotifier<GroupsState> {
 
   /// Removes [sessionId] from a board (the agent keeps running). No-op on a
   /// worktree group, whose membership is not the user's to edit.
+  ///
+  /// The session's **tab is dropped from the board's tree too**. Membership and
+  /// tree must not be allowed to disagree: a tab bound to a non-member is a dead
+  /// tile, which is exactly what decision 6 forbids — and it would only have
+  /// surfaced later, when the user activated that board.
   void removeMember(String groupId, String sessionId) {
     final index = state.groups.indexWhere((g) => g.id == groupId);
     if (index < 0) return;
@@ -338,6 +343,7 @@ class GroupsController extends StateNotifier<GroupsState> {
       index,
       group.copyWith(
         members: group.members.where((m) => m != sessionId).toList(),
+        tree: _dropTabs(group.tree, [sessionId]),
       ),
     );
   }

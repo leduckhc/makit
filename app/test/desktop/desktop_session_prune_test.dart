@@ -235,13 +235,12 @@ void main() {
       );
     });
 
-    test('decision 6 (KNOWN GAP): an INACTIVE board keeps the vanished '
-        'session\'s tab in its stored tree', () async {
-      // See the report: the prune closes tabs only in the ACTIVE workspace, so
-      // an inactive board still carries a tab bound to a gone session until it
-      // is activated AND a further snapshot arrives. Decision 6 says "No dead
-      // tiles". This test documents the actual behaviour; flip the expectation
-      // to `['keep']` to turn it into the assertion the spec really wants.
+    test('decision 6: an INACTIVE board drops the vanished session\'s tab too', () async {
+      // Found by the QA pass and independently by review: the prune closed tabs
+      // only in the ACTIVE workspace, so an inactive board carried a tab bound
+      // to a gone session and showed a dead tile the moment you activated it.
+      // Fixed by making `removeMember` drop the tab as well — membership and
+      // tree are not allowed to disagree.
       final b1 = _boardWithTabs('b1', ['s', 'keep']);
       final b2 = _boardWithTabs('b2', ['s', 'keep']);
       final container = groupsContainer(
@@ -257,9 +256,8 @@ void main() {
           .read(groupsControllerProvider)
           .groups
           .firstWhere((g) => g.id == 'b2');
-      // Actual: the dead 's' tab survives in the inactive board's tree.
-      expect(_boundIds(gb2.tree), ['s', 'keep']);
-    }, skip: 'FINDING: decision 6 tab-close is not applied to inactive boards');
+      expect(_boundIds(gb2.tree), ['keep']);
+    });
 
     test('decision 5: a new session on the active worktree group\'s branch '
         'joins the canvas without switching groups; one on another branch '

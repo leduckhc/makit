@@ -73,22 +73,24 @@ void main() {
       expect(s1SplitAfter, s1Split);
     });
 
-    test('with threshold 3 the 4th session opens a TAB in the active split',
-        () {
-      var tree = place(
-        WorkspaceController.seedWorkspace(),
-        's1',
-        mode: LayoutMode.split,
-      );
-      tree = place(tree, 's2', mode: LayoutMode.split);
-      tree = place(tree, 's3', mode: LayoutMode.split);
-      final splitsBefore = _splitCount(tree);
+    test(
+      'with threshold 3 the 4th session opens a TAB in the active split',
+      () {
+        var tree = place(
+          WorkspaceController.seedWorkspace(),
+          's1',
+          mode: LayoutMode.split,
+        );
+        tree = place(tree, 's2', mode: LayoutMode.split);
+        tree = place(tree, 's3', mode: LayoutMode.split);
+        final splitsBefore = _splitCount(tree);
 
-      // 3 shown ≥ 3 → the 4th joins the active split as a tab (no new split).
-      final placed = place(tree, 's4', mode: LayoutMode.tabs);
-      expect(_splitCount(placed), splitsBefore);
-      expect(_boundCount(placed), 4);
-    });
+        // 3 shown ≥ 3 → the 4th joins the active split as a tab (no new split).
+        final placed = place(tree, 's4', mode: LayoutMode.tabs);
+        expect(_splitCount(placed), splitsBefore);
+        expect(_boundCount(placed), 4);
+      },
+    );
 
     test('an unrelated placement leaves an existing split byte-identical', () {
       var tree = place(
@@ -177,7 +179,8 @@ void main() {
       expect(
         tab?.worktree,
         hint,
-        reason: 'DesktopChatPane renders WorktreeStarter only when a hint is set',
+        reason:
+            'DesktopChatPane renders WorktreeStarter only when a hint is set',
       );
     });
 
@@ -185,6 +188,31 @@ void main() {
       final seed = WorkspaceController.seedWorkspace();
       final next = reconcile(seed, const [], threshold: 3);
       expect(next, seed);
+    });
+
+    test('an unlocated session keeps its tab — it is pending, not foreign', () {
+      // Regression: the New-session dialog spawns a session and reveals its tab
+      // before the server reports which worktree it landed in. Since it matches
+      // no scope, reconcile used to drop that tab on the very next snapshot —
+      // the tab flickered away and took the composer's text with it.
+      final controller = WorkspaceController(
+        null,
+        WorkspaceController.seedWorkspace(),
+      );
+      placeInto(controller, 'pending', mode: LayoutMode.split);
+      final withTab = controller.state;
+
+      reconcileInto(
+        controller,
+        const [], // membership does not include it (no worktree yet)
+        threshold: 3,
+        unlocated: const {'pending'},
+      );
+      expect(controller.state, withTab, reason: 'left exactly as it was');
+
+      // Once the server locates it elsewhere, it is a foreign tab and goes.
+      reconcileInto(controller, const [], threshold: 3);
+      expect(boundSessionIds(controller.state), isEmpty);
     });
   });
 }
