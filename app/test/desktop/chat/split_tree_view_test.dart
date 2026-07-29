@@ -10,11 +10,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/group_bar.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/open_in_ide.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
-import 'package:makit/desktop/chat/groups/group.dart';
-import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
@@ -78,33 +79,38 @@ Session _session(String id, String title, {String worktree = '/tmp/wt-a'}) =>
 ProviderContainer _container({
   List<Session> sessions = const [],
   ConnectionController? connection,
-  // SPEC-30 decision 7 made close-behaviour depend on the active group's kind:
-  // a worktree group archives, a board unpins. These tests predate groups and
-  // assert the archive path, so they run in a worktree group. (The board's
-  // unpin path is covered in selected_session_test.dart.)
-  bool worktreeGroup = true,
+
+  /// The groups state to run under. Defaults to a single **worktree** group:
+  /// SPEC-30 decision 7 makes close-behaviour depend on the active group's kind
+  /// (a worktree group archives, a board unpins), and the suites here predate
+  /// groups and assert the archive path. The board's unpin path is covered in
+  /// `selected_session_test.dart`.
+  GroupsState? groups,
 }) {
+  final groupsState =
+      groups ??
+      GroupsState(
+        groups: [
+          Group.worktree(
+            id: 'g1',
+            projectId: 'p1',
+            worktreePath: '/tmp/wt/feat-x',
+            label: 'feat/x',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+        ],
+        activeGroupId: 'g1',
+      );
   return ProviderContainer(
     overrides: [
-      if (worktreeGroup)
-        groupsControllerProvider.overrideWith(
-          (ref) => GroupsController.ephemeral(
-            GroupsState(
-              groups: [
-                Group.worktree(
-                  id: 'g1',
-                  projectId: 'p1',
-                  worktreePath: '/tmp/wt/feat-x',
-                  label: 'feat/x',
-                  tree: WorkspaceController.seedWorkspace(),
-                ),
-              ],
-              activeGroupId: 'g1',
-            ),
-          ),
-        ),
+      groupsControllerProvider.overrideWith(
+        (ref) => GroupsController.ephemeral(groupsState),
+      ),
       if (connection != null)
         connectionControllerProvider.overrideWith((ref) => connection),
+      // The group/membership bars only read the repo list for a worktree
+      // group's chip; keep it empty so tests never reach the live store.
+      reposProvider.overrideWithValue(ReposState(const [])),
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
       eventsProvider.overrideWithValue(EventsState(const {}, const {})),
       for (final s in sessions)
@@ -573,36 +579,142 @@ void main() {
     });
   });
 
-  group('window title bar (worktree + IDE launcher)', () {
-    testWidgets(
-      'shows the active worktree branch and an Open-in-IDE launcher',
-      (tester) async {
-        final c = _container(
-          sessions: [_session('s1', 'Alpha', worktree: '/tmp/wt-a')],
-        );
-        addTearDown(c.dispose);
-        _ws(c).revealSession('s1');
-        await tester.pumpWidget(_tree(c));
-        await tester.pumpAndSettle();
-
-        expect(
-          find.text('wt-a'),
-          findsOneWidget,
-          reason: 'branch context label',
-        );
-        expect(find.byType(OpenInIdeButton), findsOneWidget);
-      },
-    );
-
-    testWidgets('empty starter tab shows no worktree title or IDE launcher', (
+  group('title strip (SPEC-30 decisions 10 & 11)', () {
+    testWidgets('hosts the scrolling group rail and the pinned IDE launcher', (
       tester,
     ) async {
-      final c = _container();
+      final c = _container(
+        sessions: [_session('s1', 'Alpha', worktree: '/tmp/wt-a')],
+      );
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(GroupBar), findsOneWidget);
+      expect(find.byType(OpenInIdeButton), findsOneWidget);
+      // decision 10: the strip names no branch — _WorktreeTitle is gone.
+      expect(find.text('wt-a'), findsNothing);
+    });
+
+    testWidgets('with ~10 groups the rail scrolls while the launcher stays '
+        'visible', (tester) async {
+      tester.view.physicalSize = const Size(680, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final groups = GroupsState(
+        groups: [
+          for (var i = 0; i < 10; i++)
+            Group.board(
+              id: 'g$i',
+              label: 'Board $i of ten',
+              tree: WorkspaceController.seedWorkspace(),
+            ),
+        ],
+        activeGroupId: 'g0',
+      );
+      final c = _container(groups: groups);
       addTearDown(c.dispose);
       await tester.pumpWidget(_tree(c));
       await tester.pumpAndSettle();
 
-      expect(find.byType(OpenInIdeButton), findsNothing);
+      // decision 12: the rail overflows into a horizontal scroll offset.
+      final scrollable = find.descendant(
+        of: find.byType(GroupBar),
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollable, findsOneWidget);
+      expect(
+        tester.state<ScrollableState>(scrollable).position.maxScrollExtent,
+        greaterThan(0),
+        reason: 'ten long group tabs overflow the rail',
+      );
+
+      // decision 11: the launcher is pinned outside the rail — still visible
+      // and within the viewport even as the tabs scroll away.
+      expect(find.byType(OpenInIdeButton), findsOneWidget);
+      final launcher = tester.getRect(find.byType(OpenInIdeButton));
+      expect(launcher.right, lessThanOrEqualTo(680));
+    });
+
+    testWidgets('the launcher target follows pane focus on a board', (
+      tester,
+    ) async {
+      final c = _container(
+        sessions: [
+          _session('s1', 'Alpha', worktree: '/tmp/wt-a'),
+          _session('s2', 'Beta', worktree: '/tmp/wt-b'),
+        ],
+      );
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1'); // pane A: s1 (/tmp/wt-a)
+      _ws(c).divideActive(Axis.horizontal);
+      _ws(c).revealSession('s2'); // pane B active: s2 (/tmp/wt-b)
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      String launcherPath() =>
+          tester.widget<OpenInIdeButton>(find.byType(OpenInIdeButton)).path!;
+
+      expect(launcherPath(), '/tmp/wt-b');
+
+      // Focusing pane A retargets the launcher to A's worktree.
+      await tester.tap(find.text('Alpha'));
+      await tester.pumpAndSettle();
+      expect(launcherPath(), '/tmp/wt-a');
+    });
+
+    testWidgets('an empty worktree group targets its own scope', (
+      tester,
+    ) async {
+      final groups = GroupsState(
+        groups: [
+          Group.worktree(
+            id: 'wt',
+            projectId: 'p1',
+            worktreePath: '/tmp/scope-wt',
+            label: 'feat/login',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+        ],
+        activeGroupId: 'wt',
+      );
+      final c = _container(groups: groups); // no sessions → no focused pane
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      // No pane focused, but a worktree group always owns a folder.
+      expect(
+        tester.widget<OpenInIdeButton>(find.byType(OpenInIdeButton)).path,
+        '/tmp/scope-wt',
+      );
+    });
+
+    testWidgets('a board with no panes disables the launcher', (tester) async {
+      // An empty board owns no scope and its starter tab has no worktree, so
+      // there is genuinely nothing to open. Stated explicitly rather than
+      // leaning on the helper's default, which is a worktree group.
+      final board = GroupsState(
+        groups: [
+          Group.board(
+            id: 'b1',
+            label: 'Board 1',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+        ],
+        activeGroupId: 'b1',
+      );
+      final c = _container(groups: board);
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(OpenInIdeButton), findsOneWidget);
+      expect(
+        tester.widget<OpenInIdeButton>(find.byType(OpenInIdeButton)).path,
+        isNull,
+      );
     });
   });
 

@@ -96,14 +96,23 @@ Widget ideLogo(BuildContext context, IdeTarget target, {double size = 18}) {
 class OpenInIdeButton extends ConsumerWidget {
   const OpenInIdeButton({super.key, required this.path});
 
-  /// The worktree directory to open.
-  final String path;
+  /// The worktree directory to open, or **null** when there is nothing to open
+  /// (SPEC-30 decision 11: a board with no focused pane owns no scope). A null
+  /// path renders the launcher disabled rather than pointing it at nothing —
+  /// the control never lies about a target.
+  final String? path;
+
+  /// Whether there is a folder to open. The appearance is otherwise unchanged;
+  /// only the enabled/disabled state and the target vary (decision 11).
+  bool get _enabled => path != null;
 
   static String _actionLabel(IdeTarget target) => target == IdeTarget.finder
       ? 'Reveal in Finder'
       : 'Open in ${target.label}';
 
   Future<void> _open(BuildContext context, IdeTarget target) async {
+    final path = this.path;
+    if (path == null) return;
     final cmd = ideOpenCommand(target, path);
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
@@ -150,10 +159,13 @@ class OpenInIdeButton extends ConsumerWidget {
         builder: (context, controller, _) => _IdeSplitButton(
           preferred: preferred,
           actionTooltip: _actionLabel(preferred),
+          enabled: _enabled,
           menuOpen: controller.isOpen,
-          onAction: () => _open(context, preferred),
-          onToggleMenu: () =>
-              controller.isOpen ? controller.close() : controller.open(),
+          onAction: _enabled ? () => _open(context, preferred) : null,
+          onToggleMenu: _enabled
+              ? () =>
+                    controller.isOpen ? controller.close() : controller.open()
+              : null,
         ),
       ),
     );
@@ -171,6 +183,7 @@ class _IdeSplitButton extends StatelessWidget {
   const _IdeSplitButton({
     required this.preferred,
     required this.actionTooltip,
+    required this.enabled,
     required this.menuOpen,
     required this.onAction,
     required this.onToggleMenu,
@@ -178,9 +191,10 @@ class _IdeSplitButton extends StatelessWidget {
 
   final IdeTarget preferred;
   final String actionTooltip;
+  final bool enabled;
   final bool menuOpen;
-  final VoidCallback onAction;
-  final VoidCallback onToggleMenu;
+  final VoidCallback? onAction;
+  final VoidCallback? onToggleMenu;
 
   static const double _height = 24;
   static const double _logoSize = 15;
@@ -193,7 +207,7 @@ class _IdeSplitButton extends StatelessWidget {
     // the caret lifts a tone while its menu is open (neutral active).
     final surface = cs.surfaceContainer;
     final fg = cs.onSurface;
-    return Material(
+    final button = Material(
       color: surface,
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.all(_radius),
@@ -258,5 +272,11 @@ class _IdeSplitButton extends StatelessWidget {
         ],
       ),
     );
+    // Enabled renders exactly as before (goldens are frozen by decision 11); a
+    // disabled launcher dims to read as inert, matching the mock's dead state.
+    return _enabledOpacity(button);
   }
+
+  Widget _enabledOpacity(Widget button) =>
+      enabled ? button : Opacity(opacity: 0.4, child: button);
 }

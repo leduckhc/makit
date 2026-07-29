@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../app/theme.dart';
 
+import 'groups/group.dart' show GroupKind;
+import 'groups/group_bar.dart';
+import 'groups/group_providers.dart' show activeGroupProvider;
+import 'groups/membership_bar.dart';
 import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
-import 'selected_worktree.dart';
 import 'sidebar_layout.dart' show sidebarCollapsedProvider, kTrafficLightInset;
 import 'split_view.dart';
-import 'title_bar_strip.dart';
+import 'title_bar_strip.dart' show SidebarToggleButton;
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 
@@ -27,32 +30,61 @@ class WorkspaceView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(workspaceControllerProvider);
     final collapsed = ref.watch(sidebarCollapsedProvider);
-    // The active tab's worktree (its session's worktree, or an empty tab's
-    // hint) drives the window-title context label + IDE launcher, mirroring
-    // the pre-SPEC-28 pane title bar.
+    // Decision 11: the IDE launcher targets the **active pane's** worktree.
+    // With no pane focused in a worktree group it falls back to that group's
+    // own scope (a worktree group always owns a folder); a board with no pane
+    // owns nothing, so the path is null and the launcher renders disabled.
     final worktree = ref.watch(selectedWorktreeProvider);
+    final activeGroup = ref.watch(activeGroupProvider);
+    final launcherPath =
+        worktree?.path ??
+        (activeGroup.kind == GroupKind.worktree
+            ? activeGroup.worktreePath
+            : null);
     return Column(
       children: [
-        // The OS titlebar is hidden, so this strip is the macOS window-drag
-        // zone; when the sidebar is folded it also owns the only "show sidebar"
-        // affordance.
+        // The title strip: the OS titlebar is hidden, so this is the macOS
+        // window-drag zone (a DragToMoveArea layer behind the controls). It
+        // hosts the scrolling group rail on the left and the IDE launcher
+        // pinned on the right (decisions 10 & 11); no branch label lives here.
         ColoredBox(
           color: Theme.of(context).colorScheme.surfaceContainer,
-          child: TitleBarStrip(
-            leading: collapsed
-                ? const SidebarToggleButton(collapse: false)
-                : null,
-            // The active tab's worktree/branch, on the traffic-light row above
-            // the tabs. Folded sidebar → the strip overlaps the traffic lights
-            // + unfold button, so inset past them; otherwise a small gutter.
-            title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
-            titleInset: collapsed ? kTrafficLightInset + 34 : 12,
-            trailing: worktree == null
-                ? null
-                : OpenInIdeButton(path: worktree.path),
+          child: Stack(
+            children: [
+              const Positioned.fill(
+                child: DragToMoveArea(child: SizedBox.expand()),
+              ),
+              Padding(
+                // Inset past the traffic lights only when the strip overlaps
+                // them (sidebar folded); otherwise a small gutter, since the
+                // sidebar owns the window's left edge.
+                padding: EdgeInsets.only(
+                  left: collapsed ? kTrafficLightInset : kSpace10,
+                  right: kSpace8,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (collapsed) ...[
+                      const SidebarToggleButton(collapse: false),
+                      const SizedBox(width: kSpace8),
+                    ],
+                    // Decision 12: the rail alone scrolls; it fills the width
+                    // it is given and clips its overflow internally.
+                    const Expanded(child: GroupBar()),
+                    // Decision 11: pinned outside the rail so it never scrolls
+                    // away when the rail overflows with many groups.
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: kSpace6),
+                      child: OpenInIdeButton(path: launcherPath),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-        const Divider(height: 1),
+        const _MembershipStrip(),
         Expanded(
           child: _NodeView(
             node: state.root,
@@ -60,6 +92,38 @@ class WorkspaceView extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The membership bar beneath the strip. On a very narrow canvas (the sidebar
+/// dragged to its widest) the bar's chip + toggle cannot fit; rather than throw
+/// a layout overflow it is laid out at a minimum width and clipped, keeping its
+/// left-anchored identity visible. At normal widths it renders verbatim.
+class _MembershipStrip extends StatelessWidget {
+  const _MembershipStrip();
+
+  static const double _minWidth = 420;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= _minWidth) return const MembershipBar();
+        return const ClipRect(
+          child: SizedBox(
+            height: 41,
+            child: OverflowBox(
+              alignment: Alignment.centerLeft,
+              minWidth: _minWidth,
+              maxWidth: _minWidth,
+              minHeight: 41,
+              maxHeight: 41,
+              child: MembershipBar(),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -197,40 +261,3 @@ class _SplitterDivider extends StatelessWidget {
   }
 }
 
-/// The active tab's worktree/branch label on the window title strip: a fork
-/// icon + branch name. A quiet muted context label so the worktree reads as
-/// context beneath which the session title is primary.
-class _WorktreeTitle extends StatelessWidget {
-  const _WorktreeTitle({required this.worktree});
-
-  final SelectedWorktree worktree;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final label = worktree.branch ?? worktree.path;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          PhosphorIconsLight.gitBranch,
-          size: 16,
-          color: theme.colorScheme.outline,
-        ),
-        const SizedBox(width: kSpace6),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.outline,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}

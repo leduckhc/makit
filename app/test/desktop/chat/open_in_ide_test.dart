@@ -153,5 +153,26 @@ void main() {
       expect(find.text('Open in iTerm2'), findsOneWidget);
       expect(find.text('Reveal in Finder'), findsOneWidget);
     });
+
+    testWidgets('a null path disables the launcher (nothing to open)', (
+      tester,
+    ) async {
+      // SPEC-30 decision 11: a board with no focused pane owns no scope, so the
+      // launcher is disabled rather than lying about a target.
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(body: OpenInIdeButton(path: null)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The caret is inert: tapping it opens no menu.
+      await tester.tap(find.byType(InkWell).last);
+      await tester.pumpAndSettle();
+      expect(find.text('Open in VS Code'), findsNothing);
+      expect(find.text('Reveal in Finder'), findsNothing);
+    });
   });
 }
