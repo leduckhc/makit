@@ -363,6 +363,11 @@ class _PrStatusPillState extends State<PrStatusPill> {
     // light design-system surface anchored just above the pill. Display-only,
     // so it ignores pointer events and never blocks the pill's tap/hover.
     //
+    // Open PRs only: a merged/closed PR's checks are history, and the popover's
+    // empty-state header calls the PR open outright. The pill stays hoverable
+    // and clickable, it just has nothing to reveal.
+    if (!isOpen) return pill;
+
     // OverlayPortal hands its overlay child *tight* (full-screen) constraints,
     // so we anchor with an explicit `Positioned` (left + bottom) computed from
     // the pill's render box: that both places the card above the pill and lets

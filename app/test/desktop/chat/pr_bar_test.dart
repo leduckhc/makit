@@ -314,4 +314,36 @@ void main() {
     expect(find.text('skipped'), findsOneWidget);
     expect(find.text('passed'), findsOneWidget);
   });
+
+  for (final state in ['MERGED', 'CLOSED']) {
+    testWidgets('hovering a $state PR reveals no CI history', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(
+            state: state,
+            rollup: 'fail',
+            checks: const [
+              PrCheck(name: 'analyze', bucket: 'pass'),
+              PrCheck(name: 'test', bucket: 'fail'),
+            ],
+          ),
+          onInsert: (_) {},
+        ),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('PR #42')));
+      await tester.pumpAndSettle();
+
+      // The checks are history once the PR is merged/closed: no popover, so no
+      // check rows and no header claiming this is an open pull request.
+      expect(find.text('analyze'), findsNothing);
+      expect(find.text('test'), findsNothing);
+      expect(find.textContaining('CI checks'), findsNothing);
+      expect(find.textContaining('Open pull request'), findsNothing);
+    });
+  }
 }
