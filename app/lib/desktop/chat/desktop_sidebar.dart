@@ -11,6 +11,10 @@ import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
+import 'groups/group.dart';
+import 'groups/group_bar.dart' show kBoardSwatchColor;
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
 import 'new_session_dialog.dart';
 import 'selected_session.dart';
 import 'server_profile_badge.dart';
@@ -460,16 +464,18 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                 borderRadius: BorderRadius.circular(kRadius10),
                 onFocusChange: (f) => setState(() => _focused = f),
                 onTap: () {
-                  if (selectable) {
-                    selectWorktree(
-                      ref,
-                      SelectedWorktree(
-                        projectId: repo.id,
-                        path: worktree.path,
-                        branch: worktree.branch,
-                      ),
-                    );
-                  } else {
+                  // Decision 15: a worktree row activates (minting if needed)
+                  // its group. An empty scope also seeds the in-pane starter.
+                  selectWorktree(
+                    ref,
+                    SelectedWorktree(
+                      projectId: repo.id,
+                      path: worktree.path,
+                      branch: worktree.branch,
+                    ),
+                  );
+                  // A row with sessions keeps its expand/collapse affordance.
+                  if (!selectable) {
                     setState(() => _expanded = !_expanded);
                   }
                 },
@@ -816,7 +822,7 @@ String _branchAgeLabel(DateTime? committedAt) {
   return '${(d.inDays / 365).floor()}y ago';
 }
 
-class _SessionTile extends StatelessWidget {
+class _SessionTile extends ConsumerStatefulWidget {
   const _SessionTile({
     required this.session,
     required this.selected,
@@ -830,13 +836,64 @@ class _SessionTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  ConsumerState<_SessionTile> createState() => _SessionTileState();
+}
+
+class _SessionTileState extends ConsumerState<_SessionTile> {
+  bool _hovering = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final session = widget.session;
+    final selected = widget.selected;
+    final indented = widget.indented;
+    final onTap = widget.onTap;
     final title = session.pending && session.title.trim().isEmpty
         ? 'new worktree'
         : (session.title.trim().isNotEmpty
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
+
+    // Board-membership affordances (decisions 14 & 15): a violet pin dot marks
+    // a member, and a hover `+` quick-pins a non-member — but only while a
+    // board is the active group, since only a board has a curated list to add
+    // to. A worktree group's membership is derived, so it has no quick-pin.
+    final activeGroup = ref.watch(activeGroupProvider);
+    final boardActive = activeGroup.kind == GroupKind.board;
+    final isMember = boardActive &&
+        ref
+            .watch(groupMembersProvider(activeGroup.id))
+            .contains(session.id);
+    final Widget? trailing = !boardActive
+        ? null
+        : isMember
+        ? const Icon(
+            PhosphorIconsFill.circle,
+            size: 10,
+            color: kBoardSwatchColor,
+          )
+        : (_hovering
+              ? IconButton(
+                  key: const Key('sidebarQuickPin'),
+                  tooltip: 'Pin to this board',
+                  padding: EdgeInsets.zero,
+                  iconSize: 14,
+                  visualDensity: VisualDensity.compact,
+                  constraints:
+                      const BoxConstraints(minWidth: 22, minHeight: 22),
+                  color: kBoardSwatchColor,
+                  icon: const Icon(PhosphorIconsLight.plus, size: 14),
+                  onPressed: () => ref
+                      .read(groupsControllerProvider.notifier)
+                      .addMember(
+                        activeGroup.id,
+                        session.id,
+                        location: locationOf(session),
+                      ),
+                )
+              : null);
+
     final tile = Padding(
       padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       child: ListTile(
@@ -867,19 +924,24 @@ class _SessionTile extends StatelessWidget {
             ),
           ],
         ),
+        trailing: trailing,
         onTap: onTap,
       ),
     );
     // Drag a session onto a pane to open/move it there. Horizontal affinity so
     // a normal vertical drag still scrolls the sidebar; a rightward pull (into
     // the panes) starts the drag.
-    return Draggable<SessionDragData>(
-      data: SessionDragData(session.id),
-      affinity: Axis.horizontal,
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: _SessionDragFeedback(title: title, status: session.status),
-      childWhenDragging: Opacity(opacity: 0.4, child: tile),
-      child: tile,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Draggable<SessionDragData>(
+        data: SessionDragData(session.id),
+        affinity: Axis.horizontal,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: _SessionDragFeedback(title: title, status: session.status),
+        childWhenDragging: Opacity(opacity: 0.4, child: tile),
+        child: tile,
+      ),
     );
   }
 }

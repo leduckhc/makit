@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/connection.dart';
@@ -1113,4 +1116,144 @@ void main() {
       expect(find.text('Session B'), findsOneWidget);
     },
   );
+
+  group('SPEC-30 Lane 6 — sidebar board affordances (decisions 14, 15)', () {
+    Future<ProviderContainer> pumpWithGroups(
+      WidgetTester tester, {
+      required List<RepoInfo> repos,
+      required List<Session> sessions,
+      required Group group,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWithValue(ReposState(repos)),
+          sessionsProvider.overrideWithValue(SessionsState(sessions)),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [group], activeGroupId: group.id),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+      await tester.pump();
+      return container;
+    }
+
+    Group board(List<String> members) => Group.board(
+      id: 'b1',
+      label: 'Shipping',
+      members: members,
+      tree: WorkspaceController.seedWorkspace(),
+    );
+
+    Group worktreeGroup() => Group.worktree(
+      id: 'g1',
+      projectId: 'p1',
+      worktreePath: '/tmp/wt/wt-feat',
+      label: 'feat/login',
+      tree: WorkspaceController.seedWorkspace(),
+    );
+
+    final repos = [
+      _repo(
+        'p1',
+        'alpha',
+        worktrees: [
+          _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
+        ],
+      ),
+    ];
+    final sessions = [_session('s1', 'p1', 'Fix login bug', 'codex')];
+
+    testWidgets('a hover quick-pin appears only when a board is active', (
+      tester,
+    ) async {
+      // Worktree group active → no quick-pin (its membership is derived).
+      await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: worktreeGroup(),
+      );
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
+    });
+
+    testWidgets('the quick-pin pins the session to the active board', (
+      tester,
+    ) async {
+      final container = await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(const []),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sidebarQuickPin')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('sidebarQuickPin')));
+      await tester.pump();
+
+      // Pinned exactly once (decision 3).
+      expect(container.read(groupsControllerProvider).active.members, ['s1']);
+    });
+
+    testWidgets('a board member shows the violet pin dot, not the quick-pin', (
+      tester,
+    ) async {
+      await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(['s1']),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(PhosphorIconsFill.circle), findsOneWidget);
+      expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
+    });
+
+    testWidgets('tapping a worktree row activates (mints) its group', (
+      tester,
+    ) async {
+      final container = await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(const []),
+      );
+      expect(container.read(groupsControllerProvider).active.kind,
+          GroupKind.board);
+
+      await tester.tap(find.text('feat/login'));
+      await tester.pump();
+
+      final active = container.read(groupsControllerProvider).active;
+      expect(active.kind, GroupKind.worktree);
+      expect(active.worktreePath, '/tmp/wt/wt-feat');
+    });
+  });
 }

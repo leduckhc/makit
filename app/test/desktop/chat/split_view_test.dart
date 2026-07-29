@@ -8,10 +8,14 @@ import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/groups/agent_picker.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
 import 'package:makit/desktop/chat/split_view.dart';
+import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
@@ -307,6 +311,120 @@ void main() {
       await tester.tap(_chip(tester, 'New'), buttons: kSecondaryButton);
       await tester.pumpAndSettle();
       expect(find.text('Rename session'), findsNothing);
+    });
+  });
+
+  group('SPEC-30 Lane 6 — the tab-strip + is group-aware (decision 13)', () {
+    Group wtGroup(String path, {String? sessionId, String label = 'feat/x'}) {
+      final tabId = nextNodeId(SplitNodeKind.tab);
+      final splitId = nextNodeId(SplitNodeKind.split);
+      return Group.worktree(
+        id: 'g1',
+        projectId: 'p1',
+        worktreePath: path,
+        label: label,
+        tree: WorkspaceState(
+          root: Split(
+            id: splitId,
+            tabs: [Tab(id: tabId, sessionId: sessionId)],
+            activeTabId: tabId,
+          ),
+          activeSplitId: splitId,
+        ),
+      );
+    }
+
+    Group boardGroup(List<String> members) {
+      final tabId = nextNodeId(SplitNodeKind.tab);
+      final splitId = nextNodeId(SplitNodeKind.split);
+      return Group.board(
+        id: 'b1',
+        label: 'Shipping',
+        members: members,
+        tree: WorkspaceState(
+          root: Split(
+            id: splitId,
+            tabs: [
+              Tab(id: tabId, sessionId: members.isEmpty ? null : members.first),
+            ],
+            activeTabId: tabId,
+          ),
+          activeSplitId: splitId,
+        ),
+      );
+    }
+
+    Future<ProviderContainer> pump(
+      WidgetTester tester, {
+      required Group group,
+      List<Session> sessions = const [],
+    }) async {
+      final c = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(sessions)),
+          reposProvider.overrideWithValue(ReposState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+          for (final s in sessions)
+            sessionMetaProvider(s.id).overrideWithValue(
+              const SessionMeta(
+                model: _model,
+                thinking: 'medium',
+                models: [_model],
+              ),
+            ),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [group], activeGroupId: group.id),
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('a worktree group + opens the in-pane starter, no dialog', (
+      tester,
+    ) async {
+      final c = await pump(
+        tester,
+        group: wtGroup('/tmp/wt-a', sessionId: 's1'),
+        sessions: [_session('s1', 'Alpha')],
+      );
+
+      expect(find.byType(WorktreeStarter), findsNothing);
+      await tester.tap(find.byTooltip('New session'));
+      await tester.pumpAndSettle();
+
+      // The starter appears in place; the New-session dialog never opens.
+      expect(find.byType(WorktreeStarter), findsOneWidget);
+      expect(find.text('New session'), findsNothing);
+      // The added tab carries the group's scope as its worktree hint.
+      final starter = tester.widget<WorktreeStarter>(
+        find.byType(WorktreeStarter),
+      );
+      expect(starter.worktree.path, '/tmp/wt-a');
+      // Verify the tree grew by exactly one hinted tab (added once).
+      final tabs = (c.read(workspaceControllerProvider).root as Split).tabs;
+      expect(tabs.length, 2);
+    });
+
+    testWidgets('a board + opens the agent picker', (tester) async {
+      await pump(
+        tester,
+        group: boardGroup(const []),
+        sessions: [_session('s1', 'Alpha')],
+      );
+
+      expect(find.byType(AgentPicker), findsNothing);
+      await tester.tap(find.byTooltip('New session'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AgentPicker), findsOneWidget);
+      expect(find.text('Add agents to “Shipping”'), findsOneWidget);
     });
   });
 }

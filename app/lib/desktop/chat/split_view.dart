@@ -7,6 +7,10 @@ import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/widgets/menu_item.dart';
 import 'desktop_chat_pane.dart';
+import 'groups/agent_picker.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
 import 'new_session_dialog.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
@@ -143,6 +147,52 @@ class _SplitViewState extends ConsumerState<SplitView> {
     return split.tabs.first;
   }
 
+  /// A session dropped from the sidebar (decision 14). Registers membership in
+  /// the active group first — which, on a worktree group with an out-of-scope
+  /// session, **converts** it into a board (decision 4) — then reveals the
+  /// session's tab in the now-active group's tree. A drop that converts is
+  /// announced, since a silent canvas swap would be a surprise.
+  void _dropSession(WorkspaceController controller, String sessionId,
+      DropEdge? zone) {
+    final active = ref.read(groupsControllerProvider).active;
+    final session = ref.read(sessionsProvider).byId(sessionId);
+    if (session != null) {
+      ref
+          .read(groupsControllerProvider.notifier)
+          .addMember(active.id, sessionId, location: locationOf(session));
+    }
+    final afterActive = ref.read(groupsControllerProvider).active;
+    if (afterActive.id != active.id) {
+      // Conversion swapped the canvas to a freshly minted board. Its tree is a
+      // copy of the worktree group's, so re-read the derived controller and
+      // reveal the newcomer there.
+      ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
+      _announceConversion(active.label, afterActive.label);
+      return;
+    }
+    if (zone == null) {
+      controller.openSessionInSplit(widget.split.id, sessionId);
+    } else {
+      controller.openSessionAtEdge(widget.split.id, sessionId, zone);
+    }
+  }
+
+  /// Tells the user an explicit add converted a worktree group into a board —
+  /// the original group is untouched and still reachable from the sidebar
+  /// (decision 4).
+  void _announceConversion(String fromLabel, String boardLabel) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '“$fromLabel” only holds its own branch, so this add made the board '
+          '“$boardLabel”. The worktree group is untouched — click it in the '
+          'sidebar to get it back.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = ref.read(workspaceControllerProvider.notifier);
@@ -234,11 +284,7 @@ class _SplitViewState extends ConsumerState<SplitView> {
             _hoverEdge = null;
             _hoverTabCentre = false;
           });
-          if (zone == null) {
-            controller.openSessionInSplit(widget.split.id, data.sessionId);
-          } else {
-            controller.openSessionAtEdge(widget.split.id, data.sessionId, zone);
-          }
+          _dropSession(controller, data.sessionId, zone);
         }
       },
       builder: (context, candidate, rejected) {
@@ -350,18 +396,7 @@ class _TabBar extends ConsumerWidget {
                   tooltip: 'New session',
                   color: cs.onSurface,
                   icon: const Icon(PhosphorIconsLight.plus),
-                  onPressed: () {
-                    ref
-                        .read(workspaceControllerProvider.notifier)
-                        .setActiveSplit(split.id);
-                    final worktree = _prefillWorktree(ref, split);
-                    showNewSessionDialog(
-                      context,
-                      ref,
-                      projectId: worktree?.projectId,
-                      worktree: worktree,
-                    );
-                  },
+                  onPressed: () => _onAddPressed(context, ref),
                 ),
               ],
             ),
@@ -370,6 +405,50 @@ class _TabBar extends ConsumerWidget {
       ),
     );
   }
+
+  /// The tab-strip `+` is group-aware (decision 13). On a **board** it opens
+  /// the agent picker (there is no scope, so it asks "which agent?"). In a
+  /// **worktree group** the branch already answers "where does it run?", so it
+  /// opens the in-pane starter by adding a fresh tab hinted with the group's
+  /// scope — never the dialog. Without a resolvable scope it falls back to the
+  /// New-session dialog.
+  void _onAddPressed(BuildContext context, WidgetRef ref) {
+    final controller = ref.read(workspaceControllerProvider.notifier);
+    controller.setActiveSplit(split.id);
+    final group = ref.read(activeGroupProvider);
+    if (group.kind == GroupKind.board) {
+      showAgentPicker(context, ref);
+      return;
+    }
+    final hint = _groupWorktreeHint(group);
+    if (hint != null) {
+      controller.openTab(
+        split.id,
+        Tab(id: nextNodeId(SplitNodeKind.tab), worktree: hint),
+      );
+      return;
+    }
+    final worktree = _prefillWorktree(ref, split);
+    showNewSessionDialog(
+      context,
+      ref,
+      projectId: worktree?.projectId,
+      worktree: worktree,
+    );
+  }
+}
+
+/// The active worktree group's scope as a [SelectedWorktree] hint, or null when
+/// the group is a board or its scope is incomplete.
+SelectedWorktree? _groupWorktreeHint(Group group) {
+  final projectId = group.projectId;
+  final path = group.worktreePath;
+  if (projectId == null || path == null) return null;
+  return SelectedWorktree(
+    projectId: projectId,
+    path: path,
+    branch: group.label,
+  );
 }
 
 /// The active tab's real worktree (for pre-filling the New session dialog), or
