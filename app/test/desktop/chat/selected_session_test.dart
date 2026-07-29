@@ -4,6 +4,8 @@
 import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -250,4 +252,157 @@ void main() {
       expect(container.read(workspaceControllerProvider), before);
     });
   });
+
+  group('selectSessionExclusive navigation (decision 15 a→d)', () {
+    // A container with an explicit groups state, so navigation can be observed
+    // switching (or not switching) the active group.
+    ProviderContainer nav({
+      required List<Group> groups,
+      required List<Session> sessions,
+      required String activeGroupId,
+    }) {
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(sessions)),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: groups, activeGroupId: activeGroupId),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    Group board(String id, List<String> members) =>
+        Group.board(id: id, label: id, members: members, tree: seed());
+    Group wt(String id, String path, {String? branch}) => Group.worktree(
+      id: id,
+      projectId: 'p1',
+      worktreePath: path,
+      label: branch ?? path.split('/').last,
+      tree: seed(),
+    );
+
+    testWidgets('(a) already a member of the active group → no switch', (
+      tester,
+    ) async {
+      final container = nav(
+        groups: [
+          board('b1', ['s1']),
+          wt('g2', '/tmp/wt/feat-x'),
+        ],
+        sessions: [_session('s1', worktreePath: '/tmp/wt/feat-x')],
+        activeGroupId: 'b1',
+      );
+
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 's1');
+      });
+
+      expect(
+        container.read(groupsControllerProvider).activeGroupId,
+        'b1',
+        reason: 'no group switch when the session is already in the active view',
+      );
+      expect(container.read(selectedSessionProvider), 's1');
+    });
+
+    testWidgets('(b) else its own worktree group when open', (tester) async {
+      final container = nav(
+        groups: [wt('g1', '/tmp/wt/main'), wt('g2', '/tmp/wt/feat-x')],
+        sessions: [_session('s1', worktreePath: '/tmp/wt/feat-x')],
+        activeGroupId: 'g1',
+      );
+
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 's1');
+      });
+
+      expect(container.read(groupsControllerProvider).activeGroupId, 'g2');
+      expect(container.read(selectedSessionProvider), 's1');
+    });
+
+    testWidgets('(c) else any open board holding it', (tester) async {
+      final container = nav(
+        groups: [
+          wt('g1', '/tmp/wt/main'),
+          board('b1', ['s1']),
+        ],
+        // s1 is on feat-x, but no worktree group is open for feat-x — so (b)
+        // misses and resolution falls through to the board.
+        sessions: [_session('s1', worktreePath: '/tmp/wt/feat-x')],
+        activeGroupId: 'g1',
+      );
+
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 's1');
+      });
+
+      expect(container.read(groupsControllerProvider).activeGroupId, 'b1');
+      expect(container.read(selectedSessionProvider), 's1');
+    });
+
+    testWidgets('(d) else mints the session\'s worktree group', (tester) async {
+      final container = nav(
+        groups: [wt('g1', '/tmp/wt/main')],
+        sessions: [
+          _session('s1', worktreePath: '/tmp/wt/feat-x', branch: 'feat/x'),
+        ],
+        activeGroupId: 'g1',
+      );
+
+      await _invoke(tester, container, (ref) {
+        selectSessionExclusive(ref, 's1');
+      });
+
+      final groups = container.read(groupsControllerProvider);
+      final minted = groups.groups.firstWhere(
+        (g) => g.isScopedTo(projectId: 'p1', worktreePath: '/tmp/wt/feat-x'),
+      );
+      expect(groups.activeGroupId, minted.id, reason: 'the minted group is active');
+      expect(minted.kind, GroupKind.worktree);
+      expect(container.read(selectedSessionProvider), 's1');
+    });
+
+    testWidgets(
+      'clicking a foreign-branch session NEVER converts the active worktree '
+      'group (decision 15 vs decision 4)',
+      (tester) async {
+        // The user is scoped to feat/login; they click a `main` agent.
+        final container = nav(
+          groups: [wt('gLogin', '/tmp/wt/login', branch: 'feat/login')],
+          sessions: [
+            _session('sMain', worktreePath: '/tmp/wt/main', branch: 'main'),
+          ],
+          activeGroupId: 'gLogin',
+        );
+
+        await _invoke(tester, container, (ref) {
+          selectSessionExclusive(ref, 'sMain');
+        });
+
+        final groups = container.read(groupsControllerProvider);
+        final login = groups.groups.firstWhere((g) => g.id == 'gLogin');
+        // The group we left is untouched: still a worktree group, never a board.
+        expect(login.kind, GroupKind.worktree);
+        // And decision 4's ugly auto-name never appeared — navigation did not
+        // add a member, so no conversion happened.
+        expect(
+          groups.groups.where((g) => g.label == 'feat/login +1'),
+          isEmpty,
+          reason: 'a session click must never trigger a board conversion',
+        );
+        // We travelled to main\'s freshly minted worktree group instead.
+        final main = groups.groups.firstWhere(
+          (g) => g.isScopedTo(projectId: 'p1', worktreePath: '/tmp/wt/main'),
+        );
+        expect(groups.activeGroupId, main.id);
+        expect(main.kind, GroupKind.worktree);
+      },
+    );
+  });
 }
+
+WorkspaceState seed() => WorkspaceController.seedWorkspace();
