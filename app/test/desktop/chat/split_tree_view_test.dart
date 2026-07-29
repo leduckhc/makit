@@ -13,6 +13,8 @@ import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/open_in_ide.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
@@ -76,9 +78,31 @@ Session _session(String id, String title, {String worktree = '/tmp/wt-a'}) =>
 ProviderContainer _container({
   List<Session> sessions = const [],
   ConnectionController? connection,
+  // SPEC-30 decision 7 made close-behaviour depend on the active group's kind:
+  // a worktree group archives, a board unpins. These tests predate groups and
+  // assert the archive path, so they run in a worktree group. (The board's
+  // unpin path is covered in selected_session_test.dart.)
+  bool worktreeGroup = true,
 }) {
   return ProviderContainer(
     overrides: [
+      if (worktreeGroup)
+        groupsControllerProvider.overrideWith(
+          (ref) => GroupsController.ephemeral(
+            GroupsState(
+              groups: [
+                Group.worktree(
+                  id: 'g1',
+                  projectId: 'p1',
+                  worktreePath: '/tmp/wt/feat-x',
+                  label: 'feat/x',
+                  tree: WorkspaceController.seedWorkspace(),
+                ),
+              ],
+              activeGroupId: 'g1',
+            ),
+          ),
+        ),
       if (connection != null)
         connectionControllerProvider.overrideWith((ref) => connection),
       sessionsProvider.overrideWithValue(SessionsState(sessions)),

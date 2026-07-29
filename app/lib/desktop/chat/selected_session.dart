@@ -4,6 +4,7 @@ import 'dart:async';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
 import 'panes/split_node.dart';
@@ -117,12 +118,18 @@ void closeActiveTab(WidgetRef ref) {
   closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
 }
 
-/// Close [tabId] in [splitId] and, when its session is no longer shown in any
-/// other tab, archive it (SPEC-29). Archiving is soft + recoverable: the server
-/// drops it from the active `sessions.snapshot` so the sidebar list updates,
-/// while the transcript + resume handle are kept. Shared by the tab close (X)
-/// button and the close-tab shortcut so both behave identically. A tab with no
-/// session (empty starter) just closes.
+/// Close [tabId] in [splitId] and then dispose of its session **according to the
+/// active group's kind** (SPEC-30 decision 7):
+///
+/// * **worktree group** → archive it (SPEC-29). Membership is derived, so the
+///   only way to take a session off that canvas is to end it.
+/// * **board** → **unpin** it. The list is the user's to edit and the agent
+///   keeps running; archiving here would destroy work while tidying a view.
+///
+/// The choice lives here, in the one shared close path, rather than at each
+/// affordance — so the tab ✕ and the `⌘⇧W` shortcut ([closeActiveTab]) cannot
+/// drift apart. **No call site may special-case it.** A tab with no session (an
+/// empty starter) just closes.
 void closeTabAndArchive(
   WidgetRef ref,
   String splitId,
@@ -130,8 +137,18 @@ void closeTabAndArchive(
   String? sessionId,
 ) {
   final workspace = ref.read(workspaceControllerProvider.notifier);
+  final group = ref.read(activeGroupProvider);
   workspace.closeTab(splitId, tabId);
-  if (sessionId == null || workspace.isSessionBound(sessionId)) return;
+  if (sessionId == null) return;
+  if (group.kind == GroupKind.board) {
+    // Unpin even if another tab still shows it: membership is the board's
+    // contract, and the user just said "not on this board".
+    ref
+        .read(groupsControllerProvider.notifier)
+        .removeMember(group.id, sessionId);
+    return;
+  }
+  if (workspace.isSessionBound(sessionId)) return;
   // A never-started draft has no history worth preserving — archiving it would
   // leave an empty, permanently-persisted entry in the Archived list. Just let
   // closeTab drop it.

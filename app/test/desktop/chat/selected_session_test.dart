@@ -92,6 +92,92 @@ Future<void> _invoke(
 void main() {
   setUp(resetNodeIds);
 
+  // SPEC-30 Lane 7 / decision 7: unpin-vs-archive is a property of the ACTIVE
+  // GROUP'S KIND, not of the affordance — so the tab ✕ and ⌘⇧W cannot disagree.
+  group('closeTabAndArchive by group kind (decision 7)', () {
+    /// Runs [close] against a container whose active group is [group], with
+    /// session `s1` bound to the active tab, and reports what was sent.
+    Future<(_FastConn, GroupsController)> runClose(
+      WidgetTester tester,
+      Group group,
+      void Function(WidgetRef ref) close,
+    ) async {
+      final conn = _FastConn();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith((_) => conn),
+          sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [group], activeGroupId: group.id),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      _workspace(container).revealSession('s1');
+      await _invoke(tester, container, close);
+      await tester.pumpAndSettle();
+      return (conn, container.read(groupsControllerProvider.notifier));
+    }
+
+    Group board() => Group.board(
+      id: 'b1',
+      label: 'Ship',
+      members: const ['s1'],
+      tree: WorkspaceController.seedWorkspace(),
+    );
+    Group worktree() => Group.worktree(
+      id: 'g1',
+      projectId: 'p1',
+      worktreePath: '/tmp/wt/feat-x',
+      label: 'feat/x',
+      tree: WorkspaceController.seedWorkspace(),
+    );
+
+    testWidgets('on a board the tab ✕ unpins and never archives', (
+      tester,
+    ) async {
+      final (conn, groups) = await runClose(tester, board(), (ref) {
+        final state = ref.read(workspaceControllerProvider);
+        final tab = activeTab(state)!;
+        closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+      });
+
+      expect(groups.groupById('b1')!.members, isEmpty, reason: 'unpinned');
+      expect(
+        conn.sent.where((m) => m['kind'] == 'session.archive'),
+        isEmpty,
+        reason: 'the agent keeps running',
+      );
+    });
+
+    testWidgets('in a worktree group the tab ✕ archives (unchanged)', (
+      tester,
+    ) async {
+      final (conn, _) = await runClose(tester, worktree(), (ref) {
+        final state = ref.read(workspaceControllerProvider);
+        final tab = activeTab(state)!;
+        closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
+      });
+
+      expect(conn.sent.where((m) => m['kind'] == 'session.archive').length, 1);
+    });
+
+    testWidgets('⌘⇧W agrees with the ✕ on a board (one shared path)', (
+      tester,
+    ) async {
+      final (conn, groups) = await runClose(tester, board(), closeActiveTab);
+      expect(groups.groupById('b1')!.members, isEmpty);
+      expect(conn.sent.where((m) => m['kind'] == 'session.archive'), isEmpty);
+    });
+
+    testWidgets('⌘⇧W agrees with the ✕ in a worktree group', (tester) async {
+      final (conn, _) = await runClose(tester, worktree(), closeActiveTab);
+      expect(conn.sent.where((m) => m['kind'] == 'session.archive').length, 1);
+    });
+  });
+
   group('selectSessionExclusive (decision 6 reveal)', () {
     testWidgets('binds the session into the active split\'s empty tab', (
       tester,
@@ -193,11 +279,31 @@ void main() {
     testWidgets('closeActiveTab archives the orphaned session (SPEC-29)', (
       tester,
     ) async {
+      // SPEC-30 decision 7 made this kind-dependent: archiving is the WORKTREE
+      // group's behaviour (membership is derived, so ending the session is the
+      // only way off that canvas). On a board the same path unpins instead —
+      // covered in "closeTabAndArchive by group kind".
       final conn = _FastConn();
       final container = ProviderContainer(
         overrides: [
           connectionControllerProvider.overrideWith((_) => conn),
           sessionsProvider.overrideWithValue(SessionsState([_session('s1')])),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(
+                groups: [
+                  Group.worktree(
+                    id: 'g1',
+                    projectId: 'p1',
+                    worktreePath: '/tmp/wt/feat-x',
+                    label: 'feat/x',
+                    tree: WorkspaceController.seedWorkspace(),
+                  ),
+                ],
+                activeGroupId: 'g1',
+              ),
+            ),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -220,6 +326,22 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           connectionControllerProvider.overrideWith((_) => conn),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(
+                groups: [
+                  Group.worktree(
+                    id: 'g1',
+                    projectId: 'p1',
+                    worktreePath: '/tmp/wt/feat-x',
+                    label: 'feat/x',
+                    tree: WorkspaceController.seedWorkspace(),
+                  ),
+                ],
+                activeGroupId: 'g1',
+              ),
+            ),
+          ),
           sessionsProvider.overrideWithValue(
             SessionsState([_session('d1', pending: true)]),
           ),
@@ -304,7 +426,8 @@ void main() {
       expect(
         container.read(groupsControllerProvider).activeGroupId,
         'b1',
-        reason: 'no group switch when the session is already in the active view',
+        reason:
+            'no group switch when the session is already in the active view',
       );
       expect(container.read(selectedSessionProvider), 's1');
     });
@@ -361,7 +484,11 @@ void main() {
       final minted = groups.groups.firstWhere(
         (g) => g.isScopedTo(projectId: 'p1', worktreePath: '/tmp/wt/feat-x'),
       );
-      expect(groups.activeGroupId, minted.id, reason: 'the minted group is active');
+      expect(
+        groups.activeGroupId,
+        minted.id,
+        reason: 'the minted group is active',
+      );
       expect(minted.kind, GroupKind.worktree);
       expect(container.read(selectedSessionProvider), 's1');
     });
