@@ -26,7 +26,10 @@ import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/composer/composer.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+import '../../support/svg_asset_finder.dart';
 
 /// A connection whose `session.archive` completes only when the test says so.
 class _KillConnection extends ConnectionController {
@@ -627,9 +630,7 @@ void main() {
           find.descendant(
             of: find.byType(TitleBarStrip),
             matching: icon == null
-                ? find.byKey(
-                    const ValueKey('assets/icons/git-pull-request-closed.svg'),
-                  )
+                ? findSvgAsset(kClosedPrAsset)
                 : find.byIcon(icon),
           ),
           findsOneWidget,

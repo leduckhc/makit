@@ -1,26 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import 'icon_glyph.dart';
 
 /// How a worktree's pull-request state is drawn: the glyph, its tint, and the
 /// AA-safe tint for an accompanying label.
 class PrStateStyle {
-  const PrStateStyle.font(this.icon, this.color, {Color? textColor})
-    : asset = null,
-      textColor = textColor ?? color;
+  const PrStateStyle(this.glyph, this.color, {Color? textColor})
+    : textColor = textColor ?? color;
 
-  const PrStateStyle.asset(this.asset, this.color, {Color? textColor})
-    : icon = null,
-      textColor = textColor ?? color;
-
-  /// Glyph for the state.
-  final IconData? icon;
-
-  /// SVG asset for a glyph not provided by Phosphor.
-  final String? asset;
+  /// Glyph for the state — render with `glyph.build(size:, color:)`.
+  final IconGlyph glyph;
 
   /// Tint for the glyph (and any wash behind it) — icons only need 3:1.
   final Color color;
@@ -28,22 +20,16 @@ class PrStateStyle {
   /// Tint for a label next to the glyph. Same as [color] unless the vivid hue
   /// misses WCAG AA as small text (see [MakitSemanticText]).
   final Color textColor;
-
-  Widget buildIcon({double? size, Color? color}) {
-    final resolvedColor = color ?? this.color;
-    final asset = this.asset;
-    if (asset != null) {
-      return SvgPicture.asset(
-        asset,
-        key: ValueKey(asset),
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(resolvedColor, BlendMode.srcIn),
-      );
-    }
-    return Icon(icon, size: size, color: resolvedColor);
-  }
 }
+
+/// The closed-PR mark: Phosphor ships no closed-pull-request glyph, so this is
+/// an in-house SVG drawn on Phosphor's 256 grid. It ships in the full weight
+/// range — `git-pull-request-closed-{thin,light,regular,bold,fill}.svg`, all on
+/// the same grid with the weight carried by stroke width (8/12/16/24 per
+/// Phosphor) — and this is the Light one, because every glyph the app renders is
+/// `PhosphorIconsLight`. Point at a heavier sibling only alongside a heavier
+/// Phosphor set, or the marker reads bolder than its neighbours.
+const kClosedPrAsset = 'assets/icons/git-pull-request-closed-light.svg';
 
 /// The icon + colour for a worktree whose pull request is [pr] (null when the
 /// worktree has none).
@@ -55,20 +41,22 @@ class PrStateStyle {
 /// case-insensitively:
 ///   OPEN   → pull-request symbol, brand accent (live work),
 ///   MERGED → merge symbol, [kPrMerged] purple (landed; worktree is prunable),
-///   CLOSED → prohibit sign, `colorScheme.error` (abandoned; deliberately not
-///            the `xCircle` used by the composer's "CI failing" chip),
+///   CLOSED → [kClosedPrAsset], `colorScheme.error` (abandoned),
 ///   none / unrecognised → the plain branch icon, muted.
-PrStateStyle prStateStyle(ColorScheme cs, PullRequest? pr) => switch (pr?.state
-    .toUpperCase()) {
-  'OPEN' => PrStateStyle.font(PhosphorIconsLight.gitPullRequest, cs.primary),
-  'MERGED' => PrStateStyle.font(
-    PhosphorIconsLight.gitMerge,
-    kPrMerged,
-    textColor: cs.prMergedText,
-  ),
-  'CLOSED' => PrStateStyle.asset(
-    'assets/icons/git-pull-request-closed.svg',
-    cs.error,
-  ),
-  _ => PrStateStyle.font(PhosphorIconsLight.gitBranch, cs.outline),
-};
+PrStateStyle prStateStyle(ColorScheme cs, PullRequest? pr) =>
+    switch (pr?.state.toUpperCase()) {
+      'OPEN' => PrStateStyle(
+        const IconGlyph.font(PhosphorIconsLight.gitPullRequest),
+        cs.primary,
+      ),
+      'MERGED' => PrStateStyle(
+        const IconGlyph.font(PhosphorIconsLight.gitMerge),
+        kPrMerged,
+        textColor: cs.prMergedText,
+      ),
+      'CLOSED' => PrStateStyle(const IconGlyph.svg(kClosedPrAsset), cs.error),
+      _ => PrStateStyle(
+        const IconGlyph.font(PhosphorIconsLight.gitBranch),
+        cs.outline,
+      ),
+    };

@@ -14,6 +14,9 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_chips.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
+
+import '../support/svg_asset_finder.dart';
 
 /// In-memory secure storage so ConnectionController (which StoreController
 /// subscribes to in its constructor) boots without platform channels.
@@ -408,10 +411,7 @@ void main() {
     // branch icon.
     expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
     expect(find.byIcon(PhosphorIconsLight.gitMerge), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey('assets/icons/git-pull-request-closed.svg')),
-      findsOneWidget,
-    );
+    expect(findSvgAsset(kClosedPrAsset), findsOneWidget);
     expect(find.byIcon(PhosphorIconsLight.gitBranch), findsOneWidget);
     expect(
       tester.widget<Icon>(find.byIcon(PhosphorIconsLight.gitMerge)).color,

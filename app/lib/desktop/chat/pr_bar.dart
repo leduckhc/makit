@@ -329,7 +329,7 @@ class _PrStatusPillState extends State<PrStatusPill> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              style.buildIcon(size: kPillIconSize, color: color),
+              style.glyph.build(size: kPillIconSize, color: color),
               const SizedBox(width: 5),
               Text(
                 'PR #${pr.number}',

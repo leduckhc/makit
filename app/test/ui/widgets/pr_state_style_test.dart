@@ -6,8 +6,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
-import 'package:makit/ui/widgets/pr_state_style.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/ui/widgets/icon_glyph.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 PullRequest _pr(String state) =>
@@ -18,14 +19,17 @@ void main() {
 
   test('no PR → plain branch icon, muted', () {
     final style = prStateStyle(cs, null);
-    expect(style.icon, PhosphorIconsLight.gitBranch);
+    expect(style.glyph, const IconGlyph.font(PhosphorIconsLight.gitBranch));
     expect(style.color, cs.outline);
     expect(style.textColor, cs.outline);
   });
 
   test('open PR → pull-request icon, accent', () {
     final style = prStateStyle(cs, _pr('OPEN'));
-    expect(style.icon, PhosphorIconsLight.gitPullRequest);
+    expect(
+      style.glyph,
+      const IconGlyph.font(PhosphorIconsLight.gitPullRequest),
+    );
     expect(style.color, cs.primary);
     // M3's primary already clears AA as text: no separate label variant.
     expect(style.textColor, cs.primary);
@@ -33,7 +37,7 @@ void main() {
 
   test('merged PR → merge icon, merged purple', () {
     final style = prStateStyle(cs, _pr('MERGED'));
-    expect(style.icon, PhosphorIconsLight.gitMerge);
+    expect(style.glyph, const IconGlyph.font(PhosphorIconsLight.gitMerge));
     expect(style.color, kPrMerged);
   });
 
@@ -57,21 +61,24 @@ void main() {
 
   test('closed PR → dedicated closed-PR glyph, error red', () {
     final style = prStateStyle(cs, _pr('CLOSED'));
-    expect(style.asset, 'assets/icons/git-pull-request-closed.svg');
+    expect(style.glyph, const IconGlyph.svg(kClosedPrAsset));
     expect(style.color, cs.error);
   });
 
   test('state matching is case-insensitive', () {
-    expect(prStateStyle(cs, _pr('merged')).icon, PhosphorIconsLight.gitMerge);
     expect(
-      prStateStyle(cs, _pr('open')).icon,
-      PhosphorIconsLight.gitPullRequest,
+      prStateStyle(cs, _pr('merged')).glyph,
+      const IconGlyph.font(PhosphorIconsLight.gitMerge),
+    );
+    expect(
+      prStateStyle(cs, _pr('open')).glyph,
+      const IconGlyph.font(PhosphorIconsLight.gitPullRequest),
     );
   });
 
   test('unknown state falls back to the plain branch icon', () {
     final style = prStateStyle(cs, _pr('SOMETHING_NEW'));
-    expect(style.icon, PhosphorIconsLight.gitBranch);
+    expect(style.glyph, const IconGlyph.font(PhosphorIconsLight.gitBranch));
     expect(style.color, cs.outline);
   });
 }

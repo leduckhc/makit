@@ -226,7 +226,7 @@ class _WorktreeTitle extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        prStyle.buildIcon(size: 16),
+        prStyle.glyph.build(size: 16, color: prStyle.color),
         const SizedBox(width: kSpace6),
         Flexible(
           child: Text(

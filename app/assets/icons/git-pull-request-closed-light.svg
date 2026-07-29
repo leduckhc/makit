@@ -1,0 +1,13 @@
+<!-- Closed pull request — Phosphor has no such glyph, so this is drawn on
+     Phosphor's 256 grid: node columns x=72 / x=200, ring centre radius 24, and
+     the weight expressed purely as stroke width (12/256 → outer r30 /
+     inner r18), matching PhosphorIconsLight. Stroke colour is replaced at
+     render time by IconGlyph.svg's srcIn ColorFilter. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <g stroke="#000" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="72" cy="64" r="24"/>
+    <circle cx="72" cy="192" r="24"/>
+    <circle cx="200" cy="192" r="24"/>
+    <path d="M72 94v68M200 100v62M176 40l48 48m0-48l-48 48"/>
+  </g>
+</svg>

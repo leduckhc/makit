@@ -9,7 +9,10 @@ import 'package:makit/desktop/settings/prefs/preference_entries.dart';
 import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
 import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+import '../../support/svg_asset_finder.dart';
 
 Widget _host(
   PreferencesController controller, {
@@ -247,9 +250,7 @@ void main() {
         onInsert: (_) {},
       ),
     );
-    final icon = find.byKey(
-      const ValueKey('assets/icons/git-pull-request-closed.svg'),
-    );
+    final icon = findSvgAsset(kClosedPrAsset);
     expect(icon, findsOneWidget);
     // No PR-derived nudges once the PR is dead: CI and review threads are moot.
     expect(find.text('CI failing'), findsNothing);

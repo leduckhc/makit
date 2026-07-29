@@ -10,6 +10,9 @@ import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/home_screen.dart';
 import 'package:makit/ui/home/repo_chips.dart';
 import 'package:makit/ui/widgets/glass.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
+
+import 'support/svg_asset_finder.dart';
 
 Widget _host({required List<RepoInfo> repos, required List<Session> sessions}) {
   return ProviderScope(
@@ -272,9 +275,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(PrPill),
-        matching: find.byKey(
-          const ValueKey('assets/icons/git-pull-request-closed.svg'),
-        ),
+        matching: findSvgAsset(kClosedPrAsset),
       ),
       findsOneWidget,
     );

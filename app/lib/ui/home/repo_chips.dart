@@ -108,7 +108,7 @@ class PrPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          style.buildIcon(size: kPillIconSize, color: color),
+          style.glyph.build(size: kPillIconSize, color: color),
           const SizedBox(width: 3),
           Text(
             'PR #${pr.number}',

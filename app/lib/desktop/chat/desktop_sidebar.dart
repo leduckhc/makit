@@ -532,7 +532,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                         padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
                         child: Row(
                           children: [
-                            prStyle.buildIcon(size: 16),
+                            prStyle.glyph.build(size: 16, color: prStyle.color),
                             const SizedBox(width: kSpace6),
                             Expanded(
                               child: Row(

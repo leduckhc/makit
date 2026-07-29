@@ -65,8 +65,15 @@ pure grey in `theme.dart`. Values below are `light` / `dark`.
   - open → `--color-primary` + pull-request symbol
   - merged → `--pr-merged`: `#8957E5` · `oklch(58.4% 0.205 295.6)` (GitHub's
     merged purple) + merge symbol
-  - closed → `colorScheme.error` + prohibit symbol (never `xCircle`, which the
-    composer already uses for the "CI failing" chip)
+  - closed → `colorScheme.error` +
+    `assets/icons/git-pull-request-closed-light.svg` (Phosphor ships no
+    closed-PR glyph, so this mark is in-house). It ships in the whole Phosphor
+    weight range — `-{thin,light,regular,bold,fill}.svg` — drawn parametrically
+    on Phosphor's 256 grid: node columns x72/x200 and ring centre radius 24 stay
+    fixed, the weight is only the stroke (8/12/16/24, plus solid nodes for
+    `fill`). **Light** is the one wired up, because every glyph the app renders
+    is `PhosphorIconsLight`; reach for a heavier sibling only alongside a heavier
+    Phosphor set. `test/ui/widgets/closed_pr_glyph_test.dart` guards the family.
   - no PR → `colorScheme.outline` + branch symbol
   - `gitMerge` means *merged* everywhere — an **open**-PR count (repo card meta)
     uses the pull-request symbol instead.
