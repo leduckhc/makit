@@ -68,6 +68,47 @@ App
 
 ---
 
+### Desktop canvas: groups (SPEC-30)
+
+The desktop window is a **sidebar** (the world) beside a **canvas** (one view
+onto part of it). The sidebar — repos ▸ worktrees ▸ agents — never changes when
+the canvas does.
+
+What is on the canvas is owned by a **group**, and there are exactly two kinds,
+differing only in *who decides membership*:
+
+| | Worktree group | Board |
+|---|---|---|
+| Membership | **derived**: every agent on that branch, nothing else | **curated**: a hand-picked list, may span branches and repos |
+| A new session there | joins automatically | only if you add it |
+| Closing it | free — clicking the branch rebuilds it identically | goes to **Recently closed boards** (its list cannot be rebuilt) |
+
+A group is a *view*, never a place: it cannot tell an agent where to run. That
+single sentence decides the rest of the behaviour:
+
+- **`+` differs by kind.** In a worktree group the branch already answers "where
+  does it run?", so `+` starts an agent in place (harness cards + model/reasoning
+  pills + composer). A board has no branch, so `+` opens the agent picker, whose
+  *New session…* row goes through the New-session dialog and pins the result.
+- **Sidebar clicks navigate, never mutate.** Clicking an agent takes you to a
+  group that *already* holds it. Only an explicit add — drag, quick-pin, or a
+  tick in the picker — can put a foreign agent into a worktree group, and doing
+  so **converts that group into a board** rather than leaking into it.
+- **Three distinct closes.** `✕` on a group tab closes the view only; `✕` on a
+  pane archives the agent in a worktree group but merely **unpins** it on a
+  board; deleting a worktree is the only thing that touches git.
+- **Layout is yours.** The `Agents side by side` setting is a *placement policy*
+  — it decides whether the next agent opens as a pane or a tab, and never
+  re-arranges panes you positioned.
+- The title strip carries the group tabs (scrolling, `⌘1`–`⌘9` for the first
+  nine) on the left and the "Open in editor" split button, which always targets
+  the **active pane's** worktree, on the right.
+
+**Mobile is unaffected** — it keeps its repo → worktree list and its
+new-session sheet.
+
+---
+
 ## 3. Session view
 
 **Layout:** chat + collapsible tool cards.
