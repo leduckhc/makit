@@ -4,9 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'package:makit/app/theme.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/home_screen.dart';
+import 'package:makit/ui/home/repo_chips.dart';
 import 'package:makit/ui/widgets/glass.dart';
 
 Widget _host({required List<RepoInfo> repos, required List<Session> sessions}) {
@@ -188,6 +190,95 @@ void main() {
     await tester.pump();
 
     expect(find.text('PR #42'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(PrPill),
+        matching: find.byIcon(PhosphorIconsLight.gitPullRequest),
+      ),
+      findsOneWidget,
+    );
+    // The repo card's meta row counts it as one *open* PR.
+    expect(find.text('1 PR'), findsOneWidget);
+  });
+
+  testWidgets('a merged PR pill reads as merged, not as a live PR', (
+    tester,
+  ) async {
+    final repo = _repo(
+      worktrees: [
+        const Worktree(
+          id: '/wt/feature',
+          path: '/wt/feature',
+          branch: 'add-login',
+          isPrimary: false,
+          insertions: 10,
+          deletions: 0,
+          filesChanged: 1,
+          sessionIds: ['s1'],
+          pr: PullRequest(
+            number: 42,
+            url: 'https://x/pull/42',
+            state: 'MERGED',
+            title: 'Add login',
+            isDraft: false,
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
+    await tester.pump();
+
+    final icon = find.descendant(
+      of: find.byType(PrPill),
+      matching: find.byIcon(PhosphorIconsLight.gitMerge),
+    );
+    expect(icon, findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsNothing);
+    // A merged PR is not an open one: the repo card must not advertise it.
+    expect(find.text('1 PR'), findsNothing);
+    expect(tester.widget<Icon>(icon).color, kPrMerged);
+    // The label takes the AA-safe purple, not the vivid icon hue.
+    expect(
+      tester.widget<Text>(find.text('PR #42')).style?.color,
+      Theme.of(tester.element(icon)).colorScheme.prMergedText,
+    );
+  });
+
+  testWidgets('a closed PR pill reads as closed', (tester) async {
+    final repo = _repo(
+      worktrees: [
+        const Worktree(
+          id: '/wt/feature',
+          path: '/wt/feature',
+          branch: 'add-login',
+          isPrimary: false,
+          insertions: 10,
+          deletions: 0,
+          filesChanged: 1,
+          sessionIds: ['s1'],
+          pr: PullRequest(
+            number: 42,
+            url: 'https://x/pull/42',
+            state: 'CLOSED',
+            title: 'Add login',
+            isDraft: false,
+          ),
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
+    await tester.pump();
+
+    expect(
+      find.descendant(
+        of: find.byType(PrPill),
+        matching: find.byKey(
+          const ValueKey('assets/icons/git-pull-request-closed.svg'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('1 PR'), findsNothing);
   });
 
   testWidgets('a session under its worktree surfaces a status chip', (

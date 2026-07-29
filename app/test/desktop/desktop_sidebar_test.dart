@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:makit/app/theme.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
@@ -346,9 +347,7 @@ void main() {
     expect(find.text('PR #42'), findsOneWidget);
   });
 
-  testWidgets('worktree icon reflects the PR state', (
-    tester,
-  ) async {
+  testWidgets('worktree icon reflects the PR state', (tester) async {
     await _pump(
       tester,
       repos: [
@@ -370,14 +369,26 @@ void main() {
               ),
             ),
             _worktree(
-              'wt-closed-pr',
-              branch: 'feat/closed-pr',
+              'wt-merged-pr',
+              branch: 'feat/merged-pr',
               sessionIds: ['s3'],
               pr: const PullRequest(
                 number: 8,
                 url: '',
                 state: 'MERGED',
                 title: 'y',
+                isDraft: false,
+              ),
+            ),
+            _worktree(
+              'wt-closed-pr',
+              branch: 'feat/closed-pr',
+              sessionIds: ['s4'],
+              pr: const PullRequest(
+                number: 9,
+                url: '',
+                state: 'CLOSED',
+                title: 'z',
                 isDraft: false,
               ),
             ),
@@ -388,19 +399,23 @@ void main() {
         _session('s1', 'p1', 'a', 'pi'),
         _session('s2', 'p1', 'b', 'pi'),
         _session('s3', 'p1', 'c', 'pi'),
+        _session('s4', 'p1', 'd', 'pi'),
       ],
     );
 
-    // Open PRs show the PR symbol; merged PRs show a red merge marker; only
-    // PR-less worktrees retain the plain branch icon.
+    // Open PRs show the PR symbol, merged PRs a purple merge marker, closed PRs
+    // the dedicated closed-PR marker; only PR-less worktrees retain the plain
+    // branch icon.
     expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
     expect(find.byIcon(PhosphorIconsLight.gitMerge), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('assets/icons/git-pull-request-closed.svg')),
+      findsOneWidget,
+    );
     expect(find.byIcon(PhosphorIconsLight.gitBranch), findsOneWidget);
     expect(
       tester.widget<Icon>(find.byIcon(PhosphorIconsLight.gitMerge)).color,
-      Theme.of(tester.element(find.byIcon(PhosphorIconsLight.gitMerge)))
-          .colorScheme
-          .error,
+      kPrMerged,
     );
   });
 

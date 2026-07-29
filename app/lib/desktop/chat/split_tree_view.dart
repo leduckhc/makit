@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
+import '../../store/store.dart';
+import '../../ui/widgets/pr_state_style.dart';
 
 import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
@@ -201,29 +202,31 @@ class _SplitterDivider extends StatelessWidget {
   }
 }
 
-/// The active tab's worktree/branch label on the window title strip: a fork
-/// icon + branch name (or "New worktree" while the worktree is still a virtual
-/// draft that hasn't materialised on disk). A quiet muted context label so the
-/// worktree reads as context beneath which the session title is primary.
-class _WorktreeTitle extends StatelessWidget {
+/// The active tab's worktree/branch label on the window title strip: a glyph
+/// reflecting the worktree's PR state (see [prStateStyle] — open / merged /
+/// closed / none) + branch name (or "New worktree" while the worktree is still
+/// a virtual draft that hasn't materialised on disk). A quiet muted context
+/// label so the worktree reads as context beneath which the session title is
+/// primary; only the glyph carries the PR-state tint.
+class _WorktreeTitle extends ConsumerWidget {
   const _WorktreeTitle({required this.worktree});
 
   final SelectedWorktree worktree;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final label = worktree.path.startsWith(kDraftWorktreePrefix)
         ? 'New worktree'
         : (worktree.branch ?? worktree.path);
+    // Same (poller-refreshed) source as the composer's PR bar, so the glyph
+    // flips in place the moment the PR is merged or closed.
+    final pr = ref.watch(reposProvider).prForWorktreePath(worktree.path);
+    final prStyle = prStateStyle(theme.colorScheme, pr);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          PhosphorIconsLight.gitBranch,
-          size: 16,
-          color: theme.colorScheme.outline,
-        ),
+        prStyle.buildIcon(size: 16),
         const SizedBox(width: kSpace6),
         Flexible(
           child: Text(

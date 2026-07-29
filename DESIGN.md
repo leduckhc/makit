@@ -58,12 +58,27 @@ pure grey in `theme.dart`. Values below are `light` / `dark`.
   - `--tool-destructive`: `#E5544B` · `oklch(63.9% 0.182 27.0)` — destructive tool-call icon.
   - Diff add / delete: `#3FB950` · `oklch(69.5% 0.181 145.6)` /
     `#F85149` · `oklch(66.5% 0.205 27.0)`.
+- **Pull-request state** (worktree glyphs in the desktop sidebar row, the
+  composer status pill, the window title strip and the mobile worktree pill —
+  all resolved by `prStateStyle` in `ui/widgets/pr_state_style.dart`, so a state
+  reads identically everywhere):
+  - open → `--color-primary` + pull-request symbol
+  - merged → `--pr-merged`: `#8957E5` · `oklch(58.4% 0.205 295.6)` (GitHub's
+    merged purple) + merge symbol
+  - closed → `colorScheme.error` + prohibit symbol (never `xCircle`, which the
+    composer already uses for the "CI failing" chip)
+  - no PR → `colorScheme.outline` + branch symbol
+  - `gitMerge` means *merged* everywhere — an **open**-PR count (repo card meta)
+    uses the pull-request symbol instead.
 - **Contrast-safe text variants (light theme).** The vivid status/diff hues
   above are correct for dots, icons, and washes, but as small *text* on the
   `#FAFAFA` surface they only reach ~2–3:1 (below WCAG AA). Labels use darker,
   AA-passing foregrounds on light (dark keeps the vivid hues): resolved via the
   `ColorScheme` getters `diffAddText`/`diffDelText`/`statusWarningText`/
-  `statusCautionText` in `theme.dart`.
+  `statusCautionText` in `theme.dart`. `--pr-merged` needs a variant on *both*
+  surfaces (4.4:1 light / 3.9:1 dark as text): `prMergedText` resolves to
+  `#6E40C9` (light) / `#A371F7` (dark) and reaches labels as
+  `PrStateStyle.textColor`.
 
 ### Neutral surface ramp (chroma-0)
 

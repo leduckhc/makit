@@ -2,12 +2,14 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/app/theme.dart';
 import 'package:makit/desktop/chat/pr_actions.dart';
 import 'package:makit/desktop/chat/pr_bar.dart';
 import 'package:makit/desktop/settings/prefs/preference_entries.dart';
 import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
 import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
 import 'package:makit/store/models.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 Widget _host(
   PreferencesController controller, {
@@ -36,6 +38,7 @@ Widget _host(
 }
 
 PullRequest _pr({
+  String state = 'OPEN',
   String rollup = 'pass',
   bool isDraft = false,
   List<PrCheck> checks = const [],
@@ -43,7 +46,7 @@ PullRequest _pr({
 }) => PullRequest(
   number: 42,
   url: 'https://github.com/o/r/pull/42',
-  state: 'OPEN',
+  state: state,
   title: 't',
   isDraft: isDraft,
   checkRollup: rollup,
@@ -207,6 +210,50 @@ void main() {
       ),
     );
     expect(find.text('PR #42'), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
+  });
+
+  testWidgets('a merged PR reads as merged, not as a live PR', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(
+          state: 'MERGED',
+          checks: const [
+            PrCheck(name: 'test', bucket: 'pass', workflowName: 'CI'),
+          ],
+        ),
+        onInsert: (_) {},
+      ),
+    );
+    final icon = find.byIcon(PhosphorIconsLight.gitMerge);
+    expect(icon, findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsNothing);
+    expect(tester.widget<Icon>(icon).color, kPrMerged);
+    // The label takes the AA-safe purple, not the vivid icon hue.
+    expect(
+      tester.widget<Text>(find.text('PR #42')).style?.color,
+      Theme.of(tester.element(icon)).colorScheme.prMergedText,
+    );
+    // CI is moot once merged: no rollup dot tinted by the state colour.
+    expect(find.byIcon(Icons.circle), findsNothing);
+  });
+
+  testWidgets('a closed PR reads as closed', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        PreferencesController.ephemeral(),
+        pr: _pr(state: 'CLOSED', rollup: 'fail', unresolvedComments: 2),
+        onInsert: (_) {},
+      ),
+    );
+    final icon = find.byKey(
+      const ValueKey('assets/icons/git-pull-request-closed.svg'),
+    );
+    expect(icon, findsOneWidget);
+    // No PR-derived nudges once the PR is dead: CI and review threads are moot.
+    expect(find.text('CI failing'), findsNothing);
+    expect(find.text('2 unresolved comments'), findsNothing);
   });
 
   testWidgets('commits behind (no unpushed) → chip + default "Pull"', (

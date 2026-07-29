@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../ui/widgets/codicons.dart';
 import '../../ui/widgets/icon_glyph.dart';
+import '../../ui/widgets/pr_state_style.dart';
 import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
 import 'pr_actions.dart';
@@ -124,7 +125,11 @@ _Situation? _situationFor({
       action: PrPromptAction.push,
     );
   }
-  if (pr != null && pr.checkRollup == 'fail') {
+  // Everything below is derived from the PR itself, so it only applies while the
+  // PR is open: a merged/closed PR's failing checks and review threads are
+  // history, not a next step.
+  final openPr = pr != null && pr.state.toUpperCase() == 'OPEN' ? pr : null;
+  if (openPr != null && openPr.checkRollup == 'fail') {
     return const _Situation(
       icon: IconGlyph.font(PhosphorIconsLight.xCircle),
       label: 'CI failing',
@@ -132,10 +137,10 @@ _Situation? _situationFor({
       action: PrPromptAction.fixPr,
     );
   }
-  if ((pr?.unresolvedComments ?? 0) > 0) {
+  if (openPr != null && openPr.unresolvedComments > 0) {
     return _Situation(
       icon: const IconGlyph.font(Codicons.commentDiscussion),
-      label: _plural(pr!.unresolvedComments, 'unresolved comment'),
+      label: _plural(openPr.unresolvedComments, 'unresolved comment'),
       color: amber,
       action: PrPromptAction.resolveComments,
     );
@@ -293,9 +298,19 @@ class _PrStatusPillState extends State<PrStatusPill> {
   Widget build(BuildContext context) {
     final pr = widget.pr;
     final cs = Theme.of(context).colorScheme;
-    final color = pr.isDraft
+    // A merged/closed PR is no longer about CI: its glyph and tint come from the
+    // state (shared with the sidebar row and the title strip) and the rollup dot
+    // is dropped, so stale check colours can't make a landed PR look live.
+    final style = prStateStyle(cs, pr);
+    final isOpen = pr.state.toUpperCase() == 'OPEN';
+    final color = !isOpen
+        ? style.color
+        : pr.isDraft
         ? cs.outline
         : _rollupColor(context, pr.checkRollup);
+    // Labels need WCAG AA (4.5:1), which the vivid state hues don't always clear
+    // as small text — [PrStateStyle.textColor] hands back the AA-safe variant.
+    final labelColor = !isOpen ? style.textColor : color;
     // Opaque tint: composite the verdict tint over the surface so the pill is
     // solid (not see-through over content behind it) while keeping the light
     // tinted look and legible same-colour foreground.
@@ -314,30 +329,28 @@ class _PrStatusPillState extends State<PrStatusPill> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                PhosphorIconsLight.gitPullRequest,
-                size: kPillIconSize,
-                color: color,
-              ),
+              style.buildIcon(size: kPillIconSize, color: color),
               const SizedBox(width: 5),
               Text(
                 'PR #${pr.number}',
                 style: Theme.of(context).textTheme.labelXs?.copyWith(
-                  color: color,
+                  color: labelColor,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (pr.checks.isNotEmpty) ...[
+              if (isOpen && pr.checks.isNotEmpty) ...[
                 const SizedBox(width: kSpace6),
                 Icon(Icons.circle, size: 8, color: color),
               ],
-              if (pr.isDraft) ...[
+              // Draft is an open-PR state, so it follows `isOpen` like the
+              // rollup dot rather than lingering on a merged/closed PR.
+              if (isOpen && pr.isDraft) ...[
                 const SizedBox(width: kSpace6),
                 Text(
                   'draft',
                   style: Theme.of(
                     context,
-                  ).textTheme.labelXs?.copyWith(color: color),
+                  ).textTheme.labelXs?.copyWith(color: labelColor),
                 ),
               ],
             ],
