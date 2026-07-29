@@ -22,12 +22,6 @@ import 'group.dart';
 import 'group_providers.dart';
 import 'groups_controller.dart';
 
-/// The swatch/chip hue for a **board** (curated) group. Boards are the one
-/// concept SPEC-30 adds that the neutral+green palette had no colour for, so
-/// this violet is introduced by the spec's mock (`mockups/tab-groups.html`) and
-/// shared by the group bar and the membership bar.
-const Color kBoardSwatchColor = Color(0xFFB49BFF);
-
 /// Height of the group-bar rail, matching the mock's ~40px strip.
 const double _kRailHeight = 40;
 
@@ -150,7 +144,7 @@ class _GroupTab extends ConsumerWidget {
                   width: 7,
                   height: 7,
                   decoration: BoxDecoration(
-                    color: isBoard ? kBoardSwatchColor : cs.primary,
+                    color: isBoard ? kBoardSwatch : cs.primary,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -349,7 +343,7 @@ class _NewGroupButton extends ConsumerWidget {
           value: _newBoardValue,
           icon: PhosphorIconsFill.square,
           label: 'New board…',
-          color: kBoardSwatchColor,
+          color: kBoardSwatch,
         ),
         const PopupMenuDivider(),
         PopupMenuItem<String>(
@@ -381,7 +375,7 @@ class _NewGroupButton extends ConsumerWidget {
             themedMenuItem(
               value: record.group.id,
               icon: PhosphorIconsFill.square,
-              color: kBoardSwatchColor,
+              color: kBoardSwatch,
               label:
                   '${record.group.label}   '
                   '(${record.group.members.where(live.contains).length} live)',

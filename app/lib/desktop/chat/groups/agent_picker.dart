@@ -19,7 +19,6 @@ import '../../../store/store.dart';
 import '../new_session_dialog.dart';
 import '../session_status_dot.dart';
 import 'group.dart';
-import 'group_bar.dart' show kBoardSwatchColor;
 import 'group_providers.dart';
 import 'groups_controller.dart';
 
@@ -63,7 +62,12 @@ class AgentPicker extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(kSpace16, kSpace12, kSpace16, kSpace10),
+          padding: const EdgeInsets.fromLTRB(
+            kSpace16,
+            kSpace12,
+            kSpace16,
+            kSpace10,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -103,7 +107,12 @@ class AgentPicker extends ConsumerWidget {
         ),
         const Divider(height: 1),
         Padding(
-          padding: const EdgeInsets.fromLTRB(kSpace16, kSpace10, kSpace12, kSpace10),
+          padding: const EdgeInsets.fromLTRB(
+            kSpace16,
+            kSpace10,
+            kSpace12,
+            kSpace10,
+          ),
           child: Row(
             children: [
               Expanded(
@@ -141,11 +150,7 @@ class AgentPicker extends ConsumerWidget {
     if (members.contains(session.id)) {
       controller.removeMember(group.id, session.id);
     } else {
-      controller.addMember(
-        group.id,
-        session.id,
-        location: locationOf(session),
-      );
+      controller.addMember(group.id, session.id, location: locationOf(session));
     }
   }
 
@@ -198,11 +203,7 @@ class _NewSessionRow extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            const Icon(
-              PhosphorIconsLight.plus,
-              size: 16,
-              color: kBoardSwatchColor,
-            ),
+            const Icon(PhosphorIconsLight.plus, size: 16, color: kBoardSwatch),
             const SizedBox(width: kSpace10),
             Expanded(
               child: Text('New session…', style: theme.textTheme.bodyMedium),
@@ -224,9 +225,7 @@ class _NewSessionRow extends ConsumerWidget {
   /// dialog spawns straight into the store, so a diff of the live session ids
   /// is the seam that survives without the dialog reporting an id back.
   Future<void> _newSession(BuildContext context, WidgetRef ref) async {
-    final before = {
-      for (final s in ref.read(sessionsProvider).sessions) s.id,
-    };
+    final before = {for (final s in ref.read(sessionsProvider).sessions) s.id};
     await showNewSessionDialog(context, ref);
     final controller = ref.read(groupsControllerProvider.notifier);
     for (final s in ref.read(sessionsProvider).sessions) {
@@ -329,11 +328,9 @@ class _CheckBox extends StatelessWidget {
       width: 16,
       height: 16,
       decoration: BoxDecoration(
-        color: checked ? kBoardSwatchColor : Colors.transparent,
+        color: checked ? kBoardSwatch : Colors.transparent,
         border: Border.all(
-          color: checked
-              ? kBoardSwatchColor
-              : Theme.of(context).colorScheme.outline,
+          color: checked ? kBoardSwatch : Theme.of(context).colorScheme.outline,
           width: 1.4,
         ),
         borderRadius: BorderRadius.circular(kRadius6),

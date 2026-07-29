@@ -132,6 +132,67 @@ void main() {
       );
     });
 
+    testWidgets('a worktree group with no members shows 0 and no live dot', (
+      tester,
+    ) async {
+      // Clicking a branch nobody is working on is a normal thing to do; the tab
+      // must render rather than assume at least one member.
+      final c = _container(
+        groups: [_wt('g1', '/tmp/wt/chore-deps')],
+        sessions: [],
+      );
+      await _pump(tester, c, const GroupBar());
+
+      expect(find.text('0'), findsOneWidget);
+      // Keyed, so this assertion cannot silently pass by matching nothing.
+      expect(
+        find.byKey(const Key('groupLiveDot-g1')),
+        findsNothing,
+        reason: 'no live dot without a running member',
+      );
+    });
+
+    testWidgets('a board whose members all vanished shows 0, not stale ids', (
+      tester,
+    ) async {
+      // Membership is filtered against the live session list, so a board left
+      // holding only archived ids must not claim to have agents.
+      final c = _container(
+        groups: [
+          _board('b1', ['gone-1', 'gone-2']),
+        ],
+        sessions: [],
+      );
+      await _pump(tester, c, const GroupBar());
+
+      expect(find.text('0'), findsOneWidget);
+      expect(find.text('2'), findsNothing);
+    });
+
+    testWidgets('a very long label is truncated, not overflowed', (
+      tester,
+    ) async {
+      final c = _container(
+        groups: [
+          _wt(
+            'g1',
+            '/tmp/wt/long',
+            label: 'feature/a-branch-name-nobody-should-have-typed-but-did',
+          ),
+        ],
+        sessions: [],
+      );
+      await _pump(tester, c, const GroupBar(), width: 300);
+
+      // No RenderFlex overflow was thrown while laying the rail out.
+      expect(tester.takeException(), isNull);
+      final text = tester.widget<Text>(
+        find.text('feature/a-branch-name-nobody-should-have-typed-but-did'),
+      );
+      expect(text.overflow, TextOverflow.ellipsis);
+      expect(text.maxLines, 1);
+    });
+
     testWidgets('the ✕ closes the group', (tester) async {
       final c = _container(
         groups: [_wt('g1', '/tmp/wt/a'), _board('b1', const [])],

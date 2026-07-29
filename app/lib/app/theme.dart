@@ -80,6 +80,12 @@ final makitDarkTheme = _build(Brightness.dark);
 /// Awaiting input, connecting/reconnecting, dev-fake, transient issues.
 const Color kStatusWarning = Color(0xFFE0A72E);
 
+/// Curated groups (SPEC-30 boards): violet, opposite the accent green that
+/// marks derived worktree groups. Used by the group bar, membership bar, agent
+/// picker, and the sidebar's pin dots, so it belongs in the palette rather than
+/// in whichever widget happened to need it first.
+const Color kBoardSwatch = Color(0xFFB49BFF);
+
 /// Awaiting approval — a stronger "act now" tone than [kStatusWarning].
 const Color kStatusCaution = Color(0xFFE07B39);
 

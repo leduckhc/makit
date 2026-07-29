@@ -10,7 +10,6 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../app/theme.dart';
 import '../../../store/store.dart';
 import 'group.dart';
-import 'group_bar.dart' show kBoardSwatchColor;
 import 'group_providers.dart';
 import 'groups_controller.dart';
 
@@ -46,7 +45,7 @@ class MembershipBar extends ConsumerWidget {
             label: isBoard
                 ? 'Board · ${group.label}'
                 : '${_repoName(ref, group)} · ${group.label}',
-            color: isBoard ? kBoardSwatchColor : cs.primary,
+            color: isBoard ? kBoardSwatch : cs.primary,
           ),
           const SizedBox(width: kSpace10),
           Expanded(

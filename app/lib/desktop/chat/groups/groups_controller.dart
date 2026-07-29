@@ -88,12 +88,17 @@ class ClosedBoard {
 /// Every group, the active one, and the recently-closed boards.
 @immutable
 class GroupsState {
-  /// Creates a state. [activeGroupId] must reference a group in [groups].
+  /// Creates a state. [activeGroupId] must reference a group in [groups], and
+  /// [groups] must never be empty — there is always a canvas. Asserted here so
+  /// a violation surfaces where it is diagnosable rather than as a `.first` on
+  /// an empty list somewhere in a widget build. `closeGroup` refuses to close
+  /// the last group and every decoder falls back to [fresh], so the invariant
+  /// holds by construction.
   const GroupsState({
     required this.groups,
     required this.activeGroupId,
     this.recentlyClosed = const [],
-  });
+  }) : assert(groups.length > 0, 'a workspace always has at least one group');
 
   /// The fresh-launch state: one empty board. SPEC-30 decision 19 prefers the
   /// most recently active session's worktree group, but sessions are not known

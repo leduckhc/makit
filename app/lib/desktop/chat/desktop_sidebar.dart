@@ -12,7 +12,6 @@ import '../../ui/widgets/connection_chip.dart';
 import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
 import 'groups/group.dart';
-import 'groups/group_bar.dart' show kBoardSwatchColor;
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
 import 'new_session_dialog.dart';
@@ -861,18 +860,13 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
     // to. A worktree group's membership is derived, so it has no quick-pin.
     final activeGroup = ref.watch(activeGroupProvider);
     final boardActive = activeGroup.kind == GroupKind.board;
-    final isMember = boardActive &&
-        ref
-            .watch(groupMembersProvider(activeGroup.id))
-            .contains(session.id);
+    final isMember =
+        boardActive &&
+        ref.watch(groupMembersProvider(activeGroup.id)).contains(session.id);
     final Widget? trailing = !boardActive
         ? null
         : isMember
-        ? const Icon(
-            PhosphorIconsFill.circle,
-            size: 10,
-            color: kBoardSwatchColor,
-          )
+        ? const Icon(PhosphorIconsFill.circle, size: 10, color: kBoardSwatch)
         : (_hovering
               ? IconButton(
                   key: const Key('sidebarQuickPin'),
@@ -880,9 +874,11 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
                   padding: EdgeInsets.zero,
                   iconSize: 14,
                   visualDensity: VisualDensity.compact,
-                  constraints:
-                      const BoxConstraints(minWidth: 22, minHeight: 22),
-                  color: kBoardSwatchColor,
+                  constraints: const BoxConstraints(
+                    minWidth: 22,
+                    minHeight: 22,
+                  ),
+                  color: kBoardSwatch,
                   icon: const Icon(PhosphorIconsLight.plus, size: 14),
                   onPressed: () => ref
                       .read(groupsControllerProvider.notifier)
