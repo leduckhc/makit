@@ -4,6 +4,8 @@ import 'dart:async';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_worktree.dart';
@@ -69,11 +71,39 @@ SelectedWorktree? activeRealWorktree(WidgetRef ref) {
   return _worktreeOfSession(ref.read(sessionsProvider).byId(sessionId));
 }
 
-/// Reveal [id] (SPEC-28 decision 6): focus the tab already hosting the session
-/// anywhere in the tree, or open a new tab for it in the active split. The
-/// session's worktree is its own metadata — never stored on the bound tab.
+/// Navigate to [id] (SPEC-30 decision 15): **activate a group that already
+/// contains it, then reveal its tab there** — navigation never mutates
+/// membership, so it can never trigger decision 4's conversion. Resolution
+/// order (a→d) lives in [groupHolding]; when it finds nothing (d) we mint the
+/// session's own worktree group. A session with no worktree yet, or one the
+/// store no longer knows, falls back to a plain reveal in the active group.
 /// [selectedSessionProvider] follows automatically (it mirrors the active tab).
 void selectSessionExclusive(WidgetRef ref, String id) {
+  final session = ref.read(sessionsProvider).byId(id);
+  final workspace = ref.read(workspaceControllerProvider.notifier);
+  if (session == null) {
+    workspace.revealSession(id);
+    return;
+  }
+  final groups = ref.read(groupsControllerProvider.notifier);
+  final held = groupHolding(
+    ref.read(groupsControllerProvider),
+    session,
+    (groupId) => ref.read(groupMembersProvider(groupId)),
+  );
+  final worktreePath = session.worktreePath;
+  if (held != null) {
+    groups.activate(held);
+  } else if (worktreePath != null) {
+    // (d) mint its worktree group and activate it.
+    groups.openWorktreeGroup(
+      projectId: session.projectId,
+      worktreePath: worktreePath,
+      label: session.branch ?? worktreePath.split('/').last,
+    );
+  }
+  // Reveal the session's tab in the now-active group. Never [addMember], so a
+  // worktree group you were looking at is never converted by a click.
   ref.read(workspaceControllerProvider.notifier).revealSession(id);
 }
 
@@ -122,9 +152,19 @@ void closeActiveSplit(WidgetRef ref) {
   ref.read(workspaceControllerProvider.notifier).closeActiveSplit();
 }
 
-/// Select a sessionless worktree from the sidebar: open a starter tab hinted
-/// with [worktree] in the active split (SPEC-28 — no layout swap). The New
-/// session dialog opened from that tab pre-fills with the worktree.
+/// Select a worktree from the sidebar (SPEC-30 decision 15): activate that
+/// worktree's group, minting it when it does not exist yet. An empty scope
+/// seeds the placeholder tab with [worktree] so the pane renders the in-pane
+/// starter (decision 20) rather than the no-worktree placeholder.
 void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
-  ref.read(workspaceControllerProvider.notifier).revealWorktree(worktree);
+  final groups = ref.read(groupsControllerProvider.notifier);
+  groups.openWorktreeGroup(
+    projectId: worktree.projectId,
+    worktreePath: worktree.path,
+    label: worktree.branch ?? worktree.path.split('/').last,
+  );
+  final active = ref.read(activeGroupProvider);
+  if (ref.read(groupMembersProvider(active.id)).isEmpty) {
+    ref.read(workspaceControllerProvider.notifier).revealWorktree(worktree);
+  }
 }
