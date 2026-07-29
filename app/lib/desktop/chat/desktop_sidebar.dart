@@ -528,15 +528,21 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                         padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
                         child: Row(
                           children: [
-                            // Open PR → the merge symbol; otherwise the plain
-                            // worktree/branch icon that predated the PR-centric
-                            // redesign (still used by the draft-worktree tile and
-                            // any non-open PR).
+                            // Open PRs show the pull-request symbol; merged PRs
+                            // show a red merge marker; all other worktrees keep
+                            // the plain branch icon.
                             if (worktree.pr?.state.toUpperCase() == 'OPEN')
                               Icon(
                                 PhosphorIconsLight.gitPullRequest,
                                 size: 16,
                                 color: theme.colorScheme.primary,
+                              )
+                            else if (worktree.pr?.state.toUpperCase() ==
+                                'MERGED')
+                              Icon(
+                                PhosphorIconsLight.gitMerge,
+                                size: 16,
+                                color: theme.colorScheme.error,
                               )
                             else
                               Icon(

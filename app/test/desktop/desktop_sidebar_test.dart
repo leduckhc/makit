@@ -346,7 +346,7 @@ void main() {
     expect(find.text('PR #42'), findsOneWidget);
   });
 
-  testWidgets('worktree icon: merge symbol only when a PR is open', (
+  testWidgets('worktree icon reflects the PR state', (
     tester,
   ) async {
     await _pump(
@@ -391,10 +391,17 @@ void main() {
       ],
     );
 
-    // Exactly one worktree has an *open* PR → one PR symbol. Both the
-    // PR-less and the merged-PR worktrees keep the plain branch icon.
+    // Open PRs show the PR symbol; merged PRs show a red merge marker; only
+    // PR-less worktrees retain the plain branch icon.
     expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
-    expect(find.byIcon(PhosphorIconsLight.gitBranch), findsNWidgets(2));
+    expect(find.byIcon(PhosphorIconsLight.gitMerge), findsOneWidget);
+    expect(find.byIcon(PhosphorIconsLight.gitBranch), findsOneWidget);
+    expect(
+      tester.widget<Icon>(find.byIcon(PhosphorIconsLight.gitMerge)).color,
+      Theme.of(tester.element(find.byIcon(PhosphorIconsLight.gitMerge)))
+          .colorScheme
+          .error,
+    );
   });
 
   testWidgets('empty state prompts to start a session', (tester) async {
