@@ -1,6 +1,7 @@
 import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:makit/store/secure_store.dart';
@@ -242,6 +243,178 @@ void main() {
 
     // The viewport is pinned back to the newest message (offset 0).
     expect(controller.position.pixels, lessThanOrEqualTo(1.0));
+  });
+
+  /// Scrolls the reversed transcript into history until [target] is on screen,
+  /// then a little further so the row sits clear of the floating bars.
+  Future<void> scrollIntoHistory(
+    WidgetTester tester,
+    ScrollController controller,
+    Finder target,
+  ) async {
+    for (var off = 0.0; off <= controller.position.maxScrollExtent; off += 60) {
+      controller.jumpTo(off);
+      await tester.pump();
+      if (target.evaluate().isNotEmpty) {
+        controller.jumpTo(
+          (off + 240).clamp(0.0, controller.position.maxScrollExtent),
+        );
+        await tester.pump();
+        return;
+      }
+    }
+    fail('target never scrolled into view');
+  }
+
+  /// The screen y of the first history message currently on screen — a probe
+  /// for "is the content the user is reading staying put?".
+  ({String text, double dy}) probeRow(WidgetTester tester) {
+    for (var i = 1; i <= 40; i++) {
+      final f = find.text('message #$i');
+      if (f.evaluate().length == 1) {
+        return (text: 'message #$i', dy: tester.getTopLeft(f).dy);
+      }
+    }
+    fail('no history message on screen');
+  }
+
+  testWidgets('a streamed message while scrolled up does not shift the view', (
+    tester,
+  ) async {
+    final items = longTranscript();
+    final (controller, push) = await pumpStreaming(tester, initial: items);
+    controller.jumpTo(300);
+    await tester.pump();
+
+    final before = probeRow(tester);
+
+    // A new (tall) message arrives below the viewport while the user reads
+    // history: the row under inspection must not move a pixel.
+    push([
+      ...items,
+      AgentMessageItem(seq: 999, ts: 0, text: List.filled(12, 'tok').join(' ')),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      tester.getTopLeft(find.text(before.text)).dy,
+      moreOrLessEquals(before.dy, epsilon: 0.5),
+    );
+  });
+
+  testWidgets('an incoming message mid-drag does not jump the offset', (
+    tester,
+  ) async {
+    final items = longTranscript();
+    final (controller, push) = await pumpStreaming(tester, initial: items);
+    controller.jumpTo(300);
+    await tester.pump();
+
+    // The user is dragging through history: the gesture owns the offset, and
+    // the lazy list re-estimates the extent of every row it builds on the way,
+    // so nothing may be compensated into the offset until the drag settles.
+    final drag = await tester.startGesture(
+      tester.getCenter(find.byType(ListView)),
+    );
+    await drag.moveBy(const Offset(0, 40));
+    await tester.pump();
+    final dragged = controller.position.pixels;
+
+    push([...items, AgentMessageItem(seq: 999, ts: 0, text: 'incoming')]);
+    await tester.pump();
+    expect(controller.position.pixels, moreOrLessEquals(dragged, epsilon: 0.5));
+
+    await drag.up();
+    await tester.pumpAndSettle();
+  });
+
+  List<ChatItem> transcriptWithTool() => [
+    for (var i = 1; i <= 20; i++)
+      UserMessageItem(seq: i, ts: 0, text: 'message #$i'),
+    ToolCallItem(
+      seq: 21,
+      ts: 0,
+      callId: 'c1',
+      name: 'bash',
+      args: const {'command': 'echo hi'},
+      output: 'hi',
+      ended: true,
+      exitCode: 0,
+    ),
+    for (var i = 22; i <= 40; i++)
+      UserMessageItem(seq: i, ts: 0, text: 'message #$i'),
+  ];
+
+  testWidgets('expanding a tool call keeps the tapped row in place', (
+    tester,
+  ) async {
+    final (controller, _) = await pumpStreaming(
+      tester,
+      initial: transcriptWithTool(),
+    );
+    final header = find.text('Ran echo hi');
+    await scrollIntoHistory(tester, controller, header);
+
+    final beforeDy = tester.getTopLeft(header).dy;
+    await tester.tap(header);
+    await tester.pumpAndSettle();
+
+    // The row expands downward: the header the user tapped stays put instead of
+    // sliding off the top of the viewport.
+    expect(
+      tester.getTopLeft(find.text('Ran')).dy,
+      moreOrLessEquals(beforeDy, epsilon: 1.0),
+    );
+  });
+
+  testWidgets('an expanded tool call stays expanded when scrolled away', (
+    tester,
+  ) async {
+    final (controller, _) = await pumpStreaming(
+      tester,
+      initial: transcriptWithTool(),
+    );
+    final header = find.text('Ran echo hi');
+    await scrollIntoHistory(tester, controller, header);
+    final at = controller.position.pixels;
+
+    await tester.tap(header);
+    await tester.pumpAndSettle();
+    expect(find.text('Output'), findsOneWidget);
+
+    // Scroll far away and back: the expansion is the user's state, not a
+    // side effect of the row happening to be built.
+    controller.jumpTo(controller.position.maxScrollExtent);
+    await tester.pump();
+    controller.jumpTo(at);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Output'), findsOneWidget);
+  });
+
+  testWidgets('a jump-to-newest button appears once the newest scrolls off', (
+    tester,
+  ) async {
+    final (controller, _) = await pumpStreaming(
+      tester,
+      initial: longTranscript(),
+    );
+    final jump = find.byIcon(PhosphorIconsLight.arrowDown);
+
+    // Pinned to the newest message: nothing to jump to.
+    expect(jump, findsNothing);
+
+    controller.jumpTo(600);
+    await tester.pumpAndSettle();
+    expect(jump, findsOneWidget);
+
+    // It jumps (not scrolls): one frame lands on the newest message.
+    await tester.tap(jump);
+    await tester.pump();
+    expect(controller.position.pixels, 0);
+    await tester.pumpAndSettle();
+    expect(jump, findsNothing);
   });
 
   testWidgets('a short transcript is bottom-anchored above the composer', (

@@ -4,6 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'chat_metrics.dart';
+import 'chat_transcript.dart';
 import 'tool_renderers.dart';
 
 /// Inline, collapsible tool-call row. Mirrors `ThinkingLine`: collapsed it is a
@@ -20,12 +21,24 @@ class ToolCallCard extends StatefulWidget {
   State<ToolCallCard> createState() => _ToolCallCardState();
 }
 
-class _ToolCallCardState extends State<ToolCallCard> {
+class _ToolCallCardState extends State<ToolCallCard>
+    with AutomaticKeepAliveClientMixin {
   bool _expanded = false;
   bool _hovered = false;
   final ScrollController _bodyScroll = ScrollController();
 
-  void _toggle() => setState(() => _expanded = !_expanded);
+  // An expansion is user state, so the row must survive being scrolled out of
+  // the lazy list's cache — otherwise it silently re-folds itself.
+  @override
+  bool get wantKeepAlive => _expanded;
+
+  void _toggle() => retainRowPosition(
+    context,
+    () => setState(() {
+      _expanded = !_expanded;
+      updateKeepAlive();
+    }),
+  );
 
   @override
   void dispose() {
@@ -35,6 +48,7 @@ class _ToolCallCardState extends State<ToolCallCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
     final renderer = rendererFor(item);

@@ -28,10 +28,12 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
+  final _anchor = TranscriptAnchor();
   // Dedicated controller for free-text answers to an inline ask, kept separate
   // from the normal message draft so the two can never cross-contaminate.
   final _answerController = TextEditingController();
   int _lastSeq = 0;
+  List<ChatItem>? _lastItems;
 
   @override
   void initState() {
@@ -73,6 +75,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       );
     });
 
+    if (!identical(items, _lastItems)) {
+      _lastItems = items;
+      // A real content change (new item or streamed delta): let the transcript
+      // physics absorb the growth so history stays put under the user's eyes.
+      _anchor.arm();
+    }
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
       // Reversed list: the newest message lives at offset 0. Only pull to it if
@@ -114,6 +122,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               // with no measuring pass, and older items build lazily only as
               // the user scrolls up.
               reverse: true,
+              // Absorb extent changes (streamed tokens, new items, an expanded
+              // row) into the offset once the user has scrolled into history,
+              // so the row being read never slides. See
+              // [TranscriptScrollPhysics].
+              physics: TranscriptScrollPhysics(anchor: _anchor),
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
@@ -259,52 +272,65 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: GlassSurface(
-                  borderRadius: 28,
-                  // Unified design-system glass (see DESIGN.md) — same recipe
-                  // as the top bar.
-                  child: (pendingAsk != null && pendingAsk.freeText)
-                      // Free-text answer mode: a dedicated, empty answer
-                      // controller (keyed by requestId) so a pre-ask normal
-                      // draft can never leak in as the answer. The normal draft
-                      // lives in the composer's own controller and returns when
-                      // the ask resolves.
-                      ? Composer(
-                          key: ValueKey('answer-${pendingAsk.requestId}'),
-                          glass: true,
-                          controller: _answerController,
-                          onSend: (text) => _handleSend(text, pendingAsk),
-                        )
-                      : Composer(
-                          key: const ValueKey('composer-normal'),
-                          glass: true,
-                          enabled: pendingAsk == null,
-                          commands: ref.watch(
-                            commandsProvider(widget.sessionId),
-                          ),
-                          onSend: (text) => _handleSend(text, pendingAsk),
-                          running: session?.status == SessionStatus.running,
-                          onCancel: _cancelTurn,
-                          footerActions: [
-                            if (ref
-                                    .watch(
-                                      sessionMetaProvider(widget.sessionId),
-                                    )
-                                    ?.configOptions
-                                    .isNotEmpty ??
-                                false)
-                              ComposerConfigOptions(sessionId: widget.sessionId)
-                            else ...[
-                              ComposerModelSelector(
-                                sessionId: widget.sessionId,
+                // Column grows *upward* from the bottom, so the jump button
+                // appearing above the composer never nudges the composer.
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    JumpToNewestButton(scroll: _scroll),
+                    const SizedBox(height: kSpace8),
+                    GlassSurface(
+                      borderRadius: 28,
+                      // Unified design-system glass (see DESIGN.md) — same recipe
+                      // as the top bar.
+                      child: (pendingAsk != null && pendingAsk.freeText)
+                          // Free-text answer mode: a dedicated, empty answer
+                          // controller (keyed by requestId) so a pre-ask normal
+                          // draft can never leak in as the answer. The normal draft
+                          // lives in the composer's own controller and returns when
+                          // the ask resolves.
+                          ? Composer(
+                              key: ValueKey('answer-${pendingAsk.requestId}'),
+                              glass: true,
+                              controller: _answerController,
+                              onSend: (text) => _handleSend(text, pendingAsk),
+                            )
+                          : Composer(
+                              key: const ValueKey('composer-normal'),
+                              glass: true,
+                              enabled: pendingAsk == null,
+                              commands: ref.watch(
+                                commandsProvider(widget.sessionId),
                               ),
-                              ComposerThinkingSelector(
-                                sessionId: widget.sessionId,
-                              ),
-                              ComposerModeSelector(sessionId: widget.sessionId),
-                            ],
-                          ],
-                        ),
+                              onSend: (text) => _handleSend(text, pendingAsk),
+                              running: session?.status == SessionStatus.running,
+                              onCancel: _cancelTurn,
+                              footerActions: [
+                                if (ref
+                                        .watch(
+                                          sessionMetaProvider(widget.sessionId),
+                                        )
+                                        ?.configOptions
+                                        .isNotEmpty ??
+                                    false)
+                                  ComposerConfigOptions(
+                                    sessionId: widget.sessionId,
+                                  )
+                                else ...[
+                                  ComposerModelSelector(
+                                    sessionId: widget.sessionId,
+                                  ),
+                                  ComposerThinkingSelector(
+                                    sessionId: widget.sessionId,
+                                  ),
+                                  ComposerModeSelector(
+                                    sessionId: widget.sessionId,
+                                  ),
+                                ],
+                              ],
+                            ),
+                    ),
+                  ],
                 ),
               ),
             ),

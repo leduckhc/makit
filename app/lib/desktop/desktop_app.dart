@@ -29,6 +29,7 @@ import '../store/secure_store.dart';
 import '../store/store.dart';
 import '../ui/widgets/srv_request_handler.dart';
 import 'chat/desktop_auto_select.dart';
+import 'chat/desktop_session_prune.dart';
 import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
 import 'chat/keymap_scope.dart';
@@ -249,6 +250,10 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Close tabs whose session no longer exists server-side (archived or quit
+    // from another client, or a restored layout pointing at dead sessions)
+    // BEFORE auto-select, so it sees the pruned workspace.
+    ref.watch(desktopSessionPruneProvider);
     // SPEC-10: auto-select the most recent session when none is picked.
     ref.watch(desktopAutoSelectSessionProvider);
     // Read reactively here (not inside `builder`, which builds in a descendant

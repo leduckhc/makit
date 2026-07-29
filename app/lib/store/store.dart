@@ -103,6 +103,7 @@ class StoreState {
     required this.commands,
     required this.meta,
     required this.actionErrors,
+    this.sessionsLoaded = false,
   });
 
   factory StoreState.empty() => StoreState(
@@ -132,6 +133,11 @@ class StoreState {
   /// surface transient error snackbars without adding chat items.
   final Map<String, ActionError> actionErrors;
 
+  /// Whether a `sessions.snapshot` has been received. Distinguishes "the server
+  /// has no sessions" from "we haven't heard from the server yet", which an
+  /// empty [sessions] list alone cannot.
+  final bool sessionsLoaded;
+
   StoreState copyWith({
     List<Project>? projects,
     List<RepoInfo>? repos,
@@ -141,6 +147,7 @@ class StoreState {
     Map<String, List<SlashCmd>>? commands,
     Map<String, SessionMeta>? meta,
     Map<String, ActionError>? actionErrors,
+    bool? sessionsLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
     repos: repos ?? this.repos,
@@ -150,6 +157,7 @@ class StoreState {
     commands: commands ?? this.commands,
     meta: meta ?? this.meta,
     actionErrors: actionErrors ?? this.actionErrors,
+    sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
   );
 }
 
@@ -159,7 +167,10 @@ class StoreState {
 StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
   ProjectsSnapshot(:final projects) => state.copyWith(projects: projects),
   ReposSnapshot(:final repos) => state.copyWith(repos: repos),
-  SessionsSnapshot(:final sessions) => state.copyWith(sessions: sessions),
+  SessionsSnapshot(:final sessions) => state.copyWith(
+    sessions: sessions,
+    sessionsLoaded: true,
+  ),
   SessionEventFrame(:final event) => reduceEvent(state, event),
 };
 
@@ -776,6 +787,12 @@ final sessionsProvider = Provider<SessionsState>((ref) {
   final s = ref.watch(storeControllerProvider);
   return SessionsState(s.sessions);
 });
+
+/// Whether the server's session list has been received at least once (see
+/// [StoreState.sessionsLoaded]).
+final sessionsLoadedProvider = Provider<bool>(
+  (ref) => ref.watch(storeControllerProvider).sessionsLoaded,
+);
 
 final eventsProvider = Provider<EventsState>((ref) {
   final s = ref.watch(storeControllerProvider);
