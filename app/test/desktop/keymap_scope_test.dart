@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -387,5 +389,91 @@ void main() {
     await tester.pump();
     await pressCtrl(tester, LogicalKeyboardKey.keyP);
     expect(opened, 1);
+  });
+
+  testWidgets('Ctrl+1 / Ctrl+2 switch to the 1st / 2nd group', (
+    tester,
+  ) async {
+    final keymap = await controller();
+    final groups = GroupsController.ephemeral(
+      GroupsState(
+        groups: [
+          Group.board(
+            id: 'g1',
+            label: 'One',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+          Group.board(
+            id: 'g2',
+            label: 'Two',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+        ],
+        activeGroupId: 'g1',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        groupsControllerProvider.overrideWith((_) => groups),
+      ],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    await pressCtrl(tester, LogicalKeyboardKey.digit2);
+    expect(container.read(groupsControllerProvider).activeGroupId, 'g2');
+    await pressCtrl(tester, LogicalKeyboardKey.digit1);
+    expect(container.read(groupsControllerProvider).activeGroupId, 'g1');
+  });
+
+  testWidgets('a tenth group has no shortcut — Ctrl+... never reaches it', (
+    tester,
+  ) async {
+    // There is no digit-0 binding and no wrap-around, so with two groups
+    // Ctrl+3 (a group that does not exist) is inert (decision 16).
+    final keymap = await controller();
+    final groups = GroupsController.ephemeral(
+      GroupsState(
+        groups: [
+          Group.board(
+            id: 'g1',
+            label: 'One',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+          Group.board(
+            id: 'g2',
+            label: 'Two',
+            tree: WorkspaceController.seedWorkspace(),
+          ),
+        ],
+        activeGroupId: 'g1',
+      ),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        keymapProvider.overrideWith((_) => keymap),
+        groupsControllerProvider.overrideWith((_) => groups),
+      ],
+    );
+    addTearDown(container.dispose);
+    await pumpScope(
+      tester,
+      keymap: keymap,
+      onOpenSettings: () {},
+      container: container,
+    );
+
+    await pressCtrl(tester, LogicalKeyboardKey.digit3);
+    expect(
+      container.read(groupsControllerProvider).activeGroupId,
+      'g1',
+      reason: 'no group 3 exists, so focus does not move',
+    );
   });
 }

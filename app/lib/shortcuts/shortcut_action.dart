@@ -124,6 +124,81 @@ enum ShortcutAction {
     label: 'Previous tab',
     description: 'Switch to the previous tab in the active split',
     scope: ShortcutScope.global,
+  ),
+
+  // SPEC-30 decision 16: ⌘1…⌘9 switch to the 1st–9th group. There is
+  // deliberately no action for a tenth group — no wrap-around, no "⌘9 = last";
+  // groups past the ninth are reached by clicking or scrolling the rail.
+  /// Switch to the 1st group in the group bar.
+  switchGroup1(
+    id: 'switchGroup1',
+    label: 'Switch to group 1',
+    description: 'Activate the 1st group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 2nd group in the group bar.
+  switchGroup2(
+    id: 'switchGroup2',
+    label: 'Switch to group 2',
+    description: 'Activate the 2nd group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 3rd group in the group bar.
+  switchGroup3(
+    id: 'switchGroup3',
+    label: 'Switch to group 3',
+    description: 'Activate the 3rd group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 4th group in the group bar.
+  switchGroup4(
+    id: 'switchGroup4',
+    label: 'Switch to group 4',
+    description: 'Activate the 4th group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 5th group in the group bar.
+  switchGroup5(
+    id: 'switchGroup5',
+    label: 'Switch to group 5',
+    description: 'Activate the 5th group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 6th group in the group bar.
+  switchGroup6(
+    id: 'switchGroup6',
+    label: 'Switch to group 6',
+    description: 'Activate the 6th group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 7th group in the group bar.
+  switchGroup7(
+    id: 'switchGroup7',
+    label: 'Switch to group 7',
+    description: 'Activate the 7th group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 8th group in the group bar.
+  switchGroup8(
+    id: 'switchGroup8',
+    label: 'Switch to group 8',
+    description: 'Activate the 8th group in the group bar',
+    scope: ShortcutScope.global,
+  ),
+
+  /// Switch to the 9th group in the group bar.
+  switchGroup9(
+    id: 'switchGroup9',
+    label: 'Switch to group 9',
+    description: 'Activate the 9th group in the group bar',
+    scope: ShortcutScope.global,
   );
 
   const ShortcutAction({
@@ -152,6 +227,33 @@ enum ShortcutAction {
       if (a.id == id) return a;
     }
     return null;
+  }
+
+  /// The 1st–9th group-switch actions, indexed 0–8 (SPEC-30 decision 16).
+  static const List<ShortcutAction> _switchGroupActions = [
+    switchGroup1,
+    switchGroup2,
+    switchGroup3,
+    switchGroup4,
+    switchGroup5,
+    switchGroup6,
+    switchGroup7,
+    switchGroup8,
+    switchGroup9,
+  ];
+
+  /// The group-switch action for the [index]th group (0-based), or null past
+  /// the ninth — the tenth group onward has no shortcut (decision 16).
+  static ShortcutAction? switchGroupAtIndex(int index) =>
+      (index < 0 || index >= _switchGroupActions.length)
+      ? null
+      : _switchGroupActions[index];
+
+  /// The 0-based group index this action switches to, or null when it is not a
+  /// group-switch action.
+  int? get groupIndex {
+    final i = _switchGroupActions.indexOf(this);
+    return i < 0 ? null : i;
   }
 }
 

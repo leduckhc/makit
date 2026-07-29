@@ -25,7 +25,7 @@ class Keymap {
   factory Keymap.defaults({required bool cmdIsPrimary}) {
     KeyChord primary(LogicalKeyboardKey key, {bool shift = false}) =>
         KeyChord(key, meta: cmdIsPrimary, control: !cmdIsPrimary, shift: shift);
-    return Keymap({
+    final bindings = <ShortcutAction, KeyChord>{
       ShortcutAction.sendMessage: const KeyChord(LogicalKeyboardKey.enter),
       ShortcutAction.composerNewline: const KeyChord(
         LogicalKeyboardKey.enter,
@@ -53,7 +53,25 @@ class Keymap {
         LogicalKeyboardKey.bracketLeft,
         shift: true,
       ),
-    });
+    };
+    // SPEC-30 decision 16: ⌘1…⌘9 (⎃1…⎃9 off macOS) switch to the 1st–9th
+    // group. The tenth group onward gets no binding on purpose. Added through
+    // the same table so `conflictFor` sees them like any other action.
+    const digits = <LogicalKeyboardKey>[
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+      LogicalKeyboardKey.digit5,
+      LogicalKeyboardKey.digit6,
+      LogicalKeyboardKey.digit7,
+      LogicalKeyboardKey.digit8,
+      LogicalKeyboardKey.digit9,
+    ];
+    for (var i = 0; i < digits.length; i++) {
+      bindings[ShortcutAction.switchGroupAtIndex(i)!] = primary(digits[i]);
+    }
+    return Keymap(bindings);
   }
 
   /// Returns a copy with [action] rebound to [chord].

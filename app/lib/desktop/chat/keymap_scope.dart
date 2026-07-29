@@ -5,6 +5,7 @@ import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
 import 'composer_focus.dart';
+import 'groups/groups_controller.dart';
 import 'new_session_dialog.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
@@ -197,11 +198,32 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleTab(ref, 1);
       case ShortcutAction.prevTab:
         _cycleTab(ref, -1);
+      // SPEC-30 decision 16: ⌘1…⌘9 activate the 1st–9th group. A tenth group
+      // has no binding, so it is only reachable by click or scroll.
+      case ShortcutAction.switchGroup1:
+      case ShortcutAction.switchGroup2:
+      case ShortcutAction.switchGroup3:
+      case ShortcutAction.switchGroup4:
+      case ShortcutAction.switchGroup5:
+      case ShortcutAction.switchGroup6:
+      case ShortcutAction.switchGroup7:
+      case ShortcutAction.switchGroup8:
+      case ShortcutAction.switchGroup9:
+        _switchToGroup(ref, action.groupIndex!);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:
         break;
     }
+  }
+
+  /// Activates the [index]th group (0-based) when it exists; a no-op otherwise,
+  /// so a shortcut for a group that isn't there does nothing rather than
+  /// wrapping around (SPEC-30 decision 16).
+  void _switchToGroup(WidgetRef ref, int index) {
+    final groups = ref.read(groupsControllerProvider).groups;
+    if (index >= groups.length) return;
+    ref.read(groupsControllerProvider.notifier).activate(groups[index].id);
   }
 
   /// Splits the active split, carrying the active tab's worktree onto the new

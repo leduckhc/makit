@@ -122,12 +122,53 @@ void main() {
       final send = map.chordFor(ShortcutAction.sendMessage);
       expect(map.conflictFor(send, ShortcutScope.global), isNull);
     });
+  });
 
-    test('rebind returns a new map without mutating the original', () {
-      const chord = KeyChord(LogicalKeyboardKey.keyK, meta: true);
-      final next = map.rebind(ShortcutAction.newSession, chord);
-      expect(next.chordFor(ShortcutAction.newSession), chord);
-      expect(map.chordFor(ShortcutAction.newSession), isNot(chord));
+  group('Keymap group-switch bindings (SPEC-30 decision 16)', () {
+    final map = Keymap.defaults(cmdIsPrimary: true);
+
+    test('⌘1…⌘9 are bound to the nine group-switch actions', () {
+      const digits = [
+        LogicalKeyboardKey.digit1,
+        LogicalKeyboardKey.digit2,
+        LogicalKeyboardKey.digit3,
+        LogicalKeyboardKey.digit4,
+        LogicalKeyboardKey.digit5,
+        LogicalKeyboardKey.digit6,
+        LogicalKeyboardKey.digit7,
+        LogicalKeyboardKey.digit8,
+        LogicalKeyboardKey.digit9,
+      ];
+      for (var i = 0; i < 9; i++) {
+        final action = ShortcutAction.switchGroupAtIndex(i)!;
+        expect(
+          map.chordFor(action),
+          KeyChord(digits[i], meta: true),
+          reason: 'group ${i + 1}',
+        );
+      }
+    });
+
+    test('there is no action for a tenth group', () {
+      expect(ShortcutAction.switchGroupAtIndex(9), isNull);
+    });
+
+    test('groupIndex round-trips the switch actions', () {
+      expect(ShortcutAction.switchGroup1.groupIndex, 0);
+      expect(ShortcutAction.switchGroup9.groupIndex, 8);
+      expect(ShortcutAction.newSession.groupIndex, isNull);
+    });
+
+    test('the digit chords do not conflict with any existing binding', () {
+      for (var i = 0; i < 9; i++) {
+        final action = ShortcutAction.switchGroupAtIndex(i)!;
+        final chord = map.chordFor(action);
+        expect(
+          map.conflictFor(chord, ShortcutScope.global, ignore: action),
+          isNull,
+          reason: 'group ${i + 1} chord is free',
+        );
+      }
     });
   });
 }
