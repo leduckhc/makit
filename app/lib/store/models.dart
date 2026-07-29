@@ -601,7 +601,10 @@ class RepoInfo {
   /// Worktrees that have any uncommitted/committed diff vs the default branch.
   int get activeWorktreeCount => worktrees.where((w) => w.hasChanges).length;
 
-  int get openPrCount => worktrees.where((w) => w.pr != null).length;
+  /// Worktrees with an **open** pull request. Merged/closed PRs are history, so
+  /// they don't count towards the repo card's "N PRs" meta.
+  int get openPrCount =>
+      worktrees.where((w) => w.pr?.state.toUpperCase() == 'OPEN').length;
 
   static RepoInfo? fromJson(Map<String, dynamic> j) {
     final id = j['id'];

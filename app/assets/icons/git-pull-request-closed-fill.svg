@@ -1,0 +1,13 @@
+<!-- Closed pull request — PhosphorIconsFill counterpart: solid nodes (r16) with
+     16/256 connectors on the same x=72 / x=200 grid as the outline weights.
+     Colours are replaced at render time by IconGlyph.svg's srcIn ColorFilter. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <g stroke="#000" stroke-width="16" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M72 80v96M200 104v72M176 40l48 48m0-48l-48 48"/>
+  </g>
+  <g fill="#000" stroke="none">
+    <circle cx="72" cy="64" r="16"/>
+    <circle cx="72" cy="192" r="16"/>
+    <circle cx="200" cy="192" r="16"/>
+  </g>
+</svg>

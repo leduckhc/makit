@@ -9,6 +9,7 @@ import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/app/theme.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/keymap_scope.dart';
 import 'package:makit/desktop/chat/open_in_ide.dart';
@@ -17,6 +18,7 @@ import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
 import 'package:makit/desktop/chat/split_view.dart' show SplitView, TabDragData;
+import 'package:makit/desktop/chat/title_bar_strip.dart';
 import 'package:makit/shortcuts/keymap_controller.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -24,6 +26,10 @@ import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:makit/ui/composer/composer.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+import '../../support/svg_asset_finder.dart';
 
 /// A connection whose `session.archive` completes only when the test says so.
 class _KillConnection extends ConnectionController {
@@ -73,14 +79,46 @@ Session _session(String id, String title, {String worktree = '/tmp/wt-a'}) =>
       branch: worktree.split('/').last,
     );
 
+/// A repo whose single worktree is `/tmp/wt-a` (matching [_session]'s default),
+/// optionally carrying [pr] so the title strip can reflect its state.
+RepoInfo _repoWithWorktree({PullRequest? pr, String path = '/tmp/wt-a'}) =>
+    RepoInfo(
+      id: 'p1',
+      name: 'alpha',
+      path: '/tmp/alpha',
+      pinned: false,
+      lastActivityAt: 0,
+      isGitRepo: true,
+      defaultBranch: 'main',
+      currentBranch: 'main',
+      worktrees: [
+        Worktree(
+          id: 'w1',
+          path: path,
+          branch: path.split('/').last,
+          isPrimary: false,
+          insertions: 0,
+          deletions: 0,
+          filesChanged: 0,
+          sessionIds: const ['s1'],
+          pr: pr,
+        ),
+      ],
+    );
+
+PullRequest _pr(String state) =>
+    PullRequest(number: 3, url: '', state: state, title: 't', isDraft: false);
+
 ProviderContainer _container({
   List<Session> sessions = const [],
   ConnectionController? connection,
+  List<RepoInfo> repos = const [],
 }) {
   return ProviderContainer(
     overrides: [
       if (connection != null)
         connectionControllerProvider.overrideWith((ref) => connection),
+      reposProvider.overrideWithValue(ReposState(repos)),
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
       eventsProvider.overrideWithValue(EventsState(const {}, const {})),
       for (final s in sessions)
@@ -569,6 +607,55 @@ void main() {
         expect(find.byType(OpenInIdeButton), findsOneWidget);
       },
     );
+
+    for (final (state, icon, name) in <(String?, IconData?, String)>[
+      (null, PhosphorIconsLight.gitBranch, 'no PR'),
+      ('OPEN', PhosphorIconsLight.gitPullRequest, 'open'),
+      ('MERGED', PhosphorIconsLight.gitMerge, 'merged'),
+      ('CLOSED', null, 'closed'),
+    ]) {
+      testWidgets('the branch glyph reflects the worktree PR state ($name)', (
+        tester,
+      ) async {
+        final c = _container(
+          sessions: [_session('s1', 'Alpha', worktree: '/tmp/wt-a')],
+          repos: [_repoWithWorktree(pr: state == null ? null : _pr(state))],
+        );
+        addTearDown(c.dispose);
+        _ws(c).revealSession('s1');
+        await tester.pumpWidget(_tree(c));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.descendant(
+            of: find.byType(TitleBarStrip),
+            matching: icon == null
+                ? findSvgAsset(kClosedPrAsset)
+                : find.byIcon(icon),
+          ),
+          findsOneWidget,
+        );
+      });
+    }
+
+    testWidgets('a merged PR tints the title glyph with the merged hue', (
+      tester,
+    ) async {
+      final c = _container(
+        sessions: [_session('s1', 'Alpha', worktree: '/tmp/wt-a')],
+        repos: [_repoWithWorktree(pr: _pr('MERGED'))],
+      );
+      addTearDown(c.dispose);
+      _ws(c).revealSession('s1');
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+
+      final icon = find.descendant(
+        of: find.byType(TitleBarStrip),
+        matching: find.byIcon(PhosphorIconsLight.gitMerge),
+      );
+      expect(tester.widget<Icon>(icon).color, kPrMerged);
+    });
 
     testWidgets('empty starter tab shows no worktree title or IDE launcher', (
       tester,

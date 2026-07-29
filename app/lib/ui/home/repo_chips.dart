@@ -4,6 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../widgets/pr_state_style.dart';
 
 /// Branch name pill with a git branch glyph.
 class BranchChip extends StatelessWidget {
@@ -83,7 +84,8 @@ class DiffChip extends StatelessWidget {
   }
 }
 
-/// Open-PR pill: `PR #42`, tinted grey for drafts, brand for ready.
+/// Worktree PR pill: `PR #42`, tinted grey for drafts and per PR state
+/// (open / merged / closed) otherwise — see [prStateStyle].
 class PrPill extends StatelessWidget {
   const PrPill({super.key, required this.pr});
   final PullRequest pr;
@@ -91,7 +93,9 @@ class PrPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = pr.isDraft ? cs.outline : cs.primary;
+    final style = prStateStyle(cs, pr);
+    final color = pr.isDraft ? cs.outline : style.color;
+    final labelColor = pr.isDraft ? cs.outline : style.textColor;
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: kSpace8,
@@ -104,16 +108,12 @@ class PrPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            PhosphorIconsLight.gitPullRequest,
-            size: kPillIconSize,
-            color: color,
-          ),
+          style.glyph.build(size: kPillIconSize, color: color),
           const SizedBox(width: 3),
           Text(
             'PR #${pr.number}',
             style: Theme.of(context).textTheme.labelXs?.copyWith(
-              color: color,
+              color: labelColor,
               fontWeight: FontWeight.w600,
             ),
           ),
