@@ -71,7 +71,9 @@ class MembershipBar extends ConsumerWidget {
   String _repoName(WidgetRef ref, Group group) {
     final projectId = group.projectId;
     if (projectId == null) return '';
-    return ref.read(reposProvider).byId(projectId)?.name ?? projectId;
+    // watch, not read: the repo list can arrive after first paint, and a read
+    // would leave the chip stuck on the raw project id forever.
+    return ref.watch(reposProvider).byId(projectId)?.name ?? projectId;
   }
 
   /// The explanatory sentence, phrased per kind (matching the mock exactly).
@@ -159,12 +161,14 @@ class _LayoutToggle extends ConsumerWidget {
           _ToggleSegment(
             label: 'Split',
             selected: group.layoutOverride == LayoutMode.split,
-            onTap: () => controller.setLayoutOverride(group.id, LayoutMode.split),
+            onTap: () =>
+                controller.setLayoutOverride(group.id, LayoutMode.split),
           ),
           _ToggleSegment(
             label: 'Tabs',
             selected: group.layoutOverride == LayoutMode.tabs,
-            onTap: () => controller.setLayoutOverride(group.id, LayoutMode.tabs),
+            onTap: () =>
+                controller.setLayoutOverride(group.id, LayoutMode.tabs),
           ),
         ],
       ),

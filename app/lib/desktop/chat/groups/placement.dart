@@ -114,7 +114,8 @@ void reconcileInto(
   // one, the threshold against the running shown-count.
   for (final id in members) {
     if (controller.isSessionBound(id)) continue;
-    final mode = layoutOverride ??
+    final mode =
+        layoutOverride ??
         (_boundCount(controller.state) < threshold
             ? LayoutMode.split
             : LayoutMode.tabs);

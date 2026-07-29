@@ -38,8 +38,23 @@ class GroupBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final groups = ref.watch(groupsControllerProvider).groups;
-    final activeId = ref.watch(activeGroupProvider).id;
+    // Deliberately narrow. `commitTree` rewrites GroupsState on EVERY tree
+    // mutation (splitter drag, tab move, ratio change), so watching the whole
+    // state would rebuild the entire strip while you drag a divider. The bar
+    // renders only identity — ids, kinds, labels, order — so it depends on
+    // exactly that, encoded as a string because a List's `==` is identity and
+    // would defeat the selector.
+    ref.watch(
+      groupsControllerProvider.select<String>(
+        (s) => s.groups
+            .map((g) => '${g.id}\u0000${g.kind.name}\u0000${g.label}')
+            .join('\u0001'),
+      ),
+    );
+    final groups = ref.read(groupsControllerProvider).groups;
+    final activeId = ref.watch(
+      groupsControllerProvider.select<String>((s) => s.active.id),
+    );
 
     // A single horizontally-scrolling Row (never a Wrap) is the whole of
     // decision 12: tabs overflow into a scroll offset instead of a second row.
@@ -89,9 +104,12 @@ class _GroupTab extends ConsumerWidget {
     final theme = Theme.of(context);
     final isBoard = group.kind == GroupKind.board;
     final members = ref.watch(groupMembersProvider(group.id));
-    final sessions = ref.watch(sessionsProvider);
-    final anyRunning = members.any(
-      (id) => sessions.byId(id)?.status == SessionStatus.running,
+    // Only the running-ness of this tab's members matters here; watching the
+    // whole session list rebuilt every tab on any session field change.
+    final anyRunning = ref.watch(
+      sessionsProvider.select<bool>(
+        (s) => members.any((id) => s.byId(id)?.status == SessionStatus.running),
+      ),
     );
     final controller = ref.read(groupsControllerProvider.notifier);
 
