@@ -87,6 +87,9 @@ class WorkspaceView extends ConsumerWidget {
             ],
           ),
         ),
+        // The tab-bar divider the old tabs had, restored for the outer rail:
+        // a hairline just below the group tabs, above the membership bar.
+        const Divider(height: 1),
         const MembershipBar(),
         Expanded(
           child: _NodeView(
