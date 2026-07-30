@@ -736,7 +736,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Select a session, or start a new one'), findsOneWidget);
-      expect(find.text('New session'), findsOneWidget);
+      expect(find.text('New worktree'), findsOneWidget);
       expect(find.text('Add agent'), findsOneWidget);
 
       await tester.tap(find.text('Add agent'));
@@ -753,13 +753,13 @@ void main() {
       expect(find.text('Add agent'), findsNothing);
     });
 
-    testWidgets('a pane with NO worktree keeps the New session button', (
+    testWidgets('a pane with NO worktree keeps the New worktree button', (
       tester,
     ) async {
       await pumpStarter(tester, agents: [_codex()]);
 
       expect(find.byType(HarnessCard), findsNothing);
-      expect(find.text('New session'), findsOneWidget);
+      expect(find.text('New worktree'), findsOneWidget);
     });
   });
 

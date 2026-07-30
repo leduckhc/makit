@@ -38,6 +38,77 @@ class _NoStore implements SecureStore {
   Future<void> delete({required String key}) async {}
 }
 
+/// A store whose `createWorktree` returns a fixed path so the board-side
+/// ⌘T/⌘D dialog can be confirmed and the result placed. Spawning must never
+/// happen from the New-worktree flow.
+class _WtStore extends StoreController {
+  _WtStore(super.ref);
+
+  int spawnCount = 0;
+
+  @override
+  Future<List<OpenPr>> listOpenPrs(String projectId) async => const [];
+
+  @override
+  Future<({String path, String? branch})> createWorktree(
+    String projectId, {
+    String? baseBranch,
+    String? branchName,
+  }) async => (path: '/tmp/wt/created', branch: 'auto/$baseBranch');
+
+  @override
+  Future<String> spawnSession(
+    String projectId, {
+    String? title,
+    String? agent,
+    String? worktreePath,
+    String? branch,
+    List<ConfigOptionPick>? configOptions,
+  }) async {
+    spawnCount++;
+    return 's-should-not-happen';
+  }
+}
+
+RepoInfo _repoWithBranches() => const RepoInfo(
+  id: 'p1',
+  name: 'makit',
+  path: '/tmp/p1',
+  pinned: false,
+  lastActivityAt: 0,
+  isGitRepo: true,
+  defaultBranch: 'main',
+  currentBranch: 'main',
+  worktrees: [
+    Worktree(
+      id: 'main',
+      path: '/tmp/wt/main',
+      branch: 'main',
+      isPrimary: true,
+      insertions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      sessionIds: [],
+    ),
+  ],
+);
+
+/// A worktree group scoped to `(p1, path)`, active on its own single-split tree.
+GroupsController _wtGroups(String path) => GroupsController.ephemeral(
+  GroupsState(
+    groups: [
+      Group.worktree(
+        id: 'wt1',
+        projectId: 'p1',
+        worktreePath: path,
+        label: 'feature-x',
+        tree: WorkspaceController.seedWorkspace(),
+      ),
+    ],
+    activeGroupId: 'wt1',
+  ),
+);
+
 /// Widget-level proof that [DesktopKeymapScope] turns a persisted [Keymap] into
 /// live global shortcuts. Uses Ctrl-primary defaults (cmdIsPrimary: false) so
 /// the combos are deterministic regardless of the test host platform.
@@ -195,14 +266,18 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets('Ctrl+D divides the active split into a splitter', (
+  testWidgets('Ctrl+D in a worktree group splits with the scope hint, no dialog', (
     tester,
   ) async {
+    // Decision 13: a worktree group already answers "where does it run?", so
+    // ⌘D seeds the new split with its scope and never shows a dialog.
     final keymap = await controller();
+    final groups = _wtGroups('/tmp/wt-a');
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
         sessionsProvider.overrideWithValue(SessionsState(const [])),
+        groupsControllerProvider.overrideWith((_) => groups),
       ],
     );
     addTearDown(container.dispose);
@@ -215,53 +290,73 @@ void main() {
       container: container,
     );
     await pressCtrl(tester, LogicalKeyboardKey.keyD);
+    await tester.pumpAndSettle();
 
-    // The single split became a splitter with two splits; the new (active)
-    // split holds an empty starter tab.
+    // The single split became a splitter; the new starter tab carries the
+    // group's scope, and no dialog appeared.
     expect(container.read(workspaceControllerProvider).root, isA<Splitter>());
-    expect(container.read(selectedSessionProvider), isNull);
-  });
-
-  testWidgets('Ctrl+D carries the active session\'s worktree into the new split', (
-    tester,
-  ) async {
-    // SPEC-30 decision 17: ⌘D must agree with the tab-strip +, which pre-fills
-    // the worktree you are already working in.
-    final keymap = await controller();
-    final container = ProviderContainer(
-      overrides: [
-        keymapProvider.overrideWith((_) => keymap),
-        sessionsProvider.overrideWithValue(SessionsState([session('s1')])),
-      ],
-    );
-    addTearDown(container.dispose);
-    workspace(container).revealSession('s1');
-
-    await pumpScope(
-      tester,
-      keymap: keymap,
-      onOpenSettings: () {},
-      container: container,
-    );
-    await pressCtrl(tester, LogicalKeyboardKey.keyD);
-
+    expect(find.text('New worktree'), findsNothing);
     final tab = activeTab(container.read(workspaceControllerProvider))!;
     expect(tab.sessionId, isNull, reason: 'a fresh starter tab');
-    expect(tab.worktree?.path, '/tmp/wt-x');
-    expect(tab.worktree?.branch, 'feature-x');
+    expect(tab.worktree?.path, '/tmp/wt-a');
   });
 
-  testWidgets('Ctrl+T opens the New session dialog', (tester) async {
+  testWidgets(
+    'Ctrl+D on a board opens the dialog; a confirmed worktree becomes a split',
+    (tester) async {
+      final keymap = await controller();
+      late _WtStore store;
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          reposProvider.overrideWithValue(ReposState([_repoWithBranches()])),
+          connectionControllerProvider.overrideWith((_) => _FastConn()),
+          storeControllerProvider.overrideWith((ref) {
+            store = _WtStore(ref);
+            return store;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      // A pristine board is the default fresh group.
+      expect(container.read(workspaceControllerProvider).root, isA<Split>());
+
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+      await pressCtrl(tester, LogicalKeyboardKey.keyD);
+      await tester.pumpAndSettle();
+
+      // The dialog opened (a board owns no scope, so it must ask).
+      expect(find.text('New worktree'), findsOneWidget);
+      await tester.tap(find.text('Create worktree'));
+      await tester.pumpAndSettle();
+
+      expect(store.spawnCount, 0);
+      // The confirmed worktree landed as a new split, hinted with its path.
+      expect(container.read(workspaceControllerProvider).root, isA<Splitter>());
+      final tab = activeTab(container.read(workspaceControllerProvider))!;
+      expect(tab.worktree?.path, '/tmp/wt/created');
+    },
+  );
+
+  testWidgets('Ctrl+T in a worktree group adds a hinted tab, no dialog', (
+    tester,
+  ) async {
     final keymap = await controller();
+    final groups = _wtGroups('/tmp/wt-a');
     final container = ProviderContainer(
       overrides: [
         keymapProvider.overrideWith((_) => keymap),
-        sessionsProvider.overrideWithValue(SessionsState([session('s1')])),
-        agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        groupsControllerProvider.overrideWith((_) => groups),
       ],
     );
     addTearDown(container.dispose);
-    workspace(container).revealSession('s1');
 
     await pumpScope(
       tester,
@@ -269,14 +364,58 @@ void main() {
       onOpenSettings: () {},
       container: container,
     );
-
     await pressCtrl(tester, LogicalKeyboardKey.keyT);
     await tester.pumpAndSettle();
 
-    // The dialog opened; the running session's tab is untouched.
-    expect(find.text('New session'), findsOneWidget);
-    expect(container.read(selectedSessionProvider), 's1');
+    // No dialog; a fresh tab hinted with the group's scope was added.
+    expect(find.text('New worktree'), findsNothing);
+    final split = container.read(workspaceControllerProvider).root as Split;
+    expect(split.tabs.length, 2);
+    final tab = activeTab(container.read(workspaceControllerProvider))!;
+    expect(tab.sessionId, isNull);
+    expect(tab.worktree?.path, '/tmp/wt-a');
   });
+
+  testWidgets(
+    'Ctrl+T on a board opens the dialog; a confirmed worktree becomes a tab',
+    (tester) async {
+      final keymap = await controller();
+      late _WtStore store;
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          reposProvider.overrideWithValue(ReposState([_repoWithBranches()])),
+          connectionControllerProvider.overrideWith((_) => _FastConn()),
+          storeControllerProvider.overrideWith((ref) {
+            store = _WtStore(ref);
+            return store;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+      await pressCtrl(tester, LogicalKeyboardKey.keyT);
+      await tester.pumpAndSettle();
+
+      expect(find.text('New worktree'), findsOneWidget);
+      await tester.tap(find.text('Create worktree'));
+      await tester.pumpAndSettle();
+
+      expect(store.spawnCount, 0);
+      // The confirmed worktree landed as a new tab in the board's split.
+      final split = container.read(workspaceControllerProvider).root as Split;
+      expect(split.tabs.length, 2);
+      final tab = activeTab(container.read(workspaceControllerProvider))!;
+      expect(tab.worktree?.path, '/tmp/wt/created');
+    },
+  );
 
   testWidgets('Ctrl+W closes the active split but keeps the sessions', (
     tester,

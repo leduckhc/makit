@@ -17,7 +17,7 @@ import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_draft.dart';
 import 'composer_focus.dart';
-import 'new_session_dialog.dart';
+import 'new_worktree_dialog.dart';
 import 'panes/pane_header.dart';
 import 'pr_bar.dart';
 import 'groups/agent_picker.dart';
@@ -434,9 +434,9 @@ class _EmptyTranscript extends StatelessWidget {
   }
 }
 
-/// The placeholder for a sessionless pane with NO worktree (SPEC-27): a short
-/// prompt plus a "New session" button that opens the New-session dialog, where
-/// the worktree is chosen. A pane that already has a worktree starts in place
+/// The placeholder for a sessionless pane with NO worktree (SPEC-30): a short
+/// prompt plus a "New worktree" button that opens the New-worktree dialog, where
+/// the worktree is created. A pane that already has a worktree starts in place
 /// via [WorktreeStarter] instead, so no empty pane is a dead end.
 class EmptyPaneStarter extends ConsumerWidget {
   /// Creates the placeholder.
@@ -477,8 +477,8 @@ class EmptyPaneStarter extends ConsumerWidget {
             children: [
               FilledButton.icon(
                 icon: const Icon(PhosphorIconsLight.plus, size: 16),
-                label: const Text('New session'),
-                onPressed: () => showNewSessionDialog(context, ref),
+                label: const Text('New worktree'),
+                onPressed: () => showNewWorktreeDialog(context, ref),
               ),
               if (isBoard)
                 OutlinedButton.icon(

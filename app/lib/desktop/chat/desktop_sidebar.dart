@@ -14,7 +14,7 @@ import 'connection_endpoint.dart';
 import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
-import 'new_session_dialog.dart';
+import 'new_worktree_dialog.dart';
 import 'selected_session.dart';
 import 'server_profile_badge.dart';
 import 'session_status_dot.dart';
@@ -222,10 +222,10 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                                 PhosphorIconsLight.plus,
                                 size: 16,
                               ),
-                              // One door for every new session: configure the
-                              // worktree (a fresh branch by default), harness,
-                              // and first message, then start.
-                              onPressed: () => showNewSessionDialog(
+                              // Create a worktree up front (a fresh branch by
+                              // default); you pick the harness and write the
+                              // first message on the pane you land on.
+                              onPressed: () => showNewWorktreeDialog(
                                 context,
                                 ref,
                                 projectId: repo.id,

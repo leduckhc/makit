@@ -1,8 +1,7 @@
 /// SPEC-30 — the agent picker: the board half of decision 13 and one of the
 /// four add paths of decision 14. Every live session, grouped by `repo ·
 /// branch`, with the board's current members pre-ticked; ticking a row pins or
-/// unpins it, and a leading `New session…` row opens the SPEC-27 dialog and
-/// pins whatever it spawns.
+/// unpins it, and a leading `New session…` row opens the New-worktree dialog.
 ///
 /// A board is a **view, not a place**, so the picker never asks "where does it
 /// run?" — that question only exists for the `New session…` row, which is why
@@ -16,7 +15,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../../app/theme.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
-import '../new_session_dialog.dart';
+import '../new_worktree_dialog.dart';
 import '../session_status_dot.dart';
 import 'group.dart';
 import 'group_providers.dart';
@@ -87,7 +86,7 @@ class AgentPicker extends ConsumerWidget {
           ),
         ),
         const Divider(height: 1),
-        _NewSessionRow(group: group),
+        const _NewSessionRow(),
         Flexible(
           child: ListView(
             shrinkWrap: true,
@@ -180,19 +179,18 @@ class _Section {
   final List<Session> sessions;
 }
 
-/// The leading `New session…` row: opens the SPEC-27 dialog and pins every
-/// session that appears while it is open to the board (decision 13 / 18).
+/// The leading `New session…` row (decision 13). A board has no branch, so it
+/// asks where to run: this opens the New-worktree dialog, which creates the
+/// worktree and lands the user on its Choose-a-harness starter.
 class _NewSessionRow extends ConsumerWidget {
-  const _NewSessionRow({required this.group});
-
-  final Group group;
+  const _NewSessionRow();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return InkWell(
-      onTap: () => _newSession(context, ref),
+      onTap: () => showNewWorktreeDialog(context, ref),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: kSpace16,
@@ -219,30 +217,6 @@ class _NewSessionRow extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  /// Opens the dialog and pins exactly the session it started.
-  ///
-  /// This used to diff the live session ids before/after the dialog, which is
-  /// wrong in makit's multi-client model: a session spawned from the phone or
-  /// the CLI while the dialog was open landed in the diff and was pinned to this
-  /// board (violating decision 5, "a new session started elsewhere never steals
-  /// the canvas"). The dialog now reports its own id instead.
-  Future<void> _newSession(BuildContext context, WidgetRef ref) async {
-    final spawnedId = await showNewSessionDialog(context, ref);
-    if (spawnedId == null) return; // dismissed
-    final session = ref.read(sessionsProvider).byId(spawnedId);
-    ref
-        .read(groupsControllerProvider.notifier)
-        .addMember(
-          group.id,
-          spawnedId,
-          // A just-spawned session may not have echoed its worktree yet; a board
-          // does not care (it has no scope to match against).
-          location: session != null
-              ? locationOf(session)
-              : SessionLocation(projectId: group.projectId ?? ''),
-        );
   }
 }
 

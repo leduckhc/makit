@@ -575,7 +575,7 @@ void main() {
     expect(find.text('New worktree from…'), findsNothing);
   });
 
-  testWidgets('the + button opens the New session dialog (no bare spawn)', (
+  testWidgets('the + button opens the New worktree dialog (no bare spawn)', (
     tester,
   ) async {
     final store = await _pumpWithStore(
@@ -592,8 +592,8 @@ void main() {
 
     await _tapNewWorktree(tester, 'alpha');
 
-    // The dialog configures the worktree first; nothing spawns until Start.
-    expect(find.text('New session'), findsWidgets);
+    // The dialog creates the worktree first; nothing spawns.
+    expect(find.text('New worktree'), findsWidgets);
     expect(store.spawned, isEmpty);
   });
 
