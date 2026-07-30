@@ -451,13 +451,26 @@ class ModelFlyoutColumn extends StatelessWidget {
         ),
       ),
       for (final v in allConfigValues(option))
-        _valueRow(context, option.id, v, v.value == currentValue),
+        _valueRow(context, option.id, option.name, v, v.value == currentValue),
     ];
+  }
+
+  /// Strips a redundant leading "<option name>:" prefix from a value's display
+  /// name — the agent often prefixes each value with the option name (e.g. the
+  /// `thought_level` values arrive as "Thinking: off"), but the segment header
+  /// already shows that name, so "off" reads cleaner under it.
+  String _shortValueName(String optionName, String rawName) {
+    final prefix = '$optionName:';
+    if (rawName.toLowerCase().startsWith(prefix.toLowerCase())) {
+      return rawName.substring(prefix.length).trim();
+    }
+    return rawName;
   }
 
   Widget _valueRow(
     BuildContext context,
     String optionId,
+    String optionName,
     ConfigOptionValue value,
     bool current,
   ) {
@@ -465,15 +478,14 @@ class ModelFlyoutColumn extends StatelessWidget {
     return ListTile(
       dense: true,
       visualDensity: VisualDensity.compact,
-      leading: Icon(
-        kModelActiveCheckIcon,
-        size: 16,
-        color: current ? cs.primary : Colors.transparent,
-      ),
       title: Text(
-        value.name,
+        _shortValueName(optionName, value.name),
         style: current ? TextStyle(color: cs.primary) : null,
       ),
+      // The active value's tick sits on the far (trailing) edge of the row.
+      trailing: current
+          ? Icon(kModelActiveCheckIcon, size: 16, color: cs.primary)
+          : null,
       onTap: current ? null : () => onPickOption(optionId, value.value),
     );
   }

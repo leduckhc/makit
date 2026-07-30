@@ -303,5 +303,42 @@ void main() {
       expect(find.text('Context'), findsNothing);
       expect(find.text('Reasoning'), findsOneWidget);
     });
+
+    testWidgets('strips the option-name prefix and puts the tick trailing', (
+      tester,
+    ) async {
+      const prefixed = SessionConfigOption(
+        id: 'reasoning',
+        name: 'Thinking',
+        category: 'thought_level',
+        type: ConfigOptionType.select,
+        currentValue: 'medium',
+        options: [
+          ConfigOptionValue(value: 'off', name: 'Thinking: off'),
+          ConfigOptionValue(value: 'medium', name: 'Thinking: medium'),
+        ],
+      );
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: ModelFlyoutColumn(
+              options: [prefixed],
+              values: {'reasoning': 'medium'},
+              onPickOption: _noop,
+            ),
+          ),
+        ),
+      );
+      // The redundant "Thinking: " prefix is stripped from the value rows.
+      expect(find.text('off'), findsOneWidget);
+      expect(find.text('medium'), findsOneWidget);
+      expect(find.textContaining('Thinking: '), findsNothing);
+      // The active tick sits to the right of its row's label.
+      final tick = tester.getCenter(find.byIcon(kModelActiveCheckIcon));
+      final label = tester.getCenter(find.text('medium'));
+      expect(tick.dx, greaterThan(label.dx));
+    });
   });
 }
+
+void _noop(String id, Object value) {}
