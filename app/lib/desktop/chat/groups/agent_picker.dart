@@ -300,37 +300,41 @@ class _PickerRow extends StatelessWidget {
     final title = session.title.trim().isNotEmpty
         ? session.title.trim()
         : (session.agent.trim().isNotEmpty ? session.agent : session.id);
-    return InkWell(
-      onTap: onToggle,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: kSpace16,
-          vertical: kSpace6,
-        ),
-        child: Row(
-          children: [
-            _CheckBox(checked: checked),
-            const SizedBox(width: kSpace8),
-            if (session.status != SessionStatus.idle) ...[
-              SessionStatusDot(status: session.status),
-              const SizedBox(width: kSpace6),
+    return Semantics(
+      checked: checked,
+      label: title,
+      child: InkWell(
+        onTap: onToggle,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: kSpace16,
+            vertical: kSpace6,
+          ),
+          child: Row(
+            children: [
+              _CheckBox(checked: checked),
+              const SizedBox(width: kSpace8),
+              if (session.status != SessionStatus.idle) ...[
+                SessionStatusDot(status: session.status),
+                const SizedBox(width: kSpace6),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: kSpace8),
+              Text(
+                session.agent,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
             ],
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
-              ),
-            ),
-            const SizedBox(width: kSpace8),
-            Text(
-              session.agent,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

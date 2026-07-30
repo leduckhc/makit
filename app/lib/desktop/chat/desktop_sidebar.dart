@@ -894,6 +894,7 @@ class _SessionTile extends ConsumerStatefulWidget {
 
 class _SessionTileState extends ConsumerState<_SessionTile> {
   bool _hovering = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -935,7 +936,7 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
         ? null
         : isMember
         ? const Icon(PhosphorIconsFill.circle, size: 10, color: kBoardSwatch)
-        : (_hovering
+        : (_hovering || _focused
               ? IconButton(
                   key: const Key('sidebarQuickPin'),
                   tooltip: 'Pin to this board',
@@ -962,6 +963,10 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
       padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       child: ListTile(
         dense: true,
+        // Keyboard/touch reachability: the quick-pin reveals on focus as well
+        // as hover (matching the repo header and worktree row), so it isn't
+        // pointer-only.
+        onFocusChange: (f) => setState(() => _focused = f),
         visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
         minVerticalPadding: 0,
         minTileHeight: 24,

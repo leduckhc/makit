@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
+import 'package:makit/desktop/chat/groups/placement.dart' show boundSessionIds;
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -529,6 +530,61 @@ void main() {
         expect(main.kind, GroupKind.worktree);
       },
     );
+  });
+
+  group('workspaceControllerProvider follows group-layer tree edits', () {
+    test('unpinning a member on the ACTIVE board prunes its tab from the '
+        'canvas (no resurrection on the next commit)', () {
+      const tree = WorkspaceState(
+        root: Split(
+          id: 'sp0',
+          tabs: [
+            Tab(id: 't1', sessionId: 's1'),
+            Tab(id: 't2', sessionId: 's2'),
+          ],
+          activeTabId: 't1',
+        ),
+        activeSplitId: 'sp0',
+      );
+      final board = Group.board(
+        id: 'b1',
+        label: 'Board',
+        members: const ['s1', 's2'],
+        tree: tree,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith((_) => _FastConn()),
+          sessionsProvider.overrideWithValue(
+            SessionsState([_session('s1'), _session('s2')]),
+          ),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [board], activeGroupId: 'b1'),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // The canvas seeds from the active board's tree.
+      expect(boundSessionIds(container.read(workspaceControllerProvider)), [
+        's1',
+        's2',
+      ]);
+
+      // Unpin s1 from the groups layer (as AgentPicker._toggle does on the
+      // active board): it prunes s1's tab from the board's tree.
+      container
+          .read(groupsControllerProvider.notifier)
+          .removeMember('b1', 's1');
+
+      // The rendered canvas follows the edit rather than keeping a stale tree
+      // that would re-commit and resurrect the pruned tab.
+      expect(boundSessionIds(container.read(workspaceControllerProvider)), [
+        's2',
+      ]);
+    });
   });
 }
 

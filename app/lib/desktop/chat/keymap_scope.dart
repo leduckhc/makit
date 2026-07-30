@@ -236,18 +236,7 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     // rebuilt whenever the active group changes, so placing into "whatever is
     // active when the dialog closes" could split a group the user never asked
     // about (they can switch groups with ⌘1–9 while it is open).
-    final requestedGroup = ref.read(groupsControllerProvider).active.id;
-    showNewWorktreeDialog(
-      context,
-      ref,
-      projectId: _currentProjectId(ref),
-      activateGroup: false,
-    ).then((worktree) {
-      if (worktree == null) return;
-      final groups = ref.read(groupsControllerProvider.notifier);
-      if (ref.read(groupsControllerProvider).active.id != requestedGroup) {
-        groups.activate(requestedGroup);
-      }
+    _askForWorktree(context, ref, (worktree) {
       ref
           .read(workspaceControllerProvider.notifier)
           .divideActive(axis, worktree: worktree);
@@ -272,18 +261,7 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
     }
     // Same reasoning as _divide: pin the group the request came from, since the
     // user can switch groups while the dialog is open.
-    final requestedGroup = ref.read(groupsControllerProvider).active.id;
-    showNewWorktreeDialog(
-      context,
-      ref,
-      projectId: _currentProjectId(ref),
-      activateGroup: false,
-    ).then((worktree) {
-      if (worktree == null) return;
-      final groups = ref.read(groupsControllerProvider.notifier);
-      if (ref.read(groupsControllerProvider).active.id != requestedGroup) {
-        groups.activate(requestedGroup);
-      }
+    _askForWorktree(context, ref, (worktree) {
       final activeSplitId = ref.read(workspaceControllerProvider).activeSplitId;
       ref
           .read(workspaceControllerProvider.notifier)
@@ -291,6 +269,30 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
             activeSplitId,
             Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree),
           );
+    });
+  }
+
+  /// Opens the New-worktree dialog pinned to the requesting group, then applies
+  /// [place] to the confirmed worktree. Guarded by [mounted]: worktree creation
+  /// hits the server, and this scope can be disposed while the dialog is open —
+  /// reading `ref` from a disposed ConsumerState would throw.
+  void _askForWorktree(
+    BuildContext context,
+    WidgetRef ref,
+    void Function(SelectedWorktree) place,
+  ) {
+    final requestedGroup = ref.read(groupsControllerProvider).active.id;
+    showNewWorktreeDialog(
+      context,
+      ref,
+      projectId: _currentProjectId(ref),
+      activateGroup: false,
+    ).then((worktree) {
+      if (worktree == null || !mounted) return;
+      if (ref.read(groupsControllerProvider).active.id != requestedGroup) {
+        ref.read(groupsControllerProvider.notifier).activate(requestedGroup);
+      }
+      place(worktree);
     });
   }
 

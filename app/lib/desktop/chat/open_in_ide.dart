@@ -150,7 +150,7 @@ class OpenInIdeButton extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'Opens the active pane ·',
+                      'Opens the active pane',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -344,7 +344,7 @@ class _PathHeadEllipsis extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      _fit(path, style, _maxWidth),
+      _fit(path, style, _maxWidth, MediaQuery.textScalerOf(context)),
       maxLines: 1,
       softWrap: false,
       overflow: TextOverflow.ellipsis,
@@ -353,9 +353,20 @@ class _PathHeadEllipsis extends StatelessWidget {
   }
 
   /// The longest tail of [path] that fits [maxWidth], prefixed with `…` once any
-  /// head was dropped. Returns the full path when it already fits.
-  static String _fit(String path, TextStyle? style, double maxWidth) {
-    final painter = TextPainter(textDirection: TextDirection.ltr, maxLines: 1);
+  /// head was dropped. Returns the full path when it already fits. Measures with
+  /// the same [scaler] the rendered [Text] uses, so a text-scale > 1 can't make
+  /// the precomputed tail wider than the widget and clip the worktree name.
+  static String _fit(
+    String path,
+    TextStyle? style,
+    double maxWidth,
+    TextScaler scaler,
+  ) {
+    final painter = TextPainter(
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      textScaler: scaler,
+    );
     double widthOf(String s) {
       painter.text = TextSpan(text: s, style: style);
       painter.layout();

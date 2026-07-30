@@ -233,7 +233,7 @@ void main() {
       await tester.tap(find.byTooltip('Choose editor'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Opens the active pane ·'), findsOneWidget);
+      expect(find.text('Opens the active pane'), findsOneWidget);
       // The worktree name is disclosed in full (short path, no head-truncation).
       expect(find.text('/tmp/wt/feat-login'), findsOneWidget);
       expect(find.text('Cursor'), findsOneWidget);

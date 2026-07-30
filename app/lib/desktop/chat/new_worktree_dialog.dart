@@ -179,7 +179,15 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
       switch (_source) {
         case _WorktreeFrom.existing:
           final path = _existingWorktreePath;
-          if (path == null) return;
+          if (path == null) {
+            // Mirror the fromPr branch: never bare-return after _creating is
+            // set, or the dialog wedges (Create and Close both disabled).
+            setState(() {
+              _creating = false;
+              _error = 'Select a worktree first.';
+            });
+            return;
+          }
           String? existingBranch;
           for (final w in _existingWorktrees()) {
             if (w.path == path) {

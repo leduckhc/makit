@@ -340,7 +340,7 @@ Follows `WorkspaceController`'s exact pattern (nullable prefs → ephemeral,
 `.load(prefs)`, write-through full dump), under a new key
 `kGroupsPrefsKey = 'desktop.groups'`:
 
-```
+```text
 state: { groups: List<Group>, activeGroupId: String, recentlyClosed: List<Group> }
 ```
 

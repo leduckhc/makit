@@ -463,7 +463,11 @@ class _TabBar extends ConsumerWidget {
     // both halves and the decoder drops an entry missing either — so this is an
     // invariant, not a UX branch. Asserting says so instead of implying the
     // dialog is a legitimate outcome here (decision 13 says it never is).
-    final hint = _groupWorktreeHint(group)!;
+    final hint = _groupWorktreeHint(group);
+    // A worktree group always carries both halves (Group.worktree requires them
+    // and the decoder drops an entry missing either), so the hint is never null
+    // here — assert the invariant rather than crash on a bare `!` if it is.
+    assert(hint != null, 'a worktree group must carry its scope');
     controller.openTab(
       split.id,
       Tab(id: nextNodeId(SplitNodeKind.tab), worktree: hint),

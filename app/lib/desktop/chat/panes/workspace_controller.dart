@@ -607,6 +607,16 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
     }
   }
 
+  /// Adopts an externally-produced [tree] — a group-layer edit to the active
+  /// group's tree (e.g. [GroupsController.removeMember] pruning an unpinned
+  /// tab) — WITHOUT echoing it back through the commit sink, since the groups
+  /// layer is already the source of that change. The equality guard makes the
+  /// controller's own commits, which come back around through the same
+  /// listener, a no-op.
+  void adopt(WorkspaceState tree) {
+    if (tree != state) state = tree;
+  }
+
   void _commit(WorkspaceState next) {
     state = next;
     // Best-effort: a sink that throws must not take the app down with it — the
@@ -647,8 +657,22 @@ final workspaceControllerProvider =
       final tree =
           groups.groupById(activeId)?.tree ??
           WorkspaceController.seedWorkspace();
-      return WorkspaceController(
+      final controller = WorkspaceController(
         (next) => groups.commitTree(activeId, next),
         tree,
       );
+      // Follow group-layer edits to the ACTIVE group's tree (e.g. AgentPicker
+      // unpinning a member prunes its tab) without rebuilding the controller —
+      // a rebuild on every commit would thrash and drop in-flight state. The
+      // equality guard in adopt() ignores the controller's own commits echoing
+      // back through here.
+      ref.listen<WorkspaceState?>(
+        groupsControllerProvider.select<WorkspaceState?>(
+          (s) => s.active.id == activeId ? s.active.tree : null,
+        ),
+        (_, next) {
+          if (next != null) controller.adopt(next);
+        },
+      );
+      return controller;
     });
