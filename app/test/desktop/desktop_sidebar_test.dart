@@ -450,6 +450,33 @@ void main() {
     expect(find.text('Fix login bug'), findsOneWidget);
   });
 
+  testWidgets('branch names align whether or not the row has a caret', (
+    tester,
+  ) async {
+    // Only rows with something to disclose get a caret, so the caret-less rows
+    // reserve its width instead — otherwise branch names would stagger down the
+    // column. Measured, because this is invisible until it is wrong.
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-a', branch: 'no-sessions'),
+            _worktree('wt-b', branch: 'has-sessions', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Something', 'codex')],
+    );
+
+    expect(
+      tester.getTopLeft(find.text('no-sessions')).dx,
+      tester.getTopLeft(find.text('has-sessions')).dx,
+    );
+  });
+
   testWidgets('tapping the repo header folds/unfolds its worktrees', (
     tester,
   ) async {

@@ -196,7 +196,11 @@ repo → worktree list and its new-session sheet.
 15. **Sidebar clicks navigate; they never mutate membership.**
     - A **worktree row** activates that worktree's group, minting it if it does
       not exist. This *replaces* SPEC-28 decision 6's "no worktree switch" for
-      worktree rows.
+      worktree rows. **Disclosure is a separate caret**: the row navigates, the
+      caret expands/collapses. One tap doing both meant peeking at a branch's
+      children yanked the canvas, and moving the canvas collapsed the row you
+      were reading. Rows with nothing to disclose have no caret but reserve its
+      width, so branch names stay aligned.
     - A **session row** activates a group that **already contains** that session,
       then reveals its tab there, resolved in this order: (a) the active group, if
       the session is already a member — no group switch, exactly SPEC-28
