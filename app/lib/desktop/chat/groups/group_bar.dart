@@ -101,6 +101,19 @@ class _GroupTab extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final isBoard = group.kind == GroupKind.board;
+    // A worktree group's title is its branch, which can be renamed after the
+    // group was minted. The group is keyed by the (stable) worktree path, so
+    // resolve the *live* branch from the repos snapshot and only fall back to
+    // the stored label when the worktree isn't in the snapshot yet. A board's
+    // title is user-owned, so it always uses its stored label.
+    final title = isBoard
+        ? group.label
+        : ref.watch(
+                reposProvider.select<String?>(
+                  (s) => _liveBranch(s, group.worktreePath),
+                ),
+              ) ??
+              group.label;
     final members = ref.watch(groupMembersProvider(group.id));
     // Only the running-ness of this tab's members matters here; watching the
     // whole session list rebuilt every tab on any session field change.
@@ -156,7 +169,7 @@ class _GroupTab extends ConsumerWidget {
                   const SizedBox(width: kSpace8),
                   Flexible(
                     child: Text(
-                      group.label,
+                      title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -287,6 +300,20 @@ class _RenameBoardDialogState extends State<_RenameBoardDialog> {
       ],
     );
   }
+}
+
+/// The live branch of the worktree at [worktreePath] in the repos snapshot, or
+/// null when it isn't listed. Used to keep a worktree group's tab title in sync
+/// with a branch rename (the group is keyed by path, which the rename leaves
+/// unchanged, so the stored label would otherwise go stale).
+String? _liveBranch(ReposState repos, String? worktreePath) {
+  if (worktreePath == null) return null;
+  for (final r in repos.repos) {
+    for (final wt in r.worktrees) {
+      if (wt.path == worktreePath) return wt.branch;
+    }
+  }
+  return null;
 }
 
 /// The tabular-numeral member-count badge.

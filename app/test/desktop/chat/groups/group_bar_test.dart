@@ -41,16 +41,42 @@ Group _board(String id, List<String> members, {String? label}) => Group.board(
   tree: WorkspaceController.seedWorkspace(),
 );
 
+/// A repo `p1` whose single worktree at [path] currently sits on [branch] —
+/// used to prove the tab title tracks the live branch, not the stored label.
+RepoInfo _repoWithWorktree(String path, String branch) => RepoInfo(
+  id: 'p1',
+  name: 'makit',
+  path: '/tmp/p1',
+  pinned: false,
+  lastActivityAt: 0,
+  isGitRepo: true,
+  defaultBranch: 'main',
+  currentBranch: 'main',
+  worktrees: [
+    Worktree(
+      id: 'w1',
+      path: path,
+      branch: branch,
+      isPrimary: false,
+      insertions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      sessionIds: const [],
+    ),
+  ],
+);
+
 ProviderContainer _container({
   required List<Group> groups,
   required List<Session> sessions,
   String? activeGroupId,
   List<ClosedBoard> recentlyClosed = const [],
+  List<RepoInfo> repos = const [],
 }) {
   final container = ProviderContainer(
     overrides: [
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
-      reposProvider.overrideWithValue(ReposState(const [])),
+      reposProvider.overrideWithValue(ReposState(repos)),
       groupsControllerProvider.overrideWith(
         (ref) => GroupsController.ephemeral(
           GroupsState(
@@ -172,6 +198,23 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Rename board'), findsNothing);
+    });
+
+    testWidgets('a worktree tab shows the live branch, not a stale label', (
+      tester,
+    ) async {
+      // The group was minted on feat/x; the branch was later renamed to
+      // feat/renamed. The group is keyed by the (unchanged) worktree path, so
+      // the tab must follow the live branch rather than its stored label.
+      final c = _container(
+        groups: [_wt('g1', '/tmp/wt/feat-x', label: 'feat/x')],
+        sessions: const [],
+        repos: [_repoWithWorktree('/tmp/wt/feat-x', 'feat/renamed')],
+      );
+      await _pump(tester, c, const GroupBar());
+
+      expect(find.text('feat/renamed'), findsOneWidget);
+      expect(find.text('feat/x'), findsNothing);
     });
 
     testWidgets('a worktree group with no members shows 0 and no live dot', (
