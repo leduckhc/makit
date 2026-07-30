@@ -565,54 +565,61 @@ class _TabChip extends ConsumerWidget {
         color: active
             ? _paneBackground(cs, focused: splitActive)
             : Colors.transparent,
-        child: Column(
+        // A Stack, not a Column with an Expanded: this same chip is reused as
+        // the Draggable's `feedback`, where height is unbounded — an Expanded
+        // there has nothing to expand into and the drag blows up on hit-test.
+        // The Row sizes the chip; the cap is laid over its top edge.
+        child: Stack(
           children: [
-            Container(
-              key: const Key('tabFocusCap'),
-              height: 2,
-              color: active && splitActive ? cs.primary : cs.outlineVariant,
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 10, right: 4),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (session != null) ...[
-                      SessionStatusDot(status: session.status),
-                      const SizedBox(width: kSpace6),
-                    ],
-                    Expanded(
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w500,
-                          color: active ? cs.onSurface : cs.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      iconSize: 12,
-                      visualDensity: VisualDensity.compact,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 24,
-                        minHeight: 24,
-                      ),
-                      tooltip: 'Close tab',
-                      color: active ? cs.onSurface : cs.onSurfaceVariant,
-                      icon: const Icon(PhosphorIconsLight.x),
-                      onPressed: () => closeTabAndArchive(
-                        ref,
-                        split.id,
-                        tab.id,
-                        tab.sessionId,
-                      ),
-                    ),
+            Padding(
+              padding: const EdgeInsets.only(left: 10, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (session != null) ...[
+                    SessionStatusDot(status: session.status),
+                    const SizedBox(width: kSpace6),
                   ],
-                ),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: active ? cs.onSurface : cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    iconSize: 12,
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    tooltip: 'Close tab',
+                    color: active ? cs.onSurface : cs.onSurfaceVariant,
+                    icon: const Icon(PhosphorIconsLight.x),
+                    onPressed: () => closeTabAndArchive(
+                      ref,
+                      split.id,
+                      tab.id,
+                      tab.sessionId,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                key: const Key('tabFocusCap'),
+                height: 2,
+                color: active && splitActive ? cs.primary : cs.outlineVariant,
               ),
             ),
           ],
@@ -632,6 +639,13 @@ class _TabChip extends ConsumerWidget {
       builder: (context, candidate, rejected) {
         return Draggable<TabDragData>(
           data: TabDragData(fromSplitId: split.id, tabId: tab.id),
+          // Anchor the feedback to the POINTER, so `DragTargetDetails.offset`
+          // (which is the feedback's top-left) is the cursor. The drop-zone maths
+          // in `_tabZoneFor` treats that offset as the cursor, so with the
+          // default anchor the zone depended on the chip's width — i.e. on the
+          // session's TITLE LENGTH: dragging a long-titled tab onto a pane's
+          // centre could land in an edge zone and split instead of moving.
+          dragAnchorStrategy: pointerDragAnchorStrategy,
           onDragStarted: () => controller.setActiveTab(split.id, tab.id),
           feedback: Material(
             color: Colors.transparent,
