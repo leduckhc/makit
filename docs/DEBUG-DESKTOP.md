@@ -62,7 +62,7 @@ the first run F5 just launches.
 
 To break in the server as well as the app, pick the compound **"makit full stack
 (app + server breakpoints)"**. It starts the `makit: debug server (inspect)`
-task, attaches the Node debugger on `127.0.0.1:9229`, and launches the app with
+task, attaches the Node debugger on `127.0.0.1:${makitInspectPort}`, and launches the app with
 **"makit desktop (debug, attach to running server)"** (same `MAKIT_WS_URL` /
 `MAKIT_FP` prompts, but no server task of its own). Breakpoints in
 `server/src/**.ts` and in `app/lib/**.dart` are live at the same time; stopping
@@ -71,9 +71,11 @@ either session stops both (`stopAll`).
 Run **"makit server (attach to debug server)"** alone when only the server
 matters (e.g. driving it from the CLI or an already-installed app build).
 
-> The compound prompts for a `makitInspectPort` (default `9229`). Pick a free
-> port per worktree so two full-stack debug sessions don't collide on the same
-> inspector — it maps to `MAKIT_INSPECT_PORT` for the task and the Node attach.
+> Like `makitPort`, the `makitInspectPort` input lives in both `launch.json`
+> (Node attach) and `tasks.json` (the inspect task's `MAKIT_INSPECT_PORT`), so
+> the compound prompts for it twice — enter the same value both times (the
+> defaults match at `9229`, and VS Code remembers your last entry). Pick a free
+> port per worktree so two full-stack sessions don't collide on the inspector.
 
 ### Other VS Code entries
 

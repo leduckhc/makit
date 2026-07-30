@@ -22,13 +22,13 @@
 # FLUTTER_BIN.
 set -euo pipefail
 
-MODE=run
+MODE="run"
 INSPECT=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --server-only) MODE=server; shift ;;
-    --print-fp)    MODE=fp; shift ;;
-    --kill)        MODE=kill; shift ;;
+    --server-only) MODE="server"; shift ;;
+    --print-fp)    MODE="fp"; shift ;;
+    --kill)        MODE="kill"; shift ;;
     --inspect)     INSPECT=1; shift ;;
     *) break ;;
   esac
