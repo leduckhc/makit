@@ -380,6 +380,10 @@ class _NewGroupButton extends ConsumerWidget {
     );
 
     if (selected == null) return;
+    // The bar can be rebuilt or removed while the menu is open (a group closing,
+    // the window resizing); the rest of the codebase guards ref use after an
+    // await the same way.
+    if (!context.mounted) return;
     final controller = ref.read(groupsControllerProvider.notifier);
     if (selected == _newBoardValue) {
       controller.newBoard();

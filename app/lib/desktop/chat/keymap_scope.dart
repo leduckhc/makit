@@ -232,6 +232,11 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
           .divideActive(axis, worktree: hint);
       return;
     }
+    // Pin the group the request came from: `workspaceControllerProvider` is
+    // rebuilt whenever the active group changes, so placing into "whatever is
+    // active when the dialog closes" could split a group the user never asked
+    // about (they can switch groups with ⌘1–9 while it is open).
+    final requestedGroup = ref.read(groupsControllerProvider).active.id;
     showNewWorktreeDialog(
       context,
       ref,
@@ -239,6 +244,10 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       activateGroup: false,
     ).then((worktree) {
       if (worktree == null) return;
+      final groups = ref.read(groupsControllerProvider.notifier);
+      if (ref.read(groupsControllerProvider).active.id != requestedGroup) {
+        groups.activate(requestedGroup);
+      }
       ref
           .read(workspaceControllerProvider.notifier)
           .divideActive(axis, worktree: worktree);
@@ -261,6 +270,9 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
           );
       return;
     }
+    // Same reasoning as _divide: pin the group the request came from, since the
+    // user can switch groups while the dialog is open.
+    final requestedGroup = ref.read(groupsControllerProvider).active.id;
     showNewWorktreeDialog(
       context,
       ref,
@@ -268,6 +280,10 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       activateGroup: false,
     ).then((worktree) {
       if (worktree == null) return;
+      final groups = ref.read(groupsControllerProvider.notifier);
+      if (ref.read(groupsControllerProvider).active.id != requestedGroup) {
+        groups.activate(requestedGroup);
+      }
       final activeSplitId = ref.read(workspaceControllerProvider).activeSplitId;
       ref
           .read(workspaceControllerProvider.notifier)

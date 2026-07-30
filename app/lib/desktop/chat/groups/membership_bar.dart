@@ -189,10 +189,9 @@ class _LayoutToggle extends ConsumerWidget {
     // (it keys on the active group's identity, not its tree) — but pinning
     // first mirrors the mock's "set the override, then lay out once".
     void apply(LayoutMode mode) {
-      ref.read(groupsControllerProvider.notifier).setLayoutOverride(
-        group.id,
-        mode,
-      );
+      ref
+          .read(groupsControllerProvider.notifier)
+          .setLayoutOverride(group.id, mode);
       relayoutInto(ref.read(workspaceControllerProvider.notifier), mode);
     }
 
@@ -205,15 +204,22 @@ class _LayoutToggle extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // A tap on the already-pinned segment is a no-op: `apply` unbinds every
+          // shown session and re-places it, so re-applying the current mode would
+          // rewrite the whole tree (and persist it) for no visible change.
           _ToggleSegment(
             label: 'Split',
             selected: group.layoutOverride == LayoutMode.split,
-            onTap: () => apply(LayoutMode.split),
+            onTap: group.layoutOverride == LayoutMode.split
+                ? null
+                : () => apply(LayoutMode.split),
           ),
           _ToggleSegment(
             label: 'Tabs',
             selected: group.layoutOverride == LayoutMode.tabs,
-            onTap: () => apply(LayoutMode.tabs),
+            onTap: group.layoutOverride == LayoutMode.tabs
+                ? null
+                : () => apply(LayoutMode.tabs),
           ),
         ],
       ),
@@ -230,7 +236,10 @@ class _ToggleSegment extends StatelessWidget {
 
   final String label;
   final bool selected;
-  final VoidCallback onTap;
+
+  /// Null when this segment is already the pinned mode, so tapping it does
+  /// nothing rather than rewriting the tree for no change.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

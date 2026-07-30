@@ -6,6 +6,7 @@
 /// the system rather than a rule each call site has to remember.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../settings/prefs/preference_entries.dart';
@@ -17,6 +18,12 @@ import 'group.dart';
 import 'groups_controller.dart';
 
 /// The group whose tree is on the canvas.
+///
+/// Watches the whole state deliberately: the *identity* of the active group is
+/// not enough, since callers read its label, kind, scope and layout override.
+/// `Group.==` includes the tree, so this DOES recompute on tree mutations —
+/// which is why widgets that only need one field should select it from
+/// [groupsControllerProvider] directly rather than watching this.
 final activeGroupProvider = Provider<Group>(
   (ref) => ref.watch(groupsControllerProvider).active,
 );
@@ -31,22 +38,34 @@ final groupMembersProvider = Provider.family<List<String>, String>((
   ref,
   groupId,
 ) {
-  final groups = ref.watch(groupsControllerProvider);
+  // Select only what membership depends on — kind, scope and the curated list —
+  // so a tree mutation (every focus/split/divider drag rewrites GroupsState via
+  // commitTree) does not recompute membership for every group in the family.
+  final group = ref.watch(
+    groupsControllerProvider.select<_MembershipKey?>((s) {
+      for (final g in s.groups) {
+        if (g.id == groupId) {
+          return _MembershipKey(
+            kind: g.kind,
+            projectId: g.projectId,
+            worktreePath: g.worktreePath,
+            members: g.members,
+          );
+        }
+      }
+      return null;
+    }),
+  );
   final sessions = ref.watch(sessionsProvider);
-  Group? group;
-  for (final g in groups.groups) {
-    if (g.id == groupId) group = g;
-  }
   if (group == null) return const [];
 
   switch (group.kind) {
     case GroupKind.worktree:
       return [
         for (final s in sessions.sessions)
-          if (group.isScopedTo(
-            projectId: s.projectId,
-            worktreePath: s.worktreePath,
-          ))
+          if (s.projectId == group.projectId &&
+              s.worktreePath != null &&
+              s.worktreePath == group.worktreePath)
             s.id,
       ];
     case GroupKind.board:
@@ -56,6 +75,35 @@ final groupMembersProvider = Provider.family<List<String>, String>((
       ];
   }
 });
+
+/// The slice of a [Group] that decides its membership. Equality over just these
+/// fields is what lets [groupMembersProvider] ignore tree churn.
+@immutable
+class _MembershipKey {
+  const _MembershipKey({
+    required this.kind,
+    required this.projectId,
+    required this.worktreePath,
+    required this.members,
+  });
+
+  final GroupKind kind;
+  final String? projectId;
+  final String? worktreePath;
+  final List<String> members;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _MembershipKey &&
+      other.kind == kind &&
+      other.projectId == projectId &&
+      other.worktreePath == worktreePath &&
+      listEquals(other.members, members);
+
+  @override
+  int get hashCode =>
+      Object.hash(kind, projectId, worktreePath, Object.hashAll(members));
+}
 
 /// The set of session ids the server still lists — what
 /// [GroupsController.reopenBoard] and the prune need to filter against.

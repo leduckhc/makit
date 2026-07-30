@@ -304,6 +304,10 @@ class _IdeSplitButton extends StatelessWidget {
   /// dragging chip (`split_view.dart`), an unchosen ask tile (`ask_card.dart`).
   /// Review preferred the M3 idiom; adopting it here alone would make this the
   /// only control in the app that dims differently.
-  Widget _disabledDim(Widget button) =>
-      enabled ? button : Opacity(opacity: 0.4, child: button);
+  Widget _disabledDim(Widget button) => enabled
+      ? button
+      // IgnorePointer as well as dimming: without it the disabled control still
+      // takes hover cursors and is discoverable by assistive technology, i.e. it
+      // advertises an action it will not perform.
+      : IgnorePointer(child: Opacity(opacity: 0.4, child: button));
 }

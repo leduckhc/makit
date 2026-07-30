@@ -12,6 +12,7 @@
 /// [WorkspaceCommit] sink and this controller writes them.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -553,15 +554,42 @@ class GroupsController extends StateNotifier<GroupsState> {
 
   void _commit(GroupsState next) {
     state = next;
-    _persist();
+    _schedulePersist();
   }
+
+  /// Coalesce writes to the end of the current microtask queue.
+  ///
+  /// Every tree mutation lands here — a divider drag emits one per frame — and
+  /// each write serialises *all* groups, their trees and the closed-board list.
+  /// Dragging a divider therefore produced a burst of full-state encodes. Only
+  /// the last state in a burst matters, so schedule once and write once.
+  void _schedulePersist() {
+    if (_prefs == null || _persistScheduled) return;
+    _persistScheduled = true;
+    scheduleMicrotask(() {
+      _persistScheduled = false;
+      _persist();
+    });
+  }
+
+  bool _persistScheduled = false;
 
   Future<void> _persist() async {
     final prefs = _prefs;
     if (prefs == null) return;
     try {
       await prefs.setString(kGroupsPrefsKey, jsonEncode(state.toJson()));
-    } catch (_) {
+    } catch (e, stack) {
+      // Best-effort, but not silent: a user losing their layout across restarts
+      // is a real bug and an empty catch makes it undiagnosable.
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: stack,
+          library: 'makit',
+          context: ErrorDescription('persisting desktop groups'),
+        ),
+      );
       // Best-effort, exactly as the workspace blob was: a failed write must not
       // crash the app; the in-memory state is intact and the next mutation
       // retries.

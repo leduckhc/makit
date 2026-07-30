@@ -138,6 +138,11 @@ void closeTabAndArchive(
 ) {
   final workspace = ref.read(workspaceControllerProvider.notifier);
   final group = ref.read(activeGroupProvider);
+  // Close the tab first, always: it is the action the user took, and it is the
+  // only thing that handles an empty tab or a session that is not a member.
+  // `removeMember` then drops any remaining tabs for that session, which is a
+  // second state update — but persistence is coalesced per microtask, so it
+  // costs no extra write.
   workspace.closeTab(splitId, tabId);
   if (sessionId == null) return;
   if (group.kind == GroupKind.board) {

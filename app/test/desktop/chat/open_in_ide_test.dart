@@ -181,7 +181,34 @@ void main() {
 
       // It is visibly disabled, and it does not narrate an action it will not
       // take (a dead control describing "Open in VS Code" is worse than none).
-      expect(find.byType(Opacity), findsWidgets);
+      // Dimmed *and* inert: without IgnorePointer the disabled control still
+      // takes hover cursors and is reachable by assistive technology, i.e. it
+      // advertises an action it will not perform.
+      expect(
+        find
+                .ancestor(
+                  of: find.byType(OpenInIdeButton),
+                  matching: find.byType(IgnorePointer),
+                )
+                .evaluate()
+                .isNotEmpty ||
+            find
+                .descendant(
+                  of: find.byType(OpenInIdeButton),
+                  matching: find.byType(IgnorePointer),
+                )
+                .evaluate()
+                .isNotEmpty,
+        isTrue,
+        reason: 'the disabled launcher must not take pointer events',
+      );
+      final dim = tester.widgetList<Opacity>(
+        find.descendant(
+          of: find.byType(OpenInIdeButton),
+          matching: find.byType(Opacity),
+        ),
+      );
+      expect(dim.map((o) => o.opacity), contains(0.4));
       expect(
         find.byTooltip('Nothing to open — this board has no panes'),
         findsOneWidget,

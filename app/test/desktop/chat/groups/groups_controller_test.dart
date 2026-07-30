@@ -277,6 +277,7 @@ void main() {
     test('an ephemeral controller writes nothing', () async {
       final prefs = await SharedPreferences.getInstance();
       _with([_wt('g1', 'feat/x')]).newBoard();
+      await pumpEventQueue();
       expect(prefs.getString(kGroupsPrefsKey), isNull);
     });
 
@@ -285,6 +286,10 @@ void main() {
       final c = GroupsController.load(prefs);
       final id = c.newBoard(label: 'Review');
       c.addMember(id, 's1', location: _loc('/tmp/wt/main'));
+      // Writes are coalesced to the end of the microtask queue (a divider drag
+      // emits one mutation per frame and each write encodes every group), so let
+      // the scheduled write run.
+      await pumpEventQueue();
 
       final raw = jsonDecode(prefs.getString(kGroupsPrefsKey)!) as Map;
       expect(raw['v'], 1, reason: 'the payload is versioned from day one');

@@ -609,11 +609,22 @@ class WorkspaceController extends StateNotifier<WorkspaceState> {
 
   void _commit(WorkspaceState next) {
     state = next;
-    // Best-effort: a sink that throws must not take the app down with it. The
-    // in-memory tree is already correct and the next mutation retries.
+    // Best-effort: a sink that throws must not take the app down with it — the
+    // in-memory tree is already correct and the next mutation retries. But it is
+    // reported rather than swallowed, so a persistence failure is diagnosable
+    // instead of silently costing the user their layout.
     try {
       _onCommit?.call(next);
-    } catch (_) {}
+    } catch (e, stack) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: stack,
+          library: 'makit',
+          context: ErrorDescription('committing a workspace mutation'),
+        ),
+      );
+    }
   }
 }
 

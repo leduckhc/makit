@@ -613,12 +613,18 @@ void main() {
       tester.view.physicalSize = const Size(680, 900);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
+      // Worktree groups, so the launcher is ENABLED and its hit-testability is a
+      // meaningful assertion: an empty board owns no folder, so a disabled
+      // launcher is correctly inert (IgnorePointer) and would fail that check for
+      // the right reason.
       final groups = GroupsState(
         groups: [
           for (var i = 0; i < 10; i++)
-            Group.board(
+            Group.worktree(
               id: 'g$i',
-              label: 'Board $i of ten',
+              projectId: 'p1',
+              worktreePath: '/tmp/wt/branch-number-$i',
+              label: 'feature/branch-number-$i',
               tree: WorkspaceController.seedWorkspace(),
             ),
         ],
@@ -659,13 +665,20 @@ void main() {
         reason: 'the launcher did not move with the tabs',
       );
       expect(scrolled.right, lessThanOrEqualTo(680));
-      // And it is still hit-testable, not merely present in the tree.
+      // And the launcher itself is what a tap at its centre hits — not merely
+      // "some RenderBox", which would also pass if the window-drag layer in the
+      // Stack were swallowing the gesture.
+      final launcherBox = tester.renderObject(find.byType(OpenInIdeButton));
       expect(
         tester
             .hitTestOnBinding(scrolled.center)
             .path
-            .any((e) => e.target is RenderBox),
+            .map((e) => e.target)
+            .any(
+              (t) => t == launcherBox || _isDescendantRender(t, launcherBox),
+            ),
         isTrue,
+        reason: 'something is covering the launcher',
       );
     });
 

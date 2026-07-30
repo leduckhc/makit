@@ -47,7 +47,10 @@ Future<SelectedWorktree?> showNewWorktreeDialog(
 }
 
 class _NewWorktreeDialog extends ConsumerStatefulWidget {
-  const _NewWorktreeDialog({this.initialProjectId, required this.activateGroup});
+  const _NewWorktreeDialog({
+    this.initialProjectId,
+    required this.activateGroup,
+  });
 
   final String? initialProjectId;
   final bool activateGroup;
@@ -169,7 +172,15 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
           );
         case _WorktreeFrom.fromPr:
           final pr = _prNumber;
-          if (pr == null) throw StateError('Select a pull request first.');
+          if (pr == null) {
+            // Surfaced as UI copy, so it must not be an exception: `'$e'` on a
+            // StateError renders as "Bad state: Select a pull request first."
+            setState(() {
+              _creating = false;
+              _error = 'Select a pull request first.';
+            });
+            return;
+          }
           created = await store.createWorktreeFromPr(projectId, pr);
       }
       createdPath = created.path;
@@ -178,6 +189,11 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
         path: created.path,
         branch: created.branch,
       );
+      // Hand off BEFORE activating the group: creating the worktree is the
+      // side-effectful step and it has succeeded. If activation then threw, a
+      // rollback would delete a worktree that is fine and that the user asked
+      // for — losing work to tidy up bookkeeping.
+      createdPath = null;
       if (widget.activateGroup) {
         ref
             .read(groupsControllerProvider.notifier)
@@ -187,8 +203,8 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
               label: created.branch ?? created.path.split('/').last,
             );
       }
-      createdPath = null; // handed off — the caller now owns it.
       if (!mounted) return;
+      _creating = false; // reset before popping, in case the pop is refused
       Navigator.of(context).pop(worktree);
     } catch (e) {
       if (createdPath != null) {
