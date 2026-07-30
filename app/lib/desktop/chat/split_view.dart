@@ -344,7 +344,6 @@ class _SplitViewState extends ConsumerState<SplitView> {
                   child: Column(
                     children: [
                       _TabBar(split: widget.split, active: widget.active),
-                      const Divider(height: 1),
                       Expanded(
                         child: DesktopChatPane(
                           // Key by the active tab so switching tabs recreates
@@ -557,15 +556,10 @@ class _TabChip extends ConsumerWidget {
         : sessionPaneTitle(session, sessionId);
 
     // The active tab is its pane's own body surface, rounded on the TOP only and
-    // with nothing drawn between it and the body beneath, so the tab and its
-    // content read as one cohesive shape. Focused panes sit a tonal step
-    // lighter, so their active tab does too. (The flat, divider-separated
-    // treatment this used to have now belongs to the OUTER group tabs in
-    // `group_bar.dart` — sharp for the window strip, round for tabs in a pane.)
-    //
-    // The focus cap is a 2px CHILD rather than a BorderSide: it marks which
-    // split is focused, and Flutter forbids a `borderRadius` on a non-uniform
-    // border, so a top-only side and rounded corners cannot coexist.
+    // with nothing drawn between it and the body beneath (no cap, no divider),
+    // so the tab and its content read as one cohesive shape. Which split is
+    // focused is shown by the pane's tonal step (a focused pane, and thus its
+    // active tab, sits one step lighter) — not by a stripe on the tab.
     final chip = ClipRRect(
       borderRadius: const BorderRadius.vertical(
         top: Radius.circular(9),
@@ -575,61 +569,41 @@ class _TabChip extends ConsumerWidget {
         color: active
             ? _paneBackground(cs, focused: splitActive)
             : Colors.transparent,
-        // A Stack, not a Column with an Expanded: this same chip is reused as
-        // the Draggable's `feedback`, where height is unbounded — an Expanded
-        // there has nothing to expand into and the drag blows up on hit-test.
-        // The Row sizes the chip; the cap is laid over its top edge.
-        child: Stack(
+        padding: const EdgeInsets.only(left: 10, right: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(left: 10, right: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (session != null) ...[
-                    SessionStatusDot(status: session.status),
-                    const SizedBox(width: kSpace6),
-                  ],
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: active ? cs.onSurface : cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    iconSize: 12,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
-                    ),
-                    tooltip: 'Close tab',
-                    color: active ? cs.onSurface : cs.onSurfaceVariant,
-                    icon: const Icon(PhosphorIconsLight.x),
-                    onPressed: () => closeTabAndArchive(
-                      ref,
-                      split.id,
-                      tab.id,
-                      tab.sessionId,
-                    ),
-                  ),
-                ],
+            if (session != null) ...[
+              SessionStatusDot(status: session.status),
+              const SizedBox(width: kSpace6),
+            ],
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: active ? cs.onSurface : cs.onSurfaceVariant,
+                ),
               ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                key: const Key('tabFocusCap'),
-                height: 2,
-                color: active && splitActive ? cs.primary : cs.outlineVariant,
+            IconButton(
+              iconSize: 12,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(
+                minWidth: 24,
+                minHeight: 24,
+              ),
+              tooltip: 'Close tab',
+              color: active ? cs.onSurface : cs.onSurfaceVariant,
+              icon: const Icon(PhosphorIconsLight.x),
+              onPressed: () => closeTabAndArchive(
+                ref,
+                split.id,
+                tab.id,
+                tab.sessionId,
               ),
             ),
           ],

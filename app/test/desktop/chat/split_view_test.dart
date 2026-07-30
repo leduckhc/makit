@@ -118,19 +118,6 @@ Container _chipSurface(WidgetTester tester, String label) => tester
     )
     .firstWhere((c) => c.color != null);
 
-/// The colour of the tab's 2px focus cap, which is a keyed child now rather than
-/// a BorderSide.
-Color? _chipCapColor(WidgetTester tester, String label) => tester
-    .widget<Container>(
-      find.descendant(
-        of: find
-            .ancestor(of: find.text(label), matching: find.byType(ClipRRect))
-            .first,
-        matching: find.byKey(const Key('tabFocusCap')),
-      ),
-    )
-    .color;
-
 ColorScheme _scheme(WidgetTester tester) =>
     Theme.of(tester.element(find.byType(WorkspaceView))).colorScheme;
 
@@ -200,30 +187,6 @@ void main() {
       expect(chip.top, moreOrLessEquals(bar.top));
       expect(chip.bottom, moreOrLessEquals(bar.bottom));
     });
-
-    testWidgets(
-      'only the focused split\'s active tab gets the primary cap; the '
-      'unfocused split\'s active tab caps stay neutral',
-      (tester) async {
-        final c = await _twoPanes(tester); // Beta's split focused
-        final cs = _scheme(tester);
-
-        expect(_chipCapColor(tester, 'Beta'), cs.primary);
-        expect(_chipCapColor(tester, 'Alpha'), cs.outlineVariant);
-
-        // Focus follows the active split: activating Alpha's split moves the
-        // primary cap over and dims Beta's.
-        final alphaSplitId = findTab(
-          c.read(workspaceControllerProvider).root,
-          's1',
-        )!.$1;
-        _ws(c).setActiveSplit(alphaSplitId);
-        await tester.pumpAndSettle();
-
-        expect(_chipCapColor(tester, 'Alpha'), cs.primary);
-        expect(_chipCapColor(tester, 'Beta'), cs.outlineVariant);
-      },
-    );
 
     testWidgets('the active tab seats on its pane surface; inactive tabs are '
         'dimmed', (tester) async {

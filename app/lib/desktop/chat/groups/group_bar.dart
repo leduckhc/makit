@@ -58,7 +58,7 @@ class GroupBar extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             for (var i = 0; i < groups.length; i++)
               _GroupTab(
@@ -115,7 +115,7 @@ class _GroupTab extends ConsumerWidget {
           onTap: () => controller.activate(group.id),
           borderRadius: BorderRadius.zero,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(kSpace12, kSpace6, kSpace6, 0),
+            padding: const EdgeInsets.fromLTRB(kSpace12, 0, kSpace6, 0),
             decoration: BoxDecoration(
               color: active ? cs.surfaceContainer : Colors.transparent,
               border: Border(
