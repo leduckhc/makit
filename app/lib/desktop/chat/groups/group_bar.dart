@@ -113,9 +113,7 @@ class _GroupTab extends ConsumerWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: () => controller.activate(group.id),
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(kRadius8),
-          ),
+          borderRadius: BorderRadius.zero,
           child: Container(
             padding: const EdgeInsets.fromLTRB(kSpace12, kSpace6, kSpace6, 0),
             decoration: BoxDecoration(
@@ -131,9 +129,7 @@ class _GroupTab extends ConsumerWidget {
                   color: active ? cs.outlineVariant : Colors.transparent,
                 ),
               ),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(kRadius8),
-              ),
+              borderRadius: BorderRadius.zero,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

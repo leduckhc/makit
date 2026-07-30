@@ -552,7 +552,7 @@ class _TabChip extends ConsumerWidget {
       decoration: BoxDecoration(
         // Active tab uses its pane's own body surface so it "seats" into the
         // body below (focused panes are a step lighter, so their active tab is
-        // too); a 2px cap marks it. Inactive tabs are flush and transparent.
+        // too); rounded top corners soften the join with the pane body.
         color: active
             ? _paneBackground(cs, focused: splitActive)
             : Colors.transparent,
@@ -566,7 +566,10 @@ class _TabChip extends ConsumerWidget {
           ),
           right: BorderSide(color: cs.outlineVariant, width: 1),
         ),
-      ),
+        borderRadius: const BorderRadius.vertical(
+          top: Radius.circular(kRadius10),
+        ),
+      )
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

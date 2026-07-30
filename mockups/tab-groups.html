@@ -77,6 +77,38 @@
   .ide .caret.open{background:var(--container-highest)}
   .menu .mi img{width:15px;height:15px;display:block}
   .ide.dead{opacity:.4;cursor:default}
+
+  /* NIT 3: the "New worktree" dialog — worktree only. No harness grid, no first
+     message; those belong to the starter you land on. */
+  .wtdlg{width:430px;background:var(--container);border:1px solid var(--hairline);
+         border-radius:12px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,.6)}
+  .wtdlg header{padding:14px 16px 10px;border-bottom:1px solid var(--hairline)}
+  .wtdlg h4{margin:0;font-size:13.5px;font-weight:600}
+  .wtdlg .psub{margin:3px 0 0;font-size:11.5px;color:var(--muted)}
+  .wtdlg .body{padding:14px 16px}
+  .wtdlg .lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+              color:var(--muted);font-weight:700;margin:0 0 6px}
+  .wtdlg .seg{display:inline-flex;width:auto}
+  .wtdlg .seg button{flex:0 0 auto}
+  .wtdlg .field{display:flex;align-items:center;gap:8px;border:1px solid var(--hairline);
+                border-radius:9px;padding:7px 10px;font-size:12.5px;margin-top:10px;
+                background:var(--bg)}
+  .wtdlg .field .k{color:var(--muted);min-width:64px}
+  .wtdlg footer{padding:10px 14px;border-top:1px solid var(--hairline);
+                display:flex;justify-content:flex-end;gap:8px}
+
+  /* NIT 4: the starter's PR bar — same pills/actions as a live composer. */
+  .prbar{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:11px}
+  .prpill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hairline);
+          border-radius:7px;padding:3px 8px;color:var(--muted);background:var(--container)}
+  .prpill .ok{width:7px;height:7px;border-radius:50%;background:var(--primary)}
+  .prpill .num{color:var(--text);font-weight:600}
+  .praction{margin-left:auto;display:flex;align-items:stretch;border:1px solid var(--hairline);
+            border-radius:8px;overflow:hidden;background:var(--container);cursor:pointer}
+  .praction .main{padding:4px 9px;color:var(--text)}
+  .praction .main:hover{background:var(--container-high)}
+  .praction .div{width:1px;background:var(--hairline)}
+  .praction .car{padding:4px 6px;color:var(--muted)}
   .gtab .gx{color:#5a5a5a;font-size:11px;line-height:1;margin-left:1px;opacity:0}
   .gtab:hover .gx,.gtab.on .gx{opacity:1}
   .gtab .gx:hover{color:var(--red)}
@@ -97,14 +129,19 @@
   .menu .tgt{font-size:11px;color:var(--muted);padding:2px 9px 6px}
   .menu .tgt b{color:var(--primary);font-weight:600}
   .swatch.v{background:var(--violet)}
+  /* NIT 1: the OUTER (group) tabs take the sharp-cornered style the inner pane
+     tabs used to have — a flat seat with a top cap and a right divider. */
   .gtab{
     flex:0 0 auto;white-space:nowrap;
-    display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px 9px 0 0;
+    display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:0;
+    border-top:2px solid transparent;border-right:1px solid var(--hairline);
     background:transparent;border:1px solid transparent;border-bottom:none;cursor:pointer;
     font-size:13px;color:var(--muted);position:relative;top:1px;user-select:none;
   }
   .gtab:hover{background:var(--container-high);color:var(--text)}
-  .gtab.on{background:var(--container);border-color:var(--hairline);color:var(--text)}
+  .gtabs{align-items:stretch}
+  .gtab.on{background:var(--container);color:var(--text);
+           border-top-color:var(--accent);border-right-color:var(--hairline)}
   .gtab .swatch{width:7px;height:7px;border-radius:2px;flex:0 0 auto}
   .gtab.wt   .swatch{background:var(--primary)}
   .gtab.board .swatch{background:var(--violet)}
@@ -134,8 +171,9 @@
   .sbfoot .ep{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
   .conn{display:inline-flex;align-items:center;gap:5px}
   .conn .d{width:7px;height:7px;border-radius:50%;background:var(--primary)}
-  .repo{display:flex;align-items:center;gap:6px;padding:9px 10px 3px 14px;color:var(--muted);
-        font-size:11.5px;letter-spacing:.08em;font-weight:600}
+  /* NIT 6: sentence case, bold — not upper-cased with tracking. */
+  .repo{display:flex;align-items:center;gap:6px;padding:9px 10px 3px 14px;color:var(--text);
+        font-size:12px;font-weight:700}
   .repo .name{flex:1}
   .wtrow{display:flex;align-items:center;gap:7px;margin:1px 8px;padding:4px 8px;border-radius:9px;
          font-size:12.5px;cursor:pointer}
@@ -144,7 +182,9 @@
   .wtrow.scoped .branch{color:var(--text)}
   .wtrow .branch{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .wtrow .cnt{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
-  .sessrow{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 12px 3px 34px;color:var(--muted);cursor:pointer}
+  /* NIT 7: xs text in a tighter row (was 12.5px in a 3px-padded row). */
+  .sessrow{display:flex;align-items:center;gap:7px;font-size:11px;line-height:1.35;
+           padding:1px 12px 1px 34px;min-height:20px;color:var(--muted);cursor:pointer}
   .sessrow:hover{color:var(--text)}
   .sessrow .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sessrow.inboard{color:var(--text)}
@@ -163,8 +203,9 @@
   .pane.active{border-color:#4c4c4c;box-shadow:inset 0 0 0 1px #2a2a2a}
   .ptabs{display:flex;align-items:center;gap:2px;padding:5px 5px 0;border-bottom:1px solid var(--hairline);
          background:var(--container);min-height:31px}
+  /* NIT 1: the INNER (pane) tabs get the round corners. */
   .ptab{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:5px 9px;
-        border-radius:7px 7px 0 0;cursor:pointer;max-width:190px}
+        border-radius:9px;cursor:pointer;max-width:190px}
   .ptab:hover{background:var(--container-high);color:var(--text)}
   .ptab.on{background:var(--bg);color:var(--text)}
   .ptab .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -286,6 +327,7 @@
         </div>
       </div>
       <div class="shade" id="shade" style="display:none" onclick="closePicker()"></div>
+      <div class="shade" id="wtshade" style="display:none" onclick="closeWtDialog()"></div>
     </div>
     <div class="toast" id="toast" style="margin:12px 0 0"></div>
   </div>
@@ -342,6 +384,40 @@
          opens the picker.</p>
       <button class="btn" onclick="openEmptyWorktreeGroup()">Open an empty branch group</button>
       <button class="btn ghost" style="margin-top:6px" onclick="openPicker()">＋ on a board</button>
+    </div>
+  </div>
+  <div class="rules" style="border-top:1px dashed var(--hairline)">
+    <div class="rule">
+      <h3><span class="num">A</span>Corners swapped</h3>
+      <p>The <b>outer</b> group tabs now use the flat, sharp-cornered seat (top accent cap + right
+         divider) that the inner pane tabs used to have; the <b>inner</b> pane tabs took the round
+         corners. Click between groups and panes to compare.</p>
+    </div>
+    <div class="rule">
+      <h3><span class="num">B</span>“New worktree” asks one question</h3>
+      <p>The repo <b>+</b> in the sidebar opens a worktree-only dialog — From (New branch / From PR),
+         base, optional name. No harness grid, no first message: those belong to the pane you land on.
+         Confirming creates the branch and drops you on <b>Choose a harness</b>.</p>
+      <button class="btn" onclick="openWtDialog('makit')">Open “New worktree”</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">C</span>The starter is a first-class pane</h3>
+      <p>Choose-a-harness now carries the same PR status pill, diff/ahead pill and “most actionable
+         next step” split button that sit above a live session's composer — plus the model and
+         reasoning pills in the composer itself.</p>
+      <button class="btn" onclick="clickWorktree('makit','chore/deps')">Open an empty branch</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">D</span>Sidebar typography</h3>
+      <p>Repo names are sentence-case and bold (no upper-casing, no tracking). Session rows are xs
+         text in a tighter row.</p>
+    </div>
+    <div class="rule">
+      <h3><span class="num">E</span>Two behaviours that are broken in the app</h3>
+      <p>Both already work here, so this mock is the reference: <b>Split | Tabs</b> re-arranges the
+         group on click, and <b>pinning</b> a session to a board puts it on the canvas immediately.</p>
+      <button class="btn" onclick="setOverride('split')">Split</button>
+      <button class="btn ghost" style="margin-top:6px" onclick="(function(){const b=groups.find(x=>x.kind==='board');active=b.id;addMember(b.id,'a5',{projectId:'p1',worktreePath:'/tmp/wt/fix/flaky-e2e'});})()">Pin an agent to a board</button>
     </div>
   </div>
   <p class="hint">Mock only — no app code touched. Not mocked (spec'd but not visual): the commit-sink refactor,
@@ -459,6 +535,9 @@ let groups = [
 let active = groups[0].id;
 let closedBoards = [];
 let openMenu = null, pickerOpen = false;
+/* NIT 3: the New-worktree dialog's state. It asks ONE question — where should
+   this worktree come from — and nothing about harnesses or first messages. */
+let wtDialog = null; // null | {repo, source:'branch'|'pr', base, name, pr}
 
 const g = () => groups.find(x => x.id === active) ?? groups[0];
 const focusedId = () => { const q=g(); return q.arrangement[q.focus[0]]?.[q.focus[1]] ?? null; };
@@ -567,7 +646,9 @@ function renderMemb(){
 function renderSidebar(){
   const grp = g(), ids = membersOf(grp);
   document.getElementById('sidebar').innerHTML = REPOS.map(r => `
-    <div class="repo"><span class="icon">${ICON.folder}</span><span class="name">${r.name.toUpperCase()}</span></div>
+    <div class="repo"><span class="icon">${ICON.folder}</span><span class="name">${r.name}</span>
+      <span class="gnew" style="padding:2px 6px;font-size:13px" title="New worktree"
+            onclick="event.stopPropagation();openWtDialog('${r.name}')">+</span></div>
     ${r.branches.map(b => {
       const scoped = grp.kind==='wt' && grp.repo===r.name && grp.scope===b.branch;
       const agents = b.agents.filter(live);
@@ -597,9 +678,12 @@ function paneBody(a){
     <div class="composer">Message ${a.agent}…<span class="snd">⏎</span></div>`;
 }
 
-/* Decision 20: an empty worktree group IS the starter — no placeholder step. */
+/* Decision 20: an empty worktree group IS the starter — no placeholder step.
+   NIT 4: it now carries the same PR pills + PR action button that sit above a
+   live session's composer, so a fresh worktree is not a second-class pane. */
 function starter(grp){
-  return `<div class="pane active"><div class="pbody" style="align-items:center;justify-content:center;gap:10px">
+  return `<div class="pane active">
+    <div class="pbody" style="align-items:center;justify-content:center;gap:10px">
       <div style="font-size:13px;font-weight:600">Choose a harness</div>
       <div style="font-size:11.5px;color:var(--muted)">Then send a message to start it on <b style="color:var(--primary)">${grp.scope}</b>.</div>
       <div style="display:flex;gap:10px;margin-top:4px">
@@ -608,7 +692,30 @@ function starter(grp){
             <div class="icon" style="margin:0 auto 4px">${ICON.robot}</div>${n}</div>`).join('')}
       </div>
     </div>
-    <div class="composer">Message pi… <span class="snd">⏎</span></div></div>`;
+    ${prBar(grp)}
+    <div class="composer">Message pi…
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <span class="origin">gpt-5</span><span class="origin">medium</span>
+      </span>
+      <span class="snd" style="margin-left:8px">⏎</span></div>
+  </div>`;
+}
+
+/* The PR row above a composer: status pill + "most actionable next step" split
+   button, mirroring the live pane (SPEC-23). Shown in the starter too (nit 4). */
+function prBar(grp){
+  const clean = grp.scope === 'chore/deps';
+  return `<div class="prbar" style="padding:0 10px">
+    ${clean
+      ? `<span class="prpill">no PR yet · nothing to push</span>`
+      : `<span class="prpill"><span class="ok"></span>PR <span class="num">#128</span> · checks passing</span>
+         <span class="prpill"><span class="num" style="color:var(--primary)">+412</span>
+           <span class="num" style="color:var(--red)">−87</span> · 2 ahead</span>`}
+    <span class="praction" title="The most actionable next step for this worktree">
+      <span class="main">${clean ? 'Create PR' : 'Commit and push'}</span>
+      <span class="div"></span><span class="car">▾</span>
+    </span>
+  </div>`;
 }
 
 function renderCanvas(){
@@ -644,6 +751,57 @@ function renderCanvas(){
     ? `<div class="addpane" onclick="openPicker()"><span class="big">＋</span>Add agent</div>` : '');
 }
 
+/* NIT 3: "New worktree" — worktree only. Confirming creates the worktree,
+   activates its (empty) group and lands on the Choose-a-harness starter, which
+   is where harness + model + first message actually belong. */
+function renderWtDialog(){
+  const host = document.getElementById('wtshade');
+  if (!wtDialog){ host.innerHTML=''; host.style.display='none'; return; }
+  const d = wtDialog;
+  host.style.display='flex';
+  const branches = ['main','develop','release/0.9'];
+  host.innerHTML = `<div class="wtdlg" onclick="event.stopPropagation()">
+    <header>
+      <h4>New worktree in ${d.repo}</h4>
+      <p class="psub">Creates the branch and its folder. You pick the harness and
+        write the first message in the pane you land on.</p>
+    </header>
+    <div class="body">
+      <div class="lbl">From</div>
+      <span class="seg">
+        <button class="${d.source==='branch'?'on':''}" onclick="wtSet('source','branch')">New branch</button>
+        <button class="${d.source==='pr'?'on':''}" onclick="wtSet('source','pr')">From PR</button>
+      </span>
+      ${d.source==='branch' ? `
+        <div class="field"><span class="k">Base</span>
+          <span style="flex:1">${d.base}</span>
+          <span class="caret" style="color:var(--muted)">▾</span></div>
+        <div class="field"><span class="k">Name</span>
+          <span style="flex:1;color:${d.name?'var(--text)':'#6b6b6b'}">${d.name || 'auto — worktree-a1b2c3'}</span></div>`
+      : `
+        <div class="field"><span class="k">Pull request</span>
+          <span style="flex:1">#128 · Wire the OAuth callback</span>
+          <span class="caret" style="color:var(--muted)">▾</span></div>`}
+    </div>
+    <footer>
+      <button class="btn ghost" onclick="closeWtDialog()">Cancel</button>
+      <button class="btn" onclick="confirmWtDialog()">Create worktree</button>
+    </footer>
+  </div>`;
+}
+function openWtDialog(repo){ wtDialog = {repo, source:'branch', base:'main', name:''}; render(); }
+function closeWtDialog(){ wtDialog = null; render(); }
+function wtSet(k,v){ wtDialog[k]=v; render(); }
+function confirmWtDialog(){
+  const d = wtDialog;
+  const branch = d.source==='pr' ? 'pr-128-oauth' : (d.name || 'worktree-a1b2c3');
+  branchOf(d.repo, branch) || REPOS.find(r=>r.name===d.repo).branches.push({branch, agents:[]});
+  wtDialog = null;
+  clickWorktree(d.repo, branch);   // lands on the Choose-a-harness starter
+  toast(`Created <b>${branch}</b> off <b>${d.source==='pr' ? 'PR #128' : d.base}</b> and landed on
+         <b>Choose a harness</b> — no harness or first message was asked for up front.`);
+}
+
 function renderPicker(){
   const host = document.getElementById('shade'), grp = g();
   if (!pickerOpen || grp.kind!=='board'){ host.innerHTML=''; host.style.display='none'; return; }
@@ -667,7 +825,7 @@ function renderPicker(){
       <button class="btn" onclick="closePicker()">Done</button></footer></div>`;
 }
 
-function render(){ syncAll(); renderGroupBar(); renderMemb(); renderSidebar(); renderCanvas(); renderPicker(); }
+function render(){ syncAll(); renderGroupBar(); renderMemb(); renderSidebar(); renderCanvas(); renderPicker(); renderWtDialog(); }
 
 /* ─────────────────────────── actions ─────────────────────────── */
 function pick(id){ active = id; openMenu=null; render(); }
