@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_auto_select.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart' as node;
 import 'package:makit/desktop/chat/selected_session.dart';
@@ -25,9 +27,24 @@ final _sessionsState = StateProvider<SessionsState>(
 );
 
 ProviderContainer _container(List<Session> sessions) {
+  // A board whose membership is every session in play, so auto-select's new
+  // group-awareness (it only reveals sessions the active group contains) has
+  // candidates to work with. Decision 5's "never reveal a foreign session" is
+  // exercised by its own test below.
+  final board = Group.board(
+    id: 'b1',
+    label: 'Board 1',
+    members: [for (final s in sessions) s.id],
+    tree: WorkspaceController.seedWorkspace(),
+  );
   final container = ProviderContainer(
     overrides: [
       sessionsProvider.overrideWith((ref) => ref.watch(_sessionsState)),
+      groupsControllerProvider.overrideWith(
+        (ref) => GroupsController.ephemeral(
+          GroupsState(groups: [board], activeGroupId: board.id),
+        ),
+      ),
     ],
   );
   container.read(_sessionsState.notifier).state = SessionsState(sessions);
@@ -179,6 +196,51 @@ void main() {
     expect(workspace1.activeSplitId, workspace2.activeSplitId);
     expect(container.read(selectedSessionProvider), 'a');
   });
+  test(
+    'stays inert and never switches groups when the newest session is foreign '
+    '(decision 5)',
+    () async {
+      // A worktree group for branch A is active; the only (newest) session is
+      // on branch B, so it is not a member of the active group.
+      final wtA = Group.worktree(
+        id: 'gA',
+        projectId: 'p1',
+        worktreePath: '/tmp/wt/A',
+        label: 'A',
+        tree: WorkspaceController.seedWorkspace(),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWith((ref) => ref.watch(_sessionsState)),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [wtA], activeGroupId: 'gA'),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(_sessionsState.notifier).state = SessionsState([
+        Session(
+          id: 'onB',
+          projectId: 'p1',
+          agent: 'pi',
+          title: 'onB',
+          status: SessionStatus.idle,
+          policy: ApprovalPolicy.askOnRisky,
+          worktreePath: '/tmp/wt/B',
+          lastActivityAt: 999,
+        ),
+      ]);
+
+      container.read(desktopAutoSelectSessionProvider);
+      await Future<void>.delayed(Duration.zero);
+
+      // The canvas does not change and the active group is not switched.
+      expect(container.read(selectedSessionProvider), isNull);
+      expect(container.read(groupsControllerProvider).activeGroupId, 'gA');
+    },
+  );
 }
 
 extension on WorkspaceController {

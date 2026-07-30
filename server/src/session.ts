@@ -30,13 +30,11 @@ const STREAMING_DELTA_KINDS: ReadonlySet<string> = new Set([
 /**
  * The draft → started state machine as a discriminated union (SPEC-17 P4).
  *
- * - `draft`: worktree + agent creation is deferred until the first substantive
- *   user message. `agent` is the harness to launch; `baseBranch` the branch to
- *   fork off; `pendingWorktreePath` (start-a-session-in-worktree flow) binds
- *   the draft to an EXISTING worktree, in which case `branch` is derived from
- *   git up front. `virtualWorktreeId` (split-from-draft flow) links several
- *   drafts to ONE not-yet-materialized worktree: whichever draft sends first
- *   forks it, and the rest reuse that tree (see {@link SessionManager}).
+ * - `draft`: agent creation is deferred until the first substantive user
+ *   message. `agent` is the harness to launch; `pendingWorktreePath` binds the
+ *   draft to the worktree the client resolved (creating it when needed) before
+ *   spawning, in which case `branch` is derived from git up front. Without one
+ *   the agent runs in the repo dir (non-git project / unborn HEAD).
  * - `started`: the session is live in `worktreePath` on `branch`.
  *
  * `pendingWorktreePath` lives ONLY on the draft variant, so it is a compile
@@ -47,10 +45,8 @@ export type SessionLifecycle =
   | {
       phase: "draft";
       agent: string;
-      baseBranch?: string;
       pendingWorktreePath?: string;
       branch?: string;
-      virtualWorktreeId?: string;
       /**
        * Pre-spawn config picks (SPEC-27): `{id, value}` requests, validated
        * against the cached catalog, applied at launch after the real
@@ -388,29 +384,27 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * The worktree this session is bound to, whether it has started yet or not:
+   * a started session's live path, else a draft's pending path. Undefined for a
+   * draft with no worktree (non-git project / unborn HEAD).
+   */
+  get boundWorktreePath(): string | undefined {
+    return this._lifecycle.phase === "started"
+      ? this._lifecycle.worktreePath
+      : this._lifecycle.pendingWorktreePath;
+  }
+
+  /**
    * Enter the draft phase: defer worktree + agent creation until the first
    * substantive message (see {@link Manager.startPendingSession}).
    */
   beginDraft(opts: {
     agent: string;
-    baseBranch?: string;
     pendingWorktreePath?: string;
     branch?: string;
-    virtualWorktreeId?: string;
     configPicks?: { id: string; value: string | boolean }[];
   }): void {
     this._lifecycle = { phase: "draft", ...opts };
-  }
-
-  /**
-   * Link this still-pending draft to a shared virtual worktree so a sibling
-   * draft (split off the same, not-yet-started session) materializes into the
-   * same tree on first message. No-op once started.
-   */
-  linkVirtualWorktree(virtualWorktreeId: string): void {
-    if (this._lifecycle.phase === "draft") {
-      this._lifecycle = { ...this._lifecycle, virtualWorktreeId };
-    }
   }
 
   /** Change the harness a still-pending draft will start with. No-op once started. */

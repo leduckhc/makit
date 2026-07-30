@@ -1,14 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/store.dart';
+import 'groups/group_providers.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 
-/// When the workspace shows no session at all (every tab is an empty
-/// placeholder, or their sessions no longer resolve), reveal the most recently
-/// active one so the workspace is useful on first launch (SPEC-10 Phase 1
-/// acceptance). Reveal opens/focuses a tab in the active split via
-/// [WorkspaceController].
+/// When the active group's canvas shows no session at all (every tab is an
+/// empty placeholder, or their sessions no longer resolve), reveal the most
+/// recently active session **that is already a member of the active group** so
+/// the canvas is useful on first launch (SPEC-10 Phase 1 acceptance).
+///
+/// SPEC-30 makes this group-aware: it may only reveal a session within the
+/// active group's membership. Revealing a foreign session would inject it into
+/// the active group's tree, bypassing `addMember` and breaking decisions 4, 5
+/// and 15. If nothing in the group qualifies it stays **inert** — it must never
+/// switch groups on its own (decision 5).
 ///
 /// Deliberately inert as soon as *any* tab anywhere hosts a live session: the
 /// store re-emits [sessionsProvider] on every agent message and status change
@@ -19,11 +25,19 @@ final desktopAutoSelectSessionProvider = Provider<void>((ref) {
   void pick(SessionsState next) {
     if (next.sessions.isEmpty) return;
     if (_showsAnySession(ref.read(workspaceControllerProvider), next)) return;
-    final sorted = [...next.sessions]
-      ..sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    // Only sessions the active group already contains are candidates; a
+    // foreign session is never revealed and the group is never switched.
+    final active = ref.read(activeGroupProvider);
+    final members = ref.read(groupMembersProvider(active.id)).toSet();
+    final candidates = [
+      for (final s in next.sessions)
+        if (members.contains(s.id)) s,
+    ];
+    if (candidates.isEmpty) return;
+    candidates.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
     ref
         .read(workspaceControllerProvider.notifier)
-        .revealSession(sorted.first.id);
+        .revealSession(candidates.first.id);
   }
 
   ref.listen(sessionsProvider, (_, next) => pick(next));

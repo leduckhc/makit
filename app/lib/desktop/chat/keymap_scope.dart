@@ -1,11 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Tab;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
 import 'composer_focus.dart';
-import 'new_session_dialog.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
+import 'new_worktree_dialog.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
@@ -169,30 +172,17 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
       case ShortcutAction.newSession:
-        final projectId = _currentProjectId(ref);
-        showNewSessionDialog(context, ref, projectId: projectId);
+        showNewWorktreeDialog(context, ref, projectId: _currentProjectId(ref));
       case ShortcutAction.nextSession:
         _cycleSession(ref, 1);
       case ShortcutAction.previousSession:
         _cycleSession(ref, -1);
       case ShortcutAction.splitVertical:
-        ref
-            .read(workspaceControllerProvider.notifier)
-            .divideActive(Axis.horizontal);
+        _divide(context, ref, Axis.horizontal);
       case ShortcutAction.splitHorizontal:
-        ref
-            .read(workspaceControllerProvider.notifier)
-            .divideActive(Axis.vertical);
+        _divide(context, ref, Axis.vertical);
       case ShortcutAction.newTab:
-        // A tab with only a New-session button is a dead end for a keyboard
-        // action, so "New tab" opens the dialog directly, pre-filled with the
-        // active tab's worktree when it's real (SPEC-27).
-        showNewSessionDialog(
-          context,
-          ref,
-          projectId: _currentProjectId(ref),
-          worktree: activeRealWorktree(ref),
-        );
+        _newTab(context, ref);
       case ShortcutAction.closeSplit:
         closeActiveSplit(ref);
       case ShortcutAction.closeTab:
@@ -201,11 +191,123 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         _cycleTab(ref, 1);
       case ShortcutAction.prevTab:
         _cycleTab(ref, -1);
+      // SPEC-30 decision 16: ⌘1…⌘9 activate the 1st–9th group. A tenth group
+      // has no binding, so it is only reachable by click or scroll.
+      case ShortcutAction.switchGroup1:
+      case ShortcutAction.switchGroup2:
+      case ShortcutAction.switchGroup3:
+      case ShortcutAction.switchGroup4:
+      case ShortcutAction.switchGroup5:
+      case ShortcutAction.switchGroup6:
+      case ShortcutAction.switchGroup7:
+      case ShortcutAction.switchGroup8:
+      case ShortcutAction.switchGroup9:
+        _switchToGroup(ref, action.groupIndex!);
       // Composer-scope actions are handled inside the Composer, not here.
       case ShortcutAction.sendMessage:
       case ShortcutAction.composerNewline:
         break;
     }
+  }
+
+  /// Activates the [index]th group (0-based) when it exists; a no-op otherwise,
+  /// so a shortcut for a group that isn't there does nothing rather than
+  /// wrapping around (SPEC-30 decision 16).
+  void _switchToGroup(WidgetRef ref, int index) {
+    final groups = ref.read(groupsControllerProvider).groups;
+    if (index >= groups.length) return;
+    ref.read(groupsControllerProvider.notifier).activate(groups[index].id);
+  }
+
+  /// Group-aware split (SPEC-30 decision 13). In a **worktree group** the branch
+  /// already answers "where does it run?", so the new split is seeded with the
+  /// group's scope and lands on the harness picker — **never a dialog**. On a
+  /// **board** there is no scope, so it asks first with the New-worktree dialog
+  /// and the confirmed worktree lands in the new split.
+  void _divide(BuildContext context, WidgetRef ref, Axis axis) {
+    final hint = _groupWorktreeHint(ref.read(activeGroupProvider));
+    if (hint != null) {
+      ref
+          .read(workspaceControllerProvider.notifier)
+          .divideActive(axis, worktree: hint);
+      return;
+    }
+    // Pin the group the request came from: `workspaceControllerProvider` is
+    // rebuilt whenever the active group changes, so placing into "whatever is
+    // active when the dialog closes" could split a group the user never asked
+    // about (they can switch groups with ⌘1–9 while it is open).
+    _askForWorktree(context, ref, (worktree) {
+      ref
+          .read(workspaceControllerProvider.notifier)
+          .divideActive(axis, worktree: worktree);
+    });
+  }
+
+  /// Group-aware new tab (SPEC-30 decision 13). A **worktree group** adds a tab
+  /// hinted with the group's scope — the harness picker, no dialog. A **board**
+  /// asks with the New-worktree dialog first, then opens the confirmed worktree
+  /// as a new tab in the active split.
+  void _newTab(BuildContext context, WidgetRef ref) {
+    final hint = _groupWorktreeHint(ref.read(activeGroupProvider));
+    if (hint != null) {
+      final activeSplitId = ref.read(workspaceControllerProvider).activeSplitId;
+      ref
+          .read(workspaceControllerProvider.notifier)
+          .openTab(
+            activeSplitId,
+            Tab(id: nextNodeId(SplitNodeKind.tab), worktree: hint),
+          );
+      return;
+    }
+    // Same reasoning as _divide: pin the group the request came from, since the
+    // user can switch groups while the dialog is open.
+    _askForWorktree(context, ref, (worktree) {
+      final activeSplitId = ref.read(workspaceControllerProvider).activeSplitId;
+      ref
+          .read(workspaceControllerProvider.notifier)
+          .openTab(
+            activeSplitId,
+            Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree),
+          );
+    });
+  }
+
+  /// Opens the New-worktree dialog pinned to the requesting group, then applies
+  /// [place] to the confirmed worktree. Guarded by [mounted]: worktree creation
+  /// hits the server, and this scope can be disposed while the dialog is open —
+  /// reading `ref` from a disposed ConsumerState would throw.
+  void _askForWorktree(
+    BuildContext context,
+    WidgetRef ref,
+    void Function(SelectedWorktree) place,
+  ) {
+    final requestedGroup = ref.read(groupsControllerProvider).active.id;
+    showNewWorktreeDialog(
+      context,
+      ref,
+      projectId: _currentProjectId(ref),
+      activateGroup: false,
+    ).then((worktree) {
+      if (worktree == null || !mounted) return;
+      if (ref.read(groupsControllerProvider).active.id != requestedGroup) {
+        ref.read(groupsControllerProvider.notifier).activate(requestedGroup);
+      }
+      place(worktree);
+    });
+  }
+
+  /// The scope of a worktree [group] as a tab hint. Null for a board, which
+  /// owns no scope — a worktree group always carries both halves.
+  SelectedWorktree? _groupWorktreeHint(Group group) {
+    if (group.kind != GroupKind.worktree) return null;
+    final projectId = group.projectId;
+    final path = group.worktreePath;
+    if (projectId == null || path == null) return null;
+    return SelectedWorktree(
+      projectId: projectId,
+      path: path,
+      branch: group.label,
+    );
   }
 
   /// Cycles the active split's active tab by [delta] (wrapping). No-op when the

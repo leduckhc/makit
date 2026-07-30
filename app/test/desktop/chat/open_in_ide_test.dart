@@ -148,10 +148,120 @@ void main() {
       await tester.tap(find.byType(InkWell).last);
       await tester.pumpAndSettle();
       // Every target is offered, with VS Code (the default) shown too.
-      expect(find.text('Open in VS Code'), findsWidgets);
-      expect(find.text('Open in Ghostty'), findsOneWidget);
-      expect(find.text('Open in iTerm2'), findsOneWidget);
-      expect(find.text('Reveal in Finder'), findsOneWidget);
+      expect(find.text('VS Code'), findsWidgets);
+      expect(find.text('Ghostty'), findsOneWidget);
+      expect(find.text('iTerm2'), findsOneWidget);
+      expect(find.text('Finder'), findsOneWidget);
+    });
+
+    testWidgets('a null path disables the launcher (nothing to open)', (
+      tester,
+    ) async {
+      // SPEC-30 decision 11: a board with no focused pane owns no scope, so the
+      // launcher is disabled rather than lying about a target.
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(home: Scaffold(body: OpenInIdeButton(path: null))),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Both segments are inert, not just the menu.
+      final button = tester.widget<OpenInIdeButton>(
+        find.byType(OpenInIdeButton),
+      );
+      expect(button.path, isNull);
+      await tester.tap(find.byType(InkWell).last);
+      await tester.pumpAndSettle();
+      expect(find.text('VS Code'), findsNothing);
+      expect(find.text('Finder'), findsNothing);
+      await tester.tap(find.byType(InkWell).first);
+      await tester.pumpAndSettle();
+      expect(find.text('VS Code'), findsNothing);
+
+      // It is visibly disabled, and it does not narrate an action it will not
+      // take (a dead control describing "VS Code" is worse than none).
+      // Dimmed *and* inert: without IgnorePointer the disabled control still
+      // takes hover cursors and is reachable by assistive technology, i.e. it
+      // advertises an action it will not perform.
+      expect(
+        find
+                .ancestor(
+                  of: find.byType(OpenInIdeButton),
+                  matching: find.byType(IgnorePointer),
+                )
+                .evaluate()
+                .isNotEmpty ||
+            find
+                .descendant(
+                  of: find.byType(OpenInIdeButton),
+                  matching: find.byType(IgnorePointer),
+                )
+                .evaluate()
+                .isNotEmpty,
+        isTrue,
+        reason: 'the disabled launcher must not take pointer events',
+      );
+      final dim = tester.widgetList<Opacity>(
+        find.descendant(
+          of: find.byType(OpenInIdeButton),
+          matching: find.byType(Opacity),
+        ),
+      );
+      expect(dim.map((o) => o.opacity), contains(0.4));
+      expect(
+        find.byTooltip('Nothing to open — this board has no panes'),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('VS Code'), findsNothing);
+    });
+
+    testWidgets('the menu names the folder it will open (decision 11)', (
+      tester,
+    ) async {
+      // The button is icon-only *because* the menu discloses the target; the
+      // title strip no longer carries a branch label (decision 10), so without
+      // this header nothing on screen says which worktree opens.
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(body: OpenInIdeButton(path: '/tmp/wt/feat-login')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Choose editor'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Opens the active pane'), findsOneWidget);
+      // The worktree name is disclosed in full (short path, no head-truncation).
+      expect(find.text('/tmp/wt/feat-login'), findsOneWidget);
+      expect(find.text('Cursor'), findsOneWidget);
+    });
+
+    testWidgets('a deep path head-truncates so the worktree name survives', (
+      tester,
+    ) async {
+      // Long leading path, short identifying tail: the head must collapse to
+      // '…' while the worktree folder name is kept.
+      const deep =
+          '/Users/dev/projects/monorepo/checkouts/worktrees/nested/zubby';
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(body: OpenInIdeButton(path: deep)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Choose editor'));
+      await tester.pumpAndSettle();
+
+      // The full path doesn't fit, so the head collapsed to '…' — but the
+      // identifying tail (the worktree folder name) is still shown.
+      final header = tester.widget<Text>(find.textContaining('zubby'));
+      expect(header.data, startsWith('…'));
+      expect(header.data, endsWith('zubby'));
     });
   });
 }

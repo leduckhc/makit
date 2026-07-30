@@ -462,13 +462,13 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Spawn a fresh agent session in the given project. Resolves with the new
-  /// session id once the server acks.
+  /// Spawn a fresh agent session in the given project, in the worktree the
+  /// caller already resolved (creating it first when the user asked for a new
+  /// branch or a PR). Resolves with the new session id once the server acks.
   Future<String> spawnSession(
     String projectId, {
     String? title,
     String? agent,
-    String? baseBranch,
     String? worktreePath,
     String? branch,
     List<ConfigOptionPick>? configOptions,
@@ -483,25 +483,10 @@ class StoreController extends StateNotifier<StoreState> {
           'projectId': projectId,
           'title': ?title,
           'agent': ?agent,
-          'baseBranch': ?baseBranch,
           'worktreePath': ?worktreePath,
           'branch': ?branch,
           'configOptions': ?picks,
         });
-    final sid = ack['sessionId'] as String?;
-    if (sid == null) throw StateError('server did not return sessionId');
-    return sid;
-  }
-
-  /// Spawn a new session that shares the SAME worktree as [sourceSessionId]
-  /// (the split-pane flow). When the source already runs in a real worktree the
-  /// new session binds to it; when the source is still an un-started draft both
-  /// are linked to one virtual worktree that materializes on the first message.
-  Future<String> spawnLinkedSession(String sourceSessionId) async {
-    final ack = await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {'kind': 'session.spawnLinked', 'sourceSessionId': sourceSessionId},
-    );
     final sid = ack['sessionId'] as String?;
     if (sid == null) throw StateError('server did not return sessionId');
     return sid;

@@ -96,14 +96,21 @@ Widget ideLogo(BuildContext context, IdeTarget target, {double size = 18}) {
 class OpenInIdeButton extends ConsumerWidget {
   const OpenInIdeButton({super.key, required this.path});
 
-  /// The worktree directory to open.
-  final String path;
+  /// The worktree directory to open, or **null** when there is nothing to open
+  /// (SPEC-30 decision 11: a board with no focused pane owns no scope). A null
+  /// path renders the launcher disabled rather than pointing it at nothing —
+  /// the control never lies about a target.
+  final String? path;
 
-  static String _actionLabel(IdeTarget target) => target == IdeTarget.finder
-      ? 'Reveal in Finder'
-      : 'Open in ${target.label}';
+  /// Whether there is a folder to open. The appearance is otherwise unchanged;
+  /// only the enabled/disabled state and the target vary (decision 11).
+  bool get _enabled => path != null;
+
+  static String _actionLabel(IdeTarget target) => target.label;
 
   Future<void> _open(BuildContext context, IdeTarget target) async {
+    final path = this.path;
+    if (path == null) return;
     final cmd = ideOpenCommand(target, path);
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
@@ -129,6 +136,38 @@ class OpenInIdeButton extends ConsumerWidget {
       child: MenuAnchor(
         alignmentOffset: const Offset(0, 4),
         menuChildren: [
+          // SPEC-30 decision 11: the button is icon-only *because* the menu
+          // names the exact folder — "so the control cannot lie". Decision 10
+          // also removed the title strip's branch label, so without this header
+          // nothing on screen says which worktree will open. Non-interactive.
+          if (_enabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Opens the active pane',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    // Head-truncate the path: the worktree name (the tail) is
+                    // the identifying part, so a deep path drops its *leading*
+                    // segments to a '…' rather than clipping the name.
+                    _PathHeadEllipsis(
+                      path: path!,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           for (final target in IdeTarget.values)
             MenuItemButton(
               leadingIcon: ideLogo(context, target, size: 13),
@@ -149,11 +188,16 @@ class OpenInIdeButton extends ConsumerWidget {
         ],
         builder: (context, controller, _) => _IdeSplitButton(
           preferred: preferred,
-          actionTooltip: _actionLabel(preferred),
+          // A disabled launcher must not narrate an action it will not take.
+          actionTooltip: _enabled
+              ? _actionLabel(preferred)
+              : 'Nothing to open — this board has no panes',
+          enabled: _enabled,
           menuOpen: controller.isOpen,
-          onAction: () => _open(context, preferred),
-          onToggleMenu: () =>
-              controller.isOpen ? controller.close() : controller.open(),
+          onAction: _enabled ? () => _open(context, preferred) : null,
+          onToggleMenu: _enabled
+              ? () => controller.isOpen ? controller.close() : controller.open()
+              : null,
         ),
       ),
     );
@@ -171,6 +215,7 @@ class _IdeSplitButton extends StatelessWidget {
   const _IdeSplitButton({
     required this.preferred,
     required this.actionTooltip,
+    required this.enabled,
     required this.menuOpen,
     required this.onAction,
     required this.onToggleMenu,
@@ -178,9 +223,10 @@ class _IdeSplitButton extends StatelessWidget {
 
   final IdeTarget preferred;
   final String actionTooltip;
+  final bool enabled;
   final bool menuOpen;
-  final VoidCallback onAction;
-  final VoidCallback onToggleMenu;
+  final VoidCallback? onAction;
+  final VoidCallback? onToggleMenu;
 
   static const double _height = 24;
   static const double _logoSize = 15;
@@ -193,7 +239,7 @@ class _IdeSplitButton extends StatelessWidget {
     // the caret lifts a tone while its menu is open (neutral active).
     final surface = cs.surfaceContainer;
     final fg = cs.onSurface;
-    return Material(
+    final button = Material(
       color: surface,
       shape: RoundedRectangleBorder(
         borderRadius: const BorderRadius.all(_radius),
@@ -232,7 +278,7 @@ class _IdeSplitButton extends StatelessWidget {
           // feature on the outer Material, keeping a single Material layer
           // while the InkWell's splashes still render above the colour.
           Tooltip(
-            message: 'Choose editor',
+            message: enabled ? 'Choose editor' : '',
             child: Ink(
               color: menuOpen ? cs.surfaceContainerHighest : surface,
               child: InkWell(
@@ -258,5 +304,86 @@ class _IdeSplitButton extends StatelessWidget {
         ],
       ),
     );
+    // Enabled renders exactly as before (goldens are frozen by decision 11); a
+    // disabled launcher dims to read as inert, matching the mock's dead state.
+    return _disabledDim(button);
+  }
+
+  /// Uniform `Opacity` rather than M3's token-based disabled colours, matching
+  /// how this app dims every other unavailable affordance — an unavailable
+  /// harness card (`new_session_sheet.dart`), an inactive tab chip and a
+  /// dragging chip (`split_view.dart`), an unchosen ask tile (`ask_card.dart`).
+  /// Review preferred the M3 idiom; adopting it here alone would make this the
+  /// only control in the app that dims differently.
+  Widget _disabledDim(Widget button) => enabled
+      ? button
+      // IgnorePointer as well as dimming: without it the disabled control still
+      // takes hover cursors and is discoverable by assistive technology, i.e. it
+      // advertises an action it will not perform.
+      : IgnorePointer(child: Opacity(opacity: 0.4, child: button));
+}
+
+/// A single-line [path] that truncates from the **head**: the trailing segment
+/// (the worktree/folder name) is the identifying part, so when the path is too
+/// wide the leading segments collapse to a `…` prefix instead of the tail being
+/// clipped by a normal end-ellipsis.
+///
+/// Truncation is measured against a fixed [maxWidth] with a [TextPainter] in
+/// build (not a LayoutBuilder): this widget lives inside a [MenuAnchor], which
+/// asks its children for intrinsic dimensions, and LayoutBuilder cannot answer
+/// that. A precomputed plain [Text] can.
+class _PathHeadEllipsis extends StatelessWidget {
+  const _PathHeadEllipsis({required this.path, required this.style});
+
+  final String path;
+  final TextStyle? style;
+
+  /// The 260 header cap, less its 12+12 padding.
+  static const double _maxWidth = 236;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _fit(path, style, _maxWidth, MediaQuery.textScalerOf(context)),
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
+  }
+
+  /// The longest tail of [path] that fits [maxWidth], prefixed with `…` once any
+  /// head was dropped. Returns the full path when it already fits. Measures with
+  /// the same [scaler] the rendered [Text] uses, so a text-scale > 1 can't make
+  /// the precomputed tail wider than the widget and clip the worktree name.
+  static String _fit(
+    String path,
+    TextStyle? style,
+    double maxWidth,
+    TextScaler scaler,
+  ) {
+    final painter = TextPainter(
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      textScaler: scaler,
+    );
+    double widthOf(String s) {
+      painter.text = TextSpan(text: s, style: style);
+      painter.layout();
+      return painter.width;
+    }
+
+    try {
+      if (widthOf(path) <= maxWidth) return path;
+      // Drop leading characters until the '…'-prefixed tail fits.
+      for (var start = 1; start < path.length; start++) {
+        if (widthOf('…${path.substring(start)}') <= maxWidth) {
+          return '…${path.substring(start)}';
+        }
+      }
+      return '…';
+    } finally {
+      painter.dispose();
+    }
   }
 }

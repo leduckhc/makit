@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Tab groups (option B)</title>
+<style>
+  :root{
+    /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
+    --bg:#171717;
+    --container:#242424;
+    --container-high:#2E2E2E;
+    --container-highest:#383838;
+    --text:#F5F5F5;
+    --muted:#9E9E9E;
+    --hairline:#333333;
+    --primary:#7EE8A6;
+    --accent:#4ADE80;
+    --orange:#E8A33D;
+    --red:#E5544B;
+    --violet:#B49BFF;   /* curated / board groups */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 80px;
+  }
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 28px;max-width:820px}
+  .sub kbd{background:var(--container-high);border:1px solid var(--hairline);border-radius:4px;padding:0 5px;font-size:11px;font-family:inherit}
+  section{margin:0 0 34px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  section > header{padding:14px 20px;border-bottom:1px solid var(--hairline)}
+  section h2{font-size:15px;margin:0 0 3px;font-weight:600}
+  section h2 .tag{font-size:11px;color:#0e0e0e;background:var(--accent);border-radius:6px;padding:2px 7px;margin-right:8px;font-weight:700;vertical-align:middle}
+  section h2 .tag.q{background:var(--orange)}
+  section p{margin:0;color:var(--muted);font-size:13px;max-width:860px}
+  .pad{padding:20px}
+  .icon{width:16px;height:16px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center}
+  .icon svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.4}
+  .icon.s12{width:12px;height:12px} .icon.s12 svg{width:12px;height:12px}
+
+  /* ---------- window frame ---------- */
+  .win{border:1px solid #000;border-radius:10px;overflow:hidden;background:var(--bg)}
+  .frame{display:flex;min-height:432px}
+  .col-sb{width:250px;flex:0 0 auto;background:var(--container);border-right:1px solid #000;
+          display:flex;flex-direction:column}
+  .col-main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .lights{display:flex;gap:6px;padding:11px 12px 9px}
+  .lights i{width:11px;height:11px;border-radius:50%;background:#3a3a3a;display:block}
+
+  /* ---------- the group bar (the whole point) ---------- */
+  /* The group bar starts at the sidebar's edge — groups belong to the canvas,
+     not to the whole window, so the sidebar (repos ▸ worktrees ▸ agents) stays
+     the one fixed piece of furniture on the left. */
+  .groupbar{display:flex;align-items:flex-end;gap:8px;padding:9px 10px 0;
+            border-bottom:1px solid var(--hairline);background:var(--bg);min-height:40px}
+  /* decision 12: only the TAB RAIL scrolls; the launcher stays pinned right. */
+  .gtabs{display:flex;align-items:flex-end;gap:4px;flex:1;min-width:0;
+         overflow-x:auto;overflow-y:hidden;scrollbar-width:none}
+  .gtabs::-webkit-scrollbar{height:0}
+  .ide{flex:0 0 auto}
+  .anchor{flex:0 0 auto}
+  /* a soft edge so a scrolled-under tab reads as clipped, not cut */
+  .gtabs{mask-image:linear-gradient(to right,#000 calc(100% - 18px),transparent)}
+  /* IDE launcher — unchanged from today's app: a 24px bordered split button,
+     [preferred editor logo | caret]. Icon only, no text label. It targets the
+     ACTIVE pane; the folder is named in the menu, not on the button. */
+  .ide{display:flex;align-items:stretch;margin-bottom:5px;height:24px;border-radius:8px;
+       border:1px solid var(--hairline);background:var(--container);overflow:hidden;cursor:pointer}
+  .ide .act{display:flex;align-items:center;padding:0 8px}
+  .ide .act:hover{background:var(--container-high)}
+  .ide .act img,.ide .act svg{width:15px;height:15px;display:block}
+  .ide .div{width:1px;background:var(--hairline)}
+  .ide .caret{display:flex;align-items:center;padding:0 4px;color:var(--text);font-size:9px}
+  .ide .caret:hover{background:var(--container-high)}
+  .ide .caret.open{background:var(--container-highest)}
+  .menu .mi img{width:15px;height:15px;display:block}
+  .ide.dead{opacity:.4;cursor:default}
+
+  /* NIT 3: the "New worktree" dialog — worktree only. No harness grid, no first
+     message; those belong to the starter you land on. */
+  .wtdlg{width:430px;background:var(--container);border:1px solid var(--hairline);
+         border-radius:12px;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,.6)}
+  .wtdlg header{padding:14px 16px 10px;border-bottom:1px solid var(--hairline)}
+  .wtdlg h4{margin:0;font-size:13.5px;font-weight:600}
+  .wtdlg .psub{margin:3px 0 0;font-size:11.5px;color:var(--muted)}
+  .wtdlg .body{padding:14px 16px}
+  .wtdlg .lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+              color:var(--muted);font-weight:700;margin:0 0 6px}
+  .wtdlg .seg{display:inline-flex;width:auto}
+  .wtdlg .seg button{flex:0 0 auto}
+  .wtdlg .field{display:flex;align-items:center;gap:8px;border:1px solid var(--hairline);
+                border-radius:9px;padding:7px 10px;font-size:12.5px;margin-top:10px;
+                background:var(--bg)}
+  .wtdlg .field .k{color:var(--muted);min-width:64px}
+  .wtdlg footer{padding:10px 14px;border-top:1px solid var(--hairline);
+                display:flex;justify-content:flex-end;gap:8px}
+
+  /* NIT 4: the starter's PR bar — same pills/actions as a live composer. */
+  .prbar{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:11px}
+  .prpill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--hairline);
+          border-radius:7px;padding:3px 8px;color:var(--muted);background:var(--container)}
+  .prpill .ok{width:7px;height:7px;border-radius:50%;background:var(--primary)}
+  .prpill .num{color:var(--text);font-weight:600}
+  .praction{margin-left:auto;display:flex;align-items:stretch;border:1px solid var(--hairline);
+            border-radius:8px;overflow:hidden;background:var(--container);cursor:pointer}
+  .praction .main{padding:4px 9px;color:var(--text)}
+  .praction .main:hover{background:var(--container-high)}
+  .praction .div{width:1px;background:var(--hairline)}
+  .praction .car{padding:4px 6px;color:var(--muted)}
+  .gtab .gx{color:#5a5a5a;font-size:11px;line-height:1;margin-left:1px;opacity:0}
+  .gtab:hover .gx,.gtab.on .gx{opacity:1}
+  .gtab .gx:hover{color:var(--red)}
+  .toast .undo{margin-left:8px;color:var(--text);text-decoration:underline;cursor:pointer}
+
+  /* dropdowns (group + menu, IDE launcher caret) */
+  .anchor{position:relative}
+  .menu{position:absolute;z-index:9;min-width:212px;background:var(--container);border:1px solid var(--hairline);
+        border-radius:10px;padding:5px;box-shadow:0 14px 34px rgba(0,0,0,.55);font-size:12.5px}
+  .menu.r{right:0;top:calc(100% + 5px)} .menu.l{left:0;top:calc(100% + 5px)}
+  .menu .mi{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:7px;cursor:pointer;color:var(--text)}
+  .menu .mi:hover{background:var(--container-high)}
+  .menu .mi .rt{margin-left:auto;color:var(--muted);font-size:10.5px}
+  .menu .hd{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+            padding:8px 9px 3px;font-weight:700}
+  .menu .sep{height:1px;background:var(--hairline);margin:5px 3px}
+  .menu .none{padding:5px 9px 8px;color:#6b6b6b;font-size:11.5px}
+  .menu .tgt{font-size:11px;color:var(--muted);padding:2px 9px 6px}
+  .menu .tgt b{color:var(--primary);font-weight:600}
+  .swatch.v{background:var(--violet)}
+  /* NIT 1: the OUTER (group) tabs take the sharp-cornered style the inner pane
+     tabs used to have — a flat seat with a top cap and a right divider. */
+  .gtab{
+    flex:0 0 auto;white-space:nowrap;
+    display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:0;
+    border-top:2px solid transparent;border-right:1px solid var(--hairline);
+    background:transparent;border:1px solid transparent;border-bottom:none;cursor:pointer;
+    font-size:13px;color:var(--muted);position:relative;top:1px;user-select:none;
+  }
+  .gtab:hover{background:var(--container-high);color:var(--text)}
+  .gtabs{align-items:stretch}
+  .gtab.on{background:var(--container);color:var(--text);
+           border-top-color:var(--accent);border-right-color:var(--hairline)}
+  .gtab .swatch{width:7px;height:7px;border-radius:2px;flex:0 0 auto}
+  .gtab.wt   .swatch{background:var(--primary)}
+  .gtab.board .swatch{background:var(--violet)}
+  .gtab .n{font-variant-numeric:tabular-nums;font-size:11px;color:var(--muted);
+    background:var(--container-highest);border-radius:20px;padding:0 6px;min-width:18px;text-align:center}
+  .gtab.on .n{color:var(--text)}
+  .gtab .live{width:6px;height:6px;border-radius:50%;background:var(--primary)}
+  .gnew{margin-left:2px;padding:7px 9px;color:var(--muted);cursor:pointer;border-radius:8px;font-size:15px;line-height:1}
+  .gnew:hover{background:var(--container-high);color:var(--text)}
+
+  /* ---------- membership bar ---------- */
+  .memb{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--container);
+        border-bottom:1px solid var(--hairline);font-size:12px}
+  .chip{display:inline-flex;align-items:center;gap:6px;border-radius:7px;padding:3px 9px;font-weight:600;font-size:11.5px}
+  .chip.auto{background:rgba(126,232,166,.13);color:var(--primary);border:1px solid rgba(126,232,166,.28)}
+  .chip.cur{background:rgba(180,155,255,.13);color:var(--violet);border:1px solid rgba(180,155,255,.28)}
+  .memb .why{color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .seg{display:flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden;flex:0 0 auto}
+  .seg button{background:transparent;border:0;color:var(--muted);font:inherit;font-size:11.5px;
+              padding:3px 10px;cursor:pointer}
+  .seg button.on{background:var(--container-highest);color:var(--text)}
+
+  /* ---------- body: sidebar + canvas ---------- */
+  .sb{flex:1;min-height:0;overflow:auto;padding:2px 0 8px}
+  .sbfoot{display:flex;align-items:center;gap:9px;padding:8px 12px;border-top:1px solid var(--hairline);
+          font-size:11.5px;color:var(--muted);flex:0 0 auto}
+  .sbfoot .ep{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+  .conn{display:inline-flex;align-items:center;gap:5px}
+  .conn .d{width:7px;height:7px;border-radius:50%;background:var(--primary)}
+  /* NIT 6: sentence case, bold — not upper-cased with tracking. */
+  .repo{display:flex;align-items:center;gap:6px;padding:9px 10px 3px 14px;color:var(--text);
+        font-size:12px;font-weight:700}
+  .repo .name{flex:1}
+  .wtrow{display:flex;align-items:center;gap:7px;margin:1px 8px;padding:4px 8px;border-radius:9px;
+         font-size:12.5px;cursor:pointer}
+  .wtrow:hover{background:var(--container-high)}
+  .wtrow.scoped{background:var(--container-highest)}
+  .wtrow.scoped .branch{color:var(--text)}
+  .wtrow .branch{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wtrow .cnt{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  /* NIT 7: xs text in a tighter row (was 12.5px in a 3px-padded row). */
+  .sessrow{display:flex;align-items:center;gap:7px;font-size:10px;line-height:1.3;
+           padding:1px 12px 1px 34px;min-height:18px;color:var(--muted);cursor:pointer}
+  .sessrow:hover{color:var(--text)}
+  .sessrow .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sessrow.inboard{color:var(--text)}
+  .pin{color:var(--violet);font-size:10px}
+  .dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+  .dot.run{background:var(--primary)} .dot.wait{background:var(--orange)}
+  .dot.err{background:var(--red)}     .dot.idle{background:#5a5a5a}
+  .pulse{animation:p 1.2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+
+  .canvas{flex:1;min-width:0;padding:10px;display:flex;gap:10px}
+  .canvas.grid{flex:1}
+  .canvas.grid{display:grid;grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px}
+  .pane{flex:1;min-width:0;background:var(--bg);border:1px solid var(--hairline);border-radius:10px;
+        display:flex;flex-direction:column;overflow:hidden}
+  .pane.active{border-color:#4c4c4c;box-shadow:inset 0 0 0 1px #2a2a2a}
+  .ptabs{display:flex;align-items:flex-end;gap:2px;padding:5px 5px 0;
+         border-bottom:1px solid var(--hairline);background:var(--container);min-height:31px}
+  /* NIT 1: INNER (pane) tabs are rounded on TOP ONLY, and the selected one is
+     the same colour as the body directly beneath it with no divider between —
+     so the active tab and its content read as one cohesive shape. */
+  .ptab{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:5px 9px;
+        border-radius:9px 9px 0 0;cursor:pointer;max-width:190px;position:relative;top:1px}
+  .ptab:hover{background:var(--container-high);color:var(--text)}
+  .ptab.on{background:var(--bg);color:var(--text);
+           /* +1px covers the strip's bottom hairline so there is no seam */
+           box-shadow:0 1px 0 0 var(--bg);z-index:1}
+  .ptab .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ptab .x{color:#6b6b6b;font-size:12px;line-height:1}
+  .ptab .x:hover{color:var(--red)}
+  .phead{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--hairline);font-size:12px}
+  .phead .ttl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .origin{font-size:10.5px;color:var(--muted);border:1px solid var(--hairline);border-radius:6px;padding:1px 6px;
+          white-space:nowrap;flex:0 0 auto}
+  .origin.foreign{color:var(--violet);border-color:rgba(180,155,255,.4)}
+  .pbody{flex:1;padding:12px;display:flex;flex-direction:column;gap:8px;overflow:hidden}
+  .line{height:7px;border-radius:4px;background:#232323}
+  .line.w80{width:80%}.line.w60{width:60%}.line.w45{width:45%}.line.w70{width:70%}.line.w30{width:30%}
+  .bubble{background:var(--container-high);border-radius:9px;padding:8px 10px;font-size:11.5px;color:var(--muted);
+          max-width:82%}
+  .bubble.me{align-self:flex-end;background:#2b3a31;color:#cfe9d8}
+  .composer{margin:0 10px 10px;border:1px solid var(--hairline);border-radius:10px;background:var(--container);
+            padding:7px 10px;font-size:11.5px;color:#6b6b6b;display:flex;align-items:center;gap:8px}
+  .composer .snd{margin-left:auto;color:var(--muted)}
+  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);font-size:12px}
+  .ghost{border-style:dashed;background:transparent}
+
+  /* ---------- annotations ---------- */
+  .rules{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+  .rule{border-bottom:1px dashed var(--hairline)}
+  .rules > .rule:nth-child(3n){border-right:0}
+  .rules > .rule:nth-last-child(-n+2){border-bottom:0}
+  .tri{font-size:11.5px;color:var(--muted);margin-top:6px}
+  .tri div{padding:3px 0;border-top:1px solid var(--hairline)}
+  .tri b{color:var(--text);font-weight:600}
+  .rule{padding:16px 18px;border-right:1px dashed var(--hairline)}
+  .rule:last-child{border-right:0}
+  .rule h3{font-size:12.5px;margin:0 0 6px;font-weight:600}
+  .rule h3 .num{display:inline-block;width:18px;height:18px;border-radius:50%;background:var(--container-highest);
+                color:var(--text);font-size:11px;text-align:center;line-height:18px;margin-right:7px;font-weight:700}
+  .rule p{font-size:12px;margin:0 0 10px}
+  .btn{background:var(--container-high);border:1px solid var(--hairline);color:var(--text);font:inherit;font-size:12px;
+       border-radius:8px;padding:5px 11px;cursor:pointer}
+  .btn:hover{background:var(--container-highest)}
+  .btn.ghost{background:transparent;color:var(--muted)}
+  .toast{margin-top:10px;font-size:11.5px;color:var(--violet);background:rgba(180,155,255,.1);
+         border:1px solid rgba(180,155,255,.28);border-radius:8px;padding:7px 9px;display:none}
+  .toast.show{display:block}
+  .kv{font-size:11.5px;color:var(--muted);margin-top:8px}
+  .kv b{color:var(--text);font-weight:600}
+  .hint{font-size:11.5px;color:#6b6b6b;padding:0 20px 18px}
+
+  /* add-agent ghost pane */
+  .addpane{flex:0 0 132px;border:1px dashed var(--hairline);border-radius:10px;background:transparent;
+           display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+           color:var(--muted);font-size:12px;cursor:pointer}
+  .addpane:hover{border-color:var(--violet);color:var(--violet);background:rgba(180,155,255,.05)}
+  .addpane .big{font-size:20px;line-height:1}
+
+  /* picker overlay */
+  .shade{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:5}
+  .picker{width:430px;max-height:92%;background:var(--container);border:1px solid var(--hairline);
+          border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 18px 48px rgba(0,0,0,.6)}
+  .picker header{padding:13px 16px 11px;border-bottom:1px solid var(--hairline)}
+  .picker h4{margin:0;font-size:13.5px;font-weight:600}
+  .picker .psub{margin:2px 0 0;font-size:11.5px;color:var(--muted)}
+  .picker .list{overflow:auto;padding:6px 0}
+  .newrow{display:flex;align-items:center;gap:9px;padding:9px 16px;font-size:12.5px;cursor:pointer;
+          border-bottom:1px solid var(--hairline);color:var(--text)}
+  .newrow:hover{background:var(--container-high)}
+  .newrow .big{color:var(--violet);font-size:15px;line-height:1}
+  .newrow .why{color:var(--muted);font-size:11px;margin-left:auto;text-align:right}
+  .grouphd{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+           padding:9px 16px 3px;font-weight:700}
+  .prow{display:flex;align-items:center;gap:9px;padding:5px 16px;font-size:12.5px;cursor:pointer}
+  .prow:hover{background:var(--container-high)}
+  .prow .box{width:14px;height:14px;border-radius:4px;border:1.4px solid #5a5a5a;flex:0 0 auto;
+             display:flex;align-items:center;justify-content:center;font-size:10px;color:#0e0e0e}
+  .prow.on .box{background:var(--violet);border-color:var(--violet)}
+  .prow .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prow .hz{font-size:10.5px;color:var(--muted)}
+  .prow.here{opacity:.45;cursor:not-allowed}
+  .picker footer{padding:10px 14px;border-top:1px solid var(--hairline);display:flex;align-items:center;gap:10px}
+  .picker footer .c{flex:1;font-size:11.5px;color:var(--muted)}
+  .win{position:relative}
+
+  .sessrow .quickpin{margin-left:auto;font-size:10px;color:#5a5a5a;opacity:0;padding:0 2px}
+  .sessrow:hover .quickpin{opacity:1}
+  .sessrow .quickpin:hover{color:var(--violet)}
+</style>
+</head>
+<body>
+
+<h1>Tab groups — option B <span style="font-size:12px;color:var(--muted);font-weight:400">· revised to match SPEC-30 after review</span></h1>
+<p class="sub">
+  One canvas. A <b>group</b> owns what's in it. <span style="color:var(--primary)">Worktree groups</span> populate
+  themselves (every agent on that branch, nothing else). <span style="color:var(--violet)">Boards</span> are
+  hand-picked and can span repos. Click the group tabs, the sidebar rows, the panes; press <kbd>1</kbd>–<kbd>9</kbd>.
+</p>
+
+<section>
+  <header>
+    <h2><span class="tag">live mock</span>Sidebar spans the window; groups sit beside it</h2>
+    <p>The sidebar (repos ▸ worktrees ▸ agents) is the one fixed piece of furniture. Group tabs belong to
+       the canvas, so they start at the sidebar's edge — switching a group never redraws the left column.
+       Each group keeps <b>its own arrangement</b>, and nothing ever rearranges it behind your back.</p>
+  </header>
+
+  <div class="pad">
+    <div class="win">
+      <div class="frame">
+        <div class="col-sb">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="sb" id="sidebar"></div>
+          <div class="sbfoot">
+            <span class="conn"><span class="d"></span>connected</span>
+            <span class="ep">mac-studio.tailnet</span>
+          </div>
+        </div>
+        <div class="col-main">
+          <div class="groupbar" id="groupbar"></div>
+          <div class="memb" id="memb"></div>
+          <div class="canvas" id="canvas"></div>
+        </div>
+      </div>
+      <div class="shade" id="shade" style="display:none" onclick="closePicker()"></div>
+      <div class="shade" id="wtshade" style="display:none" onclick="closeWtDialog()"></div>
+    </div>
+    <div class="toast" id="toast" style="margin:12px 0 0"></div>
+  </div>
+
+  <div class="rules">
+    <div class="rule">
+      <h3><span class="num">15</span>Sidebar clicks navigate — they never convert</h3>
+      <p>Click any agent in the sidebar. You are taken to a group that <b>already contains</b> it: this group if
+         it's a member, else its branch group, else a board holding it, else its branch group is minted.
+         Reading a <code>main</code> agent while scoped to <code>feat/login</code> can no longer turn
+         <code>feat/login</code> into a board.</p>
+      <div class="kv" id="navwhy"><b>Last navigation:</b> —</div>
+    </div>
+    <div class="rule">
+      <h3><span class="num">4</span>Only an explicit add converts</h3>
+      <p>Drag, quick-pin, or tick in the picker — those three. An out-of-scope add turns a worktree group into a
+         board (original untouched); navigation never does.</p>
+      <button class="btn" onclick="explicitDrop()">Drag <b>codex · main</b> into the active group</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">9</span>The threshold places, it never rearranges</h3>
+      <p>It only decides where a <b>newly shown</b> agent lands: a new pane while under the limit, a tab once at
+         it. Your arrangement is never rebuilt — change the setting and watch nothing move.</p>
+      <div class="kv" style="display:flex;align-items:center;gap:8px">
+        <b>Setting:</b> open up to
+        <span class="seg" style="display:inline-flex">
+          <button onclick="setThreshold(1)" id="th1">1</button>
+          <button onclick="setThreshold(2)" id="th2">2</button>
+          <button onclick="setThreshold(3)" id="th3">3</button>
+          <button onclick="setThreshold(4)" id="th4">4</button>
+        </span>
+        side by side
+      </div>
+      <div class="kv" id="thrwhy"></div>
+    </div>
+    <div class="rule">
+      <h3><span class="num">7</span>✕ is decided by the group, not the button</h3>
+      <p>On a board ✕ unpins (agent keeps running); in a worktree group it archives. The keyboard goes through the
+         same single path, so both agree.</p>
+      <div class="kv" id="xsem"></div>
+      <button class="btn" style="margin-top:8px" onclick="closeActiveTab('kbd')">⌘⇧W on the active pane</button>
+      <button class="btn ghost" style="margin-top:6px" onclick="deleteWorktree()">Delete the active worktree</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">8</span>A reopened board drops its ghosts</h3>
+      <p>Archive an agent while its board is closed, then reopen: the dead member is filtered out. A board emptied
+         that way still comes back — blank, with the picker open.</p>
+      <button class="btn" onclick="ghostDemo()">Close a board → archive a member → reopen it</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">20</span>＋, and empty groups</h3>
+      <p>In a worktree group the branch answers “where does it run?”, so ＋ starts an agent in place. A branch with
+         <b>no</b> agents opens straight onto that same starter — no placeholder step. Boards have no branch, so ＋
+         opens the picker.</p>
+      <button class="btn" onclick="openEmptyWorktreeGroup()">Open an empty branch group</button>
+      <button class="btn ghost" style="margin-top:6px" onclick="openPicker()">＋ on a board</button>
+    </div>
+  </div>
+  <div class="rules" style="border-top:1px dashed var(--hairline)">
+    <div class="rule">
+      <h3><span class="num">A</span>Corners swapped</h3>
+      <p>The <b>outer</b> group tabs now use the flat, sharp-cornered seat (top accent cap + right
+         divider) that the inner pane tabs used to have; the <b>inner</b> pane tabs took the round
+         corners. Click between groups and panes to compare.</p>
+    </div>
+    <div class="rule">
+      <h3><span class="num">B</span>“New worktree” asks one question</h3>
+      <p>The repo <b>+</b> in the sidebar opens a worktree-only dialog — From (New branch / From PR),
+         base, optional name. No harness grid, no first message: those belong to the pane you land on.
+         Confirming creates the branch and drops you on <b>Choose a harness</b>.</p>
+      <button class="btn" onclick="openWtDialog('makit')">Open “New worktree”</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">C</span>The starter is a first-class pane</h3>
+      <p>Choose-a-harness now carries the same PR status pill, diff/ahead pill and “most actionable
+         next step” split button that sit above a live session's composer — plus the model and
+         reasoning pills in the composer itself.</p>
+      <button class="btn" onclick="clickWorktree('makit','chore/deps')">Open an empty branch</button>
+    </div>
+    <div class="rule">
+      <h3><span class="num">D</span>Sidebar typography</h3>
+      <p>Repo names are sentence-case and bold (no upper-casing, no tracking). Session rows are xs
+         text in a tighter row.</p>
+    </div>
+    <div class="rule">
+      <h3><span class="num">E</span>Two behaviours that are broken in the app</h3>
+      <p>Both already work here, so this mock is the reference: <b>Split | Tabs</b> re-arranges the
+         group on click, and <b>pinning</b> a session to a board puts it on the canvas immediately.</p>
+      <button class="btn" onclick="setOverride('split')">Split</button>
+      <button class="btn ghost" style="margin-top:6px" onclick="(function(){const b=groups.find(x=>x.kind==='board');if(!b)return;active=b.id;addMember('a5');})()">Pin an agent to a board</button>
+    </div>
+  </div>
+  <p class="hint">Mock only — no app code touched. Not mocked (spec'd but not visual): the commit-sink refactor,
+     provider naming, and empty tabs inside a board (decision 21).</p>
+</section>
+<script>
+const ICON = {
+  branch:'<svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="8" r="2.4"/><path d="M6 8.4v7.2M8.4 6h4.2a3 3 0 0 1 3 3v.6"/></svg>',
+  folder:'<svg viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.4h7A1.5 1.5 0 0 1 19 9.9v7.6A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z"/></svg>',
+  code:'<svg viewBox="0 0 24 24"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg>',
+  terminal:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 10l2.5 2L7 14M12 14.5h5"/></svg>',
+  robot:'<svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 5v3"/><circle cx="9.5" cy="13" r="1.2" fill="currentColor" stroke="none"/><circle cx="14.5" cy="13" r="1.2" fill="currentColor" stroke="none"/></svg>',
+};
+
+/* ─────────────────────────── fake world ─────────────────────────── */
+const REPOS = [
+  { name:'makit', branches:[
+    { branch:'feat/login', agents:['a1','a2','a3'] },
+    { branch:'main', agents:['a4'] },
+    { branch:'fix/flaky-e2e', agents:['a5'] },
+    { branch:'chore/deps', agents:[] },          // a branch nobody is working on
+  ]},
+  { name:'pino', branches:[
+    { branch:'spec-01-daemon', agents:['a6','a7'] },
+  ]},
+];
+const AGENTS = {
+  a1:{agent:'pi',    title:'Wire the OAuth callback', st:'run',  repo:'makit', branch:'feat/login'},
+  a2:{agent:'codex', title:'Password reset e-mail',   st:'wait', repo:'makit', branch:'feat/login'},
+  a3:{agent:'pi',    title:'Session cookie tests',    st:'idle', repo:'makit', branch:'feat/login'},
+  a4:{agent:'codex', title:'Release notes for 0.9',   st:'idle', repo:'makit', branch:'main'},
+  a5:{agent:'pi',    title:'Chase the flaky timeout', st:'err',  repo:'makit', branch:'fix/flaky-e2e'},
+  a6:{agent:'codex', title:'Daemon restart policy',   st:'run',  repo:'pino',  branch:'spec-01-daemon'},
+  a7:{agent:'pi',    title:'Socket handshake docs',   st:'idle', repo:'pino',  branch:'spec-01-daemon'},
+};
+const archived = new Set();                       // decision 6 / 8
+const live = id => AGENTS[id] && !archived.has(id);
+const branchOf = (repo,branch) => REPOS.find(r=>r.name===repo)?.branches.find(b=>b.branch===branch);
+
+/* ─────────── groups: membership + an EXPLICIT arrangement ───────────
+   arrangement = ordered list of panes; each pane is an ordered list of agent
+   ids (its tab strip). Nothing recomputes this from the member count — that is
+   decision 9: the threshold PLACES, it never rearranges.                    */
+let threshold = 3;                                // layout.autoSplitThreshold
+let seq = 0;
+const gid = () => 'g'+(++seq);
+
+function worktreeGroup(repo, branch){
+  const g = {id:gid(), kind:'wt', label:branch, repo, scope:branch,
+             arrangement:[], override:null, focus:[0,0]};
+  syncDerived(g);                                 // seed from live members
+  return g;
+}
+function board(label, members){
+  const g = {id:gid(), kind:'board', label, members:[...members],
+             arrangement:[], override:null, focus:[0,0]};
+  members.forEach(id => place(g, id));
+  return g;
+}
+
+const membersOf = g => g.kind==='wt'
+  ? (branchOf(g.repo,g.scope)?.agents ?? []).filter(live)
+  : g.members.filter(live);
+
+/* Placement policy (decision 9). Under the limit → a new pane; at or over it →
+   a tab in the focused pane. An override pins one of those two answers. */
+function place(g, id){
+  const panes = g.arrangement;
+  const shown = panes.reduce((n,p)=>n+p.length,0);
+  const asTab = g.override === 'tabs' ? true
+              : g.override === 'split' ? false
+              : shown >= threshold;
+  if (asTab && panes.length){
+    const p = Math.min(g.focus[0], panes.length-1);
+    panes[p].push(id);
+    g.focus = [p, panes[p].length-1];
+  } else {
+    panes.push([id]);
+    g.focus = [panes.length-1, 0];
+  }
+}
+
+/* A derived group reconciles membership into its arrangement WITHOUT touching
+   the panes the user already positioned: new members are placed, gone members
+   are removed, everything else stays exactly where it was. */
+function syncDerived(g){
+  const want = new Set(membersOf(g));
+  g.arrangement.forEach(p => { for (let i=p.length-1;i>=0;i--) if (!want.has(p[i])) p.splice(i,1); });
+  g.arrangement = g.arrangement.filter(p => p.length);
+  const have = new Set(g.arrangement.flat());
+  membersOf(g).forEach(id => { if (!have.has(id)) place(g, id); });
+  clampFocus(g);
+}
+function syncBoard(g){
+  g.members = g.members.filter(live);
+  g.arrangement.forEach(p => { for (let i=p.length-1;i>=0;i--) if (!g.members.includes(p[i])) p.splice(i,1); });
+  g.arrangement = g.arrangement.filter(p => p.length);
+  clampFocus(g);
+}
+function sync(g){ g.kind==='wt' ? syncDerived(g) : syncBoard(g); }
+function syncAll(){ groups.forEach(sync); }
+function clampFocus(g){
+  const [p,t] = g.focus;
+  const pi = Math.min(p, Math.max(0, g.arrangement.length-1));
+  const ti = Math.min(t, Math.max(0, (g.arrangement[pi]?.length ?? 1)-1));
+  g.focus = [pi, ti];
+}
+
+let groups = [
+  worktreeGroup('makit','feat/login'),
+  worktreeGroup('pino','spec-01-daemon'),
+  board('Shipping 0.9', ['a1','a4','a6','a5']),
+  worktreeGroup('makit','main'),
+];
+let active = groups[0].id;
+let closedBoards = [];
+let openMenu = null, pickerOpen = false;
+/* NIT 3: the New-worktree dialog's state. It asks ONE question — where should
+   this worktree come from — and nothing about harnesses or first messages. */
+let wtDialog = null; // null | {repo, source:'branch'|'pr', base, name, pr}
+
+const g = () => groups.find(x => x.id === active) ?? groups[0];
+const focusedId = () => { const q=g(); return q.arrangement[q.focus[0]]?.[q.focus[1]] ?? null; };
+
+/* ─────────────────────────── render ─────────────────────────── */
+function renderGroupBar(){
+  document.getElementById('groupbar').innerHTML = `<div class="gtabs">` + groups.map((grp,i) => {
+    const ids = membersOf(grp);
+    return `<div class="gtab ${grp.kind==='wt'?'wt':'board'} ${grp.id===active?'on':''}"
+      onclick="pick('${grp.id}')"
+      title="${grp.kind==='wt' ? 'Worktree group — membership follows the branch' : 'Board — hand-picked, can span repos'}${i<9?' · ⌘'+(i+1):' · no shortcut (10th+)'}">
+      <span class="swatch"></span><span>${grp.label}</span>
+      ${ids.some(x=>AGENTS[x].st==='run')?'<span class="live pulse"></span>':''}
+      <span class="n">${ids.length}</span>
+      <span class="gx" title="${grp.kind==='wt'
+          ? 'Close this view — branch, folder and agents untouched'
+          : 'Close this board — the list goes to Recently closed'}"
+        onclick="event.stopPropagation();closeGroup('${grp.id}')">✕</span>
+    </div>`;
+  }).join('')
+  + `<span class="anchor"><span class="gnew" title="New board / reopen a closed one"
+       onclick="event.stopPropagation();toggleMenu('plus')">+</span>
+     ${openMenu==='plus'?plusMenu():''}</span></div>`
+  + ideLauncher();
+}
+
+/* The app's IdeTarget list, with its real assets (mono marks are tinted in the
+   app; here they inherit the strip's foreground closely enough for a mock). */
+const IDES = [
+  {id:'vscode',   label:'VS Code',  logo:'<img src="../app/assets/ide/visual-studio-code-light.svg" alt="">'},
+  {id:'cursor',   label:'Cursor',   logo:'<img src="../app/assets/ide/cursor.svg" alt="" style="filter:invert(1) brightness(1.6)">'},
+  {id:'zed',      label:'Zed',      logo:'<img src="../app/assets/ide/zed-light.svg" alt="">'},
+  {id:'ghostty',  label:'Ghostty',  logo:'<img src="../app/assets/ide/ghostty-light.svg" alt="">'},
+  {id:'iterm',    label:'iTerm2',   logo:'<img src="../app/assets/ide/iterm2.svg" alt="" style="filter:invert(1) brightness(1.6)">'},
+  {id:'terminal', label:'Terminal', logo:`<span class="icon s12">${ICON.terminal}</span>`},
+  {id:'finder',   label:'Finder',   logo:`<span class="icon s12">${ICON.folder}</span>`},
+];
+let preferredIde = 'cursor';                      // preferredIdePreference
+
+/* Icon-only split button, exactly as today: [logo | ▾]. No branch label — the
+   group tab names the branch in a worktree group, and per-pane origin chips do
+   it on a board (decision 10). */
+function ideLauncher(){
+  const ide = IDES.find(x=>x.id===preferredIde) ?? IDES[0];
+  const grp = g();
+  // A worktree group always owns a folder (even with no panes); a board owns
+  // none, so an empty board has nothing to open (decision 11).
+  const dead = grp.kind==='board' && !focusedId();
+  const tip = dead ? 'Nothing to open — this board has no panes'
+                   : (ide.id==='finder' ? 'Reveal in Finder' : 'Open in '+ide.label);
+  return `<span class="anchor"><div class="ide ${dead?'dead':''}">
+      <span class="act" title="${tip}">${ide.logo}</span>
+      <span class="div"></span>
+      <span class="caret ${openMenu==='ide'?'open':''}" title="Choose editor"
+            onclick="event.stopPropagation();${dead?'0':"toggleMenu('ide')"}">▾</span>
+    </div>${openMenu==='ide'?ideMenu():''}</span>`;
+}
+
+/* Only the MENU spells out what will open, so the button can't lie while
+   staying icon-sized (decision 11). */
+function ideMenu(){
+  const grp = g(), a = AGENTS[focusedId()];
+  const src = a ?? (grp.kind==='wt' ? {repo:grp.repo, branch:grp.scope} : null);
+  const folder = src ? '~/.worktrees/'+src.repo+'/'+src.branch.replace(/\//g,'-') : '—';
+  return `<div class="menu r" onclick="event.stopPropagation()">
+    <div class="tgt">Opens the active pane · <b>${folder}</b></div>
+    ${IDES.map(x=>`<div class="mi" onclick="event.stopPropagation();chooseIde('${x.id}')">
+        ${x.logo}${x.label}${x.id===preferredIde?'<span class="rt">default</span>':''}</div>`).join('')}
+  </div>`;
+}
+function chooseIde(id){ preferredIde = id; openMenu = null; render(); }
+function plusMenu(){
+  return `<div class="menu l" onclick="event.stopPropagation()">
+    <div class="mi" onclick="newBoard()"><span class="swatch v" style="width:7px;height:7px;border-radius:2px"></span>New board…</div>
+    <div class="sep"></div><div class="hd">Recently closed boards</div>
+    ${closedBoards.length===0 ? `<div class="none">Nothing closed yet</div>`
+      : closedBoards.slice().reverse().map(c=>`<div class="mi" onclick="reopenBoard('${c.grp.id}')">
+          <span class="swatch v" style="width:7px;height:7px;border-radius:2px"></span>${c.grp.label}
+          <span class="rt">${c.grp.members.filter(live).length} live</span></div>`).join('')}
+  </div>`;
+}
+
+function renderMemb(){
+  const grp = g(), ids = membersOf(grp), auto = grp.kind==='wt';
+  const panes = grp.arrangement.length, tabs = grp.arrangement.reduce((n,p)=>n+p.length,0);
+  document.getElementById('memb').innerHTML = `
+    <span class="chip ${auto?'auto':'cur'}"><span class="icon s12">${auto?ICON.branch:ICON.robot}</span>
+      ${auto ? grp.repo+' · '+grp.scope : 'Board · '+grp.label}</span>
+    <span class="why">${auto
+      ? `${ids.length} agent${ids.length===1?'':'s'} on this branch — a new session here joins automatically, and nothing else can appear`
+      : `${ids.length} pinned agent${ids.length===1?'':'s'} across ${new Set(ids.map(i=>AGENTS[i].repo)).size||0} repo(s) — nothing joins unless you add it`}</span>
+    <span class="seg">
+      <button class="${grp.override==='split'?'on':''}" onclick="setOverride('split')">Split</button>
+      <button class="${grp.override==='tabs'?'on':''}"  onclick="setOverride('tabs')">Tabs</button>
+    </span>`;
+  document.getElementById('xsem').innerHTML = auto
+    ? '<b>Active group:</b> ✕ / ⌘⇧W archive the agent'
+    : '<b>Active group:</b> ✕ / ⌘⇧W unpin it — the agent keeps running';
+  document.getElementById('thrwhy').innerHTML =
+    `<b>This group:</b> ${panes} pane${panes===1?'':'s'}, ${tabs} agent${tabs===1?'':'s'}` +
+    (grp.override ? ` · override <b>${grp.override}</b> (you arranged it)` : ` · no override — next agent lands as ${
+      tabs >= threshold ? 'a <b>tab</b>' : 'a <b>new pane</b>'}`);
+  [1,2,3,4].forEach(n => document.getElementById('th'+n).className = threshold===n?'on':'');
+}
+
+function renderSidebar(){
+  const grp = g(), ids = membersOf(grp);
+  document.getElementById('sidebar').innerHTML = REPOS.map(r => `
+    <div class="repo"><span class="icon">${ICON.folder}</span><span class="name">${r.name}</span>
+      <span class="gnew" style="padding:2px 6px;font-size:13px" title="New worktree"
+            onclick="event.stopPropagation();openWtDialog('${r.name}')">+</span></div>
+    ${r.branches.map(b => {
+      const scoped = grp.kind==='wt' && grp.repo===r.name && grp.scope===b.branch;
+      const agents = b.agents.filter(live);
+      return `<div class="wtrow ${scoped?'scoped':''}" onclick="clickWorktree('${r.name}','${b.branch}')"
+                title="Click: open this branch's group">
+          <span class="icon s12" style="color:${scoped?'var(--primary)':'var(--muted)'}">${ICON.branch}</span>
+          <span class="branch">${b.branch}</span><span class="cnt">${agents.length}</span></div>
+        ${agents.map(id => {
+          const a = AGENTS[id], on = ids.includes(id);
+          return `<div class="sessrow ${on?'inboard':''}" onclick="clickSession('${id}')"
+                    title="Click: go to a group that already has this agent">
+            <span class="dot ${a.st} ${a.st==='run'?'pulse':''}"></span><span class="t">${a.title}</span>
+            ${grp.kind==='board'
+              ? (on ? '<span class="pin">●</span>'
+                    : `<span class="quickpin" title="Pin to this board" onclick="event.stopPropagation();addMember('${id}')">＋</span>`)
+              : ''}</div>`;
+        }).join('')}`;
+    }).join('')}`).join('');
+}
+
+function paneBody(a){
+  return `<div class="pbody">
+      <div class="bubble me">${a.title}</div>
+      <div class="bubble">Reading <span style="color:var(--text)">lib/store/store.dart</span>…</div>
+      <div class="line w80"></div><div class="line w60"></div><div class="line w45"></div>
+    </div>
+    <div class="composer">Message ${a.agent}…<span class="snd">⏎</span></div>`;
+}
+
+/* Decision 20: an empty worktree group IS the starter — no placeholder step.
+   NIT 4: it now carries the same PR pills + PR action button that sit above a
+   live session's composer, so a fresh worktree is not a second-class pane. */
+function starter(grp){
+  return `<div class="pane active">
+    <div class="pbody" style="align-items:center;justify-content:center;gap:10px">
+      <div style="font-size:13px;font-weight:600">Choose a harness</div>
+      <div style="font-size:11.5px;color:var(--muted)">Then send a message to start it on <b style="color:var(--primary)">${grp.scope}</b>.</div>
+      <div style="display:flex;gap:10px;margin-top:4px">
+        ${['pi','codex'].map((n,i)=>`<div style="width:120px;border:1px solid ${i?'var(--hairline)':'var(--primary)'};
+            border-radius:10px;padding:10px;text-align:center;font-size:12px;background:${i?'transparent':'rgba(126,232,166,.08)'}">
+            <div class="icon" style="margin:0 auto 4px">${ICON.robot}</div>${n}</div>`).join('')}
+      </div>
+    </div>
+    ${prBar(grp)}
+    <div class="composer">Message pi…
+      <span style="margin-left:auto;display:flex;gap:6px">
+        <span class="origin">gpt-5</span><span class="origin">medium</span>
+      </span>
+      <span class="snd" style="margin-left:8px">⏎</span></div>
+  </div>`;
+}
+
+/* The PR row above a composer: status pill + "most actionable next step" split
+   button, mirroring the live pane (SPEC-23). Shown in the starter too (nit 4). */
+function prBar(grp){
+  const clean = grp.scope === 'chore/deps';
+  return `<div class="prbar" style="padding:0 10px">
+    ${clean
+      ? `<span class="prpill">no PR yet · nothing to push</span>`
+      : `<span class="prpill"><span class="ok"></span>PR <span class="num">#128</span> · checks passing</span>
+         <span class="prpill"><span class="num" style="color:var(--primary)">+412</span>
+           <span class="num" style="color:var(--red)">−87</span> · 2 ahead</span>`}
+    <span class="praction" title="The most actionable next step for this worktree">
+      <span class="main">${clean ? 'Create PR' : 'Commit and push'}</span>
+      <span class="div"></span><span class="car">▾</span>
+    </span>
+  </div>`;
+}
+
+function renderCanvas(){
+  const grp = g(), c = document.getElementById('canvas');
+  if (grp.arrangement.length === 0){
+    c.className = 'canvas';
+    c.innerHTML = grp.kind==='wt' ? starter(grp)
+      : `<div class="addpane" style="flex:1" onclick="openPicker()"><span class="big">＋</span>Empty board — add an agent</div>`;
+    return;
+  }
+  const foreign = a => grp.kind==='board' || !(a.repo===grp.repo && a.branch===grp.scope);
+  c.className = 'canvas' + (grp.arrangement.length > 3 ? ' grid' : '');
+  c.innerHTML = grp.arrangement.map((pane,pi) => {
+    const ti = pi===grp.focus[0] ? Math.min(grp.focus[1], pane.length-1) : 0;
+    const a = AGENTS[pane[ti]];
+    const strip = pane.map((id,i) => {
+      const s = AGENTS[id];
+      return `<div class="ptab ${i===ti?'on':''}" ${pane.length===1?'style="flex:1;max-width:none"':''}
+        onclick="event.stopPropagation();focusPane(${pi},${i})">
+        <span class="dot ${s.st} ${s.st==='run'?'pulse':''}"></span><span class="t">${s.title}</span>
+        ${pane.length===1?`<span class="origin ${foreign(s)?'foreign':''}" style="margin-left:auto">${s.agent}${foreign(s)?' · '+s.repo+'/'+s.branch:''}</span>`:''}
+        <span class="x" title="${grp.kind==='wt'?'Archive this agent':'Remove from board (keeps running)'}"
+              onclick="event.stopPropagation();closeTab(${pi},${i},'✕')">✕</span></div>`;
+    }).join('');
+    return `<div class="pane ${pi===grp.focus[0]?'active':''}" onclick="focusPane(${pi},${ti})">
+      <div class="ptabs">${strip}${pane.length>1?`<div class="gnew" style="padding:4px 8px;font-size:13px"
+          title="${grp.kind==='board'?'Add an agent':'New agent on this branch'}"
+          onclick="event.stopPropagation();${grp.kind==='board'?'openPicker()':'newInScope()'}">＋</div>`:''}</div>
+      ${pane.length>1?`<div class="phead"><span class="dot ${a.st}"></span><span class="ttl">${a.title}</span>
+         <span class="origin ${foreign(a)?'foreign':''}">${a.agent}${foreign(a)?' · '+a.repo+'/'+a.branch:''}</span></div>`:''}
+      ${paneBody(a)}</div>`;
+  }).join('') + (grp.kind==='board'
+    ? `<div class="addpane" onclick="openPicker()"><span class="big">＋</span>Add agent</div>` : '');
+}
+
+/* NIT 3: "New worktree" — worktree only. Confirming creates the worktree,
+   activates its (empty) group and lands on the Choose-a-harness starter, which
+   is where harness + model + first message actually belong. */
+function renderWtDialog(){
+  const host = document.getElementById('wtshade');
+  if (!wtDialog){ host.innerHTML=''; host.style.display='none'; return; }
+  const d = wtDialog;
+  host.style.display='flex';
+  const branches = ['main','develop','release/0.9'];
+  host.innerHTML = `<div class="wtdlg" onclick="event.stopPropagation()">
+    <header>
+      <h4>New worktree</h4>
+      <p class="psub">Creates the branch and its folder. You pick the harness and
+        write the first message in the pane you land on. A board can hold
+        worktrees from any repo, so the repo is asked for here.</p>
+    </header>
+    <div class="body">
+      <div class="lbl">Repository</div>
+      <span class="seg">
+        ${REPOS.map(r=>`<button class="${d.repo===r.name?'on':''}"
+            onclick="wtSet('repo','${r.name}')">${r.name}</button>`).join('')}
+      </span>
+      <div class="lbl" style="margin-top:14px">From</div>
+      <span class="seg">
+        <button class="${d.source==='branch'?'on':''}" onclick="wtSet('source','branch')">New branch</button>
+        <button class="${d.source==='pr'?'on':''}" onclick="wtSet('source','pr')">From PR</button>
+      </span>
+      ${d.source==='branch' ? `
+        <div class="field"><span class="k">Base</span>
+          <span style="flex:1">${d.base}</span>
+          <span class="caret" style="color:var(--muted)">▾</span></div>
+        <div class="field"><span class="k">Name</span>
+          <span style="flex:1;color:${d.name?'var(--text)':'#6b6b6b'}">${d.name || 'auto — worktree-a1b2c3'}</span></div>`
+      : `
+        <div class="field"><span class="k">Pull request</span>
+          <span style="flex:1">#128 · Wire the OAuth callback</span>
+          <span class="caret" style="color:var(--muted)">▾</span></div>`}
+    </div>
+    <footer>
+      <button class="btn ghost" onclick="closeWtDialog()">Cancel</button>
+      <button class="btn" onclick="confirmWtDialog()">Create worktree</button>
+    </footer>
+  </div>`;
+}
+function openWtDialog(repo){ wtDialog = {repo, source:'branch', base:'main', name:''}; render(); }
+function closeWtDialog(){ wtDialog = null; render(); }
+function wtSet(k,v){ wtDialog[k]=v; render(); }
+function confirmWtDialog(){
+  const d = wtDialog;
+  const branch = d.source==='pr' ? 'pr-128-oauth' : (d.name || 'worktree-a1b2c3');
+  branchOf(d.repo, branch) || REPOS.find(r=>r.name===d.repo).branches.push({branch, agents:[]});
+  wtDialog = null;
+  clickWorktree(d.repo, branch);   // lands on the Choose-a-harness starter
+  toast(`Created <b>${branch}</b> off <b>${d.source==='pr' ? 'PR #128' : d.base}</b> and landed on
+         <b>Choose a harness</b> — no harness or first message was asked for up front.`);
+}
+
+function renderPicker(){
+  const host = document.getElementById('shade'), grp = g();
+  if (!pickerOpen || grp.kind!=='board'){ host.innerHTML=''; host.style.display='none'; return; }
+  const ids = membersOf(grp);
+  host.style.display='flex';
+  host.innerHTML = `<div class="picker" onclick="event.stopPropagation()">
+    <header><h4>Add agents to “${grp.label}”</h4>
+      <p class="psub">A board is a view, not a place — anything running anywhere can join it.</p></header>
+    <div class="newrow" onclick="newOnBoard()"><span class="big">＋</span><span>New session…</span>
+      <span class="why">a board has no branch,<br>so it asks where to run</span></div>
+    <div class="list">${REPOS.map(r=>r.branches.map(b=>{
+      const agents = b.agents.filter(live);
+      if (!agents.length) return '';
+      return `<div class="grouphd">${r.name} · ${b.branch}</div>
+        ${agents.map(id=>{ const a=AGENTS[id], on=ids.includes(id);
+          return `<div class="prow ${on?'on':''}" onclick="toggleMember('${id}')">
+            <span class="box">${on?'✓':''}</span><span class="dot ${a.st} ${a.st==='run'?'pulse':''}"></span>
+            <span class="t">${a.title}</span><span class="hz">${a.agent}</span></div>`;}).join('')}`;
+    }).join('')).join('')}</div>
+    <footer><span class="c">${ids.length} on this board · drag from the sidebar works too</span>
+      <button class="btn" onclick="closePicker()">Done</button></footer></div>`;
+}
+
+function render(){ syncAll(); renderGroupBar(); renderMemb(); renderSidebar(); renderCanvas(); renderPicker(); renderWtDialog(); }
+
+/* ─────────────────────────── actions ─────────────────────────── */
+function pick(id){ active = id; openMenu=null; render(); }
+function focusPane(p,t){ g().focus = [p,t]; render(); }
+function toast(html){ const el=document.getElementById('toast'); el.innerHTML=html; el.classList.add('show'); }
+function hideToast(){ document.getElementById('toast').classList.remove('show'); }
+function toggleMenu(w){ openMenu = openMenu===w?null:w; render(); }
+function closeMenu(){ openMenu=null; render(); }
+function openPicker(){ if (g().kind==='board'){ pickerOpen=true; hideToast(); render(); } else toast('The picker is a board thing — a worktree group has no list to edit.'); }
+function closePicker(){ pickerOpen=false; render(); }
+
+/* Decision 9 — the setting places; it never rearranges. */
+function setThreshold(n){
+  threshold = n;
+  toast(`Threshold is now <b>${n}</b>. Nothing on screen moved — it only changes where the
+         <i>next</i> agent lands in groups you haven't arranged yourself.`);
+  render();
+}
+function setOverride(mode){
+  const grp = g(), ids = grp.arrangement.flat();
+  grp.override = mode;
+  grp.arrangement = mode==='split' ? ids.map(id=>[id]) : (ids.length?[ids]:[]);
+  grp.focus = [0,0];
+  toast(`Re-arranged <b>once</b>, on your click, and pinned this group to <b>${mode}</b>.`);
+  render();
+}
+
+/* Decision 15 — navigation resolves to a group that already HAS the session. */
+function clickSession(id){
+  const a = AGENTS[id];
+  let why, target = null;
+  if (membersOf(g()).includes(id)){ target = g(); why = '(a) already a member of the active group — no switch'; }
+  if (!target){ const wt = groups.find(x=>x.kind==='wt'&&x.repo===a.repo&&x.scope===a.branch);
+    if (wt){ target = wt; why = '(b) its own branch group was open'; } }
+  if (!target){ const b = groups.find(x=>x.kind==='board'&&x.members.includes(id));
+    if (b){ target = b; why = '(c) a board holding it'; } }
+  if (!target){ target = worktreeGroup(a.repo, a.branch); groups.push(target);
+    why = '(d) nothing held it — minted its branch group'; }
+  active = target.id;
+  const pi = target.arrangement.findIndex(p=>p.includes(id));
+  if (pi >= 0) target.focus = [pi, target.arrangement[pi].indexOf(id)];
+  document.getElementById('navwhy').innerHTML =
+    `<b>Last navigation:</b> ${a.title} → <b>${target.label}</b> ${why}`;
+  hideToast(); render();
+}
+function clickWorktree(repo, branch){
+  let grp = groups.find(x=>x.kind==='wt'&&x.repo===repo&&x.scope===branch);
+  if (!grp){ grp = worktreeGroup(repo,branch); groups.push(grp); }
+  pick(grp.id);
+}
+function openEmptyWorktreeGroup(){ clickWorktree('makit','chore/deps');
+  toast('A branch with no agents opens <b>straight onto the harness picker</b> — the branch already answers “where does it run?”.'); }
+
+/* Decision 4 — explicit adds only. */
+function addMember(id, silent){
+  const grp = g();
+  if (grp.kind === 'board'){
+    if (!grp.members.includes(id)){ grp.members.push(id); place(grp, id); }
+    if (!silent) toast(`Pinned <b>${AGENTS[id].title}</b> to “${grp.label}”.`);
+    return render();
+  }
+  const a = AGENTS[id];
+  if (a.repo===grp.repo && a.branch===grp.scope) return render();     // in scope: nothing to do
+  const conv = board(grp.label+' +1', [...membersOf(grp), id]);
+  groups.splice(groups.indexOf(grp)+1, 0, conv);
+  active = conv.id;
+  toast(`<b>${grp.scope}</b> can't hold an agent from <b>${a.branch}</b>, so this explicit add produced the board
+         “${conv.label}”. The worktree group is untouched — click it and it's exactly its own agents again.`);
+  render();
+}
+function toggleMember(id){
+  const grp = g();
+  if (grp.kind!=='board') return;
+  const i = grp.members.indexOf(id);
+  if (i>=0){ grp.members.splice(i,1); } else { grp.members.push(id); place(grp,id); }
+  render();
+}
+function explicitDrop(){ addMember('a4'); }
+
+/* Decision 7 — one path, group decides. Both ✕ and ⌘⇧W come through here. */
+function closeTab(pi, ti, via){
+  const grp = g(), id = grp.arrangement[pi]?.[ti];
+  if (!id) return;
+  if (grp.kind === 'board'){
+    grp.members = grp.members.filter(x=>x!==id);
+    toast(`${via} on a board → <b>unpinned</b> ${AGENTS[id].title}. The agent keeps running (still in the sidebar).`);
+  } else {
+    archived.add(id);
+    toast(`${via} in a worktree group → <b>archived</b> ${AGENTS[id].title}. Same outcome from the button and the keyboard.`);
+  }
+  render();
+}
+function closeActiveTab(){ const [p,t] = g().focus; closeTab(p, t, '⌘⇧W'); }
+
+function deleteWorktree(){
+  const grp = g();
+  if (grp.kind!=='wt') return toast('Pick a worktree group first — a board has no folder to delete.');
+  const i = groups.indexOf(grp);
+  membersOf(grp).forEach(id => archived.add(id));
+  const b = branchOf(grp.repo, grp.scope);
+  REPOS.find(r=>r.name===grp.repo).branches = REPOS.find(r=>r.name===grp.repo).branches.filter(x=>x!==b);
+  groups.splice(i,1);
+  active = (groups[Math.max(0,i-1)] ?? groups[0]).id;
+  toast(`Deleted the folder for <b>${grp.scope}</b>: its agents were archived and its group is gone.
+         Focus fell to the <b>neighbouring</b> group tab.`);
+  render();
+}
+
+/* Decision 7/8 — closing groups. */
+function closeGroup(id){
+  const i = groups.findIndex(x=>x.id===id);
+  if (i<0 || groups.length===1) return;
+  const grp = groups[i];
+  groups.splice(i,1);
+  if (active===id) active = (groups[Math.max(0,i-1)] ?? groups[0]).id;
+  if (grp.kind==='wt'){
+    toast(`Closed the <b>${grp.label}</b> view. Branch, folder and its ${membersOf(grp).length} agent(s) untouched —
+           click the branch in the sidebar and this exact group comes back.`);
+  } else {
+    closedBoards.push({grp, i});
+    if (closedBoards.length > 10) closedBoards.shift();
+    toast(`Closed board <b>${grp.label}</b>. Agents keep running; the list is under
+           <b>+ ▸ Recently closed boards</b>. <span class="undo" onclick="undoClose()">Undo</span>`);
+  }
+  render();
+}
+function undoClose(){ const c = closedBoards.pop(); if (!c) return;
+  groups.splice(Math.min(c.i,groups.length),0,c.grp); active=c.grp.id; hideToast(); render(); }
+
+/* Decision 8 — reopen filters ghosts; an emptied board still returns. */
+function reopenBoard(id){
+  const i = closedBoards.findIndex(c=>c.grp.id===id);
+  if (i<0) return;
+  const c = closedBoards.splice(i,1)[0], before = c.grp.members.length;
+  c.grp.members = c.grp.members.filter(live);
+  c.grp.arrangement = c.grp.arrangement.map(p=>p.filter(live)).filter(p=>p.length);
+  const dropped = before - c.grp.members.length;
+  groups.splice(Math.min(c.i,groups.length),0,c.grp);
+  active = c.grp.id; openMenu = null;
+  pickerOpen = c.grp.members.length === 0;
+  toast(dropped
+    ? `Reopened “${c.grp.label}” and dropped <b>${dropped}</b> archived member(s) — a closed board can't be
+       unpinned live, so the list is filtered on the way back in.${c.grp.members.length?'':' Nothing survived, so it returns blank with the picker open.'}`
+    : `Reopened “${c.grp.label}” — every member is still alive.`);
+  render();
+}
+function ghostDemo(){
+  let b = groups.find(x=>x.kind==='board') ?? board('Shipping 0.9',['a1','a4']);
+  if (!groups.includes(b)) groups.push(b);
+  active = b.id; render();
+  const victim = membersOf(b)[0];
+  closeGroup(b.id);
+  archived.add(victim);
+  reopenBoard(b.id);
+  toast(`Closed “${b.label}”, archived <b>${AGENTS[victim].title}</b> while it was closed, then reopened it:
+         the ghost was filtered out on the way back in.`);
+}
+
+function newBoard(){
+  const b = board('Board '+(groups.filter(x=>x.kind==='board').length+1), []);
+  groups.push(b); active=b.id; openMenu=null; pickerOpen=true; render();
+}
+/* ＋ in a worktree group: the scope answers "where", so no dialog. */
+function newInScope(){
+  const grp = g();
+  if (grp.kind!=='wt') return openPicker();
+  const id = 'n'+(Object.keys(AGENTS).length+1);
+  AGENTS[id] = {agent:'codex', title:'New agent on '+grp.scope, st:'run', repo:grp.repo, branch:grp.scope};
+  branchOf(grp.repo, grp.scope).agents.push(id);
+  const tabs = grp.arrangement.reduce((n,p)=>n+p.length,0);
+  toast(`No dialog — <b>${grp.scope}</b> already answers “where does it run?”. It joined automatically and landed as
+         ${(grp.override==='tabs'||(!grp.override&&tabs>=threshold))?'a <b>tab</b>':'a <b>new pane</b>'}; your existing panes did not move.`);
+  render();
+}
+/* ＋ on a board → the dialog decides the worktree, then it pins here. */
+function newOnBoard(){
+  const grp = g(), id = 'n'+(Object.keys(AGENTS).length+1);
+  AGENTS[id] = {agent:'pi', title:'New agent (fresh branch)', st:'run', repo:'makit', branch:'feat/login-2'};
+  if (!branchOf('makit','feat/login-2')) REPOS[0].branches.push({branch:'feat/login-2', agents:[id]});
+  else branchOf('makit','feat/login-2').agents.push(id);
+  grp.members.push(id); place(grp,id);
+  pickerOpen = false;
+  toast(`Opened the <b>New session</b> dialog → new branch <b>feat/login-2</b> → the agent joined “${grp.label}”.
+         Its own branch group now exists in the sidebar too.`);
+  render();
+}
+
+document.addEventListener('click', ()=>{ if (openMenu){ openMenu=null; render(); } });
+document.addEventListener('keydown', e => {
+  const n = parseInt(e.key,10);
+  if (n>=1 && n<=9 && groups[n-1]) pick(groups[n-1].id);       // 10th+ has no shortcut
+});
+render();
+</script>
+</body>
+</html>

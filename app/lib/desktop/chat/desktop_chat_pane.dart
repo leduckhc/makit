@@ -17,18 +17,20 @@ import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'composer_draft.dart';
 import 'composer_focus.dart';
-import 'harness_picker.dart';
-import 'new_session_dialog.dart';
+import 'new_worktree_dialog.dart';
 import 'panes/pane_header.dart';
 import 'pr_bar.dart';
+import 'groups/agent_picker.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
 import 'selected_session.dart';
+import 'worktree_starter.dart';
 
 // Re-export the pane-header + harness widgets so existing importers of
 // `desktop_chat_pane.dart` (e.g. pane_tree_view, widget tests) keep resolving
 // them after the SPEC-19 split.
 export 'panes/pane_header.dart'
     show PaneHeader, SessionActionsMenu, UnfoldStrip, sessionPaneTitle;
-export 'harness_picker.dart' show HarnessPicker;
 
 /// The right-hand pane of the desktop two-pane chat: transcript + docked
 /// composer for [selectedSessionProvider].
@@ -42,11 +44,8 @@ export 'harness_picker.dart' show HarnessPicker;
 class DesktopChatPane extends ConsumerStatefulWidget {
   /// Creates the desktop chat pane. When [sessionId] resolves to an existing
   /// session the pane shows its transcript; otherwise (no [sessionId], or a
-  /// persisted id that no longer resolves) it shows the harness picker for
-  /// [worktree] — the enclosing tree's worktree — but only when that is a
-  /// *real* worktree. A draft's virtual worktree (`draft:<id>`) has nothing on
-  /// disk, so a missing/dead session there falls back to the empty placeholder
-  /// (as does a null [worktree]).
+  /// persisted id that no longer resolves) it shows the starter placeholder,
+  /// pre-filled with [worktree] — the enclosing tree's worktree — when known.
   const DesktopChatPane({
     super.key,
     this.sessionId,
@@ -58,9 +57,9 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   /// The session this pane hosts, or null to start one in [worktree].
   final String? sessionId;
 
-  /// The enclosing tree's worktree; a null-session (or dead-session) leaf
-  /// renders this worktree's harness picker when it is a real worktree. A draft
-  /// virtual worktree (or null) falls back to the empty placeholder instead.
+  /// The enclosing tree's worktree. A null- or dead-session leaf renders the
+  /// in-place [WorktreeStarter] when set; the no-worktree case shows
+  /// [EmptyPaneStarter], whose action opens the New-worktree dialog.
   final SelectedWorktree? worktree;
 
   /// Whether to render the in-pane session header (title + actions menu). The
@@ -175,20 +174,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         ? null
         : ref.watch(sessionsProvider).byId(sessionId);
     if (sessionId == null || session == null) {
+      // A pane that knows its worktree starts a session in place: harness +
+      // model/reasoning pills + composer. Without one there is nothing to start
+      // in, so it falls back to the placeholder that opens the dialog (which
+      // picks the worktree). Either way no pane is a dead end (SPEC-27).
       final worktree = widget.worktree;
-      // A real worktree with no (or a dead) session pre-fills the New-session
-      // dialog with it. A draft's virtual worktree (`draft:<id>`) has nothing
-      // on disk, so it (and a null worktree) offers the dialog with no
-      // pre-fill. Every sessionless pane reaches the same placeholder + button
-      // (SPEC-27) — no dead-end panes.
-      final prefill =
-          (worktree != null && !worktree.path.startsWith(kDraftWorktreePrefix))
-          ? worktree
-          : null;
       return Column(
         children: [
           if (widget.showHeader) const UnfoldStrip(),
-          Expanded(child: EmptyPaneStarter(worktree: prefill)),
+          Expanded(
+            child: worktree == null
+                ? const EmptyPaneStarter()
+                : WorktreeStarter(worktree: worktree),
+          ),
         ],
       );
     }
@@ -239,9 +237,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
         if (widget.showHeader)
           PaneHeader(session: session, fallbackId: sessionId),
         Expanded(
-          child: (session.pending == true && session.branch == null)
-              ? HarnessPicker(session: session)
-              : items.isEmpty
+          child: items.isEmpty
               ? const _EmptyTranscript()
               // The ListView fills the full pane width so the mouse wheel
               // scrolls the transcript anywhere in the pane, not just over the
@@ -439,21 +435,24 @@ class _EmptyTranscript extends StatelessWidget {
   }
 }
 
-/// The unified sessionless-pane placeholder (SPEC-27): a short prompt plus a
-/// "New session" button that opens the New-session dialog, pre-filling the
-/// Worktree field with [worktree] when it is a real on-disk worktree. Replaces
-/// both the old `WorktreeStartView` and the button-less `_NoSelection` so every
-/// empty pane state reaches the one starter (no dead-end panes).
+/// The placeholder for a sessionless pane with NO worktree (SPEC-30): a short
+/// prompt plus a "New worktree" button that opens the New-worktree dialog, where
+/// the worktree is created. A pane that already has a worktree starts in place
+/// via [WorktreeStarter] instead, so no empty pane is a dead end.
 class EmptyPaneStarter extends ConsumerWidget {
-  /// Creates the placeholder; [worktree] pre-fills the dialog when known.
-  const EmptyPaneStarter({super.key, this.worktree});
-
-  /// The real worktree to pre-fill the dialog with, or null for no pre-fill.
-  final SelectedWorktree? worktree;
+  /// Creates the placeholder.
+  const EmptyPaneStarter({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
+    // On a board, starting a session is only half of what you want here: the
+    // other half is pulling in an agent that is already running somewhere
+    // (SPEC-30 decision 14). The tab-strip `+` covers a board that has panes;
+    // an empty one has no strip worth aiming at, so the offer belongs here.
+    // A worktree group never shows this widget (it gets [WorktreeStarter]), and
+    // its membership is derived anyway — there would be no list to add to.
+    final isBoard = ref.watch(activeGroupProvider).kind == GroupKind.board;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -461,19 +460,34 @@ class EmptyPaneStarter extends ConsumerWidget {
           Icon(PhosphorIconsLight.chats, size: 40, color: cs.outline),
           const SizedBox(height: kSpace12),
           Text(
+            // Unchanged wording: the fresh-launch group is a board, so a
+            // board-specific sentence here would replace this one almost
+            // everywhere — and "add one" would be a lie when nothing is running
+            // yet. The extra button below is the whole difference.
             'Select a session, or start a new one',
             style: TextStyle(color: cs.outline),
           ),
           const SizedBox(height: kSpace16),
-          FilledButton.icon(
-            icon: const Icon(PhosphorIconsLight.plus, size: 16),
-            label: const Text('New session'),
-            onPressed: () => showNewSessionDialog(
-              context,
-              ref,
-              projectId: worktree?.projectId,
-              worktree: worktree,
-            ),
+          // Wrap, not Row: the canvas can be squeezed to ~350px when the
+          // sidebar is dragged to its maximum, and two buttons side by side
+          // overflow there.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: kSpace8,
+            runSpacing: kSpace8,
+            children: [
+              FilledButton.icon(
+                icon: const Icon(PhosphorIconsLight.plus, size: 16),
+                label: const Text('New worktree'),
+                onPressed: () => showNewWorktreeDialog(context, ref),
+              ),
+              if (isBoard)
+                OutlinedButton.icon(
+                  icon: const Icon(PhosphorIconsLight.robot, size: 16),
+                  label: const Text('Add agent'),
+                  onPressed: () => showAgentPicker(context, ref),
+                ),
+            ],
           ),
         ],
       ),

@@ -30,6 +30,28 @@ Future<PreferencesController> _pump(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('the auto-split threshold row writes the preference', (
+    tester,
+  ) async {
+    // SPEC-30 decision 9: the control sets a placement policy. It is a plain
+    // segmented control because the value is small and bounded.
+    final controller = await _pump(tester);
+
+    expect(find.text('Agents side by side'), findsOneWidget);
+    expect(controller.get(autoSplitThresholdPreference), 3);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SegmentedButton<int>),
+        matching: find.text('5'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(controller.get(autoSplitThresholdPreference), 5);
+    expect(controller.isModified(autoSplitThresholdPreference), isTrue);
+  });
+
   testWidgets('renders Layout and Text subsections with real controls', (
     tester,
   ) async {

@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_worktree.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// The single active [Split] of a workspace.
 Split activeSplit(WorkspaceController c) => firstSplitWhere(
@@ -85,6 +84,31 @@ void main() {
       expect(active.tabs.single.sessionId, isNull);
       expect(active.activeTabId, active.tabs.single.id);
       expectIntegrity(c);
+    });
+
+    test('divideActive carries a worktree hint onto the new starter tab', () {
+      // SPEC-30 decision 17: splitting a pane must not lose where you were, so
+      // the caller (which knows the active tab's session/worktree) hands the
+      // hint down and the new tab lands on the in-pane starter for that branch
+      // instead of the no-worktree placeholder.
+      const wt = SelectedWorktree(
+        projectId: 'p1',
+        path: '/tmp/wt/feat-x',
+        branch: 'feat/x',
+      );
+      final c = WorkspaceController.ephemeral();
+      c.divideActive(Axis.horizontal, worktree: wt);
+
+      final tab = activeSplit(c).tabs.single;
+      expect(tab.sessionId, isNull);
+      expect(tab.worktree, wt);
+      expectIntegrity(c);
+    });
+
+    test('divideActive without a hint still seeds a bare tab', () {
+      final c = WorkspaceController.ephemeral();
+      c.divideActive(Axis.vertical);
+      expect(activeSplit(c).tabs.single.worktree, isNull);
     });
 
     test('closeActiveSplit collapses back to the surviving sibling', () {
@@ -552,76 +576,98 @@ void main() {
     });
   });
 
-  group('WorkspaceController persistence', () {
-    setUp(() => SharedPreferences.setMockInitialValues({}));
-
-    test('ephemeral controller does not persist', () async {
-      final prefs = await SharedPreferences.getInstance();
+  // SPEC-30 Lane 2: this controller no longer owns storage — it reports every
+  // mutation through a commit sink and the groups layer writes it. What used to
+  // be the "persistence" group therefore splits in two: the sink contract, and
+  // the decoder that the groups migration reuses to read a legacy blob.
+  group('WorkspaceController commit sink', () {
+    test('a null sink makes the controller ephemeral', () {
       final c = WorkspaceController.ephemeral();
-      c.divideActive(Axis.horizontal);
-      await Future<void>.delayed(Duration.zero);
-      expect(prefs.getString(kWorkspacePrefsKey), isNull);
+      c.divideActive(Axis.horizontal); // must not throw
+      expect(c.state.root, isA<Splitter>());
     });
 
-    test('mutations survive a reload from the same store', () async {
-      final prefs = await SharedPreferences.getInstance();
-      final c = WorkspaceController.load(prefs);
+    test('every mutation is reported, with the whole workspace', () {
+      final seen = <WorkspaceState>[];
+      final c = WorkspaceController(
+        seen.add,
+        WorkspaceController.seedWorkspace(),
+      );
       final first = c.state.activeSplitId;
       c.openTab(first, const Tab(id: 't-1', sessionId: 's-1'));
       c.divideActive(Axis.horizontal);
-      final splitterId = (c.state.root as Splitter).id;
-      c.setRatio(splitterId, 0.25);
-      c.openTab(c.state.activeSplitId, const Tab(id: 't-2', sessionId: 's-2'));
-      await Future<void>.delayed(Duration.zero);
+      c.setRatio((c.state.root as Splitter).id, 0.25);
 
-      final reloaded = WorkspaceController.load(prefs);
-      expect(reloaded.state, c.state, reason: 'identical workspace');
-      expect((reloaded.state.root as Splitter).ratio, closeTo(0.25, 1e-9));
+      expect(seen, hasLength(3));
+      expect(seen.last, c.state, reason: 'the sink sees the committed state');
+      expect((seen.last.root as Splitter).ratio, closeTo(0.25, 1e-9));
     });
 
-    test('corrupt JSON falls back to the starter workspace', () async {
-      SharedPreferences.setMockInitialValues({
-        kWorkspacePrefsKey: '{not valid json',
-      });
-      final prefs = await SharedPreferences.getInstance();
-      final c = WorkspaceController.load(prefs);
-      expect(c.state.root, isA<Split>());
-      expect((c.state.root as Split).tabs.single.sessionId, isNull);
-      expectIntegrity(c);
+    test('a throwing sink cannot take the mutation (or the app) down', () {
+      // The old _persist swallowed write failures; that guarantee is part of
+      // the sink contract now.
+      final c = WorkspaceController(
+        (_) => throw StateError('disk full'),
+        WorkspaceController.seedWorkspace(),
+      );
+      c.divideActive(Axis.horizontal);
+      expect(c.state.root, isA<Splitter>(), reason: 'the tree still mutated');
     });
 
-    test(
-      'structurally wrong JSON falls back to the starter workspace',
-      () async {
-        SharedPreferences.setMockInitialValues({
-          kWorkspacePrefsKey: '{"root": {"k": "bogus"}}',
-        });
-        final prefs = await SharedPreferences.getInstance();
-        final c = WorkspaceController.load(prefs);
-        expect(c.state.root, isA<Split>());
-        expectIntegrity(c);
-      },
-    );
+    test('reads (not mutations) never touch the sink', () {
+      var calls = 0;
+      final c = WorkspaceController(
+        (_) => calls++,
+        WorkspaceController.seedWorkspace(),
+      );
+      c.setActiveSplit(c.state.activeSplitId); // already active → no-op
+      expect(calls, 0);
+    });
+  });
 
-    test('absent JSON loads the starter workspace', () async {
-      final prefs = await SharedPreferences.getInstance();
-      final c = WorkspaceController.load(prefs);
-      expect(c.state.root, isA<Split>());
-      expect((c.state.root as Split).tabs, hasLength(1));
-      expectIntegrity(c);
+  group('WorkspaceController.decodeWorkspace', () {
+    test('corrupt JSON falls back to the starter workspace', () {
+      final state = WorkspaceController.decodeWorkspace('{not valid json');
+      expect(state.root, isA<Split>());
+      expect((state.root as Split).tabs.single.sessionId, isNull);
     });
 
-    test('ids minted after a reload never collide with restored ids', () async {
-      SharedPreferences.setMockInitialValues({});
-      final prefs = await SharedPreferences.getInstance();
-      final c1 = WorkspaceController.load(prefs); // seeds split-0 / tab-0
-      c1.divideActive(Axis.horizontal); // splitter-0, split-1, tab-1
-      await Future<void>.delayed(Duration.zero); // persist
+    test('structurally wrong JSON falls back to the starter workspace', () {
+      final state = WorkspaceController.decodeWorkspace(
+        '{"root": {"k": "bogus"}}',
+      );
+      expect(state.root, isA<Split>());
+    });
 
-      // Simulate a fresh process: the id counters restart at zero while the
-      // persisted tree still holds split-0/tab-0/…
+    test('absent JSON yields the starter workspace', () {
+      expect(WorkspaceController.decodeWorkspace(null).root, isA<Split>());
+      expect(WorkspaceController.decodeWorkspace('').root, isA<Split>());
+    });
+
+    test('a round-trip restores the exact workspace', () {
+      final c = WorkspaceController.ephemeral();
+      c.openTab(c.state.activeSplitId, const Tab(id: 't-1', sessionId: 's-1'));
+      c.divideActive(Axis.horizontal);
+      c.setRatio((c.state.root as Splitter).id, 0.25);
+
+      final back = WorkspaceController.decodeWorkspace(
+        jsonEncode(c.state.toJson()),
+      );
+      expect(back, c.state);
+    });
+
+    test('ids minted after a decode never collide with restored ids', () {
+      final c1 = WorkspaceController.ephemeral();
+      c1.divideActive(Axis.horizontal);
+      final blob = jsonEncode(c1.state.toJson());
+
+      // Simulate a fresh process: counters restart while the blob still holds
+      // split-0/tab-0/…
       resetNodeIds();
-      final c2 = WorkspaceController.load(prefs);
+      final c2 = WorkspaceController(
+        null,
+        WorkspaceController.decodeWorkspace(blob),
+      );
       c2.divideActive(Axis.horizontal);
       c2.divideActive(Axis.vertical);
 
@@ -644,25 +690,19 @@ void main() {
       expectIntegrity(c2);
     });
 
-    test(
-      'decode focuses the first split when activeSplitId is stale',
-      () async {
-        const tree = Split(
-          id: 'split-0',
-          tabs: [Tab(id: 'tab-0')],
-          activeTabId: 'tab-0',
-        );
-        SharedPreferences.setMockInitialValues({
-          kWorkspacePrefsKey: jsonEncode({
-            'root': tree.toJson(),
-            'activeSplitId': 'ghost-split', // references a non-existent split
-          }),
-        });
-        final prefs = await SharedPreferences.getInstance();
-        final c = WorkspaceController.load(prefs);
-        expect(c.state.activeSplitId, 'split-0');
-        expectIntegrity(c);
-      },
-    );
+    test('a stale activeSplitId decodes to the first split', () {
+      const tree = Split(
+        id: 'split-0',
+        tabs: [Tab(id: 'tab-0')],
+        activeTabId: 'tab-0',
+      );
+      final state = WorkspaceController.decodeWorkspace(
+        jsonEncode({
+          'root': tree.toJson(),
+          'activeSplitId': 'ghost-split', // references a non-existent split
+        }),
+      );
+      expect(state.activeSplitId, 'split-0');
+    });
   });
 }

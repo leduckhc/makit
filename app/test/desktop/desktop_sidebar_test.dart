@@ -7,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/app/theme.dart';
 import 'package:makit/desktop/chat/desktop_sidebar.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/connection.dart';
@@ -47,7 +50,6 @@ class _FakeStore extends StoreController {
     String projectId, {
     String? title,
     String? agent,
-    String? baseBranch,
     String? worktreePath,
     String? branch,
     List<ConfigOptionPick>? configOptions,
@@ -218,7 +220,7 @@ Future<void> _openWorktreeMenu(WidgetTester tester, String branchLabel) async {
 Future<void> _openRepoMenu(WidgetTester tester, String repoName) async {
   final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
   await gesture.addPointer(location: Offset.zero);
-  await gesture.moveTo(tester.getCenter(find.text(repoName.toUpperCase())));
+  await gesture.moveTo(tester.getCenter(find.text(repoName)));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('Repo actions'));
   await tester.pumpAndSettle();
@@ -230,7 +232,7 @@ Future<void> _openRepoMenu(WidgetTester tester, String repoName) async {
 Future<void> _tapNewWorktree(WidgetTester tester, String repoName) async {
   final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
   await gesture.addPointer(location: Offset.zero);
-  await gesture.moveTo(tester.getCenter(find.text(repoName.toUpperCase())));
+  await gesture.moveTo(tester.getCenter(find.text(repoName)));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('New worktree'));
   await tester.pumpAndSettle();
@@ -261,7 +263,7 @@ void main() {
       sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
     );
 
-    expect(find.text('ALPHA'), findsOneWidget);
+    expect(find.text('alpha'), findsOneWidget);
     expect(find.text('feat/login'), findsOneWidget);
     expect(find.text('Fix login bug'), findsOneWidget);
     // Only the worktree diff chip now (the repo-rollup aggregate was removed).
@@ -297,7 +299,7 @@ void main() {
     expect(container.read(selectedSessionProvider), 's1');
   });
 
-  testWidgets('drafts render as a worktree row (no DRAFTS section)', (
+  testWidgets('a pending session renders under its worktree row', (
     tester,
   ) async {
     await _pump(
@@ -306,17 +308,23 @@ void main() {
         _repo(
           'p1',
           'alpha',
-          worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
+          worktrees: [
+            _worktree(
+              'wt-main',
+              branch: 'main',
+              isPrimary: true,
+              sessionIds: ['s1'],
+            ),
+          ],
         ),
       ],
-      sessions: [_session('s1', 'p1', '', 'pi', pending: true)],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'pi', pending: true)],
     );
 
-    // The DRAFTS section header + `draft` tag were removed; a pending draft now
-    // renders as a worktree-style row labelled "new worktree".
+    // Its worktree is known at spawn time, so there is no separate draft row.
     expect(find.text('DRAFTS'), findsNothing);
-    expect(find.text('new worktree'), findsOneWidget);
-    expect(find.text('draft'), findsNothing);
+    expect(find.text('new worktree'), findsNothing);
+    expect(find.text('Fix login bug'), findsOneWidget);
   });
 
   testWidgets('open PR renders a PR pill on its worktree row', (tester) async {
@@ -424,7 +432,7 @@ void main() {
     expect(find.textContaining('No repos yet'), findsOneWidget);
   });
 
-  testWidgets('tapping the worktree branch row collapses its sessions', (
+  testWidgets('the caret collapses a worktree row; the row itself does not', (
     tester,
   ) async {
     await _pump(
@@ -443,13 +451,105 @@ void main() {
 
     expect(find.text('Fix login bug'), findsOneWidget);
 
+    // Tapping the row activates the group (decision 15) and must NOT collapse:
+    // peeking at a branch's children should not require giving up the canvas,
+    // and moving the canvas should not require collapsing the row.
     await tester.tap(find.text('feat/login'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Fix login bug'),
+      findsOneWidget,
+      reason: 'the row activates; it does not toggle',
+    );
+
+    // The caret is the disclosure control.
+    await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
     await tester.pumpAndSettle();
     expect(find.text('Fix login bug'), findsNothing);
 
-    await tester.tap(find.text('feat/login'));
+    await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
     await tester.pumpAndSettle();
     expect(find.text('Fix login bug'), findsOneWidget);
+  });
+
+  testWidgets('repo names are sentence-case and bold, not upper-cased', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo('p1', 'makit', worktrees: [_worktree('wt-main')]),
+      ],
+      sessions: const [],
+    );
+
+    expect(find.text('makit'), findsOneWidget);
+    expect(find.text('MAKIT'), findsNothing);
+    final label = tester.widget<Text>(find.text('makit'));
+    expect(label.style?.fontWeight, FontWeight.w700);
+    expect(
+      label.style?.letterSpacing ?? 0,
+      0,
+      reason: 'tracking belongs to upper-cased labels, which this is not',
+    );
+  });
+
+  testWidgets('session rows are xs text in a tight container', (tester) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-a', branch: 'a', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    final label = tester.widget<Text>(find.text('Fix login bug'));
+    expect(label.style?.fontSize, 10);
+    // The row was a dense ListTile (~40px); a 10px label does not need that.
+    expect(
+      tester
+          .getSize(
+            find.ancestor(
+              of: find.text('Fix login bug'),
+              matching: find.byType(ListTile),
+            ),
+          )
+          .height,
+      lessThanOrEqualTo(28),
+    );
+  });
+
+  testWidgets('branch names align whether or not the row has a caret', (
+    tester,
+  ) async {
+    // Only rows with something to disclose get a caret, so the caret-less rows
+    // reserve its width instead — otherwise branch names would stagger down the
+    // column. Measured, because this is invisible until it is wrong.
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [
+            _worktree('wt-a', branch: 'no-sessions'),
+            _worktree('wt-b', branch: 'has-sessions', sessionIds: ['s1']),
+          ],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Something', 'codex')],
+    );
+
+    expect(
+      tester.getTopLeft(find.text('no-sessions')).dx,
+      tester.getTopLeft(find.text('has-sessions')).dx,
+    );
   });
 
   testWidgets('tapping the repo header folds/unfolds its worktrees', (
@@ -473,19 +573,17 @@ void main() {
     expect(find.text('feat/login'), findsOneWidget);
 
     // Tapping the repo name row collapses the whole group.
-    await tester.tap(find.text('ALPHA'));
+    await tester.tap(find.text('alpha'));
     await tester.pumpAndSettle();
     expect(find.text('feat/login'), findsNothing);
 
     // Tapping again re-expands it.
-    await tester.tap(find.text('ALPHA'));
+    await tester.tap(find.text('alpha'));
     await tester.pumpAndSettle();
     expect(find.text('feat/login'), findsOneWidget);
   });
 
-  testWidgets('repo header overflow menu lists Hide + New worktree', (
-    tester,
-  ) async {
+  testWidgets('repo header overflow menu lists only Hide', (tester) async {
     await _pump(
       tester,
       repos: [
@@ -501,10 +599,11 @@ void main() {
     // Repo actions surface only on hover, so move the pointer over the header.
     await _openRepoMenu(tester, 'alpha');
     expect(find.text('Hide the repo'), findsOneWidget);
-    expect(find.text('New worktree from…'), findsOneWidget);
+    // The new-worktree picker moved to the + button: one door, not two.
+    expect(find.text('New worktree from…'), findsNothing);
   });
 
-  testWidgets('the + button spawns a pending draft without a dialog', (
+  testWidgets('the + button opens the New worktree dialog (no bare spawn)', (
     tester,
   ) async {
     final store = await _pumpWithStore(
@@ -521,34 +620,10 @@ void main() {
 
     await _tapNewWorktree(tester, 'alpha');
 
-    // A bare spawn (pending draft, no worktree on disk) is issued for the repo.
-    expect(store.spawned, ['p1']);
-    // No dialog opens: the richer picker only lives in the repo overflow menu.
-    expect(find.text('New worktree from…'), findsNothing);
+    // The dialog creates the worktree first; nothing spawns.
+    expect(find.text('New worktree'), findsWidgets);
+    expect(store.spawned, isEmpty);
   });
-
-  testWidgets(
-    'a failed + spawn shows an error snackbar (no worktree materializes)',
-    (tester) async {
-      final store = await _pumpWithStore(
-        tester,
-        repos: [
-          _repo(
-            'p1',
-            'alpha',
-            worktrees: [_worktree('wt-main', branch: 'main', isPrimary: true)],
-          ),
-        ],
-        sessions: const [],
-        fail: true,
-      );
-
-      await _tapNewWorktree(tester, 'alpha');
-
-      expect(store.spawned, ['p1']);
-      expect(find.textContaining('New worktree failed'), findsOneWidget);
-    },
-  );
 
   testWidgets(
     'the repo actions button is present but inert (ignores taps) until '
@@ -1129,8 +1204,9 @@ void main() {
         ),
       );
 
-      // Collapse the first worktree (branch-a).
-      await tester.tap(find.text('branch-a'));
+      // Collapse the first worktree (branch-a) via its caret — the row itself
+      // navigates now (SPEC-30 decision 15).
+      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-a')));
       await tester.pumpAndSettle();
       expect(find.text('Session A'), findsNothing);
       expect(find.text('Session B'), findsOneWidget);
@@ -1153,4 +1229,174 @@ void main() {
       expect(find.text('Session B'), findsOneWidget);
     },
   );
+
+  group('SPEC-30 Lane 6 — sidebar board affordances (decisions 14, 15)', () {
+    Future<ProviderContainer> pumpWithGroups(
+      WidgetTester tester, {
+      required List<RepoInfo> repos,
+      required List<Session> sessions,
+      required Group group,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWithValue(ReposState(repos)),
+          sessionsProvider.overrideWithValue(SessionsState(sessions)),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [group], activeGroupId: group.id),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+      await tester.pump();
+      return container;
+    }
+
+    Group board(List<String> members) => Group.board(
+      id: 'b1',
+      label: 'Shipping',
+      members: members,
+      tree: WorkspaceController.seedWorkspace(),
+    );
+
+    Group worktreeGroup() => Group.worktree(
+      id: 'g1',
+      projectId: 'p1',
+      worktreePath: '/tmp/wt/wt-feat',
+      label: 'feat/login',
+      tree: WorkspaceController.seedWorkspace(),
+    );
+
+    final repos = [
+      _repo(
+        'p1',
+        'alpha',
+        worktrees: [
+          _worktree('wt-feat', branch: 'feat/login', sessionIds: ['s1']),
+        ],
+      ),
+    ];
+    final sessions = [_session('s1', 'p1', 'Fix login bug', 'codex')];
+
+    testWidgets('a hover quick-pin appears only when a board is active', (
+      tester,
+    ) async {
+      // Worktree group active → no quick-pin (its membership is derived).
+      await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: worktreeGroup(),
+      );
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
+    });
+
+    testWidgets('the quick-pin pins the session to the active board', (
+      tester,
+    ) async {
+      final container = await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(const []),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sidebarQuickPin')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('sidebarQuickPin')));
+      await tester.pump();
+
+      // Pinned exactly once (decision 3).
+      expect(container.read(groupsControllerProvider).active.members, ['s1']);
+    });
+
+    testWidgets('a board member shows the violet pin dot, not the quick-pin', (
+      tester,
+    ) async {
+      await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(['s1']),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('Fix login bug')));
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(PhosphorIconsFill.circle), findsOneWidget);
+      expect(find.byKey(const Key('sidebarQuickPin')), findsNothing);
+    });
+
+    testWidgets('tapping a worktree row activates (mints) its group', (
+      tester,
+    ) async {
+      final container = await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(const []),
+      );
+      expect(
+        container.read(groupsControllerProvider).active.kind,
+        GroupKind.board,
+      );
+
+      await tester.tap(find.text('feat/login'));
+      await tester.pump();
+
+      final active = container.read(groupsControllerProvider).active;
+      expect(active.kind, GroupKind.worktree);
+      expect(active.worktreePath, '/tmp/wt/wt-feat');
+    });
+
+    testWidgets('the caret discloses without moving the canvas', (
+      tester,
+    ) async {
+      final container = await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(const []),
+      );
+      final before = container.read(groupsControllerProvider).active.id;
+
+      // The session is visible while expanded...
+      expect(find.text('Fix login bug'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
+      await tester.pumpAndSettle();
+
+      // ...and the caret actually collapsed it. Asserting only that the active
+      // group is unchanged would pass if the caret key were misspelled or the
+      // control inert, which is the failure this test exists to catch.
+      expect(find.text('Fix login bug'), findsNothing);
+      expect(
+        container.read(groupsControllerProvider).active.id,
+        before,
+        reason: 'expanding a row is not a navigation',
+      );
+    });
+  });
 }

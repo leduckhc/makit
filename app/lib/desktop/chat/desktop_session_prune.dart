@@ -1,41 +1,55 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/store.dart';
-import 'panes/split_node.dart';
-import 'panes/workspace_controller.dart';
+import 'desktop_group_reconcile.dart';
+import 'groups/group.dart';
+import 'groups/groups_controller.dart';
 
-/// Keeps the workspace honest about what the server still has: every tab bound
-/// to a session that is absent from the latest `sessions.snapshot` is closed.
+/// Keeps the groups layer honest about what the server still has.
 ///
-/// A session can vanish while its tab is open — archived or quit from another
-/// client (the phone, a second desktop) — and a persisted layout can be
-/// restored pointing at sessions the server no longer lists at all. Both used
-/// to leave a tab that renders the empty-pane starter, indistinguishable from a
-/// "New" tab the user opened on purpose. Closing them collapses/resets splits
-/// through [WorkspaceController.unbindSession], and once nothing is bound the
-/// auto-select (see `desktop_auto_select.dart`) reveals a live session again.
+/// This provider owns one thing — **unpinning sessions the server no longer
+/// lists** (SPEC-30 decision 6: a vanished session leaves every board's member
+/// list, not merely its tabs; no dead tiles, no restore affordance) — and then
+/// hands off, in a fixed order, to the reconcilers in
+/// `desktop_group_reconcile.dart`:
+///
+/// 1. unpin vanished members (here), so membership is correct;
+/// 2. [reconcileActiveCanvas], which reconciles the canvas *against* that
+///    membership;
+/// 3. [closeGroupsForDeletedWorktrees], on repo updates.
+///
+/// The order in (1) → (2) is why these are function calls rather than separate
+/// providers: two listeners on the same `sessions.snapshot` would leave it
+/// implicit, and reconciling before unpinning would place a session that is
+/// about to be removed.
 final desktopSessionPruneProvider = Provider<void>((ref) {
   void prune(SessionsState next) {
     // Before the first snapshot an empty list means "we don't know yet"
     // (offline, still connecting) — pruning then would wipe a restored layout.
     if (!ref.read(sessionsLoadedProvider)) return;
-    final workspace = ref.read(workspaceControllerProvider.notifier);
-    for (final id in _boundSessionIds(ref.read(workspaceControllerProvider))) {
-      if (next.byId(id) == null) workspace.unbindSession(id);
+    final groupsCtrl = ref.read(groupsControllerProvider.notifier);
+
+    // Decision 6: every board drops members the server no longer lists. Note
+    // this also drops their tabs — `removeMember` keeps a board's membership and
+    // its tree in agreement, so an inactive board cannot surface a dead tile
+    // when it is next activated.
+    for (final g in ref.read(groupsControllerProvider).groups) {
+      if (g.kind != GroupKind.board) continue;
+      for (final id in g.members) {
+        if (next.byId(id) == null) groupsCtrl.removeMember(g.id, id);
+      }
     }
+
+    reconcileActiveCanvas(ref, next);
   }
 
   ref.listen(sessionsProvider, (_, next) => prune(next));
-  Future.microtask(() => prune(ref.read(sessionsProvider)));
-});
-
-/// Every session id hosted by a tab anywhere in [workspace].
-List<String> _boundSessionIds(WorkspaceState workspace) {
-  final ids = <String>[];
-  // `select` never returns a match, so the walk visits every split.
-  firstSplitWhere<bool>(workspace.root, (split) {
-    ids.addAll(split.tabs.map((t) => t.sessionId).nonNulls);
-    return null;
+  ref.listen(
+    reposProvider,
+    (_, next) => closeGroupsForDeletedWorktrees(ref, next),
+  );
+  Future.microtask(() {
+    prune(ref.read(sessionsProvider));
+    closeGroupsForDeletedWorktrees(ref, ref.read(reposProvider));
   });
-  return ids;
-}
+});

@@ -4,6 +4,9 @@ import 'dart:async';
 
 import '../../store/models.dart';
 import '../../store/store.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_worktree.dart';
@@ -69,11 +72,39 @@ SelectedWorktree? activeRealWorktree(WidgetRef ref) {
   return _worktreeOfSession(ref.read(sessionsProvider).byId(sessionId));
 }
 
-/// Reveal [id] (SPEC-28 decision 6): focus the tab already hosting the session
-/// anywhere in the tree, or open a new tab for it in the active split. The
-/// session's worktree is its own metadata — never stored on the bound tab.
+/// Navigate to [id] (SPEC-30 decision 15): **activate a group that already
+/// contains it, then reveal its tab there** — navigation never mutates
+/// membership, so it can never trigger decision 4's conversion. Resolution
+/// order (a→d) lives in [groupHolding]; when it finds nothing (d) we mint the
+/// session's own worktree group. A session with no worktree yet, or one the
+/// store no longer knows, falls back to a plain reveal in the active group.
 /// [selectedSessionProvider] follows automatically (it mirrors the active tab).
 void selectSessionExclusive(WidgetRef ref, String id) {
+  final session = ref.read(sessionsProvider).byId(id);
+  final workspace = ref.read(workspaceControllerProvider.notifier);
+  if (session == null) {
+    workspace.revealSession(id);
+    return;
+  }
+  final groups = ref.read(groupsControllerProvider.notifier);
+  final held = groupHolding(
+    ref.read(groupsControllerProvider),
+    session,
+    (groupId) => ref.read(groupMembersProvider(groupId)),
+  );
+  final worktreePath = session.worktreePath;
+  if (held != null) {
+    groups.activate(held);
+  } else if (worktreePath != null) {
+    // (d) mint its worktree group and activate it.
+    groups.openWorktreeGroup(
+      projectId: session.projectId,
+      worktreePath: worktreePath,
+      label: session.branch ?? worktreePath.split('/').last,
+    );
+  }
+  // Reveal the session's tab in the now-active group. Never [addMember], so a
+  // worktree group you were looking at is never converted by a click.
   ref.read(workspaceControllerProvider.notifier).revealSession(id);
 }
 
@@ -87,12 +118,18 @@ void closeActiveTab(WidgetRef ref) {
   closeTabAndArchive(ref, state.activeSplitId, tab.id, tab.sessionId);
 }
 
-/// Close [tabId] in [splitId] and, when its session is no longer shown in any
-/// other tab, archive it (SPEC-29). Archiving is soft + recoverable: the server
-/// drops it from the active `sessions.snapshot` so the sidebar list updates,
-/// while the transcript + resume handle are kept. Shared by the tab close (X)
-/// button and the close-tab shortcut so both behave identically. A tab with no
-/// session (empty starter) just closes.
+/// Close [tabId] in [splitId] and then dispose of its session **according to the
+/// active group's kind** (SPEC-30 decision 7):
+///
+/// * **worktree group** → archive it (SPEC-29). Membership is derived, so the
+///   only way to take a session off that canvas is to end it.
+/// * **board** → **unpin** it. The list is the user's to edit and the agent
+///   keeps running; archiving here would destroy work while tidying a view.
+///
+/// The choice lives here, in the one shared close path, rather than at each
+/// affordance — so the tab ✕ and the `⌘⇧W` shortcut ([closeActiveTab]) cannot
+/// drift apart. **No call site may special-case it.** A tab with no session (an
+/// empty starter) just closes.
 void closeTabAndArchive(
   WidgetRef ref,
   String splitId,
@@ -100,8 +137,23 @@ void closeTabAndArchive(
   String? sessionId,
 ) {
   final workspace = ref.read(workspaceControllerProvider.notifier);
+  final group = ref.read(activeGroupProvider);
+  // Close the tab first, always: it is the action the user took, and it is the
+  // only thing that handles an empty tab or a session that is not a member.
+  // `removeMember` then drops any remaining tabs for that session, which is a
+  // second state update — but persistence is coalesced per microtask, so it
+  // costs no extra write.
   workspace.closeTab(splitId, tabId);
-  if (sessionId == null || workspace.isSessionBound(sessionId)) return;
+  if (sessionId == null) return;
+  if (group.kind == GroupKind.board) {
+    // Unpin even if another tab still shows it: membership is the board's
+    // contract, and the user just said "not on this board".
+    ref
+        .read(groupsControllerProvider.notifier)
+        .removeMember(group.id, sessionId);
+    return;
+  }
+  if (workspace.isSessionBound(sessionId)) return;
   // A never-started draft has no history worth preserving — archiving it would
   // leave an empty, permanently-persisted entry in the Archived list. Just let
   // closeTab drop it.
@@ -122,16 +174,19 @@ void closeActiveSplit(WidgetRef ref) {
   ref.read(workspaceControllerProvider.notifier).closeActiveSplit();
 }
 
-/// Reveal a freshly spawned pending draft ([sessionId]) as a tab and focus it
-/// (the sidebar + button). Unlike [selectSessionExclusive] this is the same
-/// reveal path, kept as a named call site so the sidebar reads intently.
-void openDraftSession(WidgetRef ref, String sessionId) {
-  ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
-}
-
-/// Select a sessionless worktree from the sidebar: open a starter tab hinted
-/// with [worktree] in the active split (SPEC-28 — no layout swap). The New
-/// session dialog opened from that tab pre-fills with the worktree.
+/// Select a worktree from the sidebar (SPEC-30 decision 15): activate that
+/// worktree's group, minting it when it does not exist yet. An empty scope
+/// seeds the placeholder tab with [worktree] so the pane renders the in-pane
+/// starter (decision 20) rather than the no-worktree placeholder.
 void selectWorktree(WidgetRef ref, SelectedWorktree worktree) {
-  ref.read(workspaceControllerProvider.notifier).revealWorktree(worktree);
+  final groups = ref.read(groupsControllerProvider.notifier);
+  groups.openWorktreeGroup(
+    projectId: worktree.projectId,
+    worktreePath: worktree.path,
+    label: worktree.branch ?? worktree.path.split('/').last,
+  );
+  final active = ref.read(activeGroupProvider);
+  if (ref.read(groupMembersProvider(active.id)).isEmpty) {
+    ref.read(workspaceControllerProvider.notifier).revealWorktree(worktree);
+  }
 }

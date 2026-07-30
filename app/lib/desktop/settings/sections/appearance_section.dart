@@ -34,7 +34,13 @@ class AppearanceSection extends StatelessWidget {
         SettingsSectionHeader(title: 'Appearance'),
         SettingsGroup(children: [_ThemeRow(), _AccentColorRow()]),
         SettingsSectionHeader(title: 'Layout'),
-        SettingsGroup(children: [_SidebarWidthRow(), _StartCollapsedRow()]),
+        SettingsGroup(
+          children: [
+            _SidebarWidthRow(),
+            _StartCollapsedRow(),
+            _AutoSplitThresholdRow(),
+          ],
+        ),
         SettingsSectionHeader(title: 'Text'),
         SettingsGroup(
           children: [_TextScaleRow(), _MonospaceFontRow(), _ChatRenderingRow()],
@@ -154,6 +160,55 @@ class _StartCollapsedRow extends ConsumerWidget {
             visible: modified,
             onPressed: () =>
                 ref.read(sidebarCollapsedProvider.notifier).state = false,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How many agents a group opens side by side before new ones land as tabs
+/// (SPEC-30 decision 9). A **placement policy**: changing it never re-arranges
+/// a group you already arranged — it decides where the next agent lands.
+class _AutoSplitThresholdRow extends ConsumerWidget {
+  const _AutoSplitThresholdRow();
+
+  static const List<int> _choices = [1, 2, 3, 4, 5, 6];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.preference(autoSplitThresholdPreference);
+    final modified = ref.preferenceModified(autoSplitThresholdPreference);
+    final controller = ref.read(preferencesControllerProvider.notifier);
+    // A stored value outside the offered range still has to render as one of
+    // them, so the control never shows an empty selection.
+    final selected = _choices.contains(value)
+        ? value
+        : autoSplitThresholdPreference.defaultValue;
+
+    return ListTile(
+      title: const Text('Agents side by side'),
+      subtitle: const Text(
+        'Open up to this many agents as panes; beyond it, new agents open as '
+        'tabs. Never rearranges a group you arranged yourself.',
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: [
+              for (final n in _choices)
+                ButtonSegment(value: n, label: Text('$n')),
+            ],
+            selected: {selected},
+            onSelectionChanged: (set) =>
+                controller.set(autoSplitThresholdPreference, set.first),
+          ),
+          const SizedBox(width: kSpace8),
+          SettingsResetButton(
+            visible: modified,
+            onPressed: () => controller.reset(autoSplitThresholdPreference),
           ),
         ],
       ),

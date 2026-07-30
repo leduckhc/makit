@@ -34,7 +34,7 @@ import 'chat/desktop_chat_bootstrap.dart';
 import 'chat/desktop_chat_shell.dart';
 import 'chat/keymap_scope.dart';
 import 'chat/loopback_pairing.dart';
-import 'chat/panes/workspace_controller.dart';
+import 'chat/groups/groups_controller.dart';
 import 'chat/sidebar_layout.dart';
 import 'daemon/daemon_lifecycle.dart';
 import 'daemon/server_profile.dart';
@@ -103,7 +103,7 @@ Future<void> runDesktopApp() async {
     cmdIsPrimary: cmdIsPrimaryModifier,
   );
   final preferencesController = PreferencesController.load(prefs);
-  final workspaceController = WorkspaceController.load(prefs);
+  final groupsController = GroupsController.load(prefs);
   final controller = DesktopController(
     client: client,
     lifecycle: lifecycle,
@@ -168,7 +168,7 @@ Future<void> runDesktopApp() async {
         preferencesControllerProvider.overrideWith(
           (ref) => preferencesController,
         ),
-        workspaceControllerProvider.overrideWith((ref) => workspaceController),
+        groupsControllerProvider.overrideWith((ref) => groupsController),
       ],
       child: const _DesktopApp(),
     ),

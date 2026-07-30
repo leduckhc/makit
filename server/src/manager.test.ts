@@ -357,11 +357,11 @@ test("removeWorktree preserves archived sessions and auto-archives live ones (SP
     const wt = await manager.createWorktree(projectId);
 
     // Two sessions bound to the worktree: one already archived, one live.
-    const draftA = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    const draftA = await manager.spawnPendingSession(projectId, "pi", wt.path);
     await manager.promotePendingSession(draftA, "archived one");
     await manager.archiveSession(draftA.id);
 
-    const draftB = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    const draftB = await manager.spawnPendingSession(projectId, "pi", wt.path);
     await manager.promotePendingSession(draftB, "live one");
     assert.equal(manager.getSession(draftB.id)!.archived, false);
 
@@ -405,7 +405,7 @@ test("unarchive of an orphaned session detaches it to the repo root (SPEC-29)", 
     const projectId = manager.listProjects()[0].id;
     const wt = await manager.createWorktree(projectId);
 
-    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
     await manager.promotePendingSession(draft, "orphan me");
     assert.equal(manager.getSession(draft.id)!.worktreePath !== undefined, true);
 
@@ -453,7 +453,7 @@ test("unarchive of a session whose worktree is still live preserves its binding 
     const projectId = manager.listProjects()[0].id;
     const wt = await manager.createWorktree(projectId);
 
-    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
     await manager.promotePendingSession(draft, "keep me");
     const before = manager.getSession(draft.id)!;
     const boundPath = before.worktreePath;
@@ -618,7 +618,7 @@ test("startPendingSession applies valid config picks to the real adapter and dro
     });
     const projectId = manager.listProjects()[0].id;
 
-    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, undefined, undefined, [
+    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, undefined, [
       { id: "model", value: "o3" },
       { id: "web", value: true },
       { id: "model", value: "nope" },
@@ -665,7 +665,7 @@ test("a draft with no picks applies no configOption actions at launch", async ()
   }
 });
 
-test("startPendingSession creates a worktree named from the first message and starts the agent there", async () => {
+test("startPendingSession starts the agent in the bound worktree and titles it from the first message", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
   const prevBase = process.env.MAKIT_WORKTREE_DIR;
@@ -675,72 +675,23 @@ test("startPendingSession creates a worktree named from the first message and st
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
     const projectId = manager.listProjects()[0].id;
 
-    const draft = await manager.spawnPendingSession(projectId, "pi");
+    // The client creates the worktree first, then spawns bound to it.
+    const wt = await manager.createWorktree(projectId, undefined, "add-login-form");
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
     const s = await manager.startPendingSession(draft.id, "Add a login form to the app");
 
     assert.equal(s.pending, false);
-    assert.equal(s.branch, "add-a-login-form-to-the");
+    assert.equal(s.branch, "add-login-form");
+    assert.equal(s.worktreePath, wt.path);
     assert.ok(s.worktreePath?.startsWith(realpathSync(base)), `worktree ${s.worktreePath} under ${base}`);
     assert.equal(started.length, 1, "agent should start once");
     assert.equal(started[0]?.cwd, s.worktreePath, "agent runs in the worktree");
+    assert.equal(s.title, "Add a login form to the");
 
     const repos = await manager.listRepos();
-    const wt = repos[0].worktrees.find((w) => w.branch === "add-a-login-form-to-the");
-    assert.ok(wt, "worktree should be listed");
-    assert.deepEqual(wt!.sessionIds, [s.id], "session linked to its worktree");
-  } finally {
-    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
-    else process.env.MAKIT_WORKTREE_DIR = prevBase;
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(base, { recursive: true, force: true });
-  }
-});
-
-test("startPendingSession forks the worktree off the chosen base branch", async () => {
-  const cwd = makeGitRepo();
-  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
-  const prevBase = process.env.MAKIT_WORKTREE_DIR;
-  process.env.MAKIT_WORKTREE_DIR = base;
-  try {
-    // A second branch `dev` with a file that does not exist on `main`.
-    const g = (...args: string[]) => execFileSync("git", args, { cwd });
-    g("checkout", "-q", "-b", "dev");
-    writeFileSync(join(cwd, "dev.txt"), "dev\n");
-    g("add", ".");
-    g("commit", "-q", "-m", "dev-only");
-    g("checkout", "-q", "main");
-
-    const started: SpawnOpts[] = [];
-    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
-    const projectId = manager.listProjects()[0].id;
-
-    const draft = await manager.spawnPendingSession(projectId, "pi", "dev");
-    const s = await manager.startPendingSession(draft.id, "work off dev");
-    // The worktree forked off `dev`, so the dev-only file is present.
-    assert.equal(existsSync(join(s.worktreePath!, "dev.txt")), true, "worktree forked off dev");
-  } finally {
-    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
-    else process.env.MAKIT_WORKTREE_DIR = prevBase;
-    rmSync(cwd, { recursive: true, force: true });
-    rmSync(base, { recursive: true, force: true });
-  }
-});
-
-test("startPendingSession falls back to the default branch for an unknown base", async () => {
-  const cwd = makeGitRepo();
-  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
-  const prevBase = process.env.MAKIT_WORKTREE_DIR;
-  process.env.MAKIT_WORKTREE_DIR = base;
-  try {
-    const started: SpawnOpts[] = [];
-    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
-    const projectId = manager.listProjects()[0].id;
-
-    const draft = await manager.spawnPendingSession(projectId, "pi", "no-such-branch");
-    const s = await manager.startPendingSession(draft.id, "work");
-    // Falls back to `main`: the worktree exists and the agent started.
-    assert.ok(s.worktreePath?.startsWith(realpathSync(base)));
-    assert.equal(started.length, 1);
+    const listed = repos[0].worktrees.find((w) => w.branch === "add-login-form");
+    assert.ok(listed, "worktree should be listed");
+    assert.deepEqual(listed!.sessionIds, [s.id], "session linked to its worktree");
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
@@ -772,13 +723,13 @@ test("spawnPendingSession binds an existing worktree (branch from git) and rejec
 
     // A path that is not a worktree of this project is rejected.
     await assert.rejects(
-      () => manager.spawnPendingSession(projectId, "pi", undefined, "/tmp/definitely-not-a-worktree"),
+      () => manager.spawnPendingSession(projectId, "pi", "/tmp/definitely-not-a-worktree"),
       /not part of project/,
     );
 
     // Binding a real worktree derives the branch from git, ignoring the
     // client-supplied branch arg.
-    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path, "client-lied");
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path, "client-lied");
     assert.equal(draft.branch, gitBranch, "branch derived from git, not the client");
 
     // First message starts the agent IN the bound worktree (no new tree).
@@ -805,7 +756,7 @@ test("removeWorktree kills drafts still bound to the tree (pendingWorktreePath)"
     const wt = await manager.createWorktree(projectId);
     // A draft bound to the worktree: its path lives on lifecycle.pendingWorktreePath
     // (session.worktreePath is undefined until the draft is started).
-    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
     assert.ok(manager.getSession(draft.id));
     assert.equal(draft.worktreePath, undefined);
 
@@ -831,7 +782,7 @@ test("removeWorktree keeps sessions alive when the git removal fails", async () 
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
     const projectId = manager.listProjects()[0].id;
     const wt = await manager.createWorktree(projectId);
-    const draft = await manager.spawnPendingSession(projectId, "pi", undefined, wt.path);
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
     assert.ok(manager.getSession(draft.id));
     // Lock the worktree so a single `--force` removal fails (git requires
     // `-f -f` for locked trees) — a deterministic stand-in for any git
@@ -852,39 +803,25 @@ test("removeWorktree keeps sessions alive when the git removal fails", async () 
   }
 });
 
-test("spawnLinkedSession shares one virtual worktree across two drafts", async () => {
+test("listRepos buckets a still-pending draft under the worktree it is bound to", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
   const prevBase = process.env.MAKIT_WORKTREE_DIR;
   process.env.MAKIT_WORKTREE_DIR = base;
   try {
-    const started: SpawnOpts[] = [];
-    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter([]) });
     const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
 
-    // A plain draft (no worktree yet), then split it into a sibling draft.
-    const d1 = await manager.spawnPendingSession(projectId, "pi");
-    const d2 = await manager.spawnLinkedSession(d1.id);
-    assert.notEqual(d1.id, d2.id);
-    assert.equal(d2.pending, true, "the linked session is itself a draft");
+    // A draft's worktree is known at spawn time, so it renders under that
+    // worktree's row instead of needing a separate "draft" UI bucket.
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
+    assert.equal(draft.pending, true);
 
-    // The sibling (d2) sends first: it forks the shared worktree.
-    const s2 = await manager.startPendingSession(d2.id, "add login form");
-    assert.ok(s2.worktreePath?.startsWith(realpathSync(base)));
-    // The original (d1) sends later: it reuses the SAME tree, not a new one.
-    const s1 = await manager.startPendingSession(d1.id, "a totally different task");
-    assert.equal(s1.worktreePath, s2.worktreePath, "both drafts share one worktree");
-    assert.equal(s1.branch, s2.branch, "both drafts share one branch");
-
-    // Exactly one worktree was forked (one extra beyond the primary checkout).
     const repos = await manager.listRepos();
-    const forked = repos[0].worktrees.filter((w) => w.branch === s2.branch);
-    assert.equal(forked.length, 1, "only one shared worktree exists");
-    assert.deepEqual(
-      [...(forked[0]!.sessionIds ?? [])].sort(),
-      [s1.id, s2.id].sort(),
-      "both sessions link to the shared worktree",
-    );
+    const listed = repos[0].worktrees.find((w) => w.path === wt.path);
+    assert.ok(listed, "the bound worktree is listed");
+    assert.deepEqual(listed!.sessionIds, [draft.id], "pending draft buckets under its worktree");
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
@@ -893,7 +830,7 @@ test("spawnLinkedSession shares one virtual worktree across two drafts", async (
   }
 });
 
-test("spawnLinkedSession mirrors a started session's real worktree", async () => {
+test("spawnPendingSession requires a worktree; without one the agent runs in the repo dir", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
   const prevBase = process.env.MAKIT_WORKTREE_DIR;
@@ -903,14 +840,64 @@ test("spawnLinkedSession mirrors a started session's real worktree", async () =>
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
     const projectId = manager.listProjects()[0].id;
 
-    // Start a session so it has a real worktree, then split off it.
-    const d1 = await manager.spawnPendingSession(projectId, "pi");
-    const s1 = await manager.startPendingSession(d1.id, "first task");
-    const d2 = await manager.spawnLinkedSession(s1.id);
-    const s2 = await manager.startPendingSession(d2.id, "second task");
+    // The client resolves (creating when needed) the worktree BEFORE spawning,
+    // so a spawn without one no longer forks a tree on first message: it runs
+    // in the repo dir (the non-git / unborn-HEAD case).
+    const draft = await manager.spawnPendingSession(projectId, "pi");
+    const s = await manager.startPendingSession(draft.id, "add a login form");
 
-    assert.equal(s2.worktreePath, s1.worktreePath, "linked session reuses the real worktree");
-    assert.equal(s2.branch, s1.branch);
+    assert.equal(s.worktreePath, cwd, "runs in the repo dir, no fork");
+    const repos = await manager.listRepos();
+    assert.equal(repos[0].worktrees.length, 1, "no extra worktree was forked");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("spawnPendingSession keeps the client's branch for the primary worktree", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    // Binding to the repo dir took the path but dropped the branch, so promotion
+    // fell back to `lc.branch ?? base` and labelled the session with the
+    // slugified first message instead of the branch it actually runs on.
+    const draft = await manager.spawnPendingSession(projectId, "pi", cwd, "main");
+    const s = await manager.startPendingSession(draft.id, "add a login form");
+
+    assert.equal(s.worktreePath, cwd);
+    assert.equal(s.branch, "main", "the branch must survive, not become a slug");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("spawnPendingSession accepts the project's own repo dir as the worktree", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    // `createWorktree` returns the repo dir for a non-git project / unborn HEAD,
+    // so that path must be a valid spawn target rather than a "foreign path".
+    const draft = await manager.spawnPendingSession(projectId, "pi", cwd);
+    const s = await manager.startPendingSession(draft.id, "work here");
+    assert.equal(s.worktreePath, cwd);
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;
@@ -950,10 +937,11 @@ test("promotePendingSession collapses two concurrent first messages onto one wor
     const started: SpawnOpts[] = [];
     const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
     const projectId = manager.listProjects()[0].id;
-    const draft = await manager.spawnPendingSession(projectId, "pi");
+    const wt = await manager.createWorktree(projectId);
+    const draft = await manager.spawnPendingSession(projectId, "pi", wt.path);
 
-    // Two first messages fired concurrently must NOT each fork a worktree +
-    // adapter — they collapse onto one in-flight promotion.
+    // Two first messages fired concurrently must NOT each start an adapter —
+    // they collapse onto one in-flight promotion.
     const [r1, r2] = await Promise.all([
       manager.promotePendingSession(draft, "add a login form"),
       manager.promotePendingSession(draft, "add a login form"),
@@ -964,10 +952,7 @@ test("promotePendingSession collapses two concurrent first messages onto one wor
     assert.equal(started.length, 1, "exactly one adapter started for concurrent promotions");
     assert.equal(draft.pending, false);
 
-    // Exactly one non-root worktree was created for this project.
-    const repos = await manager.listRepos();
-    const extraWorktrees = repos[0].worktrees.filter((w) => w.path !== realpathSync(cwd) && w.path !== cwd);
-    assert.equal(extraWorktrees.length, 1, "exactly one worktree created");
+    assert.equal(draft.worktreePath, wt.path, "promoted into the bound worktree");
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;

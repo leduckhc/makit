@@ -156,42 +156,20 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   r.register("session.spawn", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const agent = ctx.env.agent ? String(ctx.env.agent) : undefined;
-    const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
-    // Optional: bind the draft to an EXISTING worktree so the first message
-    // starts the agent there instead of forking a new one.
+    // The worktree the client resolved (creating it first when the user asked
+    // for a new branch / a PR): the first message starts the agent there.
     const worktreePath = ctx.env.worktreePath ? String(ctx.env.worktreePath) : undefined;
     const branch = ctx.env.branch ? String(ctx.env.branch) : undefined;
     // Optional pre-spawn config picks (SPEC-27): [{id, value}] validated against
     // the cached catalog by the manager (unknown ids/values dropped) and applied
     // at first-message launch.
     const configOptions = parseConfigPicks(ctx.env.configOptions);
-    // New sessions are DRAFTS: the worktree + agent are deferred until the
-    // first substantive message names the branch (see send.message). The
-    // worktree forks off `baseBranch` (default branch when unset).
-    const newSession = await manager.spawnPendingSession(projectId, agent, baseBranch, worktreePath, branch, configOptions);
+    // New sessions are DRAFTS: the agent is deferred until the first
+    // substantive message names the session (see send.message).
+    const newSession = await manager.spawnPendingSession(projectId, agent, worktreePath, branch, configOptions);
     // wireSession is invoked via the manager's "sessionCreated" listener
     // registered above — don't call it explicitly or every event fans out
     // twice.
-    broadcastSnapshots();
-    void broadcastReposSnapshot();
-    ctx.ack({ sessionId: newSession.id });
-  });
-
-  r.register("session.spawnLinked", async (ctx) => {
-    const sourceSessionId = String(ctx.env.sourceSessionId ?? "");
-    if (!sourceSessionId) {
-      ctx.err(WireErrorCode.BadRequest, "session.spawnLinked requires sourceSessionId");
-      return;
-    }
-    // Split-pane flow: the new draft shares the source's worktree — its real
-    // tree if started, else a virtual worktree both drafts materialize into.
-    let newSession;
-    try {
-      newSession = await manager.spawnLinkedSession(sourceSessionId);
-    } catch (e) {
-      ctx.err(WireErrorCode.BadRequest, (e as Error).message);
-      return;
-    }
     broadcastSnapshots();
     void broadcastReposSnapshot();
     ctx.ack({ sessionId: newSession.id });

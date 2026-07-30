@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../app/theme.dart';
-import '../../store/store.dart';
-import '../../ui/widgets/pr_state_style.dart';
 
+import 'groups/group.dart' show GroupKind;
+import 'groups/group_bar.dart';
+import 'groups/groups_controller.dart' show groupsControllerProvider;
 import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
-import 'selected_worktree.dart';
 import 'sidebar_layout.dart' show sidebarCollapsedProvider, kTrafficLightInset;
 import 'split_view.dart';
-import 'title_bar_strip.dart';
+import 'title_bar_strip.dart' show SidebarToggleButton;
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 
@@ -28,35 +29,66 @@ class WorkspaceView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(workspaceControllerProvider);
     final collapsed = ref.watch(sidebarCollapsedProvider);
-    // The active tab's worktree (its session's worktree, or an empty tab's
-    // hint) drives the window-title context label + IDE launcher, mirroring
-    // the pre-SPEC-28 pane title bar.
+    // Decision 11: the IDE launcher targets the **active pane's** worktree.
+    // With no pane focused in a worktree group it falls back to that group's
+    // own scope (a worktree group always owns a folder); a board with no pane
+    // owns nothing, so the path is null and the launcher renders disabled.
     final worktree = ref.watch(selectedWorktreeProvider);
+    // Narrow: `activeGroupProvider` yields the whole Group, whose `==` includes
+    // its tree, so watching it here would rebuild the strip on every divider
+    // drag. Only the scope (or its absence, on a board) is read.
+    final activeScope = ref.watch(
+      groupsControllerProvider.select<String?>(
+        (s) =>
+            s.active.kind == GroupKind.worktree ? s.active.worktreePath : null,
+      ),
+    );
+    final launcherPath = worktree?.path ?? activeScope;
     return Column(
       children: [
-        // The OS titlebar is hidden, so this strip is the macOS window-drag
-        // zone; when the sidebar is folded it also owns the only "show sidebar"
-        // affordance.
+        // The title strip: the OS titlebar is hidden, so this is the macOS
+        // window-drag zone (a DragToMoveArea layer behind the controls). It
+        // hosts the scrolling group rail on the left and the IDE launcher
+        // pinned on the right (decisions 10 & 11); no branch label lives here.
         ColoredBox(
           color: Theme.of(context).colorScheme.surfaceContainer,
-          child: TitleBarStrip(
-            leading: collapsed
-                ? const SidebarToggleButton(collapse: false)
-                : null,
-            // The active tab's worktree/branch, on the traffic-light row above
-            // the tabs. Folded sidebar → the strip overlaps the traffic lights
-            // + unfold button, so inset past them; otherwise a small gutter.
-            title: worktree == null ? null : _WorktreeTitle(worktree: worktree),
-            titleInset: collapsed ? kTrafficLightInset + 34 : 12,
-            // "Open in editor", only for a real on-disk worktree (a still-
-            // virtual draft has no path to open yet).
-            trailing:
-                worktree == null ||
-                    worktree.path.startsWith(kDraftWorktreePrefix)
-                ? null
-                : OpenInIdeButton(path: worktree.path),
+          child: Stack(
+            children: [
+              const Positioned.fill(
+                child: DragToMoveArea(child: SizedBox.expand()),
+              ),
+              Padding(
+                // Inset past the traffic lights only when the strip overlaps
+                // them (sidebar folded); otherwise flush to the sidebar edge,
+                // so the first group tab hugs it exactly as the inner tab bar
+                // hugs the pane edge (no left gap).
+                padding: EdgeInsets.only(
+                  left: collapsed ? kTrafficLightInset : 0,
+                  right: kSpace8,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (collapsed) ...[
+                      const SidebarToggleButton(collapse: false),
+                      const SizedBox(width: kSpace8),
+                    ],
+                    // Decision 12: the rail alone scrolls; it fills the width
+                    // it is given and clips its overflow internally.
+                    const Expanded(child: GroupBar()),
+                    // Decision 11: pinned outside the rail so it never scrolls
+                    // away when the rail overflows with many groups. Vertically
+                    // centred in the titlebar-height strip (TitleBarStrip's
+                    // pattern) so it never dictates the strip height.
+                    OpenInIdeButton(path: launcherPath),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
+        // The tab-bar divider the old tabs had, restored for the outer rail:
+        // a hairline just below the group tabs, above the canvas.
         const Divider(height: 1),
         Expanded(
           child: _NodeView(
@@ -198,49 +230,6 @@ class _SplitterDivider extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// The active tab's worktree/branch label on the window title strip: a glyph
-/// reflecting the worktree's PR state (see [prStateStyle] — open / merged /
-/// closed / none) + branch name (or "New worktree" while the worktree is still
-/// a virtual draft that hasn't materialised on disk). A quiet muted context
-/// label so the worktree reads as context beneath which the session title is
-/// primary; only the glyph carries the PR-state tint.
-class _WorktreeTitle extends ConsumerWidget {
-  const _WorktreeTitle({required this.worktree});
-
-  final SelectedWorktree worktree;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final label = worktree.path.startsWith(kDraftWorktreePrefix)
-        ? 'New worktree'
-        : (worktree.branch ?? worktree.path);
-    // Same (poller-refreshed) source as the composer's PR bar, so the glyph
-    // flips in place the moment the PR is merged or closed.
-    final pr = ref.watch(reposProvider).prForWorktreePath(worktree.path);
-    final prStyle = prStateStyle(theme.colorScheme, pr);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        prStyle.glyph.build(size: 16, color: prStyle.color),
-        const SizedBox(width: kSpace6),
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: theme.colorScheme.outline,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

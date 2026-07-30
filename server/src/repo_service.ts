@@ -78,12 +78,13 @@ async function repoSnapshot(dto: ProjectDTO, sessions: Session[]): Promise<RepoD
       ])
     : [null, null, [] as Awaited<ReturnType<typeof listWorktrees>>];
 
-  // Group this project's STARTED sessions by the worktree path they run
-  // in. Pending drafts (no worktree yet) are surfaced separately by the UI.
+  // Group this project's sessions by the worktree they are bound to. A draft
+  // counts too: its worktree is resolved before the spawn, so it renders under
+  // that worktree's row rather than in a separate UI bucket.
   const sessionsByPath = new Map<string, string[]>();
   for (const s of sessions) {
-    if (s.projectId !== dto.id || s.pending) continue;
-    const key = s.worktreePath ?? repoPath;
+    if (s.projectId !== dto.id) continue;
+    const key = s.boundWorktreePath ?? repoPath;
     const list = sessionsByPath.get(key) ?? [];
     list.push(s.id);
     sessionsByPath.set(key, list);

@@ -12,7 +12,10 @@ import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
-import 'new_session_dialog.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
+import 'new_worktree_dialog.dart';
 import 'selected_session.dart';
 import 'server_profile_badge.dart';
 import 'session_status_dot.dart';
@@ -21,9 +24,8 @@ import 'title_bar_strip.dart';
 
 /// The left pane of the desktop two-pane chat. Mirrors the mobile repo-centric
 /// home (SPEC-11): repos → worktrees (branch, diff stats, open PR) → the
-/// sessions running in each worktree, plus pending draft sessions that
-/// haven't named a branch yet. Footer shows the connection status + a hook for
-/// the Settings/Server section.
+/// sessions bound to each worktree. Footer shows the connection status + a hook
+/// for the Settings/Server section.
 class DesktopSidebar extends ConsumerWidget {
   /// Creates the sidebar.
   const DesktopSidebar({super.key, this.onOpenSettings});
@@ -115,7 +117,7 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   bool _showAll = false;
 
   /// Whether the repo group is expanded. Clicking the header row toggles it;
-  /// when collapsed the worktrees, "show more" pill, and drafts are hidden.
+  /// when collapsed the worktrees and the "show more" pill are hidden.
   bool _expanded = true;
 
   /// Whether the pointer is over the repo header row. Gates the repo actions
@@ -126,32 +128,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   /// the repo actions menu so it stays reachable without a pointer (keyboard /
   /// non-hover input), mirroring the worktree row's `_focused` handling.
   bool _repoFocused = false;
-
-  /// True while a draft spawn is in flight, so rapid clicks on the + button
-  /// can't issue concurrent `spawnSession` calls (duplicate pending worktrees).
-  bool _spawningDraft = false;
-
-  /// The sidebar + button: spawn a pending draft (no worktree on disk yet) and
-  /// open it in its own virtual pane tree, landing on the harness picker. The
-  /// real worktree materializes on the draft's first message. No dialog — the
-  /// richer "New worktree from…" picker lives in the repo overflow menu.
-  Future<void> _startDraftWorktree(String projectId) async {
-    if (_spawningDraft) return;
-    setState(() => _spawningDraft = true);
-    final store = ref.read(storeControllerProvider.notifier);
-    try {
-      final sid = await store.spawnSession(projectId);
-      if (!mounted) return;
-      openDraftSession(ref, sid);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('New worktree failed: $e')));
-    } finally {
-      if (mounted) setState(() => _spawningDraft = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +143,6 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
         .toList();
     final selectedId = widget.selectedId;
     final onSelect = widget.onSelect;
-    final drafts = sessions.where((s) => s.pending).toList();
     final byId = {for (final s in sessions) s.id: s};
     final worktrees = sortWorktreesForDisplay(repo.worktrees);
     final showMore = worktrees.length > _maxCollapsed;
@@ -204,13 +179,18 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                       const SizedBox(width: kSpace8),
                       Expanded(
                         child: Text(
-                          repo.name.toUpperCase(),
+                          // Sentence case + bold, not upper-cased with tracking:
+                          // the repo is a name, and bold carries the hierarchy
+                          // that shouting used to.
+                          repo.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.outline,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                            // labelMedium carries 0.5 tracking, which exists for
+                            // all-caps labels. This is a name now, so drop it.
+                            letterSpacing: 0,
                           ),
                         ),
                       ),
@@ -243,9 +223,14 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                                 PhosphorIconsLight.plus,
                                 size: 16,
                               ),
-                              onPressed: _spawningDraft
-                                  ? null
-                                  : () => _startDraftWorktree(repo.id),
+                              // Create a worktree up front (a fresh branch by
+                              // default); you pick the harness and write the
+                              // first message on the pane you land on.
+                              onPressed: () => showNewWorktreeDialog(
+                                context,
+                                ref,
+                                projectId: repo.id,
+                              ),
                             ),
                           ],
                         ),
@@ -296,14 +281,49 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                 ),
               ),
             ),
-          for (final s in drafts)
-            _DraftWorktreeTile(
-              session: s,
-              selected: s.id == selectedId,
-              onTap: () => onSelect(s.id),
-            ),
         ],
       ],
+    );
+  }
+}
+
+/// Width reserved for the disclosure caret, so a row without one still lines its
+/// branch name up with the rows that have one.
+const double _kCaretSlot = 18;
+
+/// The worktree row's disclosure control. Separate from the row's own tap
+/// (SPEC-30 decision 15: the row navigates, the caret discloses), so neither
+/// gesture has to guess which of the two the user meant.
+class _WorktreeCaret extends StatelessWidget {
+  const _WorktreeCaret({
+    super.key,
+    required this.expanded,
+    required this.onPressed,
+  });
+
+  final bool expanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _kCaretSlot,
+      height: _kCaretSlot,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kRadius6),
+        onTap: onPressed,
+        child: Center(
+          child: AnimatedRotation(
+            turns: expanded ? 0 : -0.25,
+            duration: const Duration(milliseconds: 120),
+            child: Icon(
+              PhosphorIconsLight.caretDown,
+              size: 12,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -379,8 +399,7 @@ class _CompactMenuButton extends StatelessWidget {
 }
 
 /// The repo header's overflow menu (the triple-dots left of +). Hosts repo-
-/// scoped actions: hide the repo (untrack it) and open the richer
-/// "New worktree from…" dialog. More items land here later.
+/// scoped actions: hide the repo (untrack it). More items land here later.
 class _RepoMenuButton extends ConsumerWidget {
   const _RepoMenuButton({required this.repo});
 
@@ -395,20 +414,9 @@ class _RepoMenuButton extends ConsumerWidget {
         switch (value) {
           case 'hide':
             _hideRepo(context, ref);
-          case 'new-worktree':
-            showNewSessionDialog(context, ref, projectId: repo.id);
         }
       },
       itemBuilder: (context) => [
-        PopupMenuItem(
-          value: 'new-worktree',
-          height: 36,
-          child: Text(
-            'New worktree from…',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-        ),
-        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'hide',
           height: 36,
@@ -479,9 +487,6 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
     final branch = worktree.branch ?? 'detached';
     final isCurrent =
         worktree.branch != null && worktree.branch == repo.currentBranch;
-    // A worktree with no sessions is selectable: clicking it opens the harness
-    // picker in the pane to start a session in this existing worktree.
-    final selectable = sessions.isEmpty;
     final worktreeSelected =
         ref.watch(selectedWorktreeProvider)?.path == worktree.path;
     // Glyph + tint per PR state (open / merged / closed / none) — shared with
@@ -504,20 +509,20 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(kRadius10),
                 onFocusChange: (f) => setState(() => _focused = f),
-                onTap: () {
-                  if (selectable) {
-                    selectWorktree(
-                      ref,
-                      SelectedWorktree(
-                        projectId: repo.id,
-                        path: worktree.path,
-                        branch: worktree.branch,
-                      ),
-                    );
-                  } else {
-                    setState(() => _expanded = !_expanded);
-                  }
-                },
+                // Decision 15: the row *navigates* — it activates (minting if
+                // needed) this worktree's group, and an empty scope also seeds
+                // the in-pane starter. It deliberately does NOT toggle
+                // disclosure: one tap doing both meant peeking at a branch's
+                // children yanked the canvas, and moving the canvas collapsed
+                // the row you were reading. The caret owns disclosure.
+                onTap: () => selectWorktree(
+                  ref,
+                  SelectedWorktree(
+                    projectId: repo.id,
+                    path: worktree.path,
+                    branch: worktree.branch,
+                  ),
+                ),
                 child: Ink(
                   decoration: BoxDecoration(
                     color: worktreeSelected
@@ -529,9 +534,22 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
+                        padding: const EdgeInsets.fromLTRB(6, 6, 8, 2),
                         child: Row(
                           children: [
+                            // Disclosure. Only rows that have something to show
+                            // get one, so an empty worktree does not offer a
+                            // control that would do nothing; its slot is kept so
+                            // branch names stay aligned down the column.
+                            if (sessions.isEmpty)
+                              const SizedBox(width: _kCaretSlot)
+                            else
+                              _WorktreeCaret(
+                                key: Key('worktreeCaret-${worktree.path}'),
+                                expanded: _expanded,
+                                onPressed: () =>
+                                    setState(() => _expanded = !_expanded),
+                              ),
                             prStyle.glyph.build(size: 16, color: prStyle.color),
                             const SizedBox(width: kSpace6),
                             Expanded(
@@ -833,89 +851,6 @@ class _RenameBranchDialogState extends State<_RenameBranchDialog> {
   }
 }
 
-/// A pending draft rendered to match a worktree row. The worktree doesn't
-/// exist yet, so it shows "new worktree" in place of the branch name and its
-/// age counts from when the user clicked New worktree (the draft's creation),
-/// since the real worktree creation is postponed until the first message.
-class _DraftWorktreeTile extends StatelessWidget {
-  const _DraftWorktreeTile({
-    required this.session,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final Session session;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final createdAt = session.lastActivityAt > 0
-        ? DateTime.fromMillisecondsSinceEpoch(session.lastActivityAt)
-        : null;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: kSpace8, vertical: 1),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(kRadius10),
-          onTap: onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              color: selected
-                  ? theme.colorScheme.surfaceContainerHighest
-                  : null,
-              borderRadius: BorderRadius.circular(kRadius10),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
-                  child: Row(
-                    children: [
-                      Icon(
-                        PhosphorIconsLight.gitBranch,
-                        size: 16,
-                        color: theme.colorScheme.outline,
-                      ),
-                      const SizedBox(width: kSpace6),
-                      Flexible(
-                        child: Text(
-                          'new worktree',
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
-                  child: SizedBox(
-                    height: 16,
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        _branchAgeLabel(createdAt),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: theme.colorScheme.outline,
-                          fontWeight: FontWeight.w300,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Human-readable HEAD-commit age like `3d ago`. Empty string when unknown,
 /// so the sub-row below the branch still reserves its vertical space.
 String _branchAgeLabel(DateTime? committedAt) {
@@ -929,7 +864,7 @@ String _branchAgeLabel(DateTime? committedAt) {
   return '${(d.inDays / 365).floor()}y ago';
 }
 
-class _SessionTile extends StatelessWidget {
+class _SessionTile extends ConsumerStatefulWidget {
   const _SessionTile({
     required this.session,
     required this.selected,
@@ -943,18 +878,87 @@ class _SessionTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
+  ConsumerState<_SessionTile> createState() => _SessionTileState();
+}
+
+class _SessionTileState extends ConsumerState<_SessionTile> {
+  bool _hovering = false;
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final session = widget.session;
+    final selected = widget.selected;
+    final indented = widget.indented;
+    final onTap = widget.onTap;
     final title = session.pending && session.title.trim().isEmpty
         ? 'new worktree'
         : (session.title.trim().isNotEmpty
               ? session.title.trim()
               : (session.agent.trim().isNotEmpty ? session.agent : session.id));
+
+    // Board-membership affordances (decisions 14 & 15): a violet pin dot marks
+    // a member, and a hover `+` quick-pins a non-member — but only while a
+    // board is the active group, since only a board has a curated list to add
+    // to. A worktree group's membership is derived, so it has no quick-pin.
+    // Narrow watches on purpose. `activeGroupProvider` yields the whole Group,
+    // whose `==` includes its tree, and `commitTree` rewrites that on every
+    // focus/split/tab change — watching it here rebuilt EVERY session tile on
+    // every canvas mutation. Only the active group's kind and id matter.
+    final boardActive = ref.watch(
+      groupsControllerProvider.select<bool>(
+        (s) => s.active.kind == GroupKind.board,
+      ),
+    );
+    final activeGroupId = ref.watch(
+      groupsControllerProvider.select<String>((s) => s.active.id),
+    );
+    final isMember =
+        boardActive &&
+        ref.watch(
+          groupMembersProvider(
+            activeGroupId,
+          ).select<bool>((members) => members.contains(session.id)),
+        );
+    final Widget? trailing = !boardActive
+        ? null
+        : isMember
+        ? const Icon(PhosphorIconsFill.circle, size: 10, color: kBoardSwatch)
+        : (_hovering || _focused
+              ? IconButton(
+                  key: const Key('sidebarQuickPin'),
+                  tooltip: 'Pin to this board',
+                  padding: EdgeInsets.zero,
+                  iconSize: 14,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(
+                    minWidth: 22,
+                    minHeight: 22,
+                  ),
+                  color: kBoardSwatch,
+                  icon: const Icon(PhosphorIconsLight.plus, size: 14),
+                  onPressed: () => ref
+                      .read(groupsControllerProvider.notifier)
+                      .addMember(
+                        activeGroupId,
+                        session.id,
+                        location: locationOf(session),
+                      ),
+                )
+              : null);
+
     final tile = Padding(
       padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       child: ListTile(
         dense: true,
-        visualDensity: VisualDensity.compact,
+        // Keyboard/touch reachability: the quick-pin reveals on focus as well
+        // as hover (matching the repo header and worktree row), so it isn't
+        // pointer-only.
+        onFocusChange: (f) => setState(() => _focused = f),
+        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+        minVerticalPadding: 0,
+        minTileHeight: 24,
         selected: selected,
         selectedTileColor: theme.colorScheme.surfaceContainerHighest,
         shape: RoundedRectangleBorder(
@@ -976,23 +980,36 @@ class _SessionTile extends StatelessWidget {
             ),
             const SizedBox(width: kSpace6),
             Expanded(
-              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              // xs (10px): a session title is a dense list entry, not body copy,
+              // and the row is sized to match rather than keeping ListTile's
+              // default height around a much smaller label.
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+              ),
             ),
           ],
         ),
+        trailing: trailing,
         onTap: onTap,
       ),
     );
     // Drag a session onto a pane to open/move it there. Horizontal affinity so
     // a normal vertical drag still scrolls the sidebar; a rightward pull (into
     // the panes) starts the drag.
-    return Draggable<SessionDragData>(
-      data: SessionDragData(session.id),
-      affinity: Axis.horizontal,
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: _SessionDragFeedback(title: title, status: session.status),
-      childWhenDragging: Opacity(opacity: 0.4, child: tile),
-      child: tile,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Draggable<SessionDragData>(
+        data: SessionDragData(session.id),
+        affinity: Axis.horizontal,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: _SessionDragFeedback(title: title, status: session.status),
+        childWhenDragging: Opacity(opacity: 0.4, child: tile),
+        child: tile,
+      ),
     );
   }
 }

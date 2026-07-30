@@ -7,7 +7,10 @@ import '../../store/store.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/widgets/menu_item.dart';
 import 'desktop_chat_pane.dart';
-import 'new_session_dialog.dart';
+import 'groups/agent_picker.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
+import 'groups/groups_controller.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
@@ -64,8 +67,53 @@ class SessionDragData {
   final String sessionId;
 }
 
+/// What a drop converted, when it did: the worktree group's label and the board
+/// that replaced it on the canvas.
+typedef GroupConversion = ({String from, String to});
+
+/// Registers [sessionId] in the active group and puts it on the canvas
+/// (decision 14), returning a [GroupConversion] when the add converted a
+/// worktree group into a board (decision 4) and null otherwise.
+///
+/// Extracted from the drag target so the orchestration is testable directly: a
+/// simulated `Draggable`→`DragTarget` accept does not fire reliably in the test
+/// harness, and this is the load-bearing part — after a conversion the derived
+/// `workspaceControllerProvider` has been rebuilt against the new board's tree,
+/// so the reveal must go through a freshly read controller, not the one the
+/// caller was holding.
+GroupConversion? dropSessionIntoActiveGroup(
+  WidgetRef ref, {
+  required String sessionId,
+  required String splitId,
+  required DropEdge? zone,
+  required WorkspaceController controller,
+}) {
+  final active = ref.read(groupsControllerProvider).active;
+  final session = ref.read(sessionsProvider).byId(sessionId);
+  // The session can be archived between the drag starting and the drop landing.
+  // There is then nothing to add and nothing to show: opening a tab for it would
+  // put a pane on the canvas bound to a session the server no longer has, which
+  // is the dead tile decision 6 forbids.
+  if (session == null) return null;
+  ref
+      .read(groupsControllerProvider.notifier)
+      .addMember(active.id, sessionId, location: locationOf(session));
+  final afterActive = ref.read(groupsControllerProvider).active;
+  if (afterActive.id != active.id) {
+    ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
+    return (from: active.label, to: afterActive.label);
+  }
+  if (zone == null) {
+    controller.openSessionInSplit(splitId, sessionId);
+  } else {
+    controller.openSessionAtEdge(splitId, sessionId, zone);
+  }
+  return null;
+}
+
 /// Renders a single [Split]: a tab strip (its tabs in order, active
-/// highlighted, per-tab close ✕, a `+` opening the New session dialog) above
+/// highlighted, per-tab close ✕, a group-aware `+` — the in-pane starter in a
+/// worktree group, the agent picker on a board) above
 /// the active tab's body. The region is a [DragTarget] for split re-docking
 /// (drop on a [DropEdge]); each tab is draggable within/between bars.
 class SplitView extends ConsumerStatefulWidget {
@@ -141,6 +189,43 @@ class _SplitViewState extends ConsumerState<SplitView> {
       if (t.id == split.activeTabId) return t;
     }
     return split.tabs.first;
+  }
+
+  /// A session dropped from the sidebar (decision 14). Delegates the
+  /// orchestration to [dropSessionIntoActiveGroup] so it is reachable without a
+  /// simulated drag gesture, and announces a conversion here (a silent canvas
+  /// swap would be a surprise).
+  void _dropSession(
+    WorkspaceController controller,
+    String sessionId,
+    DropEdge? zone,
+  ) {
+    final conversion = dropSessionIntoActiveGroup(
+      ref,
+      sessionId: sessionId,
+      splitId: widget.split.id,
+      zone: zone,
+      controller: controller,
+    );
+    if (conversion != null) {
+      _announceConversion(conversion.from, conversion.to);
+    }
+  }
+
+  /// Tells the user an explicit add converted a worktree group into a board —
+  /// the original group is untouched and still reachable from the sidebar
+  /// (decision 4).
+  void _announceConversion(String fromLabel, String boardLabel) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '“$fromLabel” only holds its own branch, so this add made the board '
+          '“$boardLabel”. The worktree group is untouched — click it in the '
+          'sidebar to get it back.',
+        ),
+      ),
+    );
   }
 
   @override
@@ -234,11 +319,7 @@ class _SplitViewState extends ConsumerState<SplitView> {
             _hoverEdge = null;
             _hoverTabCentre = false;
           });
-          if (zone == null) {
-            controller.openSessionInSplit(widget.split.id, data.sessionId);
-          } else {
-            controller.openSessionAtEdge(widget.split.id, data.sessionId, zone);
-          }
+          _dropSession(controller, data.sessionId, zone);
         }
       },
       builder: (context, candidate, rejected) {
@@ -263,7 +344,6 @@ class _SplitViewState extends ConsumerState<SplitView> {
                   child: Column(
                     children: [
                       _TabBar(split: widget.split, active: widget.active),
-                      const Divider(height: 1),
                       Expanded(
                         child: DesktopChatPane(
                           // Key by the active tab so switching tabs recreates
@@ -292,8 +372,8 @@ class _SplitViewState extends ConsumerState<SplitView> {
 }
 
 /// The tab strip: a draggable-to-move-split grip, the tabs in order, and a `+`
-/// button opening the New session dialog (pre-filled with the active tab's
-/// worktree when known).
+/// button opening the in-pane starter (worktree group) or the agent picker
+/// (board).
 class _TabBar extends ConsumerWidget {
   const _TabBar({required this.split, required this.active});
 
@@ -347,21 +427,16 @@ class _TabBar extends ConsumerWidget {
                     minWidth: 28,
                     minHeight: 24,
                   ),
-                  tooltip: 'New session',
+                  // Group-dependent, matching the approved mock: a worktree
+                  // group's + starts an agent on that branch, a board's + adds
+                  // one to the board. "New session" described neither.
+                  tooltip:
+                      ref.watch(activeGroupProvider).kind == GroupKind.board
+                      ? 'Add an agent to this board'
+                      : 'New agent on this branch',
                   color: cs.onSurface,
                   icon: const Icon(PhosphorIconsLight.plus),
-                  onPressed: () {
-                    ref
-                        .read(workspaceControllerProvider.notifier)
-                        .setActiveSplit(split.id);
-                    final worktree = _prefillWorktree(ref, split);
-                    showNewSessionDialog(
-                      context,
-                      ref,
-                      projectId: worktree?.projectId,
-                      worktree: worktree,
-                    );
-                  },
+                  onPressed: () => _onAddPressed(context, ref),
                 ),
               ],
             ),
@@ -370,26 +445,46 @@ class _TabBar extends ConsumerWidget {
       ),
     );
   }
+
+  /// The tab-strip `+` is group-aware (decision 13). On a **board** it opens
+  /// the agent picker (there is no scope, so it asks "which agent?"). In a
+  /// **worktree group** the branch already answers "where does it run?", so it
+  /// opens the in-pane starter by adding a fresh tab hinted with the group's
+  /// scope — **never the dialog**.
+  void _onAddPressed(BuildContext context, WidgetRef ref) {
+    final controller = ref.read(workspaceControllerProvider.notifier);
+    controller.setActiveSplit(split.id);
+    final group = ref.read(activeGroupProvider);
+    if (group.kind == GroupKind.board) {
+      showAgentPicker(context, ref);
+      return;
+    }
+    // A worktree group without a scope cannot exist — `Group.worktree` requires
+    // both halves and the decoder drops an entry missing either — so this is an
+    // invariant, not a UX branch. Asserting says so instead of implying the
+    // dialog is a legitimate outcome here (decision 13 says it never is).
+    final hint = _groupWorktreeHint(group);
+    // A worktree group always carries both halves (Group.worktree requires them
+    // and the decoder drops an entry missing either), so the hint is never null
+    // here — assert the invariant rather than crash on a bare `!` if it is.
+    assert(hint != null, 'a worktree group must carry its scope');
+    controller.openTab(
+      split.id,
+      Tab(id: nextNodeId(SplitNodeKind.tab), worktree: hint),
+    );
+  }
 }
 
-/// The active tab's real worktree (for pre-filling the New session dialog), or
-/// null when it has no session on disk yet. An empty tab's worktree hint
-/// pre-fills too.
-SelectedWorktree? _prefillWorktree(WidgetRef ref, Split split) {
-  Tab? active;
-  for (final t in split.tabs) {
-    if (t.id == split.activeTabId) active = t;
-  }
-  if (active == null) return null;
-  final sessionId = active.sessionId;
-  if (sessionId == null) return active.worktree;
-  final session = ref.read(sessionsProvider).byId(sessionId);
-  final path = session?.worktreePath;
-  if (session == null || path == null) return null;
+/// The scope of a worktree [group] as a tab hint. Null only for a board, which
+/// owns no scope — a *worktree* group always carries both halves.
+SelectedWorktree? _groupWorktreeHint(Group group) {
+  final projectId = group.projectId;
+  final path = group.worktreePath;
+  if (projectId == null || path == null) return null;
   return SelectedWorktree(
-    projectId: session.projectId,
+    projectId: projectId,
     path: path,
-    branch: session.branch,
+    branch: group.label,
   );
 }
 
@@ -462,57 +557,50 @@ class _TabChip extends ConsumerWidget {
         ? 'New'
         : sessionPaneTitle(session, sessionId);
 
-    final chip = Container(
-      constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
-      padding: const EdgeInsets.only(left: 10, right: 4),
-      decoration: BoxDecoration(
-        // Active tab uses its pane's own body surface so it "seats" into the
-        // body below (focused panes are a step lighter, so their active tab is
-        // too); a 2px cap marks it. Inactive tabs are flush and transparent.
+    // The active tab is its pane's own body surface, rounded on the TOP only and
+    // with nothing drawn between it and the body beneath (no cap, no divider),
+    // so the tab and its content read as one cohesive shape. Which split is
+    // focused is shown by the pane's tonal step (a focused pane, and thus its
+    // active tab, sits one step lighter) — not by a stripe on the tab.
+    final chip = ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
         color: active
             ? _paneBackground(cs, focused: splitActive)
             : Colors.transparent,
-        border: Border(
-          top: BorderSide(
-            // Brand green (design: primary = active state) only for the
-            // selected tab of the focused split; every other tab's cap is a
-            // dim neutral using outlineVariant (the sanctioned borders token).
-            color: active && splitActive ? cs.primary : cs.outlineVariant,
-            width: 2,
-          ),
-          right: BorderSide(color: cs.outlineVariant, width: 1),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (session != null) ...[
-            SessionStatusDot(status: session.status),
-            const SizedBox(width: kSpace6),
-          ],
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w500,
-                color: active ? cs.onSurface : cs.onSurfaceVariant,
+        padding: const EdgeInsets.only(left: 10, right: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (session != null) ...[
+              SessionStatusDot(status: session.status),
+              const SizedBox(width: kSpace6),
+            ],
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: active ? cs.onSurface : cs.onSurfaceVariant,
+                ),
               ),
             ),
-          ),
-          IconButton(
-            iconSize: 12,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            tooltip: 'Close tab',
-            color: active ? cs.onSurface : cs.onSurfaceVariant,
-            icon: const Icon(PhosphorIconsLight.x),
-            onPressed: () =>
-                closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
-          ),
-        ],
+            IconButton(
+              iconSize: 12,
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+              tooltip: 'Close tab',
+              color: active ? cs.onSurface : cs.onSurfaceVariant,
+              icon: const Icon(PhosphorIconsLight.x),
+              onPressed: () =>
+                  closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
+            ),
+          ],
+        ),
       ),
     );
 
@@ -528,6 +616,13 @@ class _TabChip extends ConsumerWidget {
       builder: (context, candidate, rejected) {
         return Draggable<TabDragData>(
           data: TabDragData(fromSplitId: split.id, tabId: tab.id),
+          // Anchor the feedback to the POINTER, so `DragTargetDetails.offset`
+          // (which is the feedback's top-left) is the cursor. The drop-zone maths
+          // in `_tabZoneFor` treats that offset as the cursor, so with the
+          // default anchor the zone depended on the chip's width — i.e. on the
+          // session's TITLE LENGTH: dragging a long-titled tab onto a pane's
+          // centre could land in an edge zone and split instead of moving.
+          dragAnchorStrategy: pointerDragAnchorStrategy,
           onDragStarted: () => controller.setActiveTab(split.id, tab.id),
           feedback: Material(
             color: Colors.transparent,

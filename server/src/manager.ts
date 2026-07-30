@@ -128,12 +128,6 @@ export class SessionManager extends EventEmitter {
   /** In-flight draft promotions, keyed by session id, so concurrent first
    *  messages collapse onto one worktree/adapter instead of racing. */
   private readonly promoteInFlight = new Map<string, Promise<boolean>>();
-  /** Materialized shared worktrees, keyed by virtual-worktree id. Populated by
-   *  the first draft in a split group to send a message; siblings reuse it. */
-  private readonly virtualWorktrees = new Map<string, { path: string; branch: string }>();
-  /** In-flight virtual-worktree materializations, keyed by virtual-worktree id,
-   *  so two sibling drafts racing to send first fork ONE tree, not two. */
-  private readonly vwInFlight = new Map<string, Promise<{ path: string; branch: string }>>();
   /** Tail of the per-repo worktree-creation chain (see withWorktreeCreateLock). */
   private readonly worktreeCreateLock = new Map<string, Promise<unknown>>();
   private readonly adapterFactory?: AdapterFactory;
@@ -390,13 +384,14 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Spawn a DRAFT session: no worktree, no agent process. Worktree + agent
-   * creation is deferred until the first substantive user message (see
-   * {@link startPendingSession}), which supplies the branch/worktree name.
-   * Uses a {@link DetachedAdapter} placeholder so the session wires + shows in
-   * snapshots immediately.
+   * Spawn a DRAFT session: no agent process yet. Agent creation is deferred
+   * until the first substantive user message (see {@link startPendingSession}),
+   * which names the session. `worktreePath` is the worktree the client already
+   * resolved (creating it when needed); without one the agent runs in the repo
+   * dir (non-git project / unborn HEAD). Uses a {@link DetachedAdapter}
+   * placeholder so the session wires + shows in snapshots immediately.
    */
-  async spawnPendingSession(projectId: string, agent?: string, baseBranch?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
+  async spawnPendingSession(projectId: string, agent?: string, worktreePath?: string, branch?: string, configOptions?: { id: string; value: string | boolean }[]): Promise<Session> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const agentId = agent ?? this.defaultAgentId;
@@ -406,6 +401,33 @@ export class SessionManager extends EventEmitter {
       configOptions && configOptions.length > 0
         ? this.validateConfigPicks(agentId, configOptions)
         : undefined;
+    // The path comes from the wire, so verify it is genuinely a worktree of this
+    // project (or the project dir itself, which is what `createWorktree` returns
+    // for a non-git project) and derive the branch from git rather than trusting
+    // the client — otherwise a client could launch an agent outside the project.
+    let boundPath: string | undefined;
+    let boundBranch: string | undefined;
+    if (worktreePath) {
+      if (resolve(worktreePath) === resolve(project.dto.path)) {
+        boundPath = project.dto.path;
+        // Keep the client's branch. Dropping it here meant promotion fell back
+        // to `lc.branch ?? base` and labelled a session running in the primary
+        // checkout with the slugified first message instead of its real branch.
+        boundBranch = branch;
+      } else {
+        const entries = await listWorktrees(project.dto.path);
+        const match = entries.find(
+          (e) => resolve(e.path) === resolve(worktreePath),
+        );
+        if (!match) {
+          throw new Error(
+            `worktree is not part of project ${projectId}: ${worktreePath}`,
+          );
+        }
+        boundPath = match.path;
+        boundBranch = match.branch ?? branch;
+      }
+    }
     const session = new Session({
       projectId: project.dto.id,
       agent: this.adapterFactory ? "stub" : agentId,
@@ -413,72 +435,12 @@ export class SessionManager extends EventEmitter {
       adapter: new DetachedAdapter(agentId),
       store: this.store,
     });
-    session.beginDraft({ agent: agentId, baseBranch, configPicks });
-    // Bind to an existing worktree when provided (start-a-session-in-worktree):
-    // first message launches the agent there instead of forking a new tree.
-    // The path comes from the wire, so verify it is genuinely a worktree of
-    // this project and derive the branch from git rather than trusting the
-    // client — otherwise a client could launch an agent outside the project.
-    if (worktreePath) {
-      const entries = await listWorktrees(project.dto.path);
-      const match = entries.find(
-        (e) => resolve(e.path) === resolve(worktreePath),
-      );
-      if (!match) {
-        throw new Error(
-          `worktree is not part of project ${projectId}: ${worktreePath}`,
-        );
-      }
-      session.beginDraft({
-        agent: agentId,
-        baseBranch,
-        pendingWorktreePath: match.path,
-        branch: match.branch ?? branch,
-        configPicks,
-      });
-    }
-    this.sessions.set(session.id, session);
-    this.emit("sessionCreated", session);
-    return session;
-  }
-
-  /**
-   * Spawn a new session that shares the SAME worktree as [sourceSessionId]
-   * (the split-pane flow). Mirrors the source's worktree regardless of whether
-   * it exists yet:
-   * - source already started → bind the new draft to its real worktree/branch
-   *   (first message launches the agent there, no new tree).
-   * - source still a draft → link both drafts to one virtual worktree so
-   *   whichever sends first forks it and the other reuses that tree.
-   */
-  async spawnLinkedSession(sourceSessionId: string): Promise<Session> {
-    const source = this.sessions.get(sourceSessionId);
-    if (!source) throw new Error(`no such session: ${sourceSessionId}`);
-    const lc = source.lifecycle;
-    const agent = source.pendingAgent ?? source.agent;
-    if (lc.phase === "started") {
-      // Real worktree already on disk — reuse it via the existing bind path.
-      const worktreePath = lc.worktreePath;
-      if (!worktreePath) {
-        throw new Error(`session ${sourceSessionId} has no worktree to share`);
-      }
-      return this.spawnPendingSession(source.projectId, agent, undefined, worktreePath, lc.branch);
-    }
-    // Draft source: ensure it carries a virtual-worktree id, then hand the same
-    // id to the new draft so both materialize into one tree.
-    let virtualWorktreeId = lc.virtualWorktreeId;
-    if (!virtualWorktreeId) {
-      virtualWorktreeId = randomUUID();
-      source.linkVirtualWorktree(virtualWorktreeId);
-    }
-    const session = new Session({
-      projectId: source.projectId,
-      agent: this.adapterFactory ? "stub" : agent,
-      title: DEFAULT_SESSION_TITLE,
-      adapter: new DetachedAdapter(agent),
-      store: this.store,
+    session.beginDraft({
+      agent: agentId,
+      pendingWorktreePath: boundPath,
+      branch: boundBranch,
+      configPicks,
     });
-    session.beginDraft({ agent, baseBranch: lc.baseBranch, virtualWorktreeId });
     this.sessions.set(session.id, session);
     this.emit("sessionCreated", session);
     return session;
@@ -627,10 +589,7 @@ export class SessionManager extends EventEmitter {
     //               session, restorable later.
     for (const session of this.sessions.values()) {
       if (session.projectId !== projectId) continue;
-      const lc = session.lifecycle;
-      const bound =
-        session.worktreePath ??
-        (lc.phase === "draft" ? lc.pendingWorktreePath : undefined);
+      const bound = session.boundWorktreePath;
       if (!bound || resolve(bound) !== target) continue;
       if (session.archived) continue;
       if (session.pending) {
@@ -642,11 +601,10 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Promote a pending session on its first real request: derive a branch +
-   * worktree name from `firstMessage`, create the worktree under
-   * `MAKIT_WORKTREE_DIR` off the repo's default branch, then start the chosen
-   * agent there. Idempotent — a non-pending session is returned unchanged. For
-   * a non-git project the agent runs in the repo dir (no worktree).
+   * Promote a pending session on its first real request: name it from
+   * `firstMessage` and start the chosen agent in the worktree the draft is
+   * bound to. Idempotent — a non-pending session is returned unchanged. An
+   * unbound draft (non-git project / unborn HEAD) runs in the repo dir.
    */
   async startPendingSession(sessionId: string, firstMessage: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
@@ -664,42 +622,10 @@ export class SessionManager extends EventEmitter {
     if (!this.adapterFactory) session.agent = agentId;
 
     const base = slugify(firstMessage) || `session-${session.id.slice(0, 8)}`;
-    let branch = base;
-    let worktreePath = repoPath;
-
-    if (lc.pendingWorktreePath) {
-      // Start in the existing worktree the user picked — no new tree/branch.
-      worktreePath = lc.pendingWorktreePath;
-      branch = lc.branch ?? base;
-    } else if (lc.virtualWorktreeId) {
-      // Shared virtual worktree (split-from-draft): the first sibling to reach
-      // here forks the tree and records it; the rest reuse the same one.
-      const shared = await this.materializeVirtualWorktree(
-        lc.virtualWorktreeId,
-        repoPath,
-        lc.baseBranch,
-        base,
-      );
-      worktreePath = shared.path;
-      branch = shared.branch;
-    } else if (await isGitRepo(repoPath)) {
-      const requested = lc.baseBranch;
-      const baseBranch =
-        requested && (await branchExists(repoPath, requested))
-          ? requested
-          : await detectDefaultBranch(repoPath);
-      // Unborn HEAD (no base commit): skip worktree creation, run in the repo
-      // dir — `git worktree add -b` would otherwise fail.
-      if (baseBranch) {
-        const created = await this.withWorktreeCreateLock(repoPath, async () => {
-          const b = await this.uniqueBranch(repoPath, base);
-          const p = await addWorktree({ repoPath, name: b, branch: b, baseBranch });
-          return { p, b };
-        });
-        branch = created.b;
-        worktreePath = created.p;
-      }
-    }
+    // The worktree was resolved (and created, when the user asked for a new
+    // branch) before the spawn, so promotion never forks a tree here.
+    const worktreePath = lc.pendingWorktreePath ?? repoPath;
+    const branch = lc.branch ?? base;
 
     const built = buildAdapter(agentId);
     const adapter =
@@ -769,54 +695,6 @@ export class SessionManager extends EventEmitter {
       return await task;
     } finally {
       this.promoteInFlight.delete(session.id);
-    }
-  }
-
-  /**
-   * Fork (once) or reuse the shared worktree for a virtual-worktree id. The
-   * first sibling draft to send a message forks the tree off its base branch
-   * and records `{ path, branch }`; later siblings get the same result. A
-   * per-id in-flight promise collapses two drafts racing to send first onto a
-   * single fork. For a non-git project (or unborn HEAD) both siblings simply
-   * share the repo dir.
-   */
-  private async materializeVirtualWorktree(
-    virtualWorktreeId: string,
-    repoPath: string,
-    requestedBase: string | undefined,
-    fallbackBranch: string,
-  ): Promise<{ path: string; branch: string }> {
-    const done = this.virtualWorktrees.get(virtualWorktreeId);
-    if (done) return done;
-    const inflight = this.vwInFlight.get(virtualWorktreeId);
-    if (inflight) return inflight;
-    const task = (async () => {
-      let path = repoPath;
-      let branch = fallbackBranch;
-      if (await isGitRepo(repoPath)) {
-        const baseBranch =
-          requestedBase && (await branchExists(repoPath, requestedBase))
-            ? requestedBase
-            : await detectDefaultBranch(repoPath);
-        if (baseBranch) {
-          const created = await this.withWorktreeCreateLock(repoPath, async () => {
-            const b = await this.uniqueBranch(repoPath, fallbackBranch);
-            const p = await addWorktree({ repoPath, name: b, branch: b, baseBranch });
-            return { p, b };
-          });
-          branch = created.b;
-          path = created.p;
-        }
-      }
-      const result = { path, branch };
-      this.virtualWorktrees.set(virtualWorktreeId, result);
-      return result;
-    })();
-    this.vwInFlight.set(virtualWorktreeId, task);
-    try {
-      return await task;
-    } finally {
-      this.vwInFlight.delete(virtualWorktreeId);
     }
   }
 

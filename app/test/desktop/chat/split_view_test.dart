@@ -8,16 +8,24 @@ import 'package:flutter/material.dart' hide Tab, Split;
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/groups/agent_picker.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
 import 'package:makit/desktop/chat/split_view.dart';
+import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
 const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 
-Session _session(String id, String title) => Session(
+Session _session(
+  String id,
+  String title, {
+  String worktreePath = '/tmp/wt-a',
+}) => Session(
   id: id,
   projectId: 'p1',
   agent: 'pi',
@@ -26,8 +34,8 @@ Session _session(String id, String title) => Session(
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
   lastActivityAt: 0,
-  worktreePath: '/tmp/wt-a',
-  branch: 'wt-a',
+  worktreePath: worktreePath,
+  branch: worktreePath.split('/').last,
 );
 
 ProviderContainer _container({List<Session> sessions = const []}) {
@@ -101,10 +109,14 @@ Color? _paneColor(WidgetTester tester, String label) {
 Finder _chip(WidgetTester tester, String label) =>
     find.ancestor(of: find.text(label), matching: find.byType(Container)).first;
 
-Border _chipBorder(WidgetTester tester, String label) {
-  final container = tester.widget<Container>(_chip(tester, label));
-  return (container.decoration! as BoxDecoration).border! as Border;
-}
+/// The chip's painted surface: the chip is now a ClipRRect > Container > Column
+/// (rounded tops forbid a partial border), so the surface is the innermost
+/// ancestor Container that actually paints a colour.
+Container _chipSurface(WidgetTester tester, String label) => tester
+    .widgetList<Container>(
+      find.ancestor(of: find.text(label), matching: find.byType(Container)),
+    )
+    .firstWhere((c) => c.color != null);
 
 ColorScheme _scheme(WidgetTester tester) =>
     Theme.of(tester.element(find.byType(WorkspaceView))).colorScheme;
@@ -176,34 +188,6 @@ void main() {
       expect(chip.bottom, moreOrLessEquals(bar.bottom));
     });
 
-    testWidgets(
-      'only the focused split\'s active tab gets the primary cap; the '
-      'unfocused split\'s active tab caps stay neutral',
-      (tester) async {
-        final c = await _twoPanes(tester); // Beta's split focused
-        final cs = _scheme(tester);
-
-        final betaCap = _chipBorder(tester, 'Beta').top;
-        expect(betaCap.color, cs.primary);
-        expect(betaCap.width, 2);
-
-        final alphaCap = _chipBorder(tester, 'Alpha').top;
-        expect(alphaCap.color, cs.outlineVariant);
-
-        // Focus follows the active split: activating Alpha's split moves the
-        // primary cap over and dims Beta's.
-        final alphaSplitId = findTab(
-          c.read(workspaceControllerProvider).root,
-          's1',
-        )!.$1;
-        _ws(c).setActiveSplit(alphaSplitId);
-        await tester.pumpAndSettle();
-
-        expect(_chipBorder(tester, 'Alpha').top.color, cs.primary);
-        expect(_chipBorder(tester, 'Beta').top.color, cs.outlineVariant);
-      },
-    );
-
     testWidgets('the active tab seats on its pane surface; inactive tabs are '
         'dimmed', (tester) async {
       // One split with two tabs: s2 ("Second") active, s1 ("First") inactive.
@@ -219,10 +203,7 @@ void main() {
 
       // Active chip uses its (focused) pane's body surface; inactive chips
       // stay transparent on the recessed bar.
-      Color? chipColor(String label) =>
-          (tester.widget<Container>(_chip(tester, label)).decoration!
-                  as BoxDecoration)
-              .color;
+      Color? chipColor(String label) => _chipSurface(tester, label).color;
       expect(chipColor('Second'), cs.surface);
       expect(chipColor('First'), Colors.transparent);
 
@@ -307,6 +288,286 @@ void main() {
       await tester.tap(_chip(tester, 'New'), buttons: kSecondaryButton);
       await tester.pumpAndSettle();
       expect(find.text('Rename session'), findsNothing);
+    });
+  });
+
+  group('SPEC-30 Lane 6 — the tab-strip + is group-aware (decision 13)', () {
+    Group wtGroup(String path, {String? sessionId, String label = 'feat/x'}) {
+      final tabId = nextNodeId(SplitNodeKind.tab);
+      final splitId = nextNodeId(SplitNodeKind.split);
+      return Group.worktree(
+        id: 'g1',
+        projectId: 'p1',
+        worktreePath: path,
+        label: label,
+        tree: WorkspaceState(
+          root: Split(
+            id: splitId,
+            tabs: [Tab(id: tabId, sessionId: sessionId)],
+            activeTabId: tabId,
+          ),
+          activeSplitId: splitId,
+        ),
+      );
+    }
+
+    Group boardGroup(List<String> members) {
+      final tabId = nextNodeId(SplitNodeKind.tab);
+      final splitId = nextNodeId(SplitNodeKind.split);
+      return Group.board(
+        id: 'b1',
+        label: 'Shipping',
+        members: members,
+        tree: WorkspaceState(
+          root: Split(
+            id: splitId,
+            tabs: [
+              Tab(id: tabId, sessionId: members.isEmpty ? null : members.first),
+            ],
+            activeTabId: tabId,
+          ),
+          activeSplitId: splitId,
+        ),
+      );
+    }
+
+    Future<ProviderContainer> pump(
+      WidgetTester tester, {
+      required Group group,
+      List<Session> sessions = const [],
+    }) async {
+      final c = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(sessions)),
+          reposProvider.overrideWithValue(ReposState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+          for (final s in sessions)
+            sessionMetaProvider(s.id).overrideWithValue(
+              const SessionMeta(
+                model: _model,
+                thinking: 'medium',
+                models: [_model],
+              ),
+            ),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(groups: [group], activeGroupId: group.id),
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_tree(c));
+      await tester.pumpAndSettle();
+      return c;
+    }
+
+    testWidgets('a foreign drop converts, and reveals the newcomer on the new '
+        'board (decision 4/14 orchestration)', (tester) async {
+      // The gesture itself is not simulable here, so this exercises the seam the
+      // drag target calls. It is the load-bearing part: after a conversion the
+      // derived workspaceControllerProvider has been rebuilt against the freshly
+      // minted board's tree, so the reveal must go through a re-read controller
+      // — holding the old one would drop the tab into the group the user left.
+      final c = await pump(
+        tester,
+        group: wtGroup('/tmp/wt-a', sessionId: 's1'),
+        sessions: [
+          _session('s1', 'Alpha'),
+          _session('s2', 'Foreign', worktreePath: '/tmp/wt-b'),
+        ],
+      );
+      final before = c.read(groupsControllerProvider).active;
+
+      late GroupConversion? conversion;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (ctx, ref, _) => TextButton(
+                  onPressed: () => conversion = dropSessionIntoActiveGroup(
+                    ref,
+                    sessionId: 's2',
+                    splitId: ref
+                        .read(workspaceControllerProvider)
+                        .activeSplitId,
+                    zone: null,
+                    controller: ref.read(workspaceControllerProvider.notifier),
+                  ),
+                  child: const Text('drop'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('drop'));
+      await tester.pumpAndSettle();
+
+      // It converted, and said so truthfully.
+      expect(conversion, isNotNull);
+      expect(conversion!.from, 'feat/x');
+
+      final groups = c.read(groupsControllerProvider);
+      final board = groups.active;
+      expect(board.kind, GroupKind.board);
+      expect(board.id, isNot(before.id));
+      expect(board.members, containsAll(['s1', 's2']));
+
+      // The original worktree group is untouched and still reachable.
+      final original = groups.groups.firstWhere((g) => g.id == before.id);
+      expect(original.kind, GroupKind.worktree);
+      expect(original.tree, before.tree);
+
+      // The newcomer really is on the new board's canvas — the part that would
+      // silently break if the reveal used a stale controller.
+      final tabs = <String?>[];
+      firstSplitWhere<bool>(c.read(workspaceControllerProvider).root, (split) {
+        tabs.addAll(split.tabs.map((t) => t.sessionId));
+        return null;
+      });
+      expect(tabs, contains('s2'));
+    });
+
+    testWidgets('a session that vanished mid-drag is not given a tab', (
+      tester,
+    ) async {
+      // Decision 6 forbids dead tiles. The session can be archived between the
+      // drag starting and the drop landing, in which case there is nothing to
+      // add and nothing to show.
+      final c = await pump(
+        tester,
+        group: boardGroup(const []),
+        sessions: [_session('s1', 'Alpha')],
+      );
+
+      late GroupConversion? conversion;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (ctx, ref, _) => TextButton(
+                  onPressed: () => conversion = dropSessionIntoActiveGroup(
+                    ref,
+                    sessionId: 'gone',
+                    splitId: ref
+                        .read(workspaceControllerProvider)
+                        .activeSplitId,
+                    zone: null,
+                    controller: ref.read(workspaceControllerProvider.notifier),
+                  ),
+                  child: const Text('drop'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('drop'));
+      await tester.pumpAndSettle();
+
+      expect(conversion, isNull);
+      expect(c.read(groupsControllerProvider).active.members, isEmpty);
+      final tabs = <String?>[];
+      firstSplitWhere<bool>(c.read(workspaceControllerProvider).root, (split) {
+        tabs.addAll(split.tabs.map((t) => t.sessionId));
+        return null;
+      });
+      expect(
+        tabs.whereType<String>(),
+        isEmpty,
+        reason: 'no tab may be bound to a session the server no longer has',
+      );
+    });
+
+    testWidgets('a drop onto a board adds without converting', (tester) async {
+      final c = await pump(
+        tester,
+        group: boardGroup(const ['s1']),
+        sessions: [
+          _session('s1', 'Alpha'),
+          _session('s2', 'Other', worktreePath: '/tmp/wt-b'),
+        ],
+      );
+      final beforeId = c.read(groupsControllerProvider).active.id;
+
+      late GroupConversion? conversion;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (ctx, ref, _) => TextButton(
+                  onPressed: () => conversion = dropSessionIntoActiveGroup(
+                    ref,
+                    sessionId: 's2',
+                    splitId: ref
+                        .read(workspaceControllerProvider)
+                        .activeSplitId,
+                    zone: null,
+                    controller: ref.read(workspaceControllerProvider.notifier),
+                  ),
+                  child: const Text('drop'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('drop'));
+      await tester.pumpAndSettle();
+
+      expect(conversion, isNull, reason: 'a board absorbs anything');
+      final groups = c.read(groupsControllerProvider);
+      expect(groups.active.id, beforeId, reason: 'no new group');
+      expect(groups.active.members, ['s1', 's2']);
+    });
+
+    testWidgets('a worktree group + opens the in-pane starter, no dialog', (
+      tester,
+    ) async {
+      final c = await pump(
+        tester,
+        group: wtGroup('/tmp/wt-a', sessionId: 's1'),
+        sessions: [_session('s1', 'Alpha')],
+      );
+
+      expect(find.byType(WorktreeStarter), findsNothing);
+      await tester.tap(find.byTooltip('New agent on this branch'));
+      await tester.pumpAndSettle();
+
+      // The starter appears in place; the New-session dialog never opens.
+      expect(find.byType(WorktreeStarter), findsOneWidget);
+      expect(find.text('New session'), findsNothing);
+      // The added tab carries the group's scope as its worktree hint.
+      final starter = tester.widget<WorktreeStarter>(
+        find.byType(WorktreeStarter),
+      );
+      expect(starter.worktree.path, '/tmp/wt-a');
+      // Verify the tree grew by exactly one hinted tab (added once).
+      final tabs = (c.read(workspaceControllerProvider).root as Split).tabs;
+      expect(tabs.length, 2);
+    });
+
+    testWidgets('a board + opens the agent picker', (tester) async {
+      await pump(
+        tester,
+        group: boardGroup(const []),
+        sessions: [_session('s1', 'Alpha')],
+      );
+
+      expect(find.byType(AgentPicker), findsNothing);
+      await tester.tap(find.byTooltip('Add an agent to this board'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AgentPicker), findsOneWidget);
+      expect(find.text('Add agents to “Shipping”'), findsOneWidget);
     });
   });
 }
