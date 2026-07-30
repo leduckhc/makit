@@ -190,8 +190,7 @@ void main() {
       expect(next, seed);
     });
 
-    test('an unlocated session keeps its tab — it is pending, not foreign', () {
-      // Regression: the New-session dialog spawns a session and reveals its tab
+    test('an unlocated session keeps its tab — it is pending, not foreign', () {      // Regression: the New-session dialog spawns a session and reveals its tab
       // before the server reports which worktree it landed in. Since it matches
       // no scope, reconcile used to drop that tab on the very next snapshot —
       // the tab flickered away and took the composer's text with it.
@@ -213,6 +212,42 @@ void main() {
       // Once the server locates it elsewhere, it is a foreign tab and goes.
       reconcileInto(controller, const [], threshold: 3);
       expect(boundSessionIds(controller.state), isEmpty);
+    });
+  });
+
+  group('relayout (decision 9 — the one sanctioned rearrange)', () {
+    WorkspaceState fourInTabs() {
+      final c = WorkspaceController(null, WorkspaceController.seedWorkspace());
+      for (final id in ['s1', 's2', 's3', 's4']) {
+        placeInto(c, id, mode: LayoutMode.tabs);
+      }
+      return c.state;
+    }
+
+    int splitCount(WorkspaceState s) => _splitCount(s);
+
+    test('to split: 4 tabbed members become 4 panes, order preserved', () {
+      final laid = relayout(fourInTabs(), LayoutMode.split);
+      expect(splitCount(laid), 4);
+      expect(boundSessionIds(laid), ['s1', 's2', 's3', 's4']);
+    });
+
+    test('to tabs: 4 split members collapse into one pane, order preserved', () {
+      final c = WorkspaceController(null, WorkspaceController.seedWorkspace());
+      for (final id in ['s1', 's2', 's3', 's4']) {
+        placeInto(c, id, mode: LayoutMode.split);
+      }
+      expect(splitCount(c.state), 4);
+
+      final laid = relayout(c.state, LayoutMode.tabs);
+      expect(splitCount(laid), 1);
+      expect(boundSessionIds(laid), ['s1', 's2', 's3', 's4']);
+    });
+
+    test('an empty tree is left untouched', () {
+      final seed = WorkspaceController.seedWorkspace();
+      expect(relayout(seed, LayoutMode.split), seed);
+      expect(relayout(seed, LayoutMode.tabs), seed);
     });
   });
 }

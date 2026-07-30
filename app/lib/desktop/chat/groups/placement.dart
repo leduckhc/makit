@@ -73,6 +73,35 @@ void placeInto(
   }
 }
 
+/// Re-lays-out [controller]'s tree so every currently-shown session is
+/// arranged per [mode], preserving their order. This is decision 9's **single**
+/// sanctioned rearrange — the `Split | Tabs` toggle's one click — and nothing
+/// else in the lane may move an existing pane.
+///
+/// `split` gives each shown member its own pane; `tabs` collapses them all into
+/// one pane's tab strip. The surgery is funnelled through [WorkspaceController]
+/// (unbind every member, then re-[placeInto] them) so the tree invariants
+/// stay owned in one place rather than re-derived here. A tree with nothing
+/// shown has nothing to arrange, so it is left byte-identical.
+void relayoutInto(WorkspaceController controller, LayoutMode mode) {
+  final shown = boundSessionIds(_treeOf(controller));
+  if (shown.isEmpty) return;
+  for (final id in shown) {
+    controller.unbindSession(id);
+  }
+  for (final id in shown) {
+    placeInto(controller, id, mode: mode);
+  }
+}
+
+/// Returns [tree] re-laid-out per [mode] (see [relayoutInto]), leaving the
+/// original untouched. The pure variant for tests and off-canvas trees.
+WorkspaceState relayout(WorkspaceState tree, LayoutMode mode) {
+  final scratch = WorkspaceController(null, tree);
+  relayoutInto(scratch, mode);
+  return _treeOf(scratch);
+}
+
 /// Returns [tree] reconciled to [members]: members not yet shown are placed,
 /// tabs whose session is no longer a member are removed, and everything else is
 /// untouched. An empty worktree group seeds its starter tab with [emptyHint]

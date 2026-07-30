@@ -9,9 +9,11 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../app/theme.dart';
 import '../../../store/store.dart';
+import '../panes/workspace_controller.dart';
 import 'group.dart';
 import 'group_providers.dart';
 import 'groups_controller.dart';
+import 'placement.dart';
 
 /// The bar beneath the group tabs. Reads the active group and explains — in the
 /// group's own voice — what its membership rule is.
@@ -164,12 +166,14 @@ class _KindChip extends StatelessWidget {
 }
 
 /// The `Split | Tabs` segmented toggle. Clicking a segment pins the group's
-/// layout override (decision 9); the highlighted segment is the group's
-/// *explicit* override, so with none set neither is lit — the placement then
-/// follows the threshold silently, exactly as the mock behaves.
+/// layout override **and** re-lays-out the active group's tree once, on that
+/// click (decision 9): `split` gives every shown member its own pane, `tabs`
+/// collapses them into one pane's tab strip. The highlighted segment is the
+/// group's *explicit* override, so with none set neither is lit — placement
+/// then follows the threshold silently, exactly as the mock behaves.
 ///
-/// Re-laying-out the tree on that click is Lane 3's job; this only records the
-/// override.
+/// This is the **one** place a tree is rearranged on purpose; every other path
+/// only ever *places* a newcomer beside untouched panes (decision 9's point).
 class _LayoutToggle extends ConsumerWidget {
   const _LayoutToggle({required this.group});
 
@@ -178,7 +182,20 @@ class _LayoutToggle extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final controller = ref.read(groupsControllerProvider.notifier);
+
+    // Pin the override, then rearrange the live canvas through its controller so
+    // the mutation flows back to the groups layer via the commit sink. Order is
+    // immaterial — setLayoutOverride does not rebuild the workspace controller
+    // (it keys on the active group's identity, not its tree) — but pinning
+    // first mirrors the mock's "set the override, then lay out once".
+    void apply(LayoutMode mode) {
+      ref.read(groupsControllerProvider.notifier).setLayoutOverride(
+        group.id,
+        mode,
+      );
+      relayoutInto(ref.read(workspaceControllerProvider.notifier), mode);
+    }
+
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: cs.outlineVariant),
@@ -191,14 +208,12 @@ class _LayoutToggle extends ConsumerWidget {
           _ToggleSegment(
             label: 'Split',
             selected: group.layoutOverride == LayoutMode.split,
-            onTap: () =>
-                controller.setLayoutOverride(group.id, LayoutMode.split),
+            onTap: () => apply(LayoutMode.split),
           ),
           _ToggleSegment(
             label: 'Tabs',
             selected: group.layoutOverride == LayoutMode.tabs,
-            onTap: () =>
-                controller.setLayoutOverride(group.id, LayoutMode.tabs),
+            onTap: () => apply(LayoutMode.tabs),
           ),
         ],
       ),

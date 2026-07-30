@@ -65,6 +65,25 @@ Group _boardWithTabs(String id, List<String> ids) {
 
 List<String> _boundIds(WorkspaceState s) => _tabSessions(s).nonNulls.toList();
 
+/// The active split's active tab id — the pane that has focus. Bug 2's
+/// "appear without stealing focus" is exactly this pair staying put.
+(String, String?) _focused(WorkspaceState s) {
+  final split = node.firstSplitWhere<node.Split>(
+    s.root,
+    (sp) => sp.id == s.activeSplitId ? sp : null,
+  );
+  return (s.activeSplitId, split?.activeTabId);
+}
+
+/// A board whose stored tree is the untouched seed — the exact state Bug 2
+/// leaves behind when `addMember` updates membership but nothing places a pane.
+Group _boardMembersOnly(String id, List<String> ids) => Group.board(
+  id: id,
+  label: id,
+  members: ids,
+  tree: WorkspaceController.seedWorkspace(),
+);
+
 final _snapshot = StateProvider<({List<Session> sessions, bool loaded})>(
   (ref) => (sessions: const [], loaded: false),
 );
@@ -292,6 +311,89 @@ void main() {
         container.read(groupsControllerProvider).activeGroupId,
         'gA',
         reason: 'a foreign-branch session never switches the active group',
+      );
+    });
+
+    test('bug 2: pinning a session to the active board places a pane for it '
+        'and leaves existing panes — and focus — where they were', () async {
+      // A board already showing s1 and s2 (two tabs in one split; the last
+      // revealed, s2, is focused).
+      final b = _boardWithTabs('b', ['s1', 's2']);
+      final container = groupsContainer(
+        GroupsState(groups: [b], activeGroupId: 'b'),
+      );
+      addTearDown(container.dispose);
+      _keepAlive(container);
+
+      _push(container, [_session('s1'), _session('s2')]);
+      await Future<void>.delayed(Duration.zero);
+      final focusBefore = _focused(container.read(workspaceControllerProvider));
+
+      // The user pins s3 (an explicit add): it must appear on the canvas...
+      container
+          .read(groupsControllerProvider.notifier)
+          .addMember('b', 's3', location: const SessionLocation(projectId: 'p1'));
+      _push(container, [_session('s1'), _session('s2'), _session('s3')]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        _boundIds(container.read(workspaceControllerProvider)).toSet(),
+        {'s1', 's2', 's3'},
+        reason: 'the pinned agent lands on the board canvas',
+      );
+      expect(
+        _focused(container.read(workspaceControllerProvider)),
+        focusBefore,
+        reason: 'a pinned agent appears without stealing focus',
+      );
+    });
+
+    test('bug 2: close a board with 3 members then reopen — all 3 return '
+        'to its canvas even though the stored tree was never populated',
+        () async {
+      // A neighbour group so the board is not the last one (close refuses that).
+      final keep = _wtGroup('keep', '/tmp/wt/keep');
+      final board = _boardMembersOnly('b', ['s1', 's2', 's3']);
+      final container = groupsContainer(
+        GroupsState(groups: [keep, board], activeGroupId: 'b'),
+      );
+      addTearDown(container.dispose);
+      _keepAlive(container);
+
+      final ctrl = container.read(groupsControllerProvider.notifier);
+      ctrl.closeGroup('b');
+      ctrl.reopenBoard('b', liveSessionIds: const {'s1', 's2', 's3'});
+      _push(container, [_session('s1'), _session('s2'), _session('s3')]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        _boundIds(container.read(workspaceControllerProvider)).toSet(),
+        {'s1', 's2', 's3'},
+        reason: 'a reopened board shows its surviving members',
+      );
+    });
+
+    test('bug 2: a board archived-while-closed reopens showing only its '
+        'survivors (the ghost is filtered on the way back in)', () async {
+      final keep = _wtGroup('keep', '/tmp/wt/keep');
+      final board = _boardMembersOnly('b', ['s1', 's2', 's3']);
+      final container = groupsContainer(
+        GroupsState(groups: [keep, board], activeGroupId: 'b'),
+      );
+      addTearDown(container.dispose);
+      _keepAlive(container);
+
+      final ctrl = container.read(groupsControllerProvider.notifier);
+      ctrl.closeGroup('b');
+      // s3 was archived while the board was closed — reopen filters it out.
+      ctrl.reopenBoard('b', liveSessionIds: const {'s1', 's2'});
+      _push(container, [_session('s1'), _session('s2')]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        _boundIds(container.read(workspaceControllerProvider)).toSet(),
+        {'s1', 's2'},
+        reason: 'survivors are on the canvas and the dead member is gone',
       );
     });
 

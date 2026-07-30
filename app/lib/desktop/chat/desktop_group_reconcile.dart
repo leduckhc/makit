@@ -16,6 +16,7 @@ import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
 import 'groups/placement.dart';
+import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_worktree.dart';
 
@@ -33,32 +34,64 @@ import 'selected_worktree.dart';
 void reconcileActiveCanvas(Ref ref, SessionsState sessions) {
   final workspace = ref.read(workspaceControllerProvider.notifier);
   final active = ref.read(activeGroupProvider);
+  final members = ref.read(groupMembersProvider(active.id));
+  // A session the server has not located yet (a draft before its first
+  // message) belongs to no scope, so it must not be mistaken for a foreign
+  // tab and dropped from under the user.
+  final unlocated = {
+    for (final s in sessions.sessions)
+      if (s.worktreePath == null) s.id,
+  };
 
-  if (active.kind != GroupKind.worktree) {
-    for (final id in boundSessionIds(ref.read(workspaceControllerProvider))) {
-      if (sessions.byId(id) == null) workspace.unbindSession(id);
-    }
+  if (active.kind == GroupKind.worktree) {
+    reconcileInto(
+      workspace,
+      members,
+      threshold: ref.read(autoSplitThresholdProvider),
+      layoutOverride: active.layoutOverride,
+      unlocated: unlocated,
+      emptyHint: SelectedWorktree(
+        projectId: active.projectId!,
+        path: active.worktreePath!,
+        branch: active.label,
+      ),
+    );
     return;
   }
 
+  // A board's members got there by an explicit gesture (decision 14: pin,
+  // drop, picker tick), so placing them *is* the user's intent — which is why
+  // the canvas must reconcile against curated membership too, not merely close
+  // vanished tabs. This is also what makes a reopened board come back showing
+  // its survivors: its stored tree may never have been populated, so the
+  // panes are (re)placed from the member list here.
+  //
+  // A board owns no scope, so there is no empty-hint starter and newcomers must
+  // *appear* rather than seize the canvas: focus is captured and restored
+  // around placement, since placeInto legitimately focuses what it just placed
+  // (correct for the toggle, wrong for a background pin). Existing panes still
+  // never move — that invariant lives in reconcileInto (decision 9).
+  final before = ref.read(workspaceControllerProvider);
+  final (keepSplit, keepTab) = _focusedPane(before);
   reconcileInto(
     workspace,
-    ref.read(groupMembersProvider(active.id)),
+    members,
     threshold: ref.read(autoSplitThresholdProvider),
     layoutOverride: active.layoutOverride,
-    // A session the server has not located yet (a draft before its first
-    // message) belongs to no scope, so it must not be mistaken for a foreign
-    // tab and dropped from under the user.
-    unlocated: {
-      for (final s in sessions.sessions)
-        if (s.worktreePath == null) s.id,
-    },
-    emptyHint: SelectedWorktree(
-      projectId: active.projectId!,
-      path: active.worktreePath!,
-      branch: active.label,
-    ),
+    unlocated: unlocated,
   );
+  workspace.setActiveSplit(keepSplit);
+  if (keepTab != null) workspace.setActiveTab(keepSplit, keepTab);
+}
+
+/// The `(activeSplitId, activeTabId)` pair identifying the focused pane, so a
+/// board reconcile can restore it after placing background arrivals.
+(String, String?) _focusedPane(WorkspaceState state) {
+  final split = firstSplitWhere<Split>(
+    state.root,
+    (s) => s.id == state.activeSplitId ? s : null,
+  );
+  return (state.activeSplitId, split?.activeTabId);
 }
 
 /// Closes every worktree group whose scope no longer exists (SPEC-30 decision 7

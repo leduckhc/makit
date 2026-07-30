@@ -6,6 +6,8 @@ import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/group_bar.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/groups/membership_bar.dart';
+import 'package:makit/desktop/chat/groups/placement.dart';
+import 'package:makit/desktop/chat/panes/split_node.dart' as node;
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
@@ -39,6 +41,42 @@ Group _board(String id, List<String> members, {String? label}) => Group.board(
   members: members,
   tree: WorkspaceController.seedWorkspace(),
 );
+
+/// A board whose stored tree already shows [members], arranged per [mode] — so
+/// the Split | Tabs toggle has real panes to rearrange.
+Group _boardArranged(String id, List<String> members, LayoutMode mode) {
+  final c = WorkspaceController(null, WorkspaceController.seedWorkspace());
+  for (final id in members) {
+    placeInto(c, id, mode: mode);
+  }
+  return Group.board(id: id, label: id, members: members, tree: c.state);
+}
+
+/// The session ids hosted by [state]'s tabs, in tree order.
+List<String> _shown(WorkspaceState state) {
+  final ids = <String>[];
+  node.firstSplitWhere<bool>(state.root, (s) {
+    ids.addAll(s.tabs.map((t) => t.sessionId).nonNulls);
+    return null;
+  });
+  return ids;
+}
+
+/// The number of leaf splits in [state].
+int _splitCount(WorkspaceState state) {
+  var n = 0;
+  void walk(node.SplitNode x) {
+    if (x is node.Split) {
+      n++;
+    } else if (x is node.Splitter) {
+      walk(x.first);
+      walk(x.second);
+    }
+  }
+
+  walk(state.root);
+  return n;
+}
 
 ProviderContainer _container({
   required List<Group> groups,
@@ -438,6 +476,65 @@ void main() {
         c.read(groupsControllerProvider).active.layoutOverride,
         LayoutMode.split,
       );
+    });
+
+    testWidgets('toggling to Split re-lays-out 4 tabbed members into 4 panes, '
+        'order preserved, and the override persists', (tester) async {
+      final c = _container(
+        groups: [_boardArranged('b1', ['s1', 's2', 's3', 's4'], LayoutMode.tabs)],
+        sessions: [
+          _session('s1'),
+          _session('s2'),
+          _session('s3'),
+          _session('s4'),
+        ],
+      );
+      await _pump(tester, c, const MembershipBar());
+      // Precondition: one pane, four tabs.
+      expect(_splitCount(c.read(workspaceControllerProvider)), 1);
+
+      await tester.tap(find.text('Split'));
+      await tester.pump();
+
+      expect(_splitCount(c.read(workspaceControllerProvider)), 4);
+      expect(_shown(c.read(workspaceControllerProvider)), [
+        's1',
+        's2',
+        's3',
+        's4',
+      ]);
+      expect(
+        c.read(groupsControllerProvider).active.layoutOverride,
+        LayoutMode.split,
+      );
+    });
+
+    testWidgets('toggling to Tabs collapses 4 split members into one pane with '
+        '4 tabs, order preserved', (tester) async {
+      final c = _container(
+        groups: [
+          _boardArranged('b1', ['s1', 's2', 's3', 's4'], LayoutMode.split),
+        ],
+        sessions: [
+          _session('s1'),
+          _session('s2'),
+          _session('s3'),
+          _session('s4'),
+        ],
+      );
+      await _pump(tester, c, const MembershipBar());
+      expect(_splitCount(c.read(workspaceControllerProvider)), 4);
+
+      await tester.tap(find.text('Tabs'));
+      await tester.pump();
+
+      expect(_splitCount(c.read(workspaceControllerProvider)), 1);
+      expect(_shown(c.read(workspaceControllerProvider)), [
+        's1',
+        's2',
+        's3',
+        's4',
+      ]);
     });
   });
 }
