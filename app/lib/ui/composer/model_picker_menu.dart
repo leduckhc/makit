@@ -176,16 +176,33 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
 
   Widget _buildRecent(BuildContext context) {
     final rows = _recentRows;
-    // A header row at index 0, then one row per recent model. `.builder` keeps
-    // the list lazy (the catalog can be ~300 entries).
+    final recentSet = rows.toSet();
+    // Models that are in the catalog but not in recent.
+    final remaining = _catalog
+        .where((v) => !recentSet.contains(v.value))
+        .toList();
+
     return ListView.builder(
       shrinkWrap: true,
       primary: false,
       padding: EdgeInsets.zero,
-      itemCount: rows.length + 1,
+      // Recent section + remaining section.
+      itemCount:
+          rows.length + 1 + (remaining.isNotEmpty ? 1 : 0) + remaining.length,
       itemBuilder: (context, index) {
+        // Recent section header at 0.
         if (index == 0) return _sectionLabel(context, 'Recent');
-        return _recentRow(context, rows[index - 1]);
+        // Recent rows: indices 1 through rows.length.
+        if (index <= rows.length) {
+          return _recentRow(context, rows[index - 1]);
+        }
+        // All models section header.
+        final remainingStart = rows.length + 1;
+        if (index == remainingStart) {
+          return _sectionLabel(context, 'All models · ${remaining.length}');
+        }
+        // All-models rows: indices remainingStart + 1 onwards (selection only).
+        return _resultRow(context, remaining[index - remainingStart - 1]);
       },
     );
   }

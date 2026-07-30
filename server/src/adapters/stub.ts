@@ -177,6 +177,25 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         { value: "high", name: "High" },
       ],
     },
+    {
+      id: "context",
+      name: "Context",
+      category: "model_config",
+      type: "select",
+      currentValue: "256k",
+      options: [
+        { value: "128k", name: "128k" },
+        { value: "256k", name: "256k" },
+        { value: "1m", name: "1M" },
+      ],
+    },
+    {
+      id: "fast",
+      name: "Fast",
+      category: "model_config",
+      type: "boolean",
+      currentValue: true,
+    },
   ];
 
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {

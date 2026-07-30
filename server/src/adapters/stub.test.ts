@@ -28,12 +28,16 @@ test("stub emits configOptions on start", async () => {
   await stub.start({ sessionId: "s1", cwd: "/tmp" });
   assert.equal(metas.length, 1);
   const opts = optionsOf(metas[0]);
-  assert.equal(opts.length, 2);
+  assert.equal(opts.length, 4);
   assert.equal(opts[0].id, "model");
   assert.equal(opts[0].category, "model");
   assert.equal(opts[0].currentValue, "stub-normal");
   assert.equal(opts[1].id, "thought_level");
   assert.equal(opts[1].category, "thought_level");
+  assert.equal(opts[2].id, "context");
+  assert.equal(opts[2].category, "model_config");
+  assert.equal(opts[3].id, "fast");
+  assert.equal(opts[3].category, "model_config");
 });
 
 test("configOption action updates and re-emits the complete list", async () => {
@@ -43,7 +47,7 @@ test("configOption action updates and re-emits the complete list", async () => {
   await stub.sendAction("configOption", { id: "thought_level", value: "high" });
   assert.equal(metas.length, 2);
   const opts = optionsOf(metas[1]);
-  assert.equal(opts.length, 2, "complete list re-emitted");
+  assert.equal(opts.length, 4, "complete list re-emitted");
   assert.equal(opts.find((o) => o.id === "thought_level")?.currentValue, "high");
   assert.equal(opts.find((o) => o.id === "model")?.currentValue, "stub-normal");
 });

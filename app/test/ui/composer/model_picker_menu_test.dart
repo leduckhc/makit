@@ -102,6 +102,18 @@ void main() {
       expect(find.byIcon(kModelFlyoutCaretIcon), findsOneWidget);
     });
 
+    testWidgets('empty query shows All models section after Recent', (
+      tester,
+    ) async {
+      // The recent list is [gpt-5, opus]; the catalog has 3 (gpt-5, opus,
+      // gemini). After Recent header + 2 rows, there should be an "All models"
+      // header showing the count of remaining (1 = gemini).
+      await _pumpMenu(tester);
+      expect(find.text('RECENT'), findsOneWidget);
+      expect(find.text('ALL MODELS · 1'), findsOneWidget);
+      expect(find.text('Gemini 2.5 Pro'), findsOneWidget);
+    });
+
     testWidgets(
       'the active model stays reachable even when absent from the catalog',
       (tester) async {
