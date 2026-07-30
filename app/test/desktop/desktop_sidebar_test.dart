@@ -410,7 +410,7 @@ void main() {
     expect(find.textContaining('No repos yet'), findsOneWidget);
   });
 
-  testWidgets('tapping the worktree branch row collapses its sessions', (
+  testWidgets('the caret collapses a worktree row; the row itself does not', (
     tester,
   ) async {
     await _pump(
@@ -429,11 +429,23 @@ void main() {
 
     expect(find.text('Fix login bug'), findsOneWidget);
 
+    // Tapping the row activates the group (decision 15) and must NOT collapse:
+    // peeking at a branch's children should not require giving up the canvas,
+    // and moving the canvas should not require collapsing the row.
     await tester.tap(find.text('feat/login'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Fix login bug'),
+      findsOneWidget,
+      reason: 'the row activates; it does not toggle',
+    );
+
+    // The caret is the disclosure control.
+    await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
     await tester.pumpAndSettle();
     expect(find.text('Fix login bug'), findsNothing);
 
-    await tester.tap(find.text('feat/login'));
+    await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
     await tester.pumpAndSettle();
     expect(find.text('Fix login bug'), findsOneWidget);
   });
@@ -1092,8 +1104,9 @@ void main() {
         ),
       );
 
-      // Collapse the first worktree (branch-a).
-      await tester.tap(find.text('branch-a'));
+      // Collapse the first worktree (branch-a) via its caret — the row itself
+      // navigates now (SPEC-30 decision 15).
+      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-a')));
       await tester.pumpAndSettle();
       expect(find.text('Session A'), findsNothing);
       expect(find.text('Session B'), findsOneWidget);
@@ -1254,6 +1267,27 @@ void main() {
       final active = container.read(groupsControllerProvider).active;
       expect(active.kind, GroupKind.worktree);
       expect(active.worktreePath, '/tmp/wt/wt-feat');
+    });
+
+    testWidgets('the caret discloses without moving the canvas', (
+      tester,
+    ) async {
+      final container = await pumpWithGroups(
+        tester,
+        repos: repos,
+        sessions: sessions,
+        group: board(const []),
+      );
+      final before = container.read(groupsControllerProvider).active.id;
+
+      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
+      await tester.pump();
+
+      expect(
+        container.read(groupsControllerProvider).active.id,
+        before,
+        reason: 'expanding a row is not a navigation',
+      );
     });
   });
 }

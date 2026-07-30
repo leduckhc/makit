@@ -281,6 +281,47 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
   }
 }
 
+/// Width reserved for the disclosure caret, so a row without one still lines its
+/// branch name up with the rows that have one.
+const double _kCaretSlot = 18;
+
+/// The worktree row's disclosure control. Separate from the row's own tap
+/// (SPEC-30 decision 15: the row navigates, the caret discloses), so neither
+/// gesture has to guess which of the two the user meant.
+class _WorktreeCaret extends StatelessWidget {
+  const _WorktreeCaret({
+    super.key,
+    required this.expanded,
+    required this.onPressed,
+  });
+
+  final bool expanded;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: _kCaretSlot,
+      height: _kCaretSlot,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kRadius6),
+        onTap: onPressed,
+        child: Center(
+          child: AnimatedRotation(
+            turns: expanded ? 0 : -0.25,
+            duration: const Duration(milliseconds: 120),
+            child: Icon(
+              PhosphorIconsLight.caretDown,
+              size: 12,
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A compact overflow-menu trigger sized to match the sidebar's + button: a
 /// [VisualDensity.compact] [IconButton] (so its hover state layer is the small
 /// circle the + uses) that opens a popup via [showMenu]. PopupMenuButton's own
@@ -440,9 +481,6 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
     final branch = worktree.branch ?? 'detached';
     final isCurrent =
         worktree.branch != null && worktree.branch == repo.currentBranch;
-    // A worktree with no sessions is selectable: clicking it opens the harness
-    // picker in the pane to start a session in this existing worktree.
-    final selectable = sessions.isEmpty;
     final worktreeSelected =
         ref.watch(selectedWorktreeProvider)?.path == worktree.path;
 
@@ -462,22 +500,20 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(kRadius10),
                 onFocusChange: (f) => setState(() => _focused = f),
-                onTap: () {
-                  // Decision 15: a worktree row activates (minting if needed)
-                  // its group. An empty scope also seeds the in-pane starter.
-                  selectWorktree(
-                    ref,
-                    SelectedWorktree(
-                      projectId: repo.id,
-                      path: worktree.path,
-                      branch: worktree.branch,
-                    ),
-                  );
-                  // A row with sessions keeps its expand/collapse affordance.
-                  if (!selectable) {
-                    setState(() => _expanded = !_expanded);
-                  }
-                },
+                // Decision 15: the row *navigates* — it activates (minting if
+                // needed) this worktree's group, and an empty scope also seeds
+                // the in-pane starter. It deliberately does NOT toggle
+                // disclosure: one tap doing both meant peeking at a branch's
+                // children yanked the canvas, and moving the canvas collapsed
+                // the row you were reading. The caret owns disclosure.
+                onTap: () => selectWorktree(
+                  ref,
+                  SelectedWorktree(
+                    projectId: repo.id,
+                    path: worktree.path,
+                    branch: worktree.branch,
+                  ),
+                ),
                 child: Ink(
                   decoration: BoxDecoration(
                     color: worktreeSelected
@@ -489,9 +525,22 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 6, 8, 2),
+                        padding: const EdgeInsets.fromLTRB(6, 6, 8, 2),
                         child: Row(
                           children: [
+                            // Disclosure. Only rows that have something to show
+                            // get one, so an empty worktree does not offer a
+                            // control that would do nothing; its slot is kept so
+                            // branch names stay aligned down the column.
+                            if (sessions.isEmpty)
+                              const SizedBox(width: _kCaretSlot)
+                            else
+                              _WorktreeCaret(
+                                key: Key('worktreeCaret-${worktree.path}'),
+                                expanded: _expanded,
+                                onPressed: () =>
+                                    setState(() => _expanded = !_expanded),
+                              ),
                             // Open PR → the merge symbol; otherwise the plain
                             // worktree/branch icon that predated the PR-centric
                             // redesign (still used by the draft-worktree tile and
