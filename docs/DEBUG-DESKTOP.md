@@ -26,9 +26,14 @@ This:
 **Options:**
 ```bash
 ./scripts/debug-desktop.sh --server-only  # server in foreground (no flutter run)
+./scripts/debug-desktop.sh --server-only --inspect  # …under the Node inspector
 ./scripts/debug-desktop.sh --print-fp     # print the server cert fingerprint
 ./scripts/debug-desktop.sh --kill         # stop this worktree's debug server
 ```
+
+`--inspect` runs the server as `node --inspect --import tsx`, listening on
+`127.0.0.1:9229` (override with `MAKIT_INSPECT_PORT`), so a debugger can attach
+and break in `server/src/**.ts`.
 
 All modes accept an optional `[WORKTREE]` path (defaults to the enclosing git
 repo root).
@@ -52,6 +57,44 @@ the first run F5 just launches.
 
 > The debug port and the launch URL are driven by the same `makitPort` input, so
 > they always match. Stopping the debug session ends the server task.
+
+#### Server-side breakpoints (TypeScript)
+
+To break in the server as well as the app, pick the compound **"makit full stack
+(app + server breakpoints)"**. It starts the `makit: debug server (inspect)`
+task, attaches the Node debugger on `127.0.0.1:${makitInspectPort}`, and launches the app with
+**"makit desktop (debug, attach to running server)"** (same `MAKIT_WS_URL` /
+`MAKIT_FP` prompts, but no server task of its own). Breakpoints in
+`server/src/**.ts` and in `app/lib/**.dart` are live at the same time; stopping
+either session stops both (`stopAll`).
+
+Run **"makit server (attach to debug server)"** alone when only the server
+matters (e.g. driving it from the CLI or an already-installed app build).
+
+> Like `makitPort`, the `makitInspectPort` input lives in both `launch.json`
+> (Node attach) and `tasks.json` (the inspect task's `MAKIT_INSPECT_PORT`), so
+> the compound prompts for it twice — enter the same value both times (the
+> defaults match at `9229`, and VS Code remembers your last entry). Pick a free
+> port per worktree so two full-stack sessions don't collide on the inspector.
+
+### Other VS Code entries
+
+Launch configurations:
+
+| Configuration | Purpose |
+|---|---|
+| `makit desktop (debug, worktree server)` | App + plain debug server (original one-key flow) |
+| `makit desktop (debug, attach to running server)` | App only — server already running |
+| `makit server (attach to debug server)` | Node inspector attach for `server/src` |
+| `makit server test (current file)` | `node --import tsx --test` on the open test file |
+| `makit app test (current file)` | Dart/Flutter test on the open test file |
+
+Tasks (⇧⌘P → *Run Task*): `makit: debug server`, `makit: debug server
+(inspect)`, `makit: kill debug server`, `makit: print server cert fingerprint`,
+`makit: server typecheck` (default build task), `makit: server test` (default
+test task), `makit: app analyze`, `makit: app test`, and `makit: build macOS app
+(debug) + open` (full `scripts/macos-app.sh` build + CLI embed + launch — a
+non-hot-reload build, use it to check the shipping path).
 
 ### What's Different from Main
 
