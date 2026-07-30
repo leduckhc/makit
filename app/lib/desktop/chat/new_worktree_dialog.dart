@@ -10,15 +10,14 @@ import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
 import 'selected_worktree.dart';
 
-/// Where a new worktree comes from (SPEC-30). Unlike the old New-session
-/// dialog there is **no "Existing" option** — existing worktrees are one click
-/// away in the sidebar, so the dialog only offers ways to *create* one.
-enum _WorktreeFrom { newBranch, fromPr }
+/// Where a new worktree comes from (SPEC-30).
+enum _WorktreeFrom { existing, newBranch, fromPr }
 
 /// Opens the New-worktree dialog (SPEC-30): it asks **only** where the worktree
-/// comes from — a repository plus a New-branch/From-PR source. It does **not**
-/// pick a harness, adjust config pills, or take a first message; those belong to
-/// the Choose-a-harness starter ([WorktreeStarter]) the user lands on after.
+/// comes from — use an existing worktree, create a New-branch, or fork a
+/// From-PR worktree. It does **not** pick a harness, adjust config pills, or
+/// take a first message; those belong to the Choose-a-harness starter
+/// ([WorktreeStarter]) the user lands on after.
 ///
 /// [projectId] preselects the repository; when null it defaults to the active
 /// group's repo (a worktree group knows its repo) and otherwise the first repo,
@@ -62,6 +61,7 @@ class _NewWorktreeDialog extends ConsumerStatefulWidget {
 class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
   String? _projectId;
   _WorktreeFrom _source = _WorktreeFrom.newBranch;
+  String? _existingWorktreePath;
   String? _baseBranch;
   int? _prNumber;
   Future<List<OpenPr>>? _prsFuture;
@@ -134,6 +134,16 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
     Navigator.of(context).pop();
   }
 
+  /// Whether the Create button should be enabled: a From-PR worktree needs a
+  /// selected PR, and an Existing worktree needs one to have been resolved.
+  bool _canCreateWorktree() {
+    return switch (_source) {
+      _WorktreeFrom.fromPr => _prNumber != null,
+      _WorktreeFrom.existing => _existingWorktreePath != null,
+      _WorktreeFrom.newBranch => true,
+    };
+  }
+
   void _onRepoChanged(String? projectId) {
     if (projectId == null || projectId == _projectId) return;
     setState(() {
@@ -143,6 +153,10 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
       // panel refetches when From PR is shown again.
       _prsFuture = null;
       _prNumber = null;
+      // The old repo's worktree no longer belongs to this repo.
+      _existingWorktreePath = _source == _WorktreeFrom.existing
+          ? _firstExistingWorktreePath()
+          : null;
       if (_source == _WorktreeFrom.fromPr) _loadPrs();
     });
   }
@@ -163,6 +177,10 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
     try {
       final ({String path, String? branch}) created;
       switch (_source) {
+        case _WorktreeFrom.existing:
+          final path = _existingWorktreePath;
+          if (path == null) return;
+          created = (path: path, branch: null);
         case _WorktreeFrom.newBranch:
           final name = _branchNameCtrl.text.trim();
           created = await store.createWorktree(
@@ -241,7 +259,7 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
                       ),
                     ),
                     IconButton(
-                      tooltip: 'Cancel',
+                      tooltip: 'Close',
                       icon: const Icon(Icons.close),
                       onPressed: _creating ? null : _close,
                     ),
@@ -283,13 +301,8 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
-                      onPressed: _creating ? null : _close,
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: kSpace8),
                     FilledButton(
-                      onPressed: _creating ? null : _create,
+                      onPressed: _canCreateWorktree() && !_creating ? _create : null,
                       child: const Text('Create worktree'),
                     ),
                   ],
@@ -365,6 +378,10 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
           showSelectedIcon: false,
           segments: const [
             ButtonSegment(
+              value: _WorktreeFrom.existing,
+              label: Text('Existing'),
+            ),
+            ButtonSegment(
               value: _WorktreeFrom.newBranch,
               label: Text('New branch'),
             ),
@@ -375,6 +392,9 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
               ? null
               : (s) => setState(() {
                   _source = s.first;
+                  if (_source == _WorktreeFrom.existing) {
+                    _existingWorktreePath ??= _firstExistingWorktreePath();
+                  }
                   if (_source == _WorktreeFrom.fromPr && _prsFuture == null) {
                     _loadPrs();
                   }
@@ -382,10 +402,62 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
         ),
         const SizedBox(height: kSpace10),
         switch (_source) {
+          _WorktreeFrom.existing => _existingPanel(theme),
           _WorktreeFrom.newBranch => _newBranchPanel(theme),
           _WorktreeFrom.fromPr => _fromPrPanel(theme),
         },
       ],
+    );
+  }
+
+  /// Live worktrees in the selected repo (the source list for Existing).
+  List<Worktree> _existingWorktrees() {
+    for (final r in ref.read(reposProvider).repos) {
+      if (r.id == _projectId) return r.worktrees;
+    }
+    return const <Worktree>[];
+  }
+
+  /// The first existing worktree's path, or null when the repo has none.
+  String? _firstExistingWorktreePath() {
+    final worktrees = _existingWorktrees();
+    return worktrees.isEmpty ? null : worktrees.first.path;
+  }
+
+  Widget _existingPanel(ThemeData theme) {
+    final worktrees = _existingWorktrees();
+    if (worktrees.isEmpty) {
+      return Text(
+        'No existing worktrees in this repo.',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.outline,
+        ),
+      );
+    }
+    final selected = worktrees.any((w) => w.path == _existingWorktreePath)
+        ? _existingWorktreePath
+        : worktrees.first.path;
+    return _labeledRow(
+      theme,
+      'Worktree',
+      DropdownButtonFormField<String>(
+        key: const ValueKey('wt-existing-picker'),
+        initialValue: selected,
+        isExpanded: true,
+        items: [
+          for (final wt in worktrees)
+            DropdownMenuItem(
+              value: wt.path,
+              child: Text(
+                wt.branch ?? 'detached',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: _creating
+            ? null
+            : (v) => setState(() => _existingWorktreePath = v),
+      ),
     );
   }
 

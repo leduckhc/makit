@@ -233,10 +233,10 @@ void main() {
     },
   );
 
-  testWidgets('Cancel creates nothing', (tester) async {
+  testWidgets('Close (X) creates nothing', (tester) async {
     final opened = await _open(tester);
 
-    await tester.tap(find.text('Cancel'));
+    await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
 
     expect(opened.store.createdWorktreeBases, isEmpty);

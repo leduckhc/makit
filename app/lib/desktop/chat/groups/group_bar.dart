@@ -120,14 +120,10 @@ class _GroupTab extends ConsumerWidget {
               color: active ? cs.surfaceContainer : Colors.transparent,
               border: Border(
                 top: BorderSide(
-                  color: active ? cs.outlineVariant : Colors.transparent,
+                  color: active ? cs.primary : Colors.transparent,
+                  width: 2,
                 ),
-                left: BorderSide(
-                  color: active ? cs.outlineVariant : Colors.transparent,
-                ),
-                right: BorderSide(
-                  color: active ? cs.outlineVariant : Colors.transparent,
-                ),
+                right: BorderSide(color: cs.outlineVariant, width: 1),
               ),
               borderRadius: BorderRadius.zero,
             ),
