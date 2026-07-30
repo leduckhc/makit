@@ -102,6 +102,22 @@ void main() {
       expect(find.byIcon(kModelFlyoutCaretIcon), findsOneWidget);
     });
 
+    testWidgets(
+      'the active model stays reachable even when absent from the catalog',
+      (tester) async {
+        // The catalog no longer lists the active value; it must still render
+        // (raw-value fallback) and expose its flyout caret.
+        await _pumpMenu(
+          tester,
+          activeValue: 'retired-model',
+          recent: const ['opus'],
+        );
+        expect(find.text('retired-model'), findsOneWidget);
+        expect(find.byIcon(kModelFlyoutCaretIcon), findsOneWidget);
+        expect(find.byIcon(kModelActiveCheckIcon), findsOneWidget);
+      },
+    );
+
     testWidgets('tapping a non-active recent row selects it exactly once', (
       tester,
     ) async {

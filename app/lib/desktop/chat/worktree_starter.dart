@@ -5,6 +5,7 @@ import '../../app/theme.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/models.dart';
+import '../../store/recent_models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_selectors.dart'
@@ -88,6 +89,11 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     final partition = partitionConfigOptions(options);
     final model = partition.model;
     if (model == null) return;
+    // Surface the user's existing Recent models (read-only) in the draft
+    // picker; a draft select still only updates _picks (never records recents).
+    final recent = ref
+        .read(recentModelsControllerProvider.notifier)
+        .recentModels(agent);
     showModelPickerSheet(
       context,
       builder: (_) => StatefulBuilder(
@@ -99,7 +105,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
           return ModelPickerMenu(
             modelOption: model,
             activeValue: active is String ? active : '',
-            recent: const [],
+            recent: recent,
             modelScoped: partition.modelScoped,
             values: values,
             agent: agent,

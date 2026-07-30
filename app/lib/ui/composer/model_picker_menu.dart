@@ -119,7 +119,10 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
   List<String> get _recentRows {
     final inCatalog = _catalog.map((v) => v.value).toSet();
     final rows = <String>[];
-    if (inCatalog.contains(widget.activeValue)) rows.add(widget.activeValue);
+    // Always surface the active model so its row + flyout stay reachable, even
+    // when the agent's catalog no longer lists that value ([configValueName]
+    // falls back to the raw value).
+    if (widget.activeValue.isNotEmpty) rows.add(widget.activeValue);
     for (final value in widget.recent) {
       if (value == widget.activeValue) continue;
       if (inCatalog.contains(value) && !rows.contains(value)) rows.add(value);

@@ -69,12 +69,17 @@ const _agent = AgentDescriptor(
 );
 
 Future<({_FakeStore store, ProviderContainer container})> _pump(
-  WidgetTester tester,
-) async {
+  WidgetTester tester, {
+  Map<String, List<String>> recents = const {},
+}) async {
   late _FakeStore store;
   final container = ProviderContainer(
     overrides: [
       agentsProvider.overrideWith((ref) => [_agent]),
+      if (recents.isNotEmpty)
+        recentModelsControllerProvider.overrideWith(
+          (ref) => RecentModelsController(null, recents),
+        ),
       connectionControllerProvider.overrideWith(
         (ref) => ConnectionController(const _EmptyStorage()),
       ),
@@ -146,6 +151,22 @@ void main() {
       expect(harness.container.read(recentModelsControllerProvider), isEmpty);
     },
   );
+
+  testWidgets('draft picker surfaces the existing per-agent Recent models', (
+    tester,
+  ) async {
+    // A model the user picked before this draft (not the active default).
+    await _pump(
+      tester,
+      recents: const {
+        'zed': ['opus'],
+      },
+    );
+    await tester.tap(find.text('GPT-5'));
+    await tester.pumpAndSettle();
+    // On the empty-query Recent list (no search), the remembered model shows.
+    expect(find.text('Claude Opus'), findsOneWidget);
+  });
 
   testWidgets('draft flyout tuning records a local pick, no action', (
     tester,
