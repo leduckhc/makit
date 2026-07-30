@@ -313,7 +313,9 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     FilledButton(
-                      onPressed: _canCreateWorktree() && !_creating ? _create : null,
+                      onPressed: _canCreateWorktree() && !_creating
+                          ? _create
+                          : null,
                       child: const Text('Create worktree'),
                     ),
                   ],

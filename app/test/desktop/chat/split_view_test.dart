@@ -455,7 +455,9 @@ void main() {
                   onPressed: () => conversion = dropSessionIntoActiveGroup(
                     ref,
                     sessionId: 'gone',
-                    splitId: ref.read(workspaceControllerProvider).activeSplitId,
+                    splitId: ref
+                        .read(workspaceControllerProvider)
+                        .activeSplitId,
                     zone: null,
                     controller: ref.read(workspaceControllerProvider.notifier),
                   ),

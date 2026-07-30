@@ -233,17 +233,23 @@ void main() {
       expect(boundSessionIds(laid), ['s1', 's2', 's3', 's4']);
     });
 
-    test('to tabs: 4 split members collapse into one pane, order preserved', () {
-      final c = WorkspaceController(null, WorkspaceController.seedWorkspace());
-      for (final id in ['s1', 's2', 's3', 's4']) {
-        placeInto(c, id, mode: LayoutMode.split);
-      }
-      expect(splitCount(c.state), 4);
+    test(
+      'to tabs: 4 split members collapse into one pane, order preserved',
+      () {
+        final c = WorkspaceController(
+          null,
+          WorkspaceController.seedWorkspace(),
+        );
+        for (final id in ['s1', 's2', 's3', 's4']) {
+          placeInto(c, id, mode: LayoutMode.split);
+        }
+        expect(splitCount(c.state), 4);
 
-      final laid = relayout(c.state, LayoutMode.tabs);
-      expect(splitCount(laid), 1);
-      expect(boundSessionIds(laid), ['s1', 's2', 's3', 's4']);
-    });
+        final laid = relayout(c.state, LayoutMode.tabs);
+        expect(splitCount(laid), 1);
+        expect(boundSessionIds(laid), ['s1', 's2', 's3', 's4']);
+      },
+    );
 
     test('an empty tree is left untouched', () {
       final seed = WorkspaceController.seedWorkspace();

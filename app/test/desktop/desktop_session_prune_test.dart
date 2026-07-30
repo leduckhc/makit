@@ -248,38 +248,40 @@ void main() {
       // decision 6 — a broken prune that only touched the active board would
       // leave gb2.members == ['s', 'keep'] and fail here).
       expect(gb1.members, ['keep']);
-      expect(gb2.members, ['keep'], reason: 'every board unpins, not just active');
+      expect(gb2.members, [
+        'keep',
+      ], reason: 'every board unpins, not just active');
 
       // The active board also closes the dead tab (no dead tile on the canvas).
-      expect(
-        _boundIds(container.read(workspaceControllerProvider)),
-        ['keep'],
-      );
+      expect(_boundIds(container.read(workspaceControllerProvider)), ['keep']);
     });
 
-    test('decision 6: an INACTIVE board drops the vanished session\'s tab too', () async {
-      // Found by the QA pass and independently by review: the prune closed tabs
-      // only in the ACTIVE workspace, so an inactive board carried a tab bound
-      // to a gone session and showed a dead tile the moment you activated it.
-      // Fixed by making `removeMember` drop the tab as well — membership and
-      // tree are not allowed to disagree.
-      final b1 = _boardWithTabs('b1', ['s', 'keep']);
-      final b2 = _boardWithTabs('b2', ['s', 'keep']);
-      final container = groupsContainer(
-        GroupsState(groups: [b1, b2], activeGroupId: 'b1'),
-      );
-      addTearDown(container.dispose);
-      _keepAlive(container);
+    test(
+      'decision 6: an INACTIVE board drops the vanished session\'s tab too',
+      () async {
+        // Found by the QA pass and independently by review: the prune closed tabs
+        // only in the ACTIVE workspace, so an inactive board carried a tab bound
+        // to a gone session and showed a dead tile the moment you activated it.
+        // Fixed by making `removeMember` drop the tab as well — membership and
+        // tree are not allowed to disagree.
+        final b1 = _boardWithTabs('b1', ['s', 'keep']);
+        final b2 = _boardWithTabs('b2', ['s', 'keep']);
+        final container = groupsContainer(
+          GroupsState(groups: [b1, b2], activeGroupId: 'b1'),
+        );
+        addTearDown(container.dispose);
+        _keepAlive(container);
 
-      _push(container, [_session('keep')]);
-      await Future<void>.delayed(Duration.zero);
+        _push(container, [_session('keep')]);
+        await Future<void>.delayed(Duration.zero);
 
-      final gb2 = container
-          .read(groupsControllerProvider)
-          .groups
-          .firstWhere((g) => g.id == 'b2');
-      expect(_boundIds(gb2.tree), ['keep']);
-    });
+        final gb2 = container
+            .read(groupsControllerProvider)
+            .groups
+            .firstWhere((g) => g.id == 'b2');
+        expect(_boundIds(gb2.tree), ['keep']);
+      },
+    );
 
     test('decision 5: a new session on the active worktree group\'s branch '
         'joins the canvas without switching groups; one on another branch '
@@ -335,7 +337,11 @@ void main() {
       // The user pins s3 (an explicit add): it must appear on the canvas...
       container
           .read(groupsControllerProvider.notifier)
-          .addMember('b', 's3', location: const SessionLocation(projectId: 'p1'));
+          .addMember(
+            'b',
+            's3',
+            location: const SessionLocation(projectId: 'p1'),
+          );
       _push(container, [_session('s1'), _session('s2'), _session('s3')]);
       await Future<void>.delayed(Duration.zero);
 
@@ -351,30 +357,32 @@ void main() {
       );
     });
 
-    test('bug 2: close a board with 3 members then reopen — all 3 return '
-        'to its canvas even though the stored tree was never populated',
-        () async {
-      // A neighbour group so the board is not the last one (close refuses that).
-      final keep = _wtGroup('keep', '/tmp/wt/keep');
-      final board = _boardMembersOnly('b', ['s1', 's2', 's3']);
-      final container = groupsContainer(
-        GroupsState(groups: [keep, board], activeGroupId: 'b'),
-      );
-      addTearDown(container.dispose);
-      _keepAlive(container);
+    test(
+      'bug 2: close a board with 3 members then reopen — all 3 return '
+      'to its canvas even though the stored tree was never populated',
+      () async {
+        // A neighbour group so the board is not the last one (close refuses that).
+        final keep = _wtGroup('keep', '/tmp/wt/keep');
+        final board = _boardMembersOnly('b', ['s1', 's2', 's3']);
+        final container = groupsContainer(
+          GroupsState(groups: [keep, board], activeGroupId: 'b'),
+        );
+        addTearDown(container.dispose);
+        _keepAlive(container);
 
-      final ctrl = container.read(groupsControllerProvider.notifier);
-      ctrl.closeGroup('b');
-      ctrl.reopenBoard('b', liveSessionIds: const {'s1', 's2', 's3'});
-      _push(container, [_session('s1'), _session('s2'), _session('s3')]);
-      await Future<void>.delayed(Duration.zero);
+        final ctrl = container.read(groupsControllerProvider.notifier);
+        ctrl.closeGroup('b');
+        ctrl.reopenBoard('b', liveSessionIds: const {'s1', 's2', 's3'});
+        _push(container, [_session('s1'), _session('s2'), _session('s3')]);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(
-        _boundIds(container.read(workspaceControllerProvider)).toSet(),
-        {'s1', 's2', 's3'},
-        reason: 'a reopened board shows its surviving members',
-      );
-    });
+        expect(
+          _boundIds(container.read(workspaceControllerProvider)).toSet(),
+          {'s1', 's2', 's3'},
+          reason: 'a reopened board shows its surviving members',
+        );
+      },
+    );
 
     test('bug 2: a board archived-while-closed reopens showing only its '
         'survivors (the ghost is filtered on the way back in)', () async {
@@ -433,7 +441,8 @@ void main() {
       expect(
         groups.activeGroupId,
         'g1',
-        reason: 'focus falls to the neighbour (index-1), never always the first',
+        reason:
+            'focus falls to the neighbour (index-1), never always the first',
       );
     });
   });

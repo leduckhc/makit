@@ -64,10 +64,7 @@ ProviderContainer _container({
   return container;
 }
 
-Future<void> _pump(
-  WidgetTester tester,
-  ProviderContainer container,
-) async {
+Future<void> _pump(WidgetTester tester, ProviderContainer container) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
@@ -102,49 +99,53 @@ void main() {
     expect(find.textContaining('1 on this board'), findsOneWidget);
   });
 
-  testWidgets('ticking toggles membership: pin, then unpin (never duplicates)', (
-    tester,
-  ) async {
-    final c = _container(
-      groups: [_board('b1', const [], label: 'Shipping')],
-      sessions: [_session('s1', branch: 'feat/x')],
-    );
-    await _pump(tester, c);
+  testWidgets(
+    'ticking toggles membership: pin, then unpin (never duplicates)',
+    (tester) async {
+      final c = _container(
+        groups: [_board('b1', const [], label: 'Shipping')],
+        sessions: [_session('s1', branch: 'feat/x')],
+      );
+      await _pump(tester, c);
 
-    await tester.tap(find.text('s1'));
-    await tester.pump();
-    expect(c.read(groupsControllerProvider).active.members, ['s1']);
+      await tester.tap(find.text('s1'));
+      await tester.pump();
+      expect(c.read(groupsControllerProvider).active.members, ['s1']);
 
-    // Ticking a member again (via the picker) unpins it, never duplicates.
-    await tester.tap(find.text('s1'));
-    await tester.pump();
-    expect(c.read(groupsControllerProvider).active.members, isEmpty);
-  });
+      // Ticking a member again (via the picker) unpins it, never duplicates.
+      await tester.tap(find.text('s1'));
+      await tester.pump();
+      expect(c.read(groupsControllerProvider).active.members, isEmpty);
+    },
+  );
 
-  test('addMember pins only the id it is given (decision 5, controller-level)', () {
-    // Controller-level guard, not a picker-flow test: the picker's New session…
-    // row opens the New-worktree dialog and then opens a *tab* on the board
-    // (see _createWorktreeForBoard), it does not addMember. What decision 5
-    // requires of the controller is simply that addMember pins exactly the id
-    // passed and nothing that arrived concurrently from another client.
-    final c = _container(
-      groups: [_board('b1', const [], label: 'Shipping')],
-      sessions: [_session('s-mine'), _session('s-elsewhere')],
-    );
-    final groups = c.read(groupsControllerProvider.notifier);
+  test(
+    'addMember pins only the id it is given (decision 5, controller-level)',
+    () {
+      // Controller-level guard, not a picker-flow test: the picker's New session…
+      // row opens the New-worktree dialog and then opens a *tab* on the board
+      // (see _createWorktreeForBoard), it does not addMember. What decision 5
+      // requires of the controller is simply that addMember pins exactly the id
+      // passed and nothing that arrived concurrently from another client.
+      final c = _container(
+        groups: [_board('b1', const [], label: 'Shipping')],
+        sessions: [_session('s-mine'), _session('s-elsewhere')],
+      );
+      final groups = c.read(groupsControllerProvider.notifier);
 
-    groups.addMember(
-      'b1',
-      's-mine',
-      location: const SessionLocation(projectId: 'p1'),
-    );
+      groups.addMember(
+        'b1',
+        's-mine',
+        location: const SessionLocation(projectId: 'p1'),
+      );
 
-    expect(
-      c.read(groupsControllerProvider).active.members,
-      ['s-mine'],
-      reason: 'the concurrently-spawned session is not on the board',
-    );
-  });
+      expect(
+        c.read(groupsControllerProvider).active.members,
+        ['s-mine'],
+        reason: 'the concurrently-spawned session is not on the board',
+      );
+    },
+  );
 
   testWidgets('a pre-ticked member row unpins on tap', (tester) async {
     final c = _container(

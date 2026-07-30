@@ -41,20 +41,21 @@ Group _board(String id, List<String> members) => Group.board(
 
 /// A worktree group scoped to [path] whose stored tree already hosts a tab for
 /// [hostsSessionId] — the shape that exercises groupHolding's (a′) branch.
-Group _wtHosting(String id, String path, String hostsSessionId) => Group.worktree(
-  id: id,
-  projectId: 'p1',
-  worktreePath: path,
-  label: path.split('/').last,
-  tree: WorkspaceState(
-    root: Split(
-      id: 'split-$id',
-      tabs: [Tab(id: 'tab-$id', sessionId: hostsSessionId)],
-      activeTabId: 'tab-$id',
-    ),
-    activeSplitId: 'split-$id',
-  ),
-);
+Group _wtHosting(String id, String path, String hostsSessionId) =>
+    Group.worktree(
+      id: id,
+      projectId: 'p1',
+      worktreePath: path,
+      label: path.split('/').last,
+      tree: WorkspaceState(
+        root: Split(
+          id: 'split-$id',
+          tabs: [Tab(id: 'tab-$id', sessionId: hostsSessionId)],
+          activeTabId: 'tab-$id',
+        ),
+        activeSplitId: 'split-$id',
+      ),
+    );
 
 ProviderContainer _container({
   required List<Group> groups,

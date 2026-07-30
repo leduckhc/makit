@@ -115,7 +115,13 @@ RepoInfo _repo() => RepoInfo(
 /// handle on the dialog's eventual result. The result used to be returned by
 /// value, which captured `null` before the dialog had resolved — so every
 /// assertion on it passed vacuously.
-Future<({_FakeStore store, ProviderContainer container, ValueGetter<SelectedWorktree?> result})>
+Future<
+  ({
+    _FakeStore store,
+    ProviderContainer container,
+    ValueGetter<SelectedWorktree?> result,
+  })
+>
 _open(
   WidgetTester tester, {
   Map<String, List<OpenPr>> prs = const {},
@@ -255,19 +261,20 @@ void main() {
     expect(find.text('New worktree'), findsNothing);
   });
 
-  testWidgets('activateGroup: false places the worktree without switching group', (
-    tester,
-  ) async {
-    final opened = await _open(tester, activateGroup: false);
-    await tester.tap(find.text('Create worktree'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'activateGroup: false places the worktree without switching group',
+    (tester) async {
+      final opened = await _open(tester, activateGroup: false);
+      await tester.tap(find.text('Create worktree'));
+      await tester.pumpAndSettle();
 
-    expect(opened.store.createdWorktreeBases, ['main']);
-    expect(opened.result(), isNotNull);
-    expect(opened.result()!.path, '/tmp/wt/new-main');
-    // No group was activated: still the single fresh board.
-    final groups = opened.container.read(groupsControllerProvider);
-    expect(groups.groups.length, 1);
-    expect(groups.active.kind, GroupKind.board);
-  });
+      expect(opened.store.createdWorktreeBases, ['main']);
+      expect(opened.result(), isNotNull);
+      expect(opened.result()!.path, '/tmp/wt/new-main');
+      // No group was activated: still the single fresh board.
+      final groups = opened.container.read(groupsControllerProvider);
+      expect(groups.groups.length, 1);
+      expect(groups.active.kind, GroupKind.board);
+    },
+  );
 }

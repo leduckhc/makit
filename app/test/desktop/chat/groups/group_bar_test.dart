@@ -6,7 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/group_bar.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
-import 'package:makit/desktop/chat/sidebar_layout.dart' show kTitleBarStripHeight;
+import 'package:makit/desktop/chat/sidebar_layout.dart'
+    show kTitleBarStripHeight;
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
@@ -178,10 +179,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(
-        c
-            .read(groupsControllerProvider.notifier)
-            .groupById('b1')!
-            .label,
+        c.read(groupsControllerProvider.notifier).groupById('b1')!.label,
         'Ship 1.0',
       );
       expect(find.text('Ship 1.0'), findsOneWidget);
@@ -358,7 +356,10 @@ void main() {
 
       // A wrap would grow the bar past one row; it stays a single strip at the
       // macOS titlebar height (kTitleBarStripHeight).
-      expect(tester.getSize(find.byType(GroupBar)).height, kTitleBarStripHeight);
+      expect(
+        tester.getSize(find.byType(GroupBar)).height,
+        kTitleBarStripHeight,
+      );
     });
   });
 

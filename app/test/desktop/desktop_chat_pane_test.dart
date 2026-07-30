@@ -724,7 +724,11 @@ void main() {
         transport: 'acp',
         available: false,
       );
-      await pumpStarter(tester, worktree: _wtA, agents: [unavailable, _codex()]);
+      await pumpStarter(
+        tester,
+        worktree: _wtA,
+        agents: [unavailable, _codex()],
+      );
 
       // Codex (the first *available*) is the selected card, not the unavailable
       // first entry.

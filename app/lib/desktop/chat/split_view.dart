@@ -559,9 +559,7 @@ class _TabChip extends ConsumerWidget {
     // focused is shown by the pane's tonal step (a focused pane, and thus its
     // active tab, sits one step lighter) — not by a stripe on the tab.
     final chip = ClipRRect(
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(9),
-      ),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
       child: Container(
         constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
         color: active
@@ -590,19 +588,12 @@ class _TabChip extends ConsumerWidget {
               iconSize: 12,
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(
-                minWidth: 24,
-                minHeight: 24,
-              ),
+              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
               tooltip: 'Close tab',
               color: active ? cs.onSurface : cs.onSurfaceVariant,
               icon: const Icon(PhosphorIconsLight.x),
-              onPressed: () => closeTabAndArchive(
-                ref,
-                split.id,
-                tab.id,
-                tab.sessionId,
-              ),
+              onPressed: () =>
+                  closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
             ),
           ],
         ),

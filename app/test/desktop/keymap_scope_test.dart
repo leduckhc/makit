@@ -266,40 +266,41 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets('Ctrl+D in a worktree group splits with the scope hint, no dialog', (
-    tester,
-  ) async {
-    // Decision 13: a worktree group already answers "where does it run?", so
-    // ⌘D seeds the new split with its scope and never shows a dialog.
-    final keymap = await controller();
-    final groups = _wtGroups('/tmp/wt-a');
-    final container = ProviderContainer(
-      overrides: [
-        keymapProvider.overrideWith((_) => keymap),
-        sessionsProvider.overrideWithValue(SessionsState(const [])),
-        groupsControllerProvider.overrideWith((_) => groups),
-      ],
-    );
-    addTearDown(container.dispose);
-    expect(container.read(workspaceControllerProvider).root, isA<Split>());
+  testWidgets(
+    'Ctrl+D in a worktree group splits with the scope hint, no dialog',
+    (tester) async {
+      // Decision 13: a worktree group already answers "where does it run?", so
+      // ⌘D seeds the new split with its scope and never shows a dialog.
+      final keymap = await controller();
+      final groups = _wtGroups('/tmp/wt-a');
+      final container = ProviderContainer(
+        overrides: [
+          keymapProvider.overrideWith((_) => keymap),
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          groupsControllerProvider.overrideWith((_) => groups),
+        ],
+      );
+      addTearDown(container.dispose);
+      expect(container.read(workspaceControllerProvider).root, isA<Split>());
 
-    await pumpScope(
-      tester,
-      keymap: keymap,
-      onOpenSettings: () {},
-      container: container,
-    );
-    await pressCtrl(tester, LogicalKeyboardKey.keyD);
-    await tester.pumpAndSettle();
+      await pumpScope(
+        tester,
+        keymap: keymap,
+        onOpenSettings: () {},
+        container: container,
+      );
+      await pressCtrl(tester, LogicalKeyboardKey.keyD);
+      await tester.pumpAndSettle();
 
-    // The single split became a splitter; the new starter tab carries the
-    // group's scope, and no dialog appeared.
-    expect(container.read(workspaceControllerProvider).root, isA<Splitter>());
-    expect(find.text('New worktree'), findsNothing);
-    final tab = activeTab(container.read(workspaceControllerProvider))!;
-    expect(tab.sessionId, isNull, reason: 'a fresh starter tab');
-    expect(tab.worktree?.path, '/tmp/wt-a');
-  });
+      // The single split became a splitter; the new starter tab carries the
+      // group's scope, and no dialog appeared.
+      expect(container.read(workspaceControllerProvider).root, isA<Splitter>());
+      expect(find.text('New worktree'), findsNothing);
+      final tab = activeTab(container.read(workspaceControllerProvider))!;
+      expect(tab.sessionId, isNull, reason: 'a fresh starter tab');
+      expect(tab.worktree?.path, '/tmp/wt-a');
+    },
+  );
 
   testWidgets(
     'Ctrl+D on a board opens the dialog; a confirmed worktree becomes a split',
@@ -530,9 +531,7 @@ void main() {
     expect(opened, 1);
   });
 
-  testWidgets('Ctrl+1 / Ctrl+2 switch to the 1st / 2nd group', (
-    tester,
-  ) async {
+  testWidgets('Ctrl+1 / Ctrl+2 switch to the 1st / 2nd group', (tester) async {
     final keymap = await controller();
     final groups = GroupsController.ephemeral(
       GroupsState(
