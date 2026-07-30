@@ -523,7 +523,7 @@ void main() {
       );
 
       expect(find.byType(WorktreeStarter), findsNothing);
-      await tester.tap(find.byTooltip('New session'));
+      await tester.tap(find.byTooltip('New agent on this branch'));
       await tester.pumpAndSettle();
 
       // The starter appears in place; the New-session dialog never opens.
@@ -547,7 +547,7 @@ void main() {
       );
 
       expect(find.byType(AgentPicker), findsNothing);
-      await tester.tap(find.byTooltip('New session'));
+      await tester.tap(find.byTooltip('Add an agent to this board'));
       await tester.pumpAndSettle();
 
       expect(find.byType(AgentPicker), findsOneWidget);

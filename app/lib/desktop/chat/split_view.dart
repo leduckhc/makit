@@ -109,7 +109,8 @@ GroupConversion? dropSessionIntoActiveGroup(
 }
 
 /// Renders a single [Split]: a tab strip (its tabs in order, active
-/// highlighted, per-tab close ✕, a `+` opening the New session dialog) above
+/// highlighted, per-tab close ✕, a group-aware `+` — the in-pane starter in a
+/// worktree group, the agent picker on a board) above
 /// the active tab's body. The region is a [DragTarget] for split re-docking
 /// (drop on a [DropEdge]); each tab is draggable within/between bars.
 class SplitView extends ConsumerStatefulWidget {
@@ -369,8 +370,8 @@ class _SplitViewState extends ConsumerState<SplitView> {
 }
 
 /// The tab strip: a draggable-to-move-split grip, the tabs in order, and a `+`
-/// button opening the New session dialog (pre-filled with the active tab's
-/// worktree when known).
+/// button opening the in-pane starter (worktree group) or the agent picker
+/// (board).
 class _TabBar extends ConsumerWidget {
   const _TabBar({required this.split, required this.active});
 
@@ -424,7 +425,13 @@ class _TabBar extends ConsumerWidget {
                     minWidth: 28,
                     minHeight: 24,
                   ),
-                  tooltip: 'New session',
+                  // Group-dependent, matching the approved mock: a worktree
+                  // group's + starts an agent on that branch, a board's + adds
+                  // one to the board. "New session" described neither.
+                  tooltip:
+                      ref.watch(activeGroupProvider).kind == GroupKind.board
+                      ? 'Add an agent to this board'
+                      : 'New agent on this branch',
                   color: cs.onSurface,
                   icon: const Icon(PhosphorIconsLight.plus),
                   onPressed: () => _onAddPressed(context, ref),
