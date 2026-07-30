@@ -20,6 +20,9 @@ import 'composer_focus.dart';
 import 'new_session_dialog.dart';
 import 'panes/pane_header.dart';
 import 'pr_bar.dart';
+import 'groups/agent_picker.dart';
+import 'groups/group.dart';
+import 'groups/group_providers.dart';
 import 'selected_session.dart';
 import 'worktree_starter.dart';
 
@@ -442,6 +445,13 @@ class EmptyPaneStarter extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
+    // On a board, starting a session is only half of what you want here: the
+    // other half is pulling in an agent that is already running somewhere
+    // (SPEC-30 decision 14). The tab-strip `+` covers a board that has panes;
+    // an empty one has no strip worth aiming at, so the offer belongs here.
+    // A worktree group never shows this widget (it gets [WorktreeStarter]), and
+    // its membership is derived anyway — there would be no list to add to.
+    final isBoard = ref.watch(activeGroupProvider).kind == GroupKind.board;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -449,14 +459,34 @@ class EmptyPaneStarter extends ConsumerWidget {
           Icon(PhosphorIconsLight.chats, size: 40, color: cs.outline),
           const SizedBox(height: kSpace12),
           Text(
+            // Unchanged wording: the fresh-launch group is a board, so a
+            // board-specific sentence here would replace this one almost
+            // everywhere — and "add one" would be a lie when nothing is running
+            // yet. The extra button below is the whole difference.
             'Select a session, or start a new one',
             style: TextStyle(color: cs.outline),
           ),
           const SizedBox(height: kSpace16),
-          FilledButton.icon(
-            icon: const Icon(PhosphorIconsLight.plus, size: 16),
-            label: const Text('New session'),
-            onPressed: () => showNewSessionDialog(context, ref),
+          // Wrap, not Row: the canvas can be squeezed to ~350px when the
+          // sidebar is dragged to its maximum, and two buttons side by side
+          // overflow there.
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: kSpace8,
+            runSpacing: kSpace8,
+            children: [
+              FilledButton.icon(
+                icon: const Icon(PhosphorIconsLight.plus, size: 16),
+                label: const Text('New session'),
+                onPressed: () => showNewSessionDialog(context, ref),
+              ),
+              if (isBoard)
+                OutlinedButton.icon(
+                  icon: const Icon(PhosphorIconsLight.robot, size: 16),
+                  label: const Text('Add agent'),
+                  onPressed: () => showAgentPicker(context, ref),
+                ),
+            ],
           ),
         ],
       ),

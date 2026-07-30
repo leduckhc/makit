@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
+import 'package:makit/desktop/chat/groups/agent_picker.dart';
+import 'package:makit/desktop/chat/panes/workspace_controller.dart';
+import 'package:makit/desktop/chat/groups/group.dart';
+import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/harness_picker.dart' show HarnessCard;
 import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/desktop/chat/composer_draft.dart';
@@ -583,7 +587,6 @@ void main() {
         expect(starter.worktree, _wtA);
       },
     );
-
   });
 
   group('in-pane starter (harness picker page)', () {
@@ -669,6 +672,67 @@ void main() {
       expect(find.text('Using the host default harness.'), findsOneWidget);
       // Still startable: the server picks its default harness.
       expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('an empty BOARD also offers Add agent (decision 14 path a)', (
+      tester,
+    ) async {
+      // A board has no branch, so "New session" alone is not enough: the other
+      // thing you want on an empty board is to pull in an agent that is already
+      // running. The tab-strip + covers a non-empty board; this covers the
+      // empty one, which has no tab strip to speak of.
+      late _StarterStore store;
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          agentsProvider.overrideWith((ref) async => const <AgentDescriptor>[]),
+          groupsControllerProvider.overrideWith(
+            (ref) => GroupsController.ephemeral(
+              GroupsState(
+                groups: [
+                  Group.board(
+                    id: 'b1',
+                    label: 'Board 1',
+                    tree: WorkspaceController.seedWorkspace(),
+                  ),
+                ],
+                activeGroupId: 'b1',
+              ),
+            ),
+          ),
+          storeControllerProvider.overrideWith((ref) {
+            store = _StarterStore(ref);
+            return store;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(storeControllerProvider.notifier);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: Scaffold(body: DesktopChatPane())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Select a session, or start a new one'), findsOneWidget);
+      expect(find.text('New session'), findsOneWidget);
+      expect(find.text('Add agent'), findsOneWidget);
+
+      await tester.tap(find.text('Add agent'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AgentPicker), findsOneWidget);
+      expect(store.spawnCount, 0, reason: 'adding is not spawning');
+    });
+
+    testWidgets('a worktree group\'s empty pane does NOT offer Add agent', (
+      tester,
+    ) async {
+      // Membership there is derived — there is no list to add to.
+      await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
+      expect(find.text('Add agent'), findsNothing);
     });
 
     testWidgets('a pane with NO worktree keeps the New session button', (
