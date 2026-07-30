@@ -568,7 +568,7 @@ class _TabChip extends ConsumerWidget {
     // border, so a top-only side and rounded corners cannot coexist.
     final chip = ClipRRect(
       borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(kRadius10),
+        top: Radius.circular(9),
       ),
       child: Container(
         constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
