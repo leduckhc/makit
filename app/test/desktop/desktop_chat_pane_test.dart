@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/desktop_chat_pane.dart';
 import 'package:makit/desktop/chat/groups/agent_picker.dart';
+import 'package:makit/desktop/chat/pr_bar.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
@@ -661,6 +662,23 @@ void main() {
       expect(store.spawnPicks!.single.id, 'effort');
       expect(store.spawnPicks!.single.value, 'high');
       expect(store.sent, ['start here']);
+    });
+
+    testWidgets('carries the PR bar, like a live session\'s composer', (
+      tester,
+    ) async {
+      // A fresh worktree is not a second-class pane: the PR status pill and the
+      // "most actionable next step" split button that sit above a live
+      // session's composer belong here too.
+      await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
+
+      expect(find.byType(PrComposerBar), findsOneWidget);
+      final bar = tester.widget<PrComposerBar>(find.byType(PrComposerBar));
+      expect(
+        bar.pr,
+        isNull,
+        reason: 'no repo snapshot in this test, so no PR — but the bar is there',
+      );
     });
 
     testWidgets('no available harnesses falls back to the host default hint', (

@@ -178,13 +178,18 @@ class _RepoGroupState extends ConsumerState<_RepoGroup> {
                       const SizedBox(width: kSpace8),
                       Expanded(
                         child: Text(
-                          repo.name.toUpperCase(),
+                          // Sentence case + bold, not upper-cased with tracking:
+                          // the repo is a name, and bold carries the hierarchy
+                          // that shouting used to.
+                          repo.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelMedium?.copyWith(
-                            color: theme.colorScheme.outline,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.8,
+                            color: theme.colorScheme.onSurface,
+                            fontWeight: FontWeight.w700,
+                            // labelMedium carries 0.5 tracking, which exists for
+                            // all-caps labels. This is a name now, so drop it.
+                            letterSpacing: 0,
                           ),
                         ),
                       ),
@@ -957,7 +962,9 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
       padding: const EdgeInsets.symmetric(horizontal: kSpace8),
       child: ListTile(
         dense: true,
-        visualDensity: VisualDensity.compact,
+        visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+        minVerticalPadding: 0,
+        minTileHeight: 24,
         selected: selected,
         selectedTileColor: theme.colorScheme.surfaceContainerHighest,
         shape: RoundedRectangleBorder(
@@ -979,7 +986,15 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
             ),
             const SizedBox(width: kSpace6),
             Expanded(
-              child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              // xs (10px): a session title is a dense list entry, not body copy,
+              // and the row is sized to match rather than keeping ListTile's
+              // default height around a much smaller label.
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+              ),
             ),
           ],
         ),

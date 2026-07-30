@@ -10,6 +10,7 @@ import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_selectors.dart' show ConfigOptionPickRow;
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'harness_picker.dart' show HarnessCard;
+import 'pr_bar.dart';
 import 'selected_worktree.dart';
 import 'start_session.dart';
 
@@ -31,6 +32,10 @@ class WorktreeStarter extends ConsumerStatefulWidget {
 }
 
 class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
+  /// The composer's text, so a canned PR prompt can be dropped into it the way
+  /// the live pane does.
+  final TextEditingController _composer = TextEditingController();
+
   /// The user-picked harness id; null falls back to the first available agent.
   String? _chosenAgentId;
 
@@ -49,6 +54,22 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
       if (a.available) return a.id;
     }
     return agents.isEmpty ? null : agents.first.id;
+  }
+
+  /// Appends a canned PR prompt to the composer rather than sending it: the
+  /// worktree has no agent yet, so there is nothing to send it to.
+  void _insertPrompt(String prompt) {
+    final existing = _composer.text.trimRight();
+    _composer.text = existing.isEmpty ? prompt : '$existing\n\n$prompt';
+    _composer.selection = TextSelection.collapsed(
+      offset: _composer.text.length,
+    );
+  }
+
+  @override
+  void dispose() {
+    _composer.dispose();
+    super.dispose();
   }
 
   Future<void> _start(String text) async {
@@ -80,6 +101,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final worktreePath = widget.worktree.path;
     final agentsAsync = ref.watch(agentsProvider);
     final agents = agentsAsync.value ?? const <AgentDescriptor>[];
     final selectedId = _effectiveAgentId(agents);
@@ -141,7 +163,27 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                   ],
                 ),
               const SizedBox(height: kSpace16),
+              // The same PR row a live session gets (SPEC-23): status pill and
+              // the "most actionable next step" split button, read from the
+              // repos snapshot by worktree path. A fresh worktree usually has
+              // *more* to say here than a running one (nothing pushed, no PR
+              // yet), so omitting it made the starter feel like a lesser pane.
+              PrComposerBar(
+                pr: ref.watch(reposProvider).prForWorktreePath(worktreePath),
+                uncommittedFiles: ref
+                    .watch(reposProvider)
+                    .uncommittedFilesForWorktreePath(worktreePath),
+                commitsAhead: ref
+                    .watch(reposProvider)
+                    .aheadCountForWorktreePath(worktreePath),
+                commitsBehind: ref
+                    .watch(reposProvider)
+                    .behindCountForWorktreePath(worktreePath),
+                onInsertPrompt: _insertPrompt,
+              ),
+              const SizedBox(height: kSpace8),
               Composer(
+                controller: _composer,
                 onSend: _start,
                 running: _spawning,
                 alwaysExpanded: true,

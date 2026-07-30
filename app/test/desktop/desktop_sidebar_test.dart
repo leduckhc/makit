@@ -216,7 +216,7 @@ Future<void> _openWorktreeMenu(WidgetTester tester, String branchLabel) async {
 Future<void> _openRepoMenu(WidgetTester tester, String repoName) async {
   final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
   await gesture.addPointer(location: Offset.zero);
-  await gesture.moveTo(tester.getCenter(find.text(repoName.toUpperCase())));
+  await gesture.moveTo(tester.getCenter(find.text(repoName)));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('Repo actions'));
   await tester.pumpAndSettle();
@@ -228,7 +228,7 @@ Future<void> _openRepoMenu(WidgetTester tester, String repoName) async {
 Future<void> _tapNewWorktree(WidgetTester tester, String repoName) async {
   final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
   await gesture.addPointer(location: Offset.zero);
-  await gesture.moveTo(tester.getCenter(find.text(repoName.toUpperCase())));
+  await gesture.moveTo(tester.getCenter(find.text(repoName)));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('New worktree'));
   await tester.pumpAndSettle();
@@ -259,7 +259,7 @@ void main() {
       sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
     );
 
-    expect(find.text('ALPHA'), findsOneWidget);
+    expect(find.text('alpha'), findsOneWidget);
     expect(find.text('feat/login'), findsOneWidget);
     expect(find.text('Fix login bug'), findsOneWidget);
     // Only the worktree diff chip now (the repo-rollup aggregate was removed).
@@ -450,6 +450,51 @@ void main() {
     expect(find.text('Fix login bug'), findsOneWidget);
   });
 
+  testWidgets('repo names are sentence-case and bold, not upper-cased', (
+    tester,
+  ) async {
+    await _pump(
+      tester,
+      repos: [_repo('p1', 'makit', worktrees: [_worktree('wt-main')])],
+      sessions: const [],
+    );
+
+    expect(find.text('makit'), findsOneWidget);
+    expect(find.text('MAKIT'), findsNothing);
+    final label = tester.widget<Text>(find.text('makit'));
+    expect(label.style?.fontWeight, FontWeight.w700);
+    expect(
+      label.style?.letterSpacing ?? 0,
+      0,
+      reason: 'tracking belongs to upper-cased labels, which this is not',
+    );
+  });
+
+  testWidgets('session rows are xs text in a tight container', (tester) async {
+    await _pump(
+      tester,
+      repos: [
+        _repo(
+          'p1',
+          'alpha',
+          worktrees: [_worktree('wt-a', branch: 'a', sessionIds: ['s1'])],
+        ),
+      ],
+      sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
+    );
+
+    final label = tester.widget<Text>(find.text('Fix login bug'));
+    expect(label.style?.fontSize, 10);
+    // The row was a dense ListTile (~40px); a 10px label does not need that.
+    expect(
+      tester.getSize(find.ancestor(
+        of: find.text('Fix login bug'),
+        matching: find.byType(ListTile),
+      )).height,
+      lessThanOrEqualTo(28),
+    );
+  });
+
   testWidgets('branch names align whether or not the row has a caret', (
     tester,
   ) async {
@@ -498,12 +543,12 @@ void main() {
     expect(find.text('feat/login'), findsOneWidget);
 
     // Tapping the repo name row collapses the whole group.
-    await tester.tap(find.text('ALPHA'));
+    await tester.tap(find.text('alpha'));
     await tester.pumpAndSettle();
     expect(find.text('feat/login'), findsNothing);
 
     // Tapping again re-expands it.
-    await tester.tap(find.text('ALPHA'));
+    await tester.tap(find.text('alpha'));
     await tester.pumpAndSettle();
     expect(find.text('feat/login'), findsOneWidget);
   });
