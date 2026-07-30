@@ -17,19 +17,24 @@
 /// mutations flow through its sink to the groups layer.
 library;
 
-// Placement legitimately drives a [WorkspaceController] and must observe its
-// evolving tree between mutations. Reading `.state` is protected outside a
-// StateNotifier subclass (groups_controller.dart does the identical thing and
-// is exempt only because it *is* one). These functions are pure and own the
-// throwaway controller they read, so the access is safe.
-// ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
-
 import 'package:flutter/widgets.dart' show Axis;
 
 import '../panes/split_node.dart';
 import '../panes/workspace_controller.dart';
+
 import '../selected_worktree.dart';
 import 'group.dart';
+
+/// The evolving tree of [c].
+///
+/// Placement legitimately drives a [WorkspaceController] and must observe its
+/// tree *between* mutations, but `.state` is protected outside a StateNotifier
+/// subclass (`groups_controller.dart` does the identical thing and is exempt
+/// only because it *is* one). Funnelling every read through here keeps the
+/// suppression to a single line instead of a file-wide `ignore_for_file`, which
+/// would also hide any future accidental misuse.
+// ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
+WorkspaceState _treeOf(WorkspaceController c) => c.state;
 
 /// Places [sessionId] into [tree] per [mode] and returns the new tree, leaving
 /// every pane already present byte-identical (decision 9).
@@ -40,7 +45,7 @@ WorkspaceState place(
 }) {
   final scratch = WorkspaceController(null, tree);
   placeInto(scratch, sessionId, mode: mode);
-  return scratch.state;
+  return _treeOf(scratch);
 }
 
 /// Applies [place]'s policy to a **live** [controller], so the mutation is
@@ -61,7 +66,7 @@ void placeInto(
       // Split beside the existing panes, then bind the session into the new
       // split's fresh placeholder. When nothing is shown yet there is nothing
       // to split beside, so just fill the starter tab.
-      if (_hasBoundTab(controller.state)) {
+      if (_hasBoundTab(_treeOf(controller))) {
         controller.divideActive(Axis.horizontal);
       }
       controller.revealSession(sessionId);
@@ -88,7 +93,7 @@ WorkspaceState reconcile(
     layoutOverride: layoutOverride,
     emptyHint: emptyHint,
   );
-  return scratch.state;
+  return _treeOf(scratch);
 }
 
 /// Applies [reconcile] to a **live** [controller]. The placement mode is
@@ -114,7 +119,7 @@ void reconcileInto(
   // tab the New-session dialog just opened vanish on the next snapshot and
   // reappear a moment later — the user would see a flicker and lose their
   // composer text. It is left alone until the server says where it lives.
-  for (final id in boundSessionIds(controller.state)) {
+  for (final id in boundSessionIds(_treeOf(controller))) {
     if (memberSet.contains(id) || unlocated.contains(id)) continue;
     controller.unbindSession(id);
   }
@@ -125,7 +130,7 @@ void reconcileInto(
     if (controller.isSessionBound(id)) continue;
     final mode =
         layoutOverride ??
-        (_boundCount(controller.state) < threshold
+        (_boundCount(_treeOf(controller)) < threshold
             ? LayoutMode.split
             : LayoutMode.tabs);
     placeInto(controller, id, mode: mode);
@@ -136,7 +141,7 @@ void reconcileInto(
   // occupied, so the starter does not replace a session you just started.
   if (memberSet.isEmpty &&
       emptyHint != null &&
-      !_hasBoundTab(controller.state)) {
+      !_hasBoundTab(_treeOf(controller))) {
     _seedEmptyHint(controller, emptyHint);
   }
 }
@@ -145,7 +150,7 @@ void reconcileInto(
 /// so the starter knows which worktree to run in. No-op once a session is bound
 /// or the hint already matches (keeping the tree byte-identical).
 void _seedEmptyHint(WorkspaceController controller, SelectedWorktree hint) {
-  final tab = _activeTab(controller.state);
+  final tab = _activeTab(_treeOf(controller));
   if (tab == null || tab.sessionId != null || tab.worktree == hint) return;
   controller.revealWorktree(hint);
 }
