@@ -382,6 +382,38 @@ void main() {
       );
     });
 
+    testWidgets('degrades on a narrow canvas: keeps chip + toggle, drops the '
+        'sentence, never overflows', (tester) async {
+      // The canvas can be squeezed to ~350px when the sidebar is dragged to its
+      // maximum. The sentence is the expendable element; the chip (which group
+      // am I in?) and the toggle (a control) are not.
+      final c = _container(
+        groups: [_board('b1', ['s1'], label: 'Shipping 0.9')],
+        sessions: [_session('s1')],
+      );
+      await _pump(tester, c, const MembershipBar(), width: 340);
+
+      expect(tester.takeException(), isNull, reason: 'no RenderFlex overflow');
+      expect(find.textContaining('Board · Shipping 0.9'), findsOneWidget);
+      expect(find.text('Split'), findsOneWidget);
+      expect(find.text('Tabs'), findsOneWidget);
+      expect(
+        find.textContaining('pinned agent'),
+        findsNothing,
+        reason: 'the sentence is what gives way',
+      );
+    });
+
+    testWidgets('keeps the sentence at a normal width', (tester) async {
+      final c = _container(
+        groups: [_board('b1', ['s1'], label: 'Shipping 0.9')],
+        sessions: [_session('s1')],
+      );
+      await _pump(tester, c, const MembershipBar(), width: 800);
+
+      expect(find.textContaining('pinned agent'), findsOneWidget);
+    });
+
     testWidgets('the Split | Tabs toggle writes the layout override', (
       tester,
     ) async {

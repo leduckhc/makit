@@ -15,6 +15,11 @@ import 'groups_controller.dart';
 
 /// The bar beneath the group tabs. Reads the active group and explains — in the
 /// group's own voice — what its membership rule is.
+/// Below this canvas width the explanatory sentence is dropped so the chip and
+/// the toggle keep their space. Chosen as the point where a realistic chip
+/// ("Board · Shipping 0.9") plus the toggle leave no useful room for prose.
+const double _kSentenceMinWidth = 420;
+
 class MembershipBar extends ConsumerWidget {
   /// Creates the membership bar.
   const MembershipBar({super.key});
@@ -36,31 +41,47 @@ class MembershipBar extends ConsumerWidget {
         color: cs.surfaceContainer,
         border: Border(bottom: BorderSide(color: cs.outlineVariant)),
       ),
-      child: Row(
-        children: [
-          _KindChip(
-            icon: isBoard
-                ? PhosphorIconsLight.robot
-                : PhosphorIconsLight.gitBranch,
-            label: isBoard
-                ? 'Board · ${group.label}'
-                : '${_repoName(ref, group)} · ${group.label}',
-            color: isBoard ? kBoardSwatch : cs.primary,
-          ),
-          const SizedBox(width: kSpace10),
-          Expanded(
-            child: Text(
-              _sentence(ref, group, members),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: cs.onSurfaceVariant,
+      // The canvas can be squeezed to ~350px (sidebar dragged to its widest),
+      // where the chip and the toggle alone exceed the width — an `Expanded`
+      // sentence between them cannot save that, because neither neighbour
+      // shrinks. So the bar degrades deliberately: the sentence is dropped
+      // first (it explains, it does not act), and the chip is flexible so even
+      // an extreme squeeze ellipsizes rather than overflowing.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final roomForSentence = constraints.maxWidth >= _kSentenceMinWidth;
+          return Row(
+            children: [
+              Flexible(
+                child: _KindChip(
+                  icon: isBoard
+                      ? PhosphorIconsLight.robot
+                      : PhosphorIconsLight.gitBranch,
+                  label: isBoard
+                      ? 'Board · ${group.label}'
+                      : '${_repoName(ref, group)} · ${group.label}',
+                  color: isBoard ? kBoardSwatch : cs.primary,
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: kSpace10),
-          _LayoutToggle(group: group),
-        ],
+              if (roomForSentence) ...[
+                const SizedBox(width: kSpace10),
+                Expanded(
+                  child: Text(
+                    _sentence(ref, group, members),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ] else
+                const Spacer(),
+              const SizedBox(width: kSpace10),
+              _LayoutToggle(group: group),
+            ],
+          );
+        },
       ),
     );
   }
@@ -119,11 +140,21 @@ class _KindChip extends StatelessWidget {
         children: [
           Icon(icon, size: kPillIconSize, color: color),
           const SizedBox(width: kSpace6),
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
+          // Flexible is the load-bearing part: without it the chip's intrinsic
+          // width wins and the toggle is pushed off the bar (verified — removing
+          // it overflows by 185px at 340 wide; removing the Flexible *around*
+          // the chip overflows by 105px, so both are needed). The ellipsis is
+          // cosmetic: it stops the label being clipped mid-glyph.
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],

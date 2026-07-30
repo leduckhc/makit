@@ -84,7 +84,7 @@ class WorkspaceView extends ConsumerWidget {
             ],
           ),
         ),
-        const _MembershipStrip(),
+        const MembershipBar(),
         Expanded(
           child: _NodeView(
             node: state.root,
@@ -92,38 +92,6 @@ class WorkspaceView extends ConsumerWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// The membership bar beneath the strip. On a very narrow canvas (the sidebar
-/// dragged to its widest) the bar's chip + toggle cannot fit; rather than throw
-/// a layout overflow it is laid out at a minimum width and clipped, keeping its
-/// left-anchored identity visible. At normal widths it renders verbatim.
-class _MembershipStrip extends StatelessWidget {
-  const _MembershipStrip();
-
-  static const double _minWidth = 420;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= _minWidth) return const MembershipBar();
-        return const ClipRect(
-          child: SizedBox(
-            height: 41,
-            child: OverflowBox(
-              alignment: Alignment.centerLeft,
-              minWidth: _minWidth,
-              maxWidth: _minWidth,
-              minHeight: 41,
-              maxHeight: 41,
-              child: MembershipBar(),
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -260,4 +228,3 @@ class _SplitterDivider extends StatelessWidget {
     );
   }
 }
-
