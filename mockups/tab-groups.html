@@ -183,8 +183,8 @@
   .wtrow .branch{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .wtrow .cnt{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
   /* NIT 7: xs text in a tighter row (was 12.5px in a 3px-padded row). */
-  .sessrow{display:flex;align-items:center;gap:7px;font-size:11px;line-height:1.35;
-           padding:1px 12px 1px 34px;min-height:20px;color:var(--muted);cursor:pointer}
+  .sessrow{display:flex;align-items:center;gap:7px;font-size:10px;line-height:1.3;
+           padding:1px 12px 1px 34px;min-height:18px;color:var(--muted);cursor:pointer}
   .sessrow:hover{color:var(--text)}
   .sessrow .t{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sessrow.inboard{color:var(--text)}
@@ -201,13 +201,17 @@
   .pane{flex:1;min-width:0;background:var(--bg);border:1px solid var(--hairline);border-radius:10px;
         display:flex;flex-direction:column;overflow:hidden}
   .pane.active{border-color:#4c4c4c;box-shadow:inset 0 0 0 1px #2a2a2a}
-  .ptabs{display:flex;align-items:center;gap:2px;padding:5px 5px 0;border-bottom:1px solid var(--hairline);
-         background:var(--container);min-height:31px}
-  /* NIT 1: the INNER (pane) tabs get the round corners. */
+  .ptabs{display:flex;align-items:flex-end;gap:2px;padding:5px 5px 0;
+         border-bottom:1px solid var(--hairline);background:var(--container);min-height:31px}
+  /* NIT 1: INNER (pane) tabs are rounded on TOP ONLY, and the selected one is
+     the same colour as the body directly beneath it with no divider between —
+     so the active tab and its content read as one cohesive shape. */
   .ptab{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);padding:5px 9px;
-        border-radius:9px;cursor:pointer;max-width:190px}
+        border-radius:9px 9px 0 0;cursor:pointer;max-width:190px;position:relative;top:1px}
   .ptab:hover{background:var(--container-high);color:var(--text)}
-  .ptab.on{background:var(--bg);color:var(--text)}
+  .ptab.on{background:var(--bg);color:var(--text);
+           /* +1px covers the strip's bottom hairline so there is no seam */
+           box-shadow:0 1px 0 0 var(--bg);z-index:1}
   .ptab .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ptab .x{color:#6b6b6b;font-size:12px;line-height:1}
   .ptab .x:hover{color:var(--red)}
@@ -762,12 +766,18 @@ function renderWtDialog(){
   const branches = ['main','develop','release/0.9'];
   host.innerHTML = `<div class="wtdlg" onclick="event.stopPropagation()">
     <header>
-      <h4>New worktree in ${d.repo}</h4>
+      <h4>New worktree</h4>
       <p class="psub">Creates the branch and its folder. You pick the harness and
-        write the first message in the pane you land on.</p>
+        write the first message in the pane you land on. A board can hold
+        worktrees from any repo, so the repo is asked for here.</p>
     </header>
     <div class="body">
-      <div class="lbl">From</div>
+      <div class="lbl">Repository</div>
+      <span class="seg">
+        ${REPOS.map(r=>`<button class="${d.repo===r.name?'on':''}"
+            onclick="wtSet('repo','${r.name}')">${r.name}</button>`).join('')}
+      </span>
+      <div class="lbl" style="margin-top:14px">From</div>
       <span class="seg">
         <button class="${d.source==='branch'?'on':''}" onclick="wtSet('source','branch')">New branch</button>
         <button class="${d.source==='pr'?'on':''}" onclick="wtSet('source','pr')">From PR</button>
