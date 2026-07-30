@@ -298,6 +298,12 @@ class _IdeSplitButton extends StatelessWidget {
     return _disabledDim(button);
   }
 
+  /// Uniform `Opacity` rather than M3's token-based disabled colours, matching
+  /// how this app dims every other unavailable affordance — an unavailable
+  /// harness card (`new_session_sheet.dart`), an inactive tab chip and a
+  /// dragging chip (`split_view.dart`), an unchosen ask tile (`ask_card.dart`).
+  /// Review preferred the M3 idiom; adopting it here alone would make this the
+  /// only control in the app that dims differently.
   Widget _disabledDim(Widget button) =>
       enabled ? button : Opacity(opacity: 0.4, child: button);
 }
