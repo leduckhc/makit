@@ -11,7 +11,6 @@ import 'groups/agent_picker.dart';
 import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
-import 'new_session_dialog.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
@@ -66,6 +65,47 @@ class SessionDragData {
 
   /// The session being dragged in from the sidebar.
   final String sessionId;
+}
+
+/// What a drop converted, when it did: the worktree group's label and the board
+/// that replaced it on the canvas.
+typedef GroupConversion = ({String from, String to});
+
+/// Registers [sessionId] in the active group and puts it on the canvas
+/// (decision 14), returning a [GroupConversion] when the add converted a
+/// worktree group into a board (decision 4) and null otherwise.
+///
+/// Extracted from the drag target so the orchestration is testable directly: a
+/// simulated `Draggable`→`DragTarget` accept does not fire reliably in the test
+/// harness, and this is the load-bearing part — after a conversion the derived
+/// `workspaceControllerProvider` has been rebuilt against the new board's tree,
+/// so the reveal must go through a freshly read controller, not the one the
+/// caller was holding.
+GroupConversion? dropSessionIntoActiveGroup(
+  WidgetRef ref, {
+  required String sessionId,
+  required String splitId,
+  required DropEdge? zone,
+  required WorkspaceController controller,
+}) {
+  final active = ref.read(groupsControllerProvider).active;
+  final session = ref.read(sessionsProvider).byId(sessionId);
+  if (session != null) {
+    ref
+        .read(groupsControllerProvider.notifier)
+        .addMember(active.id, sessionId, location: locationOf(session));
+  }
+  final afterActive = ref.read(groupsControllerProvider).active;
+  if (afterActive.id != active.id) {
+    ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
+    return (from: active.label, to: afterActive.label);
+  }
+  if (zone == null) {
+    controller.openSessionInSplit(splitId, sessionId);
+  } else {
+    controller.openSessionAtEdge(splitId, sessionId, zone);
+  }
+  return null;
 }
 
 /// Renders a single [Split]: a tab strip (its tabs in order, active
@@ -147,33 +187,24 @@ class _SplitViewState extends ConsumerState<SplitView> {
     return split.tabs.first;
   }
 
-  /// A session dropped from the sidebar (decision 14). Registers membership in
-  /// the active group first — which, on a worktree group with an out-of-scope
-  /// session, **converts** it into a board (decision 4) — then reveals the
-  /// session's tab in the now-active group's tree. A drop that converts is
-  /// announced, since a silent canvas swap would be a surprise.
-  void _dropSession(WorkspaceController controller, String sessionId,
-      DropEdge? zone) {
-    final active = ref.read(groupsControllerProvider).active;
-    final session = ref.read(sessionsProvider).byId(sessionId);
-    if (session != null) {
-      ref
-          .read(groupsControllerProvider.notifier)
-          .addMember(active.id, sessionId, location: locationOf(session));
-    }
-    final afterActive = ref.read(groupsControllerProvider).active;
-    if (afterActive.id != active.id) {
-      // Conversion swapped the canvas to a freshly minted board. Its tree is a
-      // copy of the worktree group's, so re-read the derived controller and
-      // reveal the newcomer there.
-      ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
-      _announceConversion(active.label, afterActive.label);
-      return;
-    }
-    if (zone == null) {
-      controller.openSessionInSplit(widget.split.id, sessionId);
-    } else {
-      controller.openSessionAtEdge(widget.split.id, sessionId, zone);
+  /// A session dropped from the sidebar (decision 14). Delegates the
+  /// orchestration to [dropSessionIntoActiveGroup] so it is reachable without a
+  /// simulated drag gesture, and announces a conversion here (a silent canvas
+  /// swap would be a surprise).
+  void _dropSession(
+    WorkspaceController controller,
+    String sessionId,
+    DropEdge? zone,
+  ) {
+    final conversion = dropSessionIntoActiveGroup(
+      ref,
+      sessionId: sessionId,
+      splitId: widget.split.id,
+      zone: zone,
+      controller: controller,
+    );
+    if (conversion != null) {
+      _announceConversion(conversion.from, conversion.to);
     }
   }
 
@@ -410,8 +441,7 @@ class _TabBar extends ConsumerWidget {
   /// the agent picker (there is no scope, so it asks "which agent?"). In a
   /// **worktree group** the branch already answers "where does it run?", so it
   /// opens the in-pane starter by adding a fresh tab hinted with the group's
-  /// scope — never the dialog. Without a resolvable scope it falls back to the
-  /// New-session dialog.
+  /// scope — **never the dialog**.
   void _onAddPressed(BuildContext context, WidgetRef ref) {
     final controller = ref.read(workspaceControllerProvider.notifier);
     controller.setActiveSplit(split.id);
@@ -420,26 +450,22 @@ class _TabBar extends ConsumerWidget {
       showAgentPicker(context, ref);
       return;
     }
-    final hint = _groupWorktreeHint(group);
-    if (hint != null) {
-      controller.openTab(
-        split.id,
-        Tab(id: nextNodeId(SplitNodeKind.tab), worktree: hint),
-      );
-      return;
-    }
-    final worktree = _prefillWorktree(ref, split);
-    showNewSessionDialog(
-      context,
-      ref,
-      projectId: worktree?.projectId,
-      worktree: worktree,
+    // A worktree group without a scope cannot exist — `Group.worktree` requires
+    // both halves and the decoder drops an entry missing either — so this is an
+    // invariant, not a UX branch. Asserting says so instead of implying the
+    // dialog is a legitimate outcome here (decision 13 says it never is).
+    final hint = _groupWorktreeHint(group)!;
+    controller.openTab(
+      split.id,
+      Tab(id: nextNodeId(SplitNodeKind.tab), worktree: hint),
     );
   }
 }
 
 /// The active worktree group's scope as a [SelectedWorktree] hint, or null when
 /// the group is a board or its scope is incomplete.
+/// The scope of a worktree [group] as a tab hint. Null only for a board, which
+/// owns no scope — a *worktree* group always carries both halves.
 SelectedWorktree? _groupWorktreeHint(Group group) {
   final projectId = group.projectId;
   final path = group.worktreePath;
@@ -448,27 +474,6 @@ SelectedWorktree? _groupWorktreeHint(Group group) {
     projectId: projectId,
     path: path,
     branch: group.label,
-  );
-}
-
-/// The active tab's real worktree (for pre-filling the New session dialog), or
-/// null when it has no session on disk yet. An empty tab's worktree hint
-/// pre-fills too.
-SelectedWorktree? _prefillWorktree(WidgetRef ref, Split split) {
-  Tab? active;
-  for (final t in split.tabs) {
-    if (t.id == split.activeTabId) active = t;
-  }
-  if (active == null) return null;
-  final sessionId = active.sessionId;
-  if (sessionId == null) return active.worktree;
-  final session = ref.read(sessionsProvider).byId(sessionId);
-  final path = session?.worktreePath;
-  if (session == null || path == null) return null;
-  return SelectedWorktree(
-    projectId: session.projectId,
-    path: path,
-    branch: session.branch,
   );
 }
 

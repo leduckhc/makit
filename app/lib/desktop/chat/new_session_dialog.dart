@@ -20,13 +20,18 @@ import 'start_session.dart';
 /// the harness's cached config options, then start the session with the first
 /// message. [projectId] preselects a repo; [worktree] pre-fills the Worktree
 /// field to an existing worktree (e.g. the active pane's) when known.
-Future<void> showNewSessionDialog(
+/// Resolves with the id of the session it started, or null when the dialog was
+/// dismissed. Callers that need to act on the new session (e.g. pinning it to
+/// the board it was started from) must use this rather than guessing from the
+/// session list, which cannot distinguish a session another client spawned while
+/// the dialog was open.
+Future<String?> showNewSessionDialog(
   BuildContext context,
   WidgetRef ref, {
   String? projectId,
   SelectedWorktree? worktree,
 }) {
-  return showDialog<void>(
+  return showDialog<String>(
     context: context,
     builder: (_) => _NewSessionDialog(
       initialProjectId: projectId ?? worktree?.projectId,
@@ -217,7 +222,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
     try {
       final (:path, :branch) = await _resolveWorktree(projectId);
       createdWorktree = _source == WorktreeSource.existing ? null : path;
-      await startSessionInWorktree(
+      final spawnedId = await startSessionInWorktree(
         ref,
         projectId: projectId,
         text: text,
@@ -228,7 +233,7 @@ class _NewSessionDialogState extends ConsumerState<_NewSessionDialog> {
       );
       createdWorktree = null; // spawned — the worktree now hosts a session.
       if (!mounted) return;
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(spawnedId);
     } catch (e) {
       if (createdWorktree != null) {
         await store

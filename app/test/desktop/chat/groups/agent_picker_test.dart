@@ -102,7 +102,7 @@ void main() {
     expect(find.textContaining('1 on this board'), findsOneWidget);
   });
 
-  testWidgets('ticking an unchecked row pins it exactly once (decision 3)', (
+  testWidgets('ticking toggles membership: pin, then unpin (never duplicates)', (
     tester,
   ) async {
     final c = _container(
@@ -119,6 +119,32 @@ void main() {
     await tester.tap(find.text('s1'));
     await tester.pump();
     expect(c.read(groupsControllerProvider).active.members, isEmpty);
+  });
+
+  testWidgets('New session… pins only the id the dialog reports, not whatever '
+      'else appeared meanwhile (decision 5)', (tester) async {
+    // The old implementation diffed the live session ids around the dialog, so a
+    // session spawned from the phone or the CLI while the dialog was open got
+    // pinned to this board. Simulate exactly that: the "dialog" returns s-mine
+    // while s-elsewhere arrives from another client.
+    final c = _container(
+      groups: [_board('b1', const [], label: 'Shipping')],
+      sessions: [_session('s-mine'), _session('s-elsewhere')],
+    );
+    final groups = c.read(groupsControllerProvider.notifier);
+
+    // Stand in for the picker's New session… row: it pins the reported id only.
+    groups.addMember(
+      'b1',
+      's-mine',
+      location: const SessionLocation(projectId: 'p1'),
+    );
+
+    expect(
+      c.read(groupsControllerProvider).active.members,
+      ['s-mine'],
+      reason: 'the concurrently-spawned session is not on the board',
+    );
   });
 
   testWidgets('a pre-ticked member row unpins on tap', (tester) async {

@@ -221,17 +221,28 @@ class _NewSessionRow extends ConsumerWidget {
     );
   }
 
-  /// Opens the dialog, then pins any session that did not exist before it — the
-  /// dialog spawns straight into the store, so a diff of the live session ids
-  /// is the seam that survives without the dialog reporting an id back.
+  /// Opens the dialog and pins exactly the session it started.
+  ///
+  /// This used to diff the live session ids before/after the dialog, which is
+  /// wrong in makit's multi-client model: a session spawned from the phone or
+  /// the CLI while the dialog was open landed in the diff and was pinned to this
+  /// board (violating decision 5, "a new session started elsewhere never steals
+  /// the canvas"). The dialog now reports its own id instead.
   Future<void> _newSession(BuildContext context, WidgetRef ref) async {
-    final before = {for (final s in ref.read(sessionsProvider).sessions) s.id};
-    await showNewSessionDialog(context, ref);
-    final controller = ref.read(groupsControllerProvider.notifier);
-    for (final s in ref.read(sessionsProvider).sessions) {
-      if (before.contains(s.id)) continue;
-      controller.addMember(group.id, s.id, location: locationOf(s));
-    }
+    final spawnedId = await showNewSessionDialog(context, ref);
+    if (spawnedId == null) return; // dismissed
+    final session = ref.read(sessionsProvider).byId(spawnedId);
+    ref
+        .read(groupsControllerProvider.notifier)
+        .addMember(
+          group.id,
+          spawnedId,
+          // A just-spawned session may not have echoed its worktree yet; a board
+          // does not care (it has no scope to match against).
+          location: session != null
+              ? locationOf(session)
+              : SessionLocation(projectId: group.projectId ?? ''),
+        );
   }
 }
 

@@ -21,7 +21,11 @@ import 'package:makit/store/store.dart';
 
 const _model = ModelInfo(provider: 'openai', id: 'gpt-5', name: 'GPT-5');
 
-Session _session(String id, String title) => Session(
+Session _session(
+  String id,
+  String title, {
+  String worktreePath = '/tmp/wt-a',
+}) => Session(
   id: id,
   projectId: 'p1',
   agent: 'pi',
@@ -30,8 +34,8 @@ Session _session(String id, String title) => Session(
   policy: ApprovalPolicy.askOnRisky,
   lastPreview: '',
   lastActivityAt: 0,
-  worktreePath: '/tmp/wt-a',
-  branch: 'wt-a',
+  worktreePath: worktreePath,
+  branch: worktreePath.split('/').last,
 );
 
 ProviderContainer _container({List<Session> sessions = const []}) {
@@ -385,6 +389,119 @@ void main() {
       await tester.pumpAndSettle();
       return c;
     }
+
+    testWidgets('a foreign drop converts, and reveals the newcomer on the new '
+        'board (decision 4/14 orchestration)', (tester) async {
+      // The gesture itself is not simulable here, so this exercises the seam the
+      // drag target calls. It is the load-bearing part: after a conversion the
+      // derived workspaceControllerProvider has been rebuilt against the freshly
+      // minted board's tree, so the reveal must go through a re-read controller
+      // — holding the old one would drop the tab into the group the user left.
+      final c = await pump(
+        tester,
+        group: wtGroup('/tmp/wt-a', sessionId: 's1'),
+        sessions: [
+          _session('s1', 'Alpha'),
+          _session('s2', 'Foreign', worktreePath: '/tmp/wt-b'),
+        ],
+      );
+      final before = c.read(groupsControllerProvider).active;
+
+      late GroupConversion? conversion;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (ctx, ref, _) => TextButton(
+                  onPressed: () => conversion = dropSessionIntoActiveGroup(
+                    ref,
+                    sessionId: 's2',
+                    splitId: ref
+                        .read(workspaceControllerProvider)
+                        .activeSplitId,
+                    zone: null,
+                    controller: ref.read(workspaceControllerProvider.notifier),
+                  ),
+                  child: const Text('drop'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('drop'));
+      await tester.pumpAndSettle();
+
+      // It converted, and said so truthfully.
+      expect(conversion, isNotNull);
+      expect(conversion!.from, 'feat/x');
+
+      final groups = c.read(groupsControllerProvider);
+      final board = groups.active;
+      expect(board.kind, GroupKind.board);
+      expect(board.id, isNot(before.id));
+      expect(board.members, containsAll(['s1', 's2']));
+
+      // The original worktree group is untouched and still reachable.
+      final original = groups.groups.firstWhere((g) => g.id == before.id);
+      expect(original.kind, GroupKind.worktree);
+      expect(original.tree, before.tree);
+
+      // The newcomer really is on the new board's canvas — the part that would
+      // silently break if the reveal used a stale controller.
+      final tabs = <String?>[];
+      firstSplitWhere<bool>(c.read(workspaceControllerProvider).root, (split) {
+        tabs.addAll(split.tabs.map((t) => t.sessionId));
+        return null;
+      });
+      expect(tabs, contains('s2'));
+    });
+
+    testWidgets('a drop onto a board adds without converting', (tester) async {
+      final c = await pump(
+        tester,
+        group: boardGroup(const ['s1']),
+        sessions: [
+          _session('s1', 'Alpha'),
+          _session('s2', 'Other', worktreePath: '/tmp/wt-b'),
+        ],
+      );
+      final beforeId = c.read(groupsControllerProvider).active.id;
+
+      late GroupConversion? conversion;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (ctx, ref, _) => TextButton(
+                  onPressed: () => conversion = dropSessionIntoActiveGroup(
+                    ref,
+                    sessionId: 's2',
+                    splitId: ref
+                        .read(workspaceControllerProvider)
+                        .activeSplitId,
+                    zone: null,
+                    controller: ref.read(workspaceControllerProvider.notifier),
+                  ),
+                  child: const Text('drop'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('drop'));
+      await tester.pumpAndSettle();
+
+      expect(conversion, isNull, reason: 'a board absorbs anything');
+      final groups = c.read(groupsControllerProvider);
+      expect(groups.active.id, beforeId, reason: 'no new group');
+      expect(groups.active.members, ['s1', 's2']);
+    });
 
     testWidgets('a worktree group + opens the in-pane starter, no dialog', (
       tester,

@@ -858,11 +858,25 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
     // a member, and a hover `+` quick-pins a non-member — but only while a
     // board is the active group, since only a board has a curated list to add
     // to. A worktree group's membership is derived, so it has no quick-pin.
-    final activeGroup = ref.watch(activeGroupProvider);
-    final boardActive = activeGroup.kind == GroupKind.board;
+    // Narrow watches on purpose. `activeGroupProvider` yields the whole Group,
+    // whose `==` includes its tree, and `commitTree` rewrites that on every
+    // focus/split/tab change — watching it here rebuilt EVERY session tile on
+    // every canvas mutation. Only the active group's kind and id matter.
+    final boardActive = ref.watch(
+      groupsControllerProvider.select<bool>(
+        (s) => s.active.kind == GroupKind.board,
+      ),
+    );
+    final activeGroupId = ref.watch(
+      groupsControllerProvider.select<String>((s) => s.active.id),
+    );
     final isMember =
         boardActive &&
-        ref.watch(groupMembersProvider(activeGroup.id)).contains(session.id);
+        ref.watch(
+          groupMembersProvider(
+            activeGroupId,
+          ).select<bool>((members) => members.contains(session.id)),
+        );
     final Widget? trailing = !boardActive
         ? null
         : isMember
@@ -883,7 +897,7 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
                   onPressed: () => ref
                       .read(groupsControllerProvider.notifier)
                       .addMember(
-                        activeGroup.id,
+                        activeGroupId,
                         session.id,
                         location: locationOf(session),
                       ),
