@@ -373,6 +373,19 @@ class GroupsController extends StateNotifier<GroupsState> {
     _replace(index, state.groups[index].withLayout(mode));
   }
 
+  /// Renames a **board** to [label] (trimmed). A worktree group's label is its
+  /// branch and is not user-editable, so this is a no-op for one. An empty or
+  /// unchanged label is ignored.
+  void renameBoard(String groupId, String label) {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) return;
+    final index = state.groups.indexWhere((g) => g.id == groupId);
+    if (index < 0) return;
+    final group = state.groups[index];
+    if (group.kind != GroupKind.board || group.label == trimmed) return;
+    _replace(index, group.copyWith(label: trimmed));
+  }
+
   /// Replaces a *pristine* fresh-launch state with the worktree group of the
   /// most recently active session (decision 19). Deliberately conservative: it
   /// only fires when the workspace is still the single untouched `Board 1`, so

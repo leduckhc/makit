@@ -59,10 +59,11 @@ class WorkspaceView extends ConsumerWidget {
               ),
               Padding(
                 // Inset past the traffic lights only when the strip overlaps
-                // them (sidebar folded); otherwise a small gutter, since the
-                // sidebar owns the window's left edge.
+                // them (sidebar folded); otherwise flush to the sidebar edge,
+                // so the first group tab hugs it exactly as the inner tab bar
+                // hugs the pane edge (no left gap).
                 padding: EdgeInsets.only(
-                  left: collapsed ? kTrafficLightInset : kSpace10,
+                  left: collapsed ? kTrafficLightInset : 0,
                   right: kSpace8,
                 ),
                 child: Row(

@@ -273,6 +273,33 @@ void main() {
     });
   });
 
+  group('renameBoard', () {
+    test('renames a board, trimming whitespace', () {
+      final c = _with([_board('b1', 'Shipping', ['s1'])]);
+      c.renameBoard('b1', '  Ship 1.0  ');
+      expect(c.groupById('b1')!.label, 'Ship 1.0');
+    });
+
+    test('ignores an empty or whitespace-only name', () {
+      final c = _with([_board('b1', 'Shipping', ['s1'])]);
+      c.renameBoard('b1', '   ');
+      expect(c.groupById('b1')!.label, 'Shipping');
+    });
+
+    test('never renames a worktree group (its label is its branch)', () {
+      final c = _with([_wt('g1', 'feat/x')]);
+      c.renameBoard('g1', 'nope');
+      expect(c.groupById('g1')!.label, 'feat/x');
+    });
+
+    test('an unknown group is a no-op, not a crash', () {
+      final c = _with([_board('b1', 'Shipping', ['s1'])]);
+      final before = c.state;
+      c.renameBoard('ghost', 'X');
+      expect(c.state, before);
+    });
+  });
+
   group('persistence', () {
     test('an ephemeral controller writes nothing', () async {
       final prefs = await SharedPreferences.getInstance();

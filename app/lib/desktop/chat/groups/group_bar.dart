@@ -113,70 +113,120 @@ class _GroupTab extends ConsumerWidget {
 
     return Tooltip(
       message: _tabTooltip(ref),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => controller.activate(group.id),
-          borderRadius: BorderRadius.zero,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(kSpace12, 0, kSpace6, 0),
-            decoration: BoxDecoration(
-              color: active ? cs.surfaceContainer : Colors.transparent,
-              border: Border(
-                top: BorderSide(
-                  color: active ? cs.primary : cs.outlineVariant,
-                  width: 2,
-                ),
-                right: BorderSide(color: cs.outlineVariant, width: 1),
-              ),
-              borderRadius: BorderRadius.zero,
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Kind swatch: green = worktree (derived), violet = board.
-                Container(
-                  key: const Key('groupKindSwatch'),
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: isBoard ? kBoardSwatch : cs.primary,
-                    borderRadius: BorderRadius.circular(2),
+      child: GestureDetector(
+        // Boards are user-named, so a board tab offers Rename on right-click /
+        // long-press. A worktree group's label is its branch — not editable.
+        onSecondaryTapDown: isBoard
+            ? (d) => _showBoardMenu(context, ref, d.globalPosition)
+            : null,
+        onLongPressStart: isBoard
+            ? (d) => _showBoardMenu(context, ref, d.globalPosition)
+            : null,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => controller.activate(group.id),
+            borderRadius: BorderRadius.zero,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(kSpace12, 0, kSpace6, 0),
+              decoration: BoxDecoration(
+                color: active ? cs.surfaceContainer : Colors.transparent,
+                border: Border(
+                  top: BorderSide(
+                    color: active ? cs.primary : cs.outlineVariant,
+                    width: 2,
                   ),
+                  right: BorderSide(color: cs.outlineVariant, width: 1),
                 ),
-                const SizedBox(width: kSpace8),
-                Flexible(
-                  child: Text(
-                    group.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: active ? cs.onSurface : cs.onSurfaceVariant,
+                borderRadius: BorderRadius.zero,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Kind swatch: green = worktree (derived), violet = board.
+                  Container(
+                    key: const Key('groupKindSwatch'),
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: isBoard ? kBoardSwatch : cs.primary,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                if (anyRunning) ...[
+                  const SizedBox(width: kSpace8),
+                  Flexible(
+                    child: Text(
+                      group.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: active ? cs.onSurface : cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  if (anyRunning) ...[
+                    const SizedBox(width: kSpace6),
+                    _GroupLiveDot(
+                      key: Key('groupLiveDot-${group.id}'),
+                      color: cs.primary,
+                    ),
+                  ],
                   const SizedBox(width: kSpace6),
-                  _GroupLiveDot(
-                    key: Key('groupLiveDot-${group.id}'),
-                    color: cs.primary,
+                  _CountPill(count: members.length, active: active),
+                  _CloseButton(
+                    tooltip: isBoard
+                        ? 'Close this board — the list goes to Recently closed'
+                        : 'Close this view — the branch, its folder and its '
+                              'agents are untouched',
+                    onPressed: () => controller.closeGroup(group.id),
                   ),
                 ],
-                const SizedBox(width: kSpace6),
-                _CountPill(count: members.length, active: active),
-                _CloseButton(
-                  tooltip: isBoard
-                      ? 'Close this board — the list goes to Recently closed'
-                      : 'Close this view — the branch, its folder and its '
-                            'agents are untouched',
-                  onPressed: () => controller.closeGroup(group.id),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// Right-click / long-press menu for a **board** tab: one item, Rename.
+  Future<void> _showBoardMenu(
+    BuildContext context,
+    WidgetRef ref,
+    Offset globalPosition,
+  ) async {
+    final overlay = Navigator.of(context).overlay;
+    if (overlay == null) return;
+    final box = overlay.context.findRenderObject();
+    if (box is! RenderBox) return;
+    final selected = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(globalPosition, globalPosition),
+        Offset.zero & box.size,
+      ),
+      popUpAnimationStyle: AnimationStyle.noAnimation,
+      items: [
+        themedMenuItem(
+          value: 'rename',
+          icon: PhosphorIconsLight.pencilSimple,
+          label: 'Rename board',
+        ),
+      ],
+    );
+    if (selected != 'rename' || !context.mounted) return;
+    await _promptRename(context, ref);
+  }
+
+  /// Prompts for a new board name and applies it. Empty/unchanged is a no-op
+  /// (the controller enforces this too).
+  Future<void> _promptRename(BuildContext context, WidgetRef ref) async {
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => _RenameBoardDialog(initial: group.label),
+    );
+    if (newName == null) return;
+    ref.read(groupsControllerProvider.notifier).renameBoard(group.id, newName);
   }
 
   /// The tab's tooltip: what the group is, plus its shortcut. The first nine
@@ -190,6 +240,52 @@ class _GroupTab extends ConsumerWidget {
     if (action == null) return '$base · no shortcut (10th+)';
     final chord = ref.watch(keymapProvider).chordFor(action);
     return '$base · ${chord.label}';
+  }
+}
+
+/// The board-rename dialog. Owns its [TextEditingController] so it is disposed
+/// only after the route is gone (a controller shared with an ad-hoc builder
+/// would be used-after-dispose while the dialog animates out).
+class _RenameBoardDialog extends StatefulWidget {
+  const _RenameBoardDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameBoardDialog> createState() => _RenameBoardDialogState();
+}
+
+class _RenameBoardDialogState extends State<_RenameBoardDialog> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_ctrl.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename board'),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        onSubmitted: (_) => _submit(),
+        decoration: const InputDecoration(border: OutlineInputBorder()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Rename')),
+      ],
+    );
   }
 }
 

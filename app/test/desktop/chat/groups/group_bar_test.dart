@@ -1,4 +1,5 @@
 // SPEC-30 Lane 5 — the group bar and membership bar widgets.
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -130,6 +131,47 @@ void main() {
         find.byTooltip('Close this board — the list goes to Recently closed'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('right-click on a board tab renames it', (tester) async {
+      final c = _container(
+        groups: [
+          _board('b1', ['s1'], label: 'Shipping'),
+        ],
+        sessions: [_session('s1')],
+      );
+      await _pump(tester, c, const GroupBar());
+
+      await tester.tap(find.text('Shipping'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rename board'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), 'Ship 1.0');
+      await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+      await tester.pumpAndSettle();
+
+      expect(
+        c
+            .read(groupsControllerProvider.notifier)
+            .groupById('b1')!
+            .label,
+        'Ship 1.0',
+      );
+      expect(find.text('Ship 1.0'), findsOneWidget);
+    });
+
+    testWidgets('a worktree tab has no rename menu', (tester) async {
+      final c = _container(
+        groups: [_wt('g1', '/tmp/wt/feat-x', label: 'feat/x')],
+        sessions: const [],
+      );
+      await _pump(tester, c, const GroupBar());
+
+      await tester.tap(find.text('feat/x'), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Rename board'), findsNothing);
     });
 
     testWidgets('a worktree group with no members shows 0 and no live dot', (
