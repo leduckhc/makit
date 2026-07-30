@@ -15,6 +15,8 @@ import 'package:makit/desktop/chat/composer_draft.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
+import 'package:makit/store/connection.dart';
+import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_chips.dart';
@@ -22,6 +24,18 @@ import 'package:makit/ui/session/tool_renderers.dart'
     show kReadableContentMaxWidth;
 
 const _wtA = SelectedWorktree(projectId: 'p1', path: '/tmp/wt-a', branch: 'a');
+
+/// In-memory secure storage so ConnectionController boots without platform
+/// channels.
+class _EmptyStorage implements SecureStore {
+  const _EmptyStorage();
+  @override
+  Future<String?> read({required String key}) async => null;
+  @override
+  Future<void> write({required String key, required String? value}) async {}
+  @override
+  Future<void> delete({required String key}) async {}
+}
 
 /// Records what the in-pane starter spawns/sends so the tests can assert it.
 class _StarterStore extends StoreController {
@@ -602,6 +616,11 @@ void main() {
       addTearDown(tester.view.reset);
       final container = ProviderContainer(
         overrides: [
+          // StoreController's constructor subscribes to the connection and
+          // sends `hello`; without this override the test reaches the real one.
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(const _EmptyStorage()),
+          ),
           sessionsProvider.overrideWithValue(SessionsState(const [])),
           eventsProvider.overrideWithValue(EventsState(const {}, const {})),
           agentsProvider.overrideWith((ref) async => agents),
@@ -677,7 +696,8 @@ void main() {
       expect(
         bar.pr,
         isNull,
-        reason: 'no repo snapshot in this test, so no PR — but the bar is there',
+        reason:
+            'no repo snapshot in this test, so no PR — but the bar is there',
       );
     });
 

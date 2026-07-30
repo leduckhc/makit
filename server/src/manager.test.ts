@@ -857,6 +857,32 @@ test("spawnPendingSession requires a worktree; without one the agent runs in the
   }
 });
 
+test("spawnPendingSession keeps the client's branch for the primary worktree", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const started: SpawnOpts[] = [];
+    const manager = new SessionManager({ projects: [cwd], adapterFactory: () => stubAdapter(started) });
+    const projectId = manager.listProjects()[0].id;
+
+    // Binding to the repo dir took the path but dropped the branch, so promotion
+    // fell back to `lc.branch ?? base` and labelled the session with the
+    // slugified first message instead of the branch it actually runs on.
+    const draft = await manager.spawnPendingSession(projectId, "pi", cwd, "main");
+    const s = await manager.startPendingSession(draft.id, "add a login form");
+
+    assert.equal(s.worktreePath, cwd);
+    assert.equal(s.branch, "main", "the branch must survive, not become a slug");
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("spawnPendingSession accepts the project's own repo dir as the worktree", async () => {
   const cwd = makeGitRepo();
   const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));

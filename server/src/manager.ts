@@ -410,6 +410,10 @@ export class SessionManager extends EventEmitter {
     if (worktreePath) {
       if (resolve(worktreePath) === resolve(project.dto.path)) {
         boundPath = project.dto.path;
+        // Keep the client's branch. Dropping it here meant promotion fell back
+        // to `lc.branch ?? base` and labelled a session running in the primary
+        // checkout with the slugified first message instead of its real branch.
+        boundBranch = branch;
       } else {
         const entries = await listWorktrees(project.dto.path);
         const match = entries.find(

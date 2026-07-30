@@ -8,7 +8,7 @@
 /// it (and only it) opens the dialog.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide Tab;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
@@ -16,6 +16,8 @@ import '../../../app/theme.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../new_worktree_dialog.dart';
+import '../panes/split_node.dart';
+import '../panes/workspace_controller.dart';
 import '../session_status_dot.dart';
 import 'group.dart';
 import 'group_providers.dart';
@@ -182,6 +184,31 @@ class _Section {
 /// The leading `New session…` row (decision 13). A board has no branch, so it
 /// asks where to run: this opens the New-worktree dialog, which creates the
 /// worktree and lands the user on its Choose-a-harness starter.
+/// Creates a worktree and opens it as a **tab on this board**, rather than
+/// activating its own worktree group.
+///
+/// Activating would switch the canvas away from the board the user is editing —
+/// and collapse this very picker, since it reads the active group — while pinning
+/// nothing. A board cannot hold a *worktree*, only sessions, so what lands here
+/// is an empty tab carrying the new worktree as its hint (decision 21): the
+/// Choose-a-harness pane, in place, exactly as `⌘T` on a board does.
+Future<void> _createWorktreeForBoard(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final worktree = await showNewWorktreeDialog(
+    context,
+    ref,
+    activateGroup: false,
+  );
+  if (worktree == null) return;
+  final workspace = ref.read(workspaceControllerProvider.notifier);
+  workspace.openTab(
+    ref.read(workspaceControllerProvider).activeSplitId,
+    Tab(id: nextNodeId(SplitNodeKind.tab), worktree: worktree),
+  );
+}
+
 class _NewSessionRow extends ConsumerWidget {
   const _NewSessionRow();
 
@@ -190,7 +217,7 @@ class _NewSessionRow extends ConsumerWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     return InkWell(
-      onTap: () => showNewWorktreeDialog(context, ref),
+      onTap: () => _createWorktreeForBoard(context, ref),
       child: Container(
         padding: const EdgeInsets.symmetric(
           horizontal: kSpace16,

@@ -352,6 +352,68 @@ void main() {
     });
   });
 
+  group('node ids across a reopen (review finding)', () {
+    test('a closed board\'s tree seeds the id counter too', () async {
+      // Only live groups were seeded, so a board that was closed at save time
+      // could come back holding ids (split-3, tab-5) that had since been minted
+      // for other nodes — duplicate ids inside one tree, which every split/tab
+      // operation assumes cannot happen.
+      // The closed board's ids are HIGHER than the live board's: seeding only
+      // from live groups leaves the counter low, so ids minted afterwards march
+      // straight into the range the closed board is still using.
+      final board = _board('b1', 'Live', ['s1']);
+      const closedTree = WorkspaceState(
+        root: Split(
+          id: 'split-7',
+          tabs: [Tab(id: 'tab-9', sessionId: 's2')],
+          activeTabId: 'tab-9',
+        ),
+        activeSplitId: 'split-7',
+      );
+      final closed = ClosedBoard(
+        group: Group.board(
+          id: 'b2',
+          label: 'Closed',
+          members: const ['s2'],
+          tree: closedTree,
+        ),
+        slot: 1,
+      );
+      SharedPreferences.setMockInitialValues({
+        kGroupsPrefsKey: jsonEncode({
+          'v': 1,
+          'groups': <Object?>[board.toJson()],
+          'activeGroupId': 'b1',
+          'recentlyClosed': <Object?>[closed.toJson()],
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      resetNodeIds();
+      final c = GroupsController.load(prefs);
+
+      // Every id in the restored closed board must be below the counter, so a
+      // freshly minted id can never collide with it.
+      final reopened = c.state.recentlyClosed.single.group;
+      final ids = <String>{};
+      firstSplitWhere<bool>(reopened.tree.root, (split) {
+        ids
+          ..add(split.id)
+          ..addAll(split.tabs.map((t) => t.id));
+        return null;
+      });
+      // Mint a run of ids: the counter must already be past the closed board's.
+      final minted = <String>{
+        for (var i = 0; i < 12; i++) nextNodeId(SplitNodeKind.split),
+        for (var i = 0; i < 12; i++) nextNodeId(SplitNodeKind.tab),
+      };
+      expect(
+        ids.intersection(minted),
+        isEmpty,
+        reason: 'a minted id collided with one inside the closed board',
+      );
+    });
+  });
+
   group('migration from the SPEC-28 single workspace', () {
     test(
       'the old blob becomes Board 1, empty tabs preserved verbatim',

@@ -5,6 +5,25 @@ import 'package:makit/shortcuts/keymap.dart';
 import 'package:makit/shortcuts/shortcut_action.dart';
 
 void main() {
+  test('rebind returns a new keymap and leaves the original alone', () {
+    // Restored: this was `rebind`'s only dedicated coverage and went missing with
+    // the ⌘1–9 work. Callers rely on it being pure — the settings screen keeps
+    // the previous map to offer a reset.
+    final base = Keymap.defaults(cmdIsPrimary: true);
+    final original = base.chordFor(ShortcutAction.toggleSidebar);
+    const chord = KeyChord(LogicalKeyboardKey.keyJ, meta: true);
+
+    final next = base.rebind(ShortcutAction.toggleSidebar, chord);
+
+    expect(next.chordFor(ShortcutAction.toggleSidebar), chord);
+    expect(
+      base.chordFor(ShortcutAction.toggleSidebar),
+      original,
+      reason: 'rebind must not mutate the receiver',
+    );
+    expect(next.bindings.length, base.bindings.length);
+  });
+
   group('KeyChord', () {
     test('round-trips through JSON', () {
       const chord = KeyChord(LogicalKeyboardKey.enter, meta: true, shift: true);

@@ -111,14 +111,17 @@ RepoInfo _repo() => RepoInfo(
   ],
 );
 
-Future<({_FakeStore store, ProviderContainer container, SelectedWorktree? result})>
+/// Opens the dialog and hands back the store, the container, and a *live*
+/// handle on the dialog's eventual result. The result used to be returned by
+/// value, which captured `null` before the dialog had resolved — so every
+/// assertion on it passed vacuously.
+Future<({_FakeStore store, ProviderContainer container, ValueGetter<SelectedWorktree?> result})>
 _open(
   WidgetTester tester, {
   Map<String, List<OpenPr>> prs = const {},
 }) async {
   late _FakeStore store;
   SelectedWorktree? result;
-  var opened = false;
   tester.view.physicalSize = const Size(1200, 1400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -157,11 +160,13 @@ _open(
   container.read(storeControllerProvider.notifier);
   await tester.tap(find.text('open'));
   await tester.pumpAndSettle();
-  opened = true;
-  expect(opened, isTrue);
-  // `result` is filled asynchronously once the dialog resolves; callers that
-  // need it read the returned record after pumping.
-  return (store: store, container: container, result: result);
+  // Assert the dialog is actually on screen — `opened = true; expect(opened)`
+  // was a tautology that could not fail.
+  expect(find.text('New worktree'), findsOneWidget);
+  // `result` fills in asynchronously once the dialog resolves, so hand back a
+  // getter; returning it by value captured null and made every assertion on it
+  // pass vacuously.
+  return (store: store, container: container, result: () => result);
 }
 
 void main() {
@@ -220,8 +225,11 @@ void main() {
       expect(groups.active.projectId, 'p1');
       expect(groups.active.worktreePath, '/tmp/wt/new-main');
 
-      // The dialog is gone.
+      // The dialog is gone, and it reported the worktree it created — the
+      // return value callers depend on (previously untestable).
       expect(find.text('New worktree'), findsNothing);
+      expect(opened.result()?.path, '/tmp/wt/new-main');
+      expect(opened.result()?.projectId, 'p1');
     },
   );
 
@@ -234,6 +242,7 @@ void main() {
     expect(opened.store.createdWorktreeBases, isEmpty);
     expect(opened.store.createdFromPr, isEmpty);
     expect(opened.store.spawnCount, 0);
+    expect(opened.result(), isNull, reason: 'dismissed reports nothing');
     // Still a single fresh board — no group was minted.
     final groups = opened.container.read(groupsControllerProvider);
     expect(groups.groups.length, 1);

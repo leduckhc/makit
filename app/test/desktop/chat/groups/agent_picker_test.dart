@@ -161,6 +161,32 @@ void main() {
     expect(c.read(groupsControllerProvider).active.members, isEmpty);
   });
 
+  testWidgets('New session… lands on the board, without switching groups', (
+    tester,
+  ) async {
+    // It used to activate the new worktree's own group, which switched the canvas
+    // away from the board being edited (collapsing this picker) and pinned
+    // nothing. A board cannot hold a worktree, so what lands is an empty tab
+    // carrying it as a hint — the Choose-a-harness pane, in place.
+    final c = _container(
+      groups: [_board('b1', const [], label: 'Shipping')],
+      sessions: [_session('s1', branch: 'feat/x')],
+    );
+    final activeBefore = c.read(groupsControllerProvider).active.id;
+    await _pump(tester, c);
+
+    await tester.tap(find.text('New session…'));
+    await tester.pumpAndSettle();
+
+    // The New-worktree dialog is what opens (no harness grid, no composer).
+    expect(find.text('New worktree'), findsOneWidget);
+    expect(
+      c.read(groupsControllerProvider).active.id,
+      activeBefore,
+      reason: 'the board is still the active group while the dialog is open',
+    );
+  });
+
   testWidgets('the picker is empty for a worktree group (never crashes)', (
     tester,
   ) async {

@@ -434,10 +434,6 @@ class GroupsController extends StateNotifier<GroupsState> {
     }
     if (groups.isEmpty) return GroupsState.fresh();
 
-    for (final g in groups) {
-      seedNodeIdsFrom(g.tree.root);
-    }
-
     final closed = <ClosedBoard>[];
     final rawClosed = decoded['recentlyClosed'];
     if (rawClosed is List) {
@@ -448,6 +444,17 @@ class GroupsController extends StateNotifier<GroupsState> {
         });
         if (record != null) closed.add(record);
       }
+    }
+
+    // Advance the node-id counters past EVERY restored tree — including the ones
+    // inside closed boards. Seeding only the live groups left the counter low,
+    // so ids minted afterwards marched into the range a closed board was still
+    // using, and reopening it produced duplicate ids inside one tree.
+    for (final g in groups) {
+      seedNodeIdsFrom(g.tree.root);
+    }
+    for (final record in closed) {
+      seedNodeIdsFrom(record.group.tree.root);
     }
 
     final activeId = decoded['activeGroupId'];

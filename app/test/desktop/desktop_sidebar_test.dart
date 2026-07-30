@@ -455,7 +455,9 @@ void main() {
   ) async {
     await _pump(
       tester,
-      repos: [_repo('p1', 'makit', worktrees: [_worktree('wt-main')])],
+      repos: [
+        _repo('p1', 'makit', worktrees: [_worktree('wt-main')]),
+      ],
       sessions: const [],
     );
 
@@ -477,7 +479,9 @@ void main() {
         _repo(
           'p1',
           'alpha',
-          worktrees: [_worktree('wt-a', branch: 'a', sessionIds: ['s1'])],
+          worktrees: [
+            _worktree('wt-a', branch: 'a', sessionIds: ['s1']),
+          ],
         ),
       ],
       sessions: [_session('s1', 'p1', 'Fix login bug', 'codex')],
@@ -487,10 +491,14 @@ void main() {
     expect(label.style?.fontSize, 10);
     // The row was a dense ListTile (~40px); a 10px label does not need that.
     expect(
-      tester.getSize(find.ancestor(
-        of: find.text('Fix login bug'),
-        matching: find.byType(ListTile),
-      )).height,
+      tester
+          .getSize(
+            find.ancestor(
+              of: find.text('Fix login bug'),
+              matching: find.byType(ListTile),
+            ),
+          )
+          .height,
       lessThanOrEqualTo(28),
     );
   });
@@ -553,9 +561,7 @@ void main() {
     expect(find.text('feat/login'), findsOneWidget);
   });
 
-  testWidgets('repo header overflow menu lists only Hide', (
-    tester,
-  ) async {
+  testWidgets('repo header overflow menu lists only Hide', (tester) async {
     await _pump(
       tester,
       repos: [
@@ -1330,8 +1336,10 @@ void main() {
         sessions: sessions,
         group: board(const []),
       );
-      expect(container.read(groupsControllerProvider).active.kind,
-          GroupKind.board);
+      expect(
+        container.read(groupsControllerProvider).active.kind,
+        GroupKind.board,
+      );
 
       await tester.tap(find.text('feat/login'));
       await tester.pump();
@@ -1352,9 +1360,16 @@ void main() {
       );
       final before = container.read(groupsControllerProvider).active.id;
 
-      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
-      await tester.pump();
+      // The session is visible while expanded...
+      expect(find.text('Fix login bug'), findsOneWidget);
 
+      await tester.tap(find.byKey(const Key('worktreeCaret-/tmp/wt/wt-feat')));
+      await tester.pumpAndSettle();
+
+      // ...and the caret actually collapsed it. Asserting only that the active
+      // group is unchanged would pass if the caret key were misspelled or the
+      // control inert, which is the failure this test exists to catch.
+      expect(find.text('Fix login bug'), findsNothing);
       expect(
         container.read(groupsControllerProvider).active.id,
         before,

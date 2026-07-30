@@ -469,6 +469,57 @@ void main() {
       expect(tabs, contains('s2'));
     });
 
+    testWidgets('a session that vanished mid-drag is not given a tab', (
+      tester,
+    ) async {
+      // Decision 6 forbids dead tiles. The session can be archived between the
+      // drag starting and the drop landing, in which case there is nothing to
+      // add and nothing to show.
+      final c = await pump(
+        tester,
+        group: boardGroup(const []),
+        sessions: [_session('s1', 'Alpha')],
+      );
+
+      late GroupConversion? conversion;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Consumer(
+                builder: (ctx, ref, _) => TextButton(
+                  onPressed: () => conversion = dropSessionIntoActiveGroup(
+                    ref,
+                    sessionId: 'gone',
+                    splitId: ref.read(workspaceControllerProvider).activeSplitId,
+                    zone: null,
+                    controller: ref.read(workspaceControllerProvider.notifier),
+                  ),
+                  child: const Text('drop'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('drop'));
+      await tester.pumpAndSettle();
+
+      expect(conversion, isNull);
+      expect(c.read(groupsControllerProvider).active.members, isEmpty);
+      final tabs = <String?>[];
+      firstSplitWhere<bool>(c.read(workspaceControllerProvider).root, (split) {
+        tabs.addAll(split.tabs.map((t) => t.sessionId));
+        return null;
+      });
+      expect(
+        tabs.whereType<String>(),
+        isEmpty,
+        reason: 'no tab may be bound to a session the server no longer has',
+      );
+    });
+
     testWidgets('a drop onto a board adds without converting', (tester) async {
       final c = await pump(
         tester,

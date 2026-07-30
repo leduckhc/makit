@@ -133,6 +133,17 @@ Widget _tree(ProviderContainer c) => UncontrolledProviderScope(
   child: const MaterialApp(home: Scaffold(body: WorkspaceView())),
 );
 
+/// Whether [target] sits inside [ancestor]'s render subtree — a hit on one of the
+/// launcher's own children counts as hitting the launcher.
+bool _isDescendantRender(Object? target, RenderObject ancestor) {
+  var node = target is RenderObject ? target.parent : null;
+  while (node != null) {
+    if (node == ancestor) return true;
+    node = node.parent;
+  }
+  return false;
+}
+
 void main() {
   setUp(resetNodeIds);
 

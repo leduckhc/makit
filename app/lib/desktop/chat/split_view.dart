@@ -90,11 +90,14 @@ GroupConversion? dropSessionIntoActiveGroup(
 }) {
   final active = ref.read(groupsControllerProvider).active;
   final session = ref.read(sessionsProvider).byId(sessionId);
-  if (session != null) {
-    ref
-        .read(groupsControllerProvider.notifier)
-        .addMember(active.id, sessionId, location: locationOf(session));
-  }
+  // The session can be archived between the drag starting and the drop landing.
+  // There is then nothing to add and nothing to show: opening a tab for it would
+  // put a pane on the canvas bound to a session the server no longer has, which
+  // is the dead tile decision 6 forbids.
+  if (session == null) return null;
+  ref
+      .read(groupsControllerProvider.notifier)
+      .addMember(active.id, sessionId, location: locationOf(session));
   final afterActive = ref.read(groupsControllerProvider).active;
   if (afterActive.id != active.id) {
     ref.read(workspaceControllerProvider.notifier).revealSession(sessionId);
