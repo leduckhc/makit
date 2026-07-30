@@ -161,18 +161,56 @@ void main() {
       // launcher is disabled rather than lying about a target.
       await tester.pumpWidget(
         const ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(body: OpenInIdeButton(path: null)),
-          ),
+          child: MaterialApp(home: Scaffold(body: OpenInIdeButton(path: null))),
         ),
       );
       await tester.pumpAndSettle();
 
-      // The caret is inert: tapping it opens no menu.
+      // Both segments are inert, not just the menu.
+      final button = tester.widget<OpenInIdeButton>(
+        find.byType(OpenInIdeButton),
+      );
+      expect(button.path, isNull);
       await tester.tap(find.byType(InkWell).last);
       await tester.pumpAndSettle();
       expect(find.text('Open in VS Code'), findsNothing);
       expect(find.text('Reveal in Finder'), findsNothing);
+      await tester.tap(find.byType(InkWell).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Open in VS Code'), findsNothing);
+
+      // It is visibly disabled, and it does not narrate an action it will not
+      // take (a dead control describing "Open in VS Code" is worse than none).
+      expect(find.byType(Opacity), findsWidgets);
+      expect(
+        find.byTooltip('Nothing to open — this board has no panes'),
+        findsOneWidget,
+      );
+      expect(find.byTooltip('Open in VS Code'), findsNothing);
+    });
+
+    testWidgets('the menu names the folder it will open (decision 11)', (
+      tester,
+    ) async {
+      // The button is icon-only *because* the menu discloses the target; the
+      // title strip no longer carries a branch label (decision 10), so without
+      // this header nothing on screen says which worktree opens.
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(body: OpenInIdeButton(path: '/tmp/wt/feat-login')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Choose editor'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Opens the active pane · /tmp/wt/feat-login'),
+        findsOneWidget,
+      );
+      expect(find.text('Open in Cursor'), findsOneWidget);
     });
   });
 }

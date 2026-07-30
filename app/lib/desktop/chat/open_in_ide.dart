@@ -138,6 +138,25 @@ class OpenInIdeButton extends ConsumerWidget {
       child: MenuAnchor(
         alignmentOffset: const Offset(0, 4),
         menuChildren: [
+          // SPEC-30 decision 11: the button is icon-only *because* the menu
+          // names the exact folder — "so the control cannot lie". Decision 10
+          // also removed the title strip's branch label, so without this header
+          // nothing on screen says which worktree will open. Non-interactive.
+          if (_enabled)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 260),
+                child: Text(
+                  'Opens the active pane · $path',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
           for (final target in IdeTarget.values)
             MenuItemButton(
               leadingIcon: ideLogo(context, target, size: 13),
@@ -158,13 +177,15 @@ class OpenInIdeButton extends ConsumerWidget {
         ],
         builder: (context, controller, _) => _IdeSplitButton(
           preferred: preferred,
-          actionTooltip: _actionLabel(preferred),
+          // A disabled launcher must not narrate an action it will not take.
+          actionTooltip: _enabled
+              ? _actionLabel(preferred)
+              : 'Nothing to open — this board has no panes',
           enabled: _enabled,
           menuOpen: controller.isOpen,
           onAction: _enabled ? () => _open(context, preferred) : null,
           onToggleMenu: _enabled
-              ? () =>
-                    controller.isOpen ? controller.close() : controller.open()
+              ? () => controller.isOpen ? controller.close() : controller.open()
               : null,
         ),
       ),
@@ -246,7 +267,7 @@ class _IdeSplitButton extends StatelessWidget {
           // feature on the outer Material, keeping a single Material layer
           // while the InkWell's splashes still render above the colour.
           Tooltip(
-            message: 'Choose editor',
+            message: enabled ? 'Choose editor' : '',
             child: Ink(
               color: menuOpen ? cs.surfaceContainerHighest : surface,
               child: InkWell(
@@ -274,9 +295,9 @@ class _IdeSplitButton extends StatelessWidget {
     );
     // Enabled renders exactly as before (goldens are frozen by decision 11); a
     // disabled launcher dims to read as inert, matching the mock's dead state.
-    return _enabledOpacity(button);
+    return _disabledDim(button);
   }
 
-  Widget _enabledOpacity(Widget button) =>
+  Widget _disabledDim(Widget button) =>
       enabled ? button : Opacity(opacity: 0.4, child: button);
 }

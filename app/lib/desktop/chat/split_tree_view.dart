@@ -6,7 +6,7 @@ import '../../app/theme.dart';
 
 import 'groups/group.dart' show GroupKind;
 import 'groups/group_bar.dart';
-import 'groups/group_providers.dart' show activeGroupProvider;
+import 'groups/groups_controller.dart' show groupsControllerProvider;
 import 'groups/membership_bar.dart';
 import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
@@ -35,12 +35,16 @@ class WorkspaceView extends ConsumerWidget {
     // own scope (a worktree group always owns a folder); a board with no pane
     // owns nothing, so the path is null and the launcher renders disabled.
     final worktree = ref.watch(selectedWorktreeProvider);
-    final activeGroup = ref.watch(activeGroupProvider);
-    final launcherPath =
-        worktree?.path ??
-        (activeGroup.kind == GroupKind.worktree
-            ? activeGroup.worktreePath
-            : null);
+    // Narrow: `activeGroupProvider` yields the whole Group, whose `==` includes
+    // its tree, so watching it here would rebuild the strip on every divider
+    // drag. Only the scope (or its absence, on a board) is read.
+    final activeScope = ref.watch(
+      groupsControllerProvider.select<String?>(
+        (s) =>
+            s.active.kind == GroupKind.worktree ? s.active.worktreePath : null,
+      ),
+    );
+    final launcherPath = worktree?.path ?? activeScope;
     return Column(
       children: [
         // The title strip: the OS titlebar is hidden, so this is the macOS

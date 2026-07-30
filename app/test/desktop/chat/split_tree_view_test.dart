@@ -630,11 +630,32 @@ void main() {
         reason: 'ten long group tabs overflow the rail',
       );
 
-      // decision 11: the launcher is pinned outside the rail — still visible
-      // and within the viewport even as the tabs scroll away.
+      // decision 11: the launcher is pinned OUTSIDE the rail. Prove it by
+      // actually scrolling to the end — asserting its position only at rest
+      // would pass even if it lived inside the scrollable and could be pushed
+      // off, which is the failure this test exists to catch.
       expect(find.byType(OpenInIdeButton), findsOneWidget);
-      final launcher = tester.getRect(find.byType(OpenInIdeButton));
-      expect(launcher.right, lessThanOrEqualTo(680));
+      final atRest = tester.getRect(find.byType(OpenInIdeButton));
+
+      final position = tester.state<ScrollableState>(scrollable).position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      final scrolled = tester.getRect(find.byType(OpenInIdeButton));
+      expect(
+        scrolled,
+        atRest,
+        reason: 'the launcher did not move with the tabs',
+      );
+      expect(scrolled.right, lessThanOrEqualTo(680));
+      // And it is still hit-testable, not merely present in the tree.
+      expect(
+        tester
+            .hitTestOnBinding(scrolled.center)
+            .path
+            .any((e) => e.target is RenderBox),
+        isTrue,
+      );
     });
 
     testWidgets('the launcher target follows pane focus on a board', (
