@@ -18,12 +18,16 @@ import '../../../shortcuts/shortcut_action.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../../../ui/widgets/menu_item.dart';
+import '../sidebar_layout.dart' show kTitleBarStripHeight;
 import 'group.dart';
 import 'group_providers.dart';
 import 'groups_controller.dart';
 
-/// Height of the group-bar rail, matching the mock's ~40px strip.
-const double _kRailHeight = 40;
+/// Height of the group-bar rail. It stands in for the hidden OS titlebar, so it
+/// uses the same perfectly-calibrated macOS titlebar height as [TitleBarStrip]
+/// ([kTitleBarStripHeight]) — the outer tabs then fill it and hug the window's
+/// top edge, clearing the traffic lights.
+const double _kRailHeight = kTitleBarStripHeight;
 
 /// The horizontally scrolling rail of group tabs, ending in the `+` menu.
 class GroupBar extends ConsumerWidget {

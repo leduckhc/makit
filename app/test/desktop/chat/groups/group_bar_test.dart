@@ -7,6 +7,7 @@ import 'package:makit/desktop/chat/groups/group_bar.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/groups/membership_bar.dart';
 import 'package:makit/desktop/chat/groups/placement.dart';
+import 'package:makit/desktop/chat/sidebar_layout.dart' show kTitleBarStripHeight;
 import 'package:makit/desktop/chat/panes/split_node.dart' as node;
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/store/models.dart';
@@ -309,8 +310,9 @@ void main() {
         reason: 'the rail overflows into a scroll offset',
       );
 
-      // A wrap would grow the bar past one row; it stays a single strip.
-      expect(tester.getSize(find.byType(GroupBar)).height, 40);
+      // A wrap would grow the bar past one row; it stays a single strip at the
+      // macOS titlebar height (kTitleBarStripHeight).
+      expect(tester.getSize(find.byType(GroupBar)).height, kTitleBarStripHeight);
     });
   });
 

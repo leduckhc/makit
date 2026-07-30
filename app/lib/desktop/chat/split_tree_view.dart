@@ -67,7 +67,7 @@ class WorkspaceView extends ConsumerWidget {
                   right: kSpace8,
                 ),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     if (collapsed) ...[
                       const SidebarToggleButton(collapse: false),
@@ -77,11 +77,10 @@ class WorkspaceView extends ConsumerWidget {
                     // it is given and clips its overflow internally.
                     const Expanded(child: GroupBar()),
                     // Decision 11: pinned outside the rail so it never scrolls
-                    // away when the rail overflows with many groups.
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: kSpace6),
-                      child: OpenInIdeButton(path: launcherPath),
-                    ),
+                    // away when the rail overflows with many groups. Vertically
+                    // centred in the titlebar-height strip (TitleBarStrip's
+                    // pattern) so it never dictates the strip height.
+                    OpenInIdeButton(path: launcherPath),
                   ],
                 ),
               ),
