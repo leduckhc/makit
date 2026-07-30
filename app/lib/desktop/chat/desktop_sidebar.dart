@@ -7,6 +7,7 @@ import '../../store/connection.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
+import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'archived_sidebar_view.dart';
@@ -488,6 +489,9 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
         worktree.branch != null && worktree.branch == repo.currentBranch;
     final worktreeSelected =
         ref.watch(selectedWorktreeProvider)?.path == worktree.path;
+    // Glyph + tint per PR state (open / merged / closed / none) — shared with
+    // the composer pill and the window title strip.
+    final prStyle = prStateStyle(theme.colorScheme, worktree.pr);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -546,22 +550,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                 onPressed: () =>
                                     setState(() => _expanded = !_expanded),
                               ),
-                            // Open PR → the merge symbol; otherwise the plain
-                            // worktree/branch icon that predated the PR-centric
-                            // redesign (still used by the draft-worktree tile and
-                            // any non-open PR).
-                            if (worktree.pr?.state.toUpperCase() == 'OPEN')
-                              Icon(
-                                PhosphorIconsLight.gitPullRequest,
-                                size: 16,
-                                color: theme.colorScheme.primary,
-                              )
-                            else
-                              Icon(
-                                PhosphorIconsLight.gitBranch,
-                                size: 16,
-                                color: theme.colorScheme.outline,
-                              ),
+                            prStyle.glyph.build(size: 16, color: prStyle.color),
                             const SizedBox(width: kSpace6),
                             Expanded(
                               child: Row(

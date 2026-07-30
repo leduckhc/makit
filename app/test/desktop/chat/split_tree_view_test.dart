@@ -86,6 +86,7 @@ ProviderContainer _container({
   /// groups and assert the archive path. The board's unpin path is covered in
   /// `selected_session_test.dart`.
   GroupsState? groups,
+  List<RepoInfo> repos = const [],
 }) {
   final groupsState =
       groups ??
@@ -108,9 +109,7 @@ ProviderContainer _container({
       ),
       if (connection != null)
         connectionControllerProvider.overrideWith((ref) => connection),
-      // The group/membership bars only read the repo list for a worktree
-      // group's chip; keep it empty so tests never reach the live store.
-      reposProvider.overrideWithValue(ReposState(const [])),
+      reposProvider.overrideWithValue(ReposState(repos)),
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
       eventsProvider.overrideWithValue(EventsState(const {}, const {})),
       for (final s in sessions)

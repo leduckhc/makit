@@ -140,7 +140,9 @@ class RepoCard extends ConsumerWidget {
       items.add(
         _metaText(
           context,
-          PhosphorIconsLight.gitMerge,
+          // Open PRs, so the pull-request symbol — not `gitMerge`, which now
+          // means "merged" everywhere else (see [prStateStyle]).
+          PhosphorIconsLight.gitPullRequest,
           '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
           color: theme.colorScheme.primary,
         ),

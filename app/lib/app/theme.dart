@@ -89,6 +89,12 @@ const Color kBoardSwatch = Color(0xFFB49BFF);
 /// Awaiting approval — a stronger "act now" tone than [kStatusWarning].
 const Color kStatusCaution = Color(0xFFE07B39);
 
+/// Pull-request "merged" hue (GitHub's merged purple). A merged PR is neither
+/// an error nor an active state, so it gets its own sanctioned hue rather than
+/// borrowing `colorScheme.error` (which stays reserved for *closed* PRs).
+/// Read via `prStateStyle`. See DESIGN.md → Colors.
+const Color kPrMerged = Color(0xFF8957E5);
+
 /// Git diff hues (also used by change chips). See DESIGN.md → Colors.
 const Color kDiffAdd = Color(0xFF3FB950);
 const Color kDiffDel = Color(0xFFF85149);
@@ -102,6 +108,10 @@ const Color _diffAddTextLight = Color(0xFF1A7F37); // 4.9:1 on #FAFAFA
 const Color _diffDelTextLight = Color(0xFFC7331F); // 5.1:1
 const Color _statusWarningTextLight = Color(0xFF7E5C00); // 5.9:1
 const Color _statusCautionTextLight = Color(0xFFA64B1E); // 5.5:1
+// [kPrMerged] needs a variant on *both* surfaces: at 4.4:1 (light) / 3.9:1
+// (dark) the vivid purple misses AA as text either way.
+const Color _prMergedTextLight = Color(0xFF6E40C9); // 6.2:1 on #FAFAFA
+const Color _prMergedTextDark = Color(0xFFA371F7); // 5.4:1 on #171717
 
 /// WCAG-AA foregrounds for semantic/diff *labels*, resolved per brightness.
 /// Use these for text; keep the vivid `kDiffAdd`/`kStatus*` tokens for dots,
@@ -114,6 +124,7 @@ extension MakitSemanticText on ColorScheme {
       _light ? _statusWarningTextLight : kStatusWarning;
   Color get statusCautionText =>
       _light ? _statusCautionTextLight : kStatusCaution;
+  Color get prMergedText => _light ? _prMergedTextLight : _prMergedTextDark;
 }
 
 // ─── Spacing ───────────────────────────────────────────────────────────

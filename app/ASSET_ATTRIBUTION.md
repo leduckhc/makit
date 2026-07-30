@@ -14,3 +14,10 @@ respective owners and are included here under the licenses below.
 
 Apple's Terminal and Finder have no official distributable logo, so the button
 uses a neutral Phosphor glyph for those rather than a fabricated mark.
+
+## Glyphs in [`assets/icons/`](assets/icons/)
+
+| File(s) | Role | Source | License |
+|---------|------|--------|---------|
+| `repo-push.png`, `repo-pull.png` | Composer PR actions | [VS Code codicons](https://github.com/microsoft/vscode-codicons) | CC BY 4.0 |
+| `git-pull-request-closed-{thin,light,regular,bold,fill}.svg` | Closed-PR state marker | Original, drawn to match [Phosphor](https://phosphoricons.com) metrics (five weights: light is default) | MIT (this repo) |
