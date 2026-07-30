@@ -13,6 +13,60 @@
         "--dart-define=MAKIT_WS_URL=wss://127.0.0.1:${input:makitPort}",
         "--dart-define=MAKIT_FP=${input:makitFp}"
       ]
+    },
+    {
+      "name": "makit desktop (debug, attach to running server)",
+      "type": "dart",
+      "request": "launch",
+      "program": "lib/main.dart",
+      "cwd": "${workspaceFolder}/app",
+      "deviceId": "macos",
+      "toolArgs": [
+        "--dart-define=MAKIT_WS_URL=wss://127.0.0.1:${input:makitPort}",
+        "--dart-define=MAKIT_FP=${input:makitFp}"
+      ]
+    },
+    {
+      "name": "makit server (attach to debug server)",
+      "type": "node",
+      "request": "attach",
+      "address": "127.0.0.1",
+      "port": "${input:makitInspectPort}",
+      "cwd": "${workspaceFolder}/server",
+      "preLaunchTask": "makit: debug server (inspect)",
+      "restart": true,
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "makit server test (current file)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/server",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx", "--test"],
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "makit app test (current file)",
+      "type": "dart",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}/app"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "makit full stack (app + server breakpoints)",
+      "configurations": [
+        "makit server (attach to debug server)",
+        "makit desktop (debug, attach to running server)"
+      ],
+      "stopAll": true,
+      "presentation": { "group": "makit", "order": 1 }
     }
   ],
   "inputs": [
@@ -26,6 +80,12 @@
       "id": "makitFp",
       "type": "promptString",
       "description": "makit server cert SHA-256. Get it once with: MAKIT_DEBUG_PORT=<port> scripts/debug-desktop.sh --print-fp   (stable per machine; VSCode remembers your last entry)"
+    },
+    {
+      "id": "makitInspectPort",
+      "type": "promptString",
+      "description": "Node inspector port for the TS server — pick a free port per worktree so parallel full-stack debug sessions don't collide (VS Code remembers your last entry).",
+      "default": "9229"
     }
   ]
 }

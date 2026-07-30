@@ -13,16 +13,31 @@
 #   debug-desktop.sh --print-fp   [WORKTREE]  # print the server cert fingerprint
 #   debug-desktop.sh --kill       [WORKTREE]  # stop this worktree's debug server
 #
+# --server-only also accepts --inspect, which runs the server under the Node
+# inspector (default port 9229, override with MAKIT_INSPECT_PORT) so VS Code can
+# attach and break in the TypeScript sources.
+#
 # WORKTREE defaults to the git repo root of the current directory.
-# Env overrides: MAKIT_DEBUG_PORT, MAKIT_DEBUG_HOME, FLUTTER_BIN.
+# Env overrides: MAKIT_DEBUG_PORT, MAKIT_DEBUG_HOME, MAKIT_INSPECT_PORT,
+# FLUTTER_BIN.
 set -euo pipefail
 
 MODE=run
-case "${1:-}" in
-  --server-only) MODE=server; shift ;;
-  --print-fp)    MODE=fp; shift ;;
-  --kill)        MODE=kill; shift ;;
-esac
+INSPECT=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --server-only) MODE=server; shift ;;
+    --print-fp)    MODE=fp; shift ;;
+    --kill)        MODE=kill; shift ;;
+    --inspect)     INSPECT=1; shift ;;
+    *) break ;;
+  esac
+done
+
+if [ "$INSPECT" = 1 ] && [ "$MODE" != server ]; then
+  echo "debug-desktop: --inspect only applies with --server-only; ignoring" >&2
+  INSPECT=0
+fi
 
 # Resolve the worktree (explicit arg wins, else the enclosing git repo).
 WT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
@@ -34,6 +49,7 @@ WT="$(cd "$WT" && pwd)"
 ID="$(printf '%s' "$WT" | shasum -a 256 | cut -c1-8)"
 DEBUG_HOME="${MAKIT_DEBUG_HOME:-$HOME/.makit-debug/$ID}"
 PORT="${MAKIT_DEBUG_PORT:-$((7900 + 0x$ID % 100))}"
+INSPECT_PORT="${MAKIT_INSPECT_PORT:-9229}"
 CRT="$DEBUG_HOME/server.crt"
 WS_URL="wss://127.0.0.1:$PORT"
 
@@ -83,6 +99,12 @@ case "$MODE" in
     mkdir -p "$DEBUG_HOME"
     echo "==> starting server  home=$DEBUG_HOME  $WS_URL  project=$WT"
     cd "$WT/server"
+    if [ "$INSPECT" = 1 ]; then
+      echo "==> node inspector on 127.0.0.1:$INSPECT_PORT"
+      exec env MAKIT_HOME="$DEBUG_HOME" \
+        node --inspect="127.0.0.1:$INSPECT_PORT" --import tsx src/index.ts serve \
+        --no-auth --host 127.0.0.1 --port "$PORT" --project "$WT"
+    fi
     exec env MAKIT_HOME="$DEBUG_HOME" pnpm exec tsx src/index.ts serve \
       --no-auth --host 127.0.0.1 --port "$PORT" --project "$WT"
     ;;

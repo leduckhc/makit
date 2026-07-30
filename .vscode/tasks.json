@@ -17,6 +17,88 @@
         }
       },
       "presentation": { "reveal": "always", "panel": "dedicated", "focus": false }
+    },
+    {
+      "label": "makit: debug server (inspect)",
+      "detail": "Same debug server, but under the Node inspector so the TS server can be attached to.",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-desktop.sh",
+      "args": ["--server-only", "--inspect", "${workspaceFolder}"],
+      "options": {
+        "env": {
+          "MAKIT_DEBUG_PORT": "${input:makitPort}",
+          "MAKIT_INSPECT_PORT": "${input:makitInspectPort}"
+        }
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "==> starting server",
+          "endsPattern": "Debugger listening on"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": false }
+    },
+    {
+      "label": "makit: kill debug server",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-desktop.sh",
+      "args": ["--kill", "${workspaceFolder}"],
+      "options": { "env": { "MAKIT_DEBUG_PORT": "${input:makitPort}" } },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      "label": "makit: print server cert fingerprint",
+      "detail": "Prints the MAKIT_FP value to paste into the launch prompt.",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/debug-desktop.sh",
+      "args": ["--print-fp", "${workspaceFolder}"],
+      "options": { "env": { "MAKIT_DEBUG_PORT": "${input:makitPort}" } },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "makit: server typecheck",
+      "type": "shell",
+      "command": "pnpm typecheck",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "makit: server test",
+      "type": "shell",
+      "command": "pnpm test",
+      "options": { "cwd": "${workspaceFolder}/server" },
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "makit: app analyze",
+      "type": "shell",
+      "command": "flutter analyze --no-pub",
+      "options": { "cwd": "${workspaceFolder}/app" },
+      "problemMatcher": []
+    },
+    {
+      "label": "makit: app test",
+      "type": "shell",
+      "command": "flutter test --no-pub",
+      "options": { "cwd": "${workspaceFolder}/app" },
+      "problemMatcher": []
+    },
+    {
+      "label": "makit: build macOS app (debug) + open",
+      "detail": "flutter build macos + embed the makit CLI, then launch the .app (non-hot-reload build).",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/macos-app.sh",
+      "args": ["debug", "--open"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
     }
   ],
   "inputs": [
@@ -25,6 +107,12 @@
       "type": "promptString",
       "description": "makit debug server port — pick a free port per worktree so parallel worktrees don't collide (VS Code remembers your last entry).",
       "default": "7990"
+    },
+    {
+      "id": "makitInspectPort",
+      "type": "promptString",
+      "description": "Node inspector port for the TS server — pick a free port per worktree so parallel full-stack debug sessions don't collide (VS Code remembers your last entry).",
+      "default": "9229"
     }
   ]
 }
