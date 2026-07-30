@@ -7,7 +7,6 @@ import '../../app/theme.dart';
 import 'groups/group.dart' show GroupKind;
 import 'groups/group_bar.dart';
 import 'groups/groups_controller.dart' show groupsControllerProvider;
-import 'groups/membership_bar.dart';
 import 'open_in_ide.dart';
 import 'selected_session.dart' show selectedWorktreeProvider;
 import 'sidebar_layout.dart' show sidebarCollapsedProvider, kTrafficLightInset;
@@ -88,9 +87,8 @@ class WorkspaceView extends ConsumerWidget {
           ),
         ),
         // The tab-bar divider the old tabs had, restored for the outer rail:
-        // a hairline just below the group tabs, above the membership bar.
+        // a hairline just below the group tabs, above the canvas.
         const Divider(height: 1),
-        const MembershipBar(),
         Expanded(
           child: _NodeView(
             node: state.root,
