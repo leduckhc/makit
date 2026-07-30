@@ -94,6 +94,10 @@ ProviderContainer _container() => ProviderContainer(
       (ref) => SessionsState(ref.watch(_snapshot).sessions),
     ),
     sessionsLoadedProvider.overrideWith((ref) => ref.watch(_snapshot).loaded),
+    // The prune provider now also listens to reposProvider (worktree-deletion
+    // cleanup); override it so building it never reaches the real store /
+    // ConnectionController (a keychain read that needs platform bindings).
+    reposProvider.overrideWithValue(ReposState(const [])),
   ],
 );
 
