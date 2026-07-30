@@ -303,11 +303,21 @@ class ComposerModeSelector extends ConsumerWidget {
 /// [ComposerModelSelector]/[ComposerThinkingSelector]/[ComposerModeSelector]
 /// triple is shown by the call site in that case (native pi, until SPEC-27).
 class ComposerConfigOptions extends ConsumerWidget {
-  /// Creates the unified config-option renderer for [sessionId].
-  const ComposerConfigOptions({super.key, required this.sessionId});
+  /// Creates the unified config-option renderer for [sessionId]. [desktop]
+  /// selects the presentation of the model picker: an anchored menu on desktop,
+  /// a modal bottom sheet on mobile.
+  const ComposerConfigOptions({
+    super.key,
+    required this.sessionId,
+    this.desktop = false,
+  });
 
   /// The session whose config options this widget reads and sets.
   final String sessionId;
+
+  /// Whether to present the model picker as a desktop anchored menu (true) or a
+  /// mobile bottom sheet (false).
+  final bool desktop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -322,6 +332,7 @@ class ComposerConfigOptions extends ConsumerWidget {
       options: options,
       values: {for (final o in options) o.id: o.currentValue},
       agent: agent,
+      desktop: desktop,
       onPick: (id, value) => ref
           .read(storeControllerProvider.notifier)
           .sendSessionAction(
@@ -329,10 +340,7 @@ class ComposerConfigOptions extends ConsumerWidget {
             'configOption',
             args: {'id': id, 'value': value},
           ),
-      onOpenModelMenu: () => showModelPickerSheet(
-        context,
-        builder: (_) => _LiveModelPickerSheet(sessionId: sessionId),
-      ),
+      menuBuilder: (_) => _LiveModelPickerSheet(sessionId: sessionId),
     );
   }
 }
@@ -622,7 +630,8 @@ class ConfigOptionPill extends StatelessWidget {
 /// read-only chips summarising the model-scoped options) first, then any
 /// standalone options as today's [ConfigOptionPill]s. When there is **no**
 /// `model` option it degrades to today's flat [ConfigOptionPickRow] (full
-/// back-compat). Tapping the model pill invokes [onOpenModelMenu]; [onPick]
+/// back-compat). On desktop the model pill anchors a popup [MenuAnchor]; on
+/// mobile it opens a modal bottom sheet ([showModelPickerSheet]). [onPick]
 /// applies a standalone pill's change (id, value).
 class ModelConfigFooter extends StatelessWidget {
   /// Creates the footer for [options], reading current [values].
@@ -632,7 +641,8 @@ class ModelConfigFooter extends StatelessWidget {
     required this.values,
     required this.agent,
     required this.onPick,
-    required this.onOpenModelMenu,
+    required this.menuBuilder,
+    this.desktop = false,
   });
 
   /// The config options to render, in agent (display) order.
@@ -648,8 +658,13 @@ class ModelConfigFooter extends StatelessWidget {
   /// Invoked with `(optionId, value)` when a standalone pill changes.
   final void Function(String id, Object value) onPick;
 
-  /// Invoked when the model pill is tapped (opens the model picker menu).
-  final VoidCallback onOpenModelMenu;
+  /// Builds the model picker content (a [ModelPickerMenu]); presented as a
+  /// desktop anchored menu or a mobile bottom sheet per [desktop].
+  final WidgetBuilder menuBuilder;
+
+  /// Whether to anchor the picker as a desktop popup menu (true) or open it as
+  /// a mobile bottom sheet (false).
+  final bool desktop;
 
   @override
   Widget build(BuildContext context) {
@@ -668,15 +683,7 @@ class ModelConfigFooter extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(
-          child: ModelConfigPill(
-            model: model,
-            modelScoped: partition.modelScoped,
-            values: values,
-            agent: agent,
-            onTap: onOpenModelMenu,
-          ),
-        ),
+        Flexible(child: _modelPill(context, model, partition.modelScoped)),
         for (final option in partition.standalone)
           Flexible(
             child: Padding(
@@ -690,6 +697,55 @@ class ModelConfigFooter extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  /// The model pill wired to its host presentation: a desktop [MenuAnchor]
+  /// popup (the pill is the anchor) or a mobile bottom sheet.
+  Widget _modelPill(
+    BuildContext context,
+    SessionConfigOption model,
+    List<SessionConfigOption> modelScoped,
+  ) {
+    if (!desktop) {
+      return ModelConfigPill(
+        model: model,
+        modelScoped: modelScoped,
+        values: values,
+        agent: agent,
+        onTap: () => showModelPickerSheet(context, builder: menuBuilder),
+      );
+    }
+    final cs = Theme.of(context).colorScheme;
+    return MenuAnchor(
+      alignmentOffset: const Offset(0, 4),
+      style: MenuStyle(
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        backgroundColor: WidgetStatePropertyAll(cs.surface),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: cs.outlineVariant),
+          ),
+        ),
+      ),
+      menuChildren: [
+        // A fixed-size box short-circuits MenuAnchor's intrinsic-size pass
+        // (the content uses ListView/Flexible, which have no intrinsic
+        // dimensions); the list scrolls within this height.
+        SizedBox(
+          width: kModelMenuWidth,
+          height: kModelMenuMaxHeight,
+          child: Builder(builder: menuBuilder),
+        ),
+      ],
+      builder: (context, controller, _) => ModelConfigPill(
+        model: model,
+        modelScoped: modelScoped,
+        values: values,
+        agent: agent,
+        onTap: () => controller.isOpen ? controller.close() : controller.open(),
+      ),
     );
   }
 }

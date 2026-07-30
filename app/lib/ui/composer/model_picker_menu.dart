@@ -20,12 +20,17 @@ const IconData kModelFlyoutBackIcon = PhosphorIconsLight.caretLeft;
 /// `showSearchableListSheet`), keeping a sliver of background visible.
 const double _kMaxHeightFraction = 0.85;
 
+/// Width of the desktop anchored model menu (a compact popup, not a full-width
+/// drawer).
+const double kModelMenuWidth = 380;
+
+/// Max height of the desktop anchored model menu; the list scrolls beyond it.
+const double kModelMenuMaxHeight = 460;
+
 /// Presents [builder]'s content (a [ModelPickerMenu]) in a modal bottom sheet
-/// capped at [_kMaxHeightFraction] of the screen height. SPEC-31 takes the
-/// plan's sanctioned fallback of using the sheet on **every** host (the shared
-/// composer already opens bottom sheets on desktop today), so a single
-/// presentation serves mobile and desktop; the content widget stays
-/// host-agnostic for a future desktop overlay.
+/// capped at [_kMaxHeightFraction] of the screen height. This is the **mobile**
+/// presentation; on desktop the model pill anchors a [MenuAnchor] popup instead
+/// (see `ModelConfigFooter`), so this is not called there.
 Future<void> showModelPickerSheet(
   BuildContext context, {
   required WidgetBuilder builder,
@@ -175,6 +180,7 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
     // the list lazy (the catalog can be ~300 entries).
     return ListView.builder(
       shrinkWrap: true,
+      primary: false,
       padding: EdgeInsets.zero,
       itemCount: rows.length + 1,
       itemBuilder: (context, index) {
@@ -198,6 +204,7 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
       // but keep the lazy list to avoid a second code path).
       return ListView.builder(
         shrinkWrap: true,
+        primary: false,
         padding: EdgeInsets.zero,
         itemCount: 2,
         itemBuilder: (context, index) {
@@ -215,6 +222,7 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
     }
     return ListView.builder(
       shrinkWrap: true,
+      primary: false,
       padding: EdgeInsets.zero,
       itemCount: results.length + 1,
       itemBuilder: (context, index) {
@@ -306,6 +314,7 @@ class _ModelPickerMenuState extends State<ModelPickerMenu> {
         ),
         Flexible(
           child: SingleChildScrollView(
+            primary: false,
             child: ModelFlyoutColumn(
               options: widget.modelScoped,
               values: widget.values,

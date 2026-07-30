@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/ui/composer/composer_selectors.dart';
+import 'package:makit/ui/composer/model_picker_menu.dart';
 
 SessionConfigOption _select({
   required String id,
@@ -49,7 +50,7 @@ Future<void> _pumpFooter(
   WidgetTester tester, {
   required List<SessionConfigOption> options,
   Map<String, Object> values = const {},
-  VoidCallback? onOpenModelMenu,
+  bool desktop = true,
   void Function(String id, Object value)? onPick,
   double width = 800,
 }) async {
@@ -63,7 +64,17 @@ Future<void> _pumpFooter(
             values: values,
             agent: 'zed',
             onPick: onPick ?? (_, _) {},
-            onOpenModelMenu: onOpenModelMenu ?? () {},
+            desktop: desktop,
+            menuBuilder: (_) => ModelPickerMenu(
+              modelOption: _model,
+              activeValue: 'gpt-5',
+              recent: const ['gpt-5'],
+              modelScoped: const [],
+              values: const {},
+              agent: 'zed',
+              onSelectModel: (_) {},
+              onPickOption: (_, _) {},
+            ),
           ),
         ),
       ),
@@ -213,15 +224,11 @@ void main() {
     });
 
     testWidgets('tapping the model pill opens the menu', (tester) async {
-      var opened = 0;
-      await _pumpFooter(
-        tester,
-        options: [_model],
-        onOpenModelMenu: () => opened++,
-      );
+      await _pumpFooter(tester, options: [_model]);
       await tester.tap(find.text('GPT-5'));
-      await tester.pump();
-      expect(opened, 1);
+      await tester.pumpAndSettle();
+      // MenuAnchor is open; expect the menu to render.
+      expect(find.byType(ModelPickerMenu), findsOneWidget);
     });
 
     testWidgets('renders without overflow in a narrow pane', (tester) async {
