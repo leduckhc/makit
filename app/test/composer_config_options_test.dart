@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/recent_models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/composer/composer_selectors.dart';
@@ -102,7 +103,9 @@ SessionConfigOption _select({
 
 void main() {
   group('ComposerConfigOptions — rendering', () {
-    testWidgets('renders one pill per option in agent order', (tester) async {
+    testWidgets('model pill + folded chips + standalone mode pill', (
+      tester,
+    ) async {
       await _pump(
         tester,
         meta: SessionMeta(
@@ -141,13 +144,14 @@ void main() {
         child: const ComposerConfigOptions(sessionId: 's1'),
       );
 
-      // Each option shows its current value's display name.
+      // The model pill shows the active model; reasoning folds into the model
+      // pill as a signal-bar chip (no standalone 'high' label); mode stays a
+      // separate pill after the model pill.
       final gpt5 = tester.getTopLeft(find.text('GPT-5'));
-      final high = tester.getTopLeft(find.text('high'));
       final code = tester.getTopLeft(find.text('Code'));
-      // Agent order == left-to-right layout order.
-      expect(gpt5.dx, lessThan(high.dx));
-      expect(high.dx, lessThan(code.dx));
+      expect(gpt5.dx, lessThan(code.dx));
+      expect(find.byType(ThinkingSignal), findsOneWidget);
+      expect(find.text('high'), findsNothing);
     });
 
     testWidgets('empty configOptions renders nothing (legacy path elsewhere)', (
@@ -221,7 +225,7 @@ void main() {
       expect(store.actions.single.args, {'id': 'mode', 'value': 'code'});
     });
 
-    testWidgets('model pill opens a searchable sheet and sends configOption', (
+    testWidgets('model pill opens the picker menu and sends configOption', (
       tester,
     ) async {
       final store = await _pump(
@@ -245,7 +249,10 @@ void main() {
         child: const ComposerConfigOptions(sessionId: 's1'),
       );
 
-      await tester.tap(find.byType(InkWell));
+      await tester.tap(find.text('GPT-5'));
+      await tester.pumpAndSettle();
+      // Empty query shows Recent (only the active model); hunt for the target.
+      await tester.enterText(find.byType(TextField), 'Opus');
       await tester.pumpAndSettle();
       await tester.tap(find.text('Claude Opus'));
       await tester.pumpAndSettle();
@@ -318,6 +325,69 @@ void main() {
       expect(find.text('Anthropic'), findsOneWidget);
       expect(find.text('Claude Opus'), findsOneWidget);
     });
+  });
+
+  group('ComposerConfigOptions — recents', () {
+    testWidgets(
+      'a live non-active model select records the value into recents',
+      (tester) async {
+        final container = ProviderContainer(
+          overrides: [
+            sessionMetaProvider('s1').overrideWithValue(
+              SessionMeta(
+                thinking: '',
+                models: const [],
+                configOptions: [
+                  _select(
+                    id: 'model',
+                    name: 'Model',
+                    category: 'model',
+                    currentValue: 'gpt-5',
+                    options: const [
+                      ConfigOptionValue(value: 'gpt-5', name: 'GPT-5'),
+                      ConfigOptionValue(value: 'opus', name: 'Claude Opus'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            sessionsProvider.overrideWithValue(
+              SessionsState([_session(agent: 'zed')]),
+            ),
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(const _EmptyStorage()),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(
+              home: Scaffold(body: ComposerConfigOptions(sessionId: 's1')),
+            ),
+          ),
+        );
+
+        // Recents start empty.
+        expect(container.read(recentModelsControllerProvider), isEmpty);
+
+        await tester.tap(find.text('GPT-5'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'Opus');
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Claude Opus'));
+        await tester.pump();
+
+        // The select is recorded optimistically on the gesture, per agent.
+        expect(
+          container
+              .read(recentModelsControllerProvider.notifier)
+              .recentModels('zed'),
+          ['opus'],
+        );
+      },
+    );
   });
 
   group('ComposerConfigOptions — dependent re-render', () {

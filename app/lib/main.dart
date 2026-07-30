@@ -16,6 +16,7 @@ import 'notifications/notification_request.dart';
 import 'notifications/pending_action_drain.dart';
 import 'notifications/push_registration.dart';
 import 'store/connection.dart';
+import 'store/recent_models.dart';
 import 'store/store.dart';
 import 'transport/transport.dart';
 import 'ui/widgets/makit_mark.dart';
@@ -38,6 +39,10 @@ Future<void> main() async {
   }
 
   await seedTestPairingIfRequested();
+  // SPEC-31: load the persisted recent-model list before wiring the store so
+  // the model picker's Recent section survives restarts on mobile too.
+  final prefs = await SharedPreferences.getInstance();
+  final recentModelsController = RecentModelsController.load(prefs);
   // The store listens to a broadcast stream that drops events without
   // listeners. Eagerly create the controller so it's subscribed before the
   // WS connects and starts pushing projects/sessions snapshots.
@@ -48,6 +53,9 @@ Future<void> main() async {
   final container = ProviderContainer(
     overrides: [
       pushRegistrarProvider.overrideWithValue(ChannelPushRegistrar()),
+      recentModelsControllerProvider.overrideWith(
+        (ref) => recentModelsController,
+      ),
     ],
   );
   container.read(storeControllerProvider);

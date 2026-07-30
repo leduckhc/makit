@@ -8,7 +8,57 @@ import '../../store/store.dart';
 import '../home/repo_chips.dart' show AgentAvatar;
 import '../widgets/searchable_list_sheet.dart';
 import '../widgets/sheet_header.dart';
+import '../../store/recent_models.dart';
 import 'client_commands.dart';
+import 'model_picker_menu.dart';
+
+/// The `category` values (SPEC-31, Makit UX policy — *not* ACP semantics) whose
+/// options are folded into the model picker as flyout segments. `model` itself
+/// is the picker's list; everything else stays a standalone pill. Conservative
+/// on purpose: unknown/`_`-prefixed categories are never folded.
+const Set<String> kModelScopedCategories = {'model_config', 'thought_level'};
+
+/// Every choice across a select option's flat `options` plus all grouped
+/// `options`, in order.
+List<ConfigOptionValue> allConfigValues(SessionConfigOption option) => [
+  ...option.options,
+  for (final g in option.groups) ...g.options,
+];
+
+/// Human label for [value] within [option]: the matching choice's name, else
+/// the raw value (or the option name when [value] is empty).
+String configValueName(SessionConfigOption option, String value) {
+  for (final v in allConfigValues(option)) {
+    if (v.value == value) return v.name;
+  }
+  return value.isEmpty ? option.name : value;
+}
+
+/// Splits an ordered [SessionConfigOption] list into the single `model` option
+/// (or null when the session advertises none), the model-scoped options folded
+/// into the picker's flyout ([kModelScopedCategories], in agent order), and the
+/// standalone options rendered as their own pills (everything else, in agent
+/// order). Pure — the footer + menu are built from this partition (SPEC-31).
+({
+  SessionConfigOption? model,
+  List<SessionConfigOption> modelScoped,
+  List<SessionConfigOption> standalone,
+})
+partitionConfigOptions(List<SessionConfigOption> options) {
+  SessionConfigOption? model;
+  final modelScoped = <SessionConfigOption>[];
+  final standalone = <SessionConfigOption>[];
+  for (final option in options) {
+    if (option.category == 'model') {
+      model ??= option;
+    } else if (kModelScopedCategories.contains(option.category)) {
+      modelScoped.add(option);
+    } else {
+      standalone.add(option);
+    }
+  }
+  return (model: model, modelScoped: modelScoped, standalone: standalone);
+}
 
 /// Small rounded pill used in the composer footer: a leading widget (agent
 /// avatar or icon) + a short label, tappable to open a picker. Kept visually
@@ -268,7 +318,7 @@ class ComposerConfigOptions extends ConsumerWidget {
     // the option itself, and a pick dispatches the single `configOption`
     // session action (never merging locally — the agent re-emits the full
     // list, keeping dependent options correct).
-    return ConfigOptionPickRow(
+    return ModelConfigFooter(
       options: options,
       values: {for (final o in options) o.id: o.currentValue},
       agent: agent,
@@ -279,6 +329,69 @@ class ComposerConfigOptions extends ConsumerWidget {
             'configOption',
             args: {'id': id, 'value': value},
           ),
+      onOpenModelMenu: () => showModelPickerSheet(
+        context,
+        builder: (_) => _LiveModelPickerSheet(sessionId: sessionId),
+      ),
+    );
+  }
+}
+
+/// SPEC-31 — the live model picker sheet content. A [ConsumerWidget] so it
+/// re-reads `session.meta` on every re-emit: the agent returns the **complete**
+/// configOptions list on each set, so the flyout stays correct (and an option
+/// disappearing does not crash — [ModelFlyoutColumn] renders wholly from the
+/// list). Selecting a model records it into recents **optimistically** on the
+/// gesture (actions are fire-and-forget, no ack) and dispatches the `model`
+/// `configOption`; tuning a segment dispatches its `configOption`.
+class _LiveModelPickerSheet extends ConsumerWidget {
+  const _LiveModelPickerSheet({required this.sessionId});
+
+  final String sessionId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options =
+        ref.watch(sessionMetaProvider(sessionId))?.configOptions ??
+        const <SessionConfigOption>[];
+    final partition = partitionConfigOptions(options);
+    final model = partition.model;
+    if (model == null) return const SizedBox.shrink();
+    final agent = ref.watch(sessionsProvider).byId(sessionId)?.agent ?? '';
+    // Rebuild when the recents change so a fresh select shows immediately.
+    ref.watch(recentModelsControllerProvider);
+    final recent = ref
+        .read(recentModelsControllerProvider.notifier)
+        .recentModels(agent);
+    final activeValue = model.currentValue is String
+        ? model.currentValue as String
+        : '';
+    final store = ref.read(storeControllerProvider.notifier);
+    return ModelPickerMenu(
+      modelOption: model,
+      activeValue: activeValue,
+      recent: recent,
+      modelScoped: partition.modelScoped,
+      values: {for (final o in options) o.id: o.currentValue},
+      agent: agent,
+      onSelectModel: (value) {
+        ref
+            .read(recentModelsControllerProvider.notifier)
+            .recordSelect(agent, value);
+        store.sendSessionAction(
+          sessionId,
+          'configOption',
+          args: {'id': model.id, 'value': value},
+        );
+        // SPEC-31 (decision a): keep the sheet open — the ConsumerWidget
+        // re-reads the re-emitted `session.meta`, so the now-active row updates
+        // in place (its `✓`+`›` flyout caret revealed). No pop.
+      },
+      onPickOption: (id, value) => store.sendSessionAction(
+        sessionId,
+        'configOption',
+        args: {'id': id, 'value': value},
+      ),
     );
   }
 }
@@ -500,6 +613,200 @@ class ConfigOptionPill extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// SPEC-31 — the composer footer for a session whose config options include a
+/// `model` category. Renders the model pill (avatar + active model name +
+/// read-only chips summarising the model-scoped options) first, then any
+/// standalone options as today's [ConfigOptionPill]s. When there is **no**
+/// `model` option it degrades to today's flat [ConfigOptionPickRow] (full
+/// back-compat). Tapping the model pill invokes [onOpenModelMenu]; [onPick]
+/// applies a standalone pill's change (id, value).
+class ModelConfigFooter extends StatelessWidget {
+  /// Creates the footer for [options], reading current [values].
+  const ModelConfigFooter({
+    super.key,
+    required this.options,
+    required this.values,
+    required this.agent,
+    required this.onPick,
+    required this.onOpenModelMenu,
+  });
+
+  /// The config options to render, in agent (display) order.
+  final List<SessionConfigOption> options;
+
+  /// Current value per option id: a [String] for a select, a [bool] for a
+  /// boolean. A missing id falls back to the option's own `currentValue`.
+  final Map<String, Object> values;
+
+  /// The owning agent id — the model pill uses it for the agent avatar.
+  final String agent;
+
+  /// Invoked with `(optionId, value)` when a standalone pill changes.
+  final void Function(String id, Object value) onPick;
+
+  /// Invoked when the model pill is tapped (opens the model picker menu).
+  final VoidCallback onOpenModelMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    final partition = partitionConfigOptions(options);
+    final model = partition.model;
+    // No model category → render exactly today's flat pill row (back-compat:
+    // native/legacy sessions, agents without a model selector).
+    if (model == null) {
+      return ConfigOptionPickRow(
+        options: options,
+        values: values,
+        agent: agent,
+        onPick: onPick,
+      );
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: ModelConfigPill(
+            model: model,
+            modelScoped: partition.modelScoped,
+            values: values,
+            agent: agent,
+            onTap: onOpenModelMenu,
+          ),
+        ),
+        for (final option in partition.standalone)
+          Flexible(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: ConfigOptionPill(
+                option: option,
+                currentValue: values[option.id] ?? option.currentValue,
+                agent: agent,
+                onPick: (value) => onPick(option.id, value),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// SPEC-31 — the composer-footer model pill: the agent avatar, the active
+/// model's name, and faint **read-only** chips summarising the model-scoped
+/// options ([kModelScopedCategories]). Reasoning (`thought_level`) renders as
+/// the [ThinkingSignal] bars; each `model_config` select shows its current
+/// value's short name; a boolean shows its name only when on. The chips are
+/// labels — tapping anywhere opens the menu via [onTap].
+class ModelConfigPill extends StatelessWidget {
+  /// Creates the model pill for [model], summarising [modelScoped] via [values].
+  const ModelConfigPill({
+    super.key,
+    required this.model,
+    required this.modelScoped,
+    required this.values,
+    required this.agent,
+    required this.onTap,
+  });
+
+  final SessionConfigOption model;
+  final List<SessionConfigOption> modelScoped;
+  final Map<String, Object> values;
+  final String agent;
+  final VoidCallback onTap;
+
+  String get _modelValue {
+    final v = values[model.id] ?? model.currentValue;
+    return v is String ? v : '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Tooltip(
+      message: 'Model',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: kSpace8,
+            vertical: kSpace4,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AgentAvatar(agent: agent, size: 16),
+              const SizedBox(width: kSpace6),
+              Flexible(
+                child: Text(
+                  configValueName(model, _modelValue),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              for (final chip in _chips(context)) ...[
+                const SizedBox(width: kSpace6),
+                chip,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// One read-only chip per model-scoped option, in agent order. Booleans that
+  /// are off contribute nothing. Text chips are wrapped in [Flexible] so they
+  /// shrink (ellipsis) instead of overflowing a narrow pane; the fixed-width
+  /// [ThinkingSignal] glyph stays intrinsic (it is already sized to the avatar).
+  List<Widget> _chips(BuildContext context) {
+    final chips = <Widget>[];
+    for (final option in modelScoped) {
+      final value = values[option.id] ?? option.currentValue;
+      if (option.type == ConfigOptionType.boolean) {
+        if (value == true) {
+          chips.add(Flexible(child: _textChip(context, option.name, on: true)));
+        }
+      } else if (option.category == 'thought_level') {
+        chips.add(ThinkingSignal(level: value is String ? value : ''));
+      } else {
+        chips.add(
+          Flexible(
+            child: _textChip(
+              context,
+              configValueName(option, value is String ? value : ''),
+            ),
+          ),
+        );
+      }
+    }
+    return chips;
+  }
+
+  Widget _textChip(BuildContext context, String text, {bool on = false}) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration: BoxDecoration(
+        color: cs.onSurface.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: on ? kMakitAccent : cs.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }

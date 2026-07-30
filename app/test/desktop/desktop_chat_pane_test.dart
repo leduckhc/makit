@@ -19,6 +19,9 @@ import 'package:makit/store/connection.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/composer/composer_selectors.dart' show ThinkingSignal;
+import 'package:makit/ui/composer/model_picker_menu.dart'
+    show kModelFlyoutCaretIcon;
 import 'package:makit/ui/home/repo_chips.dart';
 import 'package:makit/ui/session/transcript_list.dart';
 import 'package:makit/ui/session/tool_renderers.dart'
@@ -649,15 +652,17 @@ void main() {
       return store;
     }
 
-    testWidgets('a pane with a worktree shows harness cards + model and '
-        'reasoning pills + a composer', (tester) async {
+    testWidgets('a pane with a worktree shows harness cards + model pill '
+        '(reasoning folded) + a composer', (tester) async {
       await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
 
       expect(find.byType(HarnessCard), findsOneWidget);
       // The selected harness's catalog drives the composer pills before any
-      // session exists.
+      // session exists. Reasoning (thought_level) folds into the model pill as
+      // a read-only signal-bar chip (SPEC-31) rather than a standalone pill.
       expect(find.text('GPT-5'), findsOneWidget);
-      expect(find.text('Medium'), findsOneWidget);
+      expect(find.byType(ThinkingSignal), findsOneWidget);
+      expect(find.text('Medium'), findsNothing);
       expect(find.byType(TextField), findsOneWidget);
     });
 
@@ -669,10 +674,15 @@ void main() {
         agents: [_codex()],
       );
 
-      // Change the reasoning-effort pill, then send.
-      await tester.tap(find.text('Medium'));
+      // Tune reasoning to High via the model picker flyout, then send.
+      await tester.tap(find.text('GPT-5'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(kModelFlyoutCaretIcon));
       await tester.pumpAndSettle();
       await tester.tap(find.text('High').last);
+      await tester.pumpAndSettle();
+      // Dismiss the picker sheet (tap the modal barrier above it).
+      await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'start here');
       await tester.pump();
@@ -790,10 +800,14 @@ void main() {
         agents: [_codex(), codex2],
       );
 
-      // Pick High on the (default) codex harness…
-      await tester.tap(find.text('Medium'));
+      // Pick High on the (default) codex harness via the model picker flyout…
+      await tester.tap(find.text('GPT-5'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(kModelFlyoutCaretIcon));
       await tester.pumpAndSettle();
       await tester.tap(find.text('High').last);
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
       // …then switch to codex2 and send.
       await tester.tap(find.text('Codex 2'));
