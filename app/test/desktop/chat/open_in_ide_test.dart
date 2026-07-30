@@ -148,10 +148,10 @@ void main() {
       await tester.tap(find.byType(InkWell).last);
       await tester.pumpAndSettle();
       // Every target is offered, with VS Code (the default) shown too.
-      expect(find.text('Open in VS Code'), findsWidgets);
-      expect(find.text('Open in Ghostty'), findsOneWidget);
-      expect(find.text('Open in iTerm2'), findsOneWidget);
-      expect(find.text('Reveal in Finder'), findsOneWidget);
+      expect(find.text('VS Code'), findsWidgets);
+      expect(find.text('Ghostty'), findsOneWidget);
+      expect(find.text('iTerm2'), findsOneWidget);
+      expect(find.text('Finder'), findsOneWidget);
     });
 
     testWidgets('a null path disables the launcher (nothing to open)', (
@@ -173,14 +173,14 @@ void main() {
       expect(button.path, isNull);
       await tester.tap(find.byType(InkWell).last);
       await tester.pumpAndSettle();
-      expect(find.text('Open in VS Code'), findsNothing);
-      expect(find.text('Reveal in Finder'), findsNothing);
+      expect(find.text('VS Code'), findsNothing);
+      expect(find.text('Finder'), findsNothing);
       await tester.tap(find.byType(InkWell).first);
       await tester.pumpAndSettle();
-      expect(find.text('Open in VS Code'), findsNothing);
+      expect(find.text('VS Code'), findsNothing);
 
       // It is visibly disabled, and it does not narrate an action it will not
-      // take (a dead control describing "Open in VS Code" is worse than none).
+      // take (a dead control describing "VS Code" is worse than none).
       // Dimmed *and* inert: without IgnorePointer the disabled control still
       // takes hover cursors and is reachable by assistive technology, i.e. it
       // advertises an action it will not perform.
@@ -213,7 +213,7 @@ void main() {
         find.byTooltip('Nothing to open — this board has no panes'),
         findsOneWidget,
       );
-      expect(find.byTooltip('Open in VS Code'), findsNothing);
+      expect(find.byTooltip('VS Code'), findsNothing);
     });
 
     testWidgets('the menu names the folder it will open (decision 11)', (
@@ -237,7 +237,7 @@ void main() {
         find.text('Opens the active pane · /tmp/wt/feat-login'),
         findsOneWidget,
       );
-      expect(find.text('Open in Cursor'), findsOneWidget);
+      expect(find.text('Cursor'), findsOneWidget);
     });
   });
 }

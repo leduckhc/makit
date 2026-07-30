@@ -106,9 +106,7 @@ class OpenInIdeButton extends ConsumerWidget {
   /// only the enabled/disabled state and the target vary (decision 11).
   bool get _enabled => path != null;
 
-  static String _actionLabel(IdeTarget target) => target == IdeTarget.finder
-      ? 'Reveal in Finder'
-      : 'Open in ${target.label}';
+  static String _actionLabel(IdeTarget target) => target.label;
 
   Future<void> _open(BuildContext context, IdeTarget target) async {
     final path = this.path;
