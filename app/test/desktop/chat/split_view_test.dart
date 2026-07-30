@@ -109,10 +109,27 @@ Color? _paneColor(WidgetTester tester, String label) {
 Finder _chip(WidgetTester tester, String label) =>
     find.ancestor(of: find.text(label), matching: find.byType(Container)).first;
 
-Border _chipBorder(WidgetTester tester, String label) {
-  final container = tester.widget<Container>(_chip(tester, label));
-  return (container.decoration! as BoxDecoration).border! as Border;
-}
+/// The chip's painted surface: the chip is now a ClipRRect > Container > Column
+/// (rounded tops forbid a partial border), so the surface is the innermost
+/// ancestor Container that actually paints a colour.
+Container _chipSurface(WidgetTester tester, String label) => tester
+    .widgetList<Container>(
+      find.ancestor(of: find.text(label), matching: find.byType(Container)),
+    )
+    .firstWhere((c) => c.color != null);
+
+/// The colour of the tab's 2px focus cap, which is a keyed child now rather than
+/// a BorderSide.
+Color? _chipCapColor(WidgetTester tester, String label) => tester
+    .widget<Container>(
+      find.descendant(
+        of: find
+            .ancestor(of: find.text(label), matching: find.byType(ClipRRect))
+            .first,
+        matching: find.byKey(const Key('tabFocusCap')),
+      ),
+    )
+    .color;
 
 ColorScheme _scheme(WidgetTester tester) =>
     Theme.of(tester.element(find.byType(WorkspaceView))).colorScheme;
@@ -191,12 +208,8 @@ void main() {
         final c = await _twoPanes(tester); // Beta's split focused
         final cs = _scheme(tester);
 
-        final betaCap = _chipBorder(tester, 'Beta').top;
-        expect(betaCap.color, cs.primary);
-        expect(betaCap.width, 2);
-
-        final alphaCap = _chipBorder(tester, 'Alpha').top;
-        expect(alphaCap.color, cs.outlineVariant);
+        expect(_chipCapColor(tester, 'Beta'), cs.primary);
+        expect(_chipCapColor(tester, 'Alpha'), cs.outlineVariant);
 
         // Focus follows the active split: activating Alpha's split moves the
         // primary cap over and dims Beta's.
@@ -207,8 +220,8 @@ void main() {
         _ws(c).setActiveSplit(alphaSplitId);
         await tester.pumpAndSettle();
 
-        expect(_chipBorder(tester, 'Alpha').top.color, cs.primary);
-        expect(_chipBorder(tester, 'Beta').top.color, cs.outlineVariant);
+        expect(_chipCapColor(tester, 'Alpha'), cs.primary);
+        expect(_chipCapColor(tester, 'Beta'), cs.outlineVariant);
       },
     );
 
@@ -227,10 +240,7 @@ void main() {
 
       // Active chip uses its (focused) pane's body surface; inactive chips
       // stay transparent on the recessed bar.
-      Color? chipColor(String label) =>
-          (tester.widget<Container>(_chip(tester, label)).decoration!
-                  as BoxDecoration)
-              .color;
+      Color? chipColor(String label) => _chipSurface(tester, label).color;
       expect(chipColor('Second'), cs.surface);
       expect(chipColor('First'), Colors.transparent);
 

@@ -546,60 +546,77 @@ class _TabChip extends ConsumerWidget {
         ? 'New'
         : sessionPaneTitle(session, sessionId);
 
-    final chip = Container(
-      constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
-      padding: const EdgeInsets.only(left: 10, right: 4),
-      decoration: BoxDecoration(
-        // Active tab uses its pane's own body surface so it "seats" into the
-        // body below (focused panes are a step lighter, so their active tab is
-        // too); rounded top corners soften the join with the pane body.
+    // The active tab is its pane's own body surface, rounded on the TOP only and
+    // with nothing drawn between it and the body beneath, so the tab and its
+    // content read as one cohesive shape. Focused panes sit a tonal step
+    // lighter, so their active tab does too. (The flat, divider-separated
+    // treatment this used to have now belongs to the OUTER group tabs in
+    // `group_bar.dart` — sharp for the window strip, round for tabs in a pane.)
+    //
+    // The focus cap is a 2px CHILD rather than a BorderSide: it marks which
+    // split is focused, and Flutter forbids a `borderRadius` on a non-uniform
+    // border, so a top-only side and rounded corners cannot coexist.
+    final chip = ClipRRect(
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(kRadius10),
+      ),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 96, maxWidth: 220),
         color: active
             ? _paneBackground(cs, focused: splitActive)
             : Colors.transparent,
-        border: Border(
-          top: BorderSide(
-            // Brand green (design: primary = active state) only for the
-            // selected tab of the focused split; every other tab's cap is a
-            // dim neutral using outlineVariant (the sanctioned borders token).
-            color: active && splitActive ? cs.primary : cs.outlineVariant,
-            width: 2,
-          ),
-          right: BorderSide(color: cs.outlineVariant, width: 1),
-        ),
-        borderRadius: const BorderRadius.vertical(
-          top: Radius.circular(kRadius10),
-        ),
-      )
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (session != null) ...[
-            SessionStatusDot(status: session.status),
-            const SizedBox(width: kSpace6),
-          ],
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w500,
-                color: active ? cs.onSurface : cs.onSurfaceVariant,
+        child: Column(
+          children: [
+            Container(
+              key: const Key('tabFocusCap'),
+              height: 2,
+              color: active && splitActive ? cs.primary : cs.outlineVariant,
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 10, right: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (session != null) ...[
+                      SessionStatusDot(status: session.status),
+                      const SizedBox(width: kSpace6),
+                    ],
+                    Expanded(
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: active ? cs.onSurface : cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      iconSize: 12,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 24,
+                        minHeight: 24,
+                      ),
+                      tooltip: 'Close tab',
+                      color: active ? cs.onSurface : cs.onSurfaceVariant,
+                      icon: const Icon(PhosphorIconsLight.x),
+                      onPressed: () => closeTabAndArchive(
+                        ref,
+                        split.id,
+                        tab.id,
+                        tab.sessionId,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-          IconButton(
-            iconSize: 12,
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            tooltip: 'Close tab',
-            color: active ? cs.onSurface : cs.onSurfaceVariant,
-            icon: const Icon(PhosphorIconsLight.x),
-            onPressed: () =>
-                closeTabAndArchive(ref, split.id, tab.id, tab.sessionId),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
