@@ -36,6 +36,16 @@ class _FakeStore extends StoreController {
   /// Recorded `createWorktree` calls: the base branch each fork asked for.
   final List<String?> createdFrom = [];
 
+  /// When true, `spawnSession` throws — to exercise the create-then-rollback
+  /// path. `removedWorktrees` records each `removeWorktree` the rollback made.
+  bool spawnThrows = false;
+  final List<String> removedWorktrees = [];
+
+  @override
+  Future<void> removeWorktree(String projectId, String path) async {
+    removedWorktrees.add(path);
+  }
+
   @override
   Future<List<AgentDescriptor>> fetchAgents() async => agents;
 
@@ -66,6 +76,7 @@ class _FakeStore extends StoreController {
     spawnedWorktreePath = worktreePath;
     spawnedBranch = branch;
     spawnedPicks = configOptions;
+    if (spawnThrows) throw StateError('spawn failed');
     return 'new-sess';
   }
 }
@@ -227,5 +238,23 @@ void main() {
     expect(store.spawnCount, 1);
     expect(store.spawnedWorktreePath, '/tmp/demo-wt');
     expect(store.spawnedBranch, 'forked');
+  });
+
+  testWidgets('rolls back the freshly forked worktree when spawn fails', (
+    tester,
+  ) async {
+    final store = await _pump(tester, agents: [_agent('pi')]);
+    store.spawnThrows = true;
+
+    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start'));
+    await tester.pumpAndSettle();
+
+    // The worktree was created, spawn threw, so the worktree is removed again
+    // (a retry must not orphan it) and the failure surfaces in a SnackBar.
+    expect(store.createdFrom, ['main']);
+    expect(store.removedWorktrees, ['/tmp/demo-wt']);
+    expect(find.textContaining('Could not start session'), findsOneWidget);
   });
 }

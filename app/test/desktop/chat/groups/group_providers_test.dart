@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/group_providers.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
+import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/settings/prefs/preference_entries.dart';
 import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
@@ -36,6 +37,23 @@ Group _board(String id, List<String> members) => Group.board(
   label: id,
   members: members,
   tree: WorkspaceController.seedWorkspace(),
+);
+
+/// A worktree group scoped to [path] whose stored tree already hosts a tab for
+/// [hostsSessionId] — the shape that exercises groupHolding's (a′) branch.
+Group _wtHosting(String id, String path, String hostsSessionId) => Group.worktree(
+  id: id,
+  projectId: 'p1',
+  worktreePath: path,
+  label: path.split('/').last,
+  tree: WorkspaceState(
+    root: Split(
+      id: 'split-$id',
+      tabs: [Tab(id: 'tab-$id', sessionId: hostsSessionId)],
+      activeTabId: 'tab-$id',
+    ),
+    activeSplitId: 'split-$id',
+  ),
 );
 
 ProviderContainer _container({
@@ -175,6 +193,31 @@ void main() {
         held,
         'b1',
         reason: 'no switch when you are already looking at it',
+      );
+    });
+
+    test("(a′) a group whose tree already hosts the session's tab, even when "
+        'the session is in no scope and on no board', () {
+      // The New-session flow: a freshly spawned session, no server-reported
+      // worktree yet (so in nobody's scope) and pinned to no board, but its tab
+      // already lives in the group it was started from. It must resolve to that
+      // group rather than falling through to (d)/null.
+      final c = _container(
+        groups: [
+          _wt('g1', '/tmp/wt/main'),
+          _wtHosting('g2', '/tmp/wt/other', 's1'),
+        ],
+        sessions: [_session('s1')], // worktreePath: null → in no scope
+        activeGroupId: 'g1',
+      );
+      expect(
+        groupHolding(
+          c.read(groupsControllerProvider),
+          _session('s1'),
+          membersOf(c),
+        ),
+        'g2',
+        reason: 'the hosting group wins over falling through to null',
       );
     });
 

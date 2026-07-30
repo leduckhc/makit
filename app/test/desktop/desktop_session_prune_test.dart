@@ -220,6 +220,9 @@ void main() {
       );
       // Expose the repos knob via a container-scoped read.
       _reposKnob[container] = reposState;
+      // Evict alongside the container so the map doesn't retain disposed
+      // containers (and their providers) for the whole test session.
+      addTearDown(() => _reposKnob.remove(container));
       return container;
     }
 

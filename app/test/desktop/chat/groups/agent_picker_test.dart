@@ -121,19 +121,18 @@ void main() {
     expect(c.read(groupsControllerProvider).active.members, isEmpty);
   });
 
-  testWidgets('New session… pins only the id the dialog reports, not whatever '
-      'else appeared meanwhile (decision 5)', (tester) async {
-    // The old implementation diffed the live session ids around the dialog, so a
-    // session spawned from the phone or the CLI while the dialog was open got
-    // pinned to this board. Simulate exactly that: the "dialog" returns s-mine
-    // while s-elsewhere arrives from another client.
+  test('addMember pins only the id it is given (decision 5, controller-level)', () {
+    // Controller-level guard, not a picker-flow test: the picker's New session…
+    // row opens the New-worktree dialog and then opens a *tab* on the board
+    // (see _createWorktreeForBoard), it does not addMember. What decision 5
+    // requires of the controller is simply that addMember pins exactly the id
+    // passed and nothing that arrived concurrently from another client.
     final c = _container(
       groups: [_board('b1', const [], label: 'Shipping')],
       sessions: [_session('s-mine'), _session('s-elsewhere')],
     );
     final groups = c.read(groupsControllerProvider.notifier);
 
-    // Stand in for the picker's New session… row: it pins the reported id only.
     groups.addMember(
       'b1',
       's-mine',

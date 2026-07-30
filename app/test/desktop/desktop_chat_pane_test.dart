@@ -48,6 +48,9 @@ class _StarterStore extends StoreController {
   List<ConfigOptionPick>? spawnPicks;
   final List<String> sent = [];
 
+  /// When true, `spawnSession` throws — to exercise the starter's error path.
+  bool spawnThrows = false;
+
   @override
   Future<String> spawnSession(
     String projectId, {
@@ -62,6 +65,7 @@ class _StarterStore extends StoreController {
     spawnWorktreePath = worktreePath;
     spawnBranch = branch;
     spawnPicks = configOptions;
+    if (spawnThrows) throw StateError('spawn failed');
     return 'spawned';
   }
 
@@ -710,6 +714,96 @@ void main() {
       expect(find.text('Using the host default harness.'), findsOneWidget);
       // Still startable: the server picks its default harness.
       expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('preselects the first AVAILABLE harness, skipping unavailable '
+        'ones', (tester) async {
+      const unavailable = AgentDescriptor(
+        id: 'down',
+        label: 'Down',
+        transport: 'acp',
+        available: false,
+      );
+      await pumpStarter(tester, worktree: _wtA, agents: [unavailable, _codex()]);
+
+      // Codex (the first *available*) is the selected card, not the unavailable
+      // first entry.
+      final cards = tester.widgetList<HarnessCard>(find.byType(HarnessCard));
+      final selected = cards.where((c) => c.selected).toList();
+      expect(selected.length, 1);
+      expect(selected.single.agent.id, 'codex');
+    });
+
+    testWidgets('surfaces an error and re-enables when the spawn fails', (
+      tester,
+    ) async {
+      final store = await pumpStarter(
+        tester,
+        worktree: _wtA,
+        agents: [_codex()],
+      );
+      store.spawnThrows = true;
+
+      await tester.enterText(find.byType(TextField), 'go');
+      await tester.pump();
+      await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
+      await tester.pumpAndSettle();
+
+      expect(store.spawnCount, 1);
+      expect(find.textContaining('spawn failed'), findsOneWidget);
+      // Re-enabled: the composer's send affordance is back (not stuck spinning).
+      expect(find.byIcon(PhosphorIconsLight.arrowUp), findsWidgets);
+    });
+
+    testWidgets('switching harness clears the pending config picks', (
+      tester,
+    ) async {
+      // A second harness that also has an effort catalog, so the pill exists on
+      // both — the point is the *pick* made on the first must not ride along.
+      const codex2 = AgentDescriptor(
+        id: 'codex2',
+        label: 'Codex 2',
+        transport: 'native',
+        available: true,
+        configOptions: [
+          SessionConfigOption(
+            id: 'effort',
+            name: 'Reasoning effort',
+            category: 'thought_level',
+            type: ConfigOptionType.select,
+            currentValue: 'medium',
+            options: [
+              ConfigOptionValue(value: 'medium', name: 'Medium'),
+              ConfigOptionValue(value: 'high', name: 'High'),
+            ],
+          ),
+        ],
+      );
+      final store = await pumpStarter(
+        tester,
+        worktree: _wtA,
+        agents: [_codex(), codex2],
+      );
+
+      // Pick High on the (default) codex harness…
+      await tester.tap(find.text('Medium'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('High').last);
+      await tester.pumpAndSettle();
+      // …then switch to codex2 and send.
+      await tester.tap(find.text('Codex 2'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'go');
+      await tester.pump();
+      await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp).last);
+      await tester.pumpAndSettle();
+
+      expect(store.spawnAgent, 'codex2');
+      expect(
+        store.spawnPicks,
+        anyOf(isNull, isEmpty),
+        reason: 'the High pick belonged to codex and must not carry over',
+      );
     });
 
     testWidgets('an empty BOARD also offers Add agent (decision 14 path a)', (
