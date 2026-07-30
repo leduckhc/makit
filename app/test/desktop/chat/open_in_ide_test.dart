@@ -233,11 +233,35 @@ void main() {
       await tester.tap(find.byTooltip('Choose editor'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('Opens the active pane · /tmp/wt/feat-login'),
-        findsOneWidget,
-      );
+      expect(find.text('Opens the active pane ·'), findsOneWidget);
+      // The worktree name is disclosed in full (short path, no head-truncation).
+      expect(find.text('/tmp/wt/feat-login'), findsOneWidget);
       expect(find.text('Cursor'), findsOneWidget);
+    });
+
+    testWidgets('a deep path head-truncates so the worktree name survives', (
+      tester,
+    ) async {
+      // Long leading path, short identifying tail: the head must collapse to
+      // '…' while the worktree folder name is kept.
+      const deep =
+          '/Users/dev/projects/monorepo/checkouts/worktrees/nested/zubby';
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(body: OpenInIdeButton(path: deep)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Choose editor'));
+      await tester.pumpAndSettle();
+
+      // The full path doesn't fit, so the head collapsed to '…' — but the
+      // identifying tail (the worktree folder name) is still shown.
+      final header = tester.widget<Text>(find.textContaining('zubby'));
+      expect(header.data, startsWith('…'));
+      expect(header.data, endsWith('zubby'));
     });
   });
 }

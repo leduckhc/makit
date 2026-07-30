@@ -145,13 +145,26 @@ class OpenInIdeButton extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 260),
-                child: Text(
-                  'Opens the active pane · $path',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Opens the active pane ·',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    // Head-truncate the path: the worktree name (the tail) is
+                    // the identifying part, so a deep path drops its *leading*
+                    // segments to a '…' rather than clipping the name.
+                    _PathHeadEllipsis(
+                      path: path!,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -308,4 +321,58 @@ class _IdeSplitButton extends StatelessWidget {
       // takes hover cursors and is discoverable by assistive technology, i.e. it
       // advertises an action it will not perform.
       : IgnorePointer(child: Opacity(opacity: 0.4, child: button));
+}
+
+/// A single-line [path] that truncates from the **head**: the trailing segment
+/// (the worktree/folder name) is the identifying part, so when the path is too
+/// wide the leading segments collapse to a `…` prefix instead of the tail being
+/// clipped by a normal end-ellipsis.
+///
+/// Truncation is measured against a fixed [maxWidth] with a [TextPainter] in
+/// build (not a LayoutBuilder): this widget lives inside a [MenuAnchor], which
+/// asks its children for intrinsic dimensions, and LayoutBuilder cannot answer
+/// that. A precomputed plain [Text] can.
+class _PathHeadEllipsis extends StatelessWidget {
+  const _PathHeadEllipsis({required this.path, required this.style});
+
+  final String path;
+  final TextStyle? style;
+
+  /// The 260 header cap, less its 12+12 padding.
+  static const double _maxWidth = 236;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      _fit(path, style, _maxWidth),
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+      style: style,
+    );
+  }
+
+  /// The longest tail of [path] that fits [maxWidth], prefixed with `…` once any
+  /// head was dropped. Returns the full path when it already fits.
+  static String _fit(String path, TextStyle? style, double maxWidth) {
+    final painter = TextPainter(textDirection: TextDirection.ltr, maxLines: 1);
+    double widthOf(String s) {
+      painter.text = TextSpan(text: s, style: style);
+      painter.layout();
+      return painter.width;
+    }
+
+    try {
+      if (widthOf(path) <= maxWidth) return path;
+      // Drop leading characters until the '…'-prefixed tail fits.
+      for (var start = 1; start < path.length; start++) {
+        if (widthOf('…${path.substring(start)}') <= maxWidth) {
+          return '…${path.substring(start)}';
+        }
+      }
+      return '…';
+    } finally {
+      painter.dispose();
+    }
+  }
 }
