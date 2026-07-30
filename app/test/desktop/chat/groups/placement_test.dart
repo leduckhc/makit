@@ -190,7 +190,8 @@ void main() {
       expect(next, seed);
     });
 
-    test('an unlocated session keeps its tab — it is pending, not foreign', () {      // Regression: the New-session dialog spawns a session and reveals its tab
+    test('an unlocated session keeps its tab — it is pending, not foreign', () {
+      // Regression: the New-session dialog spawns a session and reveals its tab
       // before the server reports which worktree it landed in. Since it matches
       // no scope, reconcile used to drop that tab on the very next snapshot —
       // the tab flickered away and took the composer's text with it.

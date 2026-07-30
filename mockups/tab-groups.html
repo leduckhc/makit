@@ -421,7 +421,7 @@
       <p>Both already work here, so this mock is the reference: <b>Split | Tabs</b> re-arranges the
          group on click, and <b>pinning</b> a session to a board puts it on the canvas immediately.</p>
       <button class="btn" onclick="setOverride('split')">Split</button>
-      <button class="btn ghost" style="margin-top:6px" onclick="(function(){const b=groups.find(x=>x.kind==='board');active=b.id;addMember(b.id,'a5',{projectId:'p1',worktreePath:'/tmp/wt/fix/flaky-e2e'});})()">Pin an agent to a board</button>
+      <button class="btn ghost" style="margin-top:6px" onclick="(function(){const b=groups.find(x=>x.kind==='board');if(!b)return;active=b.id;addMember('a5');})()">Pin an agent to a board</button>
     </div>
   </div>
   <p class="hint">Mock only — no app code touched. Not mocked (spec'd but not visual): the commit-sink refactor,

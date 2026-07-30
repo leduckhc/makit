@@ -1,5 +1,5 @@
 /// SPEC-30 — the agent picker: the board half of decision 13 and one of the
-/// four add paths of decision 14. Every live session, grouped by `repo ·
+/// four add paths of decision 14. Every session, grouped by `repo ·
 /// branch`, with the board's current members pre-ticked; ticking a row pins or
 /// unpins it, and a leading `New session…` row opens the New-worktree dialog.
 ///
@@ -155,20 +155,30 @@ class AgentPicker extends ConsumerWidget {
     }
   }
 
-  /// Groups [sessions] by `repo · branch`, dropping repos with no live
-  /// sessions. Repo name resolves through [reposProvider]; a still-unknown
-  /// project falls back to its raw id so a row is never label-less.
+  /// Groups [sessions] by `repo · branch`. Keyed by `(projectId, branch)` so
+  /// two repos that share a display name stay in separate sections; the repo
+  /// name (resolved through [reposProvider], falling back to the raw id) is
+  /// only the section's shown label.
   List<_Section> _groupByRepoBranch(WidgetRef ref, List<Session> sessions) {
     final repos = ref.watch(reposProvider);
-    final byLabel = <String, List<Session>>{};
+    // Preserve first-seen order; key by (projectId, branch) so two repos that
+    // share a display name don't collapse into one section.
+    final order = <String>[];
+    final byKey = <String, List<Session>>{};
+    final labels = <String, String>{};
     for (final s in sessions) {
       final repoName = repos.byId(s.projectId)?.name ?? s.projectId;
-      final label = '$repoName · ${s.branch ?? 'no branch'}';
-      byLabel.putIfAbsent(label, () => []).add(s);
+      final branch = s.branch ?? 'no branch';
+      final key = '${s.projectId}\u0000$branch';
+      if (byKey.putIfAbsent(key, () => []).isEmpty) {
+        order.add(key);
+        labels[key] = '$repoName · $branch';
+      }
+      byKey[key]!.add(s);
     }
     return [
-      for (final entry in byLabel.entries)
-        _Section(label: entry.key, sessions: entry.value),
+      for (final key in order)
+        _Section(label: labels[key]!, sessions: byKey[key]!),
     ];
   }
 }
@@ -201,7 +211,7 @@ Future<void> _createWorktreeForBoard(
     ref,
     activateGroup: false,
   );
-  if (worktree == null) return;
+  if (worktree == null || !context.mounted) return;
   final workspace = ref.read(workspaceControllerProvider.notifier);
   workspace.openTab(
     ref.read(workspaceControllerProvider).activeSplitId,

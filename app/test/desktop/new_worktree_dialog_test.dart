@@ -119,6 +119,7 @@ Future<({_FakeStore store, ProviderContainer container, ValueGetter<SelectedWork
 _open(
   WidgetTester tester, {
   Map<String, List<OpenPr>> prs = const {},
+  bool activateGroup = true,
 }) async {
   late _FakeStore store;
   SelectedWorktree? result;
@@ -148,7 +149,11 @@ _open(
           body: Consumer(
             builder: (ctx, ref, _) => TextButton(
               onPressed: () async {
-                result = await showNewWorktreeDialog(ctx, ref);
+                result = await showNewWorktreeDialog(
+                  ctx,
+                  ref,
+                  activateGroup: activateGroup,
+                );
               },
               child: const Text('open'),
             ),
@@ -253,56 +258,15 @@ void main() {
   testWidgets('activateGroup: false places the worktree without switching group', (
     tester,
   ) async {
-    late _FakeStore store;
-    SelectedWorktree? result;
-    tester.view.physicalSize = const Size(1200, 1400);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
-    final container = ProviderContainer(
-      overrides: [
-        reposProvider.overrideWithValue(ReposState([_repo()])),
-        agentsProvider.overrideWith((ref) async => [_pi]),
-        connectionControllerProvider.overrideWith(
-          (ref) => ConnectionController(const _EmptyStorage()),
-        ),
-        storeControllerProvider.overrideWith((ref) {
-          store = _FakeStore(ref, const {});
-          return store;
-        }),
-      ],
-    );
-    addTearDown(container.dispose);
-    await tester.pumpWidget(
-      UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(
-          home: Scaffold(
-            body: Consumer(
-              builder: (ctx, ref, _) => TextButton(
-                onPressed: () async {
-                  result = await showNewWorktreeDialog(
-                    ctx,
-                    ref,
-                    activateGroup: false,
-                  );
-                },
-                child: const Text('open'),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    final opened = await _open(tester, activateGroup: false);
     await tester.tap(find.text('Create worktree'));
     await tester.pumpAndSettle();
 
-    expect(store.createdWorktreeBases, ['main']);
-    expect(result, isNotNull);
-    expect(result!.path, '/tmp/wt/new-main');
+    expect(opened.store.createdWorktreeBases, ['main']);
+    expect(opened.result(), isNotNull);
+    expect(opened.result()!.path, '/tmp/wt/new-main');
     // No group was activated: still the single fresh board.
-    final groups = container.read(groupsControllerProvider);
+    final groups = opened.container.read(groupsControllerProvider);
     expect(groups.groups.length, 1);
     expect(groups.active.kind, GroupKind.board);
   });

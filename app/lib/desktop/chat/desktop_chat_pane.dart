@@ -57,8 +57,9 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   /// The session this pane hosts, or null to start one in [worktree].
   final String? sessionId;
 
-  /// The enclosing tree's worktree; a null-session (or dead-session) leaf
-  /// pre-fills the New-session dialog with it.
+  /// The enclosing tree's worktree. A null- or dead-session leaf renders the
+  /// in-place [WorktreeStarter] when set; the no-worktree case shows
+  /// [EmptyPaneStarter], whose action opens the New-worktree dialog.
   final SelectedWorktree? worktree;
 
   /// Whether to render the in-pane session header (title + actions menu). The

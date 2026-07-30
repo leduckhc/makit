@@ -664,7 +664,10 @@ void main() {
         atRest,
         reason: 'the launcher did not move with the tabs',
       );
-      expect(scrolled.right, lessThanOrEqualTo(680));
+      expect(
+        scrolled.right,
+        lessThanOrEqualTo(tester.view.physicalSize.width),
+      );
       // And the launcher itself is what a tap at its centre hits — not merely
       // "some RenderBox", which would also pass if the window-drag layer in the
       // Stack were swallowing the gesture.

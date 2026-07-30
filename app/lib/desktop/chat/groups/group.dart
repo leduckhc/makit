@@ -208,7 +208,7 @@ class Group {
   /// into the other.
   Map<String, Object?> toJson() => {
     'id': id,
-    'kind': kind == GroupKind.worktree ? 'worktree' : 'board',
+    'kind': kind.name,
     'label': label,
     if (kind == GroupKind.worktree) 'projectId': projectId,
     if (kind == GroupKind.worktree) 'worktreePath': worktreePath,

@@ -471,8 +471,6 @@ class _TabBar extends ConsumerWidget {
   }
 }
 
-/// The active worktree group's scope as a [SelectedWorktree] hint, or null when
-/// the group is a board or its scope is incomplete.
 /// The scope of a worktree [group] as a tab hint. Null only for a board, which
 /// owns no scope — a *worktree* group always carries both halves.
 SelectedWorktree? _groupWorktreeHint(Group group) {

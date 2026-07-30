@@ -6,7 +6,8 @@ import '../../store/models.dart';
 
 /// A selectable harness card (icon, label, transport). Selected cards get an
 /// accent ring + check; unavailable agents are dimmed and non-tappable. Reused
-/// by the New-session dialog's harness grid.
+/// by the New-session sheet's harness grid and by [WorktreeStarter] (the
+/// in-pane start surface for SPEC-30).
 class HarnessCard extends StatelessWidget {
   const HarnessCard({
     super.key,

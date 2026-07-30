@@ -180,7 +180,14 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
         case _WorktreeFrom.existing:
           final path = _existingWorktreePath;
           if (path == null) return;
-          created = (path: path, branch: null);
+          String? existingBranch;
+          for (final w in _existingWorktrees()) {
+            if (w.path == path) {
+              existingBranch = w.branch;
+              break;
+            }
+          }
+          created = (path: path, branch: existingBranch);
         case _WorktreeFrom.newBranch:
           final name = _branchNameCtrl.text.trim();
           created = await store.createWorktree(
@@ -239,6 +246,10 @@ class _NewWorktreeDialogState extends ConsumerState<_NewWorktreeDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    // Watch the repos snapshot so the dialog rebuilds when the store broadcasts
+    // a change while it is open (a worktree added/removed elsewhere, or the
+    // branch list refreshed); the field helpers then re-read the fresh list.
+    ref.watch(reposProvider);
     return CallbackShortcuts(
       bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
       child: Dialog(

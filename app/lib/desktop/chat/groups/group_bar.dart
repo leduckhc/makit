@@ -238,7 +238,7 @@ class _GroupTab extends ConsumerWidget {
       context: context,
       builder: (_) => _RenameBoardDialog(initial: group.label),
     );
-    if (newName == null) return;
+    if (newName == null || !context.mounted) return;
     ref.read(groupsControllerProvider.notifier).renameBoard(group.id, newName);
   }
 
