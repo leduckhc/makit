@@ -50,16 +50,45 @@ function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 /**
- * Reasoning-effort levels projected as the `thought_level` config option
- * (SPEC-26). codex's `turn/start.effort` accepts these values.
+ * Fallback reasoning-effort levels for the `thought_level` config option when a
+ * model does not advertise its own `supportedReasoningEfforts` (SPEC-26).
+ * codex's `turn/start.effort` accepts these values. Real codex models advertise
+ * a **per-model** list (see {@link reasoningEffortOptions}); this is only used
+ * for older app-servers / models with no advertised set.
  */
-const REASONING_EFFORTS: ConfigOptionValue[] = [
+const FALLBACK_REASONING_EFFORTS: ConfigOptionValue[] = [
   { value: "minimal", name: "Minimal" },
   { value: "low", name: "Low" },
   { value: "medium", name: "Medium" },
   { value: "high", name: "High" },
 ];
 const DEFAULT_REASONING_EFFORT = "medium";
+
+/** Title-case a bare effort id (`"xhigh"` → `"Xhigh"`) for display. */
+function titleCaseEffort(value: string): string {
+  return value.length === 0 ? value : value[0]!.toUpperCase() + value.slice(1);
+}
+
+/**
+ * Map a codex model's advertised `supportedReasoningEfforts` into the
+ * `thought_level` option's values, preserving codex's order and per-effort
+ * descriptions. Returns `[]` when the model advertises none (caller falls back
+ * to {@link FALLBACK_REASONING_EFFORTS}).
+ */
+function reasoningEffortOptions(model: Record<string, unknown>): ConfigOptionValue[] {
+  const raw = Array.isArray(model.supportedReasoningEfforts)
+    ? model.supportedReasoningEfforts
+    : [];
+  const out: ConfigOptionValue[] = [];
+  for (const e of raw) {
+    if (!isRecord(e)) continue;
+    const value = typeof e.reasoningEffort === "string" ? e.reasoningEffort : "";
+    if (!value) continue;
+    const description = typeof e.description === "string" && e.description ? e.description : undefined;
+    out.push(description ? { value, name: titleCaseEffort(value), description } : { value, name: titleCaseEffort(value) });
+  }
+  return out;
+}
 
 export interface CodexAdapterOpts {
   /** Executable + args (default: `codex app-server`). */
@@ -105,6 +134,8 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * the next turn via `turn/start` `model`/`effort` overrides.
    */
   private catalogModels: ConfigOptionValue[] = [];
+  private effortsByModel: Record<string, ConfigOptionValue[]> = {};
+  private defaultEffortByModel: Record<string, string> = {};
   private activeModel?: string;
   private activeEffort?: string;
 
@@ -194,8 +225,17 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     const id = typeof args?.id === "string" ? args.id : "";
     const value = typeof args?.value === "string" ? args.value : "";
     if (!value) return;
-    if (id === "model") this.activeModel = value;
-    else if (id === "thought_level") this.activeEffort = value;
+    if (id === "model") {
+      this.activeModel = value;
+      // Clamp the reasoning effort to the new model's advertised set: switching
+      // to a model that doesn't support the current effort would otherwise send
+      // an invalid `effort` on the next turn. Prefer the new model's default,
+      // else its first advertised effort, else keep the current one.
+      const efforts = this.effortsByModel[value];
+      if (efforts && this.activeEffort && !efforts.some((e) => e.value === this.activeEffort)) {
+        this.activeEffort = this.defaultEffortByModel[value] ?? efforts[0]?.value ?? this.activeEffort;
+      }
+    } else if (id === "thought_level") this.activeEffort = value;
     else return;
     this.emitConfigOptions();
   }
@@ -221,11 +261,15 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       );
       const projected = projectCodexModelList(res);
       this.catalogModels = projected.models;
+      this.effortsByModel = projected.effortsByModel;
+      this.defaultEffortByModel = projected.defaultEffortByModel;
       if (!this.activeModel && projected.activeModel) this.activeModel = projected.activeModel;
       if (!this.activeEffort && projected.activeEffort) this.activeEffort = projected.activeEffort;
     } catch (e) {
       log.warn(`[makit] codex model/list failed: ${(e as Error).message}`);
       this.catalogModels = [];
+      this.effortsByModel = {};
+      this.defaultEffortByModel = {};
     }
     if (!this.activeEffort) this.activeEffort = DEFAULT_REASONING_EFFORT;
   }
@@ -237,10 +281,12 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * `category:"thought_level"` reasoning-effort select.
    */
   private emitConfigOptions(): void {
+    const efforts = (this.activeModel && this.effortsByModel[this.activeModel]) || [];
     const configOptions = buildCodexConfigOptions(
       this.catalogModels,
       this.activeModel,
       this.activeEffort,
+      efforts,
     );
     this.emitEvent({ ts: Date.now(), kind: "session.meta", payload: { configOptions } });
   }
@@ -472,17 +518,34 @@ export function projectCodexModelList(res: unknown): {
   models: ConfigOptionValue[];
   activeModel?: string;
   activeEffort?: string;
+  /** Per-model reasoning-effort option lists, keyed by model value. */
+  effortsByModel: Record<string, ConfigOptionValue[]>;
+  /** Per-model default reasoning effort, keyed by model value. */
+  defaultEffortByModel: Record<string, string>;
 } {
   const data = isRecord(res) && Array.isArray(res.data) ? res.data.filter(isRecord) : [];
   const visible = data.filter((m) => m.hidden !== true);
+  const effortsByModel: Record<string, ConfigOptionValue[]> = {};
+  const defaultEffortByModel: Record<string, string> = {};
   const models: ConfigOptionValue[] = visible.map((m) => {
     const value = String(m.model ?? m.id ?? "");
     const name = typeof m.displayName === "string" && m.displayName ? m.displayName : value;
     const description = typeof m.description === "string" ? m.description : "";
+    if (value) {
+      const efforts = reasoningEffortOptions(m);
+      if (efforts.length > 0) effortsByModel[value] = efforts;
+      if (typeof m.defaultReasoningEffort === "string") defaultEffortByModel[value] = m.defaultReasoningEffort;
+    }
     return description ? { value, name, description } : { value, name };
   });
   const active = visible.find((m) => m.isDefault === true) ?? visible[0];
-  const out: { models: ConfigOptionValue[]; activeModel?: string; activeEffort?: string } = { models };
+  const out: {
+    models: ConfigOptionValue[];
+    activeModel?: string;
+    activeEffort?: string;
+    effortsByModel: Record<string, ConfigOptionValue[]>;
+    defaultEffortByModel: Record<string, string>;
+  } = { models, effortsByModel, defaultEffortByModel };
   if (active) {
     out.activeModel = String(active.model ?? active.id ?? "");
     if (typeof active.defaultReasoningEffort === "string") out.activeEffort = active.defaultReasoningEffort;
@@ -500,6 +563,7 @@ export function buildCodexConfigOptions(
   models: ConfigOptionValue[],
   activeModel: string | undefined,
   activeEffort: string | undefined,
+  efforts: ConfigOptionValue[] = FALLBACK_REASONING_EFFORTS,
 ): SessionConfigOption[] {
   const configOptions: SessionConfigOption[] = [];
   if (models.length > 0) {
@@ -520,13 +584,21 @@ export function buildCodexConfigOptions(
       options,
     });
   }
+  // Reasoning-effort values are the active model's advertised set (falling back
+  // to a generic list). Keep the select self-consistent if the current effort
+  // is not in the list.
+  const effortOptions = efforts.length > 0 ? [...efforts] : FALLBACK_REASONING_EFFORTS;
+  const current = activeEffort ?? DEFAULT_REASONING_EFFORT;
+  if (!effortOptions.some((o) => o.value === current)) {
+    effortOptions.push({ value: current, name: titleCaseEffort(current) });
+  }
   configOptions.push({
     id: "thought_level",
     name: "Reasoning effort",
     category: "thought_level",
     type: "select",
-    currentValue: activeEffort ?? DEFAULT_REASONING_EFFORT,
-    options: REASONING_EFFORTS,
+    currentValue: current,
+    options: effortOptions,
   });
   return configOptions;
 }
@@ -591,7 +663,8 @@ export async function probeCodexConfigOptions(
       "codex probe model/list",
     );
     const projected = projectCodexModelList(res);
-    return buildCodexConfigOptions(projected.models, projected.activeModel, projected.activeEffort);
+    const efforts = (projected.activeModel && projected.effortsByModel[projected.activeModel]) || [];
+    return buildCodexConfigOptions(projected.models, projected.activeModel, projected.activeEffort, efforts);
   } catch (e) {
     log.warn(`[makit] codex probe failed: ${(e as Error).message}`);
     return buildCodexConfigOptions([], undefined, undefined);
