@@ -143,6 +143,7 @@ void main() {
     final (controller, push) = await pumpStreaming(tester, initial: items);
     final probe = find.text('message #10');
     await scrollTo(tester, controller, probe);
+    expect(probe, findsOneWidget, reason: 'probe must be on screen to measure');
     final before = tester.getTopLeft(probe).dy;
 
     push([
@@ -180,6 +181,7 @@ void main() {
     final (controller, push) = await pumpStreaming(tester, initial: items);
     final probe = find.text('message #189');
     await scrollTo(tester, controller, probe);
+    expect(probe, findsOneWidget, reason: 'probe must be on screen to measure');
     final before = tester.getTopLeft(probe).dy;
 
     // Three items arrive, the last one very tall.

@@ -36,9 +36,6 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
   // Whether this call is unfolded lives in [expandedTranscriptRowsProvider], not
   // here: the row is discarded whenever it leaves the lazy list's cache or the
   // pane is rebuilt, and an unfold must outlive that.
-  bool get _expanded =>
-      ref.read(expandedTranscriptRowsProvider).contains(widget.expansionKey);
-
   void _toggle() => ref
       .read(expandedTranscriptRowsProvider.notifier)
       .toggle(widget.expansionKey);
@@ -86,7 +83,7 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
         onHover: (h) => setState(() => _hovered = h),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: kSpace6),
-          child: _buildRow(riskIcon, riskColor),
+          child: _buildRow(riskIcon, riskColor, expanded: expanded),
         ),
       ),
     );
@@ -120,7 +117,11 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
   /// The one-liner header: tool icon, summary text, status glyph, and a
   /// trailing rotating disclosure caret. The entire header is the tap target
   /// (built by the caller), so no child owns the gesture.
-  Widget _buildRow(IconData riskIcon, Color riskColor) {
+  Widget _buildRow(
+    IconData riskIcon,
+    Color riskColor, {
+    required bool expanded,
+  }) {
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
 
@@ -149,7 +150,7 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
       opacity: _hovered ? 1 : 0,
       duration: const Duration(milliseconds: 120),
       child: AnimatedRotation(
-        turns: _expanded ? 0.25 : 0,
+        turns: expanded ? 0.25 : 0,
         duration: const Duration(milliseconds: 150),
         child: Icon(
           PhosphorIconsLight.caretRight,
@@ -166,7 +167,7 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
         const SizedBox(width: kSpace8),
         Expanded(
           child: Text(
-            _expanded ? toolLabel(item) : toolSummaryLine(item),
+            expanded ? toolLabel(item) : toolSummaryLine(item),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.mono.copyWith(
