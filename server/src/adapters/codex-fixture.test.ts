@@ -28,7 +28,7 @@ interface Frame {
 }
 
 function loadFixture(): Frame[] {
-  const path = fileURLToPath(new URL("../../test/fixtures/codex-fast-session.jsonl", import.meta.url));
+  const path = fileURLToPath(new URL("../../test/codex-sessions/codex-fast-session.jsonl", import.meta.url));
   return readFileSync(path, "utf8")
     .trim()
     .split("\n")
