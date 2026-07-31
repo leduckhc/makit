@@ -398,6 +398,25 @@ test("configOption thought_level action overrides the next turn's reasoning effo
 
 // ---------- capability projection + probe (SPEC-27) ------------------------
 
+test("a forced non-default model initialises effort from that model", async () => {
+  const fake = fakeAppServer();
+  // Force o3 (non-default); o3 advertises only "high" (default model gpt-5-codex
+  // advertises "medium"). The effort must follow o3, not the catalog default.
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport, model: "o3" });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  const payload = await collectMeta(events);
+  const tl = payload.configOptions.find((o: any) => o.id === "thought_level");
+  assert.equal(tl.currentValue, "high");
+  assert.deepEqual(tl.options, [{ value: "high", name: "High" }]);
+
+  await adapter.send({ text: "go" });
+  const turn = fake.sent.filter((m) => m.method === "turn/start").at(-1);
+  assert.equal(turn.params.effort, "high");
+});
+
 test("projectCodexModelList maps visible models and picks the default", () => {
   const projected = projectCodexModelList({
     data: [

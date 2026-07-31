@@ -52,6 +52,17 @@ test("configOption action updates and re-emits the complete list", async () => {
   assert.equal(opts.find((o) => o.id === "model")?.currentValue, "stub-normal");
 });
 
+test("boolean option round-trips true and false", async () => {
+  const stub = new StubAdapter();
+  const metas = collectMeta(stub);
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  // `fast` starts true; a boolean action can disable it, then re-enable it.
+  await stub.sendAction("configOption", { id: "fast", value: false });
+  assert.equal(optionsOf(metas.at(-1)!).find((o) => o.id === "fast")?.currentValue, false);
+  await stub.sendAction("configOption", { id: "fast", value: true });
+  assert.equal(optionsOf(metas.at(-1)!).find((o) => o.id === "fast")?.currentValue, true);
+});
+
 test("unknown option id or non-configOption action is ignored", async () => {
   const stub = new StubAdapter();
   const metas = collectMeta(stub);

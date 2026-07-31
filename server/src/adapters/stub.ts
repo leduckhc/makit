@@ -203,9 +203,14 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     const id = args?.id;
     const value = args?.value;
     const target = this.configOptions.find((o) => o.id === id);
-    if (!target || typeof value !== "string") return;
+    if (!target) return;
+    // Accept booleans for boolean options (e.g. `fast`), strings for selects.
+    const ok =
+      target.type === "boolean" ? typeof value === "boolean" : typeof value === "string";
+    if (!ok) return;
+    const next = value as string | boolean;
     this.configOptions = this.configOptions.map((o) =>
-      o.id === id ? { ...o, currentValue: value } : o,
+      o.id === id ? { ...o, currentValue: next } : o,
     );
     this.emitMeta();
   }

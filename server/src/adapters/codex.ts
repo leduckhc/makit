@@ -264,7 +264,20 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       this.effortsByModel = projected.effortsByModel;
       this.defaultEffortByModel = projected.defaultEffortByModel;
       if (!this.activeModel && projected.activeModel) this.activeModel = projected.activeModel;
-      if (!this.activeEffort && projected.activeEffort) this.activeEffort = projected.activeEffort;
+      // Initialise the effort from the SELECTED model (which may be a forced
+      // non-default model via CodexAdapterOpts.model) — not the catalog default
+      // — so we never emit/send an effort the active model doesn't support.
+      if (!this.activeEffort) {
+        const selected = this.activeModel;
+        const efforts = (selected && this.effortsByModel[selected]) || [];
+        if (efforts.length > 0) {
+          const def = selected ? this.defaultEffortByModel[selected] : undefined;
+          this.activeEffort =
+            def && efforts.some((e) => e.value === def) ? def : efforts[0]!.value;
+        } else if (selected === projected.activeModel) {
+          this.activeEffort = projected.activeEffort;
+        }
+      }
     } catch (e) {
       log.warn(`[makit] codex model/list failed: ${(e as Error).message}`);
       this.catalogModels = [];
