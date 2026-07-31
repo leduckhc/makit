@@ -145,6 +145,23 @@ export class AcpEventMapper {
     }
   }
 
+  /**
+   * Args of the `ask_user` tool call currently in flight, if any.
+   *
+   * pi-ask-user's headless fallback calls `ctx.ui.select(prompt, titles)`, so
+   * the ACP permission that carries the question to makit has TITLE-ONLY
+   * options — the per-option descriptions (and the structured question) only
+   * ever exist on the `ask_user` tool call that is running at that moment.
+   * {@link AcpAdapter} reads them from here to build a richer inline ask card.
+   */
+  pendingAskUserArgs(): Record<string, unknown> | undefined {
+    for (const t of this.tools.values()) {
+      if (!isAskUser(t.title)) continue;
+      if (t.rawInput && typeof t.rawInput === "object") return t.rawInput as Record<string, unknown>;
+    }
+    return undefined;
+  }
+
   /** Finalize any buffered text/thinking at the end of an agent turn. */
   endTurn(): void {
     this.flushAll();

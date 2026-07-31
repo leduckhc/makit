@@ -545,6 +545,8 @@ export class AcpAdapter extends SubprocessAdapter {
     if (!this.askUser) return undefined;
     log.info(`[makit] ACP pi-ui "${method ?? "?"}" → inline askUserQuestion (${opts.length} options)`);
 
+    // Captions for the choices, recovered from the concurrent `ask_user` call.
+    const askArgs = this.mapper.pendingAskUserArgs();
     const question = str(rawInput.message) ?? str(rawInput.title) ?? str(tc.title) ?? "Pick one";
     // Only add a header when it wouldn't just duplicate the question (a select
     // with a title but no message uses the title as the question).
@@ -561,7 +563,7 @@ export class AcpAdapter extends SubprocessAdapter {
             ...(header ? { header } : {}),
             question,
             // Present EVERY option (allow + reject) as a selectable choice.
-            options: opts.map((o) => ({ label: o.name })),
+            options: opts.map((o) => ({ label: o.name, ...describeChoice(o.name, askArgs) })),
           },
         ],
       });
@@ -907,6 +909,28 @@ function str(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined;
   const trimmed = v.trim();
   return trimmed ? trimmed : undefined;
+}
+
+/**
+ * The description pi's `ask_user` gave the option whose title is [label], as
+ * `{ description }` (or `{}` when there is none to add).
+ *
+ * pi-ask-user's headless fallback drops descriptions on its way to
+ * `ctx.ui.select`, so the inline ask card would otherwise show bare labels
+ * while the answered card (built from the tool result's `details`) shows the
+ * full captions. Matching is by title — the only key both sides share; the
+ * option ORDER is never used, so a mismatch just omits a caption and can never
+ * attach the wrong one to a choice.
+ */
+function describeChoice(label: string, askArgs: Record<string, unknown> | undefined): { description?: string } {
+  const options = askArgs?.options;
+  if (!Array.isArray(options)) return {};
+  for (const o of options) {
+    if (!isRecord(o) || str(o.title) !== str(label)) continue;
+    const description = str(o.description);
+    return description ? { description } : {};
+  }
+  return {};
 }
 
 /**
