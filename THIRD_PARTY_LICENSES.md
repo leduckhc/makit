@@ -76,7 +76,7 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 | `flutter_highlight` | 0.7.0 | MIT |
 | `flutter_local_notifications` | 22.2.0 | BSD-3-Clause |
 | `flutter_markdown_plus` | 1.0.12 | BSD-3-Clause |
-| `flutter_riverpod` | 3.4.1 | MIT |
+| `flutter_riverpod` | 3.4.2 | MIT |
 | `flutter_secure_storage` | 10.3.1 | BSD-3-Clause |
 | `flutter_svg` | 2.3.0 | MIT |
 | `go_router` | 17.3.0 | BSD-3-Clause |
