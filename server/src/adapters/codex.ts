@@ -136,8 +136,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private catalogModels: ConfigOptionValue[] = [];
   private effortsByModel: Record<string, ConfigOptionValue[]> = {};
   private defaultEffortByModel: Record<string, string> = {};
+  private fastByModel: Record<string, boolean> = {};
   private activeModel?: string;
   private activeEffort?: string;
+  /** "Fast" service tier (priority) toggle; defaults OFF (standard tier). */
+  private activeFast = false;
 
   constructor(opts: CodexAdapterOpts = {}) {
     super();
@@ -194,6 +197,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         input: [{ type: "text", text: input.text, text_elements: [] }],
         ...(this.activeModel ? { model: this.activeModel } : {}),
         ...(this.activeEffort ? { effort: this.activeEffort } : {}),
+        ...(this.activeFast ? { serviceTier: FAST_SERVICE_TIER } : {}),
       })) as { turn?: { id?: string } };
       const turnId = res?.turn?.id;
       if (turnId) this.turns.enterTurn(turnId);
@@ -223,6 +227,14 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
     if (action !== "configOption") return;
     const id = typeof args?.id === "string" ? args.id : "";
+    if (id === "fast") {
+      // Boolean toggle: only meaningful for a model that supports the fast tier.
+      if (typeof args?.value !== "boolean") return;
+      if (this.activeModel && !this.fastByModel[this.activeModel]) return;
+      this.activeFast = args.value;
+      this.emitConfigOptions();
+      return;
+    }
     const value = typeof args?.value === "string" ? args.value : "";
     if (!value) return;
     if (id === "model") {
@@ -235,6 +247,9 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       if (efforts && this.activeEffort && !efforts.some((e) => e.value === this.activeEffort)) {
         this.activeEffort = this.defaultEffortByModel[value] ?? efforts[0]?.value ?? this.activeEffort;
       }
+      // Drop Fast when the new model doesn't support the tier (avoids sending
+      // serviceTier to a model that can't use it).
+      if (!this.fastByModel[value]) this.activeFast = false;
     } else if (id === "thought_level") this.activeEffort = value;
     else return;
     this.emitConfigOptions();
@@ -263,6 +278,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       this.catalogModels = projected.models;
       this.effortsByModel = projected.effortsByModel;
       this.defaultEffortByModel = projected.defaultEffortByModel;
+      this.fastByModel = projected.fastByModel;
       if (!this.activeModel && projected.activeModel) this.activeModel = projected.activeModel;
       // Initialise the effort from the SELECTED model (which may be a forced
       // non-default model via CodexAdapterOpts.model) — not the catalog default
@@ -283,6 +299,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       this.catalogModels = [];
       this.effortsByModel = {};
       this.defaultEffortByModel = {};
+      this.fastByModel = {};
     }
     if (!this.activeEffort) this.activeEffort = DEFAULT_REASONING_EFFORT;
   }
@@ -295,11 +312,13 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    */
   private emitConfigOptions(): void {
     const efforts = (this.activeModel && this.effortsByModel[this.activeModel]) || [];
+    const fastSupported = Boolean(this.activeModel && this.fastByModel[this.activeModel]);
     const configOptions = buildCodexConfigOptions(
       this.catalogModels,
       this.activeModel,
       this.activeEffort,
       efforts,
+      { supported: fastSupported, active: this.activeFast },
     );
     this.emitEvent({ ts: Date.now(), kind: "session.meta", payload: { configOptions } });
   }
@@ -527,6 +546,23 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
  * ({@link CodexAppServerAdapter.captureModelCatalog}) and the throwaway probe
  * ({@link probeCodexConfigOptions}).
  */
+/**
+ * Whether a codex model supports the "Fast" service tier (1.5x speed): it
+ * advertises a `serviceTiers` entry with id `priority` (name "Fast") or lists
+ * `fast` in `additionalSpeedTiers`. Verified against a live `turn/start` probe:
+ * sending `serviceTier:"priority"` (or `"fast"`) resolves to the `priority`
+ * tier; omitting it resolves to `default` (standard).
+ */
+function modelSupportsFast(model: Record<string, unknown>): boolean {
+  const tiers = Array.isArray(model.serviceTiers) ? model.serviceTiers : [];
+  if (tiers.some((t) => isRecord(t) && t.id === "priority")) return true;
+  const extra = Array.isArray(model.additionalSpeedTiers) ? model.additionalSpeedTiers : [];
+  return extra.includes("fast");
+}
+
+/** The `serviceTier` value sent to `turn/start` when Fast is ON. */
+const FAST_SERVICE_TIER = "priority";
+
 export function projectCodexModelList(res: unknown): {
   models: ConfigOptionValue[];
   activeModel?: string;
@@ -535,11 +571,14 @@ export function projectCodexModelList(res: unknown): {
   effortsByModel: Record<string, ConfigOptionValue[]>;
   /** Per-model default reasoning effort, keyed by model value. */
   defaultEffortByModel: Record<string, string>;
+  /** Per-model "Fast" service-tier support, keyed by model value. */
+  fastByModel: Record<string, boolean>;
 } {
   const data = isRecord(res) && Array.isArray(res.data) ? res.data.filter(isRecord) : [];
   const visible = data.filter((m) => m.hidden !== true);
   const effortsByModel: Record<string, ConfigOptionValue[]> = {};
   const defaultEffortByModel: Record<string, string> = {};
+  const fastByModel: Record<string, boolean> = {};
   const models: ConfigOptionValue[] = visible.map((m) => {
     const value = String(m.model ?? m.id ?? "");
     const name = typeof m.displayName === "string" && m.displayName ? m.displayName : value;
@@ -548,6 +587,7 @@ export function projectCodexModelList(res: unknown): {
       const efforts = reasoningEffortOptions(m);
       if (efforts.length > 0) effortsByModel[value] = efforts;
       if (typeof m.defaultReasoningEffort === "string") defaultEffortByModel[value] = m.defaultReasoningEffort;
+      if (modelSupportsFast(m)) fastByModel[value] = true;
     }
     return description ? { value, name, description } : { value, name };
   });
@@ -558,7 +598,8 @@ export function projectCodexModelList(res: unknown): {
     activeEffort?: string;
     effortsByModel: Record<string, ConfigOptionValue[]>;
     defaultEffortByModel: Record<string, string>;
-  } = { models, effortsByModel, defaultEffortByModel };
+    fastByModel: Record<string, boolean>;
+  } = { models, effortsByModel, defaultEffortByModel, fastByModel };
   if (active) {
     out.activeModel = String(active.model ?? active.id ?? "");
     if (typeof active.defaultReasoningEffort === "string") out.activeEffort = active.defaultReasoningEffort;
@@ -577,6 +618,7 @@ export function buildCodexConfigOptions(
   activeModel: string | undefined,
   activeEffort: string | undefined,
   efforts: ConfigOptionValue[] = FALLBACK_REASONING_EFFORTS,
+  fast?: { supported: boolean; active: boolean },
 ): SessionConfigOption[] {
   const configOptions: SessionConfigOption[] = [];
   if (models.length > 0) {
@@ -613,6 +655,19 @@ export function buildCodexConfigOptions(
     currentValue: current,
     options: effortOptions,
   });
+  // "Fast" service tier (1.5x speed) — a boolean model_config, shown only when
+  // the active model advertises the priority/fast tier. ON → turn/start
+  // serviceTier "priority"; OFF → omit (codex resolves to "default").
+  if (fast?.supported) {
+    configOptions.push({
+      id: "fast",
+      name: "Fast",
+      category: "model_config",
+      type: "boolean",
+      currentValue: fast.active,
+      description: "1.5x speed, increased usage",
+    });
+  }
   return configOptions;
 }
 
@@ -677,7 +732,11 @@ export async function probeCodexConfigOptions(
     );
     const projected = projectCodexModelList(res);
     const efforts = (projected.activeModel && projected.effortsByModel[projected.activeModel]) || [];
-    return buildCodexConfigOptions(projected.models, projected.activeModel, projected.activeEffort, efforts);
+    const fastSupported = Boolean(projected.activeModel && projected.fastByModel[projected.activeModel]);
+    return buildCodexConfigOptions(projected.models, projected.activeModel, projected.activeEffort, efforts, {
+      supported: fastSupported,
+      active: false,
+    });
   } catch (e) {
     log.warn(`[makit] codex probe failed: ${(e as Error).message}`);
     return buildCodexConfigOptions([], undefined, undefined);

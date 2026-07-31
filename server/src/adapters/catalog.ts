@@ -139,8 +139,9 @@ export function fingerprintAgent(agentId: string): string {
   // the fingerprint tracks the harness's inputs, not the makit code, so an
   // adapter change (e.g. per-model reasoning efforts) must invalidate every
   // persisted `~/.makit/capability-cache.json` entry or stale options are
-  // served to the new-session draft. Version 2: codex per-model efforts.
-  const parts: string[] = [`catalog-schema:2`, `agent:${canonical}`];
+  // served to the new-session draft. v2: codex per-model efforts. v3: codex
+  // Fast service tier.
+  const parts: string[] = [`catalog-schema:3`, `agent:${canonical}`];
   if (isCodex) {
     parts.push(`codex-bin:${fileIdentity(resolveBinPath(process.env.MAKIT_CODEX_BIN || "codex"))}`);
     parts.push(`codex-config:${fileIdentity(codexConfigFile())}`);
