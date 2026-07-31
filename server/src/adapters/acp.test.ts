@@ -334,6 +334,73 @@ test("select maps the chosen option by index, not label (labels can collide)", a
   assert.equal(selectedOptionId, "opt-b");
 });
 
+test("select recovers option descriptions from the in-flight ask_user tool args", async () => {
+  let agentRef: ScriptedAgent;
+  const { transport } = pair((conn) => {
+    agentRef = new ScriptedAgent(conn, async (sessionId) => {
+      // pi-ask-user's headless fallback calls `ctx.ui.select(prompt, titles)`,
+      // so the permission options are title-only strings — the descriptions
+      // only exist on the concurrently-running `ask_user` tool call's args.
+      await conn.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "tooluse_ask",
+          title: "ask_user",
+          kind: "other",
+          status: "in_progress",
+          rawInput: {
+            question: "Which skill?",
+            options: [
+              { title: "Piano", description: "Improvise jazz" },
+              { title: "Languages", description: "Converse naturally" },
+            ],
+          },
+        } as any,
+      });
+      await conn.requestPermission({
+        sessionId,
+        toolCall: {
+          toolCallId: "pi-ui-4",
+          title: "Which skill?",
+          kind: "other",
+          status: "pending",
+          rawInput: { method: "select", title: "Which skill?", options: ["Piano", "Languages", "✏️ Type custom response..."] },
+        } as any,
+        options: [
+          { optionId: "choice-0", name: "Piano", kind: "allow_once" },
+          { optionId: "choice-1", name: "Languages", kind: "allow_once" },
+          { optionId: "choice-2", name: "✏️ Type custom response...", kind: "allow_once" },
+        ],
+      });
+    });
+    return agentRef;
+  });
+
+  const asked: UICall[] = [];
+  const askUser = async (call: UICall): Promise<UIResponse> => {
+    asked.push(call);
+    return { kind: "askUserQuestion", indices: [0], answers: ["Piano"], answer: "Piano" };
+  };
+
+  const adapter = new AcpAdapter({ spec: { agent: "pi", command: "x" }, connect: () => transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1", askUser });
+  await adapter.send({ text: "choose" });
+
+  const deadline = Date.now() + 1000;
+  while (Date.now() < deadline && asked.length === 0) {
+    await new Promise((r) => setTimeout(r, 5));
+  }
+
+  const q = (asked[0] as any).questions[0];
+  assert.deepEqual(q.options, [
+    { label: "Piano", description: "Improvise jazz" },
+    { label: "Languages", description: "Converse naturally" },
+    // The freeform sentinel has no matching ask_user option — no description.
+    { label: "✏️ Type custom response..." },
+  ]);
+});
+
 test("select trims the question and drops a header that only differs by whitespace", async () => {
   let agentRef: ScriptedAgent;
   const { transport } = pair((conn) => {
