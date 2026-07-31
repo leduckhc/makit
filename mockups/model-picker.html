@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Model picker + per-model config flyout</title>
+<style>
+  :root{
+    --bg:#0e0e0e;--surface:#141414;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#2a2a2a;--hairline-soft:#222;
+    --on-surface-variant:#C9C9C9;
+    --accent:#7EE8A6;
+    --faded:rgba(158,158,158,.30);
+    --sel:rgba(126,232,166,.10);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 100px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 24px;max-width:900px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  h2{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:36px 0 12px}
+  .note{color:var(--muted);font-size:12.5px;max-width:640px;margin:8px 0 0}
+
+  .stage{display:flex;gap:40px;flex-wrap:wrap;align-items:flex-start}
+
+  /* ---- composer footer pills ---- */
+  .footer{display:inline-flex;gap:6px;align-items:center;padding:8px;border:1px solid var(--hairline);border-radius:14px;background:var(--surface)}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:14px;background:var(--container-high);cursor:default}
+  .pill .lbl{font-size:12px;color:var(--on-surface-variant)}
+  .avatar{width:16px;height:16px;border-radius:5px;background:linear-gradient(135deg,#4f8cff,#8a5cff);display:inline-block}
+  .chip{font-size:10.5px;color:var(--muted);padding:1px 5px;border-radius:6px;background:rgba(255,255,255,.05);font-variant-numeric:tabular-nums}
+  .chip.on{color:var(--accent)}
+  .sigbar{display:inline-flex;align-items:flex-end;gap:1.5px;height:12px}
+  .sigbar i{width:2px;border-radius:1px;background:var(--faded);display:block}
+  .sigbar i.on{background:var(--text)}
+
+  /* ---- popup menu ---- */
+  .menu{width:300px;border:1px solid var(--hairline);border-radius:14px;background:var(--surface);overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+  .search{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--hairline);color:var(--muted)}
+  .search input{all:unset;flex:1;font-size:13px;color:var(--text)}
+  .search .ico{opacity:.7}
+  .seclabel{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:10px 14px 4px}
+  .row{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer}
+  .row:hover{background:var(--container)}
+  .row.active{background:var(--sel)}
+  .row .name{flex:1;font-size:13px}
+  .row .check{color:var(--accent);font-size:13px;width:14px;text-align:center}
+  .row .caret{color:var(--muted);font-size:14px;width:14px;text-align:center}
+  .row.browse{color:var(--on-surface-variant);border-top:1px solid var(--hairline-soft)}
+  .row.browse .count{font-size:11px;color:var(--muted)}
+  .divider{height:1px;background:var(--hairline-soft);margin:4px 0}
+  .rowchips{display:flex;gap:4px;margin-left:auto;align-items:center}
+
+  /* ---- vertical config flyout ---- */
+  .flyout{width:184px;border:1px solid var(--hairline);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+  .fly-title{padding:10px 14px 8px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .seg{padding:8px 0 6px;border-top:1px solid var(--hairline-soft)}
+  .seg-h{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700;padding:0 14px 4px;display:flex;align-items:center;gap:6px}
+  .val{display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;font-size:13px}
+  .val:hover{background:var(--container)}
+  .val.cur{color:var(--accent)}
+  .val .ck{width:12px;text-align:center;font-size:12px}
+  .val .num{font-variant-numeric:tabular-nums}
+  .toggle-row{display:flex;align-items:center;padding:8px 14px;gap:10px;cursor:pointer;border-top:1px solid var(--hairline-soft)}
+  .toggle-row .th{flex:1;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .sw{width:34px;height:20px;border-radius:11px;background:var(--container-highest);position:relative;transition:.15s}
+  .sw.on{background:var(--accent)}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
+  .sw.on::after{left:16px}
+
+  /* connect menu row -> flyout visually on desktop */
+  .desk{display:flex;align-items:flex-start;gap:0}
+  .desk .menu{border-top-right-radius:0;border-bottom-right-radius:0;border-right:none}
+  .desk .flyout{margin-top:88px;border-top-left-radius:0;border-bottom-left-radius:0}
+
+  /* ---- mobile sheet ---- */
+  .phone{width:300px;border:1px solid var(--hairline);border-radius:26px;background:#000;padding:8px;box-shadow:0 18px 50px rgba(0,0,0,.5)}
+  .phone .screen{background:var(--bg);border-radius:20px;overflow:hidden;height:420px;position:relative}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top-left-radius:18px;border-top-right-radius:18px;border-top:1px solid var(--hairline);padding-bottom:12px}
+  .grab{width:32px;height:4px;border-radius:2px;background:#555;margin:8px auto}
+  .sheet-h{padding:4px 16px 8px;font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .back{color:var(--muted);cursor:pointer}
+</style>
+</head>
+<body>
+  <h1>Model picker — search-driven menu + vertical per-model config</h1>
+  <p class="sub">Config only exists for <strong>Recent</strong> models. Empty query shows Recent (each with a config flyout); typing filters the full <code>~300</code> catalog (selection only). The flyout is a <strong>narrow vertical column</strong> — subtle segments stacked top-to-bottom — so it never grows wide and reuses as-is on mobile. <code>mode</code> stays a separate footer pill (it's session-scoped, not model-scoped).</p>
+
+  <!-- FOOTER -->
+  <h2>1 · Composer footer — model pill carries faint read-only chips</h2>
+  <div class="footer">
+    <span class="pill">
+      <span class="avatar"></span>
+      <span class="lbl">GPT-5</span>
+      <span class="sigbar" title="reasoning: high"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+      <span class="chip num">256k</span>
+      <span class="chip on">fast</span>
+    </span>
+    <span class="pill" title="mode — session scoped, separate">
+      <span style="color:var(--muted)">⚙</span><span class="lbl">code</span>
+    </span>
+  </div>
+  <p class="note">Chips are labels only. Signal-bar = reasoning (reuses existing <code>ThinkingSignal</code>), <code>256k</code> = context, <code>fast</code> lit = on. Tapping the pill opens the menu; chips are changed one level in.</p>
+
+  <!-- DESKTOP: menu empty state + flyout -->
+  <h2>2 · Desktop — empty query = Recent, hovering a row opens the vertical flyout</h2>
+  <div class="stage">
+    <div class="desk">
+      <div class="menu">
+        <div class="search"><span class="ico">🔍</span><input placeholder="Search 300 models…" /></div>
+        <div class="seclabel">Recent</div>
+        <div class="row active">
+          <span class="avatar"></span><span class="name">GPT-5</span>
+          <span class="rowchips"><span class="chip">256k</span><span class="chip on">fast</span></span>
+          <span class="check">✓</span><span class="caret">›</span>
+        </div>
+        <div class="row">
+          <span class="avatar"></span><span class="name">Claude Sonnet 4.6</span>
+          <span class="rowchips"><span class="chip">1M</span></span>
+          <span class="check"></span><span class="caret">›</span>
+        </div>
+        <div class="row">
+          <span class="avatar"></span><span class="name">Gemini 2.5 Pro</span>
+          <span class="rowchips"><span class="chip">2M</span></span>
+          <span class="check"></span><span class="caret">›</span>
+        </div>
+        <div class="row">
+          <span class="avatar"></span><span class="name">o3</span>
+          <span class="rowchips"></span>
+          <span class="check"></span><span class="caret">›</span>
+        </div>
+        <div class="row">
+          <span class="avatar"></span><span class="name">Claude Haiku 4.5</span>
+          <span class="rowchips"><span class="chip on">fast</span></span>
+          <span class="check"></span><span class="caret">›</span>
+        </div>
+        <div class="row browse">
+          <span style="width:16px;text-align:center">⋯</span>
+          <span class="name">Browse all models</span>
+          <span class="count">300</span><span class="caret">›</span>
+        </div>
+      </div>
+
+      <!-- flyout for GPT-5 -->
+      <div class="flyout">
+        <div class="fly-title"><span class="avatar"></span>GPT-5</div>
+        <div class="seg">
+          <div class="seg-h">
+            <span class="sigbar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+            Reasoning
+          </div>
+          <div class="val"><span class="ck"></span>off</div>
+          <div class="val"><span class="ck"></span>minimal</div>
+          <div class="val"><span class="ck"></span>low</div>
+          <div class="val"><span class="ck"></span>medium</div>
+          <div class="val cur"><span class="ck">✓</span>high</div>
+          <div class="val"><span class="ck"></span>xhigh</div>
+        </div>
+        <div class="seg">
+          <div class="seg-h">Context</div>
+          <div class="val"><span class="ck"></span><span class="num">128k</span></div>
+          <div class="val cur"><span class="ck">✓</span><span class="num">256k</span></div>
+          <div class="val"><span class="ck"></span><span class="num">1M</span></div>
+        </div>
+        <div class="toggle-row">
+          <span class="th">Fast</span>
+          <span class="sw on"></span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <!-- typing state -->
+      <div class="menu" style="width:300px">
+        <div class="search"><span class="ico">🔍</span><input value="haiku" /></div>
+        <div class="seclabel">Results · 6 of 300</div>
+        <div class="row"><span class="avatar"></span><span class="name">Claude Haiku 4.5</span></div>
+        <div class="row"><span class="avatar"></span><span class="name">Claude 3.5 Haiku</span></div>
+        <div class="row"><span class="avatar"></span><span class="name">Claude 3 Haiku</span></div>
+        <div class="row"><span class="avatar"></span><span class="name">Haiku (Bedrock)</span></div>
+        <div class="row"><span class="avatar"></span><span class="name">Haiku (Vertex)</span></div>
+      </div>
+      <p class="note">Typing = flat filtered list from all 300. No chips, no config — you're hunting. Picking one that isn't Recent promotes it into Recent (and it gains a flyout next time).</p>
+    </div>
+  </div>
+
+  <!-- MOBILE -->
+  <h2>3 · Mobile — same narrow column, drilled as a second sheet page</h2>
+  <div class="stage">
+    <div class="phone"><div class="screen">
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheet-h">Model</div>
+        <div class="seclabel">Recent</div>
+        <div class="row active"><span class="avatar"></span><span class="name">GPT-5</span><span class="rowchips"><span class="chip">256k</span><span class="chip on">fast</span></span><span class="caret">›</span></div>
+        <div class="row"><span class="avatar"></span><span class="name">Claude Sonnet 4.6</span><span class="rowchips"><span class="chip">1M</span></span><span class="caret">›</span></div>
+        <div class="row"><span class="avatar"></span><span class="name">Gemini 2.5 Pro</span><span class="caret">›</span></div>
+        <div class="row browse"><span style="width:16px;text-align:center">⋯</span><span class="name">Browse all models</span><span class="count">300</span><span class="caret">›</span></div>
+      </div>
+    </div></div>
+
+    <div class="phone"><div class="screen">
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheet-h"><span class="back">‹</span><span class="avatar"></span>GPT-5</div>
+        <div class="seg" style="border-top:none">
+          <div class="seg-h"><span class="sigbar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>Reasoning</div>
+          <div class="val"><span class="ck"></span>off</div>
+          <div class="val"><span class="ck"></span>minimal</div>
+          <div class="val"><span class="ck"></span>low</div>
+          <div class="val"><span class="ck"></span>medium</div>
+          <div class="val cur"><span class="ck">✓</span>high</div>
+          <div class="val"><span class="ck"></span>xhigh</div>
+        </div>
+        <div class="seg">
+          <div class="seg-h">Context</div>
+          <div class="val"><span class="ck"></span><span class="num">128k</span></div>
+          <div class="val cur"><span class="ck">✓</span><span class="num">256k</span></div>
+          <div class="val"><span class="ck"></span><span class="num">1M</span></div>
+        </div>
+        <div class="toggle-row"><span class="th">Fast</span><span class="sw on"></span></div>
+      </div>
+    </div></div>
+    <p class="note" style="align-self:center">Desktop shows the flyout <em>beside</em> the row; mobile pushes the <em>same column</em> as a second sheet page (a <code>‹</code> back to the list). One layout, two containers.</p>
+  </div>
+
+</body>
+</html>

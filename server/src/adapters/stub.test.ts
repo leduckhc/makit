@@ -28,12 +28,16 @@ test("stub emits configOptions on start", async () => {
   await stub.start({ sessionId: "s1", cwd: "/tmp" });
   assert.equal(metas.length, 1);
   const opts = optionsOf(metas[0]);
-  assert.equal(opts.length, 2);
+  assert.equal(opts.length, 4);
   assert.equal(opts[0].id, "model");
   assert.equal(opts[0].category, "model");
   assert.equal(opts[0].currentValue, "stub-normal");
   assert.equal(opts[1].id, "thought_level");
   assert.equal(opts[1].category, "thought_level");
+  assert.equal(opts[2].id, "context");
+  assert.equal(opts[2].category, "model_config");
+  assert.equal(opts[3].id, "fast");
+  assert.equal(opts[3].category, "model_config");
 });
 
 test("configOption action updates and re-emits the complete list", async () => {
@@ -43,9 +47,20 @@ test("configOption action updates and re-emits the complete list", async () => {
   await stub.sendAction("configOption", { id: "thought_level", value: "high" });
   assert.equal(metas.length, 2);
   const opts = optionsOf(metas[1]);
-  assert.equal(opts.length, 2, "complete list re-emitted");
+  assert.equal(opts.length, 4, "complete list re-emitted");
   assert.equal(opts.find((o) => o.id === "thought_level")?.currentValue, "high");
   assert.equal(opts.find((o) => o.id === "model")?.currentValue, "stub-normal");
+});
+
+test("boolean option round-trips true and false", async () => {
+  const stub = new StubAdapter();
+  const metas = collectMeta(stub);
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  // `fast` starts true; a boolean action can disable it, then re-enable it.
+  await stub.sendAction("configOption", { id: "fast", value: false });
+  assert.equal(optionsOf(metas.at(-1)!).find((o) => o.id === "fast")?.currentValue, false);
+  await stub.sendAction("configOption", { id: "fast", value: true });
+  assert.equal(optionsOf(metas.at(-1)!).find((o) => o.id === "fast")?.currentValue, true);
 });
 
 test("unknown option id or non-configOption action is ignored", async () => {

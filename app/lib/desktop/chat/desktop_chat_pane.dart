@@ -365,7 +365,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                                 ?.configOptions
                                 .isNotEmpty ??
                             false)
-                          ComposerConfigOptions(sessionId: sessionId)
+                          ComposerConfigOptions(
+                            sessionId: sessionId,
+                            desktop: true,
+                          )
                         else ...[
                           ComposerModelSelector(sessionId: sessionId),
                           ComposerThinkingSelector(sessionId: sessionId),

@@ -5,9 +5,12 @@ import '../../app/theme.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/models.dart';
+import '../../store/recent_models.dart';
 import '../../store/store.dart';
 import '../../ui/composer/composer.dart';
-import '../../ui/composer/composer_selectors.dart' show ConfigOptionPickRow;
+import '../../ui/composer/composer_selectors.dart'
+    show ModelConfigFooter, partitionConfigOptions;
+import '../../ui/composer/model_picker_menu.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import 'harness_picker.dart' show HarnessCard;
 import 'pr_bar.dart';
@@ -70,6 +73,65 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   void dispose() {
     _composer.dispose();
     super.dispose();
+  }
+
+  /// The active harness's config options (its catalog), or empty when none is
+  /// resolved yet.
+  List<SessionConfigOption> get _currentOptions {
+    final agents = ref.read(agentsProvider).value ?? const <AgentDescriptor>[];
+    final id = _effectiveAgentId(agents);
+    for (final a in agents) {
+      if (a.id == id) return a.configOptions;
+    }
+    return const <SessionConfigOption>[];
+  }
+
+  /// The active harness id (empty when none resolved).
+  String get _currentAgent {
+    final agents = ref.read(agentsProvider).value ?? const <AgentDescriptor>[];
+    return _effectiveAgentId(agents) ?? '';
+  }
+
+  /// Builds the model picker menu for the draft (SPEC-31). Backed by the local
+  /// pending [_picks] (fallback to each option's `currentValue`) — there is no
+  /// live session, so a model select updates the draft only: it never records
+  /// recents (a live-session gesture) or dispatches an action (the picks ride
+  /// the spawn and apply at launch, SPEC-27). Surfaces the user's existing
+  /// Recent models read-only.
+  Widget _buildDraftModelPicker(BuildContext context) {
+    final partition = partitionConfigOptions(_currentOptions);
+    final model = partition.model;
+    if (model == null) return const SizedBox.shrink();
+    final recent = ref
+        .read(recentModelsControllerProvider.notifier)
+        .recentModels(_currentAgent);
+    return StatefulBuilder(
+      builder: (ctx, setSheetState) {
+        final values = {
+          for (final o in _currentOptions) o.id: _picks[o.id] ?? o.currentValue,
+        };
+        final active = values[model.id];
+        return ModelPickerMenu(
+          modelOption: model,
+          activeValue: active is String ? active : '',
+          recent: recent,
+          modelScoped: partition.modelScoped,
+          values: values,
+          agent: _currentAgent,
+          onSelectModel: (value) {
+            // SPEC-31 (decision a): keep the sheet open. The outer setState
+            // updates the footer chips; setSheetState rebuilds the sheet with
+            // the new active value derived from _picks (revealing its flyout).
+            setState(() => _picks[model.id] = value);
+            setSheetState(() {});
+          },
+          onPickOption: (id, value) {
+            setState(() => _picks[id] = value);
+            setSheetState(() {});
+          },
+        );
+      },
+    );
   }
 
   Future<void> _start(String text) async {
@@ -191,11 +253,13 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                 newlineChord: keymap.chordFor(ShortcutAction.composerNewline),
                 footerActions: [
                   if (options.isNotEmpty)
-                    ConfigOptionPickRow(
+                    ModelConfigFooter(
                       options: options,
                       values: _picks,
                       agent: selectedId ?? '',
                       onPick: (id, value) => setState(() => _picks[id] = value),
+                      desktop: true,
+                      menuBuilder: _buildDraftModelPicker,
                     ),
                 ],
               ),

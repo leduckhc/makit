@@ -153,7 +153,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   /** SPEC-26: a tiny deterministic config catalog so keyless e2e runs can
    *  exercise the unified `configOptions` render + set round-trip. */
-  private configOptions: SessionConfigOption[] = [
+  private configOptions: Array<SessionConfigOption> = [
+    // Mixed boolean + string currentValue types require explicit array type annotation
     {
       id: "model",
       name: "Model",
@@ -177,6 +178,25 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         { value: "high", name: "High" },
       ],
     },
+    {
+      id: "context",
+      name: "Context",
+      category: "model_config",
+      type: "select",
+      currentValue: "256k",
+      options: [
+        { value: "128k", name: "128k" },
+        { value: "256k", name: "256k" },
+        { value: "1m", name: "1M" },
+      ],
+    },
+    {
+      id: "fast",
+      name: "Fast",
+      category: "model_config",
+      type: "boolean",
+      currentValue: true,
+    },
   ];
 
   async sendAction(action: string, args?: Record<string, unknown>): Promise<void> {
@@ -184,9 +204,14 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     const id = args?.id;
     const value = args?.value;
     const target = this.configOptions.find((o) => o.id === id);
-    if (!target || typeof value !== "string") return;
+    if (!target) return;
+    // Accept booleans for boolean options (e.g. `fast`), strings for selects.
+    const ok =
+      target.type === "boolean" ? typeof value === "boolean" : typeof value === "string";
+    if (!ok) return;
+    const next = value as string | boolean;
     this.configOptions = this.configOptions.map((o) =>
-      o.id === id ? { ...o, currentValue: value } : o,
+      o.id === id ? { ...o, currentValue: next } : o,
     );
     this.emitMeta();
   }

@@ -127,11 +127,13 @@ test("configOptions flow over the wire and a configOption action round-trips", a
     // 1. The stub's catalog reaches the client on session.meta.
     const meta = await waitFor(c, metaWithOptions(sessionId));
     const opts = optionsOf(meta);
-    assert.equal(opts.length, 2);
+    assert.equal(opts.length, 4);
     assert.equal(opts[0]!.id, "model");
     assert.equal(opts[0]!.currentValue, "stub-normal");
     assert.equal(opts[1]!.id, "thought_level");
     assert.equal(opts[1]!.currentValue, "low");
+    assert.equal(opts[2]!.id, "context");
+    assert.equal(opts[3]!.id, "fast");
 
     // 2. Set thought_level=high via the unified action; the COMPLETE updated
     //    list comes back over the wire.
@@ -147,7 +149,7 @@ test("configOptions flow over the wire and a configOption action round-trips", a
       return o.find((x) => x.id === "thought_level")?.currentValue === "high";
     });
     const after = optionsOf(updated);
-    assert.equal(after.length, 2, "complete list re-emitted");
+    assert.equal(after.length, 4, "complete list re-emitted");
     assert.equal(after.find((o) => o.id === "model")?.currentValue, "stub-normal");
   } finally {
     c.ws.close();

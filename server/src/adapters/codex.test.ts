@@ -55,6 +55,8 @@ function fakeAppServer() {
               hidden: false,
               supportedReasoningEfforts: [{ reasoningEffort: "medium", description: "" }],
               defaultReasoningEffort: "medium",
+              serviceTiers: [{ id: "priority", name: "Fast", description: "1.5x speed, increased usage" }],
+              additionalSpeedTiers: ["fast"],
               isDefault: true,
             },
             {
@@ -327,20 +329,88 @@ test("projects model/list + reasoning effort into session.meta configOptions", a
       { value: "o3", name: "o3", description: "reasoning" },
     ],
   });
-  // thought_level option — reasoning effort minimal/low/medium/high.
+  // thought_level option — the ACTIVE model's advertised efforts (gpt-5-codex
+  // advertises only "medium").
   assert.deepEqual(byId.thought_level, {
     id: "thought_level",
     name: "Reasoning effort",
     category: "thought_level",
     type: "select",
     currentValue: "medium",
-    options: [
-      { value: "minimal", name: "Minimal" },
-      { value: "low", name: "Low" },
-      { value: "medium", name: "Medium" },
-      { value: "high", name: "High" },
-    ],
+    options: [{ value: "medium", name: "Medium" }],
   });
+});
+
+test("thought_level options follow the active model + clamp on model switch", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  await collectMeta(events);
+
+  // Switch to o3, which advertises only "high" (not the current "medium").
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "model", value: "o3" });
+  const payload = await collectMeta(events);
+  const tl = payload.configOptions.find((o: any) => o.id === "thought_level");
+  // The effort list is now o3's set, and the current effort is clamped to o3's
+  // default ("high") instead of the stale "medium".
+  assert.deepEqual(tl.options, [{ value: "high", name: "High" }]);
+  assert.equal(tl.currentValue, "high");
+
+  await adapter.send({ text: "go" });
+  const turn = fake.sent.filter((m) => m.method === "turn/start").at(-1);
+  assert.equal(turn.params.effort, "high");
+});
+
+test("Fast service tier: emitted for a fast-capable model, toggles serviceTier", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  const meta = await collectMeta(events);
+  const fast = meta.configOptions.find((o: any) => o.id === "fast");
+  // gpt-5-codex advertises the priority/fast tier → a boolean Fast option,
+  // defaulting OFF.
+  assert.ok(fast, "fast option present for a fast-capable model");
+  assert.equal(fast.type, "boolean");
+  assert.equal(fast.category, "model_config");
+  assert.equal(fast.currentValue, false);
+
+  // OFF (default) → turn/start omits serviceTier.
+  await adapter.send({ text: "a" });
+  assert.equal(fake.sent.filter((m) => m.method === "turn/start").at(-1).params.serviceTier, undefined);
+
+  // Toggle ON → turn/start sends serviceTier "priority".
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "fast", value: true });
+  const on = await collectMeta(events);
+  assert.equal(on.configOptions.find((o: any) => o.id === "fast").currentValue, true);
+  await adapter.send({ text: "b" });
+  assert.equal(fake.sent.filter((m) => m.method === "turn/start").at(-1).params.serviceTier, "priority");
+});
+
+test("Fast is dropped when switching to a model that doesn't support it", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  await collectMeta(events);
+  await adapter.sendAction!("configOption", { id: "fast", value: true });
+
+  // Switch to o3 (no serviceTiers) → the Fast option disappears + resets.
+  events.length = 0;
+  await adapter.sendAction!("configOption", { id: "model", value: "o3" });
+  const meta = await collectMeta(events);
+  assert.equal(meta.configOptions.find((o: any) => o.id === "fast"), undefined);
+  await adapter.send({ text: "c" });
+  assert.equal(fake.sent.filter((m) => m.method === "turn/start").at(-1).params.serviceTier, undefined);
 });
 
 test("configOption model action re-emits meta and overrides the next turn's model", async () => {
@@ -377,6 +447,25 @@ test("configOption thought_level action overrides the next turn's reasoning effo
 });
 
 // ---------- capability projection + probe (SPEC-27) ------------------------
+
+test("a forced non-default model initialises effort from that model", async () => {
+  const fake = fakeAppServer();
+  // Force o3 (non-default); o3 advertises only "high" (default model gpt-5-codex
+  // advertises "medium"). The effort must follow o3, not the catalog default.
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport, model: "o3" });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  const payload = await collectMeta(events);
+  const tl = payload.configOptions.find((o: any) => o.id === "thought_level");
+  assert.equal(tl.currentValue, "high");
+  assert.deepEqual(tl.options, [{ value: "high", name: "High" }]);
+
+  await adapter.send({ text: "go" });
+  const turn = fake.sent.filter((m) => m.method === "turn/start").at(-1);
+  assert.equal(turn.params.effort, "high");
+});
 
 test("projectCodexModelList maps visible models and picks the default", () => {
   const projected = projectCodexModelList({

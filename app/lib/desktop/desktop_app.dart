@@ -25,6 +25,7 @@ import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
 import '../shortcuts/keymap_controller.dart';
 import '../store/connection.dart';
+import '../store/recent_models.dart';
 import '../store/secure_store.dart';
 import '../store/store.dart';
 import '../ui/widgets/srv_request_handler.dart';
@@ -103,6 +104,7 @@ Future<void> runDesktopApp() async {
     cmdIsPrimary: cmdIsPrimaryModifier,
   );
   final preferencesController = PreferencesController.load(prefs);
+  final recentModelsController = RecentModelsController.load(prefs);
   final groupsController = GroupsController.load(prefs);
   final controller = DesktopController(
     client: client,
@@ -167,6 +169,9 @@ Future<void> runDesktopApp() async {
         keymapProvider.overrideWith((ref) => keymapController),
         preferencesControllerProvider.overrideWith(
           (ref) => preferencesController,
+        ),
+        recentModelsControllerProvider.overrideWith(
+          (ref) => recentModelsController,
         ),
         groupsControllerProvider.overrideWith((ref) => groupsController),
       ],
