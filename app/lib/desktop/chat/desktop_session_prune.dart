@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../store/store.dart';
 import 'desktop_group_reconcile.dart';
 import 'groups/group.dart';
+import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
 
 /// Keeps the groups layer honest about what the server still has.
@@ -44,6 +45,17 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
   }
 
   ref.listen(sessionsProvider, (_, next) => prune(next));
+  // Membership also changes *without* a server snapshot: a quick-pin, a picker
+  // tick or a drop all mutate it in-process (decision 14). Reconciling only off
+  // `sessions.snapshot` meant a pinned agent had no pane until the next frame
+  // the server happened to send — seconds later, or never on an idle desktop.
+  //
+  // Only the canvas half runs here: unpinning is the server's news, not the
+  // user's, so there is nothing to prune on a local pin.
+  ref.listen(activeGroupMembersKeyProvider, (_, _) {
+    if (!ref.read(sessionsLoadedProvider)) return;
+    reconcileActiveCanvas(ref, ref.read(sessionsProvider));
+  });
   ref.listen(
     reposProvider,
     (_, next) => closeGroupsForDeletedWorktrees(ref, next),

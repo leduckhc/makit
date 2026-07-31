@@ -33,8 +33,19 @@ import 'selected_worktree.dart';
 /// could be seen. Membership itself (derived) is always correct regardless.
 void reconcileActiveCanvas(Ref ref, SessionsState sessions) {
   final workspace = ref.read(workspaceControllerProvider.notifier);
-  final active = ref.read(activeGroupProvider);
-  final members = ref.read(groupMembersProvider(active.id));
+  // Read the groups state straight from its notifier, and resolve membership
+  // with the pure [membersOf], rather than going through `activeGroupProvider` /
+  // `groupMembersProvider`: this runs from listeners that can both fire in one
+  // frame (a local pin plus a session snapshot), and Riverpod refuses to rebuild
+  // a derived provider twice in the same one.
+  final active = ref.read(groupsControllerProvider).active;
+  final members = membersOf(
+    kind: active.kind,
+    projectId: active.projectId,
+    worktreePath: active.worktreePath,
+    members: active.members,
+    sessions: sessions,
+  );
   // A session the server has not located yet (a draft before its first
   // message) belongs to no scope, so it must not be mistaken for a foreign
   // tab and dropped from under the user.

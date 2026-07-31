@@ -58,23 +58,42 @@ final groupMembersProvider = Provider.family<List<String>, String>((
   );
   final sessions = ref.watch(sessionsProvider);
   if (group == null) return const [];
+  return membersOf(
+    kind: group.kind,
+    projectId: group.projectId,
+    worktreePath: group.worktreePath,
+    members: group.members,
+    sessions: sessions,
+  );
+});
 
-  switch (group.kind) {
+/// [groupMembersProvider]'s rule as a pure function, so a reconciler holding a
+/// [Group] and a [SessionsState] can resolve membership without rebuilding a
+/// derived provider — which Riverpod forbids twice in one frame, and a
+/// membership change plus a session snapshot legitimately land in the same one.
+List<String> membersOf({
+  required GroupKind kind,
+  required String? projectId,
+  required String? worktreePath,
+  required List<String> members,
+  required SessionsState sessions,
+}) {
+  switch (kind) {
     case GroupKind.worktree:
       return [
         for (final s in sessions.sessions)
-          if (s.projectId == group.projectId &&
+          if (s.projectId == projectId &&
               s.worktreePath != null &&
-              s.worktreePath == group.worktreePath)
+              s.worktreePath == worktreePath)
             s.id,
       ];
     case GroupKind.board:
       return [
-        for (final id in group.members)
+        for (final id in members)
           if (sessions.byId(id) != null) id,
       ];
   }
-});
+}
 
 /// The slice of a [Group] that decides its membership. Equality over just these
 /// fields is what lets [groupMembersProvider] ignore tree churn.
@@ -104,6 +123,20 @@ class _MembershipKey {
   int get hashCode =>
       Object.hash(kind, projectId, worktreePath, Object.hashAll(members));
 }
+
+/// A value-comparable fingerprint of *what the active group's canvas should
+/// show*: its id plus its resolved member list.
+///
+/// Exists so a reconciler can `listen` for membership changes — including the
+/// ones no server frame announces (a quick-pin, a picker tick, a drop). Being a
+/// plain [String] it stays quiet on tree churn and on a member list that was
+/// merely recomputed to the same thing.
+final activeGroupMembersKeyProvider = Provider<String>((ref) {
+  final id = ref.watch(
+    groupsControllerProvider.select<String>((s) => s.active.id),
+  );
+  return '$id\u0000${ref.watch(groupMembersProvider(id)).join('\u0001')}';
+});
 
 /// The set of session ids the server still lists — what
 /// [GroupsController.reopenBoard] and the prune need to filter against.

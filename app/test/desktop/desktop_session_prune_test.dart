@@ -361,6 +361,79 @@ void main() {
       );
     });
 
+    test('pinning an existing session places its pane immediately, without '
+        'waiting for the next sessions snapshot', () async {
+      // Everything the server knows is already on the wire: s3 exists, it is
+      // just not on this board yet. Quick-pin is an in-process membership
+      // mutation, so nothing else will arrive to trigger a reconcile.
+      final b = _boardWithTabs('b', ['s1', 's2']);
+      final container = groupsContainer(
+        GroupsState(groups: [b], activeGroupId: 'b'),
+      );
+      addTearDown(container.dispose);
+      _keepAlive(container);
+
+      _push(container, [_session('s1'), _session('s2'), _session('s3')]);
+      await Future<void>.delayed(Duration.zero);
+      final focusBefore = _focused(container.read(workspaceControllerProvider));
+
+      container
+          .read(groupsControllerProvider.notifier)
+          .addMember(
+            'b',
+            's3',
+            location: const SessionLocation(projectId: 'p1'),
+          );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        _boundIds(container.read(workspaceControllerProvider)).toSet(),
+        {'s1', 's2', 's3'},
+        reason: 'the pinned agent shows up right away',
+      );
+      expect(
+        _focused(container.read(workspaceControllerProvider)),
+        focusBefore,
+        reason: 'a pinned agent appears without stealing focus',
+      );
+    });
+
+    test(
+      'a pin and a sessions snapshot landing in the SAME frame both '
+      'reconcile, without tripping Riverpod\'s one-rebuild-per-frame rule',
+      () async {
+        final b = _boardWithTabs('b', ['s1']);
+        final container = groupsContainer(
+          GroupsState(groups: [b], activeGroupId: 'b'),
+        );
+        addTearDown(container.dispose);
+        _keepAlive(container);
+
+        _push(container, [_session('s1')]);
+        await Future<void>.delayed(Duration.zero);
+
+        // Two reconcile triggers, one turn: the membership listener and the
+        // sessions listener. Reading a derived provider from both is what threw
+        // `Bad state: Tried to rebuild Provider<Group> multiple times in the same
+        // frame`, which is why the reconciler resolves membership itself.
+        container
+            .read(groupsControllerProvider.notifier)
+            .addMember(
+              'b',
+              's2',
+              location: const SessionLocation(projectId: 'p1'),
+            );
+        _push(container, [_session('s1'), _session('s2'), _session('s3')]);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          _boundIds(container.read(workspaceControllerProvider)).toSet(),
+          {'s1', 's2'},
+          reason: 's3 exists but was never pinned, so it stays off the board',
+        );
+      },
+    );
+
     test(
       'bug 2: close a board with 3 members then reopen — all 3 return '
       'to its canvas even though the stored tree was never populated',
