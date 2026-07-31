@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import 'chat_metrics.dart';
-import 'chat_transcript.dart';
+import 'transcript_expansion.dart';
 import 'tool_renderers.dart';
 
 /// Inline, collapsible tool-call row. Mirrors `ThinkingLine`: collapsed it is a
@@ -12,33 +13,32 @@ import 'tool_renderers.dart';
 /// caret shown on hover); tapping anywhere on the header toggles between the
 /// collapsed one-liner and the expanded [ToolRenderer.body]. Long bodies are
 /// capped at [kToolExpandedMaxHeight] and scroll internally.
-class ToolCallCard extends StatefulWidget {
-  const ToolCallCard({super.key, required this.item});
+class ToolCallCard extends ConsumerStatefulWidget {
+  const ToolCallCard({
+    super.key,
+    required this.item,
+    required this.expansionKey,
+  });
 
   final ToolCallItem item;
 
+  /// This row's identity in [expandedTranscriptRowsProvider].
+  final String expansionKey;
+
   @override
-  State<ToolCallCard> createState() => _ToolCallCardState();
+  ConsumerState<ToolCallCard> createState() => _ToolCallCardState();
 }
 
-class _ToolCallCardState extends State<ToolCallCard>
-    with AutomaticKeepAliveClientMixin {
-  bool _expanded = false;
+class _ToolCallCardState extends ConsumerState<ToolCallCard> {
   bool _hovered = false;
   final ScrollController _bodyScroll = ScrollController();
 
-  // An expansion is user state, so the row must survive being scrolled out of
-  // the lazy list's cache — otherwise it silently re-folds itself.
-  @override
-  bool get wantKeepAlive => _expanded;
-
-  void _toggle() => retainRowPosition(
-    context,
-    () => setState(() {
-      _expanded = !_expanded;
-      updateKeepAlive();
-    }),
-  );
+  // Whether this call is unfolded lives in [expandedTranscriptRowsProvider], not
+  // here: the row is discarded whenever it leaves the lazy list's cache or the
+  // pane is rebuilt, and an unfold must outlive that.
+  void _toggle() => ref
+      .read(expandedTranscriptRowsProvider.notifier)
+      .toggle(widget.expansionKey);
 
   @override
   void dispose() {
@@ -48,9 +48,14 @@ class _ToolCallCardState extends State<ToolCallCard>
 
   @override
   Widget build(BuildContext context) {
-    super.build(context);
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
+    // `select` so folding one row doesn't rebuild every other tool row.
+    final expanded = ref.watch(
+      expandedTranscriptRowsProvider.select(
+        (rows) => rows.contains(widget.expansionKey),
+      ),
+    );
     final renderer = rendererFor(item);
     final (riskColor, riskIcon) = switch (item.risk) {
       ToolRisk.risky => (
@@ -71,19 +76,19 @@ class _ToolCallCardState extends State<ToolCallCard>
     // target); a rotating caret shows the expand/collapse affordance.
     final header = Semantics(
       button: true,
-      expanded: _expanded,
-      onTapHint: _expanded ? 'Collapse tool call' : 'Expand tool call',
+      expanded: expanded,
+      onTapHint: expanded ? 'Collapse tool call' : 'Expand tool call',
       child: InkWell(
         onTap: _toggle,
         onHover: (h) => setState(() => _hovered = h),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: kSpace6),
-          child: _buildRow(riskIcon, riskColor),
+          child: _buildRow(riskIcon, riskColor, expanded: expanded),
         ),
       ),
     );
 
-    if (!_expanded) return header;
+    if (!expanded) return header;
 
     final body =
         renderer?.body(context, item) ?? genericToolBody(context, item);
@@ -112,7 +117,11 @@ class _ToolCallCardState extends State<ToolCallCard>
   /// The one-liner header: tool icon, summary text, status glyph, and a
   /// trailing rotating disclosure caret. The entire header is the tap target
   /// (built by the caller), so no child owns the gesture.
-  Widget _buildRow(IconData riskIcon, Color riskColor) {
+  Widget _buildRow(
+    IconData riskIcon,
+    Color riskColor, {
+    required bool expanded,
+  }) {
     final cs = Theme.of(context).colorScheme;
     final item = widget.item;
 
@@ -141,7 +150,7 @@ class _ToolCallCardState extends State<ToolCallCard>
       opacity: _hovered ? 1 : 0,
       duration: const Duration(milliseconds: 120),
       child: AnimatedRotation(
-        turns: _expanded ? 0.25 : 0,
+        turns: expanded ? 0.25 : 0,
         duration: const Duration(milliseconds: 150),
         child: Icon(
           PhosphorIconsLight.caretRight,
@@ -158,7 +167,7 @@ class _ToolCallCardState extends State<ToolCallCard>
         const SizedBox(width: kSpace8),
         Expanded(
           child: Text(
-            _expanded ? toolLabel(item) : toolSummaryLine(item),
+            expanded ? toolLabel(item) : toolSummaryLine(item),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.mono.copyWith(

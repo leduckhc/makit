@@ -17,6 +17,7 @@ import '../widgets/menu_item.dart';
 import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
+import 'transcript_list.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({super.key, required this.sessionId});
@@ -28,12 +29,10 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
-  final _anchor = TranscriptAnchor();
   // Dedicated controller for free-text answers to an inline ask, kept separate
   // from the normal message draft so the two can never cross-contaminate.
   final _answerController = TextEditingController();
   int _lastSeq = 0;
-  List<ChatItem>? _lastItems;
 
   @override
   void initState() {
@@ -75,12 +74,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       );
     });
 
-    if (!identical(items, _lastItems)) {
-      _lastItems = items;
-      // A real content change (new item or streamed delta): let the transcript
-      // physics absorb the growth so history stays put under the user's eyes.
-      _anchor.arm();
-    }
     if (items.isNotEmpty && items.last.seq != _lastSeq) {
       _lastSeq = items.last.seq;
       // Reversed list: the newest message lives at offset 0. Only pull to it if
@@ -115,18 +108,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             // HitTestBehavior.translucent so taps on empty space register,
             // while child widgets (bubbles, cards) still receive their own taps.
             behavior: HitTestBehavior.translucent,
-            child: ListView.builder(
+            child: TranscriptListView(
               controller: _scroll,
-              // Reversed so the resting position (offset 0) is the newest
-              // message at the bottom: the session opens pinned to the latest
-              // with no measuring pass, and older items build lazily only as
-              // the user scrolls up.
-              reverse: true,
-              // Absorb extent changes (streamed tokens, new items, an expanded
-              // row) into the offset once the user has scrolled into history,
-              // so the row being read never slides. See
-              // [TranscriptScrollPhysics].
-              physics: TranscriptScrollPhysics(anchor: _anchor),
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
@@ -135,6 +118,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 bottom: MediaQuery.of(context).padding.bottom + 200,
               ),
               itemCount: items.length + (hasTrailer ? 1 : 0),
+              // Let the lazy list find each already-built row at its new index
+              // when items stream in, instead of discarding every row (and its
+              // fold state) because the slots shifted.
+              findChildIndexCallback: transcriptChildIndexFinder(
+                items,
+                hasTrailer: hasTrailer,
+              ),
               itemBuilder: (context, i) {
                 // Reversed: i counts up from the visual bottom. The trailing
                 // row (i == 0) is the inline ask card when awaiting (it takes
@@ -152,7 +142,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 final item = items[index];
                 return KeyedSubtree(
                   key: chatItemKey(item),
-                  child: transcriptRow(chatItemWidget(item)),
+                  child: transcriptRow(chatItemWidget(widget.sessionId, item)),
                 );
               },
             ),

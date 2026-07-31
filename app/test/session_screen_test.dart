@@ -11,6 +11,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/session/chat_transcript.dart';
 import 'package:makit/ui/session/session_screen.dart';
+import 'package:makit/ui/session/transcript_list.dart';
 
 class _EmptyStorage implements SecureStore {
   const _EmptyStorage();
@@ -196,8 +197,8 @@ void main() {
     );
     await tester.pump();
     final controller = tester
-        .widget<ListView>(find.byType(ListView))
-        .controller!;
+        .widget<TranscriptListView>(find.byType(TranscriptListView))
+        .controller;
     final container = ProviderScope.containerOf(
       tester.element(find.byType(SessionScreen)),
     );
@@ -303,7 +304,7 @@ void main() {
     );
   });
 
-  testWidgets('an incoming message mid-drag does not jump the offset', (
+  testWidgets('an incoming message mid-drag does not move the content', (
     tester,
   ) async {
     final items = longTranscript();
@@ -311,19 +312,24 @@ void main() {
     controller.jumpTo(300);
     await tester.pump();
 
-    // The user is dragging through history: the gesture owns the offset, and
-    // the lazy list re-estimates the extent of every row it builds on the way,
-    // so nothing may be compensated into the offset until the drag settles.
+    // The user is dragging through history when a message arrives below the
+    // viewport. The row under their finger must not move; the scroll *offset*
+    // may well change, because the transcript is reversed and everything above
+    // the newest message shifts when it grows — absorbing that shift into the
+    // offset is exactly what keeps the content still.
     final drag = await tester.startGesture(
-      tester.getCenter(find.byType(ListView)),
+      tester.getCenter(find.byType(TranscriptListView)),
     );
     await drag.moveBy(const Offset(0, 40));
     await tester.pump();
-    final dragged = controller.position.pixels;
+    final before = probeRow(tester);
 
     push([...items, AgentMessageItem(seq: 999, ts: 0, text: 'incoming')]);
     await tester.pump();
-    expect(controller.position.pixels, moreOrLessEquals(dragged, epsilon: 0.5));
+    expect(
+      tester.getTopLeft(find.text(before.text)).dy,
+      moreOrLessEquals(before.dy, epsilon: 0.5),
+    );
 
     await drag.up();
     await tester.pumpAndSettle();
