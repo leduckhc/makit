@@ -680,14 +680,18 @@ class GithubBudget {
           ? (j['msUntilEmpty'] as num).toInt()
           : null,
       level: parseBudgetLevel(j['level'] is String ? j['level'] as String : ''),
-      throttles: ((j['throttles'] as List?) ?? const [])
-          .whereType<String>()
-          .toList(),
+      // `as List?` would THROW on a present non-null non-list (e.g. a bare
+      // string), taking down the whole frame -- and decode failures are
+      // swallowed, so the footer would silently go stale. Degrade to empty.
+      throttles:
+          (j['throttles'] is List ? j['throttles'] as List : const <Object?>[])
+              .whereType<String>()
+              .toList(),
       retryAfterMs: j['retryAfterMs'] is num
           ? (j['retryAfterMs'] as num).toInt()
           : null,
       measuredAt: j['measuredAt'] is num ? (j['measuredAt'] as num).toInt() : 0,
-      history: ((j['history'] as List?) ?? const [])
+      history: (j['history'] is List ? j['history'] as List : const <Object?>[])
           .whereType<Map<dynamic, dynamic>>()
           .map((m) => BudgetHistorySlot.fromJson(Map<String, dynamic>.from(m)))
           .whereType<BudgetHistorySlot>()

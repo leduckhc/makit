@@ -76,8 +76,9 @@ test("10 idle branches over 10 minutes cost >=80% fewer gh calls", async () => {
     t += POLL_MS;
   }
 
-  // Exclude the single startup rate_limit read — it is quota-exempt anyway.
-  const after = gateway.stats().execs - 1;
+  // `stats.execs` counts quota-spending calls only: the exempt rate_limit read
+  // lands in `exemptExecs`, so no hand-rolled subtraction is needed here.
+  const after = gateway.stats().execs;
   const reduction = (before - after) / before;
 
   assert.ok(

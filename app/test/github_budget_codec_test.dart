@@ -141,4 +141,24 @@ void main() {
     expect(history.first.mine, 2);
     expect(history.last.mine, 5);
   });
+
+  test('a non-list throttles or history value does not drop the frame', () {
+    // `as List?` throws on a present non-null non-list, which would take down the
+    // whole budget frame -- and, since decode failures are swallowed, silently
+    // leave the footer stale. The contract for this file is tolerant decoding, so
+    // a malformed collection must degrade to empty, not to nothing.
+    final decoded = WireCodec.decode(
+      _budgetEnv({
+        'buckets': const <String, dynamic>{},
+        'level': 'warm',
+        'throttles': 'poll 30s',
+        'history': 42,
+      }),
+    );
+    expect(decoded, isA<GithubBudgetFrame>());
+    final b = (decoded! as GithubBudgetFrame).budget;
+    expect(b.throttles, isEmpty);
+    expect(b.history, isEmpty);
+    expect(b.level, BudgetLevel.warm, reason: 'the rest of the frame survives');
+  });
 }

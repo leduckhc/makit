@@ -586,3 +586,112 @@ test("the budget says nothing about REST while graphql is serving", async () => 
     false,
   );
 });
+
+// ── CodeRabbit review findings ─────────────────────────────────────────────────
+
+test("flipping to the REST path broadcasts a budget change", async () => {
+  // #3: budget() composes the "PR status via REST" throttle, but emitIfChanged
+  // compared raw tracker snapshots -- so the composed throttle never entered the
+  // change signature and no event fired when routing flipped. Subscribers kept
+  // the old throttle list until some unrelated level change, meaning the UI
+  // reported the wrong routing state: exactly the information the throttle
+  // exists to convey.
+  const { gateway } = makeGatewayWithCmds(restHandler(5_000, 1_000));
+  const seen: string[][] = [];
+  gateway.onBudgetChange((s) => seen.push(s.throttles));
+  await gateway.refresh();
+  await gateway.prForBranch("/repo", "feature");
+  assert.ok(
+    seen.some((t) => t.some((x) => /PR status via REST/i.test(x))),
+    `expected a broadcast naming the REST route, saw ${JSON.stringify(seen)}`,
+  );
+});
+
+test("a repo with no GitHub remote does not claim REST routing", async () => {
+  // #6: routeFor persisted the choice BEFORE checking whether the REST path was
+  // usable. With no GitHub remote the code proceeds over GraphQL, yet the stored
+  // choice stayed "fallback" -- so budget() advertised a REST route that never
+  // happened, and hysteresis was seeded with a path that cannot be used.
+  const { gateway } = makeGatewayWithCmds((cmd, args) => {
+    if (cmd === "git") return ok("/srv/git/local.git"); // not a GitHub remote
+    if ((args[1] ?? "") === "rate_limit") return ok(rateLimitJson(5_000, 1_000));
+    if (args[0] === "pr") return ok(PR_JSON);
+    return fail("unexpected");
+  });
+  await gateway.refresh();
+  const r = await gateway.prForBranch("/repo", "feature");
+  assert.equal(r.kind, "pr", "the GraphQL primary still serves the lookup");
+  assert.equal(
+    gateway.budget().throttles.some((t) => /REST/i.test(t)),
+    false,
+    "must not advertise a route it could not take",
+  );
+});
+
+test("an unparseable PR url leaves the comment count unmeasured", async () => {
+  // #4: parsePrUrl fails for any non-github.com host (GitHub Enterprise), and
+  // returning 0 reported "no unresolved comments" as fact although no query ever
+  // ran -- the null-versus-zero hazard this file documents.
+  const ENTERPRISE_PR = JSON.stringify([
+    {
+      number: 7,
+      url: "https://github.example.com/o/r/pull/7",
+      state: "OPEN",
+      title: "t",
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      statusCheckRollup: [],
+    },
+  ]);
+  const { gateway } = makeGateway((args) =>
+    kindOf(args) === "rate_limit" ? ok(rateLimitJson(5_000, 5_000)) : ok(ENTERPRISE_PR),
+  );
+  await gateway.refresh();
+  const r = await gateway.prForBranch("/repo", "br");
+  assert.equal(r.kind === "pr" && r.pr.unresolvedUnknown, true);
+});
+
+test("exhausting the review-thread page cap leaves the count unmeasured", async () => {
+  // #5: after REVIEW_THREADS_MAX_PAGES with hasNextPage still true the tally is
+  // partial, yet it was cached and returned as measured -- disagreeing with the
+  // mid-pagination failure path, which correctly reports unmeasured.
+  const NEVER_ENDING = JSON.stringify({
+    data: {
+      repository: {
+        pullRequest: {
+          reviewThreads: {
+            pageInfo: { hasNextPage: true, endCursor: "next" },
+            nodes: [{ isResolved: false }],
+          },
+        },
+      },
+    },
+  });
+  const { gateway } = makeGateway((args) => {
+    if (kindOf(args) === "rate_limit") return ok(rateLimitJson(5_000, 5_000));
+    if (kindOf(args) === "threads") return ok(NEVER_ENDING);
+    return ok(PR_JSON);
+  });
+  await gateway.refresh();
+  const r = await gateway.prForBranch("/repo", "br");
+  assert.equal(r.kind === "pr" && r.pr.unresolvedUnknown, true);
+});
+
+test("the exempt rate_limit read is counted separately from quota spend", async () => {
+  // #2: stats.execs was used for the >=80% reduction claim while also counting
+  // the quota-EXEMPT rate_limit read, which forced call-reduction arithmetic to
+  // subtract it by hand and made a test assert an invariant that was not true.
+  const { gateway, execs } = makeGatewayWithCmds(restHandler(5_000, 1_000));
+  await gateway.refresh();
+  assert.equal(gateway.stats().execs, 0, "an exempt read spends no quota");
+  assert.equal(gateway.stats().exemptExecs, 1);
+
+  await gateway.prForBranch("/repo", "feature");
+  assert.equal(gateway.stats().exemptExecs, 1, "no further exempt reads");
+  // graphql is the worse buy here, so this takes the 4-call REST path.
+  assert.equal(gateway.stats().execs, 4, "the four REST calls, and nothing else");
+  // The local `git remote` read is a subprocess but costs no GitHub quota, so it
+  // must not inflate either counter.
+  assert.equal(execs.filter((e) => e.cmd === "git").length, 1, "git was consulted");
+});

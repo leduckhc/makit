@@ -17,6 +17,7 @@
  *     it declares no {@link RequestPlan} at all.
  */
 
+import type { OpenPr } from "../git.js";
 import type { RequestPlan } from "./router.js";
 
 /** Timeout (ms) for `gh pr` reads, matching git.ts. */
@@ -30,6 +31,21 @@ export const RATE_LIMIT_TIMEOUT_MS = 5_000;
 export const REVIEW_THREADS_PAGE_SIZE = 100;
 /** Safety cap on the review-thread pagination loop (matches git.ts). */
 export const REVIEW_THREADS_MAX_PAGES = 100;
+
+/**
+ * Percent-encode a value interpolated into a REST path or query string.
+ *
+ * Git ref names may contain `#`, `&` and `+`, all of which are meaningful in a
+ * URL: unencoded, a branch called `feature#1` truncates the query at the
+ * fragment and `a&state=closed` injects a second parameter. The lookup then
+ * returns the wrong PR or an empty list, which the gateway maps to `none` --
+ * erasing the pill, i.e. the very defect this spec exists to fix. The GraphQL
+ * primary passes the branch as a discrete argv value and is unaffected, so only
+ * the REST fallback needs this.
+ */
+function enc(value: string | number): string {
+  return encodeURIComponent(String(value));
+}
 
 /**
  * `prForBranch` — the hot path. Primary is GraphQL-backed `gh pr list --head`
@@ -72,7 +88,7 @@ export const OPEN_PRS_PLAN: RequestPlan = {
 export function openPrsRestArgv(owner: string, repo: string, limit: number): string[] {
   return [
     "api",
-    `/repos/${owner}/${repo}/pulls?state=open&per_page=${limit}&sort=created&direction=desc`,
+    `/repos/${enc(owner)}/${enc(repo)}/pulls?state=open&per_page=${enc(limit)}&sort=created&direction=desc`,
   ];
 }
 
@@ -81,13 +97,7 @@ export function openPrsRestArgv(owner: string, repo: string, limit: number): str
  * uses. REST nests the head ref under `head.ref` and names the link `html_url`,
  * where `gh pr list --json` returns `headRefName`/`url`.
  */
-export function restOpenPr(raw: unknown): {
-  number: number;
-  title: string;
-  headRefName: string;
-  isDraft: boolean;
-  url: string;
-} | null {
+export function restOpenPr(raw: unknown): OpenPr | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.number !== "number") return null;
@@ -127,7 +137,10 @@ export function prForBranchArgv(branch: string): string[] {
  * supply the CI rollup — four `core` calls for what GraphQL does in one.
  */
 export function prForBranchRestArgv(owner: string, repo: string, branch: string): string[] {
-  return ["api", `/repos/${owner}/${repo}/pulls?head=${owner}:${branch}&state=open&per_page=1`];
+  return [
+    "api",
+    `/repos/${enc(owner)}/${enc(repo)}/pulls?head=${enc(owner)}:${enc(branch)}&state=open&per_page=1`,
+  ];
 }
 
 /**
@@ -135,17 +148,17 @@ export function prForBranchRestArgv(owner: string, repo: string, branch: string)
  * computes asynchronously and therefore omits from the list response.
  */
 export function prDetailRestArgv(owner: string, repo: string, number: string | number): string[] {
-  return ["api", `/repos/${owner}/${repo}/pulls/${number}`];
+  return ["api", `/repos/${enc(owner)}/${enc(repo)}/pulls/${enc(number)}`];
 }
 
 /** REST Actions check-runs for a head sha. */
 export function checkRunsRestArgv(owner: string, repo: string, ref: string): string[] {
-  return ["api", `/repos/${owner}/${repo}/commits/${ref}/check-runs?per_page=100`];
+  return ["api", `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(ref)}/check-runs?per_page=100`];
 }
 
 /** REST legacy combined status for a head sha (non-Actions CI still uses it). */
 export function combinedStatusRestArgv(owner: string, repo: string, ref: string): string[] {
-  return ["api", `/repos/${owner}/${repo}/commits/${ref}/status`];
+  return ["api", `/repos/${enc(owner)}/${enc(repo)}/commits/${enc(ref)}/status`];
 }
 
 /** Read the origin remote URL. Plain `git` — local, and free of GitHub quota. */

@@ -10,6 +10,9 @@ import {
   unresolvedThreadsArgv,
   openPrsArgv,
   openPrsRestArgv,
+  checkRunsRestArgv,
+  combinedStatusRestArgv,
+  prDetailRestArgv,
   restOpenPr,
   rateLimitArgv,
   parsePrUrl,
@@ -175,4 +178,33 @@ test("restChecksToRollup tolerates missing and malformed payloads", () => {
   assert.deepEqual(restChecksToRollup(null, null), []);
   assert.deepEqual(restChecksToRollup({}, {}), []);
   assert.deepEqual(restChecksToRollup({ check_runs: "nope" }, { statuses: 3 }), []);
+});
+
+// ── REST path interpolation must be URL-safe (CodeRabbit #8) ───────────────────
+
+test("prForBranchRestArgv percent-encodes the branch", () => {
+  // Git permits `#`, `&` and `+` in ref names, all of which are meaningful in a
+  // URL. Unencoded, `feature#1` truncates the query at the fragment and
+  // `a&state=closed` injects a second parameter -- the lookup then returns the
+  // wrong PR or an empty list, which the gateway maps to `none` and which ERASES
+  // THE PILL. That is the exact defect this spec exists to fix, so the fallback
+  // path must not reintroduce it.
+  const argv = prForBranchRestArgv("o", "r", "feature#1");
+  // The colon separating owner from ref is legal unencoded in a query, so only
+  // the parts are escaped -- keeping the common case readable.
+  assert.match(argv[1], /head=o:feature%231/);
+  assert.ok(!argv[1].includes("#"), "a raw # truncates the query string");
+
+  const injected = prForBranchRestArgv("o", "r", "a&state=closed");
+  assert.ok(!injected[1].includes("a&state=closed"), "a raw & injects a parameter");
+  assert.match(injected[1], /state=open/);
+  assert.equal(injected[1].match(/state=/g)?.length, 1, "exactly one state param");
+});
+
+test("the other REST builders encode their ref and slug segments", () => {
+  // A ref can legitimately contain `+`, which decodes to a space if unencoded.
+  assert.match(checkRunsRestArgv("o", "r", "a+b")[1], /a%2Bb/);
+  assert.match(combinedStatusRestArgv("o", "r", "a+b")[1], /a%2Bb/);
+  assert.match(prDetailRestArgv("o/x", "r", 7)[1], /o%2Fx/);
+  assert.match(openPrsRestArgv("o", "r+s", 50)[1], /r%2Bs/);
 });

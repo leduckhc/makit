@@ -73,8 +73,14 @@ export interface TimerHandle {
 
 /** Exec/cache counters — spec §10 success criterion 1 (measure the ≥80% cut). */
 export interface GatewayStats {
-  /** `gh` subprocesses actually spawned. */
+  /**
+   * `gh` calls that SPENT quota. Excludes the exempt `/rate_limit` read (see
+   * {@link exemptExecs}) and the local `git remote` lookup, so this is the number
+   * the >=80% call-reduction claim is measured against without arithmetic.
+   */
   execs: number;
+  /** Quota-exempt `gh api rate_limit` reads. Free, but still subprocesses. */
+  exemptExecs: number;
   /** Reads served from cache without an exec. */
   cacheHits: number;
 }
@@ -189,7 +195,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
   /** owner/repo per repo path. A remote effectively never changes; cache forever. */
   const slugCache = new Map<string, { owner: string; repo: string } | null>();
   const listeners = new Set<(s: BudgetSnapshot) => void>();
-  const stats: GatewayStats = { execs: 0, cacheHits: 0 };
+  const stats: GatewayStats = { execs: 0, exemptExecs: 0, cacheHits: 0 };
 
   let paused = false;
   let closed = false;
@@ -199,12 +205,31 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
 
   const gate = new ConcurrencyGate(() => decide(tracker.snapshot(), { paused }).concurrency);
 
+  /**
+   * The tracker snapshot plus throttles only the gateway knows about — currently
+   * the active routing path, which lives in the router's memory, not the
+   * tracker's.
+   *
+   * Both {@link GithubGateway.budget} and {@link emitIfChanged} must go through
+   * here: composing only in the getter meant the routing throttle never entered
+   * the change signature, so flipping to REST fired no event and subscribers kept
+   * a stale throttle list until an unrelated level change.
+   */
+  function composedSnapshot(): BudgetSnapshot {
+    const snapshot = tracker.snapshot();
+    if (previousChoice.get("prForBranch")?.path !== "fallback") return snapshot;
+    return {
+      ...snapshot,
+      throttles: [...snapshot.throttles, "PR status via REST (graphql low)"],
+    };
+  }
+
   function signatureOf(s: BudgetSnapshot): string {
     return JSON.stringify({ level: s.level, throttles: s.throttles });
   }
 
   function emitIfChanged(): void {
-    const snap = tracker.snapshot();
+    const snap = composedSnapshot();
     const sig = signatureOf(snap);
     if (sig === lastSignature) return;
     lastSignature = sig;
@@ -234,11 +259,28 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     return promise;
   }
 
-  /** Route + persist `previous` per plan-key so hysteresis holds across ticks. */
+  /**
+   * Ask the router which path to take. Does NOT persist the answer: a fallback
+   * can still be abandoned (a repo with no GitHub remote has no REST path), and
+   * recording a route we did not take made `budget()` advertise REST routing that
+   * never happened and seeded hysteresis with an unusable path. Callers commit
+   * via {@link commitRoute} once the path is settled.
+   */
   function routeFor(planKey: string, plan: RequestPlan): RouteChoice {
-    const choice = route(plan, tracker.snapshot(), previousChoice.get(planKey), now());
+    return route(plan, tracker.snapshot(), previousChoice.get(planKey), now());
+  }
+
+  /**
+   * Record the path actually taken, so hysteresis holds across ticks.
+   *
+   * A change here alters the composed snapshot (the routing throttle), so it must
+   * emit: otherwise flipping to REST changes what `budget()` reports while no
+   * subscriber is ever told, and the footer keeps showing the old routing state.
+   */
+  function commitRoute(planKey: string, choice: RouteChoice): void {
+    const previous = previousChoice.get(planKey);
     previousChoice.set(planKey, choice);
-    return choice;
+    if (previous?.path !== choice.path) emitIfChanged();
   }
 
   /**
@@ -284,7 +326,10 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     interactive: boolean,
   ): Promise<number | "throttled" | "omit"> {
     const parsed = parsePrUrl(prUrl);
-    if (!parsed) return 0;
+    // Fails for any non-github.com host (GitHub Enterprise). We never queried,
+    // so the count is unmeasured -- returning 0 would report "no unresolved
+    // comments" as fact (the null-versus-zero hazard, §6.5).
+    if (!parsed) return "omit";
     const key = `threads:${repoPath}:${prUrl}`;
     if (!interactive) {
       const hit = cacheGet<number>(key);
@@ -298,11 +343,13 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       const policy = decide(budget, { paused });
       if (!allow(budget, policy, interactive)) return "throttled";
       const choice = routeFor("unresolvedThreads", UNRESOLVED_THREADS_PLAN);
+      commitRoute("unresolvedThreads", choice);
       if (choice.path === "omit") return "omit"; // graphql dry: shed the field (§6.2)
 
       let count = 0;
       let after: string | null = null;
       let recorded = false;
+      let complete = false;
       for (let page = 0; page < REVIEW_THREADS_MAX_PAGES; page++) {
         // One unit for the whole operation (spec's coarse point cost), recorded
         // before the first page so accounting leads the exec.
@@ -339,15 +386,26 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
           const threads = data.data?.repository?.pullRequest?.reviewThreads;
           const nodes = threads?.nodes ?? [];
           count += nodes.filter((n) => n && n.isResolved === false).length;
-          if (!threads?.pageInfo?.hasNextPage) break;
+          if (!threads?.pageInfo?.hasNextPage) {
+            complete = true;
+            break;
+          }
           after = threads.pageInfo.endCursor ?? null;
-          if (!after) break;
+          if (!after) {
+            complete = true;
+            break;
+          }
         } catch {
           // An unparseable page means the tally is incomplete — unmeasured, not
           // "however many we happened to count" (§6.5).
           return "throttled";
         }
       }
+      // Falling out of the loop with pages still pending leaves a PARTIAL tally.
+      // The mid-pagination failure path above already refuses to report that as
+      // fact; this exit must agree, or a PR with >100 pages of threads would show
+      // a confident wrong number.
+      if (!complete) return "throttled";
       cacheSet(key, count, TTL_UNRESOLVED_MS);
       return count;
     });
@@ -483,8 +541,14 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // GitHub remote there is no REST path, so try the primary anyway rather
       // than report a failure we never attempted.
       const slug = await resolveSlug(repoPath);
-      if (slug) return fetchPrViaRest(repoPath, branch, slug);
+      if (slug) {
+        commitRoute("prForBranch", choice);
+        return fetchPrViaRest(repoPath, branch, slug);
+      }
     }
+    // Either the router chose GraphQL, or the REST path was unavailable and we
+    // fell back to it — record what we are actually about to do.
+    commitRoute("prForBranch", { bucket: PR_FOR_BRANCH_PLAN.primary.bucket, path: "primary" });
     const r = await costedExec(
       PR_FOR_BRANCH_PLAN.primary.bucket,
       PR_FOR_BRANCH_PLAN.primary.units,
@@ -544,7 +608,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     await gate.acquire();
     let r: ExecResult;
     try {
-      stats.execs += 1;
+      stats.exemptExecs += 1;
       r = await deps.exec("gh", rateLimitArgv(), undefined, RATE_LIMIT_TIMEOUT_MS);
     } finally {
       gate.release();
@@ -618,6 +682,10 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
         const slug =
           choice.path === "fallback" ? await resolveSlug(repoPath) : null;
         const useRest = slug !== null;
+        commitRoute("openPrs", {
+          bucket: useRest ? "core" : OPEN_PRS_PLAN.primary.bucket,
+          path: useRest ? "fallback" : "primary",
+        });
         const r = await costedExec(
           useRest ? "core" : OPEN_PRS_PLAN.primary.bucket,
           useRest
@@ -649,18 +717,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     },
 
     budget() {
-      const snapshot = tracker.snapshot();
-      // Surface the routing decision, otherwise the balancing is invisible: the
-      // user watches graphql drain and stop, with nothing to say PR status is
-      // still flowing over REST. Derived from the router's last choice rather
-      // than stored on the tracker, which knows nothing about paths.
-      if (previousChoice.get("prForBranch")?.path === "fallback") {
-        return {
-          ...snapshot,
-          throttles: [...snapshot.throttles, "PR status via REST (graphql low)"],
-        };
-      }
-      return snapshot;
+      return composedSnapshot();
     },
 
     history() {
