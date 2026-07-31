@@ -22,7 +22,8 @@ import { buildAdapter, piAcpSpec } from "./agent_factory.js";
 import { listAcpSessions } from "./adapters/acp.js";
 import { listCodexThreads } from "./adapters/codex.js";
 import type { AgentSessionInfo } from "./adapters/adapter.js";
-import { listRepos, enrichPrs } from "./repo_service.js";
+import { listRepos, enrichPrs, type LastKnownPr } from "./repo_service.js";
+import { createGithubGateway, type GithubGateway } from "./github/gateway.js";
 import type { PersistedProject } from "./project-store.js";
 import {
   isGitRepo,
@@ -38,6 +39,7 @@ import {
   slugify,
   slugifyBranch,
   worktreeBaseDir,
+  run,
   type OpenPr,
 } from "./git.js";
 import type { EventStore } from "./storage/event_store.js";
@@ -99,6 +101,13 @@ export interface ManagerOpts {
    * default (real-probe) cache is created lazily when omitted.
    */
   capabilityCache?: CapabilityCache;
+  /**
+   * The single GitHub gateway (SPEC-32): every `gh` read for PR data routes
+   * through it so cost, cache, dedupe, and quota accounting live in one place.
+   * Injected so tests can substitute a fake (no subprocesses); omitted in
+   * production, where a real gateway over git.ts's `run` is created lazily.
+   */
+  gateway?: GithubGateway;
 }
 
 export interface BridgeBinding {
@@ -137,6 +146,7 @@ export class SessionManager extends EventEmitter {
   private readonly store?: EventStore;
   private capabilityCache?: CapabilityCache;
   private bridge?: BridgeBinding;
+  private readonly _gateway: GithubGateway;
 
   constructor(opts: ManagerOpts) {
     super();
@@ -146,6 +156,10 @@ export class SessionManager extends EventEmitter {
     this.defaultAgentId = "pi";
     this.store = opts.store;
     this.capabilityCache = opts.capabilityCache;
+    // The single GitHub gateway (SPEC-32). A real one over git.ts's `run` unless
+    // a fake is injected; `run` resolves `gh` via PATH, so the test PATH-shim
+    // keeps working. Constructed here does NOT self-refresh (no subprocess).
+    this._gateway = opts.gateway ?? createGithubGateway({ exec: run });
     for (const entry of opts.projects) {
       // A bare path gets a fresh server-generated id; a restored `{ id, path }`
       // keeps its id so a client's persisted projectId stays valid across a
@@ -511,11 +525,17 @@ export class SessionManager extends EventEmitter {
     });
   }
 
-  /** Open PRs for a project, for the "New worktree from PR" picker. */
+  /**
+   * Open PRs for a project, for the "New worktree from PR" picker.
+   *
+   * Marked `interactive`: this is a click, so it draws on the quota reserve
+   * (SPEC-32 §6.3). A throttled account is precisely when the user reaches for
+   * the picker, and a silently empty list would read as "no open PRs".
+   */
   async listOpenPrs(projectId: string): Promise<OpenPr[]> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
-    return listOpenPrs(project.dto.path);
+    return listOpenPrs(this._gateway, project.dto.path, undefined, { interactive: true });
   }
 
   /**
@@ -530,7 +550,7 @@ export class SessionManager extends EventEmitter {
     if (!project) throw new Error(`unknown project: ${projectId}`);
     const repoPath = project.dto.path;
     if (!(await isGitRepo(repoPath))) throw new Error(`not a git repo: ${repoPath}`);
-    const prs = await listOpenPrs(repoPath);
+    const prs = await listOpenPrs(this._gateway, repoPath);
     const pr = prs.find((p) => p.number === prNumber);
     if (!pr) throw new Error(`PR #${prNumber} is not an open PR of this repo`);
     return addWorktreeForPr({ repoPath, prNumber, headRefName: pr.headRefName });
@@ -556,7 +576,7 @@ export class SessionManager extends EventEmitter {
     if (wt.isPrimary) {
       throw new Error(`cannot rename the primary worktree's branch: ${oldName}`);
     }
-    if (await findOpenPr(repoPath, oldName)) {
+    if (await findOpenPr(this._gateway, repoPath, oldName)) {
       throw new Error(`cannot rename ${oldName}: it has an open pull request`);
     }
     await renameBranch(worktreePath, oldName, newName);
@@ -757,9 +777,12 @@ export class SessionManager extends EventEmitter {
    * {@link enrichPrs} on the result to add PR info without redoing the git
    * work — so the numbers never wait on the network.
    */
-  async listRepos(opts: { includePrs?: boolean } = {}): Promise<RepoDTO[]> {
+  async listRepos(
+    opts: { includePrs?: boolean } = {},
+    lastKnown: LastKnownPr = () => null,
+  ): Promise<RepoDTO[]> {
     const includePrs = opts.includePrs ?? true;
-    return listRepos(this.listProjects(), this.allSessions(), includePrs);
+    return listRepos(this.listProjects(), this.allSessions(), includePrs, this._gateway, lastKnown);
   }
 
   /**
@@ -769,9 +792,18 @@ export class SessionManager extends EventEmitter {
    * `gh` lookups are flattened across all repos and run through a single
    * bounded pool, so a many-worktree install can't launch hundreds of
    * concurrent `gh` processes / network calls.
+   *
+   * `lastKnown` lets a throttled/failed lookup retain the previously-broadcast
+   * PR (marked `stale`) instead of erasing the pill (SPEC-32 §6.5); the caller
+   * (server.ts) owns the last-broadcast snapshot. Defaults to "nothing known".
    */
-  async enrichPrs(repos: RepoDTO[]): Promise<RepoDTO[]> {
-    return enrichPrs(repos);
+  async enrichPrs(repos: RepoDTO[], lastKnown: LastKnownPr = () => null): Promise<RepoDTO[]> {
+    return enrichPrs(repos, this._gateway, lastKnown);
+  }
+
+  /** The single GitHub gateway (SPEC-32), for the server's budget wiring. */
+  get gateway(): GithubGateway {
+    return this._gateway;
   }
 
   /** List a project's prior on-disk pi sessions (newest first). */

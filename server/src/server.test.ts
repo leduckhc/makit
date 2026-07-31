@@ -109,3 +109,127 @@ test("streaming deltas do not re-broadcast the sessions snapshot; a status chang
     rmSync(project, { recursive: true, force: true });
   }
 });
+
+// ── SPEC-32 T6: github.budget broadcast + commands ────────────────────────────
+
+import { createGithubGateway, type ExecResult } from "./github/gateway.js";
+
+/** A fake `gh` exec: healthy rate_limit, empty for everything else. */
+function healthyExec(): (cmd: string, args: string[]) => Promise<ExecResult> {
+  return async (_cmd, args) => {
+    if (args[0] === "api" && args[1] === "rate_limit") {
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          resources: {
+            core: { limit: 5000, remaining: 5000, reset: 9_999_999_999 },
+            graphql: { limit: 5000, remaining: 5000, reset: 9_999_999_999 },
+          },
+        }),
+        stderr: "",
+      };
+    }
+    return { code: 0, stdout: "[]", stderr: "" };
+  };
+}
+
+/** Boot a server whose manager uses an injected fake gateway (no subprocess). */
+async function withBudgetServer(
+  run: (ctx: {
+    ws: WebSocket;
+    send: (frame: Record<string, unknown>) => void;
+    nextEvent: (pred: (env: Envelope) => boolean) => Promise<Envelope>;
+  }) => Promise<void>,
+): Promise<void> {
+  const home = mkdtempSync(join(tmpdir(), "makit-home-"));
+  const project = mkdtempSync(join(tmpdir(), "makit-srv-proj-"));
+  const prevHome = process.env.MAKIT_HOME;
+  process.env.MAKIT_HOME = home;
+  const cert = await loadOrCreateCert();
+  const registry = new DeviceRegistry();
+  const gateway = createGithubGateway({
+    exec: healthyExec(),
+    setTimer: () => ({ unref() {} }), // periodic refresh never fires in tests
+    clearTimer: () => {},
+  });
+  const manager = new SessionManager({ projects: [project], adapterFactory: () => fakeAdapter(), gateway });
+  const server = startWsServer({ host: "127.0.0.1", port: 0, manager, cert, registry, trustLocalhost: true });
+  await new Promise<void>((r) => server.https.on("listening", () => r()));
+  const port = (server.https.address() as AddressInfo).port;
+  const ws = new WebSocket(`wss://127.0.0.1:${port}`, { rejectUnauthorized: false });
+
+  const pending: Array<{ pred: (e: Envelope) => boolean; resolve: (e: Envelope) => void }> = [];
+  const buffered: Envelope[] = [];
+  ws.on("message", (raw) => {
+    const env = JSON.parse(raw.toString()) as Envelope;
+    const i = pending.findIndex((p) => p.pred(env));
+    if (i >= 0) pending.splice(i, 1)[0].resolve(env);
+    else buffered.push(env);
+  });
+  const nextEvent = (pred: (env: Envelope) => boolean): Promise<Envelope> => {
+    const hit = buffered.findIndex(pred);
+    if (hit >= 0) return Promise.resolve(buffered.splice(hit, 1)[0]);
+    return new Promise<Envelope>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timed out waiting for event")), 5000);
+      pending.push({ pred, resolve: (e) => (clearTimeout(t), resolve(e)) });
+    });
+  };
+  const send = (frame: Record<string, unknown>) => ws.send(JSON.stringify({ v: PROTOCOL_VERSION, ...frame }));
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", () => resolve());
+      ws.on("error", reject);
+    });
+    await run({ ws, send, nextEvent });
+  } finally {
+    ws.close();
+    await new Promise<void>((r) => server.wss.close(() => r()));
+    await new Promise<void>((r) => server.https.close(() => r()));
+    if (prevHome === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
+test("a connecting client receives a github.budget event (SPEC-32)", async () => {
+  await withBudgetServer(async ({ nextEvent }) => {
+    const env = await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    const budget = (env as { budget?: Record<string, unknown> }).budget!;
+    assert.ok(budget, "the event carries a budget payload");
+    assert.ok("buckets" in budget && "level" in budget, "budget has the frozen wire shape");
+    assert.ok(Array.isArray(budget.history) && (budget.history as unknown[]).length === 60, "60 history slots");
+    assert.ok(budget.stats && typeof (budget.stats as { execs?: unknown }).execs === "number", "stats present");
+  });
+});
+
+test("github.refresh acks and re-broadcasts the budget (SPEC-32)", async () => {
+  await withBudgetServer(async ({ send, nextEvent }) => {
+    // Flush the connect-time budget event first.
+    await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    send({ t: "cmd", id: "r1", kind: "github.refresh" });
+    const ack = await nextEvent((e) => e.t === "ack" && e.id === "r1");
+    assert.ok(ack, "github.refresh acks");
+    const budget = await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    assert.ok(budget, "github.refresh re-broadcasts the budget");
+  });
+});
+
+test("github.pause {paused:true} flips the level to paused (SPEC-32)", async () => {
+  await withBudgetServer(async ({ send, nextEvent }) => {
+    // Ensure the budget is measured (so 'paused' is reachable), then pause.
+    await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    send({ t: "cmd", id: "rf", kind: "github.refresh" });
+    await nextEvent((e) => e.t === "ack" && e.id === "rf");
+    send({ t: "cmd", id: "p1", kind: "github.pause", paused: true });
+    await nextEvent((e) => e.t === "ack" && e.id === "p1");
+    const paused = await nextEvent(
+      (e) =>
+        e.t === "event" &&
+        e.kind === "github.budget" &&
+        (e as { budget?: { level?: string } }).budget?.level === "paused",
+    );
+    assert.ok(paused, "pausing flips the budget level to paused");
+  });
+});

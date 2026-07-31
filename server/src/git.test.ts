@@ -19,7 +19,6 @@ import {
   normalizeChecks,
   rollupChecks,
   uncommittedFileCount,
-  unresolvedReviewThreadCount,
   commitsAhead,
   commitsBehind,
 } from "./git.js";
@@ -219,12 +218,6 @@ test("uncommittedFileCount counts staged, unstaged, and untracked files", async 
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
-});
-
-test("unresolvedReviewThreadCount returns 0 for a non-parseable PR URL", async () => {
-  // A non-GitHub URL short-circuits before any `gh` call.
-  assert.equal(await unresolvedReviewThreadCount(process.cwd(), "https://example.com/x"), 0);
-  assert.equal(await unresolvedReviewThreadCount(process.cwd(), ""), 0);
 });
 
 test("commitsAhead counts commits ahead of the base branch when no upstream", async () => {

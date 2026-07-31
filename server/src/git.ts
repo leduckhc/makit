@@ -17,6 +17,9 @@ import { basename, join, resolve } from "node:path";
 import { log } from "./log.js";
 import { mapLimit } from "./concurrency.js";
 import type { PrCheckBucket, PrCheckDTO, PrCheckRollup } from "./protocol.js";
+// Type-only: the gateway imports value symbols (normalizeChecks, rollupChecks)
+// from this file, so importing it as a value here would create a runtime cycle.
+import type { GithubGateway, PrLookup } from "./github/gateway.js";
 
 /**
  * Cap on concurrent per-worktree git reads within a single repo (e.g. the
@@ -41,7 +44,7 @@ interface RunResult {
  * rejects (a spawn failure resolves with code 127 and the error on stderr) so
  * callers can branch on `code` without try/catch noise.
  */
-function run(cmd: string, args: string[], cwd?: string, timeoutMs?: number): Promise<RunResult> {
+export function run(cmd: string, args: string[], cwd?: string, timeoutMs?: number): Promise<RunResult> {
   return new Promise((resolvePromise) => {
     execFile(
       cmd,
@@ -246,6 +249,12 @@ export interface PullRequestInfo {
   checkRollup: PrCheckRollup;
   /** Count of unresolved review threads on the PR (via GraphQL). */
   unresolvedComments: number;
+  /**
+   * True when {@link unresolvedComments} was NOT actually fetched (the field was
+   * shed to save quota, or REST — which cannot express it — supplied the PR).
+   * The count is then a placeholder 0, not a measured fact (SPEC-32 §6.5).
+   */
+  unresolvedUnknown?: boolean;
 }
 
 /** Raw `statusCheckRollup` entry as emitted by `gh` (either shape). */
@@ -338,122 +347,30 @@ export function rollupChecks(checks: PrCheckDTO[]): PrCheckRollup {
 }
 
 /**
- * The open PR whose head is `branch`, via `gh`, distinguishing "no open PR"
- * from a *failed* lookup:
- *   - returns a {@link PullRequestInfo} when one exists,
- *   - returns `null` when the lookup succeeded but there is genuinely no open
- *     PR (e.g. it was merged/closed and left the open set),
- *   - **throws** when the lookup itself failed (`gh` missing/unauthenticated,
- *     no GitHub remote, network/parse error).
- *
- * The PR watcher relies on this three-way distinction: a returned `null` means
- * a tracked PR vanished (broadcast the drop), whereas a throw is a transient
- * failure (retain the last-known status). {@link findOpenPr} is the lenient
- * wrapper for callers that only care whether a PR exists.
- *
- * One `gh pr list` call fetches identity + mergeability + the CI check rollup
- * together (verified: `--head` list output includes `statusCheckRollup`), so a
- * poll costs a single subprocess per open PR.
+ * The open PR whose head is `branch`, via the {@link GithubGateway}. The gateway
+ * owns cache, dedupe, concurrency, spend accounting, and 403 classification;
+ * this is a thin passthrough that keeps `git.ts` the public API surface (spec
+ * §5). It returns the three-way {@link PrLookup} so callers can tell a genuine
+ * "no open PR" (`none`) apart from a throttled/failed lookup (`unknown`) — the
+ * distinction the missing-pill bug turned on (§6.5). Never rejects.
  */
-export async function fetchOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
-  const r = await run(
-    "gh",
-    [
-      "pr",
-      "list",
-      "--head",
-      branch,
-      "--state",
-      "open",
-      "--json",
-      "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
-      "--limit",
-      "1",
-    ],
-    repoPath,
-    5000,
-  );
-  if (r.code !== 0) throw new Error(`gh pr list --head ${branch} failed (exit ${r.code})`);
-  const parsed = JSON.parse(r.stdout.trim() || "[]") as Array<Record<string, unknown>>;
-  if (!Array.isArray(parsed) || parsed.length === 0) return null;
-  const p = parsed[0];
-  const checks = normalizeChecks(p.statusCheckRollup);
-  const url = typeof p.url === "string" ? p.url : "";
-  return {
-    number: typeof p.number === "number" ? p.number : 0,
-    url,
-    state: typeof p.state === "string" ? p.state : "OPEN",
-    title: typeof p.title === "string" ? p.title : "",
-    isDraft: p.isDraft === true,
-    mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
-    mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
-    checks,
-    checkRollup: rollupChecks(checks),
-    unresolvedComments: url ? await unresolvedReviewThreadCount(repoPath, url) : 0,
-  };
+export function fetchOpenPr(gateway: GithubGateway, repoPath: string, branch: string): Promise<PrLookup> {
+  return gateway.prForBranch(repoPath, branch);
 }
 
 /**
- * Lenient {@link fetchOpenPr}: returns null for *both* "no open PR" and a failed
- * lookup. PR info is a nice-to-have for these callers (snapshot enrichment,
- * rename guard), never a hard dependency, and folding the error case into null
- * keeps a single flaky `gh` call from aborting a whole batch.
+ * Lenient {@link fetchOpenPr}: collapses `none` *and* `unknown` into `null`. PR
+ * info is a nice-to-have for these callers (rename guard), never a hard
+ * dependency. **Must not** be used on any path that can clear a pill — it
+ * cannot distinguish a vanished PR from a throttled lookup.
  */
-export async function findOpenPr(repoPath: string, branch: string): Promise<PullRequestInfo | null> {
-  try {
-    return await fetchOpenPr(repoPath, branch);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Number of *unresolved* review threads on a PR, via `gh api graphql`. GitHub's
- * `gh pr` JSON exposes no resolved-thread field, so GraphQL is the only way to
- * surface "N unresolved comments". Owner/repo/number are parsed from the PR
- * URL to avoid an extra `gh` call. Best-effort — 0 when `gh` is missing /
- * unauthenticated, the URL is unparseable, or the query fails.
- */
-export async function unresolvedReviewThreadCount(repoPath: string, prUrl: string): Promise<number> {
-  const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(prUrl);
-  if (!m) return 0;
-  const [, owner, repo, number] = m;
-  const query =
-    "query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{isResolved}}}}}";
-
-  let count = 0;
-  let after: string | null = null;
-  // Page through the thread connection (100/page) so a PR with >100 review
-  // threads isn't undercounted. Cap the loop as a safety net.
-  for (let page = 0; page < 100; page++) {
-    const args = ["api", "graphql", "-f", `query=${query}`, "-F", `owner=${owner}`, "-F", `repo=${repo}`, "-F", `number=${number}`];
-    if (after) args.push("-f", `after=${after}`);
-    const r = await run("gh", args, repoPath, 5000);
-    if (r.code !== 0) return count;
-    try {
-      const data = JSON.parse(r.stdout) as {
-        data?: {
-          repository?: {
-            pullRequest?: {
-              reviewThreads?: {
-                pageInfo?: { hasNextPage?: boolean; endCursor?: string | null };
-                nodes?: Array<{ isResolved?: boolean }>;
-              };
-            };
-          };
-        };
-      };
-      const threads = data.data?.repository?.pullRequest?.reviewThreads;
-      const nodes = threads?.nodes ?? [];
-      count += nodes.filter((n) => n && n.isResolved === false).length;
-      if (!threads?.pageInfo?.hasNextPage) break;
-      after = threads.pageInfo.endCursor ?? null;
-      if (!after) break;
-    } catch {
-      return count;
-    }
-  }
-  return count;
+export async function findOpenPr(
+  gateway: GithubGateway,
+  repoPath: string,
+  branch: string,
+): Promise<PullRequestInfo | null> {
+  const result = await gateway.prForBranch(repoPath, branch);
+  return result.kind === "pr" ? result.pr : null;
 }
 
 /**
@@ -509,24 +426,17 @@ export interface OpenPr {
 }
 
 /**
- * All open PRs for the repo, newest first, via `gh`. Returns [] when `gh` is
- * missing/unauthenticated or the repo has no GitHub remote — the picker just
- * shows an empty list rather than erroring.
+ * All open PRs for the repo, newest first, via the {@link GithubGateway}.
+ * Returns [] when `gh` is missing/unauthenticated or the repo has no GitHub
+ * remote — the picker just shows an empty list rather than erroring.
  */
-export async function listOpenPrs(repoPath: string, limit = 50): Promise<OpenPr[]> {
-  const r = await run(
-    "gh",
-    ["pr", "list", "--state", "open", "--json", "number,title,headRefName,isDraft,url", "--limit", String(limit)],
-    repoPath,
-    8000,
-  );
-  if (r.code !== 0) return [];
-  try {
-    const parsed = JSON.parse(r.stdout.trim() || "[]") as OpenPr[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+export function listOpenPrs(
+  gateway: GithubGateway,
+  repoPath: string,
+  limit = 50,
+  opts?: { interactive?: boolean },
+): Promise<OpenPr[]> {
+  return gateway.openPrs(repoPath, limit, opts);
 }
 
 /**

@@ -7,13 +7,18 @@
 
 import type { Envelope } from "../../protocol.js";
 import type { SessionManager } from "../../manager.js";
+import type { GithubGateway } from "../../github/gateway.js";
 
 export interface CommandDeps {
   readonly manager: SessionManager;
+  /** The single GitHub gateway (SPEC-32): budget, refresh, pause. */
+  readonly gateway: GithubGateway;
   /** Re-send the projects + sessions snapshots to every authed client. */
   broadcastSnapshots(): void;
   /** Recompute + broadcast the repo-centric snapshot (git-only then PR-enriched). */
   broadcastReposSnapshot(): Promise<void>;
+  /** Broadcast the current GitHub budget to every authed client (SPEC-32). */
+  broadcastBudget(): void;
   /** Reverse-RPC: present a request on the device and resolve with its reply. */
   askDevice(
     body: Record<string, unknown>,

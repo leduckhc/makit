@@ -12,6 +12,18 @@ import '../settings/prefs/preference_entries.dart';
 import '../settings/prefs/preferences_providers.dart';
 import 'pr_actions.dart';
 
+/// Tooltip on a stale pill (SPEC-32 §7.5). Names *why* the data is dimmed — a
+/// refresh that could not complete against GitHub's quota — so the user can tell
+/// last-known data from current data instead of guessing at the dimming.
+const kStalePrTooltip =
+    'Last known state — could not refresh (GitHub quota). '
+    'Retrying automatically.';
+
+/// Opacity a stale pill is drawn at. Follows the app's existing de-emphasis
+/// convention for "recede as muted context" (inactive split-view tabs, see
+/// `split_view.dart`) so a stale pill reads the same as other muted UI.
+const double _kStalePillOpacity = 0.55;
+
 /// The row that sits directly above the docked composer (SPEC-23, desktop):
 /// a permanent PR **status pill** (opens the PR on the web; hover shows the CI
 /// check list) on the left, and a **PR actions** split button (canned prompts)
@@ -137,7 +149,9 @@ _Situation? _situationFor({
       action: PrPromptAction.fixPr,
     );
   }
-  if (openPr != null && openPr.unresolvedComments > 0) {
+  if (openPr != null &&
+      !openPr.unresolvedUnknown &&
+      openPr.unresolvedComments > 0) {
     return _Situation(
       icon: const IconGlyph.font(Codicons.commentDiscussion),
       label: _plural(openPr.unresolvedComments, 'unresolved comment'),
@@ -359,6 +373,17 @@ class _PrStatusPillState extends State<PrStatusPill> {
       ),
     );
 
+    // A stale pill (SPEC-32 §7.5) is dimmed and tooltip-labelled but otherwise
+    // identical — same number, state and layout — so a throttled lookup degrades
+    // visibly instead of erasing the pill. Applied to whichever widget we
+    // return below so both the open (hoverable) and merged/closed pills dim.
+    Widget dim(Widget w) => pr.stale
+        ? Tooltip(
+            message: kStalePrTooltip,
+            child: Opacity(opacity: _kStalePillOpacity, child: w),
+          )
+        : w;
+
     // Hover popover: the per-check status list (SPEC-23 bullet 3), rendered as a
     // light design-system surface anchored just above the pill. Display-only,
     // so it ignores pointer events and never blocks the pill's tap/hover.
@@ -366,36 +391,38 @@ class _PrStatusPillState extends State<PrStatusPill> {
     // Open PRs only: a merged/closed PR's checks are history, and the popover's
     // empty-state header calls the PR open outright. The pill stays hoverable
     // and clickable, it just has nothing to reveal.
-    if (!isOpen) return pill;
+    if (!isOpen) return dim(pill);
 
     // OverlayPortal hands its overlay child *tight* (full-screen) constraints,
     // so we anchor with an explicit `Positioned` (left + bottom) computed from
     // the pill's render box: that both places the card above the pill and lets
     // it shrink-wrap to its content instead of filling the window.
-    return MouseRegion(
-      onEnter: (_) => _popover.show(),
-      onExit: (_) => _popover.hide(),
-      child: OverlayPortal(
-        controller: _popover,
-        overlayChildBuilder: (context) {
-          final pillBox = _pillKey.currentContext?.findRenderObject();
-          final overlayBox = Overlay.of(context).context.findRenderObject();
-          if (pillBox is! RenderBox ||
-              overlayBox is! RenderBox ||
-              !pillBox.hasSize) {
-            return const SizedBox.shrink();
-          }
-          final topLeft = pillBox.localToGlobal(
-            Offset.zero,
-            ancestor: overlayBox,
-          );
-          return Positioned(
-            left: topLeft.dx,
-            bottom: overlayBox.size.height - topLeft.dy + 6,
-            child: IgnorePointer(child: _ChecksPopover(pr: pr)),
-          );
-        },
-        child: KeyedSubtree(key: _pillKey, child: pill),
+    return dim(
+      MouseRegion(
+        onEnter: (_) => _popover.show(),
+        onExit: (_) => _popover.hide(),
+        child: OverlayPortal(
+          controller: _popover,
+          overlayChildBuilder: (context) {
+            final pillBox = _pillKey.currentContext?.findRenderObject();
+            final overlayBox = Overlay.of(context).context.findRenderObject();
+            if (pillBox is! RenderBox ||
+                overlayBox is! RenderBox ||
+                !pillBox.hasSize) {
+              return const SizedBox.shrink();
+            }
+            final topLeft = pillBox.localToGlobal(
+              Offset.zero,
+              ancestor: overlayBox,
+            );
+            return Positioned(
+              left: topLeft.dx,
+              bottom: overlayBox.size.height - topLeft.dy + 6,
+              child: IgnorePointer(child: _ChecksPopover(pr: pr)),
+            );
+          },
+          child: KeyedSubtree(key: _pillKey, child: pill),
+        ),
       ),
     );
   }

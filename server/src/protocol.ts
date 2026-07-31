@@ -58,7 +58,44 @@ export type EventKind =
   // session_screen.dart / desktop_chat_pane.dart). Deleting it would strand a
   // live consumer; wiring the producer belongs in the `session.action`/`cancel`
   // handlers (server.ts) / session.ts, which are out of this spec's scope.
-  | "session.action_error";
+  | "session.action_error"
+  /** GitHub API budget snapshot (SPEC-32 §6.6) — a top-level broadcast event. */
+  | "github.budget";
+
+/**
+ * GitHub API budget broadcast (SPEC-32 §6.6). Sent as a top-level
+ * `event {kind:"github.budget", budget}` frame (not a session event) on a
+ * budget level/throttle change and in the connect snapshot. `resetAt`/
+ * `measuredAt` are epoch **ms**; `history` is 60 per-minute slots, oldest first.
+ */
+export interface GithubBucketDTO {
+  limit: number;
+  remaining: number;
+  /** Epoch ms when the window resets. */
+  resetAt: number;
+  /** Requests attributed to makit in this window. */
+  mine: number;
+  /** Spend by other tools sharing the token (derived). */
+  others: number;
+}
+
+export interface GithubBudgetDTO {
+  buckets: {
+    core: GithubBucketDTO | null;
+    graphql: GithubBucketDTO | null;
+    search: GithubBucketDTO | null;
+  };
+  burnPerHour: number;
+  msUntilEmpty: number | null;
+  level: "healthy" | "warm" | "critical" | "paused" | "unknown";
+  throttles: string[];
+  retryAfterMs: number | null;
+  measuredAt: number;
+  /** 60 per-minute `{mine, others}` slots, oldest first (sparkline source). */
+  history: Array<{ mine: number; others: number }>;
+  /** Exec vs. cache-hit counters (verifies the ≥80% call-reduction claim). */
+  stats: { execs: number; cacheHits: number };
+}
 
 export interface SessionEvent {
   seq: number;
@@ -152,6 +189,10 @@ export interface PullRequestDTO {
   checkRollup: PrCheckRollup;
   /** Count of unresolved review threads on the PR. */
   unresolvedComments: number;
+  /** True when this PR was not re-fetched successfully; the UI shows it dimmed. */
+  stale?: boolean;
+  /** True when unresolvedComments was shed to save quota (the value is not reliable). */
+  unresolvedUnknown?: boolean;
 }
 
 /**

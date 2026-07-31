@@ -44,6 +44,7 @@ but are otherwise independently implementable. Respect the dependency order.
 | [SPEC-28](./2026-07-24-SPEC-28-desktop-workspace-tabs.md) | Desktop/iPad workspace: recursive splits + tabs (supersedes SPEC-20) — **decisions 3 & 6 amended by SPEC-30** | SPEC-10, SPEC-19, SPEC-27 |
 | [SPEC-30](./2026-07-29-SPEC-30-tab-groups.md) ([plan](./2026-07-29-SPEC-30-PLAN.md)) | **Tab groups**: worktree groups (derived membership) + boards (curated, cross-repo); per-group layouts, three closes, recently closed boards (amends SPEC-28 decisions 3 & 6) | SPEC-28, SPEC-27, SPEC-29 |
 | [SPEC-29](./2026-07-26-SPEC-29-session-lifecycle-resume-list-delete.md) | Adapter-native session lifecycle: resume (ACP `session/load`\|`session/resume`, codex `thread/resume`), list, delete, fork — fixes server-restart resume for pi **and** codex | SPEC-27, SPEC-17, SPEC-19 |
+| [SPEC-32](./2026-07-31-SPEC-32-github-gateway-and-budget.md) ([plan](./2026-07-31-SPEC-32-PLAN.md)) | **Centralised GitHub gateway + API budget indicator**: one door for every GitHub read (cache, dedupe, concurrency, spend accounting), cost-aware REST/GraphQL routing, a degradation ladder with an interactive reserve, and the sidebar-footer quota popover. Fixes PR pills vanishing under rate limits via a three-way `PrLookup` (`pr` / `none` / `unknown`) | SPEC-23, SPEC-19, SPEC-11 |
 
 ```text
 SPEC-01 ─┬─> SPEC-02 (CLI clients)

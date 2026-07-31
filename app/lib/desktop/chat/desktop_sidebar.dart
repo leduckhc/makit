@@ -12,6 +12,7 @@ import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
 import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
+import 'github_budget_button.dart';
 import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
@@ -1074,7 +1075,7 @@ class _Footer extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
         children: [
-          const ConnectionChip(),
+          const Flexible(child: ConnectionChip()),
           const SizedBox(width: kSpace8),
           if (endpoint != null)
             Expanded(
@@ -1089,6 +1090,7 @@ class _Footer extends ConsumerWidget {
             )
           else
             const Spacer(),
+          const GithubBudgetButton(),
           IconButton(
             tooltip: 'Add repo',
             icon: const Icon(PhosphorIconsLight.folderPlus, size: 18),

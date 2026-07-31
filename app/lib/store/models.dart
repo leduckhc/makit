@@ -420,6 +420,8 @@ class PullRequest {
     this.checks = const [],
     this.checkRollup = 'none',
     this.unresolvedComments = 0,
+    this.stale = false,
+    this.unresolvedUnknown = false,
   });
 
   final int number;
@@ -443,6 +445,16 @@ class PullRequest {
   /// Count of unresolved review threads on the PR.
   final int unresolvedComments;
 
+  /// True when this PR was not re-fetched successfully (a throttled/failed
+  /// lookup); the last-known state is retained and the pill is shown dimmed
+  /// (SPEC-32 G2). Defaults false on any server that predates the field.
+  final bool stale;
+
+  /// True when `unresolvedComments` was shed to save quota, so its value is not
+  /// reliable and the count should be hidden rather than shown as a lie.
+  /// Defaults false on any server that predates the field.
+  final bool unresolvedUnknown;
+
   static PullRequest? fromJson(Map<String, dynamic> j) {
     final number = j['number'];
     if (number is! num) return null;
@@ -465,6 +477,8 @@ class PullRequest {
           ? j['checkRollup'] as String
           : 'none',
       unresolvedComments: (j['unresolvedComments'] as num?)?.toInt() ?? 0,
+      stale: j['stale'] == true,
+      unresolvedUnknown: j['unresolvedUnknown'] == true,
     );
   }
 }
@@ -493,6 +507,196 @@ class OpenPr {
     isDraft: j['isDraft'] == true,
     url: j['url'] is String ? j['url'] as String : '',
   );
+}
+
+/// Health of the GitHub API budget, driven server-side by time-to-empty rather
+/// than percentage remaining (SPEC-32 §6.1). `unknown` means never measured
+/// (distinct from a real, measured value) and drives a dimmed icon.
+enum BudgetLevel { healthy, warm, critical, paused, unknown }
+
+BudgetLevel parseBudgetLevel(String s) => switch (s) {
+  'healthy' => BudgetLevel.healthy,
+  'warm' => BudgetLevel.warm,
+  'critical' => BudgetLevel.critical,
+  'paused' => BudgetLevel.paused,
+  _ => BudgetLevel.unknown,
+};
+
+/// One GitHub rate-limit bucket (`core`, `graphql`, or `search`). A bucket is
+/// `null` on the owning [GithubBudget] when it has not been measured yet —
+/// **unmeasured is not the same as empty**, and the two render differently, so
+/// callers must never coerce a missing bucket into a zeroed one.
+class BudgetBucket {
+  const BudgetBucket({
+    required this.limit,
+    required this.remaining,
+    required this.resetAt,
+    required this.mine,
+    required this.others,
+  });
+
+  final int limit;
+  final int remaining;
+
+  /// Epoch **milliseconds** when the window resets (the server already
+  /// converted from GitHub's seconds). The `search` bucket resets per minute;
+  /// the two hourly buckets on a fixed absolute reset.
+  final int resetAt;
+
+  /// Requests attributed to makit in this window.
+  final int mine;
+
+  /// Derived spend by other tools on the same token (`limit-remaining-mine`).
+  final int others;
+
+  /// Returns null when [limit]/[remaining] are missing or non-numeric — the
+  /// caller treats that as an unmeasured bucket, not a zeroed one.
+  static BudgetBucket? fromJson(Map<String, dynamic> j) {
+    final limit = j['limit'];
+    final remaining = j['remaining'];
+    if (limit is! num || remaining is! num) return null;
+    return BudgetBucket(
+      limit: limit.toInt(),
+      remaining: remaining.toInt(),
+      resetAt: j['resetAt'] is num ? (j['resetAt'] as num).toInt() : 0,
+      mine: j['mine'] is num ? (j['mine'] as num).toInt() : 0,
+      others: j['others'] is num ? (j['others'] as num).toInt() : 0,
+    );
+  }
+}
+
+/// One per-minute slot of the trailing 60-minute burn history, used by the
+/// popover's sparkline. Oldest first.
+class BudgetHistorySlot {
+  const BudgetHistorySlot({required this.mine, required this.others});
+
+  final int mine;
+  final int others;
+
+  static BudgetHistorySlot? fromJson(Map<String, dynamic> j) {
+    final mine = j['mine'];
+    final others = j['others'];
+    if (mine is! num && others is! num) return null;
+    return BudgetHistorySlot(
+      mine: mine is num ? mine.toInt() : 0,
+      others: others is num ? others.toInt() : 0,
+    );
+  }
+}
+
+/// Gateway spend counters (SPEC-32 §6.4). Present only once the gateway has
+/// run at least one measurement; a `null` [GithubBudget.stats] means unmeasured.
+class BudgetStats {
+  const BudgetStats({required this.execs, required this.cacheHits});
+
+  final int execs;
+  final int cacheHits;
+
+  static BudgetStats fromJson(Map<String, dynamic> j) => BudgetStats(
+    execs: j['execs'] is num ? (j['execs'] as num).toInt() : 0,
+    cacheHits: j['cacheHits'] is num ? (j['cacheHits'] as num).toInt() : 0,
+  );
+}
+
+/// The GitHub API budget snapshot pushed via the `github.budget` frame
+/// (SPEC-32 §6.6), surfaced by the desktop sidebar footer icon + popover.
+///
+/// Tolerant by construction: any of the three buckets may be `null`
+/// (unmeasured), [msUntilEmpty]/[retryAfterMs] are meaningfully nullable
+/// ("never empties" / "no burst limit"), [history] defaults to empty, and
+/// [stats] is `null` until the gateway has measured.
+class GithubBudget {
+  const GithubBudget({
+    required this.core,
+    required this.graphql,
+    required this.search,
+    required this.burnPerHour,
+    required this.msUntilEmpty,
+    required this.level,
+    required this.throttles,
+    required this.retryAfterMs,
+    required this.measuredAt,
+    required this.history,
+    required this.stats,
+  });
+
+  /// REST bucket (5,000/hour), or null when unmeasured.
+  final BudgetBucket? core;
+
+  /// GraphQL points bucket (5,000/hour) — makit's hot path — or null.
+  final BudgetBucket? graphql;
+
+  /// Search bucket (30/**minute**), or null. makit never searches, so a
+  /// non-idle search bucket is itself information (something else on the token).
+  final BudgetBucket? search;
+
+  /// Observed requests/hour over the trailing window.
+  final int burnPerHour;
+
+  /// Ms until the governing bucket empties at [burnPerHour], or null when it
+  /// will never empty (burn 0). Null is meaningful — do not coerce to 0.
+  final int? msUntilEmpty;
+
+  final BudgetLevel level;
+
+  /// Active throttles in ladder order; drives the popover banner + badge.
+  final List<String> throttles;
+
+  /// Set while a secondary (burst) limit is in force; null otherwise. Null is
+  /// meaningful ("no burst limit") — do not coerce to 0.
+  final int? retryAfterMs;
+
+  final int measuredAt;
+
+  /// Trailing 60 per-minute burn slots, oldest first. Empty when unreported.
+  final List<BudgetHistorySlot> history;
+
+  /// Gateway spend counters, or null when unmeasured.
+  final BudgetStats? stats;
+
+  /// Tolerant decode: never throws, never drops the whole snapshot for one bad
+  /// field. A missing/garbage/null bucket becomes a `null` field (unmeasured),
+  /// not a zeroed bucket.
+  static GithubBudget fromJson(Map<String, dynamic> j) {
+    final rawBuckets = j['buckets'];
+    final buckets = rawBuckets is Map
+        ? Map<String, dynamic>.from(rawBuckets)
+        : const <String, dynamic>{};
+    BudgetBucket? bucket(String name) {
+      final v = buckets[name];
+      return v is Map
+          ? BudgetBucket.fromJson(Map<String, dynamic>.from(v))
+          : null;
+    }
+
+    return GithubBudget(
+      core: bucket('core'),
+      graphql: bucket('graphql'),
+      search: bucket('search'),
+      burnPerHour: j['burnPerHour'] is num
+          ? (j['burnPerHour'] as num).toInt()
+          : 0,
+      msUntilEmpty: j['msUntilEmpty'] is num
+          ? (j['msUntilEmpty'] as num).toInt()
+          : null,
+      level: parseBudgetLevel(j['level'] is String ? j['level'] as String : ''),
+      throttles: ((j['throttles'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+      retryAfterMs: j['retryAfterMs'] is num
+          ? (j['retryAfterMs'] as num).toInt()
+          : null,
+      measuredAt: j['measuredAt'] is num ? (j['measuredAt'] as num).toInt() : 0,
+      history: ((j['history'] as List?) ?? const [])
+          .whereType<Map<dynamic, dynamic>>()
+          .map((m) => BudgetHistorySlot.fromJson(Map<String, dynamic>.from(m)))
+          .whereType<BudgetHistorySlot>()
+          .toList(),
+      stats: j['stats'] is Map
+          ? BudgetStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map))
+          : null,
+    );
+  }
 }
 
 /// One git worktree of a repo. `isPrimary` marks the repo's main checkout;

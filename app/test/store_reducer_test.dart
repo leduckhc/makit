@@ -170,6 +170,62 @@ void main() {
     });
   });
 
+  group('reduce — github.budget', () {
+    test('a budget frame updates githubBudget', () {
+      final budget = GithubBudget.fromJson({
+        'buckets': {
+          'core': {'limit': 5000, 'remaining': 1769, 'resetAt': 1, 'mine': 1},
+        },
+        'burnPerHour': 340,
+        'level': 'warm',
+        'throttles': ['poll 30s'],
+        'measuredAt': 2,
+      });
+      final state = reduce(StoreState.empty(), GithubBudgetFrame(budget));
+      expect(state.githubBudget, isNotNull);
+      expect(state.githubBudget!.level, BudgetLevel.warm);
+      expect(state.githubBudget!.core!.remaining, 1769);
+    });
+
+    test('empty store has no budget yet (null)', () {
+      expect(StoreState.empty().githubBudget, isNull);
+    });
+  });
+
+  group('githubBudgetProvider', () {
+    test('reads null before any budget frame arrives', () async {
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(githubBudgetProvider), isNull);
+    });
+  });
+
   group('StoreController — sub carries fromSeq cursor', () {
     test('sub after seeing events replays only newer ones', () async {
       final transport = _CapturingTransport();
@@ -527,6 +583,85 @@ void main() {
         ),
         isNotEmpty,
       );
+    });
+
+    test('refreshGithubBudget sends github.refresh', () async {
+      final transport = _SnapshotTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      // The /rate_limit endpoint is quota-exempt (SPEC-32 §4), so this is the
+      // one control in the popover that costs the user nothing to press.
+      await store.refreshGithubBudget();
+
+      expect(
+        transport.sent.where(
+          (e) => e.t == MsgType.cmd && e.body['kind'] == 'github.refresh',
+        ),
+        isNotEmpty,
+      );
+    });
+
+    test('setGithubPollingPaused sends github.pause with the flag', () async {
+      final transport = _SnapshotTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      await store.setGithubPollingPaused(true);
+
+      final sent = transport.sent
+          .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'github.pause')
+          .toList();
+      expect(sent, isNotEmpty);
+      expect(sent.first.body['paused'], isTrue);
     });
 
     test('addProject succeeds when server rejects repo.refresh', () async {

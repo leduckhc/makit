@@ -93,6 +93,7 @@ class FakeServer {
     _pushProjects();
     _pushRepos();
     _pushSessions();
+    _pushBudget();
   }
 
   void _pushProjects() {
@@ -274,6 +275,59 @@ class FakeServer {
                 },
               )
               .toList(),
+        },
+      ),
+    );
+  }
+
+  /// Emit one plausible `github.budget` frame so the footer icon + popover have
+  /// data on the fake path. A `warm` level with an active throttle exercises
+  /// the interesting rendering path (banner, dimmed pills) rather than the
+  /// boring healthy one.
+  void _pushBudget() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {
+          'kind': 'github.budget',
+          'budget': {
+            'buckets': {
+              'core': {
+                'limit': 5000,
+                'remaining': 1769,
+                'resetAt': now + 1080000,
+                'mine': 2100,
+                'others': 1131,
+              },
+              'graphql': {
+                'limit': 5000,
+                'remaining': 4188,
+                'resetAt': now + 1080000,
+                'mine': 300,
+                'others': 512,
+              },
+              'search': {
+                'limit': 30,
+                'remaining': 24,
+                'resetAt': now + 38000,
+                'mine': 0,
+                'others': 6,
+              },
+            },
+            'burnPerHour': 340,
+            'msUntilEmpty': 1080000,
+            'level': 'warm',
+            'throttles': ['unresolved counts on demand', 'poll 30s'],
+            'retryAfterMs': null,
+            'measuredAt': now,
+            'history': [
+              for (var i = 0; i < 60; i++)
+                {'mine': (i * 3) % 11, 'others': i % 4},
+            ],
+            'stats': {'execs': 412, 'cacheHits': 1893},
+          },
         },
       ),
     );
