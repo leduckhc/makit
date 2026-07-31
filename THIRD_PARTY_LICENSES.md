@@ -58,7 +58,7 @@ This file is generated from the project's dependency manifests:
 | `thunky` | 1.1.0 | MIT |
 | `tslib` | 1.14.1, 2.8.1 | 0BSD |
 | `tsyringe` | 4.10.0 | MIT |
-| `ws` | 8.21.0 | MIT |
+| `ws` | 8.21.1 | MIT |
 | `zod` | 3.25.76 | MIT |
 
 ---
@@ -74,7 +74,7 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 | `collection` | 1.19.1 | BSD-3-Clause |
 | `crypto` | 3.0.7 | BSD-3-Clause |
 | `flutter_highlight` | 0.7.0 | MIT |
-| `flutter_local_notifications` | 22.0.1 | BSD-3-Clause |
+| `flutter_local_notifications` | 22.2.0 | BSD-3-Clause |
 | `flutter_markdown_plus` | 1.0.12 | BSD-3-Clause |
 | `flutter_riverpod` | 3.4.1 | MIT |
 | `flutter_secure_storage` | 10.3.1 | BSD-3-Clause |

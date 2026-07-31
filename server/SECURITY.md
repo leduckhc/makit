@@ -64,6 +64,19 @@ To allow a new native package:
    one-line justification comment.
 3. Re-run `pnpm install --frozen-lockfile` to confirm.
 
+**Gap this control does not cover:** a package that ships a *prebuilt* native
+binary in its tarball needs no lifecycle script, so `allowBuilds` never sees it.
+`typescript@7` (the native compiler port) is our one such dependency: it declares
+20 `@typescript/typescript-<os>-<arch>` optional deps, and the one matching the
+host — e.g. `@typescript/typescript-darwin-arm64` — unpacks a ~23 MB (22.6 MiB)
+Mach-O executable at `lib/tsc` that runs on every `pnpm typecheck` / `pnpm
+build`. It is
+first-party Microsoft (`microsoft1es`, `typescript-bot` maintainers), has no
+install scripts, and is pinned by the lockfile with a `sha512` integrity hash —
+but note it publishes **without npm provenance attestations**, so `trustPolicy`
+has no Trusted-Publisher signal to check. Treat any future bump of it as a
+review, and keep it a dev dependency: it must never reach a runtime path.
+
 ### 2. Block exotic (git/tarball) sources
 
 - `pnpm-workspace.yaml` → `blockExoticSubdeps: true` blocks transitive deps
@@ -72,13 +85,16 @@ To allow a new native package:
 
 ### 3. Cooldown on new versions
 
-- `pnpm-workspace.yaml` → `minimumReleaseAge: 10080` (7 days). Refuses to
-  install any version published less than 7 days ago. Catches the large class
+- `pnpm-workspace.yaml` → `minimumReleaseAge: 4320` (3 days). Refuses to
+  install any version published less than 3 days ago. Catches the large class
   of attacks where a malicious version is published and detected/unpublished
   within hours.
 - `minimumReleaseAgeExclude` carries a small allow-list
   (`typescript`, `@types/node`, `@types/qrcode-terminal`, `@types/ws`). Add
   others only with a one-line justification.
+- pub.dev has no equivalent setting, so the app enforces the same 3-day window
+  itself — see [`../app/SECURITY.md`](../app/SECURITY.md) §8
+  (`app/tool/pub_cooldown.dart`). Change both windows together.
 
 To bypass for a one-off security patch:
 

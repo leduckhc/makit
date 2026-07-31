@@ -116,6 +116,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          # Full history: the cooldown gate diffs pubspec.lock against the
+          # PR base / previous commit.
+          fetch-depth: 0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -137,6 +141,27 @@ jobs:
         run: |
           cd app
           flutter pub get --enforce-lockfile
+
+      - name: Enforce pub release cooldown (SECURITY.md §8)
+        env:
+          # pub has no `minimumReleaseAge`; block lockfile versions published
+          # less than 3 days ago (SECURITY.md §8). Baseline = PR base, or the
+          # previous commit on a push. Empty on other event types (e.g. a
+          # future `schedule`/`workflow_dispatch`), and all-zero on branch
+          # creation — both are resolved to a usable commit below, because an
+          # empty ref would make git read the *index* and pass silently.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          cd app
+          base="$BASE_SHA"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
+            echo "base '$base' unusable — falling back to HEAD~1"
+            base="HEAD~1"
+          fi
+          git rev-parse --verify --quiet "$base^{commit}" > /dev/null || {
+            echo "no usable baseline commit — cannot verify cooldown"; exit 1; }
+          COOLDOWN_BASE_REF="$base" dart run tool/pub_cooldown.dart
 
       - name: Scan dependencies for known advisories (OSV)
         run: |

@@ -59,6 +59,7 @@ To add a new package:
 3. Inspect `pubspec.yaml` of the candidate for native code (`android/`,
    `ios/`, `macos/`, plugin-class entries). Native code = security review.
 4. Pin to a known-good major. Use `^x.y.z` only for stable, audited deps.
+5. Check the target version is at least 3 days old (§8).
 
 ### 2. No git-source dependencies
 
@@ -146,7 +147,55 @@ flutter pub get
 # justified ignore in an osv-scanner.toml rather than disabling the gate.
 ```
 
-### 8. Transport pinning (cross-reference)
+### 8. Release cooldown (minimum version age)
+
+The server blocks freshly published versions with pnpm's
+`minimumReleaseAge: 4320` (see [`../server/SECURITY.md`](../server/SECURITY.md)
+§3). pub has no equivalent knob, so we enforce the same **3-day window**
+ourselves:
+
+- A change may not introduce a `pubspec.lock` version that was published to
+  pub.dev less than 3 days ago. This catches the large class of attacks where a
+  malicious version is published, then detected and unpublished within days.
+- Only versions that differ from the baseline lockfile are checked
+  (`COOLDOWN_BASE_REF`, default `HEAD`). Like pnpm, the window gates what you
+  *newly install*, not what is already locked — an already-shipped version does
+  not retroactively fail the gate as it ages in.
+- Enforced by `tool/pub_cooldown.dart`, run as step 9 of `tool/audit.sh` and as
+  a blocking step in the `security-audit` CI job. Exit codes: `0` clean, `1`
+  violation, `2` could not verify. **The gate fails closed:** an unparseable
+  lockfile, an unusable baseline ref, or a changed package whose publish date
+  pub.dev will not confirm all exit `2`, and `2` fails both `audit.sh` and CI.
+  Being offline is therefore a hard failure, not a skip — that is deliberate, a
+  gate that passes when it cannot check is not a gate.
+- The lockfile is parsed with `package:yaml` (a `dev_dependencies` entry, never
+  shipped in the app binary), not a hand-rolled line parser: a parser that
+  silently mis-reads one entry would drop it from the check.
+- `COOLDOWN_BASE_REF` must never be passed to git empty. `git show
+  ':./pubspec.lock'` *succeeds* and returns the **index** copy of the file,
+  which would make the baseline identical to the working tree and pass
+  everything. `resolveBaseRef` maps blank to `HEAD` and rejects the all-zero sha
+  git reports on branch creation; the CI step additionally verifies the ref
+  resolves to a commit before invoking the tool.
+
+**Why 3 days:** a 7-day hold mostly blocked routine patch bumps on a small,
+plugin-heavy dependency set whose first-party packages move with the pinned
+Flutter SDK. 3 days still clears the publish-then-yank window the rule exists
+for. If you change it, update `cooldownWindow` in `tool/pub_cooldown.dart`, its
+test, and `server/pnpm-workspace.yaml` together.
+
+```bash
+cd app && dart run tool/pub_cooldown.dart
+```
+
+If a bump is blocked, the normal answer is **wait** — the script prints the
+publish date and age, so you know the day it clears. Only override for a
+security fix that must ship now, by adding the package to `cooldownExempt` in
+`tool/pub_cooldown.dart` with a one-line justification (mirrors
+`minimumReleaseAgeExclude`). Adding an entry is a security review; remove it
+once the version has aged past the window.
+
+### 9. Transport pinning (cross-reference)
 
 The WS transport pins the server cert SHA256 fingerprint at the
 `dart:io` layer (`badCertificateCallback`). No OS trust store is used,
