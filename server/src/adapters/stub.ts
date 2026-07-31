@@ -153,7 +153,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   /** SPEC-26: a tiny deterministic config catalog so keyless e2e runs can
    *  exercise the unified `configOptions` render + set round-trip. */
-  private configOptions: SessionConfigOption[] = [
+  private configOptions: Array<SessionConfigOption> = [
+    // Mixed boolean + string currentValue types require explicit array type annotation
     {
       id: "model",
       name: "Model",
