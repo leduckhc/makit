@@ -228,9 +228,10 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     if (action !== "configOption") return;
     const id = typeof args?.id === "string" ? args.id : "";
     if (id === "fast") {
-      // Boolean toggle: only meaningful for a model that supports the fast tier.
+      // Boolean toggle: only valid for an active model that supports the fast
+      // tier (absent/unsupported model → ignore).
       if (typeof args?.value !== "boolean") return;
-      if (this.activeModel && !this.fastByModel[this.activeModel]) return;
+      if (!this.activeModel || !this.fastByModel[this.activeModel]) return;
       this.activeFast = args.value;
       this.emitConfigOptions();
       return;
@@ -241,11 +242,11 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       this.activeModel = value;
       // Clamp the reasoning effort to the new model's advertised set: switching
       // to a model that doesn't support the current effort would otherwise send
-      // an invalid `effort` on the next turn. Prefer the new model's default,
-      // else its first advertised effort, else keep the current one.
-      const efforts = this.effortsByModel[value];
-      if (efforts && this.activeEffort && !efforts.some((e) => e.value === this.activeEffort)) {
-        this.activeEffort = this.defaultEffortByModel[value] ?? efforts[0]?.value ?? this.activeEffort;
+      // an invalid `effort` on the next turn ([pickEffort] prefers the new
+      // model's default, else its first advertised effort, else the current).
+      const efforts = this.effortsByModel[value] ?? [];
+      if (efforts.length > 0 && this.activeEffort && !efforts.some((e) => e.value === this.activeEffort)) {
+        this.activeEffort = pickEffort(efforts, this.defaultEffortByModel[value], this.activeEffort);
       }
       // Drop Fast when the new model doesn't support the tier (avoids sending
       // serviceTier to a model that can't use it).
@@ -283,17 +284,18 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       // Initialise the effort from the SELECTED model (which may be a forced
       // non-default model via CodexAdapterOpts.model) — not the catalog default
       // — so we never emit/send an effort the active model doesn't support.
+      // The fallback (only when the model advertises no efforts) is the catalog
+      // default model's default effort.
       if (!this.activeEffort) {
         const selected = this.activeModel;
         const efforts = (selected && this.effortsByModel[selected]) || [];
-        if (efforts.length > 0) {
-          const def = selected ? this.defaultEffortByModel[selected] : undefined;
-          this.activeEffort =
-            def && efforts.some((e) => e.value === def) ? def : efforts[0]!.value;
-        } else if (selected === projected.activeModel) {
-          this.activeEffort = projected.activeEffort;
-        }
+        const modelDefault = selected ? this.defaultEffortByModel[selected] : undefined;
+        const fallback = selected === projected.activeModel ? projected.activeEffort : undefined;
+        this.activeEffort = pickEffort(efforts, modelDefault, fallback);
       }
+      // Clamp Fast to the selected model's support (parallel to the sendAction
+      // logic: drop it if unsupported to avoid sending serviceTier to a model that can't use it).
+      if (this.activeModel && !this.fastByModel[this.activeModel]) this.activeFast = false;
     } catch (e) {
       log.warn(`[makit] codex model/list failed: ${(e as Error).message}`);
       this.catalogModels = [];
@@ -562,6 +564,22 @@ function modelSupportsFast(model: Record<string, unknown>): boolean {
 
 /** The `serviceTier` value sent to `turn/start` when Fast is ON. */
 const FAST_SERVICE_TIER = "priority";
+
+/**
+ * Choose a reasoning effort for a model: its advertised [modelDefault] when
+ * that value is in the advertised [efforts], else the first advertised effort,
+ * else [fallback]. Shared by the initial effort seed and the model-switch
+ * clamp so we never keep/emit an effort the active model doesn't support.
+ */
+function pickEffort(
+  efforts: ConfigOptionValue[],
+  modelDefault: string | undefined,
+  fallback: string | undefined,
+): string | undefined {
+  if (efforts.length === 0) return fallback;
+  if (modelDefault && efforts.some((e) => e.value === modelDefault)) return modelDefault;
+  return efforts[0]?.value ?? fallback;
+}
 
 export function projectCodexModelList(res: unknown): {
   models: ConfigOptionValue[];
