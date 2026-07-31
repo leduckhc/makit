@@ -85,7 +85,7 @@ pnpm exec tsx src/index.ts sessions    # list live sessions
 pnpm exec tsx src/index.ts status      # start|stop|restart|status|logs
 
 # or, after `pnpm build`:
-node dist/index.js devices
+node dist/src/index.js devices
 ```
 
 ### Test / typecheck / build
@@ -94,7 +94,7 @@ node dist/index.js devices
 cd server
 pnpm test              # node --test over src/**/*.test.ts (unit)
 pnpm typecheck         # tsc -p . --noEmit
-pnpm build             # tsc -p . → dist/  (then: node dist/index.js serve ...)
+pnpm build             # tsc -p . → dist/  (then: node dist/src/index.js serve ...)
 ```
 
 ---

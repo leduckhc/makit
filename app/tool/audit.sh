@@ -139,6 +139,28 @@ else
   green "  ✓ no dependency_overrides"
 fi
 
+# ------------------------------------------------------- 9. release cooldown
+# pub has no `minimumReleaseAge` (pnpm does — server/SECURITY.md §3), so we
+# check that this change introduces no lockfile version younger than 3 days.
+step "9. pub cooldown (no lockfile version published <3d ago)"
+set +e
+"$DART_BIN" run tool/pub_cooldown.dart >/tmp/makit-cooldown.log 2>&1
+cooldown_exit=$?
+set -e
+# `dart run` prefixes stdout with "Running build hooks..." — strip it.
+cooldown_msg=$(tail -1 /tmp/makit-cooldown.log | sed 's/.*Running build hooks\.\.\.//')
+if (( cooldown_exit == 0 )); then
+  green "  ✓ ${cooldown_msg}"
+elif (( cooldown_exit == 2 )); then
+  red "  ✗ cooldown could not be verified — ${cooldown_msg}"
+  red "    (offline? this gate fails closed — see SECURITY.md §8)"
+  fail=1
+else
+  red "  ✗ cooldown violation — see SECURITY.md §8"
+  tail -10 /tmp/makit-cooldown.log >&2
+  fail=1
+fi
+
 # ----------------------------------------------------------------- summary
 printf "\n"
 if (( fail )); then
