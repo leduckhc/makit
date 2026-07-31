@@ -12,6 +12,7 @@ library;
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
@@ -22,6 +23,7 @@ import 'chat_message.dart';
 import 'chat_metrics.dart';
 import 'media_view.dart';
 import 'tool_call_card.dart';
+import 'transcript_expansion.dart';
 
 /// Distance (logical px) from the newest message within which an incoming item
 /// re-pins the transcript to the bottom. Beyond it, the user is treated as
@@ -40,121 +42,6 @@ void anchorToNewestIfNearBottom(ScrollController scroll) {
   if (!nearBottom) return;
   WidgetsBinding.instance.addPostFrameCallback((_) {
     if (scroll.hasClients) scroll.jumpTo(0);
-  });
-}
-
-/// Keeps the rows the user is *reading* nailed to the same screen position when
-/// the transcript's extent changes underneath them.
-///
-/// The transcript is `reverse: true`, so scroll offsets are measured from the
-/// newest message. That makes the newest end stable (good: the session opens
-/// pinned to the latest) but every offset *above* it shifts whenever content
-/// grows — which is constantly, in a live session: streamed tokens extend the
-/// tail, new items arrive, a tool row expands. At a fixed pixel offset the user
-/// therefore sees the transcript slide, and an expanded row grows upward off
-/// the top of the viewport instead of downward.
-///
-/// Once the user has scrolled into history (beyond [kAnchorNearBottomPx]) this
-/// physics absorbs the extent delta into the offset, which re-anchors the
-/// viewport to the content instead of to the newest message: streaming below is
-/// then invisible. Within the near-bottom band nothing is compensated, so the
-/// transcript stays glued to the newest message as before. Folding a row is
-/// handled by [retainRowPosition] instead.
-class TranscriptScrollPhysics extends ScrollPhysics {
-  /// Creates transcript physics that compensate when [anchor] is armed.
-  const TranscriptScrollPhysics({required this.anchor, super.parent});
-
-  /// Says which extent changes are real content changes — see [TranscriptAnchor].
-  final TranscriptAnchor anchor;
-
-  @override
-  TranscriptScrollPhysics applyTo(ScrollPhysics? ancestor) =>
-      TranscriptScrollPhysics(anchor: anchor, parent: buildParent(ancestor));
-
-  @override
-  double adjustPositionForNewDimensions({
-    required ScrollMetrics oldPosition,
-    required ScrollMetrics newPosition,
-    required bool isScrolling,
-    required double velocity,
-  }) {
-    final pixels = super.adjustPositionForNewDimensions(
-      oldPosition: oldPosition,
-      newPosition: newPosition,
-      isScrolling: isScrolling,
-      velocity: velocity,
-    );
-    if (oldPosition.pixels <= kAnchorNearBottomPx) return pixels;
-    // While the user drags/flings, the gesture owns the offset and the lazy list
-    // is constantly re-estimating the extent of the rows it builds on the way.
-    // Compensating then would add a jump mid-drag, so leave scrolling alone.
-    if (isScrolling) return pixels;
-    final delta = newPosition.maxScrollExtent - oldPosition.maxScrollExtent;
-    if (delta == 0 || !anchor.claim()) return pixels;
-    return (pixels + delta).clamp(
-      newPosition.minScrollExtent,
-      newPosition.maxScrollExtent,
-    );
-  }
-}
-
-/// Tells [TranscriptScrollPhysics] which extent changes are worth compensating.
-///
-/// Armed by the surface when the item list actually changes (a new item, a
-/// streamed delta). Every *other* extent change is the lazy list refining its
-/// estimate for unbuilt rows — correcting the offset builds more rows, which
-/// changes the estimate again, so compensating those drifts the viewport and
-/// can make it correct itself every layout pass until it throws. Row folds are
-/// handled separately and exactly by [retainRowPosition].
-class TranscriptAnchor {
-  bool _armed = false;
-
-  /// Marks the next extent change as a real content change.
-  void arm() => _armed = true;
-
-  /// Consumes the armed state; true at most once per [arm].
-  bool claim() {
-    if (!_armed) return false;
-    _armed = false;
-    return true;
-  }
-
-  /// Resets to a clean state. Used when switching to a new session.
-  void reset() => _armed = false;
-}
-
-/// Runs [change] (a fold/unfold that resizes the row at [context]) while keeping
-/// that row anchored to its current screen position.
-///
-/// Needed because the transcript is `reverse: true`: scroll offsets are measured
-/// from the newest message, so a row's *bottom* edge is the fixed one and it
-/// grows upward — unfolding a long tool body would shoot the header the user
-/// just tapped off the top of the viewport. The row's own before/after screen
-/// position is measured (rather than the list's extent delta) because a lazy
-/// list also re-estimates the extent of its unbuilt rows when one row grows,
-/// which would over-correct.
-void retainRowPosition(BuildContext context, VoidCallback change) {
-  double? topOf() =>
-      (context.findRenderObject() as RenderBox?)?.localToGlobal(Offset.zero).dy;
-  final position = Scrollable.maybeOf(context)?.position;
-  final before = topOf();
-  change();
-  if (position == null || before == null) return;
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    if (!context.mounted || !position.hasContentDimensions) return;
-    final after = topOf();
-    if (after == null) return;
-    // Positive drift = the row moved up; push the content back down by it. In a
-    // reversed viewport (axis direction up) a larger offset moves content down.
-    final drift = before - after;
-    if (drift.abs() < 0.5) return;
-    final sign = position.axisDirection == AxisDirection.up ? 1 : -1;
-    position.jumpTo(
-      (position.pixels + sign * drift).clamp(
-        position.minScrollExtent,
-        position.maxScrollExtent,
-      ),
-    );
   });
 }
 
@@ -215,17 +102,23 @@ class JumpToNewestButton extends StatelessWidget {
 /// no full-screen detail navigation. Horizontal gutter + inter-row spacing are
 /// applied by the caller via [transcriptRow], so the item widgets carry none
 /// themselves.
-Widget chatItemWidget(ChatItem item) => switch (item) {
+Widget chatItemWidget(String sessionId, ChatItem item) => switch (item) {
   UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
   // client can't show. Rendered inline, tap for fullscreen.
   AgentMediaItem() => AgentMediaView(item: item),
-  ThinkingItem() => ThinkingLine(text: item.text),
+  ThinkingItem() => ThinkingLine(
+    text: item.text,
+    expansionKey: transcriptRowExpansionKey(sessionId, item),
+  ),
   // An answered askUserQuestion settles into a quiet resolved card (chosen
   // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
   ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
-  ToolCallItem() => ToolCallCard(item: item),
+  ToolCallItem() => ToolCallCard(
+    item: item,
+    expansionKey: transcriptRowExpansionKey(sessionId, item),
+  ),
   ErrorItem() => ErrorBanner(message: item.message),
 };
 
@@ -248,6 +141,36 @@ Key chatItemKey(ChatItem item) => switch (item) {
   _ => ValueKey('seq-${item.seq}'),
 };
 
+/// Maps a transcript row's [chatItemKey] back to its index in the reversed
+/// list, for the surfaces' `findChildIndexCallback`.
+///
+/// Without it a lazy list reconciles its built children **by index**: every new
+/// item shifts each older row down one slot, the key at that slot no longer
+/// matches, and Flutter throws the row away and inflates a fresh one. Every row
+/// on screen therefore loses its state (an unfolded tool re-folds) and its
+/// measured extent on *every* streamed item. With this callback the sliver
+/// finds each existing child at its new index and keeps it — state, keep-alive
+/// and layout offset included.
+///
+/// Returns a closure per build; the key→index map is built lazily on first use
+/// (only frames that actually move rows pay for it) and is valid for the
+/// [items] list it was made from.
+int? Function(Key) transcriptChildIndexFinder(
+  List<ChatItem> items, {
+  required bool hasTrailer,
+}) {
+  Map<Key, int>? byKey;
+  return (key) {
+    // Reversed list: item at position p renders at index length-1-p, shifted by
+    // the trailing row (which always occupies index 0) when present.
+    byKey ??= {
+      for (var p = 0; p < items.length; p++)
+        chatItemKey(items[p]): items.length - 1 - p + (hasTrailer ? 1 : 0),
+    };
+    return byKey![key];
+  };
+}
+
 /// The trailing transcript row shown below the newest message. An awaiting
 /// inline ask takes priority over the working indicator: Pi stays `running`
 /// while it emits an `askUserQuestion`, so both can be true at once — showing
@@ -263,46 +186,44 @@ TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the
 /// one-liner. When expanded, tapping the leading icon collapses it again.
-class ThinkingLine extends StatefulWidget {
-  /// Creates a reasoning line showing [text].
-  const ThinkingLine({super.key, required this.text});
+///
+/// The unfolded flag lives in [expandedTranscriptRowsProvider] rather than in
+/// this widget, so it survives the row being rebuilt or scrolled out of the lazy
+/// list's cache — which is also why the row needs no keep-alive.
+class ThinkingLine extends ConsumerWidget {
+  /// Creates a reasoning line showing [text], folded under [expansionKey].
+  const ThinkingLine({
+    super.key,
+    required this.text,
+    required this.expansionKey,
+  });
 
   /// The reasoning text (trimmed for display).
   final String text;
 
-  @override
-  State<ThinkingLine> createState() => _ThinkingLineState();
-}
-
-class _ThinkingLineState extends State<ThinkingLine>
-    with AutomaticKeepAliveClientMixin {
-  bool _expanded = false;
-
-  // An expansion is user state, so the row must survive being scrolled out of
-  // the lazy list's cache — otherwise it silently re-folds itself.
-  @override
-  bool get wantKeepAlive => _expanded;
+  /// This row's identity in [expandedTranscriptRowsProvider].
+  final String expansionKey;
 
   @override
-  Widget build(BuildContext context) {
-    super.build(context);
+  Widget build(BuildContext context, WidgetRef ref) {
+    // `select` so folding one row doesn't rebuild every other reasoning row.
+    final expanded = ref.watch(
+      expandedTranscriptRowsProvider.select(
+        (rows) => rows.contains(expansionKey),
+      ),
+    );
     final cs = Theme.of(context).colorScheme;
     final style = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: cs.onSurfaceVariant.withValues(alpha: 0.65),
       fontStyle: FontStyle.italic,
       height: 1.3,
     );
-    void toggle() => retainRowPosition(
-      context,
-      () => setState(() {
-        _expanded = !_expanded;
-        updateKeepAlive();
-      }),
-    );
-    final textWidget = _expanded
-        ? SelectableText(widget.text.trim(), style: style, onTap: toggle)
+    void toggle() =>
+        ref.read(expandedTranscriptRowsProvider.notifier).toggle(expansionKey);
+    final textWidget = expanded
+        ? SelectableText(text.trim(), style: style, onTap: toggle)
         : Text(
-            widget.text.trim(),
+            text.trim(),
             style: style,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -310,16 +231,20 @@ class _ThinkingLineState extends State<ThinkingLine>
     // Expanded: SelectableText handles taps on the text for selection; a tap
     // on the leading icon collapses. Collapsed: whole row is a tap target that
     // expands.
-    return _expanded
+    return expanded
         ? Semantics(
             onTap: toggle,
             onTapHint: 'Collapse thinking',
-            child: _buildRow(textWidget, onLeadingTap: toggle),
+            child: _buildRow(context, textWidget, onLeadingTap: toggle),
           )
-        : InkWell(onTap: toggle, child: _buildRow(textWidget));
+        : InkWell(onTap: toggle, child: _buildRow(context, textWidget));
   }
 
-  Widget _buildRow(Widget textWidget, {VoidCallback? onLeadingTap}) {
+  Widget _buildRow(
+    BuildContext context,
+    Widget textWidget, {
+    VoidCallback? onLeadingTap,
+  }) {
     final cs = Theme.of(context).colorScheme;
     Widget leading = Icon(
       PhosphorIconsLight.brain,

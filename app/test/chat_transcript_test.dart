@@ -6,6 +6,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/ui/session/ask_card.dart';
@@ -13,6 +14,7 @@ import 'package:makit/ui/session/chat_message.dart';
 import 'package:makit/ui/session/chat_metrics.dart';
 import 'package:makit/ui/session/chat_transcript.dart';
 import 'package:makit/ui/session/tool_call_card.dart';
+import 'package:makit/ui/session/transcript_expansion.dart';
 import 'package:makit/ui/session/tool_renderers.dart' show ToolCodeBlock;
 
 List<ChatItem> _representativeItems() => [
@@ -26,7 +28,9 @@ List<ChatItem> _representativeItems() => [
 Widget _transcript(List<ChatItem> items) => MaterialApp(
   home: Scaffold(
     body: ListView(
-      children: [for (final item in items) transcriptRow(chatItemWidget(item))],
+      children: [
+        for (final item in items) transcriptRow(chatItemWidget('s1', item)),
+      ],
     ),
   ),
 );
@@ -35,7 +39,9 @@ void main() {
   testWidgets('chatItemWidget maps each item to its widget type', (
     tester,
   ) async {
-    await tester.pumpWidget(_transcript(_representativeItems()));
+    await tester.pumpWidget(
+      ProviderScope(child: _transcript(_representativeItems())),
+    );
     await tester.pump();
 
     final rendered = [
@@ -57,8 +63,12 @@ void main() {
 
   testWidgets('ThinkingLine folds/expands on tap', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(body: ThinkingLine(text: 'reasoning trace')),
+      const ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ThinkingLine(text: 'reasoning trace', expansionKey: 'k'),
+          ),
+        ),
       ),
     );
     expect(find.byType(SelectableText), findsNothing);
@@ -79,8 +89,12 @@ void main() {
       exitCode: 0,
     );
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: ToolCallCard(item: item)),
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ToolCallCard(item: item, expansionKey: 'k'),
+          ),
+        ),
       ),
     );
     await tester.pump();
@@ -125,8 +139,12 @@ void main() {
         exitCode: 0,
       );
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: ToolCallCard(item: item)),
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ToolCallCard(item: item, expansionKey: 'k'),
+            ),
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -173,11 +191,13 @@ void main() {
       final outer = ScrollController();
       addTearDown(outer.dispose);
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ListView(
-              controller: outer,
-              children: [transcriptRow(chatItemWidget(item))],
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                controller: outer,
+                children: [transcriptRow(chatItemWidget('s1', item))],
+              ),
             ),
           ),
         ),
@@ -221,23 +241,25 @@ void main() {
     late StateSetter setOuter;
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: StatefulBuilder(
-            builder: (ctx, setState) {
-              setOuter = setState;
-              // Newest-first, like the reversed transcript. Rows are keyed by
-              // identity exactly as the real surfaces do.
-              return ListView(
-                children: [
-                  for (final it in items.reversed)
-                    KeyedSubtree(
-                      key: chatItemKey(it),
-                      child: transcriptRow(chatItemWidget(it)),
-                    ),
-                ],
-              );
-            },
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (ctx, setState) {
+                setOuter = setState;
+                // Newest-first, like the reversed transcript. Rows are keyed by
+                // identity exactly as the real surfaces do.
+                return ListView(
+                  children: [
+                    for (final it in items.reversed)
+                      KeyedSubtree(
+                        key: chatItemKey(it),
+                        child: transcriptRow(chatItemWidget('s1', it)),
+                      ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -270,7 +292,9 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(home: Scaffold(body: WorkingIndicator())),
+      const ProviderScope(
+        child: MaterialApp(home: Scaffold(body: WorkingIndicator())),
+      ),
     );
     await tester.pump();
     // The shimmer picks one work-flavoured word and masks it with a gradient;
@@ -328,10 +352,91 @@ void main() {
       ended: true,
     );
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: chatItemWidget(item))),
+      ProviderScope(
+        child: MaterialApp(home: Scaffold(body: chatItemWidget('s1', item))),
+      ),
     );
     await tester.pump();
     expect(find.byType(AnsweredAskCard), findsOneWidget);
     expect(find.byType(ToolCallCard), findsNothing);
+  });
+
+  testWidgets('an unfold outlives the row that was tapped', (tester) async {
+    // Unfolding is user intent, so it lives in [toolExpansionsProvider] rather
+    // than in the row's State: the lazy transcript drops rows that scroll out
+    // of its cache and rebuilds the pane on every tab/split/session change, and
+    // none of that may re-fold a tool the user opened.
+    final item = ToolCallItem(
+      seq: 1,
+      ts: 0,
+      callId: 'c1',
+      name: 'bash',
+      args: const {'command': 'echo hi'},
+      output: 'hi',
+      ended: true,
+      exitCode: 0,
+    );
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    Widget app(Widget child) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: Scaffold(body: child)),
+    );
+
+    await tester.pumpWidget(app(ToolCallCard(item: item, expansionKey: 'k')));
+    await tester.tap(find.text('Ran echo hi'));
+    await tester.pumpAndSettle();
+    expect(find.text('Output'), findsOneWidget);
+
+    // The row is destroyed and a brand-new one is built for the same call.
+    await tester.pumpWidget(app(const SizedBox.shrink()));
+    await tester.pumpWidget(app(ToolCallCard(item: item, expansionKey: 'k')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Output'), findsOneWidget);
+  });
+
+  test('expansion keys are scoped per session', () {
+    // Agents number their tool calls per session, so an unscoped callId would
+    // make unfolding a tool in one session unfold an unrelated row in another.
+    final call = ToolCallItem(
+      seq: 1,
+      ts: 0,
+      callId: 'call_1',
+      name: 'bash',
+      args: const {},
+    );
+    expect(
+      transcriptRowExpansionKey('s1', call),
+      isNot(transcriptRowExpansionKey('s2', call)),
+    );
+    final thinking = ThinkingItem(seq: 7, ts: 0, text: 'why');
+    expect(
+      transcriptRowExpansionKey('s1', thinking),
+      isNot(transcriptRowExpansionKey('s2', thinking)),
+    );
+  });
+
+  testWidgets('an unfolded reasoning line stays unfolded when rebuilt', (
+    tester,
+  ) async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    Widget app(Widget child) => UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: Scaffold(body: child)),
+    );
+    const row = ThinkingLine(text: 'a reasoning trace', expansionKey: 'k');
+
+    await tester.pumpWidget(app(row));
+    await tester.tap(find.text('a reasoning trace'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SelectableText), findsOneWidget);
+
+    await tester.pumpWidget(app(const SizedBox.shrink()));
+    await tester.pumpWidget(app(row));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SelectableText), findsOneWidget);
   });
 }

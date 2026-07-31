@@ -20,6 +20,7 @@ import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_chips.dart';
+import 'package:makit/ui/session/transcript_list.dart';
 import 'package:makit/ui/session/tool_renderers.dart'
     show kReadableContentMaxWidth;
 
@@ -472,7 +473,7 @@ void main() {
       );
       await tester.pump();
 
-      final listWidth = tester.getSize(find.byType(ListView)).width;
+      final listWidth = tester.getSize(find.byType(TranscriptListView)).width;
       expect(listWidth, 1200);
       expect(listWidth, greaterThan(kReadableContentMaxWidth));
     },
@@ -914,8 +915,8 @@ void main() {
       );
       await tester.pump();
       final controller = tester
-          .widget<ListView>(find.byType(ListView))
-          .controller!;
+          .widget<TranscriptListView>(find.byType(TranscriptListView))
+          .controller;
       void push(List<ChatItem> next) =>
           container.read(itemsController.notifier).state = next;
       return (controller, push);

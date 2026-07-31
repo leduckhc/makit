@@ -15,6 +15,7 @@ import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
+import '../../ui/session/transcript_list.dart';
 import 'composer_draft.dart';
 import 'composer_focus.dart';
 import 'new_worktree_dialog.dart';
@@ -79,10 +80,8 @@ class DesktopChatPane extends ConsumerStatefulWidget {
 
 class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   final _scroll = ScrollController();
-  final _anchor = TranscriptAnchor();
   String? _subscribed;
   int _lastSeq = 0;
-  List<ChatItem>? _lastItems;
 
   /// Caller-owned composer controllers, one per bound session, so the PR-actions
   /// split button (a sibling of the composer) can inject prompt text into the
@@ -118,12 +117,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     if (sessionId == null || sessionId == _subscribed) return;
     _subscribed = sessionId;
     _lastSeq = 0;
-    // A different transcript: forget the previous one so its item list can't be
-    // mistaken for this one's. (A tab keys the pane, so today the only rebind is
-    // placeholder → session, where no ListView existed yet — this keeps the
-    // reset honest if another rebind path appears.)
-    _lastItems = null;
-    _anchor.reset();
     // Defer the subscribe (and its history replay) to after the first frame so
     // the sidebar paints first — the conversation fills in immediately after.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -208,12 +201,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
     final items = ref.watch(chatItemsProvider(sessionId));
 
-    if (!identical(items, _lastItems)) {
-      _lastItems = items;
-      // A real content change (new item or streamed delta): let the transcript
-      // physics absorb the growth so history stays put under the user's eyes.
-      _anchor.arm();
-    }
     // Keep the transcript pinned to the newest message as items stream in,
     // but only when the user is already near the bottom so scrolling up to read
     // history is never yanked away. Reversed list: newest is at offset 0.
@@ -245,19 +232,18 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               // via its own centered ConstrainedBox, so the layout is unchanged.
               : Stack(
                   children: [
-                    ListView.builder(
+                    TranscriptListView(
                       controller: _scroll,
-                      // Reversed so the resting position (offset 0) is the newest
-                      // message: opens pinned to the latest, older rows build
-                      // lazily as the user scrolls up.
-                      reverse: true,
-                      // Absorb extent changes (streamed tokens, new items, an
-                      // expanded row) into the offset once the user has scrolled
-                      // into history, so the row being read never slides. See
-                      // [TranscriptScrollPhysics].
-                      physics: TranscriptScrollPhysics(anchor: _anchor),
                       padding: const EdgeInsets.symmetric(vertical: kSpace12),
                       itemCount: items.length + (hasTrailer ? 1 : 0),
+                      // Let the lazy list find each already-built row at its
+                      // new index when items stream in, instead of discarding
+                      // every row (and its fold state) because the slots
+                      // shifted.
+                      findChildIndexCallback: transcriptChildIndexFinder(
+                        items,
+                        hasTrailer: hasTrailer,
+                      ),
                       itemBuilder: (context, i) {
                         // Reversed: i counts up from the bottom. The trailing row
                         // (i == 0) is the inline ask card when awaiting (priority —
@@ -270,7 +256,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                                   1 -
                                   (hasTrailer ? i - 1 : i)];
                         final Widget child = !isTrailer
-                            ? chatItemWidget(item!)
+                            ? chatItemWidget(sessionId, item!)
                             : (trailer == TranscriptTrailer.ask
                                   ? AskCard(ask: pendingAsk!)
                                   : const WorkingIndicator());
