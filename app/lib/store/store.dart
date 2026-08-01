@@ -103,6 +103,7 @@ class StoreState {
     required this.commands,
     required this.meta,
     required this.actionErrors,
+    this.githubBudget,
     this.sessionsLoaded = false,
   });
 
@@ -133,6 +134,11 @@ class StoreState {
   /// surface transient error snackbars without adding chat items.
   final Map<String, ActionError> actionErrors;
 
+  /// Latest GitHub API budget snapshot (SPEC-32), or null until the first
+  /// `github.budget` frame arrives. A fresh client renders an `unknown` icon
+  /// while this is null.
+  final GithubBudget? githubBudget;
+
   /// Whether a `sessions.snapshot` has been received. Distinguishes "the server
   /// has no sessions" from "we haven't heard from the server yet", which an
   /// empty [sessions] list alone cannot.
@@ -147,6 +153,7 @@ class StoreState {
     Map<String, List<SlashCmd>>? commands,
     Map<String, SessionMeta>? meta,
     Map<String, ActionError>? actionErrors,
+    GithubBudget? githubBudget,
     bool? sessionsLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
@@ -157,6 +164,7 @@ class StoreState {
     commands: commands ?? this.commands,
     meta: meta ?? this.meta,
     actionErrors: actionErrors ?? this.actionErrors,
+    githubBudget: githubBudget ?? this.githubBudget,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
   );
 }
@@ -167,6 +175,7 @@ class StoreState {
 StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
   ProjectsSnapshot(:final projects) => state.copyWith(projects: projects),
   ReposSnapshot(:final repos) => state.copyWith(repos: repos),
+  GithubBudgetFrame(:final budget) => state.copyWith(githubBudget: budget),
   SessionsSnapshot(:final sessions) => state.copyWith(
     sessions: sessions,
     sessionsLoaded: true,
@@ -732,6 +741,41 @@ class StoreController extends StateNotifier<StoreState> {
     }
   }
 
+  /// Ask the server to re-read the GitHub quota (SPEC-32 §6.6). Cheap by
+  /// design: it hits GitHub's `/rate_limit`, which is **exempt** from the rate
+  /// limit, so checking the budget never spends it.
+  ///
+  /// Best-effort, like [refreshRepos]: an older server that predates
+  /// `github.refresh` replies `err {unknown cmd}`, and a failed refresh must
+  /// never surface as an error — the server re-broadcasts the budget on every
+  /// level change anyway.
+  Future<void> refreshGithubBudget() async {
+    try {
+      await _ref.read(connectionControllerProvider.notifier).request(
+        MsgType.cmd,
+        {'kind': 'github.refresh'},
+      );
+    } catch (_) {
+      // Swallow: the budget refreshes itself on a 60s cadence regardless.
+    }
+  }
+
+  /// Pause or resume the server's background PR polling (SPEC-32 §6.6).
+  ///
+  /// Pausing stops only *background* work; user-initiated actions still draw on
+  /// the reserve, and PR pills keep their last-known state (dimmed) rather than
+  /// disappearing. Best-effort for the same reason as [refreshGithubBudget].
+  Future<void> setGithubPollingPaused(bool paused) async {
+    try {
+      await _ref.read(connectionControllerProvider.notifier).request(
+        MsgType.cmd,
+        {'kind': 'github.pause', 'paused': paused},
+      );
+    } catch (_) {
+      // Swallow: a failed pause leaves polling as it was, which is safe.
+    }
+  }
+
   @override
   void dispose() {
     _sub?.cancel();
@@ -766,6 +810,13 @@ final projectsProvider = Provider<ProjectsState>((ref) {
 final reposProvider = Provider<ReposState>((ref) {
   final s = ref.watch(storeControllerProvider);
   return ReposState(s.repos);
+});
+
+/// Latest GitHub API budget snapshot (SPEC-32), or null before any
+/// `github.budget` frame has arrived. Safe to watch pre-connect — the footer
+/// icon renders an `unknown`/dimmed state while this is null.
+final githubBudgetProvider = Provider<GithubBudget?>((ref) {
+  return ref.watch(storeControllerProvider).githubBudget;
 });
 
 final sessionsProvider = Provider<SessionsState>((ref) {

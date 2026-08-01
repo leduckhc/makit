@@ -58,4 +58,36 @@ void main() {
   test('PullRequest.fromJson returns null without a number', () {
     expect(PullRequest.fromJson({'url': 'u'}), isNull);
   });
+
+  test(
+    'PullRequest.fromJson defaults stale/unresolvedUnknown false when absent',
+    () {
+      // Every server that predates SPEC-32 omits these fields; the pill must
+      // still decode and render as a fresh, fully-known PR.
+      final pr = PullRequest.fromJson({
+        'number': 7,
+        'url': 'u',
+        'state': 'OPEN',
+        'title': 't',
+        'isDraft': false,
+      });
+      expect(pr, isNotNull);
+      expect(pr!.stale, isFalse);
+      expect(pr.unresolvedUnknown, isFalse);
+    },
+  );
+
+  test('PullRequest.fromJson carries stale/unresolvedUnknown when present', () {
+    final pr = PullRequest.fromJson({
+      'number': 7,
+      'url': 'u',
+      'state': 'OPEN',
+      'title': 't',
+      'isDraft': false,
+      'stale': true,
+      'unresolvedUnknown': true,
+    });
+    expect(pr!.stale, isTrue);
+    expect(pr.unresolvedUnknown, isTrue);
+  });
 }

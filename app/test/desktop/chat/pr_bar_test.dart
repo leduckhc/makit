@@ -46,6 +46,8 @@ PullRequest _pr({
   bool isDraft = false,
   List<PrCheck> checks = const [],
   int unresolvedComments = 0,
+  bool stale = false,
+  bool unresolvedUnknown = false,
 }) => PullRequest(
   number: 42,
   url: 'https://github.com/o/r/pull/42',
@@ -55,7 +57,20 @@ PullRequest _pr({
   checkRollup: rollup,
   checks: checks,
   unresolvedComments: unresolvedComments,
+  stale: stale,
+  unresolvedUnknown: unresolvedUnknown,
 );
+
+/// The opacity a stale pill is drawn at, so the two-way test can assert the
+/// dimmed value without duplicating the production constant.
+double? _pillOpacity(WidgetTester tester) {
+  final opacities = find.ancestor(
+    of: find.text('PR #42'),
+    matching: find.byType(Opacity),
+  );
+  if (opacities.evaluate().isEmpty) return null;
+  return tester.widget<Opacity>(opacities.first).opacity;
+}
 
 void main() {
   testWidgets('actions button main segment inserts the default prompt', (
@@ -346,4 +361,83 @@ void main() {
       expect(find.textContaining('Open pull request'), findsNothing);
     });
   }
+
+  // ── SPEC-32 §7.5 · stale pills + unmeasured counts ──────────────────────
+  group('SPEC-32 stale pills', () {
+    testWidgets('a stale PR still renders, dimmed', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(stale: true),
+          onInsert: (_) {},
+        ),
+      );
+      // The regression guard for the reported bug: a throttled lookup must NOT
+      // erase the pill — its number and state glyph stay in the tree.
+      expect(find.text('PR #42'), findsOneWidget);
+      expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
+      // …and it is visibly de-emphasised (dimmed), not full strength.
+      final opacity = _pillOpacity(tester);
+      expect(opacity, isNotNull);
+      expect(opacity, lessThan(1.0));
+    });
+
+    testWidgets('a fresh PR renders at full emphasis', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(stale: false),
+          onInsert: (_) {},
+        ),
+      );
+      // No dimming wrapper: the fresh pill is drawn at full strength, so the
+      // dimmed-vs-fresh distinction is real and the stale test can't pass
+      // vacuously.
+      expect(find.text('PR #42'), findsOneWidget);
+      expect(_pillOpacity(tester), isNull);
+    });
+
+    testWidgets('a stale pill names the reason in its tooltip', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(stale: true),
+          onInsert: (_) {},
+        ),
+      );
+      final tip = find.byTooltip(kStalePrTooltip);
+      expect(tip, findsOneWidget);
+      // The copy explains the *why* (a refresh that couldn't complete), not
+      // just the label.
+      expect(kStalePrTooltip, contains('Last known state'));
+      expect(kStalePrTooltip.toLowerCase(), contains('quota'));
+    });
+
+    testWidgets('unresolvedUnknown hides the count instead of showing 0', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          // The 0 is a placeholder (the count was shed), not a fact — showing
+          // "0 unresolved comments" would be a confident lie.
+          pr: _pr(unresolvedComments: 0, unresolvedUnknown: true),
+          onInsert: (_) {},
+        ),
+      );
+      expect(find.textContaining('unresolved comment'), findsNothing);
+    });
+
+    testWidgets('a measured count still renders its number', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(unresolvedComments: 3, unresolvedUnknown: false),
+          onInsert: (_) {},
+        ),
+      );
+      // Guards against hiding real data: a measured non-zero count is shown.
+      expect(find.text('3 unresolved comments'), findsOneWidget);
+    });
+  });
 }

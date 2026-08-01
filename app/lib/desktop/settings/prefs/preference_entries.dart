@@ -140,6 +140,18 @@ const PreferenceEntry<String> prPullPromptPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+/// Whether the GitHub API budget popover's "Burn history" detail is expanded.
+/// Backs the popover's in-place expander so the user's choice survives opens
+/// and restarts (SPEC-32 §7.2). Internal bookkeeping — a remembered UI state,
+/// not a user-facing setting.
+const PreferenceEntry<bool> budgetHistoryExpandedPreference = PreferenceEntry(
+  id: 'chat.budgetHistoryExpanded',
+  defaultValue: false,
+  encode: _encodeBool,
+  decode: _decodeBool,
+  internal: true,
+);
+
 /// How many agents a group opens side by side before it starts placing new ones
 /// as tabs (SPEC-30 decision 9). A **placement policy**, not a rendering mode:
 /// changing it never re-arranges a group the user already arranged — it only
@@ -169,6 +181,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   prCommitPushPromptPreference,
   prPushPromptPreference,
   prPullPromptPreference,
+  budgetHistoryExpandedPreference,
 ];
 
 Object? _encodeThemeMode(ThemeMode value) => value.name;

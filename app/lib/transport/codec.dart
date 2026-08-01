@@ -38,6 +38,11 @@ class SessionEventFrame extends Decoded {
   final SessionEvent event;
 }
 
+class GithubBudgetFrame extends Decoded {
+  const GithubBudgetFrame(this.budget);
+  final GithubBudget budget;
+}
+
 /// Stateless decoder. All methods return `null` on malformed input.
 class WireCodec {
   const WireCodec._();
@@ -87,6 +92,18 @@ class WireCodec {
           return null;
         }
         return SessionEventFrame(event);
+      case 'github.budget':
+        // Tolerant by contract: a missing bucket / null field must survive as
+        // null (unmeasured ≠ empty), never take down the socket. Only a
+        // non-map `budget` payload is unrecoverable.
+        final raw = env.body['budget'];
+        if (raw is! Map) {
+          _warn('github.budget');
+          return null;
+        }
+        return GithubBudgetFrame(
+          GithubBudget.fromJson(Map<String, dynamic>.from(raw)),
+        );
       default:
         return null;
     }

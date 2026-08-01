@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — GitHub API budget indicator</title>
+<style>
+  /* Tokens lifted from app/lib/app/theme.dart (dark ramp + sanctioned hues) */
+  :root{
+    --bg:#171717;            /* surface */
+    --cLowest:#121212;
+    --cLow:#1E1E1E;
+    --c:#242424;             /* surfaceContainer — the sidebar */
+    --cHigh:#2E2E2E;
+    --cHighest:#383838;
+    --text:#F5F5F5;          /* onSurface */
+    --muted:#9E9E9E;         /* outline / onSurfaceVariant */
+    --hairline:#333333;      /* outlineVariant */
+    --accent:#4ADE80;        /* kMakitAccent */
+    --warn:#E0A72E;          /* kStatusWarning */
+    --caution:#E07B39;       /* kStatusCaution */
+    --err:#F85149;           /* kDiffDel */
+    --violet:#B49BFF;        /* kBoardSwatch */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+       font-size:14px;padding:32px 24px 100px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 26px;max-width:900px;line-height:1.55}
+  .sub code{background:var(--cLow);padding:1px 5px;border-radius:4px;font-size:12.5px}
+  .try{display:inline-block;background:rgba(74,222,128,.12);color:var(--accent);border-radius:7px;
+       padding:6px 11px;font-size:12px;margin:0 0 26px}
+
+  section{margin:0 0 32px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  section > header{padding:14px 20px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px}
+  section h2{font-size:15px;margin:0;font-weight:600}
+  section header .hint{font-size:12px;color:var(--muted)}
+  .pad{padding:22px}
+  .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .note{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6;max-width:540px}
+  .note code{background:var(--cLow);padding:1px 4px;border-radius:3px}
+  .row{display:flex;flex-wrap:wrap}
+  .col{flex:1;min-width:340px;padding:22px}
+  .col + .col{border-left:1px dashed var(--hairline)}
+  .tag{font-size:10.5px;color:#0e0e0e;border-radius:6px;padding:2px 8px;font-weight:700;letter-spacing:.04em}
+  .tag.rec{background:var(--accent)}
+
+  /* ── sidebar footer strip ─────────────────────────────────────── */
+  .sbwrap{background:var(--bg);border:1px solid #000;border-radius:10px;overflow:hidden;width:316px}
+  .sbbody{height:150px;background:var(--c)}
+  .footer{display:flex;align-items:center;gap:2px;background:var(--c);
+          padding:8px 8px 8px 12px;border-top:1px solid var(--hairline)}
+  .cchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .cchip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .endpoint{flex:1;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:6px}
+  .ibtn{width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+        color:var(--muted);cursor:default;position:relative}
+  .ibtn:hover,.ibtn.hovered{background:rgba(255,255,255,.07)}
+  .ibtn.active{background:rgba(255,255,255,.11)}
+  .ibtn svg{stroke:currentColor;fill:none;stroke-width:1.4}
+  .ibtn.gh svg{fill:currentColor;stroke:none}
+  .ibtn.warm{color:var(--warn)}
+  .ibtn.hot{color:var(--err)}
+  .ibtn.off{color:#5a5a5a}
+
+  .states{display:flex;gap:26px;flex-wrap:wrap}
+  .state{text-align:center;width:96px}
+  .state .box{background:var(--c);border-radius:10px;padding:8px;display:inline-flex}
+  .state .nm{font-size:11px;color:var(--text);margin-top:8px}
+  .state .ds{font-size:10.5px;color:var(--muted);line-height:1.35;margin-top:2px}
+
+  /* ── hover tooltip (the footer one) ────────────────────────────── */
+  .tip{background:#000;border:1px solid var(--hairline);border-radius:7px;
+       padding:5px 9px;font-size:11.5px;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+  .tip .n{font-variant-numeric:tabular-nums}
+  .tip .w{color:var(--warn)}
+  .tip .sep{color:var(--hairline);padding:0 5px}
+  .tip .hintkey{color:var(--muted)}
+
+  /* ── explainer tooltip (data-tip driven) ───────────────────────── */
+  #ex{position:fixed;z-index:99;max-width:270px;background:#000;border:1px solid #3d3d3d;
+      border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.5;color:#E8E8E8;
+      box-shadow:0 10px 26px rgba(0,0,0,.65);pointer-events:none;opacity:0;transition:opacity .12s}
+  #ex.on{opacity:1}
+  #ex code{background:#1c1c1c;padding:1px 4px;border-radius:3px}
+  #ex b{color:#fff;font-weight:600}
+  [data-tip]:hover{cursor:help}
+  body.guides [data-tip]{outline:1px dotted rgba(74,222,128,.35);outline-offset:1px}
+
+  /* ── popover shell ─────────────────────────────────────────────── */
+  .pop{width:300px;background:var(--cLow);border:1px solid var(--hairline);
+       border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.55);padding:12px 14px}
+  .ptop{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .ptop .mark{color:var(--muted);display:inline-flex}
+  .ptop .mark svg{fill:currentColor}
+  .ptop .ttl{font-size:12px;font-weight:600;letter-spacing:.02em;flex:1}
+  .ptop .reset{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .headline{display:flex;align-items:flex-end;gap:7px;margin:2px 0 3px}
+  .headline .big{font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .headline .unit{font-size:12px;color:var(--muted);padding-bottom:2px}
+  .headline.warm .big{color:var(--warn)}
+  .headline.hot .big{color:var(--err)}
+  .caption{font-size:11px;color:var(--muted);margin:0 0 12px;line-height:1.45}
+
+  .m{margin:9px 0 0}
+  .m .top{display:flex;align-items:baseline;gap:6px;font-size:11.5px;margin-bottom:4px}
+  .m .top .k{color:var(--muted);flex:1;letter-spacing:.02em}
+  .m .top .v{font-variant-numeric:tabular-nums}
+  .m .top .of{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
+  .bar{height:4px;border-radius:2px;background:var(--cHighest);overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+  .bar i.mine{background:var(--accent)}
+  .bar i.other{background:var(--violet);opacity:.75}
+  .bar i.mine.w{background:var(--warn)}
+  .bar i.mine.h{background:var(--err)}
+  /* per-minute bucket reads differently: ticked track, not a long drain */
+  .m.min .bar{height:4px;background:
+     repeating-linear-gradient(90deg,var(--cHighest) 0 4px,transparent 4px 6px)}
+  .m.min .top .of{font-style:normal}
+
+  .legend{display:flex;gap:12px;font-size:10.5px;color:var(--muted);margin-top:9px;flex-wrap:wrap}
+  .legend b{font-weight:400;color:var(--text)}
+  .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+  .sw.mine{background:var(--accent)}
+  .sw.other{background:var(--violet);opacity:.75}
+
+  .banner{display:flex;gap:7px;align-items:flex-start;font-size:11px;line-height:1.45;
+          border-radius:8px;padding:7px 9px;margin-top:11px}
+  .banner.warm{background:rgba(224,167,46,.12);color:#EBC46B}
+  .banner.hot{background:rgba(248,81,73,.13);color:#FF9A93}
+  .banner svg{flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.5;margin-top:1px}
+
+  /* ── the expander pill ─────────────────────────────────────────── */
+  .pillrow{display:flex;align-items:center;gap:8px;margin-top:12px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);
+        border:1px solid var(--hairline);border-radius:999px;padding:4px 10px 4px 9px}
+  .pill:hover{background:rgba(255,255,255,.05);color:var(--text)}
+  .pill.open{background:rgba(255,255,255,.06);color:var(--text);border-color:#454545}
+  .pill svg{stroke:currentColor;fill:none;stroke-width:1.6}
+  .pill .cnt{background:rgba(224,167,46,.18);color:var(--warn);border-radius:999px;
+             padding:0 5px;font-size:10px;font-variant-numeric:tabular-nums}
+  .pillrow .grow{flex:1}
+  .tlink{font-size:11px;color:var(--muted)}
+
+  /* ── expanded detail ──────────────────────────────────────────── */
+  .details{margin-top:12px;border-top:1px solid var(--hairline);padding-top:11px}
+  .dlbl{font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
+  .spark svg{display:block;width:100%;height:40px;overflow:visible}
+  .sparkfoot{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px}
+  .shed{margin-top:4px}
+  .shed .item{display:flex;align-items:center;gap:7px;font-size:11px;margin:5px 0;color:var(--muted);line-height:1.3}
+  .shed .item .d{width:6px;height:6px;border-radius:50%;background:#4a4a4a;flex:0 0 auto}
+  .shed .item.done{color:#7a7a7a}
+  .shed .item.done .d{background:var(--warn)}
+  .shed .item.done s{text-decoration-color:#5a5a5a}
+  .shed .item.next{color:var(--text)}
+  .shed .item.next .d{background:var(--warn);box-shadow:0 0 0 3px rgba(224,167,46,.18)}
+  .actions{display:flex;gap:8px;margin-top:12px}
+  .btn{flex:1;text-align:center;font-size:11.5px;padding:6px 8px;border-radius:7px;background:var(--cHigh);color:var(--text)}
+  .btn.ghost{background:transparent;border:1px solid var(--hairline);color:var(--muted)}
+
+  /* anchored demo */
+  .anchor{position:relative;width:316px;overflow:visible}
+  .anchor .pop{position:absolute;right:6px;bottom:52px}
+  .anchor .tip{position:absolute;right:10px;bottom:50px}
+  .anchor .tail{position:absolute;right:44px;bottom:46px;width:10px;height:10px;background:var(--cLow);
+                border-right:1px solid var(--hairline);border-bottom:1px solid var(--hairline);transform:rotate(45deg)}
+  .stage{background:#0b0b0b;border:1px solid #000;border-radius:12px;padding:18px;display:flex;gap:40px;flex-wrap:wrap}
+  .stageInner{height:250px;display:flex;align-items:flex-end}
+  .stageInner.tall{height:660px}
+
+  /* copy table */
+  table{border-collapse:collapse;width:100%;font-size:12px}
+  th,td{text-align:left;vertical-align:top;padding:7px 12px 7px 0;border-bottom:1px solid #262626;line-height:1.5}
+  th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.el{white-space:nowrap;color:var(--text)}
+  td.tx{color:var(--muted)}
+  td.tx code{background:var(--cLow);padding:1px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+  <h1>GitHub API budget — sidebar footer indicator</h1>
+  <p class="sub">
+    <strong>Hover</strong> the footer mark → one-line tooltip. <strong>Click</strong> → the budget popover,
+    collapsed, with a <strong>“Burn history”</strong> pill that expands the diagnostics in place.
+    Every element in the popover carries its own explainer tooltip — the panel teaches the quota model rather than
+    assuming you already hold it. Colours are sanctioned tokens from <code>app/lib/app/theme.dart</code>.
+  </p>
+  <p class="try">Hover anything inside a popover to read its explainer. Press <b>G</b> to outline every element that has one.</p>
+
+  <!-- ─────────────────────────── ICON STATES ─────────────────────────── -->
+  <section>
+    <header><h2>1 · Footer icon states</h2><span class="hint">the mark itself carries the state</span></header>
+    <div class="pad">
+      <div class="states">
+        <div class="state">
+          <div class="box"><span class="ibtn gh" data-tip="<b>Healthy.</b> More than 30 minutes of quota headroom at the current rate. Same muted grey as the other footer icons, so it disappears into the row when there is nothing to report.">__GH__</span></div>
+          <div class="nm">Healthy</div><div class="ds">&gt;30 min of headroom. Untinted.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn gh warm" data-tip="<b>Warm.</b> Under 30 minutes of headroom. The gateway has begun stretching poll intervals and deferring the expensive review-thread counts.">__GH__</span></div>
+          <div class="nm">Warm</div><div class="ds">&lt;30 min. Polling stretched.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn gh hot" data-tip="<b>Critical.</b> Under 5 minutes of headroom, or the reserve floor has been reached. Background polling is about to stop; your own actions still get budget.">__GH__</span></div>
+          <div class="nm">Critical</div><div class="ds">&lt;5 min, or reserve floor hit.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn gh hot" data-tip="<b>Paused.</b> Quota exhausted or manually paused: no background polling until the window resets. PR pills keep their last known state, dimmed.">__GHSLASH__</span></div>
+          <div class="nm">Paused</div><div class="ds">Polling suspended until reset.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn gh off" data-tip="<b>Unknown.</b> No quota reading yet — usually because <code>gh</code> is not authenticated on this machine, in which case PR status is unavailable entirely.">__GH__</span></div>
+          <div class="nm">Unknown</div><div class="ds">No <code>gh</code> auth, or not measured yet.</div>
+        </div>
+      </div>
+      <p class="note">
+        Quiet at rest: healthy matches the folder/archive/gear icons, so the footer gains no permanent coloured
+        mark competing with the connection chip. Colour appears only when there is something to say.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── HOVER ─────────────────────────── -->
+  <section>
+    <header><h2>2 · Hover → one-line tooltip</h2><span class="hint">the ambient read, no click needed</span></header>
+    <div class="pad">
+      <div class="stage">
+        <div class="stageInner">
+          <div class="sbwrap anchor">
+            <div class="sbbody"></div>
+            <div class="tip">
+              quota runs out in <span class="w n">18 min</span><span class="sep">·</span><span class="n">1,769</span> REST left
+              <span class="sep">·</span><span class="hintkey">click for detail</span>
+            </div>
+            <div class="footer">
+              <span class="cchip"><span class="dot"></span>Connected</span>
+              <span class="endpoint">100.83.12.4:9787</span>
+              <span class="ibtn gh warm hovered">__GH__</span>
+              <span class="ibtn">__FOLDERPLUS__</span>
+              <span class="ibtn">__ARCHIVE__</span>
+              <span class="ibtn">__GEAR__</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">
+        Same shape as the other footer tooltips (“Add repo”, “Settings &amp; Server”), so it costs no new
+        vocabulary. Healthy reads simply <em>“GitHub API budget — healthy · 4,812 REST left”</em>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── COLLAPSED / EXPANDED ─────────────────────────── -->
+  <section>
+    <header><h2>3 · Click → popover</h2><span class="hint">collapsed by default; the pill expands in place · hover any element for its explainer</span></header>
+    <div class="row">
+      <div class="col">
+        <div class="lbl"><span class="tag rec">DEFAULT</span> &nbsp;Collapsed</div>
+        <div class="pop">
+          <div class="ptop">
+            <span class="mark">__GH16__</span>
+            <span class="ttl" data-tip="Every GitHub read makit makes — PR identity, CI checks, review threads — spends from one hourly quota tied to your <code>gh</code> login. This panel is that quota.">GitHub API budget</span>
+            <span class="reset" data-tip="GitHub's window is <b>fixed, not rolling</b>: the entire allowance returns at this instant, not gradually. Waiting it out is often faster than optimising.">resets 14:32</span>
+          </div>
+          <div class="headline warm">
+            <span class="big" data-tip="How long the remaining quota lasts <b>at the current burn rate</b>. This is the number to act on: it can read minutes even while the raw remaining count still looks comfortable.">18</span>
+            <span class="unit">min of quota left</span>
+          </div>
+          <p class="caption" data-tip="Requests per hour, measured over the last 10 minutes and extrapolated. Compare against the 300/h you can sustain forever.">at the current 340 req/h burn · quota resets in 12 min</p>
+
+          <div class="m">
+            <div class="top">
+              <span class="k" data-tip="The main REST pool: <b>5,000 requests per hour</b> per account. Spent by PR lookups and most <code>gh</code> commands.">REST core</span>
+              <span class="v" data-tip="Requests still available in this window.">1,769</span>
+              <span class="of">/ 5,000 left</span>
+            </div>
+            <div class="bar" data-tip="Full width = the whole hourly allowance. The filled portion is what has already been spent, split by who spent it.">
+              <i class="mine w" style="width:42%"></i><i class="other" style="width:22%"></i>
+            </div>
+          </div>
+
+          <div class="m">
+            <div class="top">
+              <span class="k" data-tip="A <b>separate</b> 5,000/hour pool. <code>gh pr list</code> and the unresolved-review-thread counts run on GraphQL, so this drains independently of REST — exhausting one does not touch the other.">GraphQL</span>
+              <span class="v" data-tip="Requests still available in this window.">4,188</span>
+              <span class="of">/ 5,000 left</span>
+            </div>
+            <div class="bar" data-tip="Full width = the whole hourly allowance. The filled portion is what has already been spent, split by who spent it.">
+              <i class="mine" style="width:11%"></i><i class="other" style="width:5%"></i>
+            </div>
+          </div>
+
+          <div class="m min">
+            <div class="top">
+              <span class="k" data-tip="Search is capped <b>per minute</b> (30 authenticated), not per hour — it throttles quickly and recovers quickly. Shown only when something has used it in the last few minutes; makit itself does not search.">Search</span>
+              <span class="v" data-tip="Searches left in the current 60-second window.">24</span>
+              <span class="of" data-tip="A one-minute window, not the hourly one — so this row's reset countdown is seconds, not minutes.">/ 30 this minute · 38s</span>
+            </div>
+            <div class="bar" data-tip="Ticked track marks this as a per-minute bucket rather than an hourly drain.">
+              <i class="other" style="width:20%"></i>
+            </div>
+          </div>
+
+          <div class="legend">
+            <span data-tip="Spent by this makit server: PR polling, repo snapshots, and PR actions you triggered."><span class="sw mine"></span>makit <b>2,100</b></span>
+            <span data-tip="Spent by anything else on the same <code>gh</code> token — your terminal, Codex, other agents. makit cannot observe those calls; this is the gap between the quota GitHub reports and makit's own count. It is usually why the limit is hit."><span class="sw other"></span>other tools <b>1,131</b></span>
+          </div>
+
+          <div class="banner warm" data-tip="What the gateway has already changed to protect the quota. Automatic — nothing for you to do.">__WARNI__<span>Polling stretched to <b>30s</b>; comment counts on demand.</span></div>
+
+          <div class="pillrow">
+            <span class="pill" data-tip="Show the last hour of spend and the full throttling ladder.">__CHART__ Burn history
+              <span class="cnt" data-tip="Number of throttles currently in force. Hidden when nothing has been shed, so the pill only draws your eye when it has news.">2</span> __CARETDOWN__</span>
+            <span class="grow"></span>
+            <span class="tlink" data-tip="Re-read the quota from GitHub. Uses the <code>/rate_limit</code> endpoint, which GitHub exempts — so checking your budget never spends it.">Refresh</span>
+          </div>
+        </div>
+        <p class="note">
+          The Search row appears <strong>only when non-idle</strong>. makit never searches, so a non-zero Search
+          bucket is itself a signal: something else on your token does. Its ticked track and seconds-scale
+          countdown mark it as a per-minute limit, which behaves nothing like the hourly pools.
+        </p>
+      </div>
+
+      <div class="col">
+        <div class="lbl">Expanded</div>
+        <div class="pop">
+          <div class="ptop">
+            <span class="mark">__GH16__</span>
+            <span class="ttl" data-tip="Every GitHub read makit makes — PR identity, CI checks, review threads — spends from one hourly quota tied to your <code>gh</code> login.">GitHub API budget</span>
+            <span class="reset" data-tip="GitHub's window is <b>fixed, not rolling</b>: the entire allowance returns at this instant.">resets 14:32</span>
+          </div>
+          <div class="headline warm">
+            <span class="big" data-tip="How long the remaining quota lasts at the current burn rate.">18</span><span class="unit">min of quota left</span>
+          </div>
+          <p class="caption">at the current 340 req/h burn · quota resets in 12 min</p>
+          <div class="m">
+            <div class="top"><span class="k">REST core</span><span class="v">1,769</span><span class="of">/ 5,000 left</span></div>
+            <div class="bar"><i class="mine w" style="width:42%"></i><i class="other" style="width:22%"></i></div>
+          </div>
+          <div class="m">
+            <div class="top"><span class="k">GraphQL</span><span class="v">4,188</span><span class="of">/ 5,000 left</span></div>
+            <div class="bar"><i class="mine" style="width:11%"></i><i class="other" style="width:5%"></i></div>
+          </div>
+          <div class="m min">
+            <div class="top"><span class="k">Search</span><span class="v">24</span><span class="of">/ 30 this minute · 38s</span></div>
+            <div class="bar"><i class="other" style="width:20%"></i></div>
+          </div>
+          <div class="legend">
+            <span><span class="sw mine"></span>makit <b>2,100</b></span>
+            <span><span class="sw other"></span>other tools <b>1,131</b></span>
+          </div>
+          <div class="banner warm">__WARNI__<span>Polling stretched to <b>30s</b>; comment counts on demand.</span></div>
+          <div class="pillrow">
+            <span class="pill open" data-tip="Hide the detail again. Your choice is remembered across opens and restarts.">__CHART__ Burn history <span class="cnt">2</span> __CARETUP__</span>
+            <span class="grow"></span>
+            <span class="tlink">Refresh</span>
+          </div>
+
+          <div class="details">
+            <div class="dlbl" data-tip="Requests per hour, sampled each minute for the last hour. Reveals whether you are in a spike or a steady overspend — the fixes differ.">Last 60 minutes</div>
+            <div class="spark" data-tip="<b>Amber</b> = makit's own calls. <b>Violet</b> = other tools on the same token. <b>Dashed</b> = 300/h, the rate you can sustain indefinitely. Above the dashes, you are borrowing from the next hour.">
+              <svg viewBox="0 0 272 40" preserveAspectRatio="none">
+                <line x1="0" y1="20" x2="272" y2="20" stroke="#383838" stroke-width="1" stroke-dasharray="3 3"/>
+                <polyline points="0,35 21,32 42,34 63,27 84,29 105,22 126,24 147,17 168,20 189,13 210,16 231,11 252,13 272,9"
+                          fill="none" stroke="#E0A72E" stroke-width="1.6" stroke-linejoin="round"/>
+                <polyline points="0,38 21,37 42,38 63,36 84,37 105,35 126,36 147,34 168,35 189,33 210,34 231,32 252,33 272,31"
+                          fill="none" stroke="#B49BFF" stroke-width="1.4" opacity=".8" stroke-linejoin="round"/>
+              </svg>
+              <div class="sparkfoot"><span>−60 min</span><span>┈ sustainable 300/h</span><span>now</span></div>
+            </div>
+            <div class="dlbl" style="margin-top:14px" data-tip="The fixed sequence of savings the gateway applies as quota drains, cheapest information sacrificed first.">Degradation ladder</div>
+            <div class="shed">
+              <div class="item done" data-tip="<b>Applied.</b> Unresolved-comment counts are the most expensive call we make — paged GraphQL, per PR, on every tick. They now load only when you look at that row."><span class="d"></span><s>Comment counts → on demand</s></div>
+              <div class="item done" data-tip="<b>Applied.</b> The fast 10s poll is reserved for PRs with CI in flight; everything has been stretched to 30s."><span class="d"></span><s>Poll interval → 30s</s></div>
+              <div class="item next" data-tip="<b>Next.</b> Applies automatically when REST drops below 900 remaining."><span class="d"></span>Next at &lt;900 left: poll every 2 min</div>
+              <div class="item" data-tip="Background polling stops entirely and 300 requests are held back, so an action you take never fails for lack of quota."><span class="d"></span>At &lt;300 left: pause polling, hold reserve</div>
+              <div class="item" data-tip="Throttling only ever slows the background poller. Creating a PR, checking one out, or refreshing on demand always gets budget from the reserve."><span class="d"></span>Your own actions are never blocked</div>
+            </div>
+            <div class="actions">
+              <span class="btn ghost" data-tip="Stop background PR polling until you turn it back on. PR pills keep their last known state, dimmed.">Pause polling now</span>
+              <span class="btn ghost" data-tip="Set the reserve size, a self-imposed requests/hour ceiling, and the slowest acceptable poll interval.">Budget settings</span>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          Burn history (amber = makit, violet = other tools, dashed = sustainable rate) plus the ladder showing
+          what has been shed, what is next, and at which threshold. Expanded state is <strong>remembered</strong>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── IN CONTEXT ─────────────────────────── -->
+  <section>
+    <header><h2>4 · Expanded, in the footer</h2><span class="hint">worst-case height — grows upward from the last row</span></header>
+    <div class="pad">
+      <div class="stage">
+        <div class="stageInner tall">
+          <div class="sbwrap anchor">
+            <div class="sbbody" style="height:600px"></div>
+            <div class="pop">
+              <div class="ptop"><span class="mark">__GH16__</span><span class="ttl">GitHub API budget</span><span class="reset">resets 14:32</span></div>
+              <div class="headline warm"><span class="big">18</span><span class="unit">min of quota left</span></div>
+              <p class="caption">at the current 340 req/h burn · quota resets in 12 min</p>
+              <div class="m">
+                <div class="top"><span class="k">REST core</span><span class="v">1,769</span><span class="of">/ 5,000 left</span></div>
+                <div class="bar"><i class="mine w" style="width:42%"></i><i class="other" style="width:22%"></i></div>
+              </div>
+              <div class="m">
+                <div class="top"><span class="k">GraphQL</span><span class="v">4,188</span><span class="of">/ 5,000 left</span></div>
+                <div class="bar"><i class="mine" style="width:11%"></i><i class="other" style="width:5%"></i></div>
+              </div>
+              <div class="m min">
+                <div class="top"><span class="k">Search</span><span class="v">24</span><span class="of">/ 30 this minute · 38s</span></div>
+                <div class="bar"><i class="other" style="width:20%"></i></div>
+              </div>
+              <div class="legend">
+                <span><span class="sw mine"></span>makit <b>2,100</b></span>
+                <span><span class="sw other"></span>other tools <b>1,131</b></span>
+              </div>
+              <div class="banner warm">__WARNI__<span>Polling stretched to <b>30s</b>; comment counts on demand.</span></div>
+              <div class="pillrow">
+                <span class="pill open">__CHART__ Burn history <span class="cnt">2</span> __CARETUP__</span>
+                <span class="grow"></span><span class="tlink">Refresh</span>
+              </div>
+              <div class="details">
+                <div class="dlbl">Last 60 minutes</div>
+                <div class="spark">
+                  <svg viewBox="0 0 272 40" preserveAspectRatio="none">
+                    <line x1="0" y1="20" x2="272" y2="20" stroke="#383838" stroke-width="1" stroke-dasharray="3 3"/>
+                    <polyline points="0,35 21,32 42,34 63,27 84,29 105,22 126,24 147,17 168,20 189,13 210,16 231,11 252,13 272,9"
+                              fill="none" stroke="#E0A72E" stroke-width="1.6" stroke-linejoin="round"/>
+                    <polyline points="0,38 21,37 42,38 63,36 84,37 105,35 126,36 147,34 168,35 189,33 210,34 231,32 252,33 272,31"
+                              fill="none" stroke="#B49BFF" stroke-width="1.4" opacity=".8" stroke-linejoin="round"/>
+                  </svg>
+                  <div class="sparkfoot"><span>−60 min</span><span>┈ sustainable 300/h</span><span>now</span></div>
+                </div>
+                <div class="dlbl" style="margin-top:14px">Degradation ladder</div>
+                <div class="shed">
+                  <div class="item done"><span class="d"></span><s>Comment counts → on demand</s></div>
+                  <div class="item done"><span class="d"></span><s>Poll interval → 30s</s></div>
+                  <div class="item next"><span class="d"></span>Next at &lt;900 left: poll every 2 min</div>
+                  <div class="item"><span class="d"></span>At &lt;300 left: pause polling, hold reserve</div>
+                  <div class="item"><span class="d"></span>Your own actions are never blocked</div>
+                </div>
+                <div class="actions">
+                  <span class="btn ghost">Pause polling now</span>
+                  <span class="btn ghost">Budget settings</span>
+                </div>
+              </div>
+            </div>
+            <div class="tail"></div>
+            <div class="footer">
+              <span class="cchip"><span class="dot"></span>Connected</span>
+              <span class="endpoint">100.83.12.4:9787</span>
+              <span class="ibtn gh warm active">__GH__</span>
+              <span class="ibtn">__FOLDERPLUS__</span>
+              <span class="ibtn">__ARCHIVE__</span>
+              <span class="ibtn">__GEAR__</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">
+        Fully expanded with the Search row is ~540px — fits above the footer at the default window height, and the
+        icon holds a pressed tint while open. In a shorter window the detail block scrolls rather than the popover
+        flipping to the side.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── EDGE STATES ─────────────────────────── -->
+  <section>
+    <header><h2>5 · Edge states</h2><span class="hint">these carry most of the value</span></header>
+    <div class="row">
+      <div class="col">
+        <div class="lbl">Exhausted / paused</div>
+        <div class="pop">
+          <div class="ptop"><span class="mark">__GH16__</span><span class="ttl">GitHub API budget</span><span class="reset" data-tip="The full 5,000 returns at once at this time.">resets 14:32</span></div>
+          <div class="headline hot"><span class="big" data-tip="Nothing left in the REST pool. Reads fail with HTTP 403 until the window resets.">0</span><span class="unit">REST calls left</span></div>
+          <p class="caption">quota resets in 9 min</p>
+          <div class="m">
+            <div class="top"><span class="k">REST core</span><span class="v">0</span><span class="of">/ 5,000 left</span></div>
+            <div class="bar"><i class="mine h" style="width:74%"></i><i class="other" style="width:26%"></i></div>
+          </div>
+          <div class="banner hot" data-tip="The fix for your original complaint: a throttled lookup used to return &ldquo;no PR&rdquo;, which the watcher broadcast as &ldquo;the PR is gone&rdquo; — so pills vanished. Now the last known state is kept and dimmed.">__WARNI__<span><b>Polling paused.</b> PR pills show the last known state, dimmed, until the quota resets.</span></div>
+          <div class="pillrow">
+            <span class="pill">__CHART__ Burn history <span class="cnt">4</span> __CARETDOWN__</span>
+            <span class="grow"></span><span class="tlink" data-tip="Costs no quota: the <code>/rate_limit</code> endpoint is exempt, so you can check whether the window has reset for free.">Retry now</span>
+          </div>
+        </div>
+        <p class="note">The key promise: exhausted quota <strong>never</strong> makes a PR pill disappear.</p>
+      </div>
+      <div class="col">
+        <div class="lbl">Unknown — no auth</div>
+        <div class="pop">
+          <div class="ptop"><span class="mark">__GH16__</span><span class="ttl">GitHub API budget</span></div>
+          <div class="headline"><span class="big" style="color:var(--muted)" data-tip="No reading available — with no token there is no quota to report.">—</span></div>
+          <p class="caption">Not measured yet. <code>gh</code> is not authenticated on this machine, so PR status is unavailable.</p>
+          <div class="actions"><span class="btn" data-tip="Copies the command; makit does not run auth flows on your behalf.">Run <code>gh auth login</code></span></div>
+        </div>
+        <div class="lbl" style="margin-top:26px">Secondary rate limit</div>
+        <div class="pop">
+          <div class="ptop"><span class="mark">__GH16__</span><span class="ttl">GitHub API budget</span><span class="reset" data-tip="From GitHub's <code>Retry-After</code> header. Unlike the hourly window, this clears in seconds.">retry in 47s</span></div>
+          <div class="headline warm"><span class="big">4,102</span><span class="unit">REST calls left</span></div>
+          <p class="caption" data-tip="Secondary limits punish <b>burstiness</b>, not volume: too many concurrent or too-rapid calls. Plenty of quota can remain while you are blocked.">quota is fine — GitHub applied a <em>secondary</em> (burst) limit</p>
+          <div class="banner warm" data-tip="The correct response is fewer parallel calls, not waiting for the hourly reset — so the gateway lowers its concurrency cap instead of pausing.">__WARNI__<span>Backing off <b>47s</b> per <code>Retry-After</code>. Concurrency reduced to 2.</span></div>
+        </div>
+        <p class="note">Worth distinguishing: secondary limits fire on burstiness, and the fix is concurrency.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── TOOLTIP COPY ─────────────────────────── -->
+  <section>
+    <header><h2>6 · Explainer copy, for review</h2><span class="hint">every tooltip in one place — easier to edit as prose than by hovering</span></header>
+    <div class="pad">
+      <table>
+        <tr><th style="width:150px">Element</th><th>Tooltip</th></tr>
+        <tr><td class="el">Title</td><td class="tx">Every GitHub read makit makes — PR identity, CI checks, review threads — spends from one hourly quota tied to your <code>gh</code> login. This panel is that quota.</td></tr>
+        <tr><td class="el">resets 14:32</td><td class="tx">GitHub's window is <em>fixed, not rolling</em>: the entire allowance returns at this instant, not gradually. Waiting it out is often faster than optimising.</td></tr>
+        <tr><td class="el">“18 min of quota left”</td><td class="tx">How long the remaining quota lasts at the current burn rate. The number to act on: it can read minutes even while the raw remaining count still looks comfortable.</td></tr>
+        <tr><td class="el">Burn caption</td><td class="tx">Requests per hour, measured over the last 10 minutes and extrapolated. Compare against the 300/h you can sustain forever.</td></tr>
+        <tr><td class="el">REST core</td><td class="tx">The main REST pool: 5,000 requests per hour per account. Spent by PR lookups and most <code>gh</code> commands.</td></tr>
+        <tr><td class="el">GraphQL</td><td class="tx">A <em>separate</em> 5,000/hour pool. <code>gh pr list</code> and the unresolved-review-thread counts run on GraphQL, so this drains independently of REST — exhausting one does not touch the other.</td></tr>
+        <tr><td class="el">Search</td><td class="tx">Search is capped <em>per minute</em> (30 authenticated), not per hour — it throttles quickly and recovers quickly. Shown only when something has used it recently; makit itself does not search.</td></tr>
+        <tr><td class="el">Bar</td><td class="tx">Full width = the whole hourly allowance. The filled portion is what has already been spent, split by who spent it.</td></tr>
+        <tr><td class="el">makit swatch</td><td class="tx">Spent by this makit server: PR polling, repo snapshots, and PR actions you triggered.</td></tr>
+        <tr><td class="el">other tools swatch</td><td class="tx">Spent by anything else on the same <code>gh</code> token — your terminal, Codex, other agents. makit cannot observe those calls; this is the gap between the quota GitHub reports and makit's own count. It is usually why the limit is hit.</td></tr>
+        <tr><td class="el">Throttle banner</td><td class="tx">What the gateway has already changed to protect the quota. Automatic — nothing for you to do.</td></tr>
+        <tr><td class="el">Pill badge</td><td class="tx">Number of throttles currently in force. Hidden when nothing has been shed, so the pill only draws your eye when it has news.</td></tr>
+        <tr><td class="el">Refresh</td><td class="tx">Re-read the quota from GitHub. Uses the <code>/rate_limit</code> endpoint, which GitHub exempts — so checking your budget never spends it.</td></tr>
+        <tr><td class="el">Sparkline</td><td class="tx">Amber = makit's own calls. Violet = other tools on the same token. Dashed = 300/h, the rate you can sustain indefinitely. Above the dashes, you are borrowing from the next hour.</td></tr>
+        <tr><td class="el">Ladder · applied</td><td class="tx">Unresolved-comment counts are the most expensive call we make — paged GraphQL, per PR, on every tick. They now load only when you look at that row.</td></tr>
+        <tr><td class="el">Ladder · next</td><td class="tx">Applies automatically when REST drops below 900 remaining.</td></tr>
+        <tr><td class="el">Ladder · reserve</td><td class="tx">Background polling stops entirely and 300 requests are held back, so an action you take never fails for lack of quota.</td></tr>
+        <tr><td class="el">Paused banner</td><td class="tx">A throttled lookup used to return “no PR”, which the watcher broadcast as “the PR is gone” — so pills vanished. Now the last known state is kept and dimmed.</td></tr>
+        <tr><td class="el">Secondary limit</td><td class="tx">Secondary limits punish <em>burstiness</em>, not volume: too many concurrent or too-rapid calls. Plenty of quota can remain while you are blocked. The fix is fewer parallel calls, not waiting for the reset.</td></tr>
+      </table>
+      <p class="note" style="max-width:760px">
+        Tooltips are explanatory, not label-restating — a tooltip that says “REST core: the REST core limit” is
+        noise. Each one answers “why does this number matter / what do I do about it”. They use the same
+        <code>Tooltip</code> widget as the rest of the app, with a slightly longer delay (~600ms) and a wrapped
+        max-width since these are sentences, not labels.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── INTERACTION ─────────────────────────── -->
+  <section>
+    <header><h2>7 · Interaction summary</h2></header>
+    <div class="pad">
+      <p class="note" style="max-width:780px;margin-top:0">
+        <strong>Hover icon</strong> → one-line tooltip, ~500ms delay.<br>
+        <strong>Click icon</strong> → popover opens collapsed; click-outside / <code>Esc</code> dismisses.<br>
+        <strong>Pill</strong> → expands the detail in place, animating height (~160ms); state persists across opens
+        and restarts.<br>
+        <strong>Search row</strong> → rendered only when the search bucket has been touched recently, since makit
+        never spends it.<br>
+        <strong>Element tooltips</strong> → ~600ms delay, wrapped, dismissed on move-away; every number and every
+        coloured mark has one.<br>
+        <strong>Data</strong> → the popover renders the budget snapshot the gateway already broadcasts; opening it
+        costs zero GitHub calls.
+      </p>
+    </div>
+  </section>
+
+  <div id="ex"></div>
+
+<script>
+const GH_PATH='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.05-.13-.36-.91.08-1.9 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44.99.13 1.77.08 1.9.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A7.995 7.995 0 0 0 16 8c0-4.42-3.58-8-8-8Z';
+const SVG={
+ GH:'<svg viewBox="0 0 16 16" width="17" height="17"><path d="'+GH_PATH+'"/></svg>',
+ GH16:'<svg viewBox="0 0 16 16" width="14" height="14"><path d="'+GH_PATH+'"/></svg>',
+ GHSLASH:'<svg viewBox="0 0 16 16" width="17" height="17"><path d="'+GH_PATH+'" opacity=".5"/><path d="M1.8 14.2 14.2 1.8" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>',
+ FOLDERPLUS:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h6l2 2h10v10H3z"/><path d="M12 11v5M9.5 13.5h5"/></svg>',
+ ARCHIVE:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h18v3H3zM4.5 9v10h15V9M10 12.5h4"/></svg>',
+ GEAR:'<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M4.6 7.5l1.7 1M17.7 15.5l1.7 1M4.6 16.5l1.7-1M17.7 8.5l1.7-1"/></svg>',
+ WARNI:'<svg viewBox="0 0 24 24" width="13" height="13"><path d="M12 4.5 21 19H3z"/><path d="M12 10v4M12 16.4v.2"/></svg>',
+ CHART:'<svg viewBox="0 0 24 24" width="12" height="12"><path d="M4 19V5M4 19h16M7.5 16l3.5-5 3 3 4.5-7"/></svg>',
+ CARETDOWN:'<svg viewBox="0 0 24 24" width="11" height="11"><path d="M6 9.5l6 6 6-6"/></svg>',
+ CARETUP:'<svg viewBox="0 0 24 24" width="11" height="11"><path d="M6 14.5l6-6 6 6"/></svg>',
+};
+const root=document.querySelector('body');
+root.innerHTML=root.innerHTML
+ .replace(/__GHSLASH__/g,SVG.GHSLASH)
+ .replace(/__GH16__/g,SVG.GH16)
+ .replace(/__GH__/g,SVG.GH)
+ .replace(/__FOLDERPLUS__/g,SVG.FOLDERPLUS)
+ .replace(/__ARCHIVE__/g,SVG.ARCHIVE)
+ .replace(/__GEAR__/g,SVG.GEAR)
+ .replace(/__WARNI__/g,SVG.WARNI)
+ .replace(/__CHART__/g,SVG.CHART)
+ .replace(/__CARETDOWN__/g,SVG.CARETDOWN)
+ .replace(/__CARETUP__/g,SVG.CARETUP);
+
+// explainer tooltip
+const ex=document.getElementById('ex');
+let t=null;
+document.addEventListener('mouseover',e=>{
+  const el=e.target.closest('[data-tip]');
+  if(!el){clearTimeout(t);ex.classList.remove('on');return;}
+  clearTimeout(t);
+  t=setTimeout(()=>{
+    ex.innerHTML=el.getAttribute('data-tip');
+    ex.classList.add('on');
+    const r=el.getBoundingClientRect();
+    const w=ex.offsetWidth,h=ex.offsetHeight;
+    let x=r.left, y=r.top-h-8;
+    if(y<8) y=r.bottom+8;
+    if(x+w>innerWidth-10) x=innerWidth-w-10;
+    ex.style.left=x+'px'; ex.style.top=y+'px';
+  },260);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='g'||e.key==='G') document.body.classList.toggle('guides');
+});
+addEventListener('scroll',()=>{clearTimeout(t);ex.classList.remove('on');},{passive:true});
+</script>
+</body>
+</html>

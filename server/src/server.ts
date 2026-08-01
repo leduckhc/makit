@@ -32,7 +32,7 @@
 
 import { createServer as createHttpsServer, type Server as HttpsServer } from "node:https";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Envelope, RepoDTO } from "./protocol.js";
+import type { Envelope, RepoDTO, GithubBudgetDTO } from "./protocol.js";
 import { PROTOCOL_VERSION, newId } from "./protocol.js";
 import { decodeFrame, encodeFrame, WireErrorCode } from "./protocol/codec.js";
 import type { SessionManager } from "./manager.js";
@@ -53,11 +53,13 @@ import { register as registerSessionCommands } from "./ws/commands/session.js";
 import { register as registerProjectCommands } from "./ws/commands/project.js";
 import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
 import { register as registerRepoCommands } from "./ws/commands/repo.js";
+import { register as registerGithubCommands } from "./ws/commands/github.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
 import { throttleTrailing } from "./ws/throttle.js";
 import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
 import { fetchOpenPr } from "./git.js";
+import { decide } from "./github/policy.js";
 import { attachMediaRoute } from "./media/route.js";
 import { sharedMediaStore } from "./media/store.js";
 
@@ -175,6 +177,45 @@ export function startWsServer(opts: ServerOpts) {
   let reposSnapshotGeneration = 0;
   let lastEnrichedRepos: RepoDTO[] | undefined;
 
+  // The single GitHub gateway (SPEC-32). Owned by the manager (so its
+  // listRepos/enrichPrs/listOpenPrs share the one cache + quota accounting);
+  // server.ts drives its budget broadcast, manual refresh/pause, and the poll
+  // cadence. Refreshed ONCE at startup — construction does not self-refresh (it
+  // would spawn a `gh` in tests), and until the first read the level is
+  // `unknown`, which makes the policy shed unresolved counts unnecessarily.
+  const gateway = manager.gateway;
+  // A failed startup refresh leaves the budget at `unknown`, which makes the
+  // policy shed unresolved counts and poll slowly. Log it rather than swallow:
+  // a permanently failing refresh (bad token, missing `gh`) is otherwise
+  // invisible and looks like the feature simply not working.
+  void gateway.refresh().catch((e: unknown) => {
+    log.warn(`[makit] github budget: initial rate_limit read failed: ${(e as Error).message}`);
+  });
+  https.on("close", () => gateway.close());
+
+  // The current budget as a wire DTO: the tracker snapshot plus the sparkline
+  // history and the exec/cache counters (spec §6.6 frozen contract).
+  const budgetDto = (): GithubBudgetDTO => {
+    const snapshot = gateway.budget();
+    return { ...snapshot, history: gateway.history(), stats: gateway.stats() };
+  };
+  const broadcastBudget = (): void => {
+    const frame: OutgoingFrame = { t: "event", id: newId("gh"), kind: "github.budget", budget: budgetDto() };
+    for (const c of clients.values()) if (c.authed) c.send(frame);
+  };
+  // Last-known PR accessor for enrichPrs' retain-on-throttle (spec §6.5). Derived
+  // from the same `lastEnrichedRepos` the git-only phase preserves, but keyed by
+  // repo PATH + branch (not repo.id + worktree.id, which preserveLastKnownPrs
+  // uses) because that is how the gateway/enrichPrs identify a lookup.
+  const lastKnownPr = (repoPath: string, branch: string): RepoDTO["worktrees"][number]["pr"] => {
+    if (!lastEnrichedRepos) return null;
+    for (const repo of lastEnrichedRepos) {
+      if (repo.path !== repoPath) continue;
+      for (const worktree of repo.worktrees) if (worktree.branch === branch) return worktree.pr;
+    }
+    return null;
+  };
+
   // Watch each project's git worktrees so a `git worktree add`/`remove` done
   // outside makit pushes a fresh repos.snapshot instead of waiting for the
   // next client reconnect. Kept in sync with the project set inside
@@ -189,17 +230,33 @@ export function startWsServer(opts: ServerOpts) {
   // manual refresh. Its tracked set is refreshed from each enriched snapshot
   // (see broadcastReposSnapshot); closed with the listeners.
   const prWatcher = watchPrs({
-    // fetchOpenPr (not findOpenPr): it throws on a transient gh failure and
-    // returns null only for a genuine "no open PR", so the watcher can tell a
-    // merged/closed PR (broadcast the drop) from a flaky lookup (keep status).
-    fetchPr: (repoPath, branch) => fetchOpenPr(repoPath, branch),
+    // fetchOpenPr routes through the gateway: it returns the three-way PrLookup
+    // so the watcher can tell a merged/closed PR (broadcast the drop) from a
+    // flaky/throttled lookup (`unknown` → keep status).
+    fetchPr: (repoPath, branch) => fetchOpenPr(gateway, repoPath, branch),
     onChange: () => void broadcastReposSnapshot(),
-    // Poll every 5s regardless of check state (no adaptive backoff): PR status
-    // stays near-live in the UI.
-    fastMs: 5_000,
-    slowMs: 5_000,
+    // Drive the cadence from the degradation ladder (SPEC-32 §6.3) instead of a
+    // hardcoded 5s. The old `fastMs=slowMs=5_000` was the root cause of the
+    // quota burn (≥2N calls every 5s); feeding the policy's pollIntervalMs lets
+    // the 5s→30s→120s→paused ladder actually take effect. `Infinity` (paused)
+    // stops polling rather than busy-looping.
+    intervalMs: () => decide(gateway.budget()).pollIntervalMs,
   });
   https.on("close", () => prWatcher.close());
+
+  // Fire only on a level/throttle CHANGE (onBudgetChange already gates on that),
+  // never per tick — the footer is idle most of the time. The change also pokes
+  // the PR poller: the paused rung arms no timer, and `sync()` only runs on a
+  // repos-snapshot broadcast, so without this a recovered quota could leave PR
+  // polling dead until some unrelated event happened to fire (SPEC-32).
+  //
+  // Registered AFTER prWatcher exists: the callback captures it, and registering
+  // earlier would leave a temporal-dead-zone hazard if a budget change ever
+  // arrived synchronously.
+  gateway.onBudgetChange(() => {
+    broadcastBudget();
+    prWatcher.poke();
+  });
 
   // Device ids with a live authenticated WS connection — feeds the control
   // plane's `devices.list` "connected" flag (SPEC-01) AND the wake decision
@@ -327,12 +384,13 @@ export function startWsServer(opts: ServerOpts) {
 
   function buildCommandRouter(): CommandRouter {
     const r = new CommandRouter();
-    const deps = { manager, broadcastSnapshots, broadcastReposSnapshot, askDevice };
+    const deps = { manager, gateway, broadcastSnapshots, broadcastReposSnapshot, broadcastBudget, askDevice };
 
     registerSessionCommands(r, deps);
     registerProjectCommands(r, deps);
     registerWorktreeCommands(r, deps);
     registerRepoCommands(r, deps);
+    registerGithubCommands(r, deps);
 
     // SPEC-07: register the device's content-free wake push token.
     registerPushCommands(r, registry);
@@ -366,6 +424,9 @@ export function startWsServer(opts: ServerOpts) {
   function sendSnapshots(client: WsClient) {
     client.send({ t: "event", id: newId("snap"), kind: "projects.snapshot", projects: manager.listProjects() });
     client.send({ t: "event", id: newId("snap"), kind: "sessions.snapshot", sessions: manager.listSessions() });
+    // Include the current budget so a freshly-connected client renders the
+    // footer immediately, without waiting for the next level change (spec §6.6).
+    client.send({ t: "event", id: newId("gh"), kind: "github.budget", budget: budgetDto() });
   }
 
   /**
@@ -415,7 +476,7 @@ export function startWsServer(opts: ServerOpts) {
     try {
       // Enrich the snapshot we already have — PR lookups only, no second full
       // pass of git work.
-      const repos = await manager.enrichPrs(gitOnly);
+      const repos = await manager.enrichPrs(gitOnly, lastKnownPr);
       if (generation !== reposSnapshotGeneration) return;
       lastEnrichedRepos = repos;
       // Refresh the PR poller's tracked set from the authoritative snapshot so

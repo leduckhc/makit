@@ -25,7 +25,7 @@
  * endpoint to receive them (research §5, Tier 1).
  */
 
-import type { PullRequestInfo } from "./git.js";
+import type { PrLookup } from "./github/gateway.js";
 import type { PullRequestDTO, RepoDTO } from "./protocol.js";
 import { mapLimit } from "./concurrency.js";
 
@@ -45,17 +45,26 @@ interface TrackedPr {
 export interface PrWatcherOptions {
   /**
    * Fetch current PR status for a head branch (typically {@link fetchOpenPr}).
-   * Must **throw** on a transient lookup failure and resolve to `null` only for
-   * a genuine "no open PR", so the watcher can tell a vanished PR apart from a
-   * flaky `gh` call.
+   * Returns a three-way {@link PrLookup}: `unknown` (a throttled/failed lookup)
+   * takes the same retain-the-signature path a transient failure always has, so
+   * a flaky lookup never drops a tracked PR; only a definite `none` clears one.
    */
-  fetchPr: (repoPath: string, branch: string) => Promise<PullRequestInfo | null>;
+  fetchPr: (repoPath: string, branch: string) => Promise<PrLookup>;
   /** Called when a tracked PR's status changed — re-broadcasts the snapshot. */
   onChange: () => void;
   /** Poll interval while any tracked PR has in-flight checks. Default 10s. */
   fastMs?: number;
   /** Poll interval once every tracked PR's checks are terminal. Default 60s. */
   slowMs?: number;
+  /**
+   * Dynamic poll interval (ms), re-read before each tick. When supplied it
+   * OVERRIDES the fast/slow cadence — SPEC-32 drives it from the budget policy
+   * (`decide(gateway.budget()).pollIntervalMs`) so the degradation ladder
+   * actually takes effect. A non-finite value (e.g. `Infinity`, the paused
+   * rung) STOPS polling rather than busy-looping; it re-arms on the next
+   * {@link PrWatcher.sync}. Jitter/unref behaviour is preserved.
+   */
+  intervalMs?: () => number;
   /** Max random jitter added to each interval. Default 3s. */
   jitterMs?: number;
   /** Injectable timer (tests). Defaults to global setTimeout. */
@@ -67,6 +76,16 @@ export interface PrWatcherOptions {
 export interface PrWatcher {
   /** Refresh the tracked PR set from a freshly-enriched repos snapshot. */
   sync(repos: RepoDTO[]): void;
+  /**
+   * Re-evaluate the schedule without touching the tracked set.
+   *
+   * The paused rung (a non-finite {@link PrWatcherOptions.intervalMs}) arms no
+   * timer, and nothing else would re-arm it: {@link sync} only runs on a
+   * repos-snapshot broadcast. Called when the budget level changes so a
+   * recovered quota resumes polling promptly instead of waiting for an
+   * unrelated event (SPEC-32).
+   */
+  poke(): void;
   /** Run one poll cycle now; resolves to whether a change was broadcast. */
   pollOnce(): Promise<boolean>;
   /** Stop polling and drop all state. */
@@ -140,7 +159,13 @@ export function watchPrs(opts: PrWatcherOptions): PrWatcher {
       timer = undefined;
       return;
     }
-    const base = anyPending ? fastMs : slowMs;
+    const base = opts.intervalMs ? opts.intervalMs() : anyPending ? fastMs : slowMs;
+    // A non-finite interval means "stop polling" (the paused rung), NOT "poll
+    // immediately": leave no timer armed. `sync()` re-arms when state changes.
+    if (!Number.isFinite(base)) {
+      timer = undefined;
+      return;
+    }
     const delay = base + Math.floor(Math.random() * jitterMs);
     const handle = setTimer(() => {
       void pollOnce().finally(schedule);
@@ -155,14 +180,26 @@ export function watchPrs(opts: PrWatcherOptions): PrWatcher {
       return false;
     }
     const entries = [...tracked.values()];
-    // Bounded fan-out (POLL_CONCURRENCY): a distinct fetch result per entry so
-    // a resolved `null` (PR gone from the open set) is told apart from a
-    // rejection (transient `gh` failure). fetchPr throws on failure and returns
-    // null only for a genuine "no open PR".
+    // Bounded fan-out (POLL_CONCURRENCY). Collapse the three-way lookup onto the
+    // watcher's existing (ok, pr) contract: `unknown` → ok:false (a transient
+    // failure — retain the last-known signature, no broadcast), `none` → ok with
+    // a null pr (a genuine drop — broadcast), `pr` → ok with the fresh PR. The
+    // defensive `.catch` remains in case an injected fetchPr rejects.
     const results = await mapLimit(entries, POLL_CONCURRENCY, (t) =>
       opts
         .fetchPr(t.repoPath, t.branch)
-        .then((pr) => ({ t, ok: true, pr }) as const)
+        .then((lookup) => {
+          // `switch` rather than nested ternaries: this is the load-bearing
+          // three-way mapping, and the switch gives exhaustiveness over the union.
+          switch (lookup.kind) {
+            case "unknown":
+              return { t, ok: false, pr: null } as const;
+            case "pr":
+              return { t, ok: true, pr: lookup.pr } as const;
+            case "none":
+              return { t, ok: true, pr: null } as const;
+          }
+        })
         .catch(() => ({ t, ok: false, pr: null }) as const),
     );
 
@@ -212,6 +249,10 @@ export function watchPrs(opts: PrWatcherOptions): PrWatcher {
       for (const key of [...lastSig.keys()]) if (!next.has(key)) lastSig.delete(key);
       tracked.clear();
       for (const [k, v] of next) tracked.set(k, v);
+      schedule();
+    },
+    poke(): void {
+      if (closed) return;
       schedule();
     },
     pollOnce,

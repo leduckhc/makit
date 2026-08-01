@@ -49,8 +49,10 @@ function routerWith(manager: Partial<CommandDeps["manager"]>): { router: Command
   const router = new CommandRouter();
   const deps = {
     manager: manager as CommandDeps["manager"],
+    gateway: {} as CommandDeps["gateway"],
     broadcastSnapshots: () => {},
     broadcastReposSnapshot: async () => {},
+    broadcastBudget: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);
