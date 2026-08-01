@@ -21,6 +21,7 @@ import '../widgets/glass.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
+import 'navigator/outline.dart';
 import 'media_view.dart';
 import 'tool_call_card.dart';
 import 'transcript_expansion.dart';
@@ -103,7 +104,13 @@ class JumpToNewestButton extends StatelessWidget {
 /// applied by the caller via [transcriptRow], so the item widgets carry none
 /// themselves.
 Widget chatItemWidget(String sessionId, ChatItem item) => switch (item) {
-  UserMessageItem() => ChatBubble.user(text: item.text, ts: item.ts),
+  // Wrapped so a tap lands you back in the full transcript while outline mode
+  // is on (SPEC-34); a pass-through otherwise.
+  UserMessageItem() => OutlineJumpable(
+    sessionId: sessionId,
+    item: item,
+    child: ChatBubble.user(text: item.text, ts: item.ts),
+  ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
   // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
   // client can't show. Rendered inline, tap for fullscreen.

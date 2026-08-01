@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../store/connection.dart';
+import '../../store/mobile_navigator.dart';
 import '../../app/theme.dart';
 import '../../store/store.dart';
 import '../../transport/protocol.dart';
@@ -107,6 +108,19 @@ class SettingsScreen extends ConsumerWidget {
             ),
             trailing: const Icon(PhosphorIconsLight.caretRight),
             onTap: () => context.go('/'),
+          ),
+
+          // SPEC-34: mobile's single navigator control. Not the desktop picker
+          // — see the spec's Surface matrix for why.
+          SwitchListTile(
+            secondary: _leadingIcon(PhosphorIconsLight.listMagnifyingGlass),
+            value: ref.watch(mobileNavigatorProvider),
+            title: const Text('Message navigator'),
+            subtitle: const Text(
+              'Drag the right edge of a chat to jump back to your own messages',
+            ),
+            onChanged: (on) =>
+                ref.read(mobileNavigatorProvider.notifier).set(on),
           ),
 
           const Divider(),

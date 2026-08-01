@@ -184,6 +184,18 @@ Future<void> runDesktopApp() async {
         railOptionsProvider.overrideWith(
           (ref) => ref.watch(desktopRailOptionsProvider),
         ),
+        scrubberOptionsProvider.overrideWith(
+          (ref) => ref.watch(desktopScrubberOptionsProvider),
+        ),
+        breadcrumbOptionsProvider.overrideWith(
+          (ref) => ref.watch(desktopBreadcrumbOptionsProvider),
+        ),
+        paletteOptionsProvider.overrideWith(
+          (ref) => ref.watch(desktopPaletteOptionsProvider),
+        ),
+        outlineOptionsProvider.overrideWith(
+          (ref) => ref.watch(desktopOutlineOptionsProvider),
+        ),
       ],
       child: const _DesktopApp(),
     ),

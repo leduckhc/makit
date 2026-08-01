@@ -11,6 +11,15 @@ import 'package:makit/ui/session/navigator/navigator_style.dart';
 void main() {
   late PreferencesController controller;
 
+  /// Taps [label], scrolling it into view first: the section is taller than the
+  /// 600pt test viewport once a style's options expand.
+  Future<void> tapRow(WidgetTester tester, String label) async {
+    await tester.ensureVisible(find.text(label));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(label));
+    await tester.pumpAndSettle();
+  }
+
   Future<void> pumpPrefs(WidgetTester tester) async {
     controller = PreferencesController.ephemeral();
     await tester.pumpWidget(
@@ -56,8 +65,7 @@ void main() {
     expect(find.text('Ripple on hover'), findsOneWidget);
     expect(find.text('Tick length shows message length'), findsOneWidget);
 
-    await tester.tap(find.text('Off'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'Off');
 
     expect(
       controller.get(messageNavigatorStylePreference),
@@ -67,32 +75,39 @@ void main() {
     expect(find.text('Ripple on hover'), findsNothing);
   });
 
-  testWidgets('unbuilt styles are disabled and marked coming soon', (
+  testWidgets('every style is selectable and shows its own options', (
     tester,
   ) async {
     await pumpPrefs(tester);
-    expect(find.text('coming soon'), findsNWidgets(4));
 
-    await tester.tap(find.text('Prompt scrubber'));
-    await tester.pumpAndSettle();
-
+    await tapRow(tester, 'Prompt scrubber');
     expect(
       controller.get(messageNavigatorStylePreference),
-      MessageNavigatorStyle.rail,
-      reason: 'tapping an unbuilt style must not select it',
+      MessageNavigatorStyle.scrubber,
     );
+    expect(find.text('Scroll while dragging'), findsOneWidget);
+    expect(find.text('Show timestamps'), findsOneWidget);
+    expect(find.text('Tick spacing'), findsNothing);
+
+    await tapRow(tester, 'Outline mode');
+    expect(find.text('Hide tool calls too'), findsOneWidget);
+    expect(find.text('Scroll while dragging'), findsNothing);
+
+    await tapRow(tester, 'Sticky breadcrumb');
+    expect(find.text('Show position counter'), findsOneWidget);
+
+    await tapRow(tester, 'Prompt palette');
+    expect(find.text("Search the agent's messages too"), findsOneWidget);
   });
 
   testWidgets('the spacing segments write the preference', (tester) async {
     await pumpPrefs(tester);
     expect(controller.get(railTickSpacingPreference), 6);
 
-    await tester.tap(find.text('roomy'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'roomy');
     expect(controller.get(railTickSpacingPreference), 14);
 
-    await tester.tap(find.text('normal'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'normal');
     expect(controller.get(railTickSpacingPreference), 10);
   });
 
@@ -100,27 +115,22 @@ void main() {
     await pumpPrefs(tester);
     expect(controller.get(railRipplePreference), isTrue);
 
-    await tester.tap(find.text('Ripple on hover'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'Ripple on hover');
     expect(controller.get(railRipplePreference), isFalse);
 
-    await tester.tap(find.text('Tick length shows message length'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'Tick length shows message length');
     expect(controller.get(railEncodeLengthPreference), isFalse);
   });
 
   testWidgets('options survive switching style away and back — the bug the '
       'mockup exposed', (tester) async {
     await pumpPrefs(tester);
-    await tester.tap(find.text('roomy'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'roomy');
 
-    await tester.tap(find.text('Off'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'Off');
     expect(find.text('Tick spacing'), findsNothing);
 
-    await tester.tap(find.text('Ripple rail'));
-    await tester.pumpAndSettle();
+    await tapRow(tester, 'Ripple rail');
 
     expect(controller.get(railTickSpacingPreference), 14);
     expect(find.text('Tick spacing'), findsOneWidget);

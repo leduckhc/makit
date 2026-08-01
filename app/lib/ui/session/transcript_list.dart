@@ -39,22 +39,9 @@ class TranscriptJumpTarget extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Scroll offset of the child at [childIndex], or null when it is not laid out.
-  ///
-  /// Read-only: never triggers layout and never estimates. A null answer means
-  /// "un-built", which is the caller's cue to [request] a jump instead.
-  double? offsetForChild(int childIndex) => _render?.offsetForChild(childIndex);
-
-  /// Mean extent of the currently laid-out rows, for seeding an estimate.
-  double? get meanBuiltExtent => _render?.meanBuiltExtent;
-
   /// Child index of the row at the *top* of the viewport, or null when nothing
   /// is laid out. The rail uses this to light the tick you are reading.
   int? get topVisibleChild => _render?.topVisibleChildIndex;
-
-  /// Abandons an outstanding request. Silent: the caller is about to move the
-  /// viewport itself, which schedules the layout this would otherwise ask for.
-  void cancel() => _childIndex = null;
 
   /// Clears the outstanding request from inside layout, where notifying
   /// listeners would be illegal.

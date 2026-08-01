@@ -63,7 +63,6 @@ void main() {
       addTearDown(controller.dispose);
       addTearDown(target.dispose);
       final jumper = TranscriptJumper(
-        controller: controller,
         target: target,
         itemCount: () => count,
         hasTrailer: () => hasTrailer,
@@ -103,12 +102,31 @@ void main() {
       expect(jumper.flashed.value?.position, 4);
     });
 
-    testWidgets('a built item needs no correction at all', (tester) async {
+    testWidgets('a built row and an un-built row land the SAME way', (
+      tester,
+    ) async {
+      // The bug this pins: a "fast path" that jumped straight to a built row's
+      // offset put it at the viewport's near edge, while the in-layout
+      // correction puts it at the top — so the same click landed differently
+      // depending on whether the row happened to be built yet.
+      // Expressed as idempotence, which is the observable consequence: the
+      // first jump to a far-off row goes through the un-built path, the second
+      // finds it built — and must not move it.
       final jumper = await pump(tester);
-      jumper.jumpToItem(39); // newest — already on screen
+      jumper.jumpToItem(4); // child 35: not built at rest
       await tester.pump();
-      expect(target.childIndex, isNull, reason: 'fast path: never requests');
-      expect(jumper.flashed.value?.position, 39, reason: 'flash still fires');
+      final firstLanding = tester.getTopLeft(find.text('child 35')).dy;
+
+      jumper.jumpToItem(4); // now built
+      await tester.pump();
+      final secondLanding = tester.getTopLeft(find.text('child 35')).dy;
+
+      expect(
+        secondLanding,
+        closeTo(firstLanding, 1.0),
+        reason: 'a built row and an un-built row must land identically',
+      );
+      expect(jumper.flashed.value?.position, 4);
     });
 
     testWidgets('the trailer shift is applied', (tester) async {

@@ -27,18 +27,12 @@ class _StyleCopy {
     required this.title,
     required this.blurb,
     this.badge,
-    this.built = true,
   });
 
   final MessageNavigatorStyle style;
   final String title;
   final String blurb;
   final String? badge;
-
-  /// Whether this style renders anything yet. The enum ships complete so the
-  /// stored preference is forward-compatible, but an unbuilt style must be
-  /// visibly unavailable rather than silently doing nothing.
-  final bool built;
 }
 
 const List<_StyleCopy> _styles = [
@@ -60,13 +54,13 @@ const List<_StyleCopy> _styles = [
     title: 'Prompt scrubber',
     badge: 'touch',
     blurb: 'Drag the right edge; a preview card snaps prompt to prompt.',
-    built: false,
   ),
   _StyleCopy(
     style: MessageNavigatorStyle.palette,
     title: 'Prompt palette',
-    blurb: 'A shortcut opens a searchable list of your messages.',
-    built: false,
+    blurb:
+        'Opens a searchable list of your messages — the only style that can '
+        'search what you wrote.',
   ),
   _StyleCopy(
     style: MessageNavigatorStyle.breadcrumb,
@@ -74,7 +68,6 @@ const List<_StyleCopy> _styles = [
     blurb:
         'A chip always shows which of your prompts produced what you are '
         'reading, with prev/next hops.',
-    built: false,
   ),
   _StyleCopy(
     style: MessageNavigatorStyle.outline,
@@ -82,7 +75,6 @@ const List<_StyleCopy> _styles = [
     blurb:
         'A toggle hides assistant output, leaving your prompts as a table of '
         'contents.',
-    built: false,
   ),
 ];
 
@@ -125,12 +117,10 @@ class _StyleRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final enabled = copy.built;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ListTile(
-          enabled: enabled,
           leading: Icon(
             selected
                 ? Icons.radio_button_checked
@@ -145,18 +135,12 @@ class _StyleRow extends ConsumerWidget {
                 const SizedBox(width: kSpace6),
                 _Badge(label: copy.badge!),
               ],
-              if (!enabled) ...[
-                const SizedBox(width: kSpace6),
-                const _Badge(label: 'coming soon'),
-              ],
             ],
           ),
           subtitle: Text(copy.blurb),
-          onTap: enabled
-              ? () => ref
-                    .read(preferencesControllerProvider.notifier)
-                    .set(messageNavigatorStylePreference, copy.style)
-              : null,
+          onTap: () => ref
+              .read(preferencesControllerProvider.notifier)
+              .set(messageNavigatorStylePreference, copy.style),
         ),
         // Only the selected style's options are built — not built-and-hidden.
         if (selected) ..._optionsFor(copy.style),
@@ -178,8 +162,50 @@ class _StyleRow extends ConsumerWidget {
         subtitle: 'Makes the rail a fingerprint of the session',
       ),
     ],
-    // The remaining styles' options ship with the styles themselves.
-    _ => const [],
+    MessageNavigatorStyle.scrubber => const [
+      _SwitchRow(
+        entry: scrubLiveScrollPreference,
+        title: 'Scroll while dragging',
+        subtitle: 'Off shows a preview and jumps when you let go',
+      ),
+      _SwitchRow(
+        entry: scrubTimestampsPreference,
+        title: 'Show timestamps',
+        subtitle: 'Relative time on the preview card',
+      ),
+    ],
+    MessageNavigatorStyle.palette => const [
+      _SwitchRow(
+        entry: paletteSearchAllPreference,
+        title: 'Search the agent\'s messages too',
+        subtitle: 'Off searches only what you wrote',
+      ),
+    ],
+    MessageNavigatorStyle.breadcrumb => const [
+      _SwitchRow(
+        entry: crumbAutoHidePreference,
+        title: 'Fade at the newest message',
+        subtitle: 'Where there is nothing to go back to',
+      ),
+      _SwitchRow(
+        entry: crumbCounterPreference,
+        title: 'Show position counter',
+        subtitle: 'For example "4/7"',
+      ),
+    ],
+    MessageNavigatorStyle.outline => const [
+      _SwitchRow(
+        entry: outlineHideToolsPreference,
+        title: 'Hide tool calls too',
+        subtitle: 'Off keeps tool calls as context between your prompts',
+      ),
+      _SwitchRow(
+        entry: outlineShowCountsPreference,
+        title: 'Show hidden-row counts',
+        subtitle: 'For example "8 hidden" on the toggle',
+      ),
+    ],
+    MessageNavigatorStyle.off => const [],
   };
 }
 

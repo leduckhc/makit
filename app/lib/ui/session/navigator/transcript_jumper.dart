@@ -77,14 +77,10 @@ class TranscriptJumper {
   /// trailing row comes and goes while the agent works, and outline mode changes
   /// the row count underneath us.
   TranscriptJumper({
-    required this.controller,
     required this.target,
     required this.itemCount,
     required this.hasTrailer,
   });
-
-  /// The transcript's controller (offset 0 == newest).
-  final ScrollController controller;
 
   /// The render-layer handle that performs the jump during layout.
   final TranscriptJumpTarget target;
@@ -114,19 +110,14 @@ class TranscriptJumper {
     );
     if (child == null) return;
 
-    final known = target.offsetForChild(child);
-    if (known != null && controller.hasClients) {
-      // Fast path: the row is laid out, so its offset is exact. `jumpTo`, never
-      // `animateTo` — stacked animations during a token stream (SPEC-21).
-      // Cancel any request still outstanding from an earlier jump, or layout
-      // would keep seeking *that* row and undo this one.
-      target.cancel();
-      controller.jumpTo(known.clamp(0.0, controller.position.maxScrollExtent));
-    } else {
-      // Un-built: the render object walks to it inside layout, so no
-      // intermediate frame is painted.
-      target.request(child);
-    }
+    // One path for built and un-built rows alike. There *was* a "fast path" here
+    // that jumped straight to a built row's known offset — but `jumpTo(offset)`
+    // puts the row at the viewport's *near* edge while the in-layout correction
+    // puts it at the *top*, so the same click landed differently depending on
+    // whether the row happened to be built yet. The render object resolves a
+    // built row inside the very next layout anyway, so the optimisation bought
+    // nothing but that inconsistency. `jumpTo`/`animateTo` are never used.
+    target.request(child);
     _flash(position);
   }
 

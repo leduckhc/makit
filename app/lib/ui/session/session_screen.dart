@@ -18,6 +18,7 @@ import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
 import 'navigator/message_navigator_overlay.dart';
+import 'navigator/outline_mode.dart';
 import 'transcript_list.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
@@ -51,7 +52,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
-    final items = ref.watch(chatItemsProvider(widget.sessionId));
+    // SPEC-34: the transcript's rows, folded to your prompts only while
+    // outline mode is on (a pass-through for every other navigator style).
+    final items = ref.watch(transcriptItemsProvider(widget.sessionId));
     final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
     // Clear the dedicated free-text answer controller whenever the ask ends or
     // leaves free-text mode, so a later answer composer never reopens with a

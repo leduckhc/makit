@@ -17,6 +17,8 @@ import 'notifications/pending_action_drain.dart';
 import 'notifications/push_registration.dart';
 import 'store/connection.dart';
 import 'store/recent_models.dart';
+import 'store/mobile_navigator.dart';
+import 'ui/session/navigator/navigator_style.dart';
 import 'store/store.dart';
 import 'transport/transport.dart';
 import 'ui/widgets/makit_mark.dart';
@@ -43,6 +45,7 @@ Future<void> main() async {
   // the model picker's Recent section survives restarts on mobile too.
   final prefs = await SharedPreferences.getInstance();
   final recentModelsController = RecentModelsController.load(prefs);
+  final mobileNavigator = MobileNavigatorController.load(prefs);
   // The store listens to a broadcast stream that drops events without
   // listeners. Eagerly create the controller so it's subscribed before the
   // WS connects and starts pushing projects/sessions snapshots.
@@ -55,6 +58,14 @@ Future<void> main() async {
       pushRegistrarProvider.overrideWithValue(ChannelPushRegistrar()),
       recentModelsControllerProvider.overrideWith(
         (ref) => recentModelsController,
+      ),
+      mobileNavigatorProvider.overrideWith((ref) => mobileNavigator),
+      // SPEC-34: mobile has one navigator control, not the desktop picker. The
+      // pointer-only styles are unreachable here by construction.
+      messageNavigatorStyleProvider.overrideWith(
+        (ref) => ref.watch(mobileNavigatorProvider)
+            ? MessageNavigatorStyle.scrubber
+            : MessageNavigatorStyle.off,
       ),
     ],
   );

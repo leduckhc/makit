@@ -41,28 +41,6 @@ void main() {
     return (controller, target);
   }
 
-  testWidgets('offsetForChild is exact for a built row and null otherwise', (
-    tester,
-  ) async {
-    final (_, target) = await pumpList(tester);
-    // Row 0 is at the resting (newest) end, so it is certainly built.
-    expect(target.offsetForChild(0), isNotNull);
-    expect(target.offsetForChild(0), closeTo(0, 0.5));
-    // Row 55 is far up a 60-row lazy list — never built at rest.
-    expect(target.offsetForChild(55), isNull);
-    // Out of range must not throw.
-    expect(target.offsetForChild(9999), isNull);
-    expect(target.offsetForChild(-1), isNull);
-  });
-
-  testWidgets('meanBuiltExtent reports a plausible row height', (tester) async {
-    final (_, target) = await pumpList(tester);
-    final mean = target.meanBuiltExtent;
-    expect(mean, isNotNull);
-    expect(mean, greaterThan(39));
-    expect(mean, lessThan(160));
-  });
-
   testWidgets('a jump to an un-built row lands in ONE frame', (tester) async {
     final (controller, target) = await pumpList(tester);
     expect(find.text('row 48'), findsNothing);

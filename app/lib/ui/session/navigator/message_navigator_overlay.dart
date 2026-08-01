@@ -17,8 +17,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../store/chat_items.dart';
 import '../transcript_list.dart';
+import 'breadcrumb.dart';
 import 'navigator_style.dart';
+import 'outline.dart';
+import 'palette.dart';
 import 'rail.dart';
+import 'scrubber.dart';
 import 'transcript_jumper.dart';
 import 'user_message_indices.dart';
 
@@ -96,7 +100,6 @@ class MessageNavigatorOverlay extends ConsumerStatefulWidget {
 class _MessageNavigatorOverlayState
     extends ConsumerState<MessageNavigatorOverlay> {
   late final TranscriptJumper _jumper = TranscriptJumper(
-    controller: widget.controller,
     target: widget.target,
     itemCount: () => widget.items.length,
     hasTrailer: () => widget.hasTrailer,
@@ -129,13 +132,19 @@ class _MessageNavigatorOverlayState
     return switch (style) {
       MessageNavigatorStyle.off => const SizedBox.shrink(),
       MessageNavigatorStyle.rail => MessageRail(context: navigatorContext),
-      // Not built yet — the enum ships complete so the preference is
-      // forward-compatible, but these styles are still `[coming soon]` in
-      // Settings and must not render a half-thing here.
-      MessageNavigatorStyle.scrubber ||
-      MessageNavigatorStyle.palette ||
-      MessageNavigatorStyle.breadcrumb ||
-      MessageNavigatorStyle.outline => const SizedBox.shrink(),
+      MessageNavigatorStyle.scrubber => MessageScrubber(
+        context: navigatorContext,
+      ),
+      MessageNavigatorStyle.palette => MessagePalette(
+        context: navigatorContext,
+      ),
+      MessageNavigatorStyle.breadcrumb => MessageBreadcrumb(
+        context: navigatorContext,
+      ),
+      MessageNavigatorStyle.outline => MessageOutline(
+        sessionId: widget.sessionId,
+        context: navigatorContext,
+      ),
     };
   }
 }

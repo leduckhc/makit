@@ -85,3 +85,106 @@ class RailOptions {
 
 /// The rail's options for the current surface.
 final railOptionsProvider = Provider<RailOptions>((ref) => const RailOptions());
+
+/// The scrubber's tunables. Same override discipline as [RailOptions].
+@immutable
+class ScrubberOptions {
+  /// Creates scrubber options.
+  const ScrubberOptions({this.liveScroll = true, this.timestamps = true});
+
+  /// Whether the transcript scrolls during the drag (false = commit on release).
+  final bool liveScroll;
+
+  /// Whether the preview card shows a relative timestamp.
+  final bool timestamps;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScrubberOptions &&
+      other.liveScroll == liveScroll &&
+      other.timestamps == timestamps;
+
+  @override
+  int get hashCode => Object.hash(liveScroll, timestamps);
+}
+
+/// The scrubber's options for the current surface.
+final scrubberOptionsProvider = Provider<ScrubberOptions>(
+  (ref) => const ScrubberOptions(),
+);
+
+/// The breadcrumb's tunables.
+@immutable
+class BreadcrumbOptions {
+  /// Creates breadcrumb options.
+  const BreadcrumbOptions({this.autoHide = true, this.counter = true});
+
+  /// Whether the chip dims itself while pinned to the newest message.
+  final bool autoHide;
+
+  /// Whether the chip shows its "4/7" position counter.
+  final bool counter;
+
+  @override
+  bool operator ==(Object other) =>
+      other is BreadcrumbOptions &&
+      other.autoHide == autoHide &&
+      other.counter == counter;
+
+  @override
+  int get hashCode => Object.hash(autoHide, counter);
+}
+
+/// The breadcrumb's options for the current surface.
+final breadcrumbOptionsProvider = Provider<BreadcrumbOptions>(
+  (ref) => const BreadcrumbOptions(),
+);
+
+/// The palette's tunables.
+@immutable
+class PaletteOptions {
+  /// Creates palette options.
+  const PaletteOptions({this.searchAll = false});
+
+  /// Whether the palette searches assistant/tool rows too.
+  final bool searchAll;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PaletteOptions && other.searchAll == searchAll;
+
+  @override
+  int get hashCode => searchAll.hashCode;
+}
+
+/// The palette's options for the current surface.
+final paletteOptionsProvider = Provider<PaletteOptions>(
+  (ref) => const PaletteOptions(),
+);
+
+/// Outline mode's tunables.
+@immutable
+class OutlineOptions {
+  /// Creates outline options.
+  const OutlineOptions({this.hideTools = false, this.showCounts = true});
+
+  /// Whether tool-call rows are hidden as well as assistant messages.
+  final bool hideTools;
+
+  /// Whether a per-prompt "N rows hidden" count is shown.
+  final bool showCounts;
+
+  @override
+  bool operator ==(Object other) =>
+      other is OutlineOptions &&
+      other.hideTools == hideTools &&
+      other.showCounts == showCounts;
+
+  @override
+  int get hashCode => Object.hash(hideTools, showCounts);
+}
+
+/// Outline mode's options for the current surface.
+final outlineOptionsProvider = Provider<OutlineOptions>(
+  (ref) => const OutlineOptions(),
+);

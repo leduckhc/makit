@@ -28,6 +28,35 @@ final desktopNavigatorStyleProvider = Provider<MessageNavigatorStyle>(
   (ref) => _watch(ref, messageNavigatorStylePreference),
 );
 
+/// The stored scrubber options.
+final desktopScrubberOptionsProvider = Provider<ScrubberOptions>(
+  (ref) => ScrubberOptions(
+    liveScroll: _watch(ref, scrubLiveScrollPreference),
+    timestamps: _watch(ref, scrubTimestampsPreference),
+  ),
+);
+
+/// The stored breadcrumb options.
+final desktopBreadcrumbOptionsProvider = Provider<BreadcrumbOptions>(
+  (ref) => BreadcrumbOptions(
+    autoHide: _watch(ref, crumbAutoHidePreference),
+    counter: _watch(ref, crumbCounterPreference),
+  ),
+);
+
+/// The stored palette options.
+final desktopPaletteOptionsProvider = Provider<PaletteOptions>(
+  (ref) => PaletteOptions(searchAll: _watch(ref, paletteSearchAllPreference)),
+);
+
+/// The stored outline options.
+final desktopOutlineOptionsProvider = Provider<OutlineOptions>(
+  (ref) => OutlineOptions(
+    hideTools: _watch(ref, outlineHideToolsPreference),
+    showCounts: _watch(ref, outlineShowCountsPreference),
+  ),
+);
+
 /// The stored rail options, for overriding the shared [railOptionsProvider].
 final desktopRailOptionsProvider = Provider<RailOptions>(
   (ref) => RailOptions(
