@@ -16,6 +16,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../transcript_list.dart';
 
@@ -80,6 +82,7 @@ class TranscriptJumper {
     required this.target,
     required this.itemCount,
     required this.hasTrailer,
+    required this.onFlash,
   });
 
   /// The render-layer handle that performs the jump during layout.
@@ -91,15 +94,12 @@ class TranscriptJumper {
   /// Whether a trailing row currently occupies child index 0.
   final bool Function() hasTrailer;
 
-  /// The item position currently highlighted, or null.
+  /// Called with the landed item position so the row can highlight itself.
   ///
-  /// Rows watch this to draw the landing outline. It is set even when the target
-  /// was already on screen — that is the case where a jump is otherwise
-  /// indistinguishable from a no-op — and even when the render layer gave up
-  /// short, so the user's eye still has somewhere to go.
-  final ValueNotifier<JumpFlash?> flashed = ValueNotifier<JumpFlash?>(null);
-
-  int _serial = 0;
+  /// Fires even when the target was already on screen — that is the case where a
+  /// jump is otherwise indistinguishable from a no-op — and even when the render
+  /// layer gave up short, so the user's eye still has somewhere to go.
+  final void Function(int position) onFlash;
 
   /// Brings the item at [position] on screen.
   void jumpToItem(int position) {
@@ -118,11 +118,22 @@ class TranscriptJumper {
     // built row inside the very next layout anyway, so the optimisation bought
     // nothing but that inconsistency. `jumpTo`/`animateTo` are never used.
     target.request(child);
-    _flash(position);
+    onFlash(position);
   }
+}
 
-  void _flash(int position) => flashed.value = JumpFlash(position, ++_serial);
+/// The most recent jump within a session, for rows to highlight themselves.
+///
+/// A provider rather than something hanging off [TranscriptJumper] because the
+/// rows that must render the highlight are *siblings* of whatever owns the
+/// jumper (the navigator overlay, or the session screen's action menu), never its
+/// descendants — the same reason `outlineExitJumpProvider` exists.
+final jumpFlashProvider = StateProvider.family<JumpFlash?, String>(
+  (ref, _) => null,
+);
 
-  /// Releases the flash notifier.
-  void dispose() => flashed.dispose();
+/// Records a jump to [position] in [sessionId], re-arming any existing highlight.
+void recordJumpFlash(WidgetRef ref, String sessionId, int position) {
+  final notifier = ref.read(jumpFlashProvider(sessionId).notifier);
+  notifier.state = JumpFlash(position, (notifier.state?.serial ?? 0) + 1);
 }

@@ -257,13 +257,17 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                         // Pi stays running while asking), else the "working…"
                         // indicator while running.
                         final bool isTrailer = hasTrailer && i == 0;
+                        final int position =
+                            items.length - 1 - (hasTrailer ? i - 1 : i);
                         final ChatItem? item = isTrailer
                             ? null
-                            : items[items.length -
-                                  1 -
-                                  (hasTrailer ? i - 1 : i)];
+                            : items[position];
                         final Widget child = !isTrailer
-                            ? chatItemWidget(sessionId, item!)
+                            ? chatItemWidget(
+                                sessionId,
+                                item!,
+                                position: position,
+                              )
                             : (trailer == TranscriptTrailer.ask
                                   ? AskCard(ask: pendingAsk!)
                                   : const WorkingIndicator());

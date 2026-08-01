@@ -133,7 +133,9 @@ estimate keeps under-shooting) degrades to "lands close" rather than tripping a 
 assert. Convergence is therefore guaranteed *within one frame*; accuracy is bounded
 best-effort, which is what step 4 covers.
 
-4. **Landing flash.** The target row flashes a 2pt `primary` outline for 900ms. This is
+4. **Landing flash.** The target row flashes a 2pt `primary` outline for 900ms, rendered by
+   `JumpFlashHighlight` around the row and fading itself out (no timer clearing shared
+   state). This is
    *not* cover for a jump artefact (there is none now): it earns its place by confirming
    the jump did something when the target was **already on screen**, which is otherwise
    indistinguishable from a no-op. If the jump gave up short, the flash still goes on the
@@ -229,20 +231,25 @@ Four schema decisions, each load-bearing:
 
 | | Desktop | Mobile |
 |---|---|---|
-| Style picker + all per-style options | ✅ full, in Settings › Agents & Chat | ❌ not available |
-| Effective style | as chosen (default `rail`) | `outline`, or `off` |
-| On/off | via the `off` style | ✅ a single switch in mobile Settings |
+| Style picker + all per-style options | ✅ full, in Settings › Agents & Chat | ❌ none — mobile has **no** navigator settings |
+| Route back to your prompts | one of five transcript overlays | **My messages** in the session-actions (`⋯`) menu → a sheet |
+| Transcript chrome | yes (the chosen style) | none |
 
-Mobile gets **one** control — *Message navigator: on/off* — because success criterion 4 ("a
-user who finds it noisy can turn it off") is not negotiable, and because a phone has
-exactly one sensible style anyway: **`outline`**.
+**Mobile does not use the navigator styles at all.** It gets a *My messages* item in the
+session-actions (`⋯`) menu, which opens a sheet listing the prompts you sent, newest first;
+tapping one jumps and dismisses.
 
-The rail and breadcrumb are hover-only, so they were never candidates. The scrubber looked
-like the touch answer (it was *designed* as the touch answer) and is wrong anyway: it asks
-a thumb to land on one of N markers down a 22pt edge strip — ~18pt apart at 40 prompts —
-while competing with the iOS edge-swipe-back gesture and covering the preview card it is
-driving. Outline needs no precision at all, and collapsing the agent away is *more* useful
-on a small screen than a large one: the conversation becomes a readable table of contents.
+The five styles are all, in the end, pointer designs. The rail and breadcrumb need hover.
+The scrubber *was* the touch answer and is still wrong: it asks a thumb to land on one of N
+markers down a 22pt edge strip — ~18pt apart at 40 prompts — on the very edge iOS reserves
+for swipe-back, under the finger driving it. Outline is fine but spends permanent transcript
+chrome on a screen that has none to spare. A sheet is the platform's own idiom for "pick
+from a list", costs no screen furniture, and needs no setting to explain — which is why
+criterion 4 ("a user who finds it noisy can turn it off") is satisfied by construction:
+there is nothing on screen to turn off.
+
+The **landing flash** is what makes this work: the sheet dismisses on pick, so the outlined
+row is the only thing telling you where you ended up.
 It is deliberately **not** wired to `PreferencesController`: adopting the desktop
 preference system on mobile is a real refactor (the storage key is literally named
 `desktop_settings_overrides`) and belongs in its own spec, not smuggled in here.
@@ -289,7 +296,8 @@ Consequences to respect:
 |---|---|---|
 | 1 | Ship **all five styles + off**, selectable in **desktop** Settings, each with its own options | User's explicit choice over the trimmed "Rail + Off + density" alternative. Intent is that all five ship; the unknown-id fallback means deferring any of them later needs no migration |
 | 1b | Mobile gets **one on/off switch**, not the picker | The desktop preference system does not reach mobile; a full port is its own spec |
-| 2 | **Rail** is the desktop default; **outline** is what mobile gets | Rail is hover-only. Outline is the only style needing no pointer precision — see §Surface matrix |
+| 2 | **Rail** is the desktop default; mobile gets a **sheet from the session-actions menu**, not a style | All five styles are pointer designs, and a phone has no screen to spend on permanent chrome — see §Surface matrix |
+| 2b | Mobile has **no navigator preferences at all** | Nothing is on screen to configure or disable |
 | 3 | Rail is a **cosy top-right cluster** at fixed spacing, not a proportional full-height gutter | The ripple is only legible when ticks are close; also removes the lazy-list geometry problem entirely |
 | 4 | Markers placed by **item index**, never scroll offset | Un-built rows have no offset (SPEC-21) |
 | 5 | **Outline** is one of the mutually-exclusive styles | Confirmed: not an independent toggle that coexists with the rail |

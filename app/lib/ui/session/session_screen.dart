@@ -18,7 +18,9 @@ import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
 import 'navigator/message_navigator_overlay.dart';
+import 'navigator/messages_sheet.dart';
 import 'navigator/outline_mode.dart';
+import 'navigator/transcript_jumper.dart';
 import 'transcript_list.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
@@ -31,8 +33,20 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
-  // SPEC-34: the render-layer handle the message navigator jumps through.
+  // SPEC-34: the render-layer handle jumps are resolved through, plus the jumper
+  // the session-actions sheet drives. `itemCount`/`hasTrailer` are read at call
+  // time, so a trailing "working…" row appearing mid-session cannot skew them.
   final _jumpTarget = TranscriptJumpTarget();
+  late final TranscriptJumper _jumper = TranscriptJumper(
+    target: _jumpTarget,
+    itemCount: () => _items.length,
+    hasTrailer: () => _hasTrailer,
+    onFlash: (position) => recordJumpFlash(ref, widget.sessionId, position),
+  );
+
+  /// Latest transcript + trailer state, captured each build for [_jumper].
+  List<ChatItem> _items = const [];
+  bool _hasTrailer = false;
   // Dedicated controller for free-text answers to an inline ask, kept separate
   // from the normal message draft so the two can never cross-contaminate.
   final _answerController = TextEditingController();
@@ -67,6 +81,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       awaiting: pendingAsk != null,
     );
     final hasTrailer = trailer != TranscriptTrailer.none;
+    // Hand the current transcript shape to the sheet's jumper (read lazily by
+    // its callbacks, so this must be the latest build's values).
+    _items = items;
+    _hasTrailer = hasTrailer;
 
     ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
       prev,
@@ -149,7 +167,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 final item = items[index];
                 return KeyedSubtree(
                   key: chatItemKey(item),
-                  child: transcriptRow(chatItemWidget(widget.sessionId, item)),
+                  child: transcriptRow(
+                    chatItemWidget(widget.sessionId, item, position: index),
+                  ),
                 );
               },
             ),
@@ -388,6 +408,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   ref: ref,
                   sessionId: widget.sessionId,
                 );
+              case 'messages':
+                showMyMessagesSheet(
+                  context: context,
+                  sessionId: widget.sessionId,
+                  jumper: _jumper,
+                );
               case 'archive':
                 _confirmArchive();
             }
@@ -407,6 +433,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               value: 'thinking',
               icon: PhosphorIconsLight.brain,
               label: 'Thinking',
+            ),
+            const PopupMenuDivider(),
+            // SPEC-34: mobile's route back to your own prompts. A sheet rather
+            // than transcript chrome — see messages_sheet.dart.
+            themedMenuItem(
+              value: 'messages',
+              icon: PhosphorIconsLight.listMagnifyingGlass,
+              label: 'My messages',
             ),
             const PopupMenuDivider(),
             themedMenuItem(

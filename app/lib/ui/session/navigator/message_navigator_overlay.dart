@@ -111,13 +111,8 @@ class _MessageNavigatorOverlayState
     target: widget.target,
     itemCount: () => widget.items.length,
     hasTrailer: () => widget.hasTrailer,
+    onFlash: (position) => recordJumpFlash(ref, widget.sessionId, position),
   );
-
-  @override
-  void dispose() {
-    _jumper.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {

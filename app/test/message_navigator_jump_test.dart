@@ -51,6 +51,7 @@ void main() {
   group('TranscriptJumper', () {
     late ScrollController controller;
     late TranscriptJumpTarget target;
+    late List<int> flashes;
 
     /// 40 rows of uneven height; item position p renders at child 39-p.
     Future<TranscriptJumper> pump(
@@ -60,14 +61,15 @@ void main() {
     }) async {
       controller = ScrollController();
       target = TranscriptJumpTarget();
+      flashes = [];
       addTearDown(controller.dispose);
       addTearDown(target.dispose);
       final jumper = TranscriptJumper(
         target: target,
         itemCount: () => count,
         hasTrailer: () => hasTrailer,
+        onFlash: flashes.add,
       );
-      addTearDown(jumper.dispose);
       final total = count + (hasTrailer ? 1 : 0);
       await tester.pumpWidget(
         MaterialApp(
@@ -99,7 +101,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('child 35'), findsOneWidget);
-      expect(jumper.flashed.value?.position, 4);
+      expect(flashes.last, 4);
     });
 
     testWidgets('a built row and an un-built row land the SAME way', (
@@ -126,7 +128,7 @@ void main() {
         closeTo(firstLanding, 1.0),
         reason: 'a built row and an un-built row must land identically',
       );
-      expect(jumper.flashed.value?.position, 4);
+      expect(flashes.last, 4);
     });
 
     testWidgets('the trailer shift is applied', (tester) async {
@@ -140,21 +142,16 @@ void main() {
       expect(tester.getTopLeft(find.text('child 36')).dy, closeTo(0, 24));
     });
 
-    testWidgets('jumping to the same item twice re-arms the flash', (
-      tester,
-    ) async {
-      // The row animates its own outline out, so the notifier keeps the last
-      // jump; only the serial tells a repeat apart from a no-op.
+    testWidgets('jumping to the same item twice flashes twice', (tester) async {
+      // The row animates its own outline out, so a repeat must re-arm rather
+      // than look like a no-op. `recordJumpFlash`'s serial is what carries that;
+      // here we only assert the jumper reports both.
       final jumper = await pump(tester);
       jumper.jumpToItem(10);
       await tester.pump();
-      final first = jumper.flashed.value!;
       jumper.jumpToItem(10);
       await tester.pump();
-      final second = jumper.flashed.value!;
-      expect(second.position, 10);
-      expect(second.serial, greaterThan(first.serial));
-      expect(second, isNot(first));
+      expect(flashes, [10, 10]);
     });
 
     testWidgets('overlapping jumps: the last target wins', (tester) async {
@@ -162,7 +159,7 @@ void main() {
       jumper.jumpToItem(2);
       jumper.jumpToItem(30);
       await tester.pump();
-      expect(jumper.flashed.value?.position, 30);
+      expect(flashes.last, 30);
       expect(find.text('child 9'), findsOneWidget); // 39 - 30
     });
 
@@ -174,7 +171,7 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
       expect(controller.position.pixels, before);
-      expect(jumper.flashed.value, isNull, reason: 'nothing to flash');
+      expect(flashes, isEmpty, reason: 'nothing to flash');
     });
 
     testWidgets('never uses animateTo — the position settles immediately', (
