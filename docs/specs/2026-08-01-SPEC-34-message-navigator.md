@@ -65,10 +65,10 @@ desktop cannot drift — the SPEC-21/SPEC-24 parity rule.
 | Style | Affordance | Input | Notes |
 |---|---|---|---|
 | `rail` | Cosy cluster of hairline ticks in the **top-right corner**; hover ripples the cluster and reveals the message; click jumps | pointer | **default on desktop** |
-| `scrubber` | Drag the right edge; a preview card snaps prompt-to-prompt | touch + pointer | **default on mobile** |
+| `scrubber` | Drag the right edge; a preview card snaps prompt-to-prompt | pointer (drag) | |
 | `palette` | Shortcut opens a filterable list of your messages; ↑↓ previews, ⏎ jumps | keyboard | only style that **searches** |
 | `breadcrumb` | Glass chip always shows which prompt produced what you're reading, ◀ ▶ hops | passive | answers "where am I", not "where was it" |
-| `outline` | Toggle hides assistant/tool rows, leaving your prompts as a table of contents; click one to expand back in place | toggle | doubles as a session summary |
+| `outline` | Toggle hides assistant/tool rows, leaving your prompts as a table of contents; click one to expand back in place | toggle | **the mobile style**; doubles as a session summary |
 | `off` | Nothing | — | escape hatch |
 
 ### The rail, precisely
@@ -230,12 +230,19 @@ Four schema decisions, each load-bearing:
 | | Desktop | Mobile |
 |---|---|---|
 | Style picker + all per-style options | ✅ full, in Settings › Agents & Chat | ❌ not available |
-| Effective style | as chosen (default `rail`) | `scrubber`, or `off` |
+| Effective style | as chosen (default `rail`) | `outline`, or `off` |
 | On/off | via the `off` style | ✅ a single switch in mobile Settings |
 
 Mobile gets **one** control — *Message navigator: on/off* — because success criterion 4 ("a
 user who finds it noisy can turn it off") is not negotiable, and because a phone has
-exactly one sensible style anyway (`scrubber`; the rail and breadcrumb are pointer-only).
+exactly one sensible style anyway: **`outline`**.
+
+The rail and breadcrumb are hover-only, so they were never candidates. The scrubber looked
+like the touch answer (it was *designed* as the touch answer) and is wrong anyway: it asks
+a thumb to land on one of N markers down a 22pt edge strip — ~18pt apart at 40 prompts —
+while competing with the iOS edge-swipe-back gesture and covering the preview card it is
+driving. Outline needs no precision at all, and collapsing the agent away is *more* useful
+on a small screen than a large one: the conversation becomes a readable table of contents.
 It is deliberately **not** wired to `PreferencesController`: adopting the desktop
 preference system on mobile is a real refactor (the storage key is literally named
 `desktop_settings_overrides`) and belongs in its own spec, not smuggled in here.
@@ -253,6 +260,11 @@ final messageNavigatorStyleProvider = Provider<MessageNavigatorStyle>(
 // desktop root: override with the full preference
 // mobile root:  override with  enabled ? scrubber : off,  from one SharedPreferences bool
 ```
+
+**Placement constraint.** Mobile floats a glass top bar over the transcript, so a
+navigator anchored at the Stack's top edge sits *behind* it — present in the widget tree,
+invisible and untappable on screen. The overlay therefore takes a `topInset` and pads once
+for all five styles; each surface passes the same inset it uses for the list's top padding.
 
 Consequences to respect:
 - Shared `ui/` never imports `desktop/` — the override direction is what keeps that true.
@@ -277,7 +289,7 @@ Consequences to respect:
 |---|---|---|
 | 1 | Ship **all five styles + off**, selectable in **desktop** Settings, each with its own options | User's explicit choice over the trimmed "Rail + Off + density" alternative. Intent is that all five ship; the unknown-id fallback means deferring any of them later needs no migration |
 | 1b | Mobile gets **one on/off switch**, not the picker | The desktop preference system does not reach mobile; a full port is its own spec |
-| 2 | **Rail** is the desktop default; **scrubber** the mobile default | Rail is hover-only; mobile has no hover |
+| 2 | **Rail** is the desktop default; **outline** is what mobile gets | Rail is hover-only. Outline is the only style needing no pointer precision — see §Surface matrix |
 | 3 | Rail is a **cosy top-right cluster** at fixed spacing, not a proportional full-height gutter | The ripple is only legible when ticks are close; also removes the lazy-list geometry problem entirely |
 | 4 | Markers placed by **item index**, never scroll offset | Un-built rows have no offset (SPEC-21) |
 | 5 | **Outline** is one of the mutually-exclusive styles | Confirmed: not an independent toggle that coexists with the rail |

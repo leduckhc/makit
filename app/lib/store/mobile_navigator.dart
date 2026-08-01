@@ -6,9 +6,17 @@
 /// Porting it is a separate spec.
 ///
 /// So mobile gets **one switch**, not the picker — success criterion 4 ("a user
-/// who finds it noisy can turn it off") is not negotiable, and a phone has one
-/// sensible style anyway: the scrubber, since the rail and breadcrumb need a
-/// pointer.
+/// who finds it noisy can turn it off") is not negotiable.
+///
+/// On means **outline mode**, and the reasoning is worth keeping: the rail and
+/// breadcrumb need hover, and the other two are built around a pointer's
+/// precision even though both technically work by touch. The scrubber asks a
+/// thumb to land on one of N markers down a 22pt edge strip — at 40 prompts on a
+/// phone those are ~18pt apart, it competes with the iOS edge-swipe-back
+/// gesture, and the thumb covers the very preview card it is driving. Outline is
+/// a tap, it needs no precision, and collapsing the agent away is *more*
+/// valuable on a small screen, not less: the whole conversation becomes a
+/// readable table of contents.
 ///
 /// Persistence mirrors [RecentModelsController] (SPEC-31): a single
 /// SharedPreferences key, read at startup, tolerant of a missing value.
@@ -43,7 +51,7 @@ class MobileNavigatorController extends StateNotifier<bool> {
 
   /// The style mobile should render for the current flag.
   MessageNavigatorStyle get style =>
-      state ? MessageNavigatorStyle.scrubber : MessageNavigatorStyle.off;
+      state ? MessageNavigatorStyle.outline : MessageNavigatorStyle.off;
 
   /// Turns the navigator on or off, persisting the choice.
   Future<void> set(bool enabled) async {

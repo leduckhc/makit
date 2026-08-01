@@ -64,7 +64,7 @@ Future<void> main() async {
       // pointer-only styles are unreachable here by construction.
       messageNavigatorStyleProvider.overrideWith(
         (ref) => ref.watch(mobileNavigatorProvider)
-            ? MessageNavigatorStyle.scrubber
+            ? MessageNavigatorStyle.outline
             : MessageNavigatorStyle.off,
       ),
     ],

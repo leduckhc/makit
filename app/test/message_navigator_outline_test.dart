@@ -263,4 +263,53 @@ void main() {
       );
     });
   });
+
+  group('mobile placement', () {
+    // Mobile floats a glass top bar over the transcript. A navigator anchored at
+    // the Stack's top edge would sit *behind* it — visible to `find`, but under
+    // the bar and untappable. This is the bug that only appeared once mobile
+    // switched from the scrubber (a full-height edge strip) to outline.
+    testWidgets('the toggle clears the floating top bar', (tester) async {
+      const inset = 100.0;
+      final items = _transcript();
+      final controller = ScrollController();
+      final target = TranscriptJumpTarget();
+      addTearDown(controller.dispose);
+      addTearDown(target.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            messageNavigatorStyleProvider.overrideWithValue(
+              MessageNavigatorStyle.outline,
+            ),
+            chatItemsProvider('s1').overrideWithValue(items),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Stack(
+                children: [
+                  const SizedBox.expand(),
+                  MessageNavigatorOverlay(
+                    sessionId: 's1',
+                    controller: controller,
+                    target: target,
+                    items: items,
+                    hasTrailer: false,
+                    topInset: inset,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getTopLeft(find.text('outline')).dy,
+        greaterThanOrEqualTo(inset),
+        reason: 'the toggle must sit below the glass bar, not behind it',
+      );
+    });
+  });
 }

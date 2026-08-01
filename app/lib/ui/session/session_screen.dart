@@ -162,6 +162,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             target: _jumpTarget,
             items: items,
             hasTrailer: hasTrailer,
+            // Clear the floating glass top bar, exactly as the list's padding does.
+            topInset: topInset + 60,
           ),
           // Scrim: fade the transcript under the top edge so the floating
           // controls stay legible (≈30%→20%→transparent).

@@ -117,7 +117,8 @@ class SettingsScreen extends ConsumerWidget {
             value: ref.watch(mobileNavigatorProvider),
             title: const Text('Message navigator'),
             subtitle: const Text(
-              'Drag the right edge of a chat to jump back to your own messages',
+              'Adds an Outline button to a chat: collapse the agent away and '
+              'see just the messages you sent',
             ),
             onChanged: (on) =>
                 ref.read(mobileNavigatorProvider.notifier).set(on),

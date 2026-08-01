@@ -12,11 +12,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
-  test('defaults to on, and on means the scrubber', () async {
+  test('defaults to on, and on means outline mode', () async {
     final prefs = await SharedPreferences.getInstance();
     final controller = MobileNavigatorController.load(prefs);
     expect(controller.state, isTrue);
-    expect(controller.style, MessageNavigatorStyle.scrubber);
+    expect(controller.style, MessageNavigatorStyle.outline);
   });
 
   test('off means no navigator at all', () async {
@@ -44,7 +44,7 @@ void main() {
     expect(MobileNavigatorController.load(prefs).state, isTrue);
   });
 
-  test('mobile can never reach a pointer-only style', () async {
+  test('mobile can never reach a pointer-oriented style', () async {
     final prefs = await SharedPreferences.getInstance();
     final controller = MobileNavigatorController.load(prefs);
     for (final enabled in [true, false]) {
@@ -55,6 +55,13 @@ void main() {
         reason: 'the rail needs hover',
       );
       expect(controller.style, isNot(MessageNavigatorStyle.breadcrumb));
+      expect(
+        controller.style,
+        isNot(MessageNavigatorStyle.scrubber),
+        reason:
+            'a thumb cannot land on 18pt-apart markers, and the strip '
+            'competes with the iOS edge-swipe-back gesture',
+      );
     }
   });
 

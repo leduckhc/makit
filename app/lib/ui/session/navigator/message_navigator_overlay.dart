@@ -75,6 +75,7 @@ class MessageNavigatorOverlay extends ConsumerStatefulWidget {
     required this.target,
     required this.items,
     required this.hasTrailer,
+    this.topInset = 0,
   });
 
   /// Session whose transcript this is.
@@ -91,6 +92,13 @@ class MessageNavigatorOverlay extends ConsumerStatefulWidget {
 
   /// Whether a trailing row currently occupies child index 0.
   final bool hasTrailer;
+
+  /// Space at the top of the transcript that the navigator must stay clear of.
+  ///
+  /// Mobile floats a glass top bar over the transcript, so a navigator anchored
+  /// at the Stack's top edge would sit *behind* it — invisible and untappable.
+  /// Each surface passes the same inset it uses for the list's top padding.
+  final double topInset;
 
   @override
   ConsumerState<MessageNavigatorOverlay> createState() =>
@@ -129,6 +137,21 @@ class _MessageNavigatorOverlayState
       hasTrailer: widget.hasTrailer,
     );
 
+    // Inset once, here, rather than in each of the five navigators: they place
+    // themselves with `Positioned` inside this padded box.
+    return Positioned.fill(
+      top: widget.topInset,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [_navigator(style, navigatorContext)],
+      ),
+    );
+  }
+
+  Widget _navigator(
+    MessageNavigatorStyle style,
+    MessageNavigatorContext navigatorContext,
+  ) {
     return switch (style) {
       MessageNavigatorStyle.off => const SizedBox.shrink(),
       MessageNavigatorStyle.rail => MessageRail(context: navigatorContext),

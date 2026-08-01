@@ -129,13 +129,19 @@ navigator** renders over the transcript, chosen per surface:
 
 | | Desktop | Mobile |
 |---|---|---|
-| Which style | picker in Settings › Agents & Chat (rail · scrubber · palette · breadcrumb · outline · off) | scrubber, or off |
+| Which style | picker in Settings › Agents & Chat (rail · scrubber · palette · breadcrumb · outline · off) | outline, or off |
 | Configured by | full picker + per-style options | a single on/off switch |
 
-The rail and breadcrumb need hover, so mobile never receives them: each app root
-*overrides* the shared style provider with what that surface can offer, which
-makes a pointer-only style unreachable on a phone by construction rather than by
-a coercion call someone must remember.
+Each app root *overrides* the shared style provider with what that surface can
+offer, so an unsuitable style is unreachable on a phone by construction rather
+than by a coercion call someone must remember. Mobile gets **outline**: the rail
+and breadcrumb need hover, and the scrubber — despite being designed for touch —
+asks a thumb for precision it does not have (markers ~18pt apart at 40 prompts,
+fighting the iOS edge-swipe-back gesture). Outline is a tap, and collapsing the
+agent away is worth more on a small screen, not less.
+
+Navigators anchored at the top must clear the floating glass bar: the overlay
+takes a `topInset` and pads once for all styles.
 
 > **Do not place navigator markers proportionally to scroll position.** The
 > transcript is a reversed lazy list, so rows that have not been laid out have no
