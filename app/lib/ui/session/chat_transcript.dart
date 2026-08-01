@@ -117,6 +117,7 @@ Widget chatItemWidget(String sessionId, ChatItem item) => switch (item) {
   ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
   ToolCallItem() => ToolCallCard(
     item: item,
+    sessionId: sessionId,
     expansionKey: transcriptRowExpansionKey(sessionId, item),
   ),
   ErrorItem() => ErrorBanner(message: item.message),
