@@ -130,6 +130,13 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           const _SectionHeader('About'),
           ListTile(
+            leading: _leadingIcon(PhosphorIconsLight.bug),
+            title: const Text('Diagnostics'),
+            subtitle: const Text('View, copy, and send app logs'),
+            trailing: const Icon(PhosphorIconsLight.caretRight),
+            onTap: () => context.go('/diagnostics'),
+          ),
+          ListTile(
             leading: _leadingIcon(PhosphorIconsLight.info),
             title: const Text('makit'),
             subtitle: const Text('Mobile client · Protocol v$protocolVersion'),

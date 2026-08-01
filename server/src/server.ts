@@ -55,6 +55,7 @@ import { register as registerWorktreeCommands } from "./ws/commands/worktree.js"
 import { register as registerRepoCommands } from "./ws/commands/repo.js";
 import { register as registerGithubCommands } from "./ws/commands/github.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
+import { register as registerDiagnosticsCommands } from "./ws/commands/diagnostics.js";
 import { throttleTrailing } from "./ws/throttle.js";
 import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
@@ -391,6 +392,10 @@ export function startWsServer(opts: ServerOpts) {
     registerWorktreeCommands(r, deps);
     registerRepoCommands(r, deps);
     registerGithubCommands(r, deps);
+
+    // In-app logging: ingest client diagnostics into the server log. Always on
+    // (not dev-gated) — field crash reports from iOS are a production need.
+    registerDiagnosticsCommands(r);
 
     // SPEC-07: register the device's content-free wake push token.
     registerPushCommands(r, registry);

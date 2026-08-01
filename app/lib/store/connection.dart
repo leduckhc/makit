@@ -9,6 +9,7 @@ import 'secure_store.dart';
 import '../pairing/mdns_browser.dart';
 import '../pairing/pair_info.dart';
 import '../notifications/push_registration.dart';
+import '../diagnostics/app_log.dart';
 import '../transport/protocol.dart';
 import '../transport/transport.dart';
 import '../transport/ws_client.dart';
@@ -246,15 +247,16 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       await Future<void>.delayed(_rediscoverStall);
       if (state.wsState == WsState.connected) return;
 
-      debugPrint(
-        '[makit] connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
+      appLog.info(
+        'conn',
+        'connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
       );
       final found = await _browseLan(timeout: const Duration(seconds: 4));
       final matches = found
           .where((d) => d.fingerprint == server.fingerprint)
           .toList();
       if (matches.isEmpty) {
-        debugPrint('[makit] no mDNS match for stored fingerprint.');
+        appLog.warn('conn', 'no mDNS match for stored fingerprint.');
         state = state.copyWith(
           lastError: 'Server unreachable at ${server.host}:${server.port}',
         );
@@ -263,8 +265,9 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       final match = matches.first;
       if (match.host == server.host && match.port == server.port) return;
 
-      debugPrint(
-        '[makit] mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
+      appLog.info(
+        'conn',
+        'mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
       );
       final updated = PairedServer(
         host: match.host,

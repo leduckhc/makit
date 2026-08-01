@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,6 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app/router.dart';
 import 'app/theme.dart';
 import 'app/test_bootstrap.dart';
+import 'diagnostics/app_log.dart';
+import 'diagnostics/error_capture.dart';
+import 'diagnostics/lifecycle_flush.dart';
 import 'notifications/notification_observer.dart';
 import 'notifications/notification_request.dart';
 import 'notifications/pending_action_drain.dart';
@@ -20,6 +23,7 @@ import 'store/prefs/preferences_controller.dart';
 import 'store/prefs/preferences_providers.dart';
 import 'store/recent_models.dart';
 import 'store/store.dart';
+import 'transport/protocol.dart' show protocolVersion;
 import 'transport/transport.dart';
 import 'ui/widgets/makit_mark.dart';
 import 'ui/widgets/srv_request_handler.dart';
@@ -31,6 +35,24 @@ import 'platform_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Diagnostics logging: install global error capture and the rolling
+  // on-device log file BEFORE any platform branch or UI, so an early crash on
+  // either desktop or mobile is still recorded (and shippable to the Mac).
+  installErrorCapture(appLog);
+  if (kDebugMode) appLog.addSink(const ConsoleLogSink());
+  try {
+    final fileSink = await openDefaultLogSink();
+    appLog.addSink(fileSink);
+    // The sink buffers routine lines to stay off the hot path; flush them when
+    // the app is backgrounded so a force-quit can't drop the breadcrumbs.
+    installLifecycleFlush(fileSink.flush);
+  } catch (e) {
+    // A missing app-support dir must never block startup; the in-memory ring
+    // buffer and the Diagnostics viewer still work without the file.
+    appLog.warn('boot', 'log file unavailable: $e');
+  }
+  appLog.info('boot', 'makit starting (protocol v$protocolVersion)');
 
   // macOS is the server-side *control* app (SPEC-03), a different app from the
   // mobile client — it must never show the pairing/chat flow. Branch to its own
