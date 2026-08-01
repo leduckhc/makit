@@ -123,6 +123,28 @@ new-session sheet.
   currently viewing this session.
 - Long-press a message → copy, quote-reply, retry-from-here.
 
+**Finding your own messages (SPEC-34).** A long session is ~90% agent output, so
+re-reading your own prompts must not mean scrolling blind. One **message
+navigator** renders over the transcript, chosen per surface:
+
+| | Desktop | Mobile |
+|---|---|---|
+| Which style | picker in Settings › Agents & Chat (rail · scrubber · palette · breadcrumb · outline · off) | scrubber, or off |
+| Configured by | full picker + per-style options | a single on/off switch |
+
+The rail and breadcrumb need hover, so mobile never receives them: each app root
+*overrides* the shared style provider with what that surface can offer, which
+makes a pointer-only style unreachable on a phone by construction rather than by
+a coercion call someone must remember.
+
+> **Do not place navigator markers proportionally to scroll position.** The
+> transcript is a reversed lazy list, so rows that have not been laid out have no
+> scroll offset, and deriving one means measuring the whole history — the lurch
+> SPEC-21 removed. Markers are placed by message **order**; jumping is resolved by
+> `SliverGeometry.scrollOffsetCorrection` *inside* layout, never from a post-frame
+> callback (that paints the wrong frame first — a visible blink). This is the one
+> constraint to re-read before touching any of it.
+
 ---
 
 ## 4. Composer affordances
