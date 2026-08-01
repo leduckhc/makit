@@ -129,16 +129,16 @@ navigator** renders over the transcript, chosen per surface:
 
 | | Desktop | Mobile |
 |---|---|---|
-| How you get back | one of five transcript overlays (rail · scrubber · palette · breadcrumb · outline) | **My messages** in the session-actions (`⋯`) menu → sheet, newest first, tap to jump |
+| How you get back | one of four transcript overlays (rail · palette · breadcrumb · outline) | **My messages** in the session-actions (`⋯`) menu → sheet, newest first, tap to jump |
 | Configured by | picker + per-style options in Settings › Agents & Chat | nothing — no mobile navigator settings |
 
 Each app root *overrides* the shared style provider with what that surface can
 offer; mobile leaves it at `off`, so an unsuitable style is unreachable on a phone
-by construction rather than by a coercion call someone must remember. All five
-styles are pointer designs — the rail and breadcrumb need hover, and the scrubber
-asks a thumb for precision it lacks (markers ~18pt apart at 40 prompts, on the
-edge iOS reserves for swipe-back) — and a phone has no screen to spend on
-permanent chrome, so mobile uses a sheet from the actions menu instead.
+by construction rather than by a coercion call someone must remember. The
+styles are pointer designs — the rail and breadcrumb need hover — and a phone has
+no screen to spend on permanent chrome, so mobile uses a sheet from the actions
+menu instead. (An edge-drag scrubber was built for touch and removed: it asked a
+thumb for precision it lacks, on the edge iOS reserves for swipe-back.)
 
 After any jump the landing row briefly outlines itself (`JumpFlashHighlight`).
 On mobile that is load-bearing: the sheet dismisses, so the outline is the only

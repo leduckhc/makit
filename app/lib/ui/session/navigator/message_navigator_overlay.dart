@@ -22,7 +22,6 @@ import 'navigator_style.dart';
 import 'outline.dart';
 import 'palette.dart';
 import 'rail.dart';
-import 'scrubber.dart';
 import 'transcript_jumper.dart';
 import 'user_message_indices.dart';
 
@@ -150,9 +149,6 @@ class _MessageNavigatorOverlayState
     return switch (style) {
       MessageNavigatorStyle.off => const SizedBox.shrink(),
       MessageNavigatorStyle.rail => MessageRail(context: navigatorContext),
-      MessageNavigatorStyle.scrubber => MessageScrubber(
-        context: navigatorContext,
-      ),
       MessageNavigatorStyle.palette => MessagePalette(
         context: navigatorContext,
       ),

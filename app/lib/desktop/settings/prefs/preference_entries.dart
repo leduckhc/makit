@@ -200,23 +200,6 @@ const PreferenceEntry<bool> railEncodeLengthPreference = PreferenceEntry(
   decode: _decodeBool,
 );
 
-/// Whether the scrubber scrolls the transcript during the drag (false = preview
-/// only, commit on release).
-const PreferenceEntry<bool> scrubLiveScrollPreference = PreferenceEntry(
-  id: 'chat.navigator.scrub.liveScroll',
-  defaultValue: true,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
-/// Whether the scrubber's preview card shows a relative timestamp.
-const PreferenceEntry<bool> scrubTimestampsPreference = PreferenceEntry(
-  id: 'chat.navigator.scrub.timestamps',
-  defaultValue: true,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
 /// Whether the palette searches assistant/tool rows too (false = yours only).
 const PreferenceEntry<bool> paletteSearchAllPreference = PreferenceEntry(
   id: 'chat.navigator.palette.searchAll',
@@ -280,8 +263,6 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   railTickSpacingPreference,
   railRipplePreference,
   railEncodeLengthPreference,
-  scrubLiveScrollPreference,
-  scrubTimestampsPreference,
   paletteSearchAllPreference,
   crumbAutoHidePreference,
   crumbCounterPreference,

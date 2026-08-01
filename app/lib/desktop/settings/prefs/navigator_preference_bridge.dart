@@ -28,14 +28,6 @@ final desktopNavigatorStyleProvider = Provider<MessageNavigatorStyle>(
   (ref) => _watch(ref, messageNavigatorStylePreference),
 );
 
-/// The stored scrubber options.
-final desktopScrubberOptionsProvider = Provider<ScrubberOptions>(
-  (ref) => ScrubberOptions(
-    liveScroll: _watch(ref, scrubLiveScrollPreference),
-    timestamps: _watch(ref, scrubTimestampsPreference),
-  ),
-);
-
 /// The stored breadcrumb options.
 final desktopBreadcrumbOptionsProvider = Provider<BreadcrumbOptions>(
   (ref) => BreadcrumbOptions(

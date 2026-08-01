@@ -2,7 +2,7 @@
 /// a small affordance in the transcript's top-right corner (SPEC-34).
 ///
 /// **Why this style exists.** It is the only navigator that can *search* — the
-/// rail and scrubber locate a prompt by position, the palette by content. So it
+/// rail locates a prompt by position, the palette by content. So it
 /// is the one place where the corpus can widen from "your own messages" to the
 /// whole transcript (`searchAll`), and the one place where result order in the
 /// list diverges from item order in the transcript. That divergence is the

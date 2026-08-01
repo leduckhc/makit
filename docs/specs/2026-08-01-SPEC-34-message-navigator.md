@@ -48,7 +48,7 @@ not a fetch.
 
 ## Design
 
-### Five navigator styles, one shared spine
+### Four navigator styles, one shared spine
 
 All styles are pure consumers of two shared pieces plus a preference:
 
@@ -65,7 +65,6 @@ desktop cannot drift — the SPEC-21/SPEC-24 parity rule.
 | Style | Affordance | Input | Notes |
 |---|---|---|---|
 | `rail` | Cosy cluster of hairline ticks in the **top-right corner**; hover ripples the cluster and reveals the message; click jumps | pointer | **default on desktop** |
-| `scrubber` | Drag the right edge; a preview card snaps prompt-to-prompt | pointer (drag) | |
 | `palette` | Shortcut opens a filterable list of your messages; ↑↓ previews, ⏎ jumps | keyboard | only style that **searches** |
 | `breadcrumb` | Glass chip always shows which prompt produced what you're reading, ◀ ▶ hops | passive | answers "where am I", not "where was it" |
 | `outline` | Toggle hides assistant/tool rows, leaving your prompts as a table of contents; click one to expand back in place | toggle | **the mobile style**; doubles as a session summary |
@@ -174,7 +173,6 @@ Options per style:
 | Style | Options |
 |---|---|
 | `rail` | Tick spacing (`cosy 6` / `normal 10` / `roomy 14`) · Ripple on hover · Tick length = message length |
-| `scrubber` | Scroll while dragging (off = preview, jump on release) · Show timestamps |
 | `palette` | Search assistant messages too · Shortcut (read-only; rebound in **Shortcuts**) |
 | `breadcrumb` | Hide while streaming · Show position counter |
 | `outline` | Hide tool calls too · Show hidden-row counts |
@@ -239,11 +237,12 @@ Four schema decisions, each load-bearing:
 session-actions (`⋯`) menu, which opens a sheet listing the prompts you sent, newest first;
 tapping one jumps and dismisses.
 
-The five styles are all, in the end, pointer designs. The rail and breadcrumb need hover.
-The scrubber *was* the touch answer and is still wrong: it asks a thumb to land on one of N
-markers down a 22pt edge strip — ~18pt apart at 40 prompts — on the very edge iOS reserves
-for swipe-back, under the finger driving it. Outline is fine but spends permanent transcript
-chrome on a screen that has none to spare. A sheet is the platform's own idiom for "pick
+The styles are all, in the end, pointer designs. The rail and breadcrumb need hover. An
+edge-drag **scrubber** was built for exactly this case and then **removed** (see decision 1c):
+it asked a thumb to land on one of N markers ~18pt apart down a 22pt strip, on the very edge
+iOS reserves for swipe-back, under the finger driving it — and once mobile stopped using it,
+it was just a worse rail. Outline is fine but spends permanent transcript chrome on a screen
+that has none to spare. A sheet is the platform's own idiom for "pick
 from a list", costs no screen furniture, and needs no setting to explain — which is why
 criterion 4 ("a user who finds it noisy can turn it off") is satisfied by construction:
 there is nothing on screen to turn off.
@@ -294,7 +293,8 @@ Consequences to respect:
 
 | # | Decision | Rationale |
 |---|---|---|
-| 1 | Ship **all five styles + off**, selectable in **desktop** Settings, each with its own options | User's explicit choice over the trimmed "Rail + Off + density" alternative. Intent is that all five ship; the unknown-id fallback means deferring any of them later needs no migration |
+| 1 | Ship **four styles + off** — rail · palette · breadcrumb · outline — selectable in **desktop** Settings, each with its own options | User's explicit choice over the trimmed "Rail + Off + density" alternative |
+| 1c | The **scrubber was built, then removed** | Once mobile moved to a sheet, an edge-drag style had no constituency: on a pointer it duplicates the rail less legibly. The enum's unknown-id fallback made removal a deletion, not a migration — a stored `"scrubber"` decodes to the default (tested) |
 | 1b | Mobile gets **one on/off switch**, not the picker | The desktop preference system does not reach mobile; a full port is its own spec |
 | 2 | **Rail** is the desktop default; mobile gets a **sheet from the session-actions menu**, not a style | All five styles are pointer designs, and a phone has no screen to spend on permanent chrome — see §Surface matrix |
 | 2b | Mobile has **no navigator preferences at all** | Nothing is on screen to configure or disable |
@@ -320,11 +320,6 @@ proving a jump does not disturb fold state.
 **P1 — Rail.** Cluster, ripple, peek, current-tick, 3 options.
 → *verify:* widget tests for tick count/spacing per option, pointer→index mapping at the
 cluster edges, ripple disabled under `MediaQuery.disableAnimations`, jump on click.
-
-**P2 — Scrubber.** Unblocks mobile (P0 leaves mobile on `off`). Drag, snap, preview card,
-`liveScroll` both ways.
-→ *verify:* drag gesture tests; `liveScroll: false` scrolls only on release; mobile
-coercion test (`rail` stored → `scrubber` rendered).
 
 **P3 — Outline.** Global fold reusing SPEC-24's expansion machinery; hidden-row counts;
 click-to-expand-in-place preserving the clicked prompt's position.
@@ -356,7 +351,7 @@ traversal.
 | **Index-based jump lands imprecisely** on tall un-built rows (code blocks, images) | In-layout `scrollOffsetCorrection` converges within one frame with no painted intermediate; our own ≤5 cap keeps us under `RenderViewport`'s assert, and the landing flash covers a give-up-short landing |
 | Jump lands one message off via a botched index transform | Reuse `transcriptChildIndexFinder`'s expression; test with `hasTrailer` both ways and while `outline` is active |
 | **Five navigators is five maintenance bills** — tests, mobile story, forever | Phased so each lands green independently; enum + unknown-id fallback means P4/P5 can be deferred or dropped without migration |
-| Rail collides with the macOS scrollbar / iOS edge-swipe-back | Rail is a top-corner cluster, not a full-height gutter; scrubber is the touch style and must be tested against edge-swipe |
+| Rail collides with the macOS scrollbar | Rail is a top-corner cluster, not a full-height gutter |
 | Cluster outgrows the corner past ~60 prompts | 60 × 6pt = 360pt still fits; beyond that, cap the cluster height and squeeze spacing — **not** in scope here, but the widget takes a max-height so the fix is local |
 | Peek card obscures the newest messages | Card is pinned to the crest and inset; it never covers the composer |
 

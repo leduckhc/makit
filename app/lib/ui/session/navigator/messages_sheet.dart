@@ -2,12 +2,13 @@
 /// the session-actions menu (SPEC-34).
 ///
 /// Mobile takes this route rather than one of the five transcript-overlay styles
-/// because none of them suits a thumb. The rail and breadcrumb need hover; the
-/// scrubber asks for precision a thumb does not have (markers ~18pt apart at 40
-/// prompts, on the edge iOS reserves for swipe-back, under the finger driving
-/// it). A sheet is the platform's own idiom for "pick from a list", costs no
-/// permanent screen furniture, and needs no settings to explain it — which is
-/// why mobile has no navigator preferences at all.
+/// because none of them suits a thumb: they are pointer designs, and a phone has
+/// no screen to spend on permanent chrome. (An edge-drag "scrubber" style was
+/// built for exactly this and then removed — it asked a thumb to land on one of
+/// N markers ~18pt apart, on the edge iOS reserves for swipe-back, under the
+/// finger driving it.) A sheet is the platform's own idiom for "pick from a
+/// list", costs no permanent screen furniture, and needs no settings to explain
+/// it — which is why mobile has no navigator preferences at all.
 library;
 
 import 'package:flutter/material.dart';

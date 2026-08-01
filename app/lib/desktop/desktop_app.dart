@@ -184,9 +184,6 @@ Future<void> runDesktopApp() async {
         railOptionsProvider.overrideWith(
           (ref) => ref.watch(desktopRailOptionsProvider),
         ),
-        scrubberOptionsProvider.overrideWith(
-          (ref) => ref.watch(desktopScrubberOptionsProvider),
-        ),
         breadcrumbOptionsProvider.overrideWith(
           (ref) => ref.watch(desktopBreadcrumbOptionsProvider),
         ),

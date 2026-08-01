@@ -50,12 +50,6 @@ const List<_StyleCopy> _styles = [
         'sent. Hover to ripple and reveal, click to jump.',
   ),
   _StyleCopy(
-    style: MessageNavigatorStyle.scrubber,
-    title: 'Prompt scrubber',
-    badge: 'touch',
-    blurb: 'Drag the right edge; a preview card snaps prompt to prompt.',
-  ),
-  _StyleCopy(
     style: MessageNavigatorStyle.palette,
     title: 'Prompt palette',
     blurb:
@@ -160,18 +154,6 @@ class _StyleRow extends ConsumerWidget {
         entry: railEncodeLengthPreference,
         title: 'Tick length shows message length',
         subtitle: 'Makes the rail a fingerprint of the session',
-      ),
-    ],
-    MessageNavigatorStyle.scrubber => const [
-      _SwitchRow(
-        entry: scrubLiveScrollPreference,
-        title: 'Scroll while dragging',
-        subtitle: 'Off shows a preview and jumps when you let go',
-      ),
-      _SwitchRow(
-        entry: scrubTimestampsPreference,
-        title: 'Show timestamps',
-        subtitle: 'Relative time on the preview card',
       ),
     ],
     MessageNavigatorStyle.palette => const [

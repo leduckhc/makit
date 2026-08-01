@@ -7,12 +7,13 @@
 /// [messageNavigatorStyleProvider] with whatever that surface can actually offer:
 ///
 /// - desktop → the user's `messageNavigatorStylePreference` (the full picker);
-/// - mobile → `scrubber` or `off`, from a single on/off switch, because the
-///   desktop preference system does not reach mobile and the pointer-only styles
-///   have no touch story.
+/// - mobile → left at `off`. Every style here is a pointer design, and a phone
+///   has no screen to spend on permanent chrome, so mobile reaches its own
+///   messages through a sheet in the session-actions menu instead
+///   (`messages_sheet.dart`).
 ///
-/// Coercion is deliberately *not* a function anyone has to remember to call: a
-/// hover-only style is unreachable on mobile because mobile never puts one in
+/// Coercion is deliberately *not* a function anyone has to remember to call: an
+/// unsuitable style is unreachable on mobile because mobile never puts one in
 /// the provider.
 library;
 
@@ -26,9 +27,6 @@ enum MessageNavigatorStyle {
 
   /// Cosy cluster of ticks in the top-right corner; hover ripples, click jumps.
   rail,
-
-  /// Drag the trailing edge; a preview card snaps prompt to prompt.
-  scrubber,
 
   /// A shortcut opens a filterable list of your messages.
   palette,
@@ -85,33 +83,6 @@ class RailOptions {
 
 /// The rail's options for the current surface.
 final railOptionsProvider = Provider<RailOptions>((ref) => const RailOptions());
-
-/// The scrubber's tunables. Same override discipline as [RailOptions].
-@immutable
-class ScrubberOptions {
-  /// Creates scrubber options.
-  const ScrubberOptions({this.liveScroll = true, this.timestamps = true});
-
-  /// Whether the transcript scrolls during the drag (false = commit on release).
-  final bool liveScroll;
-
-  /// Whether the preview card shows a relative timestamp.
-  final bool timestamps;
-
-  @override
-  bool operator ==(Object other) =>
-      other is ScrubberOptions &&
-      other.liveScroll == liveScroll &&
-      other.timestamps == timestamps;
-
-  @override
-  int get hashCode => Object.hash(liveScroll, timestamps);
-}
-
-/// The scrubber's options for the current surface.
-final scrubberOptionsProvider = Provider<ScrubberOptions>(
-  (ref) => const ScrubberOptions(),
-);
 
 /// The breadcrumb's tunables.
 @immutable

@@ -22,14 +22,25 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           messageNavigatorStyleProvider.overrideWithValue(
-            MessageNavigatorStyle.scrubber,
+            MessageNavigatorStyle.outline,
           ),
         ],
       );
       addTearDown(container.dispose);
       expect(
         container.read(messageNavigatorStyleProvider),
-        MessageNavigatorStyle.scrubber,
+        MessageNavigatorStyle.outline,
+      );
+    });
+
+    test('a stored "scrubber" — a style that used to exist — decodes to the '
+        'default rather than breaking the pane', () {
+      final controller = PreferencesController(null, const {
+        'chat.navigator.style': 'scrubber',
+      });
+      expect(
+        controller.get(messageNavigatorStylePreference),
+        MessageNavigatorStyle.rail,
       );
     });
   });
@@ -82,8 +93,6 @@ void main() {
         'chat.navigator.rail.spacing',
         'chat.navigator.rail.ripple',
         'chat.navigator.rail.encodeLength',
-        'chat.navigator.scrub.liveScroll',
-        'chat.navigator.scrub.timestamps',
         'chat.navigator.palette.searchAll',
         'chat.navigator.crumb.autoHide',
         'chat.navigator.crumb.counter',
@@ -99,8 +108,6 @@ void main() {
       expect(c.get(railTickSpacingPreference), 6);
       expect(c.get(railRipplePreference), isTrue);
       expect(c.get(railEncodeLengthPreference), isTrue);
-      expect(c.get(scrubLiveScrollPreference), isTrue);
-      expect(c.get(scrubTimestampsPreference), isTrue);
       expect(c.get(paletteSearchAllPreference), isFalse);
       expect(c.get(crumbAutoHidePreference), isTrue);
       expect(c.get(crumbCounterPreference), isTrue);

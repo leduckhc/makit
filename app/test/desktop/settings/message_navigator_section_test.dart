@@ -44,7 +44,6 @@ void main() {
     for (final title in const [
       'Off',
       'Ripple rail',
-      'Prompt scrubber',
       'Prompt palette',
       'Sticky breadcrumb',
       'Outline mode',
@@ -80,18 +79,13 @@ void main() {
   ) async {
     await pumpPrefs(tester);
 
-    await tapRow(tester, 'Prompt scrubber');
+    await tapRow(tester, 'Outline mode');
     expect(
       controller.get(messageNavigatorStylePreference),
-      MessageNavigatorStyle.scrubber,
+      MessageNavigatorStyle.outline,
     );
-    expect(find.text('Scroll while dragging'), findsOneWidget);
-    expect(find.text('Show timestamps'), findsOneWidget);
-    expect(find.text('Tick spacing'), findsNothing);
-
-    await tapRow(tester, 'Outline mode');
     expect(find.text('Hide tool calls too'), findsOneWidget);
-    expect(find.text('Scroll while dragging'), findsNothing);
+    expect(find.text('Tick spacing'), findsNothing);
 
     await tapRow(tester, 'Sticky breadcrumb');
     expect(find.text('Show position counter'), findsOneWidget);
