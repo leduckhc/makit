@@ -73,10 +73,25 @@ void main() {
         'Ran echo hi',
       );
     });
-    test('bash collapses multi-line commands to one line', () {
+    test('bash drops the cd/export prologue and chains the rest', () {
       expect(
         toolSummaryLine(_tool('bash', {'command': 'cd /x &&\n  pnpm  server'})),
-        'Ran cd /x && pnpm server',
+        'Ran pnpm server',
+      );
+      expect(
+        toolSummaryLine(
+          _tool('bash', {'command': 'cd /x && export PATH=/y && pnpm test'}),
+        ),
+        'Ran pnpm test +env',
+      );
+    });
+    test('paths are shown relative to the session worktree', () {
+      expect(
+        toolSummaryLine(
+          _tool('read', {'path': '/w/tree/app/lib/foo.dart'}),
+          root: '/w/tree',
+        ),
+        'Read app/lib/foo.dart',
       );
     });
     test('edit/read/write/grep summarise their target', () {

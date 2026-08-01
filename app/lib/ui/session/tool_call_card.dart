@@ -4,6 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/store.dart';
 import 'chat_metrics.dart';
 import 'transcript_expansion.dart';
 import 'tool_renderers.dart';
@@ -18,9 +19,15 @@ class ToolCallCard extends ConsumerStatefulWidget {
     super.key,
     required this.item,
     required this.expansionKey,
+    this.sessionId,
   });
 
   final ToolCallItem item;
+
+  /// Session this row belongs to — used to resolve the worktree path that
+  /// absolute paths in the collapsed one-liner are shown relative to. Null in
+  /// tests/previews that render a card standalone.
+  final String? sessionId;
 
   /// This row's identity in [expandedTranscriptRowsProvider].
   final String expansionKey;
@@ -114,6 +121,15 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
     );
   }
 
+  /// The session's worktree path, so `/Users/…/worktree/app/lib/x.dart`
+  /// renders as `app/lib/x.dart`. Watched narrowly so an unrelated session
+  /// update never rebuilds this row.
+  String? _root() {
+    final id = widget.sessionId;
+    if (id == null) return null;
+    return ref.watch(sessionsProvider.select((s) => s.byId(id)?.worktreePath));
+  }
+
   /// The one-liner header: tool icon, summary text, status glyph, and a
   /// trailing rotating disclosure caret. The entire header is the tap target
   /// (built by the caller), so no child owns the gesture.
@@ -167,7 +183,7 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
         const SizedBox(width: kSpace8),
         Expanded(
           child: Text(
-            expanded ? toolLabel(item) : toolSummaryLine(item),
+            expanded ? toolLabel(item) : toolSummaryLine(item, root: _root()),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.mono.copyWith(
