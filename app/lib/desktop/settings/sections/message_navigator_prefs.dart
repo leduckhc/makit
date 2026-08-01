@@ -1,0 +1,271 @@
+/// The `Message navigator` settings leaf (SPEC-34): a style picker whose
+/// selected row expands its own options.
+///
+/// Presentation is an **expanding radio list**, not a `SegmentedButton`: five
+/// styles with two or three options each is thirteen controls, so progressive
+/// disclosure is mandatory — and a radio list lets the user read what "Outline"
+/// means without selecting it. This is a choice made once, so informed beats
+/// compact.
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../app/theme.dart';
+import '../../../ui/session/navigator/navigator_style.dart';
+import '../prefs/preference.dart';
+import '../prefs/preference_entries.dart';
+import '../prefs/preferences_providers.dart';
+import 'section_header.dart';
+import 'settings_group.dart';
+
+/// Human-facing copy for each style, plus which styles are actually built.
+@immutable
+class _StyleCopy {
+  const _StyleCopy({
+    required this.style,
+    required this.title,
+    required this.blurb,
+    this.badge,
+    this.built = true,
+  });
+
+  final MessageNavigatorStyle style;
+  final String title;
+  final String blurb;
+  final String? badge;
+
+  /// Whether this style renders anything yet. The enum ships complete so the
+  /// stored preference is forward-compatible, but an unbuilt style must be
+  /// visibly unavailable rather than silently doing nothing.
+  final bool built;
+}
+
+const List<_StyleCopy> _styles = [
+  _StyleCopy(
+    style: MessageNavigatorStyle.off,
+    title: 'Off',
+    blurb: 'No navigator. Scroll the transcript by hand.',
+  ),
+  _StyleCopy(
+    style: MessageNavigatorStyle.rail,
+    title: 'Ripple rail',
+    badge: 'pointer',
+    blurb:
+        'A cosy cluster of ticks in the top-right corner — one per message you '
+        'sent. Hover to ripple and reveal, click to jump.',
+  ),
+  _StyleCopy(
+    style: MessageNavigatorStyle.scrubber,
+    title: 'Prompt scrubber',
+    badge: 'touch',
+    blurb: 'Drag the right edge; a preview card snaps prompt to prompt.',
+    built: false,
+  ),
+  _StyleCopy(
+    style: MessageNavigatorStyle.palette,
+    title: 'Prompt palette',
+    blurb: 'A shortcut opens a searchable list of your messages.',
+    built: false,
+  ),
+  _StyleCopy(
+    style: MessageNavigatorStyle.breadcrumb,
+    title: 'Sticky breadcrumb',
+    blurb:
+        'A chip always shows which of your prompts produced what you are '
+        'reading, with prev/next hops.',
+    built: false,
+  ),
+  _StyleCopy(
+    style: MessageNavigatorStyle.outline,
+    title: 'Outline mode',
+    blurb:
+        'A toggle hides assistant output, leaving your prompts as a table of '
+        'contents.',
+    built: false,
+  ),
+];
+
+/// The subsection: header, blurb, and the picker group.
+class MessageNavigatorPrefs extends ConsumerWidget {
+  /// Creates the `Message navigator` settings leaf.
+  const MessageNavigatorPrefs({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.preference(messageNavigatorStylePreference);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SettingsSectionHeader(title: 'Message navigator'),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            'How you jump back to your own messages in a long transcript.',
+          ),
+        ),
+        SettingsGroup(
+          children: [
+            for (final copy in _styles)
+              _StyleRow(copy: copy, selected: copy.style == selected),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// One style row; when selected it is followed by that style's options.
+class _StyleRow extends ConsumerWidget {
+  const _StyleRow({required this.copy, required this.selected});
+
+  final _StyleCopy copy;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = copy.built;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          enabled: enabled,
+          leading: Icon(
+            selected
+                ? Icons.radio_button_checked
+                : Icons.radio_button_unchecked,
+            size: 18,
+            color: selected ? scheme.primary : scheme.outline,
+          ),
+          title: Row(
+            children: [
+              Flexible(child: Text(copy.title)),
+              if (copy.badge != null) ...[
+                const SizedBox(width: kSpace6),
+                _Badge(label: copy.badge!),
+              ],
+              if (!enabled) ...[
+                const SizedBox(width: kSpace6),
+                const _Badge(label: 'coming soon'),
+              ],
+            ],
+          ),
+          subtitle: Text(copy.blurb),
+          onTap: enabled
+              ? () => ref
+                    .read(preferencesControllerProvider.notifier)
+                    .set(messageNavigatorStylePreference, copy.style)
+              : null,
+        ),
+        // Only the selected style's options are built — not built-and-hidden.
+        if (selected) ..._optionsFor(copy.style),
+      ],
+    );
+  }
+
+  List<Widget> _optionsFor(MessageNavigatorStyle style) => switch (style) {
+    MessageNavigatorStyle.rail => const [
+      _SpacingRow(),
+      _SwitchRow(
+        entry: railRipplePreference,
+        title: 'Ripple on hover',
+        subtitle: 'Neighbouring ticks stretch and spread apart',
+      ),
+      _SwitchRow(
+        entry: railEncodeLengthPreference,
+        title: 'Tick length shows message length',
+        subtitle: 'Makes the rail a fingerprint of the session',
+      ),
+    ],
+    // The remaining styles' options ship with the styles themselves.
+    _ => const [],
+  };
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: kSpace6),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(kRadius6),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+/// Tick spacing: the one number a user notices immediately.
+class _SpacingRow extends ConsumerWidget {
+  const _SpacingRow();
+
+  static const Map<int, String> _labels = {
+    6: 'cosy',
+    10: 'normal',
+    14: 'roomy',
+  };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.preference(railTickSpacingPreference);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(56, 0, 16, kSpace12),
+      child: Row(
+        children: [
+          const Expanded(child: Text('Tick spacing')),
+          SegmentedButton<int>(
+            showSelectedIcon: false,
+            segments: [
+              for (final entry in _labels.entries)
+                ButtonSegment(value: entry.key, label: Text(entry.value)),
+            ],
+            selected: {_labels.containsKey(value) ? value : 6},
+            onSelectionChanged: (selection) => ref
+                .read(preferencesControllerProvider.notifier)
+                .set(railTickSpacingPreference, selection.first),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A boolean option row bound to [entry].
+class _SwitchRow extends ConsumerWidget {
+  const _SwitchRow({
+    required this.entry,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final PreferenceEntry<bool> entry;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.preference(entry);
+    return Padding(
+      padding: const EdgeInsets.only(left: 40),
+      child: SwitchListTile(
+        value: value,
+        title: Text(title),
+        subtitle: Text(subtitle),
+        onChanged: (next) =>
+            ref.read(preferencesControllerProvider.notifier).set(entry, next),
+      ),
+    );
+  }
+}

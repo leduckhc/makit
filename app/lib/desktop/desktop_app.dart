@@ -41,6 +41,8 @@ import 'daemon/daemon_lifecycle.dart';
 import 'daemon/server_profile.dart';
 import 'desktop_controller.dart';
 import 'screens/providers.dart';
+import '../ui/session/navigator/navigator_style.dart';
+import 'settings/prefs/navigator_preference_bridge.dart';
 import 'settings/prefs/preference_entries.dart';
 import 'settings/prefs/preferences_controller.dart';
 import 'settings/prefs/preferences_providers.dart';
@@ -174,6 +176,14 @@ Future<void> runDesktopApp() async {
           (ref) => recentModelsController,
         ),
         groupsControllerProvider.overrideWith((ref) => groupsController),
+        // SPEC-34: hand the stored navigator style + rail options to the shared
+        // transcript providers (shared `ui/` cannot read `desktop/` prefs).
+        messageNavigatorStyleProvider.overrideWith(
+          (ref) => ref.watch(desktopNavigatorStyleProvider),
+        ),
+        railOptionsProvider.overrideWith(
+          (ref) => ref.watch(desktopRailOptionsProvider),
+        ),
       ],
       child: const _DesktopApp(),
     ),

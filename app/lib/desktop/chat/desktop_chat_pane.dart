@@ -14,6 +14,7 @@ import '../../ui/composer/composer_selectors.dart';
 import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
+import '../../ui/session/navigator/message_navigator_overlay.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import '../../ui/session/transcript_list.dart';
 import 'composer_draft.dart';
@@ -80,6 +81,8 @@ class DesktopChatPane extends ConsumerStatefulWidget {
 
 class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   final _scroll = ScrollController();
+  // SPEC-34: the render-layer handle the message navigator jumps through.
+  final _jumpTarget = TranscriptJumpTarget();
   String? _subscribed;
   int _lastSeq = 0;
 
@@ -234,6 +237,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   children: [
                     TranscriptListView(
                       controller: _scroll,
+                      jumpTarget: _jumpTarget,
                       padding: const EdgeInsets.symmetric(vertical: kSpace12),
                       itemCount: items.length + (hasTrailer ? 1 : 0),
                       // Let the lazy list find each already-built row at its
@@ -284,6 +288,15 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           ),
                         );
                       },
+                    ),
+                    // SPEC-34: the message navigator, over the transcript.
+                    // Renders nothing when the chosen style is `off`.
+                    MessageNavigatorOverlay(
+                      sessionId: sessionId,
+                      controller: _scroll,
+                      target: _jumpTarget,
+                      items: items,
+                      hasTrailer: hasTrailer,
                     ),
                     // Floating "jump to newest" affordance over the transcript,
                     // just above the composer — the same widget as mobile.
@@ -400,6 +413,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   void dispose() {
+    _jumpTarget.dispose();
     _scroll.dispose();
     for (final c in _composerControllers.values) {
       c.dispose();

@@ -1,0 +1,647 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — "find my messages" mockups</title>
+<style>
+  :root{
+    /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
+    --bg:#171717;
+    --container-lowest:#121212;
+    --container-low:#1E1E1E;
+    --container:#242424;
+    --container-high:#2E2E2E;   /* user bubble */
+    --container-highest:#383838;
+    --text:#F5F5F5;
+    --muted:#9E9E9E;
+    --hairline:#333333;
+    --primary:#7EE8A6;
+    --accent:#4ADE80;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 96px;
+  }
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 12px;max-width:900px}
+  .sub code,code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .legend{color:var(--muted);font-size:12.5px;max-width:900px;margin:0 0 28px;
+          border-left:2px solid var(--hairline);padding-left:12px}
+
+  .variant{margin:0 0 40px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .variant > header{padding:16px 20px;border-bottom:1px solid var(--hairline)}
+  .variant h2{font-size:15px;margin:0 0 6px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .tag{font-size:11px;color:#0e0e0e;background:var(--accent);border-radius:6px;padding:2px 7px;font-weight:700}
+  .tag.alt{background:var(--container-highest);color:var(--text)}
+  .variant p{margin:0;color:var(--muted);font-size:13px;max-width:940px}
+  .variant p + p{margin-top:6px}
+  .body{display:flex;gap:0;align-items:stretch}
+  .stage{flex:1;padding:20px;min-width:0}
+  .notes{width:300px;flex:none;border-left:1px dashed var(--hairline);padding:20px;font-size:12px;color:var(--muted)}
+  .notes h3{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700}
+  .notes ul{margin:0 0 14px;padding-left:16px}
+  .notes li{margin-bottom:5px}
+  .notes li b{color:var(--text);font-weight:600}
+  .verdict{border-top:1px solid var(--hairline);padding-top:10px;margin-top:4px}
+  .pro::before{content:"✓ ";color:var(--accent)}
+  .con::before{content:"✕ ";color:#E5544B}
+
+  /* ---------- chat pane ---------- */
+  .pane{
+    position:relative;background:var(--bg);border:1px solid #000;border-radius:var(--radius);
+    height:420px;overflow:hidden;
+  }
+  .scroller{position:absolute;inset:0;overflow-y:auto;scroll-behavior:smooth;padding:16px 0 16px}
+  .scroller::-webkit-scrollbar{width:0}
+  .colinner{max-width:560px;margin:0 auto;padding:0 20px}
+  .row{margin-bottom:14px;scroll-margin-top:14px}
+  .row.user{display:flex;justify-content:flex-end}
+  .bubble{background:var(--container-high);border-radius:12px;padding:8px 12px;max-width:78%;
+          font-size:13px;transition:box-shadow .25s,background .25s}
+  .row.assistant .txt{font-size:13px;color:#DEDEDE}
+  .row.assistant .who{font-size:11px;color:var(--muted);margin-bottom:2px}
+  .row.tool{font-size:12px;color:var(--muted);border:1px solid var(--hairline);border-radius:8px;
+            padding:6px 10px;background:var(--container-low);display:flex;gap:8px;align-items:center}
+  .row.tool .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+  .row.user.flash .bubble{box-shadow:0 0 0 2px var(--accent);background:#343a36}
+
+  /* fake floating composer so the pane reads like the app */
+  .composer{position:absolute;left:0;right:0;bottom:0;padding:10px 20px 12px;
+            background:linear-gradient(to top,rgba(23,23,23,.96) 60%,rgba(23,23,23,0));pointer-events:none}
+  .composer .box{max-width:560px;margin:0 auto;background:rgba(46,46,46,.82);border:1px solid var(--hairline);
+                 border-radius:16px;padding:8px 12px;color:var(--muted);font-size:12.5px;
+                 display:flex;justify-content:space-between;align-items:center}
+  .composer .send{width:24px;height:24px;border-radius:50%;background:var(--accent)}
+
+  /* ============ A. RIPPLE RAIL (cosy) ============ */
+  /* The rail is a COMPACT CLUSTER pinned to the top-right corner: fixed tick
+     spacing, not proportional to scroll height. Reads as one small object. */
+  .rail{position:absolute;top:12px;right:0;width:72px;z-index:6}
+  .tick{
+    position:absolute;right:10px;height:1.5px;border-radius:1px;background:var(--muted);opacity:.38;
+    transform-origin:100% 50%;
+    transition:width .26s cubic-bezier(.2,.9,.2,1),top .26s cubic-bezier(.2,.9,.2,1),
+               opacity .2s,background .2s,height .2s;
+    cursor:pointer;
+  }
+  .rail:hover .tick{opacity:.55}
+  .tick.active{background:var(--accent);opacity:1;height:2px}
+  .tick.cur{background:var(--primary);opacity:.9}
+  /* generous invisible hit strip so 6pt-apart ticks stay clickable */
+  .rail .hit{position:absolute;right:0;width:72px}
+  .dial{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-size:11.5px;color:var(--muted)}
+  .dial input[type=range]{width:150px;accent-color:var(--accent)}
+  .dial b{color:var(--text);font-variant-numeric:tabular-nums;font-weight:600}
+  .dial label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .peek{
+    position:absolute;right:44px;max-width:300px;background:var(--container);
+    border:1px solid var(--hairline);border-radius:10px;padding:8px 11px;font-size:12.5px;
+    box-shadow:0 10px 30px rgba(0,0,0,.55);opacity:0;transform:translateY(-50%) translateX(6px);
+    transition:opacity .16s,transform .16s;pointer-events:none;z-index:8;
+  }
+  .peek.on{opacity:1;transform:translateY(-50%) translateX(0)}
+  .peek .meta{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+
+  /* ============ B. SCRUBBER ============ */
+  .scrub{position:absolute;top:0;bottom:0;right:0;width:22px;z-index:6;cursor:ns-resize}
+  .scrub .track{position:absolute;top:12px;bottom:12px;right:9px;width:2px;background:var(--hairline)}
+  .snode{position:absolute;right:6px;width:8px;height:8px;border-radius:50%;background:var(--muted);
+         opacity:.5;transform:translate(0,-50%) scale(.75);transition:transform .2s,opacity .2s,background .2s}
+  .scrub:hover .snode{opacity:.85;transform:translate(0,-50%) scale(1)}
+  .snode.hot{background:var(--accent);opacity:1;transform:translate(-2px,-50%) scale(1.5)}
+  .card{
+    position:absolute;right:34px;width:290px;background:var(--container);border:1px solid var(--hairline);
+    border-radius:12px;padding:10px 12px;box-shadow:0 14px 40px rgba(0,0,0,.6);
+    opacity:0;transform:translateY(-50%);transition:opacity .14s;pointer-events:none;z-index:9
+  }
+  .card.on{opacity:1}
+  .card .n{font-size:10.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+  .card .t{font-size:13px}
+  .card .when{font-size:11px;color:var(--muted);margin-top:6px}
+
+  /* ============ C. PALETTE ============ */
+  .palbtn{position:absolute;top:10px;right:12px;z-index:7;background:rgba(36,36,36,.9);
+          border:1px solid var(--hairline);color:var(--muted);border-radius:8px;padding:5px 9px;
+          font:inherit;font-size:11.5px;cursor:pointer}
+  .palbtn:hover{color:var(--text);border-color:var(--container-highest)}
+  .overlay{position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:10;display:none;
+           align-items:flex-start;justify-content:center;padding-top:34px}
+  .overlay.on{display:flex}
+  .pal{width:420px;background:var(--container-low);border:1px solid var(--hairline);border-radius:12px;
+       box-shadow:0 24px 60px rgba(0,0,0,.7);overflow:hidden}
+  .pal input{width:100%;background:transparent;border:0;border-bottom:1px solid var(--hairline);
+             color:var(--text);font:inherit;padding:11px 13px;outline:none}
+  .pal ul{list-style:none;margin:0;padding:6px;max-height:250px;overflow:auto}
+  .pal li{padding:7px 9px;border-radius:7px;font-size:13px;cursor:pointer;display:flex;gap:9px;align-items:baseline}
+  .pal li .idx{font-size:10.5px;color:var(--muted);flex:none;width:22px;font-variant-numeric:tabular-nums}
+  .pal li .s{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pal li.sel{background:var(--container-high)}
+  .pal li.sel .idx{color:var(--accent)}
+  .pal footer{border-top:1px solid var(--hairline);padding:7px 12px;font-size:11px;color:var(--muted);
+              display:flex;gap:14px}
+  kbd{background:#000;border:1px solid var(--hairline);border-radius:4px;padding:0 4px;font-size:10.5px}
+
+  /* ============ D. BREADCRUMB ============ */
+  .crumb{position:absolute;top:10px;left:0;right:0;z-index:7;display:flex;justify-content:center;pointer-events:none}
+  .crumb .chip{pointer-events:auto;display:flex;align-items:center;gap:2px;max-width:min(420px,86%);
+    background:rgba(36,36,36,.88);border:1px solid var(--hairline);border-radius:14px;padding:3px 4px;
+    backdrop-filter:blur(12px);box-shadow:0 6px 20px rgba(0,0,0,.4)}
+  .crumb button{background:transparent;border:0;color:var(--muted);font:inherit;font-size:14px;
+                cursor:pointer;width:24px;height:24px;border-radius:50%;line-height:1}
+  .crumb button:hover{background:var(--container-high);color:var(--text)}
+  .crumb .lbl{font-size:12px;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+              color:#E4E4E4;cursor:pointer}
+  .crumb .cnt{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums;padding-right:6px;flex:none}
+
+  /* ============ E. OUTLINE MODE ============ */
+  .obtn{position:absolute;top:10px;right:12px;z-index:7;background:rgba(36,36,36,.9);
+        border:1px solid var(--hairline);color:var(--muted);border-radius:8px;padding:5px 9px;
+        font:inherit;font-size:11.5px;cursor:pointer}
+  .obtn.on{color:#0e0e0e;background:var(--accent);border-color:var(--accent);font-weight:600}
+  .scroller.outline .row.assistant,.scroller.outline .row.tool{display:none}
+  .scroller.outline .row.user{justify-content:flex-start}
+  .scroller.outline .row.user .bubble{max-width:100%;width:100%;background:transparent;
+    border:1px solid var(--hairline);border-left:2px solid var(--accent);border-radius:8px;cursor:pointer}
+  .scroller.outline .row.user .bubble:hover{background:var(--container-low)}
+  .fold{display:none;font-size:11px;color:var(--muted);margin-top:4px}
+  .scroller.outline .fold{display:block}
+</style>
+</head>
+<body>
+
+<h1>“Where are <em>my</em> messages?” — 5 candidate affordances</h1>
+<p class="sub">
+  Problem: in a long session the transcript is ~90% assistant output, so re-finding your own
+  prompts means scrolling blind. Each mockup below is <strong>live</strong> — hover, drag, click,
+  type. Same fake session in every pane (7 user messages, 24 rows).
+</p>
+<p class="legend">
+  Implementation reality check: the transcript is a <em>reversed lazy list</em>
+  (<code>app/lib/ui/session/transcript_list.dart</code>), so pixel offsets of un-built rows are
+  unknown. Anything that needs exact pixel positions (A/B) must place markers by
+  <strong>item index</strong>, not scroll offset — visually near-identical, but ticks aren’t
+  perfectly proportional to scroll distance. Variants C/D/E need no geometry at all.
+</p>
+
+<!-- ══════════════════════ A ══════════════════════ -->
+<section class="variant">
+  <header>
+    <h2><span class="tag">A</span> Ripple Rail <span class="tag alt">cosy</span></h2>
+    <p>A hairline tick per user message, packed into a <strong>tight cluster in the top-right
+       corner</strong> at fixed spacing. Hovering makes it <em>ripple</em>: the tick under the cursor
+       stretches longest, neighbours follow with a falloff <em>and are gently pushed apart</em>, so
+       the cluster behaves like a liquid surface. Click jumps. The tick for the region you’re
+       reading stays lit green.</p>
+    <p>Dial the density in below — the spacing you pick becomes the constant in the Flutter widget.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="dial">
+        <span>spacing</span>
+        <input type="range" min="3" max="14" step="1" value="6" id="gap" />
+        <b id="gapv">6pt</b>
+        <label><input type="checkbox" id="push" checked /> ripple push</label>
+        <label><input type="checkbox" id="lenc" checked /> length = message length</label>
+      </div>
+      <div class="pane" data-variant="a">
+        <div class="scroller"><div class="colinner"></div></div>
+        <div class="rail"><div class="hit"></div></div>
+        <div class="peek"></div>
+        <div class="composer"><div class="box"><span>Message…</span><span class="send"></span></div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Notes</h3>
+      <ul>
+        <li><b>Fixed spacing, not proportional.</b> The cluster is indexed by message order, so it
+            needs <em>no</em> pixel geometry — which is exactly what the reversed lazy list can give
+            us. The earlier objection to A is gone.</li>
+        <li><b>Discoverability:</b> ~0.38 opacity, 1.5pt hairlines — at 6pt spacing it reads as a
+            small texture swatch, not chrome.</li>
+        <li><b>Ripple</b> = <code>width</code> falloff over ±3 neighbours <em>plus</em> a vertical
+            push that spreads them apart, 260ms <code>easeOutCubic</code>. Tight spacing is what
+            makes the wave legible — spread out, it was just three lines growing.</li>
+        <li><b>Hit target:</b> 6pt rows are far below the 44pt minimum, so the pointer maps to the
+            nearest index across a 72pt strip rather than to the tick itself. Fine for a mouse;
+            on touch this must fall back to variant B’s scrubber.</li>
+        <li><b>Scales further now:</b> 40 prompts × 6pt = 240pt — still fits. Past ~60 the cluster
+            wants a max height and proportional squeeze.</li>
+      </ul>
+      <div class="verdict">
+        <div class="pro">Zero screen cost, no geometry needed, the wave finally feels like a wave.</div>
+        <div class="con">Loses the spatial “top = old / bottom = new” mapping to the scroll position.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ B ══════════════════════ -->
+<section class="variant">
+  <header>
+    <h2><span class="tag">B</span> Prompt Scrubber</h2>
+    <p>Same rail, but built for <em>scrubbing</em>: press and drag along the right edge and a
+       preview card follows your thumb/cursor, snapping node-to-node like the iOS Photos
+       year-scrubber. Release to land. Works identically with a finger.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="pane" data-variant="b">
+        <div class="scroller"><div class="colinner"></div></div>
+        <div class="scrub"><div class="track"></div></div>
+        <div class="card"></div>
+        <div class="composer"><div class="box"><span>Message…</span><span class="send"></span></div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Notes</h3>
+      <ul>
+        <li><b>Drag anywhere</b> on the 22pt strip — hit target is finger-sized, the visuals are 2pt.</li>
+        <li>Card shows prompt + relative time; could show “+4 tool calls, 2 edits” underneath.</li>
+        <li>Live-scroll while dragging (as here) or preview-only-then-commit; the former feels faster, the latter avoids yanking a streaming transcript.</li>
+        <li><b>One affordance, both platforms</b> — the only variant here that is native on touch <em>and</em> mouse.</li>
+      </ul>
+      <div class="verdict">
+        <div class="pro">Touch-first, continuous, no new screen furniture.</div>
+        <div class="con">Competes with the scrollbar / edge-swipe-back gesture on iOS.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ C ══════════════════════ -->
+<section class="variant">
+  <header>
+    <h2><span class="tag">C</span> Prompt Palette <span class="tag alt">⌘/</span></h2>
+    <p>Keyboard-first: one shortcut opens a filterable list of <em>only your</em> messages.
+       Type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to preview (the row flashes behind the overlay),
+       <kbd>⏎</kbd> to jump. Scales to a thousand prompts and is the only variant that lets you
+       search by content.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="pane" data-variant="c">
+        <div class="scroller"><div class="colinner"></div></div>
+        <button class="palbtn">⌘/ my messages</button>
+        <div class="overlay">
+          <div class="pal">
+            <input placeholder="Filter your messages…" />
+            <ul></ul>
+            <footer><span><kbd>↑</kbd><kbd>↓</kbd> preview</span><span><kbd>⏎</kbd> jump</span><span><kbd>esc</kbd> close</span></footer>
+          </div>
+        </div>
+        <div class="composer"><div class="box"><span>Message…</span><span class="send"></span></div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Notes</h3>
+      <ul>
+        <li>Reuses the existing desktop keymap scope (<code>keymap_scope.dart</code>) — no new surface metaphor.</li>
+        <li><b>Search</b> is the real unlock: “what did I ask about the migration?”</li>
+        <li>Mobile: same list from a long-press on the header / a “history” icon — becomes a bottom sheet.</li>
+        <li>Cheapest to build: it’s a list + <code>scrollToIndex</code>. No render-layer work.</li>
+      </ul>
+      <div class="verdict">
+        <div class="pro">Scales infinitely, searchable, accessible, trivial to implement.</div>
+        <div class="con">Modal — loses the “glance at the shape of the session” quality.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ D ══════════════════════ -->
+<section class="variant">
+  <header>
+    <h2><span class="tag">D</span> Sticky Prompt Breadcrumb</h2>
+    <p>Ambient rather than on-demand: a glass chip always tells you <em>which prompt of yours
+       produced what you’re currently looking at</em> (“4/7 · make the rail hoverable”). ◀ ▶ hop
+       between prompts; tap the label to jump to that prompt’s top. Scroll the pane — the chip
+       tracks you.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="pane" data-variant="d">
+        <div class="scroller"><div class="colinner"></div></div>
+        <div class="crumb"><div class="chip">
+          <button class="prev" title="previous prompt">◀</button>
+          <span class="lbl"></span><span class="cnt"></span>
+          <button class="next" title="next prompt">▶</button>
+        </div></div>
+        <div class="composer"><div class="box"><span>Message…</span><span class="send"></span></div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Notes</h3>
+      <ul>
+        <li>Answers a question the others don’t: <b>“where am I?”</b>, not just “where was it?”</li>
+        <li>Pairs with the existing <code>JumpToNewestButton</code> glass language.</li>
+        <li>Works with keyboard (<kbd>⌥↑</kbd>/<kbd>⌥↓</kbd>), touch, and screen readers unchanged.</li>
+        <li>Auto-hide while streaming / while pinned to the newest message so it isn’t permanent chrome.</li>
+      </ul>
+      <div class="verdict">
+        <div class="pro">Always-on orientation; no hover, no gesture, mobile-identical.</div>
+        <div class="con">Spends vertical space; a second floating bar above the transcript.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ E ══════════════════════ -->
+<section class="variant">
+  <header>
+    <h2><span class="tag">E</span> Outline Mode <span class="tag alt">collapse the noise</span></h2>
+    <p>Invert the problem: don’t navigate <em>past</em> the assistant — hide it. One toggle collapses
+       every assistant/tool row, leaving your prompts as a table of contents (with a “12 rows
+       hidden” count). Click a prompt to drop back into the full transcript right there.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="pane" data-variant="e">
+        <div class="scroller"><div class="colinner"></div></div>
+        <button class="obtn">outline</button>
+        <div class="composer"><div class="box"><span>Message…</span><span class="send"></span></div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Notes</h3>
+      <ul>
+        <li>Reuses the fold machinery already in <code>transcript_expansion.dart</code> — it’s a
+            global fold, not a new widget tree.</li>
+        <li>Doubles as a <b>session summary</b> you can screenshot or read to remember what you asked.</li>
+        <li>Preserves scroll anchoring: collapsing keeps the nearest prompt under the cursor.</li>
+        <li>Same interaction on mobile and desktop, one button.</li>
+      </ul>
+      <div class="verdict">
+        <div class="pro">Solves “review what I asked” as well as “jump to it”. No hover.</div>
+        <div class="con">Mode switch — you leave the conversation to navigate it.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+const MSGS = [
+  {r:'u',t:'Set up the reversed transcript so it anchors to the newest message'},
+  {r:'a',t:'I’ll add a scroll-offset correction in the sliver so rows keep their position when content changes above them.'},
+  {r:'t',t:'read app/lib/ui/session/transcript_list.dart'},
+  {r:'a',t:'The list is a CustomScrollView with reverse: true. Adding _AnchoredSliverList now.'},
+  {r:'t',t:'edit transcript_list.dart · +48 −6'},
+  {r:'u',t:'It still blinks when a tool call streams in — can you look at findChildIndexCallback?'},
+  {r:'a',t:'Without it the lazy list reconciles by index, so every new item shifts rows into slots whose keys no longer match and each row is rebuilt — losing fold state and measured height.'},
+  {r:'t',t:'edit chat_transcript.dart · +12 −2'},
+  {r:'a',t:'Wired findChildIndexCallback on both surfaces. The blink is gone in my repro.'},
+  {r:'u',t:'Add a widget test that reproduces the blink before you call it fixed'},
+  {r:'t',t:'write app/test/ui/session/transcript_anchor_test.dart'},
+  {r:'a',t:'Test fails on the old code path and passes on the new one. Red → green confirmed.'},
+  {r:'u',t:'Now the real thing: I can never find my own messages in a long session'},
+  {r:'a',t:'A few options: an edge rail of ticks, a scrubber, a filterable palette, a sticky breadcrumb, or an outline mode that hides assistant output.'},
+  {r:'u',t:'I like the rail. Make hovering it feel like a wave and reveal the message text'},
+  {r:'a',t:'Falloff over ±2 neighbours with a 220ms easeOutCubic on width, plus a peek card pinned to the hovered tick.'},
+  {r:'t',t:'write mockups/user-message-rail.html'},
+  {r:'a',t:'Five live variants are in the mockup file — hover, drag and type in each pane to compare them.'},
+  {r:'u',t:'Does the rail still work when a session has 200 prompts?'},
+  {r:'a',t:'Not well — ticks collide below ~3pt spacing. Past that threshold the palette or the breadcrumb scales; the rail can cluster into decades.'},
+  {r:'t',t:'run flutter analyze --no-pub'},
+  {r:'a',t:'No issues found. Ready for you to pick a direction.'},
+  {r:'u',t:'Ship the one that works on my phone too'},
+  {r:'a',t:'That points at B or D — both are pointer-independent. I’d pair the rail (desktop) with the scrubber (touch) since they share one data model.'},
+];
+const AGO = ['just now','2m ago','6m ago','11m ago','18m ago','24m ago','31m ago','40m ago'];
+
+function build(pane){
+  const inner = pane.querySelector('.colinner');
+  const users = [];
+  MSGS.forEach((m,i)=>{
+    const row = document.createElement('div');
+    row.className = 'row ' + (m.r==='u'?'user':m.r==='t'?'tool':'assistant');
+    if(m.r==='u'){
+      row.innerHTML = '<div class="bubble">'+m.t+'<div class="fold"></div></div>';
+      users.push(row);
+    } else if(m.r==='t'){
+      row.innerHTML = '<span class="dot"></span>'+m.t;
+    } else {
+      row.innerHTML = '<div class="who">agent</div><div class="txt">'+m.t+'</div>';
+    }
+    inner.appendChild(row);
+  });
+  // "n rows hidden" labels for outline mode
+  users.forEach((u,k)=>{
+    const next = users[k+1];
+    let n=0, cur=u.nextElementSibling;
+    while(cur && cur!==next){ n++; cur=cur.nextElementSibling; }
+    u.querySelector('.fold').textContent = n ? n+' assistant rows hidden' : '';
+  });
+  return {scroller: pane.querySelector('.scroller'), users};
+}
+function flash(row){
+  row.classList.add('flash');
+  setTimeout(()=>row.classList.remove('flash'), 900);
+}
+function jump(scroller,row){
+  scroller.scrollTo({top: row.offsetTop - 14, behavior:'smooth'});
+  flash(row);
+}
+// index of the user message governing the current viewport (last one at/above top)
+function currentIdx(scroller, users){
+  const y = scroller.scrollTop + 20;
+  let idx = 0;
+  users.forEach((u,i)=>{ if(u.offsetTop <= y) idx = i; });
+  return idx;
+}
+
+/* ---------- A: cosy ripple rail ---------- */
+(function(){
+  const pane = document.querySelector('[data-variant="a"]');
+  const {scroller, users} = build(pane);
+  const rail = pane.querySelector('.rail'), peek = pane.querySelector('.peek');
+  const uMsgs = MSGS.filter(m=>m.r==='u');
+  const gapEl = document.getElementById('gap'), gapV = document.getElementById('gapv');
+  const pushEl = document.getElementById('push'), lenEl = document.getElementById('lenc');
+  const hit = rail.querySelector('.hit');
+
+  const ticks = users.map((u,i)=>{
+    const t = document.createElement('div');
+    t.className = 'tick'; t.dataset.i = i;
+    rail.appendChild(t);
+    return t;
+  });
+
+  const GAP = () => +gapEl.value;
+  // resting length: either a fingerprint of message length, or uniform
+  const baseW = i => lenEl.checked
+    ? (uMsgs[i].t.length>60?20:uMsgs[i].t.length>40?15:11)
+    : 14;
+
+  function layout(focus){
+    const g = GAP();
+    ticks.forEach((t,i)=>{
+      const d = focus==null ? 99 : Math.abs(i-focus);
+      // width falloff — the ripple crest
+      const grow = focus==null ? 0 : (d===0?30:d===1?21:d===2?12:d===3?5:0);
+      t.style.width = (baseW(i)+grow)+'px';
+      // vertical push — neighbours spread away from the crest, like liquid
+      let shove = 0;
+      if(focus!=null && pushEl.checked && d>0 && d<=3){
+        shove = Math.sign(i-focus) * (d===1?3.5:d===2?2:.8);
+      }
+      t.style.top = (i*g + shove) + 'px';
+      t.classList.toggle('active', i===focus);
+    });
+    hit.style.height = ((ticks.length-1)*g + 26) + 'px';
+    hit.style.top = '-12px';
+    gapV.textContent = g + 'pt';
+  }
+  function mark(){
+    const c = currentIdx(scroller, users);
+    ticks.forEach((t,i)=>t.classList.toggle('cur', i===c));
+  }
+  let focus = null;
+  rail.addEventListener('mousemove', e=>{
+    const y = e.clientY - rail.getBoundingClientRect().top;
+    // map the pointer to an INDEX across the cluster (ticks are too thin to hit)
+    focus = Math.min(Math.max(Math.round(y / GAP()), 0), ticks.length-1);
+    layout(focus);
+    peek.style.top = (focus*GAP() + 12) + 'px';
+    peek.innerHTML = '<div class="meta">you · '+(focus+1)+'/'+ticks.length+'</div>' + uMsgs[focus].t;
+    peek.classList.add('on');
+  });
+  rail.addEventListener('mouseleave', ()=>{
+    focus = null; layout(null); peek.classList.remove('on');
+  });
+  rail.addEventListener('click', ()=>{ if(focus!=null) jump(scroller, users[focus]); });
+  gapEl.addEventListener('input', ()=>layout(focus));
+  pushEl.addEventListener('change', ()=>layout(focus));
+  lenEl.addEventListener('change', ()=>layout(focus));
+  scroller.addEventListener('scroll', mark);
+  requestAnimationFrame(()=>{layout(null);mark();});
+})();
+
+/* ---------- B: scrubber ---------- */
+(function(){
+  const pane = document.querySelector('[data-variant="b"]');
+  const {scroller, users} = build(pane);
+  const scrub = pane.querySelector('.scrub'), card = pane.querySelector('.card');
+  const uMsgs = MSGS.filter(m=>m.r==='u');
+  const nodes = users.map((u,i)=>{
+    const n = document.createElement('div'); n.className='snode'; n.dataset.i=i;
+    scrub.appendChild(n); return n;
+  });
+  function place(){
+    const h = scroller.scrollHeight;
+    nodes.forEach((n,i)=>n.style.top = (users[i].offsetTop / h * 100) + '%');
+  }
+  let dragging=false;
+  function nearest(y){
+    let best=0,bd=1e9;
+    nodes.forEach((n,i)=>{const d=Math.abs(n.offsetTop-y); if(d<bd){bd=d;best=i}});
+    return best;
+  }
+  function show(y, commit){
+    const i = nearest(y);
+    nodes.forEach((n,k)=>n.classList.toggle('hot', k===i));
+    card.style.top = Math.min(Math.max(nodes[i].offsetTop, 60), 360) + 'px';
+    card.innerHTML = '<div class="n">your message '+(i+1)+' of '+nodes.length+'</div>'
+      + '<div class="t">'+uMsgs[i].t+'</div><div class="when">'+AGO[(nodes.length-1-i)%AGO.length]+'</div>';
+    card.classList.add('on');
+    if(commit) scroller.scrollTo({top: users[i].offsetTop-14, behavior:'auto'});
+  }
+  function hide(){ card.classList.remove('on'); nodes.forEach(n=>n.classList.remove('hot')); }
+  const yOf = e => (e.touches?e.touches[0].clientY:e.clientY) - scrub.getBoundingClientRect().top;
+  scrub.addEventListener('mousedown', e=>{dragging=true; show(yOf(e), true); e.preventDefault();});
+  scrub.addEventListener('mousemove', e=>show(yOf(e), dragging));
+  scrub.addEventListener('mouseleave', ()=>{ if(!dragging) hide(); });
+  scrub.addEventListener('touchstart', e=>{dragging=true; show(yOf(e), true);}, {passive:true});
+  scrub.addEventListener('touchmove', e=>{show(yOf(e), true); e.preventDefault();}, {passive:false});
+  window.addEventListener('mouseup', ()=>{ if(dragging){dragging=false; hide();} });
+  window.addEventListener('touchend', ()=>{ if(dragging){dragging=false; hide();} });
+  requestAnimationFrame(place); window.addEventListener('resize', place);
+})();
+
+/* ---------- C: palette ---------- */
+(function(){
+  const pane = document.querySelector('[data-variant="c"]');
+  const {scroller, users} = build(pane);
+  const btn = pane.querySelector('.palbtn'), ov = pane.querySelector('.overlay');
+  const input = pane.querySelector('.pal input'), list = pane.querySelector('.pal ul');
+  const uMsgs = MSGS.filter(m=>m.r==='u');
+  let shown = [], sel = 0;
+  function render(q){
+    shown = uMsgs.map((m,i)=>({m,i})).filter(o=>o.m.t.toLowerCase().includes(q.toLowerCase()));
+    sel = 0;
+    list.innerHTML = shown.map((o,k)=>
+      '<li data-k="'+k+'" class="'+(k===0?'sel':'')+'"><span class="idx">'+(o.i+1)+'</span><span class="s">'+o.m.t+'</span></li>'
+    ).join('') || '<li style="color:var(--muted)">no match</li>';
+    preview();
+  }
+  function preview(){
+    if(!shown[sel]) return;
+    const row = users[shown[sel].i];
+    scroller.scrollTo({top: row.offsetTop-14, behavior:'smooth'});
+    flash(row);
+  }
+  function open(){ ov.classList.add('on'); input.value=''; render(''); input.focus(); }
+  function close(){ ov.classList.remove('on'); }
+  btn.onclick = open;
+  ov.onclick = e => { if(e.target===ov) close(); };
+  input.oninput = () => render(input.value);
+  input.onkeydown = e => {
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      sel = Math.min(Math.max(sel + (e.key==='ArrowDown'?1:-1), 0), shown.length-1);
+      [...list.children].forEach((li,k)=>li.classList.toggle('sel', k===sel));
+      list.children[sel]?.scrollIntoView({block:'nearest'});
+      preview(); e.preventDefault();
+    } else if(e.key==='Enter'){ preview(); close(); }
+    else if(e.key==='Escape'){ close(); }
+  };
+  list.onclick = e => {
+    const li = e.target.closest('li[data-k]'); if(!li) return;
+    sel = +li.dataset.k; preview(); close();
+  };
+  pane.addEventListener('keydown', e=>{ if(e.key==='/'&&(e.metaKey||e.ctrlKey)){open();e.preventDefault();} });
+  pane.tabIndex = 0;
+})();
+
+/* ---------- D: breadcrumb ---------- */
+(function(){
+  const pane = document.querySelector('[data-variant="d"]');
+  const {scroller, users} = build(pane);
+  const lbl = pane.querySelector('.lbl'), cnt = pane.querySelector('.cnt');
+  const uMsgs = MSGS.filter(m=>m.r==='u');
+  let i = 0;
+  function sync(){
+    i = currentIdx(scroller, users);
+    lbl.textContent = uMsgs[i].t;
+    cnt.textContent = (i+1)+'/'+uMsgs.length;
+  }
+  scroller.addEventListener('scroll', sync);
+  pane.querySelector('.prev').onclick = ()=>{ if(i>0) jump(scroller, users[i-1]); };
+  pane.querySelector('.next').onclick = ()=>{ if(i<users.length-1) jump(scroller, users[i+1]); };
+  lbl.onclick = ()=> jump(scroller, users[i]);
+  requestAnimationFrame(sync);
+})();
+
+/* ---------- E: outline ---------- */
+(function(){
+  const pane = document.querySelector('[data-variant="e"]');
+  const {scroller, users} = build(pane);
+  const btn = pane.querySelector('.obtn');
+  btn.onclick = ()=>{
+    const on = scroller.classList.toggle('outline');
+    btn.classList.toggle('on', on);
+    btn.textContent = on ? 'outline · on' : 'outline';
+    if(!on) return;
+    scroller.scrollTop = 0;
+  };
+  users.forEach((u,k)=> u.querySelector('.bubble').addEventListener('click', ()=>{
+    if(!scroller.classList.contains('outline')) return;
+    scroller.classList.remove('outline');
+    btn.classList.remove('on'); btn.textContent='outline';
+    requestAnimationFrame(()=>jump(scroller, u));
+  }));
+})();
+</script>
+</body>
+</html>

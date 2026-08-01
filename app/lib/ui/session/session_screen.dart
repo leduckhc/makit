@@ -17,6 +17,7 @@ import '../widgets/menu_item.dart';
 import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
+import 'navigator/message_navigator_overlay.dart';
 import 'transcript_list.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
@@ -29,6 +30,8 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
+  // SPEC-34: the render-layer handle the message navigator jumps through.
+  final _jumpTarget = TranscriptJumpTarget();
   // Dedicated controller for free-text answers to an inline ask, kept separate
   // from the normal message draft so the two can never cross-contaminate.
   final _answerController = TextEditingController();
@@ -110,6 +113,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             behavior: HitTestBehavior.translucent,
             child: TranscriptListView(
               controller: _scroll,
+              jumpTarget: _jumpTarget,
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
@@ -146,6 +150,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 );
               },
             ),
+          ),
+          // SPEC-34: the message navigator, over the transcript and under the
+          // floating bars. Renders nothing when the surface's style is `off`.
+          MessageNavigatorOverlay(
+            sessionId: widget.sessionId,
+            controller: _scroll,
+            target: _jumpTarget,
+            items: items,
+            hasTrailer: hasTrailer,
           ),
           // Scrim: fade the transcript under the top edge so the floating
           // controls stay legible (≈30%→20%→transparent).
@@ -477,6 +490,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _jumpTarget.dispose();
     _answerController.dispose();
     super.dispose();
   }
