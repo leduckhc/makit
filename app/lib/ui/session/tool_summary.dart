@@ -46,10 +46,18 @@ String compactPathsIn(String line, {String? root}) =>
 
 /// Shell prologue segments that carry no information about what the agent
 /// actually did: entering the worktree, exporting a toolchain onto `PATH`,
-/// sourcing an env file, `set -euo pipefail`, bare `FOO=bar` assignments.
-final RegExp _prologue = RegExp(
-  r'^(cd\s|export\s|source\s|\.\s|set\s+[-+]|[A-Za-z_][A-Za-z0-9_]*=)',
-);
+/// sourcing an env file, `set -euo pipefail`.
+final RegExp _prologue = RegExp(r'^(cd\s|export\s|source\s|\.\s|set\s+[-+])');
+
+/// A segment that is *only* an assignment (`FOO=bar`). Anchored at both ends so
+/// an assignment that prefixes a real command (`NODE_ENV=production npm run
+/// build`) is kept — there the assignment is not prologue, it is part of what
+/// the agent ran.
+final RegExp _bareAssignment = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*=\S*$');
+
+/// True when [segment] is prologue at all (env mutation or a `cd`).
+bool _isPrologue(String segment) =>
+    _prologue.hasMatch(segment) || _bareAssignment.hasMatch(segment);
 
 /// True when [segment] is a prologue segment that mutates the environment
 /// (as opposed to `cd`, which is silently dropped).
@@ -64,11 +72,11 @@ String compactCommand(String command) {
   final full = oneLine(command);
   if (full.isEmpty) return '';
 
-  final segments = _splitTopLevel(_stripHeredoc(command));
+  final segments = _splitTopLevel(_stripHeredocs(command));
   final kept = <String>[];
   var env = false;
   for (final s in segments) {
-    if (_prologue.hasMatch(s)) {
+    if (_isPrologue(s)) {
       env |= _isEnv(s);
       continue;
     }
@@ -78,21 +86,33 @@ String compactCommand(String command) {
   return '${kept.join(' › ')}${env ? ' +env' : ''}';
 }
 
-/// Replace a heredoc (`… <<'EOF' … EOF`) body with a `«heredoc, N lines»`
-/// marker. The body is often a whole script — useless in one line and full of
-/// operators that would confuse [_splitTopLevel]. Anything chained after the
-/// terminator line is kept, so `python3 <<EOF … EOF && echo done` still shows
-/// the `echo done`.
-String _stripHeredoc(String command) {
-  final open = RegExp(r'<<-?\s*[\x27"]?(\w+)[\x27"]?').firstMatch(command);
-  if (open == null) return command;
-  final tag = open[1]!;
-  final lines = command.substring(open.end).split('\n').skip(1).toList();
-  final end = lines.indexWhere((l) => l.trim() == tag);
-  final bodyLines = end < 0 ? lines.length : end;
-  final after = end < 0 ? '' : lines.sublist(end + 1).join('\n');
-  final marker = '«heredoc, $bodyLines line${bodyLines == 1 ? '' : 's'}»';
-  return '${command.substring(0, open.start)}$marker\n$after';
+final RegExp _heredocOpen = RegExp(r'<<-?\s*[\x27"]?(\w+)[\x27"]?');
+
+/// Replace every heredoc (`… <<'EOF' … EOF`) body with a `«heredoc, N lines»`
+/// marker. A body is often a whole script — useless in one line and full of
+/// operators that would confuse [_splitTopLevel]. Text between and after the
+/// terminators is kept verbatim, so `python3 <<EOF … EOF && echo done` still
+/// shows the `echo done`. An unterminated heredoc runs to the end of the
+/// command.
+String _stripHeredocs(String command) {
+  final out = StringBuffer();
+  var rest = command;
+  while (true) {
+    final open = _heredocOpen.firstMatch(rest);
+    if (open == null) {
+      out.write(rest);
+      return out.toString();
+    }
+    final tag = open[1]!;
+    final lines = rest.substring(open.end).split('\n').skip(1).toList();
+    final end = lines.indexWhere((l) => l.trim() == tag);
+    final bodyLines = end < 0 ? lines.length : end;
+    out.write(rest.substring(0, open.start));
+    out.write('«heredoc, $bodyLines line${bodyLines == 1 ? '' : 's'}»');
+    if (end < 0) return out.toString();
+    out.write('\n');
+    rest = lines.sublist(end + 1).join('\n');
+  }
 }
 
 /// Split a command on top-level `&&`, `||`, `;` and newlines, ignoring

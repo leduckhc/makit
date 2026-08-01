@@ -144,6 +144,29 @@ void main() {
       );
     });
 
+    test('keeps an inline env assignment that prefixes a real command', () {
+      expect(
+        compactCommand('NODE_ENV=production npm run build && echo ok'),
+        'NODE_ENV=production npm run build › echo ok',
+      );
+    });
+
+    test('collapses every heredoc in the command', () {
+      expect(
+        compactCommand(
+          "python3 <<'EOF'\na\nEOF\ncat <<'X'\nb\nc\nX\necho done",
+        ),
+        'python3 «heredoc, 1 line» › cat «heredoc, 2 lines» › echo done',
+      );
+    });
+
+    test('collapses an unterminated heredoc to the end of the command', () {
+      expect(
+        compactCommand("python3 <<'EOF'\na\nb"),
+        'python3 «heredoc, 2 lines»',
+      );
+    });
+
     test('keeps commands chained after the heredoc terminator', () {
       expect(
         compactCommand("python3 <<'EOF'\nprint(1)\nEOF\necho done"),
