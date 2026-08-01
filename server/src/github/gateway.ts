@@ -465,6 +465,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
 
     const row = rows[0];
     const number = typeof row.number === "number" ? row.number : 0;
+    const rawState = typeof row.state === "string" ? row.state.toUpperCase() : "OPEN";
     const head = row.head as { sha?: unknown } | undefined;
     const sha = typeof head?.sha === "string" ? head.sha : "";
 
@@ -487,11 +488,20 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
 
     let mergeable: string | null = "UNKNOWN";
     let mergeStateStatus: string | null = null;
+    let merged = false;
     try {
-      const d = JSON.parse(detail.stdout) as { mergeable?: unknown; mergeable_state?: unknown };
+      const d = JSON.parse(detail.stdout) as {
+        mergeable?: unknown;
+        mergeable_state?: unknown;
+        merged?: unknown;
+      };
       mergeable = restMergeable(d.mergeable);
       mergeStateStatus =
         typeof d.mergeable_state === "string" ? d.mergeable_state.toUpperCase() : null;
+      // REST has no distinct "merged" state — a merged PR lists as `closed`. The
+      // detail's `merged` boolean is the only way to tell it apart, so the UI
+      // can draw the merged (purple) glyph rather than the closed (red) one.
+      merged = d.merged === true;
     } catch {
       return { kind: "unknown", reason: "error" };
     }
@@ -511,8 +521,10 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     const pr: PullRequestInfo = {
       number,
       url: typeof row.html_url === "string" ? row.html_url : "",
-      // REST reports lowercase state; the DTO speaks GraphQL's uppercase.
-      state: typeof row.state === "string" ? row.state.toUpperCase() : "OPEN",
+      // REST reports lowercase state and no distinct "merged"; the DTO speaks
+      // GraphQL's uppercase MERGED/CLOSED/OPEN, so map a merged-flagged PR to
+      // MERGED and otherwise upper-case the raw open/closed state.
+      state: merged ? "MERGED" : rawState,
       title: typeof row.title === "string" ? row.title : "",
       isDraft: row.draft === true,
       mergeable,

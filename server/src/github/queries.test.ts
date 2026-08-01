@@ -86,7 +86,7 @@ test("prForBranchArgv preserves the git.ts json field set and --head/--limit", (
     "--head",
     "feature/x",
     "--state",
-    "open",
+    "all",
     "--json",
     "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
     "--limit",
@@ -97,7 +97,7 @@ test("prForBranchArgv preserves the git.ts json field set and --head/--limit", (
 test("prForBranchRestArgv targets the repo pulls endpoint filtered by head", () => {
   assert.deepEqual(prForBranchRestArgv("o", "r", "br"), [
     "api",
-    "/repos/o/r/pulls?head=o:br&state=open&per_page=1",
+    "/repos/o/r/pulls?head=o:br&state=all&per_page=1&sort=created&direction=desc",
   ]);
 });
 
@@ -185,7 +185,7 @@ test("restChecksToRollup tolerates missing and malformed payloads", () => {
 test("prForBranchRestArgv percent-encodes the branch", () => {
   // Git permits `#`, `&` and `+` in ref names, all of which are meaningful in a
   // URL. Unencoded, `feature#1` truncates the query at the fragment and
-  // `a&state=closed` injects a second parameter -- the lookup then returns the
+  // `a&state=open` injects a second parameter -- the lookup then returns the
   // wrong PR or an empty list, which the gateway maps to `none` and which ERASES
   // THE PILL. That is the exact defect this spec exists to fix, so the fallback
   // path must not reintroduce it.
@@ -195,9 +195,9 @@ test("prForBranchRestArgv percent-encodes the branch", () => {
   assert.match(argv[1], /head=o:feature%231/);
   assert.ok(!argv[1].includes("#"), "a raw # truncates the query string");
 
-  const injected = prForBranchRestArgv("o", "r", "a&state=closed");
-  assert.ok(!injected[1].includes("a&state=closed"), "a raw & injects a parameter");
-  assert.match(injected[1], /state=open/);
+  const injected = prForBranchRestArgv("o", "r", "a&state=open");
+  assert.ok(!injected[1].includes("a&state=open"), "a raw & injects a parameter");
+  assert.match(injected[1], /state=all/);
   assert.equal(injected[1].match(/state=/g)?.length, 1, "exactly one state param");
 });
 
