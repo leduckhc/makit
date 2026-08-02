@@ -996,6 +996,7 @@ class Session {
     this.promptImage = false,
     this.archived = false,
     this.orphaned = false,
+    this.queued = const [],
   });
 
   final String id;
@@ -1042,6 +1043,11 @@ class Session {
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
+  /// Messages submitted while the agent was busy that could not be steered into
+  /// the running turn (SPEC-35), oldest first. They are delivered one per idle
+  /// transition and can be cancelled until then.
+  final List<QueuedMessage> queued;
+
   Session copyWith({
     SessionStatus? status,
     ApprovalPolicy? policy,
@@ -1058,6 +1064,7 @@ class Session {
     bool? promptImage,
     bool? archived,
     bool? orphaned,
+    List<QueuedMessage>? queued,
   }) => Session(
     id: id,
     projectId: projectId,
@@ -1076,5 +1083,37 @@ class Session {
     promptImage: promptImage ?? this.promptImage,
     archived: archived ?? this.archived,
     orphaned: orphaned ?? this.orphaned,
+    queued: queued ?? this.queued,
   );
+}
+
+/// One message waiting for the agent to go idle (SPEC-35). [attachmentCount] is
+/// a count, not descriptors: the chip only needs to say "and an image", and the
+/// bytes are already safe in the server's media store.
+class QueuedMessage {
+  const QueuedMessage({
+    required this.id,
+    required this.text,
+    required this.queuedAt,
+    this.attachmentCount,
+  });
+
+  /// Server-assigned; the handle `queue.cancel` takes.
+  final String id;
+  final String text;
+  final int queuedAt;
+  final int? attachmentCount;
+
+  static QueuedMessage? fromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    if (id is! String || id.isEmpty) return null;
+    return QueuedMessage(
+      id: id,
+      text: j['text'] is String ? j['text'] as String : '',
+      queuedAt: j['queuedAt'] is num ? (j['queuedAt'] as num).toInt() : 0,
+      attachmentCount: j['attachmentCount'] is num
+          ? (j['attachmentCount'] as num).toInt()
+          : null,
+    );
+  }
 }

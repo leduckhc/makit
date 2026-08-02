@@ -9,7 +9,7 @@ import type { UICall, UIResponse } from "../uicall.js";
  * A controllable fake `codex app-server`: auto-replies to the adapter's
  * requests and lets the test push notifications / server-requests in.
  */
-function fakeAppServer() {
+function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown } } = {}) {
   let lineCb: (l: string) => void = () => {};
   const sent: any[] = [];
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
@@ -21,6 +21,13 @@ function fakeAppServer() {
       sent.push(msg);
       // Auto-respond to client → server requests.
       if (msg.method && msg.id !== undefined) {
+        // `turn/steer` is scripted per-test: it is the one method whose ERROR
+        // shapes are load-bearing (SPEC-35 §Evidence).
+        if (msg.method === "turn/steer" && opts.steer) {
+          const scripted = opts.steer();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
         const result = respond(msg.method);
         if (result !== undefined) queueMicrotask(() => feed({ id: msg.id, result }));
       }
@@ -589,3 +596,65 @@ test("codex advertises the full session lifecycle capability set (SPEC-29)", () 
   const adapter = new CodexAppServerAdapter();
   assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
 });
+
+/**
+ * SPEC-35 T2 — `turn/steer`. Ids and error strings are verbatim from the live
+ * spike against codex-cli 0.146.0 (spec §Evidence), so a protocol change shows
+ * up here as a failure rather than as a silently-queued message in production.
+ */
+async function steerHarness(steer: () => { result?: unknown; error?: unknown }) {
+  const fake = fakeAppServer({ steer });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  await adapter.send({ text: "long task" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t1" } } });
+  await waitFor(() => fake.sent.some((m) => m.method === "turn/start"));
+  const echoesBefore = events.filter((e) => e.kind === "user.message").length;
+  return { fake, adapter, events, echoesBefore };
+}
+
+test("steer(): accepted — injects into the active turn and echoes once", async () => {
+  const h = await steerHarness(() => ({ result: { turnId: "t1" } }));
+
+  assert.equal(await h.adapter.steer({ text: "do X instead" }), true);
+
+  const steers = h.fake.sent.filter((m) => m.method === "turn/steer");
+  assert.equal(steers.length, 1);
+  assert.equal(steers[0].params.threadId, "th1");
+  assert.equal(steers[0].params.expectedTurnId, "t1", "precondition = the ANNOUNCED turn id");
+  assert.deepEqual(steers[0].params.input, [{ type: "text", text: "do X instead", text_elements: [] }]);
+  assert.equal(
+    h.fake.sent.filter((m) => m.method === "turn/start").length,
+    1,
+    "steering must never start a second turn",
+  );
+  assert.equal(h.events.filter((e) => e.kind === "user.message").length, h.echoesBefore + 1);
+});
+
+for (const [label, error] of [
+  ["no active turn", { code: -32600, message: "no active turn to steer" }],
+  [
+    "stale precondition",
+    { code: -32600, message: "expected active turn id `t0` but found `t1`" },
+  ],
+  ["non-steerable turn", { code: -32600, message: "activeTurnNotSteerable" }],
+] as const) {
+  test(`steer(): ${label} — reports false and echoes nothing`, async () => {
+    const h = await steerHarness(() => ({ error }));
+
+    assert.equal(await h.adapter.steer({ text: "do X instead" }), false);
+    assert.equal(
+      h.events.filter((e) => e.kind === "user.message").length,
+      h.echoesBefore,
+      "a message that was not delivered must not appear in the transcript",
+    );
+    assert.equal(
+      h.events.filter((e) => e.kind === "session.error").length,
+      0,
+      "a queueable steer failure is not a session error",
+    );
+    assert.equal(h.fake.sent.filter((m) => m.method === "turn/start").length, 1);
+  });
+}

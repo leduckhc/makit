@@ -182,8 +182,23 @@ class WireCodec {
           promptImage: j['promptImage'] == true,
           archived: j['archived'] == true,
           orphaned: j['orphaned'] == true,
+          queued: decodeQueued(j['queued']),
         ),
       );
+    }
+    return out;
+  }
+
+  /// Decode a session's `queued` array (SPEC-35). Absent/malformed entries yield
+  /// an empty queue rather than failing the whole snapshot: a session list is
+  /// too important to drop over a pending-message chip.
+  static List<QueuedMessage> decodeQueued(Object? raw) {
+    if (raw is! List) return const [];
+    final out = <QueuedMessage>[];
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final q = QueuedMessage.fromJson(Map<String, dynamic>.from(entry));
+      if (q != null) out.add(q);
     }
     return out;
   }

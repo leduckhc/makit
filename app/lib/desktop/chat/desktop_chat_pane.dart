@@ -396,6 +396,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                             )
                           : null,
                       enabled: pendingAsk == null,
+                      // SPEC-35: mid-turn messages waiting for idle.
+                      queued: session.queued,
+                      onCancelQueued: (id) => ref
+                          .read(storeControllerProvider.notifier)
+                          .cancelQueuedMessage(sessionId, id),
                       controller: _composerControllerFor(sessionId),
                       commands: ref.watch(commandsProvider(sessionId)),
                       onSend: (text) =>

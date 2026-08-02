@@ -168,6 +168,11 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }, echoDelayMs);
   }
 
+  /** No mid-turn injection (SPEC-35): the session layer queues instead. */
+  async steer(_input: UserInput): Promise<boolean> {
+    return false;
+  }
+
   async cancel(): Promise<void> {
     this.emit("status", "idle");
   }

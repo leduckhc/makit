@@ -541,6 +541,77 @@ void main() {
         expect(items.map((item) => item.text), ['first task']);
       },
     );
+
+    test(
+      'a mid-turn message gets no optimistic bubble, so no server event is swallowed (SPEC-35)',
+      () async {
+        // While the agent is running, the next seq belongs to the agent's own
+        // stream, not to our echo: the message will be steered or queued and
+        // echoed later (or never, if cancelled). An optimistic bubble at
+        // cursor+1 would therefore advance the cursor past a REAL event and the
+        // reducer would drop it.
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        transport.pushSessions([
+          {
+            'id': _sid,
+            'projectId': 'p1',
+            'agent': 'codex',
+            'status': 'running',
+          },
+        ]);
+        store.subscribeSession(_sid);
+        transport.pushAck(id: 's-$_sid');
+        transport.pushEvent(seq: 1, sessionId: _sid, kind: 'user.message', text: 'long task');
+        await Future<void>.delayed(Duration.zero);
+
+        store.appendOptimisticMessage(_sid, 'mid-turn');
+        store.sendMessage(_sid, 'mid-turn');
+
+        // The agent keeps streaming: seq 2 is ITS event, not our echo.
+        transport.pushEvent(seq: 2, sessionId: _sid, text: 'still working');
+        await Future<void>.delayed(Duration.zero);
+
+        final state = container.read(storeControllerProvider);
+        final items = foldEvents(state.events[_sid]!);
+        expect(
+          items.whereType<AgentMessageItem>().map((i) => i.text),
+          ['still working'],
+          reason: 'the agent event must not be swallowed by a guessed seq',
+        );
+        expect(
+          items.whereType<UserMessageItem>().map((i) => i.text),
+          ['long task'],
+          reason: 'the mid-turn message shows as a queue chip until delivered',
+        );
+      },
+    );
   });
 
   group('StoreController — repo refresh after project add', () {

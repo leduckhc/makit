@@ -177,25 +177,33 @@ enqueue** (checked before the busy check).
 
 ### Wire protocol
 
-```ts
-// New EventKind — transient state, last-one-wins, NOT transcript history.
-| "session.queue"        // payload: { pending: QueuedMessage[] }
+> **Amended during implementation.** The queue was originally specified as a
+> `session.queue` event kind. It ships on the **sessions snapshot** instead — see
+> [PLAN deviation 1](./2026-08-02-SPEC-35-PLAN.md#deviations): an event kind is
+> persisted in the durable log, so a restart would replay a stale non-empty queue
+> as ghost chips for messages the server no longer holds.
 
-export interface QueuedMessage {
+```ts
+// protocol.ts — on SessionDTO, so it rides the existing sessions snapshot
+// (already reconnect-safe, already broadcast on `metaChanged`).
+queued: QueuedMessageDTO[];
+
+export interface QueuedMessageDTO {
   /** Server-assigned, stable for the lifetime of the queue entry. */
   id: string;
   text: string;
-  attachments?: WireAttachment[];   // unresolved: bytes stay in the media store
   queuedAt: number;
+  /** A count, not descriptors: the chip only needs to say "and an image". */
+  attachmentCount?: number;
 }
 
 // New CmdKind
 | "queue.cancel"          // { sessionId, id }  -> drops one pending message
 ```
 
-`session.queue` is emitted on every mutation (enqueue, cancel, flush, clear) and on
-`session.attach`, so a reconnecting client gets current state without replaying. Like
-`session.status` it is a snapshot, so log replay converging on the final value is correct.
+A `queue.cancel` naming an id the server no longer holds **acks** rather than
+errors: the message flushed between the tap and the frame, which is a race the
+user cannot avoid.
 
 ## App design
 
@@ -207,8 +215,14 @@ export interface QueuedMessage {
   SPEC-34's index-keyed markers.
 - A steered message needs **no** affordance: it arrives as a normal `user.message` event
   and appears in the transcript, which is exactly what the user expects to see.
-- `session.queue` is stored on the session model (`app/lib/store/models.dart`) and
-  reduced in `store.dart` next to `session.status`; `chat_items.dart` is untouched.
+- **No optimistic bubble while the agent is busy.** The optimistic user bubble guesses
+  `cursor + 1` for its seq, which only holds when the very next server event is our own
+  echo. Mid-turn that seq belongs to the agent's stream, so the bubble would advance the
+  cursor past a real event and the reducer would drop it (`reduceEvent`'s idempotency
+  guard). The queue chip is the feedback instead. See
+  [PLAN deviation 2](./2026-08-02-SPEC-35-PLAN.md#deviations).
+- `queued` is carried on the session model (`app/lib/store/models.dart`) and decoded in
+  `transport/codec.dart` next to the rest of the DTO; `chat_items.dart` is untouched.
 
 ## Testing
 

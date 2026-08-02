@@ -174,7 +174,31 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
     }
+    // SPEC-35: stop means stop. Pending mid-turn messages are dropped rather
+    // than fired into the context the user just aborted.
+    session.clearQueue();
     await session.adapter.cancel();
+    ctx.ack();
+  });
+
+  /**
+   * Drop ONE pending mid-turn message (SPEC-35). An id the server no longer
+   * holds is a race the user cannot avoid — the message was flushed between the
+   * tap and this frame — so it acks instead of erroring.
+   */
+  r.register("queue.cancel", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const id = ctx.env.id;
+    if (typeof id !== "string" || !id) {
+      ctx.err(WireErrorCode.BadRequest, "queue.cancel requires a string `id`");
+      return;
+    }
+    session.cancelQueued(id);
     ctx.ack();
   });
 

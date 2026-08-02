@@ -71,3 +71,14 @@ test("unknown option id or non-configOption action is ignored", async () => {
   await stub.sendAction("compact");
   assert.equal(metas.length, 1, "no re-emit for unknown id / other actions");
 });
+
+test("an adapter with no steering primitive reports it (SPEC-35 T1)", async () => {
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const before = events.length;
+
+  assert.equal(await stub.steer({ text: "mid-turn" }), false);
+  assert.equal(events.length, before, "steer() must not echo or emit anything");
+});

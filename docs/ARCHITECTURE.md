@@ -228,6 +228,24 @@ session uses:
 - Deterministic fake (fixed-delay echo + markdown sample reply) used by the
   app's E2E suite; no real agent involved.
 
+### 5.5 Mid-turn messages: steer vs queue (SPEC-35)
+
+A message submitted while a turn is in flight is never sent as an overlapping
+request. `Session.sendUserMessage` decides:
+
+- **Steer** — `adapter.steer(input)` injects it into the running turn. Only codex
+  implements it (`turn/steer`, with the announced turn id as the
+  `expectedTurnId` precondition); every failure resolves `false`.
+- **Queue** — anything the adapter cannot steer waits in an in-memory FIFO on the
+  Session and is delivered one message per `idle` transition. Pending messages
+  ride the sessions snapshot as `SessionDTO.queued` (never the event log, so a
+  restart cannot replay a stale queue) and are cancellable via `queue.cancel`;
+  `cancel` (stop) drops the whole queue.
+
+A turn is only ever "in flight" because the agent said so — `turn/started` /
+ACP's prompt lifecycle. codex's `turn/start` reply is deliberately ignored: sent
+mid-turn it returns a turn id that is never announced or completed.
+
 *(The original PTY-vs-native Spike 0 in §10 predates World A/B/D and is
 historical — makit ships pi-only, so the PTY/Codex/Claude comparison there
 never shipped.)*

@@ -168,6 +168,19 @@ export type SessionStatus =
 
 export type ApprovalPolicy = "yolo" | "ask-on-risky" | "ask-always";
 
+/**
+ * One message waiting to be delivered when the agent next goes idle (SPEC-35).
+ * Attachments are reported as a count, not as descriptors: the chip only needs
+ * to say "and an image", and the bytes are already safe in the media store.
+ */
+export interface QueuedMessageDTO {
+  /** Stable for the lifetime of the queue entry; the handle `queue.cancel` takes. */
+  id: string;
+  text: string;
+  queuedAt: number;
+  attachmentCount?: number;
+}
+
 export interface ProjectDTO {
   id: string;
   name: string;
@@ -270,6 +283,15 @@ export interface SessionDTO {
   lastActivityAt: number;
   lastPreview: string;
   /**
+   * Messages the user submitted while the agent was busy that this back end
+   * could not steer into the running turn (SPEC-35), oldest first. They are
+   * delivered one per idle transition and are NOT in the event log until then,
+   * so a cancelled one leaves no transcript trace. Carried on the DTO rather
+   * than as an event kind precisely because it is live state: it must not
+   * survive a restart as a ghost queue in a replayed log.
+   */
+  queued: QueuedMessageDTO[];
+  /**
    * Draft state: a spawned session whose worktree + agent are deferred until
    * the first substantive user message (which names the branch/worktree).
    */
@@ -339,6 +361,8 @@ export type CmdKind =
   | "session.unarchive"
   | "session.listArchived"
   | "session.setAgent"
+  /** Drop ONE pending mid-turn message by id (SPEC-35). */
+  | "queue.cancel"
   // repos / projects / worktrees
   | "worktree.create"
   | "worktree.createFromPr"

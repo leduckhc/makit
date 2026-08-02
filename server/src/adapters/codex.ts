@@ -249,6 +249,54 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     }
   }
 
+  /**
+   * Steer the running turn (SPEC-35): codex's `turn/steer` folds the message
+   * into the turn identified by `expectedTurnId`, so the user gets one turn in
+   * the transcript instead of an overlapping second one.
+   *
+   * Every failure resolves `false` so the session layer can queue the message
+   * instead — including the races (`no active turn to steer`, a precondition
+   * mismatch) and the turn kinds codex refuses to steer (`activeTurnNotSteerable`
+   * for review/compact). A failure is deliberately NOT a `session.error`: the
+   * message is not lost, it is merely delivered later.
+   *
+   * Note on attachments: the prompt text has to be built (and files
+   * materialised) before the request, so a rejected steer may leave an
+   * attachment already in the worktree. That is harmless — materialisation is
+   * content-addressed and idempotent, so the later flush writes the same file.
+   */
+  async steer(input: UserInput): Promise<boolean> {
+    const turnId = this.turns.activeTurnIds[0];
+    if (!this.threadId || !turnId) return false;
+
+    let turn: PreparedTurn;
+    try {
+      turn = prepareTurn(this.media, input, this.workspaceRoot);
+    } catch (err) {
+      // Same call as `send()`: a prompt naming a file the agent cannot open is
+      // worse than an error. Reported here, and NOT re-queued.
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `attachment delivery failed: ${(err as Error).message}` },
+      });
+      return true;
+    }
+
+    try {
+      await this.request("turn/steer", {
+        threadId: this.threadId,
+        input: [{ type: "text", text: turn.promptText, text_elements: [] }],
+        expectedTurnId: turnId,
+      });
+    } catch {
+      return false;
+    }
+    // Accepted: echo only now, so a rejected steer leaves no transcript trace.
+    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
+    return true;
+  }
+
   async cancel(): Promise<void> {
     if (!this.threadId) return;
     for (const turnId of this.turns.activeTurnIds) {

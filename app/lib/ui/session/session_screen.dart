@@ -423,6 +423,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   : null,
                               glass: true,
                               controller: _composerController,
+                              // SPEC-35: messages held until the agent goes
+                              // idle, cancellable until then.
+                              queued: session?.queued ?? const [],
+                              onCancelQueued: (id) => ref
+                                  .read(storeControllerProvider.notifier)
+                                  .cancelQueuedMessage(widget.sessionId, id),
                               enabled: pendingAsk == null,
                               commands: ref.watch(
                                 commandsProvider(widget.sessionId),
