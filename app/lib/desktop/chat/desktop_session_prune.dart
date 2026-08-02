@@ -24,6 +24,31 @@ import 'groups/groups_controller.dart';
 /// implicit, and reconciling before unpinning would place a session that is
 /// about to be removed.
 final desktopSessionPruneProvider = Provider<void>((ref) {
+  var disposed = false;
+  ref.onDispose(() => disposed = true);
+
+  /// Runs [body] *after* Riverpod's current refresh pass.
+  ///
+  /// Every reconciler here writes groups state — unpinning a member, or
+  /// committing the tree that placing a pane produces. A listener fires
+  /// synchronously inside `ProviderScheduler._performRefresh`, and that pass
+  /// re-reads `stateToRefresh.length` on each iteration, so a provider the
+  /// write re-dirties is flushed again in the same pass. For anything already
+  /// built in it — `activeGroupProvider` watches the whole `GroupsState`, and
+  /// `Group.==` includes the tree — that is "Tried to rebuild Provider<Group>
+  /// multiple times in the same frame", which aborts the pass; since
+  /// `_performRefresh` arms its debug guard without try/finally, the graph then
+  /// stays poisoned for the rest of the process.
+  ///
+  /// A microtask lands after the pass, where a write merely schedules the next
+  /// one — the sanctioned way to feed a result back into the graph.
+  void afterPass(void Function() body) {
+    Future.microtask(() {
+      if (disposed) return;
+      body();
+    });
+  }
+
   void prune(SessionsState next) {
     // Before the first snapshot an empty list means "we don't know yet"
     // (offline, still connecting) — pruning then would wipe a restored layout.
@@ -44,7 +69,7 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
     reconcileActiveCanvas(ref, next);
   }
 
-  ref.listen(sessionsProvider, (_, next) => prune(next));
+  ref.listen(sessionsProvider, (_, next) => afterPass(() => prune(next)));
   // Membership also changes *without* a server snapshot: a quick-pin, a picker
   // tick or a drop all mutate it in-process (decision 14). Reconciling only off
   // `sessions.snapshot` meant a pinned agent had no pane until the next frame
@@ -53,14 +78,16 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
   // Only the canvas half runs here: unpinning is the server's news, not the
   // user's, so there is nothing to prune on a local pin.
   ref.listen(activeGroupMembersKeyProvider, (_, _) {
-    if (!ref.read(sessionsLoadedProvider)) return;
-    reconcileActiveCanvas(ref, ref.read(sessionsProvider));
+    afterPass(() {
+      if (!ref.read(sessionsLoadedProvider)) return;
+      reconcileActiveCanvas(ref, ref.read(sessionsProvider));
+    });
   });
   ref.listen(
     reposProvider,
-    (_, next) => closeGroupsForDeletedWorktrees(ref, next),
+    (_, next) => afterPass(() => closeGroupsForDeletedWorktrees(ref, next)),
   );
-  Future.microtask(() {
+  afterPass(() {
     prune(ref.read(sessionsProvider));
     closeGroupsForDeletedWorktrees(ref, ref.read(reposProvider));
   });
