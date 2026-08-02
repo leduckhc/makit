@@ -12,6 +12,26 @@ import '../../store/recent_models.dart';
 import 'client_commands.dart';
 import 'model_picker_menu.dart';
 
+/// Whether the session's agent can switch model — it advertised a selectable
+/// model list, and is not driving the newer `configOptions` mechanism.
+///
+/// The single source of truth for "is this control meaningful?", read by both the
+/// composer pill and the session ⋯ menu. They used to decide separately, and the
+/// menu decided wrong: it offered Model and Thinking to every agent, so on an ACP
+/// agent (modes / config options, no model or thinking) Thinking opened a picker,
+/// sent an action nothing could honour, and reported success.
+///
+/// A non-empty [SessionMeta.configOptions] supersedes the legacy
+/// `model`/`thinking` fields (SPEC-26) — the composer swaps its footer to those
+/// selectors, so reaching for a legacy picker would drive the wrong channel.
+bool sessionCanPickModel(SessionMeta? meta) =>
+    meta != null && meta.configOptions.isEmpty && meta.models.isNotEmpty;
+
+/// Whether the session's agent takes a thinking level. See [sessionCanPickModel]
+/// for why `configOptions` disqualifies the legacy path.
+bool sessionCanSetThinking(SessionMeta? meta) =>
+    meta != null && meta.configOptions.isEmpty && meta.thinking.isNotEmpty;
+
 /// The `category` values (SPEC-31, Makit UX policy — *not* ACP semantics) whose
 /// options are folded into the model picker as flyout segments. `model` itself
 /// is the picker's list; everything else stays a standalone pill. Conservative
@@ -126,11 +146,11 @@ class ComposerModelSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final meta = ref.watch(sessionMetaProvider(sessionId));
-    if (meta == null || meta.models.isEmpty) return const SizedBox.shrink();
+    if (!sessionCanPickModel(meta)) return const SizedBox.shrink();
     final agent = ref.watch(sessionsProvider).byId(sessionId)?.agent ?? '';
     return _ComposerPill(
       leading: AgentAvatar(agent: agent, size: 16),
-      label: meta.model?.name ?? 'model',
+      label: meta!.model?.name ?? 'model',
       tooltip: 'Model',
       onTap: () => handleClientCommand(
         '/model',
@@ -209,9 +229,9 @@ class ComposerThinkingSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final meta = ref.watch(sessionMetaProvider(sessionId));
-    if (meta == null || meta.thinking.isEmpty) return const SizedBox.shrink();
+    if (!sessionCanSetThinking(meta)) return const SizedBox.shrink();
     return _ComposerPill(
-      leading: ThinkingSignal(level: meta.thinking),
+      leading: ThinkingSignal(level: meta!.thinking),
       label: meta.thinking,
       tooltip: 'Thinking effort',
       onTap: () => handleClientCommand(

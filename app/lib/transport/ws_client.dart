@@ -8,6 +8,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'pinned_http.dart';
 import 'protocol.dart';
 import 'transport.dart';
+import '../diagnostics/app_log.dart';
 // WsState now lives in transport.dart (breaks the interface↔impl import cycle);
 // re-export so existing `import 'ws_client.dart'` consumers are unaffected.
 export 'transport.dart' show WsState;
@@ -142,8 +143,7 @@ class WsClient implements Transport {
     } catch (e) {
       if (gen != _openGen) return; // a newer open took over; it owns state
       // Surface connect errors so we can see TLS / refused / etc. in logs.
-      // ignore: avoid_print
-      print('[makit] ws connect to $_url failed: $e');
+      appLog.warn('ws', 'connect to $_url failed: $e');
       _scheduleRetry();
       return;
     }
@@ -197,8 +197,7 @@ class WsClient implements Transport {
     try {
       ch.sink.add(jsonEncode(env.toJson()));
     } catch (e) {
-      // ignore: avoid_print
-      print('[makit] ws send dropped (channel closing): $e');
+      appLog.debug('ws', 'send dropped (channel closing): $e');
     }
   }
 

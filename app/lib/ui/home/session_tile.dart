@@ -43,7 +43,11 @@ class SessionTile extends ConsumerWidget {
       confirmDismiss: (_) => _confirmAndQuit(context, ref),
       child: ListTile(
         dense: true,
-        contentPadding: EdgeInsets.only(left: indented ? 30 : 16, right: 12),
+        // Sits under its worktree's branch name (caret slot + glyph + gap), the
+        // sidebar's indentation ladder, at a touch-sized height.
+        contentPadding: EdgeInsets.only(left: indented ? 33 : 12, right: 12),
+        minTileHeight: kTouchRow,
+        visualDensity: VisualDensity.compact,
         onTap: () => context.go('/session/${session.id}'),
         leading: AgentAvatar(agent: session.agent),
         title: Row(

@@ -4,6 +4,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../widgets/pr_sheet.dart';
 import '../widgets/pr_state_style.dart';
 
 /// Branch name pill with a git branch glyph.
@@ -85,7 +86,9 @@ class DiffChip extends StatelessWidget {
 }
 
 /// Worktree PR pill: `PR #42`, tinted grey for drafts and per PR state
-/// (open / merged / closed) otherwise — see [prStateStyle].
+/// (open / merged / closed) otherwise — see [prStateStyle]. Tapping opens the
+/// shared PR sheet ([showPrSheet]) — the same detail the session screen's chip
+/// shows, so there is one PR surface with two entry points.
 class PrPill extends StatelessWidget {
   const PrPill({super.key, required this.pr});
   final PullRequest pr;
@@ -96,28 +99,49 @@ class PrPill extends StatelessWidget {
     final style = prStateStyle(cs, pr);
     final color = pr.isDraft ? cs.outline : style.color;
     final labelColor = pr.isDraft ? cs.outline : style.textColor;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: kSpace8,
-        vertical: kSpace2,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
+    // The tap target is the full row height (kTouchRow) while the *painted*
+    // pill stays content-sized: the pill opens the PR sheet, so it needs a
+    // thumb-sized target, but inflating the visible chip to 44px would make a
+    // blob of it and push the worktree row well past the density the list is
+    // tuned for. So the ink/hit box is tall and transparent, and the tint is
+    // drawn by the shrink-wrapped box inside it.
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(kRadius8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          style.glyph.build(size: kPillIconSize, color: color),
-          const SizedBox(width: 3),
-          Text(
-            'PR #${pr.number}',
-            style: Theme.of(context).textTheme.labelXs?.copyWith(
-              color: labelColor,
-              fontWeight: FontWeight.w600,
+        onTap: () => showPrSheet(context, pr),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: kTouchRow),
+          child: Center(
+            widthFactor: 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(kRadius8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace8,
+                  vertical: kSpace2,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    style.glyph.build(size: kPillIconSize, color: color),
+                    const SizedBox(width: 3),
+                    Text(
+                      'PR #${pr.number}',
+                      style: Theme.of(context).textTheme.labelXs?.copyWith(
+                        color: labelColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -256,4 +280,18 @@ List<Worktree> sortWorktreesForDisplay(Iterable<Worktree> worktrees) {
     return (b.insertions + b.deletions) - (a.insertions + a.deletions);
   });
   return out;
+}
+
+/// Human-readable HEAD-commit age like `3d ago`, shared by the mobile worktree
+/// row and the desktop sidebar's sub-row. Empty string when unknown, so a
+/// caller that reserves the line keeps its vertical space.
+String branchAgeLabel(DateTime? committedAt) {
+  if (committedAt == null) return '';
+  final d = DateTime.now().difference(committedAt);
+  if (d.inSeconds < 60) return 'just now';
+  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
+  if (d.inHours < 24) return '${d.inHours}h ago';
+  if (d.inDays < 30) return '${d.inDays}d ago';
+  if (d.inDays < 365) return '${(d.inDays / 30).floor()}mo ago';
+  return '${(d.inDays / 365).floor()}y ago';
 }

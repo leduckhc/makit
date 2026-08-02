@@ -10,7 +10,8 @@
 /// - mobile → left at `off`. Every style here is a pointer design, and a phone
 ///   has no screen to spend on permanent chrome, so mobile reaches its own
 ///   messages through a sheet in the session-actions menu instead
-///   (`messages_sheet.dart`).
+///   (`messages_sheet.dart`). This is a product choice, not a technical limit:
+///   the preference system lives in `store/` and mobile loads it too.
 ///
 /// Coercion is deliberately *not* a function anyone has to remember to call: an
 /// unsuitable style is unreachable on mobile because mobile never puts one in

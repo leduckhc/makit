@@ -218,11 +218,11 @@ Four schema decisions, each load-bearing:
 3. **Options for non-selected styles stay persisted.** Switching Rail → Outline → Rail
    must return the user to their spacing. The picker must not clear sibling entries.
    *(Verified in the mockup; the naive implementation gets this wrong.)*
-4. **The picker is desktop-only, and the spec says so.** `PreferencesController` persists
-   to the SharedPreferences key `desktop_settings_overrides` and is used **nowhere** outside
-   `lib/desktop/`; mobile's `ui/settings/settings_screen.dart` is hand-built `ListTile`s
-   with no `PreferenceEntry` at all. Pretending otherwise would ship a phone that is stuck
-   on one style with no off switch. See [§Surface matrix](#surface-matrix).
+4. **The picker is desktop-only — now by choice, not by constraint.** When this spec was
+   written `PreferencesController` was desktop-only, which forced the split. The
+   mobile-parity work has since moved it to `store/prefs/` and mobile loads it too, so a
+   mobile picker is now *possible*. It is still not wanted: mobile has no navigator styles
+   to choose between. See [§Surface matrix](#surface-matrix).
 
 ### Surface matrix
 <a id="surface-matrix"></a>
@@ -249,9 +249,9 @@ there is nothing on screen to turn off.
 
 The **landing flash** is what makes this work: the sheet dismisses on pick, so the outlined
 row is the only thing telling you where you ended up.
-It is deliberately **not** wired to `PreferencesController`: adopting the desktop
-preference system on mobile is a real refactor (the storage key is literally named
-`desktop_settings_overrides`) and belongs in its own spec, not smuggled in here.
+Nothing is wired to `PreferencesController` on mobile — not because it cannot be (the
+preference system is shared as of the mobile-parity work) but because there is nothing to
+configure.
 
 Instead, shared UI reads a shared provider that each surface overrides at its app root —
 the same shape as `RecentModelsController.load(prefs)` in `lib/store/recent_models.dart`,
@@ -286,8 +286,8 @@ Consequences to respect:
 - No jumping to assistant messages (except `palette` with `searchAll` on).
 - No cross-session search. No server-side index.
 - No pagination protocol — history is already in memory.
-- **No port of the desktop preference system to mobile.** Mobile gets one on/off switch;
-  full parity needs its own spec.
+- **No mobile navigator preferences.** Not because the preference system is unavailable
+  there (it is shared now), but because mobile has no navigator styles to configure.
 
 ## Decisions (locked)
 
@@ -297,7 +297,7 @@ Consequences to respect:
 | 1c | The **scrubber was built, then removed** | Once mobile moved to a sheet, an edge-drag style had no constituency: on a pointer it duplicates the rail less legibly. The enum's unknown-id fallback made removal a deletion, not a migration — a stored `"scrubber"` decodes to the default (tested) |
 | 1b | Mobile gets **one on/off switch**, not the picker | The desktop preference system does not reach mobile; a full port is its own spec |
 | 2 | **Rail** is the desktop default; mobile gets a **sheet from the session-actions menu**, not a style | All five styles are pointer designs, and a phone has no screen to spend on permanent chrome — see §Surface matrix |
-| 2b | Mobile has **no navigator preferences at all** | Nothing is on screen to configure or disable |
+| 2b | Mobile has **no navigator preferences at all** | Nothing is on screen to configure or disable. Originally forced (prefs were desktop-only); now a deliberate choice, since prefs moved to `store/` |
 | 3 | Rail is a **cosy top-right cluster** at fixed spacing, not a proportional full-height gutter | The ripple is only legible when ticks are close; also removes the lazy-list geometry problem entirely |
 | 4 | Markers placed by **item index**, never scroll offset | Un-built rows have no offset (SPEC-21) |
 | 5 | **Outline** is one of the mutually-exclusive styles | Confirmed: not an independent toggle that coexists with the rail |

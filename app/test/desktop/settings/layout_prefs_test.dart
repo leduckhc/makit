@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
-import 'package:makit/desktop/settings/prefs/preference_entries.dart';
-import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
-import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

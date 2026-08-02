@@ -83,6 +83,7 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 | `liquid_glass_renderer` | 0.2.0-dev.4 | MIT |
 | `markdown` | 7.3.1 | BSD-3-Clause |
 | `multicast_dns` | 0.3.3+1 | BSD-3-Clause |
+| `path_provider` | 2.1.6 | BSD-3-Clause |
 | `phosphoricons_flutter` | 1.0.0 | MIT |
 | `qr_flutter` | 4.1.0 | BSD-3-Clause |
 | `shared_preferences` | 2.5.5 | BSD-3-Clause |

@@ -8,9 +8,9 @@ import '../../store/models.dart';
 import '../../ui/widgets/codicons.dart';
 import '../../ui/widgets/icon_glyph.dart';
 import '../../ui/widgets/pr_state_style.dart';
-import '../settings/prefs/preference_entries.dart';
-import '../settings/prefs/preferences_providers.dart';
-import 'pr_actions.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
+import '../../ui/widgets/pr_actions.dart';
 
 /// Tooltip on a stale pill (SPEC-32 §7.5). Names *why* the data is dimmed — a
 /// refresh that could not complete against GitHub's quota — so the user can tell
@@ -225,66 +225,6 @@ class _CountLabel extends StatelessWidget {
 }
 
 /// Colour for a CI rollup verdict.
-Color _rollupColor(BuildContext context, String rollup) {
-  final cs = Theme.of(context).colorScheme;
-  return switch (rollup) {
-    'pass' => const Color(0xFF3FB950),
-    'fail' => const Color(0xFFF85149),
-    'pending' => const Color(0xFFD29922),
-    _ => cs.outline,
-  };
-}
-
-/// Colour for a single check bucket (shared by the hover list).
-Color _bucketColor(BuildContext context, String bucket) {
-  final cs = Theme.of(context).colorScheme;
-  return switch (bucket) {
-    'pass' => const Color(0xFF3FB950),
-    'fail' || 'cancel' => const Color(0xFFF85149),
-    'pending' => const Color(0xFFD29922),
-    _ => cs.outline, // skipping / unknown
-  };
-}
-
-/// Sort rank for a check bucket: failures float to the top so the most obvious
-/// issues are easiest to spot, then in-flight, then skipped, then passing.
-int _bucketRank(String bucket) => switch (bucket) {
-  'fail' || 'cancel' => 0,
-  'pending' => 1,
-  'skipping' => 2,
-  'pass' => 3,
-  _ => 4,
-};
-
-/// Human-readable status word for a check bucket (the third column).
-String _bucketLabel(String bucket) => switch (bucket) {
-  'pass' => 'passed',
-  'fail' => 'failed',
-  'cancel' => 'cancelled',
-  'pending' => 'pending',
-  'skipping' => 'skipped',
-  _ => bucket,
-};
-
-/// Leading status glyph for a check bucket (the first column).
-IconData _bucketIcon(String bucket) => switch (bucket) {
-  'pass' => PhosphorIconsLight.checkCircle,
-  'fail' || 'cancel' => PhosphorIconsLight.xCircle,
-  'pending' => PhosphorIconsLight.clock,
-  'skipping' => PhosphorIconsLight.minusCircle,
-  _ => PhosphorIconsLight.circleDashed,
-};
-
-/// Checks sorted by [_bucketRank], stable within a bucket (preserves the
-/// server's original order for ties).
-List<PrCheck> _sortedChecks(List<PrCheck> checks) {
-  final indexed = [for (var i = 0; i < checks.length; i++) (i, checks[i])];
-  indexed.sort((a, b) {
-    final byRank = _bucketRank(a.$2.bucket).compareTo(_bucketRank(b.$2.bucket));
-    return byRank != 0 ? byRank : a.$1.compareTo(b.$1);
-  });
-  return [for (final e in indexed) e.$2];
-}
 
 /// The permanent PR pill: `PR #42` with a CI-verdict dot. Tapping opens the PR
 /// on the web; hovering reveals the per-check status list ([_ChecksPopover]).
@@ -321,7 +261,7 @@ class _PrStatusPillState extends State<PrStatusPill> {
         ? style.color
         : pr.isDraft
         ? cs.outline
-        : _rollupColor(context, pr.checkRollup);
+        : prRollupColor(cs, pr.checkRollup);
     // Labels need WCAG AA (4.5:1), which the vivid state hues don't always clear
     // as small text — [PrStateStyle.textColor] hands back the AA-safe variant.
     final labelColor = !isOpen ? style.textColor : color;
@@ -430,7 +370,7 @@ class _PrStatusPillState extends State<PrStatusPill> {
 
 /// The hover popover for [PrStatusPill]: a light, design-system surface listing
 /// each CI check as three columns — `[status glyph] [name] [status]` — ordered
-/// by [_bucketRank] so failures sit at the top.
+/// by bucket rank (see [sortPrChecks]) so failures sit at the top.
 class _ChecksPopover extends StatelessWidget {
   const _ChecksPopover({required this.pr});
 
@@ -440,7 +380,7 @@ class _ChecksPopover extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
-    final checks = _sortedChecks(pr.checks);
+    final checks = sortPrChecks(pr.checks);
     final header = checks.isEmpty
         ? (pr.url.isEmpty
               ? 'Open pull request'
@@ -497,7 +437,7 @@ class _CheckRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
-    final color = _bucketColor(context, check.bucket);
+    final color = prCheckBucketColor(cs, check.bucket);
     final label = check.workflowName == null || check.workflowName!.isEmpty
         ? check.name
         : '${check.workflowName!} / ${check.name}';
@@ -505,7 +445,7 @@ class _CheckRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 1.5),
       child: Row(
         children: [
-          Icon(_bucketIcon(check.bucket), size: 12, color: color),
+          Icon(prCheckBucketIcon(check.bucket), size: 12, color: color),
           const SizedBox(width: kSpace6),
           Expanded(
             child: Text(
@@ -517,7 +457,7 @@ class _CheckRow extends StatelessWidget {
           ),
           const SizedBox(width: kSpace12),
           Text(
-            _bucketLabel(check.bucket),
+            prCheckBucketLabel(check.bucket),
             style: base.copyWith(color: color, fontWeight: FontWeight.w600),
           ),
         ],

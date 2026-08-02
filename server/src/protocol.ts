@@ -323,6 +323,7 @@ export type CmdKind =
   | "agents.list"
   | "agents.refresh"
   | "push.register"
+  | "client.log"
   // dev-only probes
   | "debug.ask"
   | "debug.ask-multi";

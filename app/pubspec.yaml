@@ -48,6 +48,9 @@ dependencies:
   # SPEC-08 seam: the background notification-response isolate persists a
   # pending-action queue here (non-secret action metadata, drained by SPEC-07).
   shared_preferences: 2.5.5          # publisher: flutter.dev — pending-action queue
+  # On-device diagnostic log file (SPEC — in-app logging). Already resolved as a
+  # transitive dep of the plugins above; promoted to a direct dep here.
+  path_provider: ^2.1.0              # publisher: flutter.dev — app-support dir for makit.log
   # ---------------- SPEC-03 desktop control app (macOS only) ----------
   # Pinned exactly: tray_manager + window_manager have native Swift/Obj-C
   # code. qr_flutter is pure-Dart (safe for caret).
@@ -63,6 +66,11 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+
+  # Deterministic timer control in tests (the diagnostics log sink's buffered
+  # flush). Already resolved transitively via flutter_test; declared here
+  # because tests import it directly.
+  fake_async: ^1.3.3               # publisher: dart.dev
 
   # Tooling-only — never shipped in the app binary.
   yaml: ^3.1.3                     # publisher: dart.dev — tool/pub_cooldown.dart parses pubspec.lock

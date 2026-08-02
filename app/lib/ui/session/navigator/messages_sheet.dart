@@ -8,7 +8,9 @@
 /// N markers ~18pt apart, on the edge iOS reserves for swipe-back, under the
 /// finger driving it.) A sheet is the platform's own idiom for "pick from a
 /// list", costs no permanent screen furniture, and needs no settings to explain
-/// it — which is why mobile has no navigator preferences at all.
+/// it — which is why mobile exposes no navigator preferences. Mobile *could*:
+/// the preference system is shared (`store/prefs/`) and mobile loads it. There is
+/// simply nothing here worth configuring.
 library;
 
 import 'package:flutter/material.dart';

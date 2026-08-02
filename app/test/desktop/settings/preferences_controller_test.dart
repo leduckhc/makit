@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/desktop/settings/prefs/preference.dart';
-import 'package:makit/desktop/settings/prefs/preference_entries.dart';
-import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preference.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A throwaway entry used to exercise the generic codec paths.

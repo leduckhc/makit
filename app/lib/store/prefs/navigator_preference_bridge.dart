@@ -1,15 +1,20 @@
-/// Bridges the desktop preference system to the shared message-navigator
-/// providers (SPEC-34).
+/// Bridges stored preferences to the shared message-navigator providers
+/// (SPEC-34).
 ///
-/// Shared `ui/` code must not import `desktop/`, so the style and the per-style
-/// options reach the transcript as plain provider *values* that the desktop app
-/// root overrides with the user's stored preferences. This file is that bridge —
-/// and the only place that knows both sides.
+/// The navigator reads its style and options as plain provider *values* that an
+/// app root overrides, rather than reading `PreferenceEntry`s itself: that keeps
+/// the transcript indifferent to where the values come from, and lets a surface
+/// supply something else entirely (mobile supplies nothing — it has no navigator).
+///
+/// Only the **desktop** root wires these up today. Nothing stops mobile from
+/// doing so — since the mobile-parity work the preference system lives here in
+/// `store/` and both surfaces load it — mobile simply has no navigator styles to
+/// configure.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../ui/session/navigator/navigator_style.dart';
+import '../../ui/session/navigator/navigator_style.dart';
 import 'preference.dart';
 import 'preference_entries.dart';
 import 'preferences_providers.dart';

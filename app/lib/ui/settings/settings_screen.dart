@@ -10,6 +10,7 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
 import 'notification_settings.dart';
+import 'appearance_settings.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -110,6 +111,10 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           const Divider(),
+          const _SectionHeader('Appearance'),
+          const AppearanceSettingsSection(),
+
+          const Divider(),
           const _SectionHeader('Notifications'),
           const NotificationSettingsSection(),
 
@@ -124,6 +129,13 @@ class SettingsScreen extends ConsumerWidget {
 
           const Divider(),
           const _SectionHeader('About'),
+          ListTile(
+            leading: _leadingIcon(PhosphorIconsLight.bug),
+            title: const Text('Diagnostics'),
+            subtitle: const Text('View, copy, and send app logs'),
+            trailing: const Icon(PhosphorIconsLight.caretRight),
+            onTap: () => context.go('/diagnostics'),
+          ),
           ListTile(
             leading: _leadingIcon(PhosphorIconsLight.info),
             title: const Text('makit'),

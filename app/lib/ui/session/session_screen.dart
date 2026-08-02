@@ -10,6 +10,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
+import '../composer/composer_draft.dart';
 import '../composer/composer_selectors.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
@@ -21,6 +22,7 @@ import 'navigator/message_navigator_overlay.dart';
 import 'navigator/messages_sheet.dart';
 import 'navigator/outline_mode.dart';
 import 'navigator/transcript_jumper.dart';
+import 'session_pr_chip.dart';
 import 'transcript_list.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
@@ -50,7 +52,29 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   // Dedicated controller for free-text answers to an inline ask, kept separate
   // from the normal message draft so the two can never cross-contaminate.
   final _answerController = TextEditingController();
+  // The normal composer's field, one per session. Owned here (rather than left
+  // inside Composer) so a PR action can write into it — see [_insertPrompt].
+  // Keyed by session because rebinding the screen to another session must not
+  // carry the previous session's text across, the same reason the composer
+  // widget itself is keyed.
+  final _composerControllers = <String, TextEditingController>{};
   int _lastSeq = 0;
+
+  TextEditingController get _composerController => _composerControllers
+      .putIfAbsent(widget.sessionId, TextEditingController.new);
+
+  /// Put a canned PR prompt in the composer without sending it: append below any
+  /// half-typed text rather than replacing it, and leave the caret at the end so
+  /// the user can edit before sending. The draft is persisted by the composer's
+  /// own controller listener.
+  void _insertPrompt(String prompt) {
+    final existing = _composerController.text;
+    final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
+    _composerController.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+  }
 
   @override
   void initState() {
@@ -118,6 +142,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final label = sessionName.isNotEmpty
         ? sessionName
         : (project?.name ?? widget.sessionId);
+    // The PR heading this session's worktree, if any (SPEC-23). Same resolver
+    // the desktop composer bar uses, so both surfaces read one source.
+    final pr = ref
+        .watch(reposProvider)
+        .prForWorktreePath(session?.worktreePath);
     return Scaffold(
       // Edge-to-edge so the transcript scrolls *behind* the glass bars.
       extendBodyBehindAppBar: true,
@@ -266,19 +295,42 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   ],
                                 ),
                           ),
-                          if (session?.pane != null)
-                            Text(
-                              '\u29c9 ${session!.pane!.mux} ${session.pane!.paneId}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurface.withValues(alpha: 0.45),
-                                    shadows: [
-                                      Shadow(color: cs.surface, blurRadius: 6),
-                                    ],
+                          // Subtitle line (SPEC-23): the pane label and/or the
+                          // PR chip. Both are optional, so the line collapses
+                          // to nothing on a headless, PR-less session.
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (session?.pane != null)
+                                Flexible(
+                                  child: Text(
+                                    '\u29c9 ${session!.pane!.mux} '
+                                    '${session.pane!.paneId}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: cs.onSurface.withValues(
+                                            alpha: 0.45,
+                                          ),
+                                          shadows: [
+                                            Shadow(
+                                              color: cs.surface,
+                                              blurRadius: 6,
+                                            ),
+                                          ],
+                                        ),
                                   ),
-                            ),
+                                ),
+                              if (session?.pane != null && pr != null)
+                                const SizedBox(width: kSpace6),
+                              if (pr != null)
+                                SessionPrChip(
+                                  pr: pr,
+                                  onInsertPrompt: _insertPrompt,
+                                ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -324,12 +376,24 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               onSend: (text) => _handleSend(text, pendingAsk),
                             )
                           : Composer(
-                              key: const ValueKey('composer-normal'),
+                              // Keyed by session so switching sessions in place
+                              // gets a fresh field seeded from *that* session's
+                              // draft, instead of carrying the old text over.
+                              key: ValueKey('composer-${widget.sessionId}'),
                               glass: true,
+                              controller: _composerController,
                               enabled: pendingAsk == null,
                               commands: ref.watch(
                                 commandsProvider(widget.sessionId),
                               ),
+                              // Persist the draft per session so a half-typed
+                              // message survives a route pop (SPEC-27).
+                              initialText: ref.read(
+                                composerDraftsProvider,
+                              )[widget.sessionId],
+                              onDraftChanged: (text) => ref
+                                  .read(composerDraftsProvider.notifier)
+                                  .set(widget.sessionId, text),
                               onSend: (text) => _handleSend(text, pendingAsk),
                               running: session?.status == SessionStatus.running,
                               onCancel: _cancelTurn,
@@ -418,37 +482,53 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 _confirmArchive();
             }
           },
-          itemBuilder: (context) => [
-            themedMenuItem(
-              value: 'rename',
-              icon: PhosphorIconsLight.pencilSimple,
-              label: 'Rename session',
-            ),
-            themedMenuItem(
-              value: 'model',
-              icon: PhosphorIconsLight.robot,
-              label: 'Model',
-            ),
-            themedMenuItem(
-              value: 'thinking',
-              icon: PhosphorIconsLight.brain,
-              label: 'Thinking',
-            ),
-            const PopupMenuDivider(),
-            // SPEC-34: mobile's route back to your own prompts. A sheet rather
-            // than transcript chrome — see messages_sheet.dart.
-            themedMenuItem(
-              value: 'messages',
-              icon: PhosphorIconsLight.listMagnifyingGlass,
-              label: 'My messages',
-            ),
-            const PopupMenuDivider(),
-            themedMenuItem(
-              value: 'archive',
-              icon: PhosphorIconsLight.archiveBox,
-              label: 'Archive session',
-            ),
-          ],
+          itemBuilder: (context) {
+            // Only offer what this agent can actually do. An ACP agent carries
+            // modes / config options instead of model + thinking, and offering
+            // those anyway made the menu lie: Thinking used to open a picker and
+            // report a level the agent never applied.
+            final meta = ref.watch(sessionMetaProvider(widget.sessionId));
+            final canModel = sessionCanPickModel(meta);
+            final canThink = sessionCanSetThinking(meta);
+            return [
+              themedMenuItem(
+                value: 'rename',
+                icon: PhosphorIconsLight.pencilSimple,
+                label: 'Rename session',
+              ),
+              // SPEC-34: mobile's route back to your own prompts. Grouped with
+              // Rename, not with Model/Thinking, because it is not capability
+              // gated — it reads the transcript the client already holds, so it
+              // works on every agent. Sitting above the rule also keeps that
+              // rule's contract intact: it separates *configuration* from
+              // Archive and disappears when there is no configuration.
+              themedMenuItem(
+                value: 'messages',
+                icon: PhosphorIconsLight.listMagnifyingGlass,
+                label: 'My messages',
+              ),
+              if (canModel)
+                themedMenuItem(
+                  value: 'model',
+                  icon: PhosphorIconsLight.robot,
+                  label: 'Model',
+                ),
+              if (canThink)
+                themedMenuItem(
+                  value: 'thinking',
+                  icon: PhosphorIconsLight.brain,
+                  label: 'Thinking',
+                ),
+              // The rule separates configuration from Archive, so it only earns
+              // its place when there is configuration above it.
+              if (canModel || canThink) const PopupMenuDivider(),
+              themedMenuItem(
+                value: 'archive',
+                icon: PhosphorIconsLight.archiveBox,
+                label: 'Archive session',
+              ),
+            ];
+          },
         ),
       ),
     );
@@ -531,6 +611,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     _scroll.dispose();
     _jumpTarget.dispose();
     _answerController.dispose();
+    for (final c in _composerControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 }

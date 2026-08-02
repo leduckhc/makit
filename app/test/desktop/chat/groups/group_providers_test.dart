@@ -7,9 +7,9 @@ import 'package:makit/desktop/chat/groups/group_providers.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/panes/split_node.dart';
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
-import 'package:makit/desktop/settings/prefs/preference_entries.dart';
-import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
-import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 

@@ -2,9 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
+import '../diagnostics/diagnostics_screen.dart';
 import '../pairing/onboarding_controller.dart';
 import '../pairing/onboarding_screen.dart';
 import '../pairing/readiness.dart';
+import '../ui/home/archived_screen.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/session/session_screen.dart';
 import '../ui/settings/settings_screen.dart';
@@ -40,6 +42,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const HomeScreen(),
         routes: [
           GoRoute(path: 'settings', builder: (_, _) => const SettingsScreen()),
+          GoRoute(path: 'archived', builder: (_, _) => const ArchivedScreen()),
+          GoRoute(
+            path: 'diagnostics',
+            builder: (_, _) => const DiagnosticsScreen(),
+          ),
           GoRoute(
             path: 'session/:id',
             builder: (_, s) =>

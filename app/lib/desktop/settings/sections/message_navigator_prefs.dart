@@ -13,9 +13,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme.dart';
 import '../../../ui/session/navigator/navigator_style.dart';
-import '../prefs/preference.dart';
-import '../prefs/preference_entries.dart';
-import '../prefs/preferences_providers.dart';
+import '../../../store/prefs/preference.dart';
+import '../../../store/prefs/preference_entries.dart';
+import '../../../store/prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 

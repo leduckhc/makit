@@ -2,8 +2,8 @@
 // preference entries backing the desktop picker.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/desktop/settings/prefs/preference_entries.dart';
-import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:makit/ui/session/navigator/navigator_style.dart';
 
 void main() {

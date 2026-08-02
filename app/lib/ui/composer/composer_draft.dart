@@ -5,10 +5,10 @@ import 'package:flutter_riverpod/legacy.dart';
 /// that hasn't started yet).
 ///
 /// Held app-wide (deliberately **not** `autoDispose`) so a half-typed message
-/// survives the composer's widget being disposed and recreated — the two ways
-/// a draft used to vanish on desktop: switching the selected worktree, and
-/// splitting/reflowing the pane tree. Cleared drafts (post-send) are pruned so
-/// the map only ever holds live drafts.
+/// survives the composer's widget being disposed and recreated — the ways a
+/// draft used to vanish: switching the selected worktree and splitting/reflowing
+/// the pane tree on desktop, popping the session route on mobile. Cleared drafts
+/// (post-send) are pruned so the map only ever holds live drafts.
 class ComposerDrafts extends StateNotifier<Map<String, String>> {
   ComposerDrafts() : super(const {});
 
