@@ -16,6 +16,8 @@ import 'notifications/notification_request.dart';
 import 'notifications/pending_action_drain.dart';
 import 'notifications/push_registration.dart';
 import 'store/connection.dart';
+import 'store/prefs/preferences_controller.dart';
+import 'store/prefs/preferences_providers.dart';
 import 'store/recent_models.dart';
 import 'store/store.dart';
 import 'transport/transport.dart';
@@ -43,6 +45,10 @@ Future<void> main() async {
   // the model picker's Recent section survives restarts on mobile too.
   final prefs = await SharedPreferences.getInstance();
   final recentModelsController = RecentModelsController.load(prefs);
+  // Appearance preferences (theme mode, text scale) share the desktop's
+  // preferences layer, so the phone reads and writes the same diff-only
+  // overrides format from its own storage.
+  final preferencesController = PreferencesController.load(prefs);
   // The store listens to a broadcast stream that drops events without
   // listeners. Eagerly create the controller so it's subscribed before the
   // WS connects and starts pushing projects/sessions snapshots.
@@ -55,6 +61,9 @@ Future<void> main() async {
       pushRegistrarProvider.overrideWithValue(ChannelPushRegistrar()),
       recentModelsControllerProvider.overrideWith(
         (ref) => recentModelsController,
+      ),
+      preferencesControllerProvider.overrideWith(
+        (ref) => preferencesController,
       ),
     ],
   );
@@ -209,14 +218,20 @@ class _MakitAppState extends ConsumerState<MakitApp>
       );
     }
     final router = ref.watch(routerProvider);
+    // Appearance preferences applied at the root: theme mode directly, and text
+    // scale through a MediaQuery wrapper so it reaches dialogs and sheets too
+    // (same approach as desktop_app.dart).
+    final textScaler = TextScaler.linear(ref.watch(textScaleValueProvider));
     return MaterialApp.router(
       title: 'makit',
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: ref.watch(themeModeValueProvider),
       routerConfig: router,
-      builder: (context, child) =>
-          SrvRequestHandler(child: child ?? const SizedBox()),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+        child: SrvRequestHandler(child: child ?? const SizedBox()),
+      ),
       debugShowCheckedModeBanner: false,
     );
   }

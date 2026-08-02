@@ -5,9 +5,9 @@ import 'package:makit/control/control_types.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/desktop/screens/fake_control_client.dart';
 import 'package:makit/desktop/screens/providers.dart';
-import 'package:makit/desktop/settings/prefs/preference_entries.dart';
-import 'package:makit/desktop/settings/prefs/preferences_controller.dart';
-import 'package:makit/desktop/settings/prefs/preferences_providers.dart';
+import 'package:makit/store/prefs/preference_entries.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/desktop/settings/sections/advanced_section.dart';
 
 StatusData _status() => const StatusData(

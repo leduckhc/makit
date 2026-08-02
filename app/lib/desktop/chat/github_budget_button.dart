@@ -23,8 +23,8 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../settings/prefs/preference_entries.dart';
-import '../settings/prefs/preferences_providers.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 
 /// Test hooks: stable keys for the bars, search row, throttle badge, expander
 /// pill, and expanded diagnostics so widget tests can assert their presence

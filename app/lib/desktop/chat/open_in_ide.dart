@@ -6,8 +6,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
-import '../settings/prefs/preference_entries.dart';
-import '../settings/prefs/preferences_providers.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 
 /// The external apps the title-bar "Open in…" split button can launch for the
 /// current worktree path (macOS desktop only).

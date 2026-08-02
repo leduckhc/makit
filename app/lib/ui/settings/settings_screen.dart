@@ -10,6 +10,7 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
 import 'notification_settings.dart';
+import 'appearance_settings.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -108,6 +109,10 @@ class SettingsScreen extends ConsumerWidget {
             trailing: const Icon(PhosphorIconsLight.caretRight),
             onTap: () => context.go('/'),
           ),
+
+          const Divider(),
+          const _SectionHeader('Appearance'),
+          const AppearanceSettingsSection(),
 
           const Divider(),
           const _SectionHeader('Notifications'),

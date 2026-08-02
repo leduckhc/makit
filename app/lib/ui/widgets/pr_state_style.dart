@@ -60,3 +60,64 @@ PrStateStyle prStateStyle(ColorScheme cs, PullRequest? pr) =>
         cs.outline,
       ),
     };
+
+/// Colour for a PR's aggregate CI verdict ([PullRequest.checkRollup]).
+///
+/// Shared with [prCheckBucketColor] so the pill's verdict tint and the
+/// per-check list can't disagree. GitHub's own check hues (they coincide with
+/// the diff palette but mean something different, so they stay literal here
+/// rather than borrowing `kDiffAdd`/`kDiffDel`).
+Color prRollupColor(ColorScheme cs, String rollup) => switch (rollup) {
+  'pass' => const Color(0xFF3FB950),
+  'fail' => const Color(0xFFF85149),
+  'pending' => const Color(0xFFD29922),
+  _ => cs.outline,
+};
+
+/// Colour for a single check bucket ([PrCheck.bucket]). A cancelled check reads
+/// as a failure — it did not pass and the user must act.
+Color prCheckBucketColor(ColorScheme cs, String bucket) => switch (bucket) {
+  'pass' => const Color(0xFF3FB950),
+  'fail' || 'cancel' => const Color(0xFFF85149),
+  'pending' => const Color(0xFFD29922),
+  _ => cs.outline, // skipping / unknown
+};
+
+/// Human status word for a check bucket.
+String prCheckBucketLabel(String bucket) => switch (bucket) {
+  'pass' => 'passed',
+  'fail' => 'failed',
+  'cancel' => 'cancelled',
+  'pending' => 'pending',
+  'skipping' => 'skipped',
+  _ => bucket,
+};
+
+/// Leading status glyph for a check bucket.
+IconData prCheckBucketIcon(String bucket) => switch (bucket) {
+  'pass' => PhosphorIconsLight.checkCircle,
+  'fail' || 'cancel' => PhosphorIconsLight.xCircle,
+  'pending' => PhosphorIconsLight.clock,
+  'skipping' => PhosphorIconsLight.minusCircle,
+  _ => PhosphorIconsLight.circleDashed,
+};
+
+/// Sort rank for a check bucket: failures float to the top so the most obvious
+/// issues are easiest to spot, then in-flight, then skipped, then passing.
+int _bucketRank(String bucket) => switch (bucket) {
+  'fail' || 'cancel' => 0,
+  'pending' => 1,
+  'skipping' => 2,
+  _ => 3,
+};
+
+/// Checks sorted by [_bucketRank], stable within a bucket (preserves the
+/// server's original order for ties).
+List<PrCheck> sortPrChecks(List<PrCheck> checks) {
+  final indexed = [for (var i = 0; i < checks.length; i++) (i, checks[i])];
+  indexed.sort((a, b) {
+    final byRank = _bucketRank(a.$2.bucket).compareTo(_bucketRank(b.$2.bucket));
+    return byRank != 0 ? byRank : a.$1.compareTo(b.$1);
+  });
+  return [for (final e in indexed) e.$2];
+}

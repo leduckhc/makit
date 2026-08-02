@@ -11,7 +11,7 @@ import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/harness_picker.dart' show HarnessCard;
 import 'package:makit/desktop/chat/worktree_starter.dart';
-import 'package:makit/desktop/chat/composer_draft.dart';
+import 'package:makit/ui/composer/composer_draft.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';

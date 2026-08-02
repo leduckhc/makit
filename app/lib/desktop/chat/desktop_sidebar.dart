@@ -633,7 +633,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                   const SizedBox(width: kSpace4),
                                 ],
                                 Text(
-                                  _branchAgeLabel(worktree.committedAt),
+                                  branchAgeLabel(worktree.committedAt),
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: theme.colorScheme.outline,
                                     fontWeight: FontWeight.w300,
@@ -850,19 +850,6 @@ class _RenameBranchDialogState extends State<_RenameBranchDialog> {
       ],
     );
   }
-}
-
-/// Human-readable HEAD-commit age like `3d ago`. Empty string when unknown,
-/// so the sub-row below the branch still reserves its vertical space.
-String _branchAgeLabel(DateTime? committedAt) {
-  if (committedAt == null) return '';
-  final d = DateTime.now().difference(committedAt);
-  if (d.inSeconds < 60) return 'just now';
-  if (d.inMinutes < 60) return '${d.inMinutes}m ago';
-  if (d.inHours < 24) return '${d.inHours}h ago';
-  if (d.inDays < 30) return '${d.inDays}d ago';
-  if (d.inDays < 365) return '${(d.inDays / 30).floor()}mo ago';
-  return '${(d.inDays / 365).floor()}y ago';
 }
 
 class _SessionTile extends ConsumerStatefulWidget {

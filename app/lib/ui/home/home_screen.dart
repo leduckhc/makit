@@ -41,7 +41,19 @@ class HomeScreen extends ConsumerWidget {
                 : ListView.builder(
                     padding: EdgeInsets.fromLTRB(12, topInset + 60, 12, 24),
                     itemCount: repos.length,
+                    // Lets the sliver re-locate a keyed card that changed index
+                    // (repos reorder by activity). Without it the key merely
+                    // discards the moved card's state instead of moving it.
+                    findChildIndexCallback: (key) {
+                      final id = (key as ValueKey<String>).value;
+                      final i = repos.indexWhere((r) => r.id == id);
+                      return i < 0 ? null : i;
+                    },
                     itemBuilder: (context, i) => RepoCard(
+                      // Keyed by repo: the card owns collapse state, and repos
+                      // reorder by activity, so an unkeyed card would hand its
+                      // collapsed state to whichever repo took its slot.
+                      key: ValueKey(repos[i].id),
                       repo: repos[i],
                       sessions: sessions.forProject(repos[i].id),
                     ),
@@ -107,6 +119,12 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       const SizedBox(width: kSpace6),
                     ],
+                    GlassCircleButton(
+                      icon: PhosphorIconsLight.archiveBox,
+                      tooltip: 'Archived sessions',
+                      onTap: () => context.go('/archived'),
+                    ),
+                    const SizedBox(width: kSpace6),
                     GlassCircleButton(
                       icon: PhosphorIconsLight.folderPlus,
                       tooltip: 'Add repo',

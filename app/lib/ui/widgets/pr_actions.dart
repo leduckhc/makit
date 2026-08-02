@@ -2,11 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
-import '../../ui/widgets/codicons.dart';
-import '../../ui/widgets/icon_glyph.dart';
-import '../settings/prefs/preference.dart';
-import '../settings/prefs/preference_entries.dart';
-import '../settings/prefs/preferences_providers.dart';
+import 'codicons.dart';
+import 'icon_glyph.dart';
+import '../../store/prefs/preference.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 
 /// PNG glyphs exported from the codicon `repo-push`/`repo-pull` SVGs
 /// (assets/icons/, tinted at render time via [IconGlyph]/[ImageIcon]).
