@@ -27,6 +27,7 @@ import 'chat_metrics.dart';
 import 'diff_view.dart';
 import 'line_diff.dart';
 import 'tool_result_text.dart';
+import 'tool_summary.dart';
 
 // Re-export the pure result-text helpers so existing importers of
 // `tool_renderers.dart` keep resolving them after the SPEC-19 split.
@@ -105,8 +106,13 @@ List<Widget> genericToolBody(BuildContext context, ToolCallItem item) {
 
 /// Collapsed one-liner summary for [item] — the renderer's
 /// [ToolRenderer.summaryLine] when registered, otherwise the raw tool name.
-String toolSummaryLine(ToolCallItem item) =>
-    rendererFor(item)?.summaryLine(item) ?? item.name;
+///
+/// Absolute paths in the result are compacted (see [compactPathsIn]); pass the
+/// session's worktree path as [root] so paths inside it render relative.
+String toolSummaryLine(ToolCallItem item, {String? root}) => compactPathsIn(
+  rendererFor(item)?.summaryLine(item) ?? item.name,
+  root: root,
+);
 
 /// Short header label for [item] shown when its row is expanded — the
 /// renderer's [ToolRenderer.label] when registered, otherwise the raw name.
@@ -304,10 +310,6 @@ String languageForPath(String path) {
     _ => 'plaintext',
   };
 }
-
-/// Collapse a (possibly multi-line) command/label into one whitespace-normalised
-/// line for the collapsed summary.
-String _oneLine(String s) => s.trim().replaceAll(RegExp(r'\s+'), ' ');
 
 // ---------------------------------------------------------------------------
 // Built-in renderers
@@ -521,7 +523,7 @@ class _BashRenderer extends ToolRenderer {
 
   @override
   String summaryLine(ToolCallItem item) {
-    final cmd = _oneLine(item.args['command']?.toString() ?? '');
+    final cmd = compactCommand(item.args['command']?.toString() ?? '');
     return cmd.isEmpty ? 'Ran' : 'Ran $cmd';
   }
 
@@ -562,7 +564,7 @@ class _GrepRenderer extends ToolRenderer {
 
   @override
   String summaryLine(ToolCallItem item) {
-    final pattern = _oneLine(item.args['pattern']?.toString() ?? '');
+    final pattern = oneLine(item.args['pattern']?.toString() ?? '');
     return pattern.isEmpty ? 'Grep' : 'Grep $pattern';
   }
 

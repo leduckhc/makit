@@ -13,6 +13,7 @@ import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/connection.dart';
+import 'package:makit/transport/ws_client.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
@@ -1229,6 +1230,63 @@ void main() {
       expect(find.text('Session B'), findsOneWidget);
     },
   );
+
+  testWidgets('footer action icons sit flush against the sidebar right edge', (
+    tester,
+  ) async {
+    const width = 320.0;
+    const rightPadding = 8.0;
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(ReposState(const [])),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+        // A paired+connected server: the endpoint label shows and the
+        // connection chip collapses — the layout the user actually sees.
+        connectionProvider.overrideWithValue(
+          MakitConnState(
+            wsState: WsState.connected,
+            server: PairedServer(
+              host: '127.0.0.1',
+              port: 9787,
+              fingerprint: 'f',
+              bearer: 'b',
+              label: 'srv',
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: width,
+              child: DesktopSidebar(onOpenSettings: () {}),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('localhost:9787'), findsOneWidget);
+    final settings = tester.getRect(
+      find.ancestor(
+        of: find.byTooltip('Settings & Server'),
+        matching: find.byType(IconButton),
+      ),
+    );
+    expect(
+      settings.right,
+      moreOrLessEquals(width - rightPadding, epsilon: 1),
+      reason:
+          'the last footer icon must end at the footer padding, not float '
+          'in the middle of the row',
+    );
+  });
 
   group('SPEC-30 Lane 6 — sidebar board affordances (decisions 14, 15)', () {
     Future<ProviderContainer> pumpWithGroups(

@@ -130,6 +130,7 @@ Widget chatItemWidget(String sessionId, ChatItem item, {int position = -1}) =>
       ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
       ToolCallItem() => ToolCallCard(
         item: item,
+        sessionId: sessionId,
         expansionKey: transcriptRowExpansionKey(sessionId, item),
       ),
       ErrorItem() => ErrorBanner(message: item.message),

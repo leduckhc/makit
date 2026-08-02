@@ -285,6 +285,53 @@ test("stays on GraphQL while it has headroom", async () => {
   );
 });
 
+test("REST maps a merged PR (closed + merged flag) to MERGED, not CLOSED", async () => {
+  // REST has no distinct "merged" state: a merged PR lists as `closed`. Only the
+  // detail's `merged` boolean tells them apart, so the gateway must read it or
+  // the UI would paint a landed PR with the abandoned (closed/red) glyph.
+  const mergedList = JSON.stringify([
+    { number: 7, html_url: "https://github.com/o/r/pull/7", state: "closed", title: "t", draft: false, head: { sha: "abc" } },
+  ]);
+  const mergedDetail = JSON.stringify({ mergeable: null, mergeable_state: "clean", merged: true });
+  const { gateway } = makeGatewayWithCmds((cmd, args) => {
+    if (cmd === "git") return ok("git@github.com:o/r.git\n");
+    const path = args[1] ?? "";
+    if (path === "rate_limit") return ok(rateLimitJson(5_000, 1_000));
+    if (path.includes("/pulls?head=")) return ok(mergedList);
+    if (/\/pulls\/\d+$/.test(path)) return ok(mergedDetail);
+    if (path.includes("/check-runs")) return ok(REST_CHECKS);
+    if (path.endsWith("/status")) return ok(REST_STATUS);
+    return fail("unexpected");
+  });
+  await gateway.refresh();
+  const res = await gateway.prForBranch("/repo", "feature");
+  assert.equal(res.kind, "pr");
+  if (res.kind !== "pr") return;
+  assert.equal(res.pr.state, "MERGED", "merged flag wins over the raw closed state");
+});
+
+test("REST maps a plain closed (unmerged) PR to CLOSED", async () => {
+  const closedList = JSON.stringify([
+    { number: 7, html_url: "https://github.com/o/r/pull/7", state: "closed", title: "t", draft: false, head: { sha: "abc" } },
+  ]);
+  const closedDetail = JSON.stringify({ mergeable: null, mergeable_state: "dirty", merged: false });
+  const { gateway } = makeGatewayWithCmds((cmd, args) => {
+    if (cmd === "git") return ok("git@github.com:o/r.git\n");
+    const path = args[1] ?? "";
+    if (path === "rate_limit") return ok(rateLimitJson(5_000, 1_000));
+    if (path.includes("/pulls?head=")) return ok(closedList);
+    if (/\/pulls\/\d+$/.test(path)) return ok(closedDetail);
+    if (path.includes("/check-runs")) return ok(REST_CHECKS);
+    if (path.endsWith("/status")) return ok(REST_STATUS);
+    return fail("unexpected");
+  });
+  await gateway.refresh();
+  const res = await gateway.prForBranch("/repo", "feature");
+  assert.equal(res.kind, "pr");
+  if (res.kind !== "pr") return;
+  assert.equal(res.pr.state, "CLOSED");
+});
+
 test("resolves owner/repo from git, spending no GitHub quota", async () => {
   const { gateway, execs } = makeGatewayWithCmds(restHandler(5_000, 1_000));
   await gateway.refresh();

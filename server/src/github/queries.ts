@@ -112,8 +112,14 @@ export function restOpenPr(raw: unknown): OpenPr | null {
 }
 
 /**
- * Primary (GraphQL-backed) argv for the open PR on `branch`: identity,
+ * Primary (GraphQL-backed) argv for the latest PR on `branch`: identity,
  * mergeability, and the CI check rollup in one call.
+ *
+ * `--state all` (not `open`) so a merged or closed PR keeps rendering with its
+ * own state glyph instead of vanishing to the bare-branch icon. `gh pr list`
+ * returns newest-first, so `--limit 1` yields the most recent PR on the branch —
+ * an OPEN one when it exists, else the last MERGED/CLOSED one. The state field
+ * distinguishes all three (`gh` reports MERGED distinctly from CLOSED).
  */
 export function prForBranchArgv(branch: string): string[] {
   return [
@@ -122,7 +128,7 @@ export function prForBranchArgv(branch: string): string[] {
     "--head",
     branch,
     "--state",
-    "open",
+    "all",
     "--json",
     "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
     "--limit",
@@ -131,15 +137,23 @@ export function prForBranchArgv(branch: string): string[] {
 }
 
 /**
- * REST fallback argv for the open PR on `branch` (spec §4's ~4× path). Lists
- * open PRs whose head is `owner:branch`; {@link prDetailRestArgv} then supplies
+ * REST fallback argv for the latest PR on `branch` (spec §4's ~4× path). Lists
+ * PRs whose head is `owner:branch`; {@link prDetailRestArgv} then supplies
  * `mergeable` (absent from the list response) and the two check argv builders
  * supply the CI rollup — four `core` calls for what GraphQL does in one.
+ *
+ * `state=all` (mirroring {@link prForBranchArgv}) so a merged/closed PR is still
+ * returned. `sort=created&direction=desc` pins newest-first (matching
+ * {@link openPrsRestArgv}) so `per_page=1` is reliably the most recent PR rather
+ * than relying on GitHub's implicit default ordering — an older CLOSED PR
+ * winning the slot over a newer OPEN one would re-introduce the wrong-glyph bug.
+ * REST has no distinct "merged" state — the detail call's `merged`
+ * flag disambiguates a merged PR from a plain closed one (see `fetchPrViaRest`).
  */
 export function prForBranchRestArgv(owner: string, repo: string, branch: string): string[] {
   return [
     "api",
-    `/repos/${enc(owner)}/${enc(repo)}/pulls?head=${enc(owner)}:${enc(branch)}&state=open&per_page=1`,
+    `/repos/${enc(owner)}/${enc(repo)}/pulls?head=${enc(owner)}:${enc(branch)}&state=all&per_page=1&sort=created&direction=desc`,
   ];
 }
 

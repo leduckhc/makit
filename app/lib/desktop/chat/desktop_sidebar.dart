@@ -1075,21 +1075,29 @@ class _Footer extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
       child: Row(
         children: [
-          const Flexible(child: ConnectionChip()),
-          const SizedBox(width: kSpace8),
-          if (endpoint != null)
-            Expanded(
-              child: Text(
-                endpoint,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.outline,
-                ),
-              ),
-            )
-          else
-            const Spacer(),
+          // Status + endpoint share one Expanded so *all* slack lands here and
+          // the trailing icons stay pinned to the right edge. (The chip used to
+          // be a flex sibling of the icons, so it claimed a share of the slack
+          // it never painted, leaving dead space after the last icon.)
+          Expanded(
+            child: Row(
+              children: [
+                const Flexible(child: ConnectionChip()),
+                const SizedBox(width: kSpace8),
+                if (endpoint != null)
+                  Flexible(
+                    child: Text(
+                      endpoint,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.outline,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           const GithubBudgetButton(),
           IconButton(
             tooltip: 'Add repo',
