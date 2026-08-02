@@ -208,7 +208,6 @@ void main() {
           'mediaId': 'a' * 64,
           'mime': 'image/png',
           'kind': 'image',
-          'sizeBytes': 7281,
           'alt': 'shot.png',
           'callId': 'c1',
         }),
@@ -217,7 +216,6 @@ void main() {
       final m = items.single as AgentMediaItem;
       expect(m.mediaId, 'a' * 64);
       expect(m.mime, 'image/png');
-      expect(m.sizeBytes, 7281);
       expect(m.alt, 'shot.png');
       expect(m.callId, 'c1');
     });
@@ -240,13 +238,12 @@ void main() {
       expect(items, isEmpty);
     });
 
-    test('agent.media tolerates a missing mime/size/alt', () {
+    test('agent.media tolerates a missing mime/alt', () {
       final items = foldEvents([
         _ev(1, EventKind.agentMedia, {'mediaId': 'b' * 64}),
       ]);
       final m = items.single as AgentMediaItem;
       expect(m.mime, 'image/png', reason: 'a sane default keeps it renderable');
-      expect(m.sizeBytes, 0);
       expect(m.alt, isNull);
       expect(m.callId, isNull);
     });

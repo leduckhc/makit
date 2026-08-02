@@ -309,7 +309,6 @@ class UserAttachmentThumb extends ConsumerWidget {
       ts: 0,
       mediaId: attachment.mediaId,
       mime: attachment.mime,
-      sizeBytes: attachment.sizeBytes,
       alt: label,
     );
     final Widget content = fetch == null

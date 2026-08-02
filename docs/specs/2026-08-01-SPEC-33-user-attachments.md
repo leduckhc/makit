@@ -200,6 +200,11 @@ live session has a cwd.
 
 ```ts
 { kind: "user.message", payload: { text, attachments?: [{ mediaId, mime, sizeBytes, name? }] } }
+// As shipped, the app parses `{mediaId, mime, name?}` into `MediaAttachmentRef`
+// and ignores `sizeBytes`: nothing renders it. The app's own optimistic copy is
+// built by `MediaAttachmentRef.toEchoWire()`, and the outbound `send.message`
+// form by `toWire()` (id + name only) — one class, two wire shapes, so the
+// build-then-reparse cannot drift.
 ```
 
 Descriptors only — the same reason SPEC-22 gives (replayed log). The app's

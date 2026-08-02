@@ -19,9 +19,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'pinned_http.dart';
-
-/// A sha256, lowercase hex — the only id shape the route accepts.
-final RegExp _mediaIdPattern = RegExp(r'^[a-f0-9]{64}$');
+import 'protocol.dart';
 
 /// Where (and with what credentials) media is fetched from.
 class MediaEndpoint {
@@ -39,7 +37,7 @@ class MediaEndpoint {
   final String? fingerprint;
 
   Uri urlFor(String mediaId) {
-    if (!_mediaIdPattern.hasMatch(mediaId)) {
+    if (!isMediaId(mediaId)) {
       // The id is spliced into a URL path — refuse anything that isn't a hash
       // rather than escaping it and hoping.
       throw ArgumentError.value(mediaId, 'mediaId', 'not a sha256');
@@ -140,7 +138,7 @@ class MediaDescriptor {
     final id = json['mediaId'];
     final mime = json['mime'];
     final size = json['sizeBytes'];
-    if (id is! String || !_mediaIdPattern.hasMatch(id)) return null;
+    if (id is! String || !isMediaId(id)) return null;
     if (mime is! String || mime.isEmpty) return null;
     return MediaDescriptor(
       mediaId: id,

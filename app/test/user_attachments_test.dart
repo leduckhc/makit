@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/chat_items.dart';
-import 'package:makit/store/models.dart';
 import 'package:makit/transport/codec.dart';
+import 'package:makit/store/models.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:makit/store/media.dart';
@@ -26,12 +26,7 @@ void main() {
         _userEvent({
           'text': 'why is this misaligned?',
           'attachments': [
-            {
-              'mediaId': _id,
-              'mime': 'image/png',
-              'sizeBytes': 1234,
-              'name': 'shot.png',
-            },
+            {'mediaId': _id, 'mime': 'image/png', 'name': 'shot.png'},
           ],
         }),
       ]);
@@ -41,8 +36,20 @@ void main() {
       expect(item.attachments, hasLength(1));
       expect(item.attachments.single.mediaId, _id);
       expect(item.attachments.single.mime, 'image/png');
-      expect(item.attachments.single.sizeBytes, 1234);
       expect(item.attachments.single.name, 'shot.png');
+    });
+
+    test('the optimistic wire form round-trips back through tryParse', () {
+      // `appendOptimisticMessage` writes `toEchoWire()` into a payload that this
+      // very fold parses back, in-process. A field dropped from one side is a
+      // field missing from the rendered bubble forever, because the optimistic
+      // copy is the one that survives the seq-collision dedup.
+      const ref = MediaAttachmentRef(
+        mediaId: _id,
+        mime: 'image/jpeg',
+        name: 'shot.jpg',
+      );
+      expect(MediaAttachmentRef.tryParse(ref.toEchoWire()), ref);
     });
 
     test('history with no attachments key folds exactly as before', () {
@@ -120,12 +127,8 @@ void main() {
             text: 'look',
             ts: 1000,
             attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-              MediaAttachmentRef(
-                mediaId: 'b$_id',
-                mime: 'image/png',
-                sizeBytes: 1,
-              ),
+              MediaAttachmentRef(mediaId: _id, mime: 'image/png'),
+              MediaAttachmentRef(mediaId: 'b$_id', mime: 'image/png'),
             ],
           ),
         ),
@@ -141,9 +144,7 @@ void main() {
           const ChatBubble.user(
             text: 'look',
             ts: 1000,
-            attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-            ],
+            attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
             promptImage: false,
           ),
         ),
@@ -159,9 +160,7 @@ void main() {
           const ChatBubble.user(
             text: 'look',
             ts: 1000,
-            attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-            ],
+            attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
             promptImage: true,
           ),
         ),
@@ -188,9 +187,7 @@ void main() {
           const ChatBubble.user(
             text: '',
             ts: 1000,
-            attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-            ],
+            attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
           ),
         ),
       );

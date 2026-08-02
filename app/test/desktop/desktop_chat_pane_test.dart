@@ -77,21 +77,20 @@ class _StarterStore extends StoreController {
   void appendOptimisticMessage(
     String sessionId,
     String text, {
-    List<({String mediaId, String mime, String name})> attachments = const [],
+    List<MediaAttachmentRef> attachments = const [],
   }) {}
 
   @override
   void sendMessage(
     String sessionId,
     String text, {
-    List<({String mediaId, String mime, String name})> attachments = const [],
+    List<MediaAttachmentRef> attachments = const [],
   }) {
     sent.add(text);
     sentAttachments.add(attachments);
   }
 
-  final List<List<({String mediaId, String mime, String name})>>
-  sentAttachments = [];
+  final List<List<MediaAttachmentRef>> sentAttachments = [];
 }
 
 /// A harness advertising a model + reasoning-effort catalog (what the pills

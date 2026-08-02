@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:ulid/ulid.dart';
 
+import '../../store/chat_items.dart';
 import '../../store/composer_attachments.dart';
 import '../../store/media.dart';
 import '../../store/store.dart';
@@ -82,10 +83,7 @@ Future<void> _stage(
 );
 
 /// Descriptors for the wire, then clear — called around a successful send.
-List<({String mediaId, String mime, String name})> takeAttachmentsForSend(
-  WidgetRef ref,
-  String key,
-) {
+List<MediaAttachmentRef> takeAttachmentsForSend(WidgetRef ref, String key) {
   final notifier = ref.read(composerAttachmentsProvider.notifier);
   final wire = notifier.wireFor(key);
   // Only the sent (ready) ones are dropped: a failed chip stays visible with its

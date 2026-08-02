@@ -51,7 +51,6 @@ Future<void> _pump(WidgetTester tester, {required String mediaId}) async {
           ts: 0,
           mediaId: mediaId,
           mime: 'image/png',
-          sizeBytes: kPng.length,
           alt: 'shot.png',
         ),
       ]),

@@ -400,7 +400,7 @@ class StoreController extends StateNotifier<StoreState> {
   void appendOptimisticMessage(
     String sessionId,
     String text, {
-    List<({String mediaId, String mime, String name})> attachments = const [],
+    List<MediaAttachmentRef> attachments = const [],
   }) {
     // Replay events have not advanced the public cursor yet, so assigning the
     // next seq here could collide with buffered history. The command still goes
@@ -437,10 +437,7 @@ class StoreController extends StateNotifier<StoreState> {
           // reducer's idempotency guard, so THIS payload is what gets rendered
           // — a bubble without its thumbnails would be permanent.
           if (attachments.isNotEmpty)
-            'attachments': [
-              for (final a in attachments)
-                {'mediaId': a.mediaId, 'mime': a.mime, 'name': a.name},
-            ],
+            'attachments': [for (final a in attachments) a.toEchoWire()],
         },
       ),
     );
@@ -449,7 +446,7 @@ class StoreController extends StateNotifier<StoreState> {
   void sendMessage(
     String sessionId,
     String text, {
-    List<({String mediaId, String mime, String name})> attachments = const [],
+    List<MediaAttachmentRef> attachments = const [],
   }) {
     _ref
         .read(connectionControllerProvider.notifier)
@@ -461,13 +458,11 @@ class StoreController extends StateNotifier<StoreState> {
               'kind': 'send.message',
               'sessionId': sessionId,
               'text': text,
-              // Ids only — the bytes were uploaded to `POST /media` first, and
-              // the server resolves each id against its store (SPEC-33 §3.3).
+              // Ids only (see `toWire`) — the bytes were uploaded to
+              // `POST /media` first and the server resolves each id against its
+              // store (SPEC-33 §3.3).
               if (attachments.isNotEmpty)
-                'attachments': [
-                  for (final a in attachments)
-                    {'mediaId': a.mediaId, 'name': a.name},
-                ],
+                'attachments': [for (final a in attachments) a.toWire()],
             },
           ),
         );

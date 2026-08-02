@@ -6,15 +6,17 @@
 
 import { WireErrorCode } from "../../protocol/codec.js";
 import { log } from "../../log.js";
-import { sharedMediaStore, type MediaAttachment, type MediaStore } from "../../media/store.js";
+import {
+  isMediaId,
+  sharedMediaStore,
+  type MediaAttachment,
+  type MediaStore,
+} from "../../media/store.js";
 import type { CommandRouter } from "../command_router.js";
 import type { CommandDeps } from "./deps.js";
 
 /** Per-message attachment cap (SPEC-33 §3.3). A prompt, not a gallery. */
 export const MAX_ATTACHMENTS = 8;
-
-/** A sha256, lowercase hex — the only id shape the store can resolve. */
-const SHA256_RE = /^[a-f0-9]{64}$/;
 
 /**
  * Label handed to `promotePendingSession` when an image-only turn promotes a
@@ -47,7 +49,7 @@ export function parseAttachments(
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
     const { mediaId, name } = entry as { mediaId?: unknown; name?: unknown };
-    if (typeof mediaId !== "string" || !SHA256_RE.test(mediaId)) continue;
+    if (typeof mediaId !== "string" || !isMediaId(mediaId)) continue;
     wanted.push(typeof name === "string" && name ? { mediaId, name } : { mediaId });
   }
   if (wanted.length === 0) return undefined;
