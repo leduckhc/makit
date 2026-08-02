@@ -4,6 +4,7 @@
  */
 
 import { EventEmitter } from "node:events";
+import type { MediaAttachment } from "../media/store.js";
 import type { SessionEvent } from "../protocol.js";
 import type { AskUser } from "../uicall.js";
 
@@ -71,6 +72,13 @@ export interface SpawnOpts {
 
 export interface UserInput {
   text: string;
+  /**
+   * Images the user attached (SPEC-33). Already resolved against the media
+   * store by the `send.message` handler, so every entry has verified bytes on
+   * disk. Absent when the turn is text-only; adapters that ignore the field
+   * degrade to today's behaviour.
+   */
+  attachments?: MediaAttachment[];
 }
 
 /**
@@ -96,6 +104,22 @@ export interface SessionCapabilities {
   archive: boolean;
 }
 
+/**
+ * What a back end accepts *in a prompt* (SPEC-33) — distinct from
+ * {@link SessionCapabilities}, which is about the session lifecycle.
+ *
+ * Only `image` for now, mirroring ACP's `promptCapabilities`. makit reports it
+ * so the app can label a message that was delivered as a file instead of shown
+ * to the model directly; the inline-image send path is a later phase.
+ */
+export interface PromptCapabilities {
+  /** The agent accepts image content blocks in a prompt. */
+  image: boolean;
+}
+
+/** No inline prompt media — the safe default for every adapter. */
+export const NO_PROMPT_CAPABILITIES: Readonly<PromptCapabilities> = Object.freeze({ image: false });
+
 /** All-false capabilities — the safe default for a process-less adapter. */
 export const NO_SESSION_CAPABILITIES: Readonly<SessionCapabilities> = Object.freeze({
   resume: false,
@@ -108,6 +132,13 @@ export const NO_SESSION_CAPABILITIES: Readonly<SessionCapabilities> = Object.fre
 
 export interface AgentAdapter extends EventEmitter {
   readonly agent: string;
+  /**
+   * What this back end accepts in a prompt (SPEC-33). Like
+   * {@link SessionCapabilities} this is only authoritative after `start()` for
+   * ACP (negotiated from `initialize`); adapters that cannot take inline media
+   * report {@link NO_PROMPT_CAPABILITIES}.
+   */
+  readonly promptCapabilities: PromptCapabilities;
   /**
    * The back end's session-lifecycle capabilities (SPEC-29). For ACP this is
    * only authoritative AFTER `start()` (it is read from the `initialize`

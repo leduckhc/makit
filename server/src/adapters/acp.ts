@@ -30,11 +30,13 @@ import {
   type SessionConfigOption as AcpConfigOption,
 } from "@agentclientprotocol/sdk";
 import type { AnyMessage } from "@agentclientprotocol/sdk";
-import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from "./adapter.js";
+import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities, PromptCapabilities } from "./adapter.js";
+import { NO_PROMPT_CAPABILITIES } from "./adapter.js";
 import { SubprocessAdapter } from "./subprocess-adapter.js";
 import { AcpEventMapper } from "./acp-map.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
 import { LocalMediaResolver, rewriteMarkdownImages } from "../media/local.js";
+import { prepareTurn, type PreparedTurn } from "../media/attach.js";
 import { spawnLineProcess } from "./child_transport.js";
 import { mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord } from "./wire.js";
@@ -96,6 +98,10 @@ export class AcpAdapter extends SubprocessAdapter {
    */
   private loading = false;
   private workspaceRoot = "";
+  /** Blob store — reads for `user.message` attachments, writes for `agent.media`. */
+  private readonly media: MediaStore;
+  /** Negotiated from `initialize`; false until then (SPEC-33 T6). */
+  promptCapabilities: PromptCapabilities = NO_PROMPT_CAPABILITIES;
   private askUser?: AskUser;
   private mapper: AcpEventMapper;
 
@@ -120,7 +126,7 @@ export class AcpAdapter extends SubprocessAdapter {
     this.spec = opts.spec;
     this.agent = opts.spec.agent;
     this.connectFn = opts.connect ?? defaultConnect(opts.spec);
-    const media = opts.media ?? sharedMediaStore();
+    const media = (this.media = opts.media ?? sharedMediaStore());
     this.mapper = new AcpEventMapper({
       emit: (e) => this.emit("event", e),
       onTitle: (t) => this.emit("title", t),
@@ -185,6 +191,7 @@ export class AcpAdapter extends SubprocessAdapter {
     // Negotiate session-lifecycle capabilities from the initialize response
     // (SPEC-29) so resume/list/delete/fork are gated on what the agent advertises.
     this.capabilities = deriveAcpCapabilities(init);
+    this.promptCapabilities = deriveAcpPromptCapabilities(init);
 
     // Resume an existing session by its native ACP id when requested, preferring
     // a no-replay resume; else a silent replay-load; else fall back to a fresh
@@ -245,15 +252,31 @@ export class AcpAdapter extends SubprocessAdapter {
   async send(input: UserInput): Promise<void> {
     if (!this.conn || !this.acpSessionId) throw new Error("AcpAdapter: send before start");
 
+    // SPEC-33: attachments are delivered as files in the worktree, named in the
+    // prompt. If that write fails there is nothing useful to send — a prompt
+    // referencing an image the agent cannot open is worse than an error — so the
+    // turn is abandoned with a real, persisted `session.error`.
+    let turn: PreparedTurn;
+    try {
+      turn = prepareTurn(this.media, input, this.workspaceRoot);
+    } catch (err) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `attachment delivery failed: ${(err as Error).message}` },
+      });
+      return;
+    }
+
     // Echo the user message so transcripts are complete (mirrors the pi adapter).
-    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: { text: input.text } });
+    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
 
     const turnKey = this.turns.enterTurn();
 
     this.conn
       .prompt({
         sessionId: this.acpSessionId,
-        prompt: [{ type: "text", text: input.text }],
+        prompt: [{ type: "text", text: turn.promptText }],
       })
       .then((res) => {
         // Turn complete: finalize buffered text/thinking + tool state.
@@ -665,6 +688,20 @@ export function deriveAcpCapabilities(init: unknown): SessionCapabilities {
     fork: has(sc.fork),
     archive: has(sc.archive),
   };
+}
+
+/**
+ * Derive {@link PromptCapabilities} from an ACP `initialize` response.
+ *
+ * `agentCapabilities.promptCapabilities.image` per the ACP schema. Strict `true`
+ * only — a truthy-but-not-boolean value is treated as unsupported, because
+ * claiming image support we do not actually have would silently mislabel
+ * messages in the transcript.
+ */
+export function deriveAcpPromptCapabilities(init: unknown): PromptCapabilities {
+  const caps = isRecord(init) && isRecord(init.agentCapabilities) ? init.agentCapabilities : {};
+  const prompt = isRecord(caps.promptCapabilities) ? caps.promptCapabilities : {};
+  return { image: prompt.image === true };
 }
 
 // ---------- default subprocess transport -----------------------------------

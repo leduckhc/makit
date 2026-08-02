@@ -397,7 +397,11 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  void appendOptimisticMessage(String sessionId, String text) {
+  void appendOptimisticMessage(
+    String sessionId,
+    String text, {
+    List<({String mediaId, String mime, String name})> attachments = const [],
+  }) {
     // Replay events have not advanced the public cursor yet, so assigning the
     // next seq here could collide with buffered history. The command still goes
     // to the server; its real user.message echo is ordered after the sub ack and
@@ -426,12 +430,27 @@ class StoreController extends StateNotifier<StoreState> {
         sessionId: sessionId,
         ts: DateTime.now().millisecondsSinceEpoch,
         kind: EventKind.userMessage,
-        payload: {'text': text},
+        payload: {
+          'text': text,
+          // SPEC-33: the optimistic copy MUST carry the attachments too. The
+          // server's echo arrives with the same seq and is dropped by the
+          // reducer's idempotency guard, so THIS payload is what gets rendered
+          // — a bubble without its thumbnails would be permanent.
+          if (attachments.isNotEmpty)
+            'attachments': [
+              for (final a in attachments)
+                {'mediaId': a.mediaId, 'mime': a.mime, 'name': a.name},
+            ],
+        },
       ),
     );
   }
 
-  void sendMessage(String sessionId, String text) {
+  void sendMessage(
+    String sessionId,
+    String text, {
+    List<({String mediaId, String mime, String name})> attachments = const [],
+  }) {
     _ref
         .read(connectionControllerProvider.notifier)
         .send(
@@ -442,6 +461,13 @@ class StoreController extends StateNotifier<StoreState> {
               'kind': 'send.message',
               'sessionId': sessionId,
               'text': text,
+              // Ids only — the bytes were uploaded to `POST /media` first, and
+              // the server resolves each id against its store (SPEC-33 §3.3).
+              if (attachments.isNotEmpty)
+                'attachments': [
+                  for (final a in attachments)
+                    {'mediaId': a.mediaId, 'name': a.name},
+                ],
             },
           ),
         );

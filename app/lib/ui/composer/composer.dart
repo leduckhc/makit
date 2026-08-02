@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../shortcuts/key_chord.dart';
+import '../../store/composer_attachments.dart';
 import '../../store/models.dart';
+import 'attachment_chips.dart';
 import 'slash_palette.dart';
 
 /// Composer = input bar with slash-command palette + send.
@@ -38,8 +41,36 @@ class Composer extends StatefulWidget {
     this.onDraftChanged,
     this.enabled = true,
     this.disabledHint,
+    this.attachments = const [],
+    this.onAttach,
+    this.onRemoveAttachment,
+    this.onRetryAttachment,
+    this.readClipboardImage,
+    this.onPasteImage,
   });
   final void Function(String text) onSend;
+
+  /// Images staged for the next message (SPEC-33), newest last. Rendered as a
+  /// chip strip above the field; an unsettled (uploading) one blocks sending.
+  final List<ComposerAttachment> attachments;
+
+  /// Opens the attachment picker. **Null means this session cannot take
+  /// attachments** — the paperclip stays visible but inert, with a tooltip that
+  /// says why, rather than accepting a file makit could not deliver.
+  final VoidCallback? onAttach;
+
+  /// Remove / retry a staged attachment by its `localId`.
+  final ValueChanged<String>? onRemoveAttachment;
+  final ValueChanged<String>? onRetryAttachment;
+
+  /// Reads an image off the system clipboard, or null when there is none.
+  /// Injected so the composer stays testable and platform-free.
+  final Future<({Uint8List bytes, String mime, String name})?> Function()?
+  readClipboardImage;
+
+  /// Called with a pasted image's bytes. When [readClipboardImage] yields
+  /// nothing, the paste falls through to the field's normal text paste.
+  final void Function(Uint8List bytes, String mime, String name)? onPasteImage;
 
   /// When false, the composer is inert: the field + send are replaced by a
   /// muted [disabledHint] bar. Used while a session is awaiting an inline
@@ -156,9 +187,19 @@ class _ComposerState extends State<Composer> {
     setState(() => _showSlash = showSlash);
   }
 
+  /// Whether there is something to send: text, or at least one stored image.
+  /// An upload still in flight blocks sending outright — the server would
+  /// reject a `mediaId` it has not stored yet, losing the whole turn.
+  bool get _canSend {
+    if (widget.attachments.any((a) => a.status == AttachmentStatus.uploading)) {
+      return false;
+    }
+    return _hasText || widget.attachments.any((a) => a.isReady);
+  }
+
   void _send() {
     final text = _ctrl.text.trim();
-    if (text.isEmpty) return;
+    if (!_canSend) return;
     widget.onSend(text);
     _ctrl.clear();
     // Dismiss the composer + keyboard so focus returns to the chat content.
@@ -197,6 +238,15 @@ class _ComposerState extends State<Composer> {
               filter: _ctrl.text,
               commands: widget.commands,
               onPick: _onSlashPicked,
+            ),
+          // Shown even when the composer is disabled (awaiting an inline
+          // answer): the attachments still exist and may still be uploading, so
+          // hiding them would strand un-removable, invisible work.
+          if (widget.attachments.isNotEmpty)
+            AttachmentChips(
+              attachments: widget.attachments,
+              onRemove: widget.onRemoveAttachment ?? (_) {},
+              onRetry: widget.onRetryAttachment ?? (_) {},
             ),
           Container(
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
@@ -304,11 +354,63 @@ class _ComposerState extends State<Composer> {
   }
 
   Widget _buildPlus() {
-    return const IconButton(
-      icon: Icon(PhosphorIconsLight.paperclip),
-      tooltip: 'Attachments coming in v2',
-      // Disabled until v2 (@-mention picker); avoids misleading enabled no-op.
-      onPressed: null,
+    final canAttach = widget.onAttach != null;
+    return IconButton(
+      icon: const Icon(PhosphorIconsLight.paperclip),
+      tooltip: canAttach
+          ? 'Attach an image'
+          // Honest about the reason rather than a vague disabled state.
+          : 'Connect to your makit server to attach images',
+      onPressed: widget.onAttach,
+    );
+  }
+
+  /// ⌘V/Ctrl+V: image first, otherwise the field's OWN paste. Never swallow a
+  /// text paste.
+  Future<void> _handlePaste() async {
+    final read = widget.readClipboardImage;
+    final onImage = widget.onPasteImage;
+    if (read == null || onImage == null) {
+      await _pasteText();
+      return;
+    }
+    final image = await read();
+    // The clipboard read is async: this composer may be gone by now (a desktop
+    // worktree switch or pane split disposes it), and touching `_ctrl` or the
+    // callbacks after that throws "used after being disposed".
+    if (!mounted) return;
+    if (image == null) {
+      await _pasteText();
+      return;
+    }
+    onImage(image.bytes, image.mime, image.name);
+  }
+
+  /// Text paste, done by hand.
+  ///
+  /// **Known tradeoff, deliberate.** Where ⌘V *is* claimed (only composers that
+  /// can attach images — see `_canPasteImages`), whether the clipboard holds an
+  /// image is knowable only asynchronously, so the field's native paste never
+  /// runs and this stands in for it — without undo-stack or platform IME paste
+  /// behaviour. Handing the intent back to the framework is not available here:
+  /// `EditableText` registers its `PasteTextIntent` handler in an `Actions` map
+  /// *below* the `TextField`, so `Actions.invoke` from any context we hold
+  /// cannot resolve it (verified — it throws "Unable to find an action for an
+  /// Intent with type PasteTextIntent"). Reaching the `EditableTextState` would
+  /// mean walking the element tree, which is worse than this.
+  Future<void> _pasteText() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final text = data?.text;
+    // Disposed while reading the clipboard → `_ctrl` may be gone.
+    if (!mounted || text == null || text.isEmpty) return;
+    final value = _ctrl.value;
+    final sel = value.selection;
+    final start = sel.isValid ? sel.start : value.text.length;
+    final end = sel.isValid ? sel.end : value.text.length;
+    _ctrl.value = value.copyWith(
+      text: value.text.replaceRange(start, end, text),
+      selection: TextSelection.collapsed(offset: start + text.length),
+      composing: TextRange.empty,
     );
   }
 
@@ -326,7 +428,7 @@ class _ComposerState extends State<Composer> {
       padding: EdgeInsets.zero,
     );
     final Widget child;
-    if (_hasText) {
+    if (_canSend) {
       child = IconButton.filled(
         key: const ValueKey('send'),
         icon: const Icon(PhosphorIconsLight.arrowUp),
@@ -368,19 +470,39 @@ class _ComposerState extends State<Composer> {
     );
   }
 
+  /// True only when this composer can actually do something extra with ⌘V.
+  bool get _canPasteImages =>
+      widget.readClipboardImage != null && widget.onPasteImage != null;
+
   Map<ShortcutActivator, Intent> _shortcuts() {
+    // ⌘V is claimed ONLY where an image paste is possible. Claiming it
+    // everywhere would replace the field's native paste (undo stack, platform IME
+    // behaviour) in composers that gain nothing from it — the free-text answer
+    // composers, and any session that cannot attach.
+    final paste = _canPasteImages
+        ? const {
+            SingleActivator(LogicalKeyboardKey.keyV, meta: true):
+                _PasteIntent(),
+            SingleActivator(LogicalKeyboardKey.keyV, control: true):
+                _PasteIntent(),
+          }
+        : const <ShortcutActivator, Intent>{};
     final sendChord = widget.sendChord;
     if (sendChord == null) {
       // Default (mobile + un-configured): ⌘+Enter and Ctrl+Enter both send.
-      return const {
-        SingleActivator(LogicalKeyboardKey.enter, meta: true): _SendIntent(),
-        SingleActivator(LogicalKeyboardKey.enter, control: true): _SendIntent(),
+      return {
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+            const _SendIntent(),
+        const SingleActivator(LogicalKeyboardKey.enter, control: true):
+            const _SendIntent(),
+        ...paste,
       };
     }
     return {
       sendChord.toActivator(): const _SendIntent(),
       if (widget.newlineChord != null)
         widget.newlineChord!.toActivator(): const _NewlineIntent(),
+      ...paste,
     };
   }
 
@@ -411,6 +533,12 @@ class _ComposerState extends State<Composer> {
           _NewlineIntent: CallbackAction<_NewlineIntent>(
             onInvoke: (_) {
               _insertNewline();
+              return null;
+            },
+          ),
+          _PasteIntent: CallbackAction<_PasteIntent>(
+            onInvoke: (_) {
+              unawaited(_handlePaste());
               return null;
             },
           ),
@@ -473,4 +601,8 @@ class _SendIntent extends Intent {
 
 class _NewlineIntent extends Intent {
   const _NewlineIntent();
+}
+
+class _PasteIntent extends Intent {
+  const _PasteIntent();
 }

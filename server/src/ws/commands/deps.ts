@@ -8,11 +8,19 @@
 import type { Envelope } from "../../protocol.js";
 import type { SessionManager } from "../../manager.js";
 import type { GithubGateway } from "../../github/gateway.js";
+import type { MediaStore } from "../../media/store.js";
 
 export interface CommandDeps {
   readonly manager: SessionManager;
   /** The single GitHub gateway (SPEC-32): budget, refresh, pause. */
   readonly gateway: GithubGateway;
+  /**
+   * Content-addressed media store (SPEC-33) — used to resolve the attachment
+   * ids on `send.message` into real descriptors. Optional and defaulted to the
+   * process-wide store (mirroring `AcpAdapter`'s `opts.media`) so tests can
+   * point at a temp dir without wiring a whole server.
+   */
+  readonly media?: MediaStore;
   /** Re-send the projects + sessions snapshots to every authed client. */
   broadcastSnapshots(): void;
   /** Recompute + broadcast the repo-centric snapshot (git-only then PR-enriched). */

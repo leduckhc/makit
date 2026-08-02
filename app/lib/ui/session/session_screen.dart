@@ -8,6 +8,8 @@ import '../../app/theme.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../composer/attachment_controller.dart';
+import '../composer/attachment_sources.dart';
 import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_draft.dart';
@@ -93,6 +95,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     // SPEC-34: the transcript's rows, folded to your prompts only while
     // outline mode is on (a pass-through for every other navigator style).
     final items = ref.watch(transcriptItemsProvider(widget.sessionId));
+    final attachments = attachmentsFor(ref, widget.sessionId);
+    // Only real precondition: somewhere to upload to (SPEC-33 §3.4). NOT a
+    // recorded worktree — the server materialises into the agent's cwd, and the
+    // default repo-root session legitimately has `worktreePath == null`, so
+    // gating on it would disable the paperclip for the commonest case.
+    final canAttachHere = canAttach(ref) && session != null;
     final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
     // Clear the dedicated free-text answer controller whenever the ask ends or
     // leaves free-text mode, so a later answer composer never reopens with a
@@ -197,7 +205,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 return KeyedSubtree(
                   key: chatItemKey(item),
                   child: transcriptRow(
-                    chatItemWidget(widget.sessionId, item, position: index),
+                    chatItemWidget(
+                      widget.sessionId,
+                      item,
+                      position: index,
+                      promptImage: session?.promptImage ?? false,
+                    ),
                   ),
                 );
               },
@@ -380,6 +393,34 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               // gets a fresh field seeded from *that* session's
                               // draft, instead of carrying the old text over.
                               key: ValueKey('composer-${widget.sessionId}'),
+                              attachments: attachments,
+                              onAttach: canAttachHere
+                                  ? () => showAttachMenu(
+                                      context,
+                                      ref,
+                                      widget.sessionId,
+                                    )
+                                  : null,
+                              onRemoveAttachment: (id) =>
+                                  removeAttachment(ref, widget.sessionId, id),
+                              onRetryAttachment: (id) =>
+                                  retryAttachment(ref, widget.sessionId, id),
+                              // Gated like the paperclip: pasting into a session that cannot
+                              // deliver a file must not stage one either.
+                              readClipboardImage: canAttachHere
+                                  ? readClipboardImage
+                                  : null,
+                              onPasteImage: canAttachHere
+                                  ? (bytes, mime, name) => stageAttachment(
+                                      ref,
+                                      widget.sessionId,
+                                      image: (
+                                        bytes: bytes,
+                                        mime: mime,
+                                        name: name,
+                                      ),
+                                    )
+                                  : null,
                               glass: true,
                               controller: _composerController,
                               enabled: pendingAsk == null,
@@ -600,15 +641,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       );
       if (handled) return;
     }
+    // SPEC-33: take + clear in one step so a second tap cannot resend the same
+    // images.
+    final sending = takeAttachmentsForSend(ref, widget.sessionId);
     // Optimistic UI: show the message immediately so it doesn't look hung.
     // The server will echo it back; if there's a conflict we reconcile by seq.
     ref
         .read(storeControllerProvider.notifier)
-        .appendOptimisticMessage(widget.sessionId, text);
+        .appendOptimisticMessage(widget.sessionId, text, attachments: sending);
     // Send to server (may arrive out of order w.r.t. the local append, but seq resolves it).
     ref
         .read(storeControllerProvider.notifier)
-        .sendMessage(widget.sessionId, text);
+        .sendMessage(widget.sessionId, text, attachments: sending);
   }
 
   @override

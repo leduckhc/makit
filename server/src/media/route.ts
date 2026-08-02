@@ -1,6 +1,6 @@
 /**
- * Media route — `GET`/`HEAD /media/<sha256>` over the same HTTPS listener(s)
- * that carry the WS (SPEC-22).
+ * Media route — `GET`/`HEAD /media/<sha256>` and `POST /media` over the same
+ * HTTPS listener(s) that carry the WS (SPEC-22 for serving, SPEC-33 for upload).
  *
  * Auth is the **paired-device bearer in an `Authorization` header**, verified
  * against the same {@link DeviceRegistry} the WS handshake uses. SPEC-22
@@ -8,17 +8,18 @@
  * RPC; that only exists to serve loaders that can't set headers. makit's app
  * fetches media through its own pinned `HttpClient`, so it *can* send a header
  * — which is both simpler and safer: no capability ends up in a URL that is
- * persisted in the replayed event log, screenshotted, or written to logs.
+ * persisted in the replayed event log, screenshotted, or written to logs. The
+ * upload verb inherits all of that unchanged, which is why it costs so little.
  *
- * The response is cacheable forever (`immutable`): the URL is a content hash,
- * so bytes for a given `mediaId` can never change.
+ * The `GET` response is cacheable forever (`immutable`): the URL is a content
+ * hash, so bytes for a given `mediaId` can never change.
  */
 
 import { createReadStream } from "node:fs";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
 import { log } from "../log.js";
-import type { MediaStore } from "./store.js";
+import { MEDIA_MIME_ALLOWLIST, type MediaStore } from "./store.js";
 
 /** The slice of the device registry the route depends on. */
 export interface MediaAuthRegistry {
@@ -37,6 +38,8 @@ export interface MediaRouteDeps {
 }
 
 const MEDIA_PREFIX = "/media/";
+/** Upload target. Exactly `/media` — `/media/<id>` is the per-blob resource. */
+const MEDIA_UPLOAD_PATH = "/media";
 
 /**
  * Install the media handler on `server`. Safe to call on several listeners
@@ -47,6 +50,16 @@ const MEDIA_PREFIX = "/media/";
  */
 export function attachMediaRoute(server: Server, deps: MediaRouteDeps): void {
   server.on("request", (req, res) => {
+    const path = req.url?.split("?")[0] ?? "";
+    if (path === MEDIA_UPLOAD_PATH) {
+      try {
+        handleUpload(req, res, deps);
+      } catch (err) {
+        log.error(`[makit] media upload failed: ${(err as Error).message}`);
+        if (!res.headersSent) status(res, 500, "upload_failed");
+      }
+      return;
+    }
     if (!req.url?.startsWith(MEDIA_PREFIX)) return; // not ours — leave it alone
     try {
       handle(req, res, deps);
@@ -55,6 +68,128 @@ export function attachMediaRoute(server: Server, deps: MediaRouteDeps): void {
       if (!res.headersSent) notFound(res);
     }
   });
+}
+
+/**
+ * `POST /media` — store one blob, return its descriptor (SPEC-33 §3.1).
+ *
+ * Ordering is the whole point of this function: **authenticate, then check the
+ * declared size and mime, and only then read a byte of body.** An
+ * unauthenticated or unstorable request must never cause an allocation. The
+ * declared `Content-Length` is not trusted either — the running total is checked
+ * per chunk, so a sender that lies about its length is destroyed mid-stream
+ * rather than admitted under a length it then exceeds.
+ */
+function handleUpload(req: IncomingMessage, res: ServerResponse, deps: MediaRouteDeps): void {
+  if (req.method !== "POST") {
+    res.writeHead(405, { Allow: "POST" });
+    res.end();
+    return;
+  }
+  if (!authorized(req, deps)) {
+    res.writeHead(401, { "WWW-Authenticate": "Bearer" });
+    res.end();
+    // Nothing has been read from the socket; destroy so a large in-flight body
+    // is not drained on behalf of a caller we just rejected.
+    req.destroy();
+    return;
+  }
+
+  // Mime comes from the header, not from sniffing: the store's allowlist is what
+  // keeps script-bearing types (SVG, HTML) out of the serving path entirely.
+  const mime = (req.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+  if (!MEDIA_MIME_ALLOWLIST.has(mime)) {
+    status(res, 415, "unsupported_media_type");
+    req.destroy();
+    return;
+  }
+
+  const declared = Number(req.headers["content-length"]);
+  if (!Number.isInteger(declared) || declared <= 0) {
+    status(res, 411, "length_required");
+    req.destroy();
+    return;
+  }
+  const max = deps.store.maxBlobBytes;
+  if (declared > max) {
+    status(res, 413, "payload_too_large");
+    req.destroy();
+    return;
+  }
+
+  const chunks: Buffer[] = [];
+  let received = 0;
+  let settled = false;
+  const reply = (code: number, error: string) => {
+    // `end` and `error` can BOTH fire on one request — e.g. a sender that writes
+    // past its Content-Length: the body completes, then the surplus fails to
+    // parse as the next request and the socket errors. Without this guard the
+    // second one throws ERR_HTTP_HEADERS_SENT out of an event handler.
+    if (settled) return;
+    settled = true;
+    if (!res.headersSent) status(res, code, error);
+    req.destroy();
+  };
+
+  req.on("data", (chunk: Buffer) => {
+    if (settled) return;
+    received += chunk.length;
+    // Both bounds matter: the store's cap, and the length this request was
+    // admitted under. Exceeding either means we stop before storing anything.
+    if (received > max || received > declared) {
+      reply(413, "payload_too_large");
+      return;
+    }
+    chunks.push(chunk);
+  });
+
+  req.on("end", () => {
+    if (settled) return;
+    if (received !== declared) {
+      // Short body: a truncated image must not be stored under a hash that the
+      // client will then reference as if it were the whole file.
+      reply(400, "incomplete_body");
+      return;
+    }
+    // `store.put` is synchronous fs work (mkdir/write/fsync/rename) and DOES
+    // throw on a full disk, EACCES, or a failed rename. We are inside an `end`
+    // event callback, so the try/catch around `handleUpload` cannot see it: an
+    // unguarded throw here becomes an uncaught exception that takes the whole
+    // daemon down and leaves the client hanging. Hence a local guard, and
+    // `settled` is set only once the write has actually succeeded.
+    let descriptor;
+    try {
+      descriptor = deps.store.put(Buffer.concat(chunks), mime);
+    } catch (err) {
+      log.error(`[makit] media upload could not be stored: ${(err as Error).message}`);
+      reply(500, "upload_failed");
+      return;
+    }
+    settled = true;
+    // Metadata only — never a filename (the client's, and not ours to log) and
+    // never bytes.
+    log.info(`[makit] media upload mime=${mime} bytes=${descriptor.sizeBytes}`);
+    const body = JSON.stringify(descriptor);
+    res.writeHead(201, {
+      "Content-Type": "application/json",
+      "Content-Length": String(Buffer.byteLength(body)),
+      // The descriptor is cheap to recompute and must never be served stale.
+      "Cache-Control": "no-store",
+    });
+    res.end(body);
+  });
+
+  req.on("error", () => reply(400, "upload_aborted"));
+}
+
+/** Small JSON error body. Never an image — see {@link notFound}. */
+function status(res: ServerResponse, code: number, error: string): void {
+  const body = JSON.stringify({ error });
+  res.writeHead(code, {
+    "Content-Type": "application/json",
+    "Content-Length": String(Buffer.byteLength(body)),
+  });
+  res.end(body);
 }
 
 function handle(req: IncomingMessage, res: ServerResponse, deps: MediaRouteDeps): void {

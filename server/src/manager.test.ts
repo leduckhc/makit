@@ -22,6 +22,7 @@ function stubAdapter(started: SpawnOpts[]): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as any).agent = "stub";
   (e as any).capabilities = { resume: true, load: false, list: true, delete: true, fork: false };
+  (e as any).promptCapabilities = { image: false };
   (e as any).agentSessionId = undefined;
   (e as any).start = async (opts: SpawnOpts) => {
     started.push(opts);
@@ -566,6 +567,7 @@ function stubActionAdapter(
 ): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as any).agent = "stub";
+  (e as any).promptCapabilities = { image: false };
   (e as any).start = async (opts: SpawnOpts) => {
     started.push(opts);
   };

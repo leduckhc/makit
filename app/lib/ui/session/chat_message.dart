@@ -46,11 +46,29 @@ class _Timestamp extends StatelessWidget {
 }
 
 /// The user's own messages — right-aligned coloured bubble.
+/// Caption under a sent message whose images were handed to the agent as files
+/// rather than shown to the model directly (SPEC-33 §3.5). Explains a lukewarm
+/// reply ("I see a path…") instead of leaving it mysterious.
+const String kSentAsFileNote = 'Sent as a file for the agent to open';
+
 class ChatBubble extends StatelessWidget {
-  const ChatBubble.user({required this.text, required this.ts, super.key});
+  const ChatBubble.user({
+    required this.text,
+    required this.ts,
+    this.attachments = const [],
+    this.promptImage = false,
+    super.key,
+  });
 
   final String text;
   final int ts;
+
+  /// Images sent with this message (SPEC-33).
+  final List<MediaAttachmentRef> attachments;
+
+  /// Whether the agent can see images inside the prompt. Drives only the
+  /// [kSentAsFileNote] caption — makit always delivers a file today.
+  final bool promptImage;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +76,7 @@ class ChatBubble extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final bubble = cs.surfaceContainerHigh;
     final onBubble = cs.onSurface;
+    final hasText = text.isNotEmpty;
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -81,8 +100,41 @@ class ChatBubble extends StatelessWidget {
                   bottomRight: Radius.circular(4),
                 ),
               ),
-              child: SelectableText(text, style: TextStyle(color: onBubble)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (attachments.isNotEmpty)
+                    Padding(
+                      // No gap below when there is no text to separate from.
+                      padding: EdgeInsets.only(bottom: hasText ? kSpace8 : 0),
+                      child: Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: kSpace4,
+                        runSpacing: kSpace4,
+                        children: [
+                          for (final a in attachments)
+                            UserAttachmentThumb(attachment: a),
+                        ],
+                      ),
+                    ),
+                  // An image-only message renders no text row at all, rather
+                  // than an empty selectable line that eats a tap.
+                  if (hasText)
+                    SelectableText(text, style: TextStyle(color: onBubble)),
+                ],
+              ),
             ),
+            if (attachments.isNotEmpty && !promptImage)
+              Padding(
+                padding: const EdgeInsets.only(top: kSpace2, right: kSpace4),
+                child: Text(
+                  kSentAsFileNote,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: cs.outline),
+                ),
+              ),
             _Timestamp(ts: ts, alignRight: true),
           ],
         ),

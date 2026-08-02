@@ -12,7 +12,8 @@
  * field. Lines are newline-delimited JSON.
  */
 
-import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from "./adapter.js";
+import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities, PromptCapabilities } from "./adapter.js";
+import { NO_PROMPT_CAPABILITIES } from "./adapter.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +23,8 @@ import { CodexEventMapper } from "./codex-map.js";
 import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js";
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord, parseJsonLine } from "./wire.js";
+import { sharedMediaStore, type MediaStore } from "../media/store.js";
+import { prepareTurn, type PreparedTurn } from "../media/attach.js";
 import type { AskUser } from "../uicall.js";
 import type { SessionConfigOption, ConfigOptionValue } from "../protocol.js";
 import { log } from "../log.js";
@@ -99,6 +102,12 @@ export interface CodexAdapterOpts {
   model?: string;
   /** Test seam: supply a transport instead of spawning a subprocess. */
   connect?: (cwd: string, env: Record<string, string>) => CodexTransport;
+  /**
+   * Blob store for user attachments (SPEC-33). Defaults to the shared
+   * `~/.makit/media` store the `/media` route serves from; tests inject a
+   * temp-dir store.
+   */
+  media?: MediaStore;
 }
 
 export class CodexAppServerAdapter extends SubprocessAdapter {
@@ -112,11 +121,21 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    */
   readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: true, archive: true };
 
+  /**
+   * codex's `turn/start` `input[]` is typed `{type:"text", text, text_elements}`;
+   * no image element type is verified, so attachments always take the file
+   * hand-off (SPEC-33 §6).
+   */
+  readonly promptCapabilities: PromptCapabilities = NO_PROMPT_CAPABILITIES;
+
   private readonly command: string;
   private readonly args: string[];
   private readonly extraEnv: Record<string, string>;
   private readonly model?: string;
   private readonly connectFn: (cwd: string, env: Record<string, string>) => CodexTransport;
+  private readonly media: MediaStore;
+  /** The session's worktree — where attachments are materialised (SPEC-33). */
+  private workspaceRoot = "";
 
   private transport?: CodexTransport;
   private mapper: CodexEventMapper;
@@ -149,6 +168,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.extraEnv = opts.env ?? {};
     this.model = opts.model;
     this.connectFn = opts.connect ?? defaultConnect(this.command, this.args);
+    this.media = opts.media ?? sharedMediaStore();
     this.mapper = new CodexEventMapper({
       emit: (e) => this.emit("event", e),
       onTitle: (t) => this.emit("title", t),
@@ -160,6 +180,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.askUser = opts.askUser;
 
     const env = { ...this.extraEnv, ...(opts.env ?? {}) };
+    this.workspaceRoot = opts.cwd;
     this.transport = this.connectFn(opts.cwd, env);
     this.transport.onLine((line) => this.handleLine(line));
     this.transport.onExit((code) => this.handleExit(code, () => this.rejectPending()));
@@ -188,13 +209,28 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   async send(input: UserInput): Promise<void> {
     if (!this.threadId) throw new Error("CodexAppServerAdapter: send before start");
 
-    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: { text: input.text } });
+    // SPEC-33: attachments are delivered as files in the worktree, named in the
+    // prompt (codex's `input[]` has no verified image element type). A failed
+    // write abandons the turn rather than prompting about an unreachable file.
+    let turn: PreparedTurn;
+    try {
+      turn = prepareTurn(this.media, input, this.workspaceRoot);
+    } catch (err) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `attachment delivery failed: ${(err as Error).message}` },
+      });
+      return;
+    }
+
+    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
     this.emit("status", "running");
 
     try {
       const res = (await this.request("turn/start", {
         threadId: this.threadId,
-        input: [{ type: "text", text: input.text, text_elements: [] }],
+        input: [{ type: "text", text: turn.promptText, text_elements: [] }],
         ...(this.activeModel ? { model: this.activeModel } : {}),
         ...(this.activeEffort ? { effort: this.activeEffort } : {}),
         ...(this.activeFast ? { serviceTier: FAST_SERVICE_TIER } : {}),

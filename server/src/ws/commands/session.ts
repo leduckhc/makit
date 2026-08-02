@@ -6,8 +6,61 @@
 
 import { WireErrorCode } from "../../protocol/codec.js";
 import { log } from "../../log.js";
+import { sharedMediaStore, type MediaAttachment, type MediaStore } from "../../media/store.js";
 import type { CommandRouter } from "../command_router.js";
 import type { CommandDeps } from "./deps.js";
+
+/** Per-message attachment cap (SPEC-33 §3.3). A prompt, not a gallery. */
+export const MAX_ATTACHMENTS = 8;
+
+/** A sha256, lowercase hex — the only id shape the store can resolve. */
+const SHA256_RE = /^[a-f0-9]{64}$/;
+
+/**
+ * Label handed to `promotePendingSession` when an image-only turn promotes a
+ * draft session. The first message names the branch/worktree, and "" would
+ * produce an unusable name.
+ */
+const IMAGE_ONLY_LABEL = "attachment";
+
+/**
+ * Resolve the wire `attachments` array against the media store (SPEC-33 §3.3).
+ *
+ * Two failure modes, treated differently on purpose:
+ *
+ * - **Malformed entries are dropped**, matching {@link parseConfigPicks}. A
+ *   client that sends junk gets the well-formed remainder.
+ * - **A well-formed id the store cannot resolve is an error.** Dropping it would
+ *   turn "why is this button misaligned?" into a bare text prompt and leave the
+ *   user reading a reply about nothing. An expired or GC'd upload must be
+ *   visible, so this returns `"unresolved"` and the handler refuses the turn.
+ *
+ * Returns `undefined` when there is nothing to attach, so the adapter contract
+ * stays "absent means absent".
+ */
+export function parseAttachments(
+  raw: unknown,
+  store: MediaStore,
+): MediaAttachment[] | undefined | "unresolved" | "too_many" {
+  if (!Array.isArray(raw)) return undefined;
+  const wanted: { mediaId: string; name?: string }[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const { mediaId, name } = entry as { mediaId?: unknown; name?: unknown };
+    if (typeof mediaId !== "string" || !SHA256_RE.test(mediaId)) continue;
+    wanted.push(typeof name === "string" && name ? { mediaId, name } : { mediaId });
+  }
+  if (wanted.length === 0) return undefined;
+  if (wanted.length > MAX_ATTACHMENTS) return "too_many";
+
+  const resolved: MediaAttachment[] = [];
+  for (const { mediaId, name } of wanted) {
+    const descriptor = store.stat(mediaId);
+    if (!descriptor) return "unresolved";
+    resolved.push(name ? { ...descriptor, name } : descriptor);
+  }
+  return resolved;
+}
 
 /**
  * Parse the optional `session.spawn` `configOptions` picks from the wire:
@@ -40,11 +93,28 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.BadRequest, "send.message requires a string `text`");
       return;
     }
+    // SPEC-33: images the user attached. Resolved here, so an adapter never sees
+    // an id it cannot turn into bytes.
+    const attachments = parseAttachments(ctx.env.attachments, deps.media ?? sharedMediaStore());
+    if (attachments === "too_many") {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        `send.message accepts at most ${MAX_ATTACHMENTS} attachments`,
+      );
+      return;
+    }
+    if (attachments === "unresolved") {
+      ctx.err(
+        WireErrorCode.BadRequest,
+        "send.message names an attachment that is no longer stored — re-upload it",
+      );
+      return;
+    }
     const session = sid ? manager.getSession(sid) : undefined;
     // Log metadata only — never the message text, which can carry PII or
-    // credentials.
+    // credentials, and never an attachment's id or name.
     log.info(
-      `[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} textLen=${text.length}`,
+      `[makit] send.message sid=${sid.slice(0, 8)} session=${!!session} textLen=${text.length} attachments=${attachments?.length ?? 0}`,
     );
     if (!session) {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
@@ -57,12 +127,15 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     // persisted, monotonic `session.error`), so the handler just checks
     // whether to proceed and refreshes the repo snapshot on success.
     if (session.pending) {
-      const started = await manager.promotePendingSession(session, text);
+      // An image-only turn has no text to name the branch after, so promotion
+      // gets a fallback label rather than "".
+      const label = text.trim() || (attachments?.length ? IMAGE_ONLY_LABEL : text);
+      const started = await manager.promotePendingSession(session, label);
       if (!started) return;
       broadcastSnapshots();
       void broadcastReposSnapshot();
     }
-    await session.sendUserMessage(text);
+    await session.sendUserMessage(text, attachments);
   });
 
   // Built-in control actions (e.g. /compact, /thinking) — NOT user turns.

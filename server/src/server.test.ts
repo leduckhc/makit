@@ -19,6 +19,9 @@ import type { AgentAdapter } from "./adapters/adapter.js";
 function fakeAdapter(): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as unknown as { agent: string }).agent = "stub";
+  // SPEC-33: `toDTO` reports the adapter's prompt capabilities, so a double that
+  // omits them is not a usable AgentAdapter (the cast hides it, the DTO doesn't).
+  (e as unknown as { promptCapabilities: { image: boolean } }).promptCapabilities = { image: false };
   (e as unknown as { start: () => Promise<void> }).start = async () => {};
   (e as unknown as { send: () => Promise<void> }).send = async () => {};
   (e as unknown as { cancel: () => Promise<void> }).cancel = async () => {};

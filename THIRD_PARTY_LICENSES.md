@@ -73,6 +73,7 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 |---------|---------|---------|
 | `collection` | 1.19.1 | BSD-3-Clause |
 | `crypto` | 3.0.7 | BSD-3-Clause |
+| `file_selector` | 1.1.0 | BSD-3-Clause |
 | `flutter_highlight` | 0.7.0 | MIT |
 | `flutter_local_notifications` | 22.2.0 | BSD-3-Clause |
 | `flutter_markdown_plus` | 1.0.12 | BSD-3-Clause |
@@ -80,6 +81,7 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 | `flutter_secure_storage` | 10.3.1 | BSD-3-Clause |
 | `flutter_svg` | 2.3.0 | MIT |
 | `go_router` | 17.3.0 | BSD-3-Clause |
+| `image_picker` | 1.2.3 | BSD-3-Clause |
 | `liquid_glass_renderer` | 0.2.0-dev.4 | MIT |
 | `markdown` | 7.3.1 | BSD-3-Clause |
 | `multicast_dns` | 0.3.3+1 | BSD-3-Clause |
@@ -87,6 +89,7 @@ BSD-3-Clause) are bundled in the app and shown on the in-app Licenses page.
 | `phosphoricons_flutter` | 1.0.0 | MIT |
 | `qr_flutter` | 4.1.0 | BSD-3-Clause |
 | `shared_preferences` | 2.5.5 | BSD-3-Clause |
+| `super_clipboard` | 0.9.1 | MIT |
 | `tray_manager` | 0.5.3 | MIT |
 | `ulid` | 2.0.1 | BSD-3-Clause |
 | `url_launcher` | 6.3.2 | BSD-3-Clause |

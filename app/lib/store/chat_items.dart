@@ -27,9 +27,62 @@ sealed class ChatItem {
   final int ts;
 }
 
+/// A descriptor for one image the user attached (SPEC-33), as it arrives on the
+/// `user.message` payload. Bytes are NOT here — they are fetched from
+/// `GET /media/<mediaId>` — because this event is replayed in full on resume.
+class MediaAttachmentRef {
+  const MediaAttachmentRef({
+    required this.mediaId,
+    required this.mime,
+    this.sizeBytes = 0,
+    this.name,
+  });
+
+  final String mediaId;
+  final String mime;
+  final int sizeBytes;
+
+  /// The name the user's file had, for a11y and the failure placeholder.
+  final String? name;
+
+  /// Parse one wire entry, or null when it is not usable. Skipping a malformed
+  /// entry beats rendering a thumbnail that can never load.
+  static MediaAttachmentRef? tryParse(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['mediaId'];
+    if (id is! String || !_sha256.hasMatch(id)) return null;
+    final mime = raw['mime'];
+    final size = raw['sizeBytes'];
+    final name = raw['name'];
+    return MediaAttachmentRef(
+      mediaId: id,
+      mime: mime is String && mime.isNotEmpty ? mime : 'image/png',
+      sizeBytes: size is int ? size : 0,
+      name: name is String && name.isNotEmpty ? name : null,
+    );
+  }
+
+  /// Parse the `attachments` array off a `user.message` payload. Absent (all
+  /// pre-SPEC-33 history) or malformed → empty.
+  static List<MediaAttachmentRef> parseList(Object? raw) {
+    if (raw is! List) return const [];
+    return [for (final e in raw) ?tryParse(e)];
+  }
+}
+
+final RegExp _sha256 = RegExp(r'^[a-f0-9]{64}$');
+
 class UserMessageItem extends ChatItem {
-  UserMessageItem({required super.seq, required super.ts, required this.text});
+  UserMessageItem({
+    required super.seq,
+    required super.ts,
+    required this.text,
+    this.attachments = const [],
+  });
   final String text;
+
+  /// Images sent with this message (SPEC-33). Empty for a text-only turn.
+  final List<MediaAttachmentRef> attachments;
 }
 
 class AgentMessageItem extends ChatItem {
@@ -224,6 +277,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             seq: e.seq,
             ts: e.ts,
             text: e.payload['text'] as String? ?? '',
+            attachments: MediaAttachmentRef.parseList(e.payload['attachments']),
           ),
         );
       case EventKind.agentMessage:

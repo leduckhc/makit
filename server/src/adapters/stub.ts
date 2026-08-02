@@ -1,5 +1,8 @@
 import { EventEmitter } from "node:events";
-import type { AdapterEvent, AgentAdapter, SessionCapabilities, SpawnOpts, UserInput } from "./adapter.js";
+import type { AdapterEvent, AgentAdapter, PromptCapabilities, SessionCapabilities, SpawnOpts, UserInput } from "./adapter.js";
+import { NO_PROMPT_CAPABILITIES } from "./adapter.js";
+import { sharedMediaStore } from "../media/store.js";
+import { prepareTurn, type PreparedTurn } from "../media/attach.js";
 import type { SessionConfigOption } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
 
@@ -33,9 +36,12 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** Resume-capable so keyless e2e can exercise the server-restart resume path
    *  (SPEC-29): the manager persists {@link agentSessionId} and re-attaches by it. */
   readonly capabilities: SessionCapabilities = { resume: true, load: false, list: true, delete: true, fork: false, archive: false };
+  readonly promptCapabilities: PromptCapabilities = NO_PROMPT_CAPABILITIES;
   agentSessionId?: string;
 
   private sessionId = "";
+  /** Session cwd — attachments are materialised here, as on a real adapter. */
+  private workspaceRoot = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
 
   constructor(options: StubAdapterOptions = {}) {
@@ -45,6 +51,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   async start(opts: SpawnOpts): Promise<void> {
     this.sessionId = opts.sessionId ?? "";
+    this.workspaceRoot = opts.cwd;
     // Echo back a native id so the manager can persist + resume it. On resume,
     // reuse the id makit hands us so identity is stable across a restart.
     this.agentSessionId = opts.resumeAgentSessionId ?? `stub-${this.sessionId || Date.now()}`;
@@ -66,11 +73,25 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async send(input: UserInput): Promise<void> {
-    this.emitEvent({
-      ts: Date.now(),
-      kind: "user.message",
-      payload: { text: input.text },
-    });
+    // SPEC-33: the stub takes the SAME delivery path as the real adapters
+    // (materialise into the worktree, name the file in the prompt, echo
+    // descriptors). Without this the keyless e2e loop would "pass" while
+    // exercising nothing, and the dev/demo loop would silently drop images.
+    let turn: PreparedTurn;
+    try {
+      turn = prepareTurn(sharedMediaStore(), input, this.workspaceRoot);
+    } catch (err) {
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `attachment delivery failed: ${(err as Error).message}` },
+      });
+      return;
+    }
+    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
+    // Replies are scripted off the user's own text; the file references are for
+    // the (imaginary) agent, so keep the trigger words unaffected by them.
+    const prompt = turn.promptText;
 
     if (input.text.includes("ASK_MULTI")) {
       await this.askMultiQuestion();
@@ -142,7 +163,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       this.emitEvent({
         ts: Date.now(),
         kind: "agent.message",
-        payload: { text: `echo: ${input.text}` },
+        payload: { text: `echo: ${prompt}` },
       });
     }, echoDelayMs);
   }

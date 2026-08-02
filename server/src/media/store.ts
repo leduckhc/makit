@@ -54,6 +54,17 @@ export interface MediaDescriptor {
   sizeBytes: number;
 }
 
+/**
+ * A resolved user attachment (SPEC-33): a stored blob plus the display name the
+ * client suggested. This is the shape that crosses `UserInput` into an adapter,
+ * i.e. the descriptor the server has already **verified exists**, unlike the
+ * `WireAttachment` the app sends (which is only an id).
+ */
+export interface MediaAttachment extends MediaDescriptor {
+  /** Display hint from the client. Never trusted as a path. */
+  name?: string;
+}
+
 export interface MediaStoreOpts {
   /** Blob directory. Defaults to `$MAKIT_HOME/media` (`~/.makit/media`). */
   dir?: string;
@@ -172,4 +183,14 @@ let shared: MediaStore | undefined;
 export function sharedMediaStore(): MediaStore {
   shared ??= new MediaStore();
   return shared;
+}
+
+/**
+ * Drop the cached store so the next {@link sharedMediaStore} call re-reads
+ * `MAKIT_HOME`. **Tests only.** The cache is keyed on nothing, so a test that
+ * points `MAKIT_HOME` at a fresh temp dir would otherwise keep resolving blobs
+ * from the previous test's directory.
+ */
+export function resetSharedMediaStoreForTests(): void {
+  shared = undefined;
 }
