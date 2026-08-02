@@ -1,6 +1,17 @@
 # SPEC-34 — Message navigator (find your own messages in a long transcript)
 
-**Status:** Proposed · **Priority:** P2 · **Branch:** `feat/user-message-scroller`
+**Status:** Shipped, narrowed · **Priority:** P2 · **Branch:** `feat/user-message-scroller`
+
+> **What actually shipped (review of #126):** two affordances, not five — the desktop
+> **ripple rail** and the mobile **messages sheet**. The prompt palette, sticky
+> breadcrumb and outline mode were built as alternates behind a settings picker and
+> have been deleted, along with their options/providers/preferences. Outline mode's
+> `transcriptItemsProvider` and `OutlineJumpable` are gone too: both surfaces read
+> `chatItemsProvider` again. `MessageNavigatorStyle` is now `{off, rail}` and desktop
+> settings offer a single rail switch plus the rail's three options. Everything below
+> about the five candidates is design history; the scroll/jump machinery
+> (`transcript_jumper`, `jump_flash`, `user_message_indices`, `transcript_list`)
+> shipped as specified.
 **Depends on:** SPEC-21 (reversed anchored transcript), SPEC-24 (fold state in `expandedTranscriptRowsProvider`)
 **Mockups:** [`mockups/user-message-rail.html`](../../mockups/user-message-rail.html) (the five candidates) · [`mockups/chat-navigator-settings.html`](../../mockups/chat-navigator-settings.html) (settings + schema)
 

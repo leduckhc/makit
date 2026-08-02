@@ -22,7 +22,6 @@ import 'chat_metrics.dart';
 import 'chat_transcript.dart';
 import 'navigator/message_navigator_overlay.dart';
 import 'navigator/messages_sheet.dart';
-import 'navigator/outline_mode.dart';
 import 'navigator/transcript_jumper.dart';
 import 'session_pr_chip.dart';
 import 'transcript_list.dart';
@@ -92,9 +91,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
-    // SPEC-34: the transcript's rows, folded to your prompts only while
-    // outline mode is on (a pass-through for every other navigator style).
-    final items = ref.watch(transcriptItemsProvider(widget.sessionId));
+    final items = ref.watch(chatItemsProvider(widget.sessionId));
     final attachments = attachmentsFor(ref, widget.sessionId);
     // Only real precondition: somewhere to upload to (SPEC-33 §3.4). NOT a
     // recorded worktree — the server materialises into the agent's cwd, and the

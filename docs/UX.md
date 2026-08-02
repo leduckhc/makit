@@ -124,21 +124,22 @@ new-session sheet.
 - Long-press a message → copy, quote-reply, retry-from-here.
 
 **Finding your own messages (SPEC-34).** A long session is ~90% agent output, so
-re-reading your own prompts must not mean scrolling blind. One **message
-navigator** renders over the transcript, chosen per surface:
+re-reading your own prompts must not mean scrolling blind. Each surface has one
+affordance:
 
 | | Desktop | Mobile |
 |---|---|---|
-| How you get back | one of four transcript overlays (rail · palette · breadcrumb · outline) | **My messages** in the session-actions (`⋯`) menu → sheet, newest first, tap to jump |
-| Configured by | picker + per-style options in Settings › Agents & Chat | nothing — no mobile navigator settings |
+| How you get back | the **ripple rail** over the transcript's top-right corner | **My messages** in the session-actions (`⋯`) menu → sheet, newest first, tap to jump |
+| Configured by | rail switch + its three options in Settings › Agents & Chat | nothing — no mobile navigator settings |
 
 Each app root *overrides* the shared style provider with what that surface can
-offer; mobile leaves it at `off`, so an unsuitable style is unreachable on a phone
-by construction rather than by a coercion call someone must remember. The
-styles are pointer designs — the rail and breadcrumb need hover — and a phone has
-no screen to spend on permanent chrome, so mobile uses a sheet from the actions
-menu instead. (An edge-drag scrubber was built for touch and removed: it asked a
-thumb for precision it lacks, on the edge iOS reserves for swipe-back.)
+offer; mobile leaves it at `off`, so the rail is unreachable on a phone by
+construction rather than by a coercion call someone must remember. The rail is a
+pointer design — it needs hover — and a phone has no screen to spend on permanent
+chrome, so mobile uses a sheet from the actions menu instead. (A palette, a sticky
+breadcrumb, an outline mode and an edge-drag scrubber were built and removed: four
+alternate renderings of one jump is configuration standing in for a product
+decision, and the scrubber asked a thumb for precision it lacks.)
 
 After any jump the landing row briefly outlines itself (`JumpFlashHighlight`).
 On mobile that is load-bearing: the sheet dismisses, so the outline is the only

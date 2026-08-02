@@ -1,11 +1,8 @@
-/// The `Message navigator` settings leaf (SPEC-34): a style picker whose
-/// selected row expands its own options.
+/// The `Message navigator` settings leaf (SPEC-34): the rail's on/off switch and
+/// its options.
 ///
-/// Presentation is an **expanding radio list**, not a `SegmentedButton`: five
-/// styles with two or three options each is thirteen controls, so progressive
-/// disclosure is mandatory — and a radio list lets the user read what "Outline"
-/// means without selecting it. This is a choice made once, so informed beats
-/// compact.
+/// One affordance, so one switch — the rail's options are shown only while it is
+/// on, because a control that cannot affect anything is noise.
 library;
 
 import 'package:flutter/material.dart';
@@ -19,67 +16,16 @@ import '../../../store/prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 
-/// Human-facing copy for each style, plus which styles are actually built.
-@immutable
-class _StyleCopy {
-  const _StyleCopy({
-    required this.style,
-    required this.title,
-    required this.blurb,
-    this.badge,
-  });
-
-  final MessageNavigatorStyle style;
-  final String title;
-  final String blurb;
-  final String? badge;
-}
-
-const List<_StyleCopy> _styles = [
-  _StyleCopy(
-    style: MessageNavigatorStyle.off,
-    title: 'Off',
-    blurb: 'No navigator. Scroll the transcript by hand.',
-  ),
-  _StyleCopy(
-    style: MessageNavigatorStyle.rail,
-    title: 'Ripple rail',
-    badge: 'pointer',
-    blurb:
-        'A cosy cluster of ticks in the top-right corner — one per message you '
-        'sent. Hover to ripple and reveal, click to jump.',
-  ),
-  _StyleCopy(
-    style: MessageNavigatorStyle.palette,
-    title: 'Prompt palette',
-    blurb:
-        'Opens a searchable list of your messages — the only style that can '
-        'search what you wrote.',
-  ),
-  _StyleCopy(
-    style: MessageNavigatorStyle.breadcrumb,
-    title: 'Sticky breadcrumb',
-    blurb:
-        'A chip always shows which of your prompts produced what you are '
-        'reading, with prev/next hops.',
-  ),
-  _StyleCopy(
-    style: MessageNavigatorStyle.outline,
-    title: 'Outline mode',
-    blurb:
-        'A toggle hides assistant output, leaving your prompts as a table of '
-        'contents.',
-  ),
-];
-
-/// The subsection: header, blurb, and the picker group.
+/// The subsection: header, blurb, and the rail's controls.
 class MessageNavigatorPrefs extends ConsumerWidget {
   /// Creates the `Message navigator` settings leaf.
   const MessageNavigatorPrefs({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final selected = ref.preference(messageNavigatorStylePreference);
+    final on =
+        ref.preference(messageNavigatorStylePreference) ==
+        MessageNavigatorStyle.rail;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -92,125 +38,39 @@ class MessageNavigatorPrefs extends ConsumerWidget {
         ),
         SettingsGroup(
           children: [
-            for (final copy in _styles)
-              _StyleRow(copy: copy, selected: copy.style == selected),
+            SwitchListTile(
+              value: on,
+              title: const Text('Ripple rail'),
+              subtitle: const Text(
+                'A cosy cluster of ticks in the top-right corner — one per '
+                'message you sent. Hover to ripple and reveal, click to jump.',
+              ),
+              onChanged: (next) => ref
+                  .read(preferencesControllerProvider.notifier)
+                  .set(
+                    messageNavigatorStylePreference,
+                    next
+                        ? MessageNavigatorStyle.rail
+                        : MessageNavigatorStyle.off,
+                  ),
+            ),
+            // Only built while the rail is on — not built-and-hidden.
+            if (on) ...const [
+              _SpacingRow(),
+              _SwitchRow(
+                entry: railRipplePreference,
+                title: 'Ripple on hover',
+                subtitle: 'Neighbouring ticks stretch and spread apart',
+              ),
+              _SwitchRow(
+                entry: railEncodeLengthPreference,
+                title: 'Tick length shows message length',
+                subtitle: 'Makes the rail a fingerprint of the session',
+              ),
+            ],
           ],
         ),
       ],
-    );
-  }
-}
-
-/// One style row; when selected it is followed by that style's options.
-class _StyleRow extends ConsumerWidget {
-  const _StyleRow({required this.copy, required this.selected});
-
-  final _StyleCopy copy;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ListTile(
-          leading: Icon(
-            selected
-                ? Icons.radio_button_checked
-                : Icons.radio_button_unchecked,
-            size: 18,
-            color: selected ? scheme.primary : scheme.outline,
-          ),
-          title: Row(
-            children: [
-              Flexible(child: Text(copy.title)),
-              if (copy.badge != null) ...[
-                const SizedBox(width: kSpace6),
-                _Badge(label: copy.badge!),
-              ],
-            ],
-          ),
-          subtitle: Text(copy.blurb),
-          onTap: () => ref
-              .read(preferencesControllerProvider.notifier)
-              .set(messageNavigatorStylePreference, copy.style),
-        ),
-        // Only the selected style's options are built — not built-and-hidden.
-        if (selected) ..._optionsFor(copy.style),
-      ],
-    );
-  }
-
-  List<Widget> _optionsFor(MessageNavigatorStyle style) => switch (style) {
-    MessageNavigatorStyle.rail => const [
-      _SpacingRow(),
-      _SwitchRow(
-        entry: railRipplePreference,
-        title: 'Ripple on hover',
-        subtitle: 'Neighbouring ticks stretch and spread apart',
-      ),
-      _SwitchRow(
-        entry: railEncodeLengthPreference,
-        title: 'Tick length shows message length',
-        subtitle: 'Makes the rail a fingerprint of the session',
-      ),
-    ],
-    MessageNavigatorStyle.palette => const [
-      _SwitchRow(
-        entry: paletteSearchAllPreference,
-        title: 'Search the agent\'s messages too',
-        subtitle: 'Off searches only what you wrote',
-      ),
-    ],
-    MessageNavigatorStyle.breadcrumb => const [
-      _SwitchRow(
-        entry: crumbAutoHidePreference,
-        title: 'Fade at the newest message',
-        subtitle: 'Where there is nothing to go back to',
-      ),
-      _SwitchRow(
-        entry: crumbCounterPreference,
-        title: 'Show position counter',
-        subtitle: 'For example "4/7"',
-      ),
-    ],
-    MessageNavigatorStyle.outline => const [
-      _SwitchRow(
-        entry: outlineHideToolsPreference,
-        title: 'Hide tool calls too',
-        subtitle: 'Off keeps tool calls as context between your prompts',
-      ),
-      _SwitchRow(
-        entry: outlineShowCountsPreference,
-        title: 'Show hidden-row counts',
-        subtitle: 'For example "8 hidden" on the toggle',
-      ),
-    ],
-    MessageNavigatorStyle.off => const [],
-  };
-}
-
-class _Badge extends StatelessWidget {
-  const _Badge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: kSpace6),
-      decoration: BoxDecoration(
-        border: Border.all(color: scheme.outlineVariant),
-        borderRadius: BorderRadius.circular(kRadius6),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
-      ),
     );
   }
 }

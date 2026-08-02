@@ -18,7 +18,6 @@ import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/navigator/message_navigator_overlay.dart';
-import '../../ui/session/navigator/outline_mode.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import '../../ui/session/transcript_list.dart';
 import 'composer_focus.dart';
@@ -208,9 +207,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       );
     });
 
-    // SPEC-34: the transcript's rows, folded to your prompts only while
-    // outline mode is on (a pass-through for every other navigator style).
-    final items = ref.watch(transcriptItemsProvider(sessionId));
+    final items = ref.watch(chatItemsProvider(sessionId));
 
     // Keep the transcript pinned to the newest message as items stream in,
     // but only when the user is already near the bottom so scrolling up to read
