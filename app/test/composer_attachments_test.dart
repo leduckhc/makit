@@ -233,7 +233,6 @@ void main() {
       // A server appears. Retrying uses the NEW uploader without rebuilding.
       final up = _FakeUploader();
       current = up.fn;
-      expect(a.canAttach, isTrue);
       final retry = a.retry('s1', 'l1');
       up.succeed(0);
       await retry;
@@ -245,7 +244,6 @@ void main() {
     // Unpaired / fake-data mode: a chip stuck on a spinner forever would be the
     // worst outcome.
     final a = ComposerAttachments(() => null);
-    expect(a.canAttach, isFalse);
 
     await a.add(
       key: 's1',

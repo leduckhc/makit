@@ -16,40 +16,70 @@ import 'package:ulid/ulid.dart';
 
 import '../../store/composer_attachments.dart';
 import '../../store/media.dart';
+import '../../store/store.dart';
+import '../widgets/sheet_header.dart';
 import 'attachment_sources.dart';
+import 'composer.dart';
 
-/// Reads the staged attachments for [key].
-List<ComposerAttachment> attachmentsFor(WidgetRef ref, String key) =>
-    ref.watch(composerAttachmentsProvider)[key] ?? const [];
-
-/// Whether the paperclip should be live. False when nothing is paired (no
-/// uploader) — the composer then shows an inert clip with a reason.
+/// Wires one session's composer to the attachment machinery — the whole
+/// capability in one call, so neither surface can wire up a different half of it.
 ///
-/// Watches the endpoint provider directly rather than the attachments notifier:
-/// the UI must rebuild when a server is (dis)connected, while the notifier must
-/// NOT be rebuilt by that change (it holds staged bytes and in-flight uploads).
-bool canAttach(WidgetRef ref) => ref.watch(mediaUploaderProvider) != null;
-
-/// Stage + upload one picked/pasted image.
-Future<void> stageAttachment(
+/// [pick] is null (an inert paperclip, no ⌘V claim) when there is nowhere to
+/// upload to or the session is gone. The staged chips are handed over either way:
+/// unpairing mid-stage must not hide images the next send would still carry.
+///
+/// Must be called from a `build`: it watches the staged list, the uploader and
+/// the session.
+ComposerAttachmentsApi composerAttachments(
+  BuildContext context,
   WidgetRef ref,
-  String key, {
-  required PickedImage image,
-}) => ref
-    .read(composerAttachmentsProvider.notifier)
-    .add(
-      key: key,
-      localId: Ulid().toString(),
-      bytes: image.bytes,
-      mime: image.mime,
-      name: image.name,
-    );
+  String sessionId,
+) {
+  // Only real precondition: somewhere to upload to (SPEC-33 §3.4), and a session
+  // to upload for. NOT a recorded worktree — the server materialises into the
+  // agent's cwd, and the default repo-root session legitimately has
+  // `worktreePath == null`, so gating on it would disable the paperclip for the
+  // commonest case.
+  //
+  // The uploader is watched through `mediaUploaderProvider`, NOT through the
+  // attachments notifier: the paperclip must rebuild when a server is
+  // (dis)connected, while the notifier must not be rebuilt by that change (it
+  // holds staged bytes and in-flight uploads).
+  final canStage =
+      ref.watch(mediaUploaderProvider) != null &&
+      ref.watch(sessionsProvider).byId(sessionId) != null;
+  // Read lazily inside the callbacks: they fire long after this build.
+  ComposerAttachments notifier() =>
+      ref.read(composerAttachmentsProvider.notifier);
+  return ComposerAttachmentsApi(
+    staged: ref.watch(composerAttachmentsProvider)[sessionId] ?? const [],
+    pick: canStage
+        ? () => _showAttachMenu(context, notifier(), sessionId)
+        : null,
+    remove: (localId) => notifier().remove(sessionId, localId),
+    retry: (localId) => notifier().retry(sessionId, localId),
+    readClipboardImage: readClipboardImage,
+    stagePasted: (image) => _stage(notifier(), sessionId, image),
+  );
+}
 
-void removeAttachment(WidgetRef ref, String key, String localId) =>
-    ref.read(composerAttachmentsProvider.notifier).remove(key, localId);
-
-void retryAttachment(WidgetRef ref, String key, String localId) =>
-    ref.read(composerAttachmentsProvider.notifier).retry(key, localId);
+/// Stage + upload one picked/pasted image. The one place a staged attachment's
+/// client id is minted.
+///
+/// Takes the notifier, not a `WidgetRef`: the picker path calls this *after*
+/// awaiting a sheet and a plugin, by which time the composer's element may be
+/// gone and `ref.read` would throw.
+Future<void> _stage(
+  ComposerAttachments notifier,
+  String key,
+  PickedImage image,
+) => notifier.add(
+  key: key,
+  localId: Ulid().toString(),
+  bytes: image.bytes,
+  mime: image.mime,
+  name: image.name,
+);
 
 /// Descriptors for the wire, then clear — called around a successful send.
 List<({String mediaId, String mime, String name})> takeAttachmentsForSend(
@@ -69,25 +99,28 @@ List<({String mediaId, String mime, String name})> takeAttachmentsForSend(
 /// Photo library / camera on phones; a file dialog on desktop. A picked file
 /// that is not a supported image is reported inline rather than uploaded and
 /// rejected by the server.
-Future<void> showAttachMenu(
+///
+/// Takes the [notifier] rather than a `WidgetRef` because the sheet and the
+/// picker outlive the composer — a desktop worktree switch or pane split disposes
+/// it — and using a `WidgetRef` after its element unmounts throws. The provider
+/// is deliberately not autoDispose precisely so the staging still lands in that
+/// case, so hold the notifier rather than bailing out.
+Future<void> _showAttachMenu(
   BuildContext context,
-  WidgetRef ref,
-  String key, {
-  RelativeRect? position,
-}) async {
-  // Resolved BEFORE the awaits below. The picker (and the sheet) can outlive the
-  // composer — a desktop worktree switch or pane split disposes it — and using a
-  // `WidgetRef` after its element unmounts throws. The provider is deliberately
-  // not autoDispose precisely so the staging still lands in that case, so hold
-  // the notifier rather than bailing out.
-  final notifier = ref.read(composerAttachmentsProvider.notifier);
+  ComposerAttachments notifier,
+  String key,
+) async {
   final source = supportsPhotoPickers
       ? await showModalBottomSheet<AttachSource>(
           context: context,
+          // Drag handle + header, like every other sheet in the app.
+          showDragHandle: true,
           builder: (ctx) => SafeArea(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const SheetHeader(title: 'Attach an image'),
                 ListTile(
                   leading: const Icon(PhosphorIconsLight.image),
                   title: const Text('Photo library'),
@@ -114,8 +147,8 @@ Future<void> showAttachMenu(
 
   // The pickers throw for real reasons: a denied camera/photo-library
   // permission, a plugin channel error, an unreadable file, or an oversized one.
-  // Both call sites discard this future, so an uncaught error here would surface
-  // as an unhandled async error and the user would just see nothing happen.
+  // The caller discards this future, so an uncaught error here would surface as
+  // an unhandled async error and the user would just see nothing happen.
   final PickedImage? image;
   try {
     image = await pickImage(source);
@@ -131,13 +164,7 @@ Future<void> showAttachMenu(
   // the dialogs already filter to supported image types, so an unsupported pick
   // is close to unreachable; neither case warrants a message.
   if (image == null) return;
-  await notifier.add(
-    key: key,
-    localId: Ulid().toString(),
-    bytes: image.bytes,
-    mime: image.mime,
-    name: image.name,
-  );
+  await _stage(notifier, key, image);
 }
 
 /// Turn a picker failure into something worth showing a person.

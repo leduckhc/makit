@@ -94,8 +94,6 @@ class ComposerAttachments
   /// instead.
   final MediaUploader? Function() _resolveUploader;
 
-  bool get canAttach => _resolveUploader() != null;
-
   List<ComposerAttachment> forKey(String key) => state[key] ?? const [];
 
   /// Whether [key] is safe to send: no upload still in flight.
@@ -243,6 +241,7 @@ final composerAttachmentsProvider =
     >(
       // `read`, not `watch`: see `_resolveUploader`. Widgets that need to react
       // to the endpoint appearing/disappearing watch `mediaUploaderProvider`
-      // directly (see `canAttach` in ui/composer/attachment_controller.dart).
+      // directly (see `composerAttachments` in
+      // ui/composer/attachment_controller.dart).
       (ref) => ComposerAttachments(() => ref.read(mediaUploaderProvider)),
     );

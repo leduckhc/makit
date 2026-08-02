@@ -245,6 +245,15 @@ attachments)` out. The upload lifecycle (pending → uploaded → failed) is own
 by a small notifier alongside `composerDraftsProvider`, so a desktop pane switch
 does not lose an in-flight upload.
 
+> **As shipped:** the composer takes one nullable value object,
+> `ComposerAttachmentsApi? attachments` (staged list + pick/remove/retry/clipboard
+> read/paste-stage), built per surface by `composerAttachments(context, ref,
+> sessionId)`. Null means "not attachment-aware" (the free-text answer composers);
+> a null `pick` inside means "nowhere to upload right now", which is the single
+> gate for the inert paperclip and for leaving ⌘V to the field. The first cut used
+> six independent optional callbacks and both surfaces then re-tested
+> `canAttachHere` four times each — the duplication the object removes.
+
 ### 4.2 Three entry points
 
 | Entry | Platform | Plugin |
