@@ -268,7 +268,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                                 sessionId,
                                 item!,
                                 position: position,
-                                promptImage: session.promptImage,
                               )
                             : (trailer == TranscriptTrailer.ask
                                   ? AskCard(ask: pendingAsk!)

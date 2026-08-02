@@ -12,8 +12,7 @@
  * field. Lines are newline-delimited JSON.
  */
 
-import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities, PromptCapabilities } from "./adapter.js";
-import { NO_PROMPT_CAPABILITIES } from "./adapter.js";
+import type { SpawnOpts, UserInput, AgentSessionInfo, SessionCapabilities } from "./adapter.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,7 +23,7 @@ import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js"
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord, parseJsonLine } from "./wire.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
-import { prepareTurn, type PreparedTurn } from "../media/attach.js";
+import { prepareTurnOrFail } from "../media/attach.js";
 import type { AskUser } from "../uicall.js";
 import type { SessionConfigOption, ConfigOptionValue } from "../protocol.js";
 import { log } from "../log.js";
@@ -126,7 +125,6 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
    * no image element type is verified, so attachments always take the file
    * hand-off (SPEC-33 §6).
    */
-  readonly promptCapabilities: PromptCapabilities = NO_PROMPT_CAPABILITIES;
 
   private readonly command: string;
   private readonly args: string[];
@@ -212,17 +210,8 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     // SPEC-33: attachments are delivered as files in the worktree, named in the
     // prompt (codex's `input[]` has no verified image element type). A failed
     // write abandons the turn rather than prompting about an unreachable file.
-    let turn: PreparedTurn;
-    try {
-      turn = prepareTurn(this.media, input, this.workspaceRoot);
-    } catch (err) {
-      this.emitEvent({
-        ts: Date.now(),
-        kind: "session.error",
-        payload: { message: `attachment delivery failed: ${(err as Error).message}` },
-      });
-      return;
-    }
+    const turn = prepareTurnOrFail(this.media, input, this.workspaceRoot, (e) => this.emitEvent(e));
+    if (!turn) return;
 
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
     this.emit("status", "running");

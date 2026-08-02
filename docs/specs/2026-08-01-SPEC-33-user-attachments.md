@@ -189,12 +189,15 @@ one. Two constraints on this path:
   gate is `promptImage && <active model claims image support>` — and any
   uncertainty resolves to (a), never to a dropped image.
 
-Mechanically: add `promptImage: boolean` to the negotiated capabilities (ACP:
-derived in `deriveAcpCapabilities`, `acp.ts:656`; codex: static `false`) and
-surface it on the session snapshot. In v1 it is reported but only used for the
-UI note (§3.5); the send path always takes (a). The paperclip is enabled whenever
-there is a server to upload to — the file form needs nothing else, since every
-live session has a cwd.
+Mechanically: phase (b) negotiates the capability where it is *used* — in the
+send path — and records the resulting per-blob decision on the `user.message`
+event (see §3.5). **v1 plumbs no capability at all.** An earlier cut did: a
+`PromptCapabilities` interface on `AgentAdapter`, derived from ACP `initialize`,
+surfaced as `promptImage` on the session snapshot, whose only consumer was the
+hand-off note. It was removed in review because the note it drove was wrong in
+three ways at once — see §3.5. The paperclip is enabled whenever there is a
+server to upload to — the file form needs nothing else, since every live session
+has a cwd.
 
 ### 3.5 `user.message` carries descriptors, and the app renders them
 
@@ -221,16 +224,43 @@ shown to the model directly (§3.4a), the user's own bubble carries a small mute
 caption under the thumbnails — e.g. *"Sent as a file for the agent to open"* —
 so a lukewarm reply ("I see a path…") is explicable instead of mysterious.
 
-Importantly, the note is derived **client-side** from the session's
-`promptImage` capability, *not* from a field on the event. The seq-collision
-dedup above means the optimistic bubble is the copy that survives, and the app
-cannot know the server's per-blob decision at that instant. Deriving the note
-from the capability the app already has in the snapshot keeps optimistic and
-replayed renders identical. In v1 `promptImage` is effectively always false at
-the send path, so the note always shows; when phase (b) lands, the same
-predicate switches it off for inline sends. The one imprecision this accepts:
-an over-8 MB blob on an image-capable agent falls back to a file but shows no
-note. Acceptable — no other design keeps the two render paths in agreement.
+**As shipped: the note is unconditional.** makit always delivers a file, so the
+note is true of every attachment-bearing turn, and nothing gates it.
+
+The first cut gated it on a session-level `promptImage` capability, for a real
+reason: the seq-collision dedup above means the optimistic bubble is the copy
+that survives, and the app cannot know the server's per-blob decision at that
+instant, so deriving from a snapshot field kept optimistic and replayed renders
+identical. That reasoning is sound about *rendering* and wrong about *meaning*.
+Review found three defects:
+
+1. **Wrong polarity.** The flag says what the agent *could* accept; the note
+   states what makit *did*. Since v1 always writes a file, an agent advertising
+   `image: true` suppressed a true statement — the better the agent, the less the
+   user was told, with no explanation on screen when the agent ignored the image.
+2. **Wrong granularity.** ACP negotiates `promptCapabilities` once per *agent
+   process*, at `initialize`, before any model is chosen. Image support is a
+   property of the **model**, which the user can change mid-session
+   (`session.action('model', …)` — same connection, capability never re-read). The
+   flag was stale by design. This is O4's question, arriving early.
+3. **Wrong lifetime.** `promptImage` is a *live session* field, applied by the app
+   to every bubble in the transcript. A message's delivery is a fact frozen at
+   send time. Once (b) makes delivery conditional, switching to an inline-capable
+   model would silently strip the note from older messages that really were files
+   — a transcript that rewrites its own history.
+
+**Phase (b) therefore records delivery on the event, not on the session:**
+`payload.deliveredAs: "file" | "inline"`, written by `prepareTurn` in
+`media/attach.ts`, which is the one place that knows what it actually did. That
+survives model switches, replays correctly, and lets one transcript hold both
+kinds of turn side by side.
+
+The optimistic-render problem the first cut was avoiding remains, and (b) must
+answer it: the app cannot predict a per-blob fallback (an over-8 MB image on an
+image-capable agent still goes as a file). The likely answer is a targeted merge
+— let the server's echo update the optimistic bubble's `deliveredAs` even though
+the dedup drops the rest of the payload — rather than a session-level guess.
+Deciding that is part of (b), not of v1.
 
 ### 3.6 Images only in this spec
 
@@ -394,8 +424,10 @@ bytes exist).
 - **O3** — Confirm `agentCapabilities.promptCapabilities.image` is the exact
   path in the installed `@agentclientprotocol/sdk` ^1.3.0 schema, and that
   pi-acp sets it. Cheap: assert against a live `initialize` response in
-  `server/test`. **No longer blocks v1** (which always uses the file form) —
-  it gates the later inline phase and the accuracy of the hand-off note.
+  `server/test`. **Does not block v1**, which uses the file form and no longer
+  reads the capability at all (§3.5); it gates the inline phase only. Note O4
+  turns out to be the harder half: the ACP path can be exactly right and still be
+  the wrong question, because it answers per agent process, not per model.
 - **O4** (new, from the §3.4b deferral) — where does "this *model* can see
   images" come from? SPEC-31 gives us per-active-model config, but no model
   advertises image support today. Likely a small static table keyed by model id,

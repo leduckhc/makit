@@ -195,12 +195,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 return KeyedSubtree(
                   key: chatItemKey(item),
                   child: transcriptRow(
-                    chatItemWidget(
-                      widget.sessionId,
-                      item,
-                      position: index,
-                      promptImage: session?.promptImage ?? false,
-                    ),
+                    chatItemWidget(widget.sessionId, item, position: index),
                   ),
                 );
               },

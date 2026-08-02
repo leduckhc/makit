@@ -107,7 +107,6 @@ Widget chatItemWidget(
   String sessionId,
   ChatItem item, {
   int position = -1,
-  bool promptImage = false,
 }) => switch (item) {
   // SPEC-34: a pass-through unless active — the landing highlight after a jump.
   UserMessageItem() => JumpFlashHighlight(
@@ -119,7 +118,6 @@ Widget chatItemWidget(
       attachments: item.attachments,
       // SPEC-33: only decides whether the sent-as-a-file note shows; it
       // does not change what was sent.
-      promptImage: promptImage,
     ),
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),

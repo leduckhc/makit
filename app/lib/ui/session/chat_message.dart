@@ -45,18 +45,17 @@ class _Timestamp extends StatelessWidget {
   }
 }
 
-/// The user's own messages — right-aligned coloured bubble.
 /// Caption under a sent message whose images were handed to the agent as files
 /// rather than shown to the model directly (SPEC-33 §3.5). Explains a lukewarm
 /// reply ("I see a path…") instead of leaving it mysterious.
 const String kSentAsFileNote = 'Sent as a file for the agent to open';
 
+/// The user's own messages — right-aligned coloured bubble.
 class ChatBubble extends StatelessWidget {
   const ChatBubble.user({
     required this.text,
     required this.ts,
     this.attachments = const [],
-    this.promptImage = false,
     super.key,
   });
 
@@ -65,10 +64,6 @@ class ChatBubble extends StatelessWidget {
 
   /// Images sent with this message (SPEC-33).
   final List<MediaAttachmentRef> attachments;
-
-  /// Whether the agent can see images inside the prompt. Drives only the
-  /// [kSentAsFileNote] caption — makit always delivers a file today.
-  final bool promptImage;
 
   @override
   Widget build(BuildContext context) {
@@ -125,7 +120,14 @@ class ChatBubble extends StatelessWidget {
                 ],
               ),
             ),
-            if (attachments.isNotEmpty && !promptImage)
+            // SPEC-33: a delivery receipt for THIS message. makit always
+            // materialises a file and names it in the prompt, so it is true of
+            // every attachment-bearing turn. Do NOT gate it on what the agent can
+            // accept: that suppresses a true statement, goes stale when the model
+            // changes mid-session, and — read off the live session — would
+            // relabel history. When inline sending lands, record the delivery on
+            // the `user.message` event and render from that.
+            if (attachments.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: kSpace2, right: kSpace4),
                 child: Text(

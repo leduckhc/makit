@@ -288,13 +288,6 @@ export interface SessionDTO {
    */
   resumable: boolean;
   /**
-   * True when the agent accepts images *inside* the prompt (SPEC-33). makit
-   * currently delivers every attachment as a file in the worktree, so this is
-   * informational: the app uses it to decide whether to label a sent message
-   * "handed over as a file". The inline-image send path is a later phase.
-   */
-  promptImage: boolean;
-  /**
    * Archived (SPEC-29): a soft, recoverable hide. Archived sessions are omitted
    * from the active `sessions.snapshot`; this flag is present for any surface
    * that explicitly lists archived sessions.

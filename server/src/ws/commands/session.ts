@@ -26,25 +26,32 @@ export const MAX_ATTACHMENTS = 8;
 const IMAGE_ONLY_LABEL = "attachment";
 
 /**
+ * Outcome of {@link parseAttachments}. A union rather than a value-or-marker
+ * because there are four distinct outcomes, two of which the user must be told
+ * about: nothing attached (`ok`, no `attachments`), some resolved, and the two
+ * refusals below.
+ */
+export type ParsedAttachments =
+  | { ok: true; attachments?: MediaAttachment[] }
+  | { ok: false; reason: "unresolved" | "too_many" };
+
+/**
  * Resolve the wire `attachments` array against the media store (SPEC-33 §3.3).
  *
  * Two failure modes, treated differently on purpose:
  *
  * - **Malformed entries are dropped**, matching {@link parseConfigPicks}. A
  *   client that sends junk gets the well-formed remainder.
- * - **A well-formed id the store cannot resolve is an error.** Dropping it would
+ * - **A well-formed id the store cannot resolve is a refusal.** Dropping it would
  *   turn "why is this button misaligned?" into a bare text prompt and leave the
  *   user reading a reply about nothing. An expired or GC'd upload must be
- *   visible, so this returns `"unresolved"` and the handler refuses the turn.
+ *   visible, so this reports `"unresolved"` and the handler refuses the turn.
  *
- * Returns `undefined` when there is nothing to attach, so the adapter contract
- * stays "absent means absent".
+ * `attachments` is left absent (not empty) when there is nothing to attach, so
+ * the adapter contract stays "absent means absent".
  */
-export function parseAttachments(
-  raw: unknown,
-  store: MediaStore,
-): MediaAttachment[] | undefined | "unresolved" | "too_many" {
-  if (!Array.isArray(raw)) return undefined;
+export function parseAttachments(raw: unknown, store: MediaStore): ParsedAttachments {
+  if (!Array.isArray(raw)) return { ok: true };
   const wanted: { mediaId: string; name?: string }[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== "object") continue;
@@ -52,16 +59,16 @@ export function parseAttachments(
     if (typeof mediaId !== "string" || !isMediaId(mediaId)) continue;
     wanted.push(typeof name === "string" && name ? { mediaId, name } : { mediaId });
   }
-  if (wanted.length === 0) return undefined;
-  if (wanted.length > MAX_ATTACHMENTS) return "too_many";
+  if (wanted.length === 0) return { ok: true };
+  if (wanted.length > MAX_ATTACHMENTS) return { ok: false, reason: "too_many" };
 
   const resolved: MediaAttachment[] = [];
   for (const { mediaId, name } of wanted) {
     const descriptor = store.stat(mediaId);
-    if (!descriptor) return "unresolved";
+    if (!descriptor) return { ok: false, reason: "unresolved" };
     resolved.push(name ? { ...descriptor, name } : descriptor);
   }
-  return resolved;
+  return { ok: true, attachments: resolved };
 }
 
 /**
@@ -97,21 +104,17 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     }
     // SPEC-33: images the user attached. Resolved here, so an adapter never sees
     // an id it cannot turn into bytes.
-    const attachments = parseAttachments(ctx.env.attachments, deps.media ?? sharedMediaStore());
-    if (attachments === "too_many") {
+    const parsed = parseAttachments(ctx.env.attachments, deps.media ?? sharedMediaStore());
+    if (!parsed.ok) {
       ctx.err(
         WireErrorCode.BadRequest,
-        `send.message accepts at most ${MAX_ATTACHMENTS} attachments`,
+        parsed.reason === "too_many"
+          ? `send.message accepts at most ${MAX_ATTACHMENTS} attachments`
+          : "send.message names an attachment that is no longer stored — re-upload it",
       );
       return;
     }
-    if (attachments === "unresolved") {
-      ctx.err(
-        WireErrorCode.BadRequest,
-        "send.message names an attachment that is no longer stored — re-upload it",
-      );
-      return;
-    }
+    const attachments = parsed.attachments;
     const session = sid ? manager.getSession(sid) : undefined;
     // Log metadata only — never the message text, which can carry PII or
     // credentials, and never an attachment's id or name.

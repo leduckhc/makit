@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/chat_items.dart';
-import 'package:makit/transport/codec.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -96,22 +95,6 @@ void main() {
     });
   });
 
-  group('SessionDTO.promptImage', () {
-    test('is decoded from the sessions snapshot', () {
-      final sessions = WireCodec.decodeSessions([
-        {'id': 's1', 'projectId': 'p', 'agent': 'pi', 'promptImage': true},
-      ]);
-      expect(sessions!.single.promptImage, isTrue);
-    });
-
-    test('defaults to false when the server does not report it', () {
-      final sessions = WireCodec.decodeSessions([
-        {'id': 's1', 'projectId': 'p', 'agent': 'codex'},
-      ]);
-      expect(sessions!.single.promptImage, isFalse);
-    });
-  });
-
   group('user bubble', () {
     Widget host(Widget child) => ProviderScope(
       // No endpoint: thumbnails render their labelled placeholder instead of
@@ -136,36 +119,25 @@ void main() {
       expect(find.byType(UserAttachmentThumb), findsNWidgets(2));
     });
 
-    testWidgets('shows the hand-off note when the agent cannot see images', (
-      tester,
-    ) async {
+    testWidgets('every attachment carries the hand-off note', (tester) async {
+      // The note is a delivery receipt for THIS message, not a claim about the
+      // agent: makit always materialises a file and names it in the prompt, so
+      // the note is true of every attachment-bearing turn. It used to be hidden
+      // when the agent advertised image support — which suppressed a true
+      // statement, went stale when the model changed mid-session (support is
+      // negotiated once per agent process), and was read off the *live* session,
+      // so it would have relabelled history. When inline sending lands, the
+      // delivery must be recorded on the `user.message` event instead.
       await tester.pumpWidget(
         host(
           const ChatBubble.user(
             text: 'look',
             ts: 1000,
             attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
-            promptImage: false,
           ),
         ),
       );
       expect(find.text(kSentAsFileNote), findsOneWidget);
-    });
-
-    testWidgets('hides the note when the agent takes images directly', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        host(
-          const ChatBubble.user(
-            text: 'look',
-            ts: 1000,
-            attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
-            promptImage: true,
-          ),
-        ),
-      );
-      expect(find.text(kSentAsFileNote), findsNothing);
     });
 
     testWidgets('a text-only message shows no note and no strip', (
