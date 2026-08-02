@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../control/control_types.dart' show StatusData;
+import '../../../diagnostics/diagnostics_screen.dart' show DiagnosticsScreen;
 import '../../../store/connection.dart' show connectionProvider;
 import '../../../transport/protocol.dart' show protocolVersion;
 import '../../chat/sidebar_layout.dart' show resetSidebarLayoutToDefaults;
@@ -32,7 +33,7 @@ class AdvancedSection extends StatelessWidget {
       children: const [
         SettingsSectionHeader(title: 'Advanced'),
         SettingsSectionHeader(title: 'Developer'),
-        SettingsGroup(children: [_FakeServerRow()]),
+        SettingsGroup(children: [_FakeServerRow(), _DiagnosticsRow()]),
         SettingsSectionHeader(title: 'Status'),
         SettingsGroup(
           children: [
@@ -115,6 +116,30 @@ class _StatusRowsState extends ConsumerState<_StatusRows> {
           ],
         );
       },
+    );
+  }
+}
+
+/// Developer → Diagnostics. Opens the on-device log viewer for the control
+/// app's own logs (framework/uncaught errors captured at startup). The
+/// "send to server" affordance is hidden here: the desktop app runs beside the
+/// server, and the daemon log already has its own live tail.
+class _DiagnosticsRow extends StatelessWidget {
+  const _DiagnosticsRow();
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: Icon(PhosphorIconsLight.bug, color: cs.outline),
+      title: const Text('Diagnostics'),
+      subtitle: const Text('View and copy this app\'s logs.'),
+      trailing: const Icon(PhosphorIconsLight.caretRight, size: 18),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const DiagnosticsScreen(showSendToServer: false),
+        ),
+      ),
     );
   }
 }

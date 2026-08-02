@@ -7,8 +7,7 @@
 /// contract test locks in against the shared fixtures.
 library;
 
-import 'package:flutter/foundation.dart';
-
+import '../diagnostics/app_log.dart';
 import '../store/models.dart';
 import 'protocol.dart';
 
@@ -55,7 +54,7 @@ class WireCodec {
     } catch (e) {
       // Belt-and-suspenders: the boundary must never throw into the frame
       // stream, whatever malformed shape arrives.
-      debugPrint('[makit] WireCodec: dropped frame (decode threw: $e)');
+      appLog.warn('codec', 'dropped frame (decode threw: $e)');
       return null;
     }
   }
@@ -208,6 +207,6 @@ class WireCodec {
   }
 
   static void _warn(String kind) {
-    debugPrint('[makit] WireCodec: dropped malformed "$kind" frame');
+    appLog.warn('codec', 'dropped malformed "$kind" frame');
   }
 }
