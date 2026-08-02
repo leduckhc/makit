@@ -233,6 +233,18 @@ void main() {
       expect(find.text('none'), findsNothing);
     });
 
+    testWidgets('is a touch-sized target', (tester) async {
+      await pumpChip(tester, _pr());
+
+      // The chip is the only route into the PR sheet from a session, so it has
+      // to be hittable: it used to be 19px tall against the app's 44pt floor.
+      final ink = find.descendant(
+        of: find.byType(SessionPrChip),
+        matching: find.byType(InkWell),
+      );
+      expect(tester.getSize(ink.first).height, greaterThanOrEqualTo(44));
+    });
+
     testWidgets('opens the PR sheet when tapped', (tester) async {
       await pumpChip(tester, _pr(checks: [_check('test', 'pass')]));
 
