@@ -13,6 +13,7 @@ function fakeAppServer() {
   let lineCb: (l: string) => void = () => {};
   const sent: any[] = [];
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
+  let turnSeq = 0;
 
   const transport: CodexTransport = {
     send: (line) => {
@@ -40,8 +41,11 @@ function fakeAppServer() {
         return { thread: { id: "th1" } };
       case "thread/resume":
         return { thread: { id: "th-resumed" } };
+      // Real codex hands back a FRESH turn id for every `turn/start`, even when
+      // a turn is already in flight (in which case the message is folded into
+      // the active turn and the returned id is never announced on the wire).
       case "turn/start":
-        return { turn: { id: "t1" } };
+        return { turn: { id: `t${++turnSeq}` } };
       case "turn/interrupt":
         return {};
       case "model/list":
@@ -125,6 +129,39 @@ test("initializes, starts a thread, runs a turn, and streams a message", async (
   assert.equal((events.find((e) => e.kind === "user.message")!.payload as any).text, "hi");
   assert.ok(statuses.includes("running"));
   await waitFor(() => statuses.at(-1) === "idle");
+});
+
+test("a mid-turn send does not leave a phantom turn in flight", async () => {
+  // A `turn/start` sent while a turn is active is folded by codex into the
+  // active turn: the id it returns is never announced (`turn/started`) nor
+  // completed. Registering it would pin the tracker to `running` forever.
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const statuses: string[] = [];
+  adapter.on("status", (s) => statuses.push(s));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  await adapter.send({ text: "long task" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t1" } } });
+  await waitFor(() => statuses.at(-1) === "running");
+
+  // User types again while the agent is still working.
+  await adapter.send({ text: "actually, do X instead" });
+  await waitFor(() => fake.sent.filter((m) => m.method === "turn/start").length === 2);
+
+  // Only the original turn ever completes.
+  fake.feed({ method: "turn/completed", params: { turn: { id: "t1" } } });
+  await waitFor(() => statuses.at(-1) === "idle");
+
+  // And a cancel targets the announced turn, never the unannounced id.
+  await adapter.send({ text: "more" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t3" } } });
+  await waitFor(() => statuses.at(-1) === "running");
+  await adapter.cancel();
+  assert.deepEqual(
+    fake.sent.filter((m) => m.method === "turn/interrupt").map((m) => m.params.turnId),
+    ["t3"],
+  );
 });
 
 test("maps native requestUserInput to askUserQuestion and returns answers by question id", async () => {

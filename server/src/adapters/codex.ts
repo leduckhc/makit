@@ -228,15 +228,17 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.emit("status", "running");
 
     try {
-      const res = (await this.request("turn/start", {
+      // The turn id in this reply is deliberately ignored: codex folds a
+      // `turn/start` sent mid-turn into the active turn and returns a fresh id
+      // that is never announced or completed, which would pin the tracker to
+      // `running` forever. `turn/started` is the only source of truth.
+      await this.request("turn/start", {
         threadId: this.threadId,
         input: [{ type: "text", text: turn.promptText, text_elements: [] }],
         ...(this.activeModel ? { model: this.activeModel } : {}),
         ...(this.activeEffort ? { effort: this.activeEffort } : {}),
         ...(this.activeFast ? { serviceTier: FAST_SERVICE_TIER } : {}),
-      })) as { turn?: { id?: string } };
-      const turnId = res?.turn?.id;
-      if (turnId) this.turns.enterTurn(turnId);
+      });
     } catch (err) {
       this.emitEvent({
         ts: Date.now(),
