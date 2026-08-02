@@ -443,7 +443,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             // modes / config options instead of model + thinking, and offering
             // those anyway made the menu lie: Thinking used to open a picker and
             // report a level the agent never applied.
-            final meta = ref.watch(sessionMetaProvider(widget.sessionId));
+            //
+            // `read`, not `watch`: this runs when the menu opens, outside this
+            // widget's build, so a subscription made here would be scoped to the
+            // wrong lifecycle. The menu is rebuilt on each open anyway, so it is
+            // never stale in practice.
+            final meta = ref.read(sessionMetaProvider(widget.sessionId));
             final canModel = sessionCanPickModel(meta);
             final canThink = sessionCanSetThinking(meta);
             return [

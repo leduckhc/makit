@@ -20,22 +20,32 @@ final preferencesControllerProvider =
 
 /// Current theme mode. A provider rather than only the [PreferencesRefX]
 /// extension because the app root and tests read it without a `WidgetRef`.
-final themeModeValueProvider = Provider<ThemeMode>(
-  (ref) => ref.watch(_valueOf(themeModePreference)),
-);
+///
+/// Written out per entry instead of through a helper that *returns* a provider:
+/// a helper called inside a provider body constructs a brand-new provider on
+/// every rebuild, which Riverpod treats as a different provider each time — the
+/// cache never hits and the container accumulates them.
+final themeModeValueProvider = Provider<ThemeMode>((ref) {
+  ref.watch(
+    preferencesControllerProvider.select(
+      (overrides) => overrides[themeModePreference.id],
+    ),
+  );
+  return ref
+      .read(preferencesControllerProvider.notifier)
+      .get(themeModePreference);
+});
 
 /// Current UI text scale (see [textScalePreference]).
-final textScaleValueProvider = Provider<double>(
-  (ref) => ref.watch(_valueOf(textScalePreference)),
-);
-
-/// A provider over one [entry]'s value, rebuilding only when that entry's
-/// stored value changes.
-Provider<T> _valueOf<T>(PreferenceEntry<T> entry) => Provider<T>((ref) {
+final textScaleValueProvider = Provider<double>((ref) {
   ref.watch(
-    preferencesControllerProvider.select((overrides) => overrides[entry.id]),
+    preferencesControllerProvider.select(
+      (overrides) => overrides[textScalePreference.id],
+    ),
   );
-  return ref.read(preferencesControllerProvider.notifier).get(entry);
+  return ref
+      .read(preferencesControllerProvider.notifier)
+      .get(textScalePreference);
 });
 
 /// Reactive, typed read of a single [entry]: rebuilds when its stored value
