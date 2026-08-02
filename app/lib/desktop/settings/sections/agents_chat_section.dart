@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme.dart';
-import '../../chat/pr_actions.dart';
-import '../prefs/preference.dart';
-import '../prefs/preferences_providers.dart';
+import '../../../ui/widgets/pr_actions.dart';
+import '../../../store/prefs/preference.dart';
+import '../../../store/prefs/preferences_providers.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 import 'settings_reset_button.dart';

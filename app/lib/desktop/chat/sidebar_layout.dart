@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
-import '../settings/prefs/preference_entries.dart';
-import '../settings/prefs/preferences_providers.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 
 /// Layout state for the desktop sidebar. The sidebar can be folded away
 /// (fully hidden) and resized within [kSidebarMinWidth]–[kSidebarMaxWidth].

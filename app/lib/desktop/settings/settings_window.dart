@@ -3,8 +3,8 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
-import 'prefs/preference_entries.dart';
-import 'prefs/preferences_providers.dart';
+import '../../store/prefs/preference_entries.dart';
+import '../../store/prefs/preferences_providers.dart';
 import 'registry/settings_registry.dart';
 import 'settings_detail_pane.dart';
 import 'settings_item_anchor.dart';

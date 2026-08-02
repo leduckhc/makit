@@ -135,7 +135,10 @@ class FakeServer {
   }
 
   /// Repo-centric snapshot: two demo repos, each with a primary worktree plus
-  /// a feature-branch worktree carrying diff stats / an open PR.
+  /// a feature-branch worktree carrying diff stats / an open PR, and (for the
+  /// first repo) a tail of quiet branches so the demo also shows what a busy
+  /// checkout looks like — session-less rows, the "Show N more" cut and branch
+  /// ages.
   void _pushRepos() {
     final byProject = <String, List<_FakeSession>>{};
     for (final s in _sessions.values) {
@@ -178,6 +181,7 @@ class FakeServer {
           'deletions': 0,
           'filesChanged': 0,
           'sessionIds': primaryIds,
+          'committedAt': _agoMs(const Duration(hours: 5)),
         },
       ];
       final featBranches = <String, List<String>>{};
@@ -196,6 +200,7 @@ class FakeServer {
           'deletions': 6 * i,
           'filesChanged': 2 + i,
           'sessionIds': ids,
+          'committedAt': _agoMs(Duration(minutes: 12 * i)),
           if (i == 1)
             'pr': {
               'number': 41 + i,
@@ -239,7 +244,7 @@ class FakeServer {
         'isGitRepo': true,
         'defaultBranch': 'main',
         'currentBranch': 'main',
-        'worktrees': worktrees,
+        'worktrees': [...worktrees, ..._quietWorktrees(pid, repoPath)],
       });
     });
 
@@ -251,6 +256,75 @@ class FakeServer {
       ),
     );
   }
+
+  /// Epoch-ms for "[ago] before now" — keeps the seeded timestamps readable at
+  /// the call site instead of raw arithmetic.
+  int _agoMs(Duration ago) =>
+      DateTime.now().subtract(ago).millisecondsSinceEpoch;
+
+  /// Quiet branches with no sessions, added to the *first* demo repo only: real
+  /// checkouts accumulate stale worktrees, and without them the demo shows
+  /// neither a session-less row, the five-worktree "Show N more" cut, nor a
+  /// spread of branch ages. One carries uncommitted work so it also demonstrates
+  /// why a branch with no session is still worth listing.
+  List<Map<String, dynamic>> _quietWorktrees(
+    String projectId,
+    String repoPath,
+  ) {
+    if (projectId != 'proj-makit') return const [];
+    const branches = [
+      ('tidy-composer-spacing', 18, 4, 2, Duration(days: 2)),
+      ('spike-offline-cache', 0, 0, 0, Duration(days: 9)),
+      ('bump-deps', 3, 3, 1, Duration(days: 34)),
+      ('old-experiment', 0, 0, 0, Duration(days: 420)),
+    ];
+    return [
+      for (final (branch, ins, del, files, age) in branches)
+        {
+          'id': '$repoPath/.wt/$branch',
+          'path': '$repoPath/.wt/$branch',
+          'branch': branch,
+          'isPrimary': false,
+          'insertions': ins,
+          'deletions': del,
+          'filesChanged': files,
+          'uncommittedFiles': files,
+          'sessionIds': const <String>[],
+          'committedAt': _agoMs(age),
+        },
+    ];
+  }
+
+  /// Sessions the demo reports as archived (SPEC-29). Fixed ids so restoring one
+  /// twice in a demo behaves consistently; `orphaned` on the last one exercises
+  /// the "worktree removed" chip.
+  List<Map<String, dynamic>> _archivedSessions() => [
+    {
+      'id': 's-archived-1',
+      'projectId': 'proj-makit',
+      'agent': 'pi',
+      'title': 'draft release notes',
+      'status': 'exited',
+      'policy': 'ask-on-risky',
+      'lastActivityAt': _agoMs(const Duration(days: 1)),
+      'lastPreview': 'Wrote CHANGELOG.md for 0.4.0.',
+      'branch': 'draft-release-notes',
+      'archived': true,
+    },
+    {
+      'id': 's-archived-2',
+      'projectId': 'proj-cmux',
+      'agent': 'claude',
+      'title': 'investigate tab flicker',
+      'status': 'exited',
+      'policy': 'ask-on-risky',
+      'lastActivityAt': _agoMs(const Duration(days: 6)),
+      'lastPreview': 'Traced it to the snapshot boundary.',
+      'branch': 'investigate-tab-flicker',
+      'archived': true,
+      'orphaned': true,
+    },
+  ];
 
   void _pushSessions() {
     _emit(
@@ -272,6 +346,14 @@ class FakeServer {
                   'lastPreview': s.preview,
                   'pending': s.pending,
                   if (s.branch != null) 'branch': s.branch,
+                  // Path of the worktree this session runs in, matching the
+                  // ids built in [_pushRepos]. Surfaces that resolve
+                  // session -> worktree (the PR chip, the composer's git
+                  // hints) are dead without it.
+                  if (!s.pending)
+                    'worktreePath': s.branch == null
+                        ? s.projectPath
+                        : '${s.projectPath}/.wt/${s.branch}',
                 },
               )
               .toList(),
@@ -364,6 +446,15 @@ class FakeServer {
       case 'repo.refresh':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         _pushRepos();
+        return;
+      case 'session.listArchived':
+        _emit(
+          Envelope(
+            t: MsgType.ack,
+            id: env.id,
+            body: {'sessions': _archivedSessions()},
+          ),
+        );
         return;
       case 'agents.list':
         _emit(

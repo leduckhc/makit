@@ -110,8 +110,10 @@ void main() {
     expect(find.byIcon(PhosphorIconsFill.star), findsOneWidget);
   });
 
-  testWidgets('a worktree with no live session is hidden', (tester) async {
-    // A feature worktree with changes but no session must not render.
+  testWidgets('a worktree with no live session still renders', (tester) async {
+    // Matching the desktop sidebar (SPEC-11): every worktree is listed, whether
+    // or not a session is running in it — a branch with work on it is the thing
+    // you most want to start a session *on*, so hiding it hid the entry point.
     final repo = _repo(
       worktrees: [
         const Worktree(
@@ -129,7 +131,9 @@ void main() {
     await tester.pumpWidget(_host(repos: [repo], sessions: const []));
     await tester.pump();
 
-    expect(find.text('add-login'), findsNothing);
+    expect(find.text('add-login'), findsOneWidget);
+    // Its diff stats come with it, so the row is worth the space it takes.
+    expect(find.text('+42'), findsWidgets);
   });
 
   testWidgets('a worktree with changes renders a +/- diff chip', (

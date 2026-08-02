@@ -12,8 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../app/theme.dart';
-import '../prefs/preference_entries.dart';
-import '../prefs/preferences_providers.dart';
+import '../../../store/prefs/preference_entries.dart';
+import '../../../store/prefs/preferences_providers.dart';
 import 'coming_soon.dart';
 import 'section_header.dart';
 import 'settings_group.dart';

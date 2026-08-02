@@ -16,7 +16,7 @@ import '../../../transport/protocol.dart' show protocolVersion;
 import '../../chat/sidebar_layout.dart' show resetSidebarLayoutToDefaults;
 import '../../screens/providers.dart' show controlClientProvider;
 import '../../screens/time_format.dart' show formatUptime;
-import '../prefs/preferences_providers.dart';
+import '../../../store/prefs/preferences_providers.dart';
 import 'coming_soon.dart';
 import 'section_header.dart';
 import 'settings_group.dart';

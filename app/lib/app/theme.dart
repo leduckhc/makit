@@ -131,6 +131,11 @@ extension MakitSemanticText on ColorScheme {
 // The layout rhythm (see DESIGN.md → Spacing). Prefer these over raw literals
 // for padding, gaps, and `SizedBox` spacers so the scale stays consistent.
 // Base unit is 4px with 2px half-steps for tight icon/label gaps.
+
+/// Minimum height for a row the user taps (Apple HIG's 44pt). The mobile repo
+/// list follows the desktop sidebar's density, but a 24px pointer row is not a
+/// thumb target, so rows are compressed only down to this floor.
+const double kTouchRow = 44;
 const double kSpace2 = 2;
 const double kSpace4 = 4;
 const double kSpace6 = 6;
