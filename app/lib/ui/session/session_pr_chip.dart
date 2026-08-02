@@ -24,14 +24,7 @@ class SessionPrChip extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final style = prStateStyle(cs, pr);
     final isOpen = pr.state.toUpperCase() == 'OPEN';
-    // A merged/closed PR reads by its state; an open one by its CI verdict, so a
-    // stale check colour can't make a landed PR look live (as on desktop).
-    final color = !isOpen
-        ? style.color
-        : pr.isDraft
-        ? cs.outline
-        : prRollupColor(cs, pr.checkRollup);
-    final labelColor = !isOpen ? style.textColor : color;
+    final (icon: color, label: labelColor) = prPillColors(cs, pr);
     final verdict = isOpen && pr.checkRollup != 'none'
         ? prCheckBucketLabel(pr.checkRollup)
         : null;

@@ -85,10 +85,12 @@ class DiffChip extends StatelessWidget {
   }
 }
 
-/// Worktree PR pill: `PR #42`, tinted grey for drafts and per PR state
-/// (open / merged / closed) otherwise — see [prStateStyle]. Tapping opens the
-/// shared PR sheet ([showPrSheet]) — the same detail the session screen's chip
-/// shows, so there is one PR surface with two entry points.
+/// Worktree PR pill: `PR #42`, tinted by [prPillColors] — an open PR by its CI
+/// verdict, a merged/closed one by its state, a draft grey. Same rule as the
+/// session chip and the desktop composer pill, so a failing PR cannot read red
+/// in one place and brand-blue here. Tapping opens the shared PR sheet
+/// ([showPrSheet]) — the same detail the session screen's chip shows, so there is
+/// one PR surface with two entry points.
 class PrPill extends StatelessWidget {
   const PrPill({super.key, required this.pr});
   final PullRequest pr;
@@ -97,8 +99,7 @@ class PrPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final style = prStateStyle(cs, pr);
-    final color = pr.isDraft ? cs.outline : style.color;
-    final labelColor = pr.isDraft ? cs.outline : style.textColor;
+    final (icon: color, label: labelColor) = prPillColors(cs, pr);
     // The tap target is the full row height (kTouchRow) while the *painted*
     // pill stays content-sized: the pill opens the PR sheet, so it needs a
     // thumb-sized target, but inflating the visible chip to 44px would make a
