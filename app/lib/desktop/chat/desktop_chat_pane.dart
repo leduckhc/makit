@@ -15,6 +15,8 @@ import '../../ui/composer/composer_selectors.dart';
 import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
+import '../../ui/session/navigator/message_navigator_overlay.dart';
+import '../../ui/session/navigator/outline_mode.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import '../../ui/session/transcript_list.dart';
 import 'composer_focus.dart';
@@ -80,6 +82,8 @@ class DesktopChatPane extends ConsumerStatefulWidget {
 
 class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   final _scroll = ScrollController();
+  // SPEC-34: the render-layer handle the message navigator jumps through.
+  final _jumpTarget = TranscriptJumpTarget();
   String? _subscribed;
   int _lastSeq = 0;
 
@@ -199,7 +203,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       );
     });
 
-    final items = ref.watch(chatItemsProvider(sessionId));
+    // SPEC-34: the transcript's rows, folded to your prompts only while
+    // outline mode is on (a pass-through for every other navigator style).
+    final items = ref.watch(transcriptItemsProvider(sessionId));
 
     // Keep the transcript pinned to the newest message as items stream in,
     // but only when the user is already near the bottom so scrolling up to read
@@ -234,6 +240,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   children: [
                     TranscriptListView(
                       controller: _scroll,
+                      jumpTarget: _jumpTarget,
                       padding: const EdgeInsets.symmetric(vertical: kSpace12),
                       itemCount: items.length + (hasTrailer ? 1 : 0),
                       // Let the lazy list find each already-built row at its
@@ -250,13 +257,17 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                         // Pi stays running while asking), else the "working…"
                         // indicator while running.
                         final bool isTrailer = hasTrailer && i == 0;
+                        final int position =
+                            items.length - 1 - (hasTrailer ? i - 1 : i);
                         final ChatItem? item = isTrailer
                             ? null
-                            : items[items.length -
-                                  1 -
-                                  (hasTrailer ? i - 1 : i)];
+                            : items[position];
                         final Widget child = !isTrailer
-                            ? chatItemWidget(sessionId, item!)
+                            ? chatItemWidget(
+                                sessionId,
+                                item!,
+                                position: position,
+                              )
                             : (trailer == TranscriptTrailer.ask
                                   ? AskCard(ask: pendingAsk!)
                                   : const WorkingIndicator());
@@ -284,6 +295,15 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           ),
                         );
                       },
+                    ),
+                    // SPEC-34: the message navigator, over the transcript.
+                    // Renders nothing when the chosen style is `off`.
+                    MessageNavigatorOverlay(
+                      sessionId: sessionId,
+                      controller: _scroll,
+                      target: _jumpTarget,
+                      items: items,
+                      hasTrailer: hasTrailer,
                     ),
                     // Floating "jump to newest" affordance over the transcript,
                     // just above the composer — the same widget as mobile.
@@ -400,6 +420,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
 
   @override
   void dispose() {
+    _jumpTarget.dispose();
     _scroll.dispose();
     for (final c in _composerControllers.values) {
       c.dispose();

@@ -18,6 +18,10 @@ import '../widgets/menu_item.dart';
 import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
+import 'navigator/message_navigator_overlay.dart';
+import 'navigator/messages_sheet.dart';
+import 'navigator/outline_mode.dart';
+import 'navigator/transcript_jumper.dart';
 import 'session_pr_chip.dart';
 import 'transcript_list.dart';
 
@@ -31,6 +35,20 @@ class SessionScreen extends ConsumerStatefulWidget {
 
 class _SessionScreenState extends ConsumerState<SessionScreen> {
   final _scroll = ScrollController();
+  // SPEC-34: the render-layer handle jumps are resolved through, plus the jumper
+  // the session-actions sheet drives. `itemCount`/`hasTrailer` are read at call
+  // time, so a trailing "working…" row appearing mid-session cannot skew them.
+  final _jumpTarget = TranscriptJumpTarget();
+  late final TranscriptJumper _jumper = TranscriptJumper(
+    target: _jumpTarget,
+    itemCount: () => _items.length,
+    hasTrailer: () => _hasTrailer,
+    onFlash: (position) => recordJumpFlash(ref, widget.sessionId, position),
+  );
+
+  /// Latest transcript + trailer state, captured each build for [_jumper].
+  List<ChatItem> _items = const [];
+  bool _hasTrailer = false;
   // Dedicated controller for free-text answers to an inline ask, kept separate
   // from the normal message draft so the two can never cross-contaminate.
   final _answerController = TextEditingController();
@@ -72,7 +90,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionsProvider).byId(widget.sessionId);
-    final items = ref.watch(chatItemsProvider(widget.sessionId));
+    // SPEC-34: the transcript's rows, folded to your prompts only while
+    // outline mode is on (a pass-through for every other navigator style).
+    final items = ref.watch(transcriptItemsProvider(widget.sessionId));
     final pendingAsk = ref.watch(pendingAskProvider(widget.sessionId));
     // Clear the dedicated free-text answer controller whenever the ask ends or
     // leaves free-text mode, so a later answer composer never reopens with a
@@ -85,6 +105,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       awaiting: pendingAsk != null,
     );
     final hasTrailer = trailer != TranscriptTrailer.none;
+    // Hand the current transcript shape to the sheet's jumper (read lazily by
+    // its callbacks, so this must be the latest build's values).
+    _items = items;
+    _hasTrailer = hasTrailer;
 
     ref.listen<ActionError?>(sessionActionErrorProvider(widget.sessionId), (
       prev,
@@ -139,6 +163,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
             behavior: HitTestBehavior.translucent,
             child: TranscriptListView(
               controller: _scroll,
+              jumpTarget: _jumpTarget,
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
@@ -171,10 +196,23 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 final item = items[index];
                 return KeyedSubtree(
                   key: chatItemKey(item),
-                  child: transcriptRow(chatItemWidget(widget.sessionId, item)),
+                  child: transcriptRow(
+                    chatItemWidget(widget.sessionId, item, position: index),
+                  ),
                 );
               },
             ),
+          ),
+          // SPEC-34: the message navigator, over the transcript and under the
+          // floating bars. Renders nothing when the surface's style is `off`.
+          MessageNavigatorOverlay(
+            sessionId: widget.sessionId,
+            controller: _scroll,
+            target: _jumpTarget,
+            items: items,
+            hasTrailer: hasTrailer,
+            // Clear the floating glass top bar, exactly as the list's padding does.
+            topInset: topInset + 60,
           ),
           // Scrim: fade the transcript under the top edge so the floating
           // controls stay legible (≈30%→20%→transparent).
@@ -434,6 +472,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   ref: ref,
                   sessionId: widget.sessionId,
                 );
+              case 'messages':
+                showMyMessagesSheet(
+                  context: context,
+                  sessionId: widget.sessionId,
+                  jumper: _jumper,
+                );
               case 'archive':
                 _confirmArchive();
             }
@@ -457,6 +501,17 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 icon: PhosphorIconsLight.pencilSimple,
                 label: 'Rename session',
               ),
+              // SPEC-34: mobile's route back to your own prompts. Grouped with
+              // Rename, not with Model/Thinking, because it is not capability
+              // gated — it reads the transcript the client already holds, so it
+              // works on every agent. Sitting above the rule also keeps that
+              // rule's contract intact: it separates *configuration* from
+              // Archive and disappears when there is no configuration.
+              themedMenuItem(
+                value: 'messages',
+                icon: PhosphorIconsLight.listMagnifyingGlass,
+                label: 'My messages',
+              ),
               if (canModel)
                 themedMenuItem(
                   value: 'model',
@@ -469,8 +524,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   icon: PhosphorIconsLight.brain,
                   label: 'Thinking',
                 ),
-              // The rule separates configuration from the destructive action, so
-              // it only earns its place when there is configuration above it.
+              // The rule separates configuration from Archive, so it only earns
+              // its place when there is configuration above it.
               if (canModel || canThink) const PopupMenuDivider(),
               themedMenuItem(
                 value: 'archive',
@@ -559,6 +614,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _jumpTarget.dispose();
     _answerController.dispose();
     for (final c in _composerControllers.values) {
       c.dispose();

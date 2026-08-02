@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme.dart';
-import '../../../ui/widgets/pr_actions.dart';
 import '../../../store/prefs/preference.dart';
 import '../../../store/prefs/preferences_providers.dart';
+import '../../../ui/widgets/pr_actions.dart';
+import 'message_navigator_prefs.dart';
 import 'section_header.dart';
 import 'settings_group.dart';
 import 'settings_reset_button.dart';
 
 /// Agents & Chat section body.
 ///
-/// Wires the **PR actions** leaf (SPEC-23): an editable prompt per composer PR
+/// Wires the **message navigator** leaf (SPEC-34) and the **PR actions** leaf
+/// (SPEC-23): an editable prompt per composer PR
 /// action (Create PR / Fix PR / Resolve comments). A blank field means "use the
 /// built-in default", so the shipped prompts can evolve without stomping a
 /// user's edit. The remaining leaves are reserved `[coming soon]` placeholders.
@@ -23,6 +25,7 @@ class AgentsChatSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       children: [
+        const MessageNavigatorPrefs(),
         const SettingsSectionHeader(title: 'PR actions'),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
