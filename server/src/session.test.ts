@@ -9,6 +9,10 @@ import type { SessionEvent } from "./protocol.js";
 function fakeAdapter(): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as any).agent = "pi";
+  // Required by AgentAdapter and read by `toDTO()` (SPEC-33). The `as unknown as`
+  // cast hides its absence, so a test that reaches the DTO would throw on
+  // `undefined.image`.
+  (e as any).promptCapabilities = { image: false };
   (e as any).start = async () => {};
   (e as any).send = async () => {};
   (e as any).cancel = async () => {};

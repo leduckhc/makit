@@ -58,6 +58,20 @@ dependencies:
   window_manager: 0.5.2              # publisher: leanflutter.dev — macOS window sizing/position
   qr_flutter: ^4.1.0                 # publisher: theyakka.com — pure-Dart QR code rendering
   phosphoricons_flutter: ^1.0.0      # publisher: lucaszafret.com.br — Phosphor icons (Dart 3.x compatible)
+  # ---------------- SPEC-33 user attachments ---------------------------
+  # Pinned exactly: all three ship native code. Picker sources for the
+  # composer's paperclip (image_picker = gallery/camera on mobile,
+  # file_selector = desktop open dialog).
+  image_picker: 1.2.3                # publisher: flutter.dev — gallery + camera (iOS/Android)
+  file_selector: 1.1.0               # publisher: flutter.dev — macOS/desktop open dialog
+  # Clipboard IMAGE reads (Flutter's own Clipboard is text-only), so ⌘V/Paste
+  # of a screenshot works in the composer. Publisher nativeshell.dev, MIT.
+  # Implemented in Rust via the transitive `super_native_extensions`, which is
+  # why `rustup` is a REQUIRED build prerequisite: without it the plugin
+  # downloads precompiled binaries that pubspec.lock does not hash-verify.
+  # `tool/audit.sh` fails the build when rustup is missing — do not remove that
+  # check while this dependency is present. See SPEC-33 §4.3.
+  super_clipboard: 0.9.1             # publisher: nativeshell.dev — pasteboard image reads
 
 dev_dependencies:
   flutter_test:

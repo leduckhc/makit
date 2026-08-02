@@ -90,11 +90,15 @@ fi
 set -e
 
 # ------------------------------------------------------------ 6. format check
-step "6. dart format --set-exit-if-changed ."
-if "$DART_BIN" format --set-exit-if-changed --output=none . >/dev/null 2>&1; then
+step "6. dart format --set-exit-if-changed (our sources)"
+# Scoped to our own sources, not `.`: cargokit (super_native_extensions, SPEC-33)
+# writes a generated `build_tool_runner.dart` into `build/`, which is unformatted
+# and would make this gate permanently dirty on any machine that has built once.
+if "$DART_BIN" format --set-exit-if-changed --output=none \
+  lib test tool integration_test >/dev/null 2>&1; then
   green "  ✓ formatted"
 else
-  yellow "  ! files need formatting — run: dart format ."
+  yellow "  ! files need formatting — run: dart format lib test tool integration_test"
   warn=1
 fi
 # ----------------------------------------------------- 8. advisory scan (OSV)
@@ -158,6 +162,27 @@ elif (( cooldown_exit == 2 )); then
 else
   red "  ✗ cooldown violation — see SECURITY.md §8"
   tail -10 /tmp/makit-cooldown.log >&2
+  fail=1
+fi
+
+# ------------------------------------------------- 10. rust toolchain present
+# super_clipboard (SPEC-33 §4.3) is implemented in Rust. Quoting the package:
+# "If you don't have Rust installed, the plugin will automatically download
+# precompiled binaries for target platform." Those binaries are fetched at build
+# time and are NOT covered by pubspec.lock's sha256 hashes (SECURITY.md §3/§4),
+# so the only way to keep the supply chain hash-verified is to compile from
+# source — which the plugin's build integration does automatically IF rustup is
+# detected. Hence: rustup present is a hard requirement while this dep exists.
+step "10. Rust toolchain present (super_clipboard builds from source)"
+if ! grep -q "^  super_clipboard:" pubspec.lock; then
+  green "  ✓ super_clipboard not locked — check not applicable"
+elif command -v rustup >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
+  green "  ✓ rustup + cargo on PATH ($(rustup --version 2>/dev/null | head -1))"
+else
+  red "  ✗ super_clipboard is locked but rustup/cargo is not on PATH"
+  red "    Without it the plugin downloads precompiled binaries that"
+  red "    pubspec.lock does not hash-verify. Install: https://rustup.rs"
+  red "    (see SECURITY.md and docs/specs/…SPEC-33…§4.3)"
   fail=1
 fi
 

@@ -282,3 +282,72 @@ class _FullscreenMedia extends StatelessWidget {
     );
   }
 }
+
+/// A thumbnail for an image the **user** attached (SPEC-33).
+///
+/// Deliberately a small fixed square rather than the agent's width-filling
+/// [AgentMediaView]: a sent screenshot is a receipt ("this is what I sent"), not
+/// content to read, and several can sit side by side in one bubble. Tapping
+/// opens the same fullscreen viewer.
+class UserAttachmentThumb extends ConsumerWidget {
+  const UserAttachmentThumb({super.key, required this.attachment});
+
+  final MediaAttachmentRef attachment;
+
+  /// Edge of the square. Big enough to recognise a screenshot, small enough
+  /// that three fit across a phone bubble.
+  static const double size = 76;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fetch = ref.watch(mediaFetcherProvider);
+    final label = attachment.name ?? attachment.mime;
+    // Reuse the agent-media rendering path by describing this attachment in the
+    // same terms; the fetch + fullscreen behaviour is then identical.
+    final item = AgentMediaItem(
+      seq: 0,
+      ts: 0,
+      mediaId: attachment.mediaId,
+      mime: attachment.mime,
+      sizeBytes: attachment.sizeBytes,
+      alt: label,
+    );
+    final Widget content = fetch == null
+        // Unpaired or fake-data mode: a labelled tile, never a dead spinner.
+        ? MediaPlaceholder(label: label)
+        : Image(
+            // Downsampled to the square actually drawn, for the same reason
+            // `_MediaImage` does it: a full-resolution user upload decodes to
+            // hundreds of MB of RGBA and is then cached at that size.
+            image: ResizeImage(
+              MakitMediaImage(attachment.mediaId, fetch),
+              width: (size * MediaQuery.devicePixelRatioOf(context)).round(),
+              allowUpscaling: false,
+              policy: ResizeImagePolicy.fit,
+            ),
+            fit: BoxFit.cover,
+            frameBuilder: (context, child, frame, wasSyncLoaded) =>
+                wasSyncLoaded || frame != null
+                ? child
+                : MediaPlaceholder(label: label, loading: true),
+            errorBuilder: (context, error, stack) => MediaPlaceholder(
+              label: error is MediaNotFoundException
+                  ? '$label — no longer stored'
+                  : label,
+            ),
+          );
+    return Semantics(
+      image: true,
+      label: label,
+      child: GestureDetector(
+        onTap: fetch == null
+            ? null
+            : () => _openFullscreen(context, item, fetch),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(kRadius8),
+          child: SizedBox.square(dimension: size, child: content),
+        ),
+      ),
+    );
+  }
+}

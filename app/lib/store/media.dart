@@ -68,3 +68,11 @@ final mediaFetcherProvider = Provider<MediaFetcher?>((ref) {
   final endpoint = ref.watch(mediaEndpointProvider);
   return endpoint == null ? null : httpMediaFetcher(endpoint);
 });
+
+/// Uploads attachment bytes, or null when there is no endpoint to upload to
+/// (unpaired, or fake-data mode) — the composer disables attaching in that case
+/// rather than staging an upload that can never run.
+final mediaUploaderProvider = Provider<MediaUploader?>((ref) {
+  final endpoint = ref.watch(mediaEndpointProvider);
+  return endpoint == null ? null : httpMediaUploader(endpoint);
+});

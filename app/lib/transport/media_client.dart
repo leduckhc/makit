@@ -14,6 +14,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -116,3 +117,162 @@ MediaFetcher httpMediaFetcher(MediaEndpoint endpoint) {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Upload (SPEC-33) — the input half: the user's screenshot goes UP to the same
+// content-addressed store the agent's media comes down from.
+// ---------------------------------------------------------------------------
+
+/// A stored blob, as `POST /media` describes it back to us.
+class MediaDescriptor {
+  const MediaDescriptor({
+    required this.mediaId,
+    required this.mime,
+    required this.sizeBytes,
+  });
+
+  final String mediaId;
+  final String mime;
+  final int sizeBytes;
+
+  static MediaDescriptor? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final id = json['mediaId'];
+    final mime = json['mime'];
+    final size = json['sizeBytes'];
+    if (id is! String || !_mediaIdPattern.hasMatch(id)) return null;
+    if (mime is! String || mime.isEmpty) return null;
+    return MediaDescriptor(
+      mediaId: id,
+      mime: mime,
+      sizeBytes: size is int ? size : 0,
+    );
+  }
+}
+
+/// The blob exceeds what the server will store (or what we will send).
+class MediaTooLargeException implements Exception {
+  const MediaTooLargeException(this.sizeBytes);
+  final int sizeBytes;
+  @override
+  String toString() =>
+      'attachment is too large (${(sizeBytes / (1024 * 1024)).toStringAsFixed(1)} MB); '
+      'the limit is ${kMaxAttachmentBytes ~/ (1024 * 1024)} MB';
+}
+
+/// The type is not one makit stores. Also covers "no bytes to send".
+class MediaUnsupportedTypeException implements Exception {
+  const MediaUnsupportedTypeException(this.mime);
+  final String mime;
+  @override
+  String toString() => 'attachments of type "$mime" are not supported';
+}
+
+/// Mirrors the server's `DEFAULT_MAX_MEDIA_BYTES` (`media/store.ts`). Checked
+/// locally so a too-big screenshot fails before it is uploaded, not after.
+const int kMaxAttachmentBytes = 24 * 1024 * 1024;
+
+/// Mirrors the server's `MEDIA_MIME_ALLOWLIST`. Deliberately excludes SVG (it
+/// can carry script) and every non-image type — see `media/store.ts`.
+const Set<String> kAttachmentMimes = {
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/bmp',
+};
+
+/// The mime for a picked file's name, or null when it isn't a supported image.
+///
+/// Extension-based on purpose: the picker gives us a name, and guessing from
+/// bytes would let an unsupported type through to a server that will only
+/// reject it. Null means "refuse in the UI with a clear message".
+String? mimeForFilename(String name) {
+  final dot = name.lastIndexOf('.');
+  if (dot < 0 || dot == name.length - 1) return null;
+  return switch (name.substring(dot + 1).toLowerCase()) {
+    'png' => 'image/png',
+    'jpg' || 'jpeg' => 'image/jpeg',
+    'gif' => 'image/gif',
+    'webp' => 'image/webp',
+    'bmp' => 'image/bmp',
+    _ => null,
+  };
+}
+
+/// Uploads bytes and resolves with the stored blob's descriptor.
+typedef MediaUploader =
+    Future<MediaDescriptor> Function(Uint8List bytes, String mime);
+
+/// A [MediaUploader] that POSTs to [endpoint] over the pinned client.
+///
+/// Same trust and auth story as [httpMediaFetcher] — the pinned client plus a
+/// bearer header — because it is the same route on the same listener. Size and
+/// type are checked here first: the server enforces them too (it must; a client
+/// check is not a control), but failing locally saves a pointless multi-MB
+/// upload over a phone connection.
+MediaUploader httpMediaUploader(MediaEndpoint endpoint) {
+  return (Uint8List bytes, String mime) async {
+    if (bytes.isEmpty || !kAttachmentMimes.contains(mime)) {
+      throw MediaUnsupportedTypeException(mime);
+    }
+    if (bytes.length > kMaxAttachmentBytes) {
+      throw MediaTooLargeException(bytes.length);
+    }
+    final fp = endpoint.fingerprint;
+    final client = fp != null && fp.isNotEmpty
+        ? pinnedHttpClient(fp)
+        : HttpClient();
+    try {
+      final req = await client
+          .postUrl(Uri.parse('${endpoint.base}/media'))
+          .timeout(_timeout);
+      req.headers.contentType = ContentType.parse(mime);
+      // Explicit length: the server refuses chunked uploads (it has no size to
+      // admit them under) — see `media/route.ts`.
+      req.contentLength = bytes.length;
+      final bearer = endpoint.bearer;
+      if (bearer != null && bearer.isNotEmpty) {
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $bearer');
+      }
+      req.add(bytes);
+      final res = await req.close().timeout(_uploadTimeout);
+      if (res.statusCode == HttpStatus.requestEntityTooLarge) {
+        await res.drain<void>();
+        throw MediaTooLargeException(bytes.length);
+      }
+      if (res.statusCode == HttpStatus.unsupportedMediaType) {
+        await res.drain<void>();
+        throw MediaUnsupportedTypeException(mime);
+      }
+      if (res.statusCode != HttpStatus.created) {
+        await res.drain<void>();
+        throw MediaFetchException('HTTP ${res.statusCode}');
+      }
+      final body = await res.transform(utf8.decoder).join().timeout(_timeout);
+      final descriptor = MediaDescriptor.tryParse(jsonDecode(body) as Object?);
+      if (descriptor == null) {
+        // A 201 we cannot parse is a failure: returning a half-empty descriptor
+        // would put an unusable id into a `send.message`.
+        throw const MediaFetchException('malformed upload response');
+      }
+      return descriptor;
+    } on MediaTooLargeException {
+      rethrow;
+    } on MediaUnsupportedTypeException {
+      rethrow;
+    } on MediaFetchException {
+      rethrow;
+    } on TimeoutException {
+      throw const MediaFetchException('upload timed out');
+    } catch (e) {
+      throw MediaFetchException('$e');
+    } finally {
+      client.close(force: true);
+    }
+  };
+}
+
+/// Longer than a fetch: a multi-MB upload over Tailscale on a phone is slower
+/// than pulling a thumbnail back down.
+const _uploadTimeout = Duration(seconds: 60);

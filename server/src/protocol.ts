@@ -33,6 +33,15 @@ export interface Envelope {
 }
 
 export type EventKind =
+  /**
+   * The user's own turn, echoed by the adapter so transcripts are complete.
+   * `payload.text` is the prompt; `payload.attachments` (SPEC-33) is an optional
+   * array of **resolved** `MediaAttachment` descriptors
+   * (`{mediaId, mime, sizeBytes, name?}`) for images the user attached — richer
+   * than the inbound {@link WireAttachment}, which carries only an id + name. As with
+   * `agent.media`, only the descriptor is carried — the app fetches bytes from
+   * `GET /media/<mediaId>` — because the event log is replayed in full on resume.
+   */
   | "user.message"
   | "agent.message"
   | "agent.message.delta"
@@ -103,6 +112,20 @@ export interface SessionEvent {
   ts: number;
   kind: EventKind;
   payload: Record<string, unknown>;
+}
+
+/**
+ * One attachment as it arrives on `send.message` (SPEC-33).
+ *
+ * Deliberately just an id plus a display hint: the bytes were already uploaded
+ * to the content-addressed store via `POST /media`, so the id is sufficient and
+ * self-verifying. `name` is a **hint only** — it is never used as a path. When a
+ * file has to be materialised for the agent, the server derives the on-disk name
+ * from the content hash and sanitises the hint (see `media/attach.ts`).
+ */
+export interface WireAttachment {
+  mediaId: string;
+  name?: string;
 }
 
 /**
@@ -264,6 +287,13 @@ export interface SessionDTO {
    * by the app on subscribe; non-resumable cold sessions stay read-only.
    */
   resumable: boolean;
+  /**
+   * True when the agent accepts images *inside* the prompt (SPEC-33). makit
+   * currently delivers every attachment as a file in the worktree, so this is
+   * informational: the app uses it to decide whether to label a sent message
+   * "handed over as a file". The inline-image send path is a later phase.
+   */
+  promptImage: boolean;
   /**
    * Archived (SPEC-29): a soft, recoverable hide. Archived sessions are omitted
    * from the active `sessions.snapshot`; this flag is present for any surface

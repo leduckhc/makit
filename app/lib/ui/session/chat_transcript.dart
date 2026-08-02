@@ -104,37 +104,48 @@ class JumpToNewestButton extends StatelessWidget {
 /// no full-screen detail navigation. Horizontal gutter + inter-row spacing are
 /// applied by the caller via [transcriptRow], so the item widgets carry none
 /// themselves.
-Widget chatItemWidget(String sessionId, ChatItem item, {int position = -1}) =>
-    switch (item) {
-      // Two SPEC-34 wrappers, both pass-throughs unless active: the outline tap
-      // (back into the full transcript) and the landing highlight after a jump.
-      UserMessageItem() => OutlineJumpable(
-        sessionId: sessionId,
-        item: item,
-        child: JumpFlashHighlight(
-          sessionId: sessionId,
-          position: position,
-          child: ChatBubble.user(text: item.text, ts: item.ts),
-        ),
-      ),
-      AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
-      // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
-      // client can't show. Rendered inline, tap for fullscreen.
-      AgentMediaItem() => AgentMediaView(item: item),
-      ThinkingItem() => ThinkingLine(
+Widget chatItemWidget(
+  String sessionId,
+  ChatItem item, {
+  int position = -1,
+  bool promptImage = false,
+}) => switch (item) {
+  // Two SPEC-34 wrappers, both pass-throughs unless active: the outline tap
+  // (back into the full transcript) and the landing highlight after a jump.
+  UserMessageItem() => OutlineJumpable(
+    sessionId: sessionId,
+    item: item,
+    child: JumpFlashHighlight(
+      sessionId: sessionId,
+      position: position,
+      child: ChatBubble.user(
         text: item.text,
-        expansionKey: transcriptRowExpansionKey(sessionId, item),
+        ts: item.ts,
+        attachments: item.attachments,
+        // SPEC-33: only decides whether the sent-as-a-file note shows; it
+        // does not change what was sent.
+        promptImage: promptImage,
       ),
-      // An answered askUserQuestion settles into a quiet resolved card (chosen
-      // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
-      ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
-      ToolCallItem() => ToolCallCard(
-        item: item,
-        sessionId: sessionId,
-        expansionKey: transcriptRowExpansionKey(sessionId, item),
-      ),
-      ErrorItem() => ErrorBanner(message: item.message),
-    };
+    ),
+  ),
+  AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
+  // An image/GIF the agent produced (SPEC-22) — the one thing a terminal
+  // client can't show. Rendered inline, tap for fullscreen.
+  AgentMediaItem() => AgentMediaView(item: item),
+  ThinkingItem() => ThinkingLine(
+    text: item.text,
+    expansionKey: transcriptRowExpansionKey(sessionId, item),
+  ),
+  // An answered askUserQuestion settles into a quiet resolved card (chosen
+  // highlighted, rest dimmed) rather than a foldable tool row (SPEC-25 #1).
+  ToolCallItem() when _isAnsweredAsk(item) => AnsweredAskCard(item: item),
+  ToolCallItem() => ToolCallCard(
+    item: item,
+    sessionId: sessionId,
+    expansionKey: transcriptRowExpansionKey(sessionId, item),
+  ),
+  ErrorItem() => ErrorBanner(message: item.message),
+};
 
 /// A persisted, answered ask-user tool call. Matches pi's `ask_user` and the
 /// `askUserQuestion` variants other adapters use (underscore/case-insensitive).

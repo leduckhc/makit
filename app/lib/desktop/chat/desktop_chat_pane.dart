@@ -8,6 +8,8 @@ import '../../shortcuts/shortcut_action.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../../ui/composer/attachment_controller.dart';
+import '../../ui/composer/attachment_sources.dart';
 import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_draft.dart';
@@ -150,8 +152,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       if (handled) return;
     }
     final store = ref.read(storeControllerProvider.notifier);
-    store.appendOptimisticMessage(sessionId, text);
-    store.sendMessage(sessionId, text);
+    // SPEC-33: take + clear in one step so a second tap cannot resend the same
+    // images.
+    final sending = takeAttachmentsForSend(ref, sessionId);
+    store.appendOptimisticMessage(sessionId, text, attachments: sending);
+    store.sendMessage(sessionId, text, attachments: sending);
   }
 
   void _cancelTurn(String sessionId) => handleClientCommand(
@@ -216,6 +221,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     }
 
     final running = session.status == SessionStatus.running;
+    // SPEC-33: the only precondition is somewhere to upload to. The file lands
+    // in the agent's cwd, which a live session always has — a session with no
+    // recorded `worktreePath` (the repo-root default) still works.
+    final canAttachHere = canAttach(ref);
     final pendingAsk = ref.watch(pendingAskProvider(sessionId));
     // Clear the dedicated free-text answer controller when the ask ends or
     // leaves free-text mode, so a later answer composer starts empty.
@@ -267,6 +276,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                                 sessionId,
                                 item!,
                                 position: position,
+                                promptImage: session.promptImage,
                               )
                             : (trailer == TranscriptTrailer.ask
                                   ? AskCard(ask: pendingAsk!)
@@ -365,6 +375,26 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       // leaf id → same pane state) recreates the composer and
                       // re-seeds initialText, instead of leaking s1's text into s2.
                       key: ValueKey(sessionId),
+                      attachments: attachmentsFor(ref, sessionId),
+                      // Nothing paired → nowhere to upload, so the clip stays inert
+                      // with a reason and paste is left to the field's text handling.
+                      onAttach: canAttachHere
+                          ? () => showAttachMenu(context, ref, sessionId)
+                          : null,
+                      onRemoveAttachment: (id) =>
+                          removeAttachment(ref, sessionId, id),
+                      onRetryAttachment: (id) =>
+                          retryAttachment(ref, sessionId, id),
+                      readClipboardImage: canAttachHere
+                          ? readClipboardImage
+                          : null,
+                      onPasteImage: canAttachHere
+                          ? (bytes, mime, name) => stageAttachment(
+                              ref,
+                              sessionId,
+                              image: (bytes: bytes, mime: mime, name: name),
+                            )
+                          : null,
                       enabled: pendingAsk == null,
                       controller: _composerControllerFor(sessionId),
                       commands: ref.watch(commandsProvider(sessionId)),

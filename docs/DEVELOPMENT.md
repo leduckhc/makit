@@ -14,6 +14,8 @@ notarization specifics see [`../BUILD_AND_DEPLOY.md`](../BUILD_AND_DEPLOY.md).
 | Server package manager | **pnpm** (`npm install` is blocked by a preinstall guard) |
 | Node | 20+ (server runs via `tsx`) |
 | Apple team | `RT8DP44B6N` · bundle id `dev.getmakit.app` |
+| Rust | **required** — `rustup` + `cargo` on `PATH` (see below) |
+| CocoaPods | **required** for iOS/macOS builds (see below) |
 | KC's iPhone (wireless) | device id `00008150-0006282C3E52401C` |
 | Booted simulator | `iPhone 17` — `803DF95F-0D22-4ACD-9A9F-82A9F50F5CC8` |
 
@@ -28,9 +30,43 @@ Sanity check:
 ```sh
 flutter --version          # expect 3.44.4
 pnpm --version
+rustup --version           # SPEC-33: required, see "Rust + CocoaPods" below
+pod --version
 xcrun simctl list devices booted
 flutter devices            # lists simulators, macOS, and wireless iPhones
 ```
+
+### Rust + CocoaPods (both required since SPEC-33)
+
+The app depends on `super_clipboard` (clipboard **image** reads — Flutter's own
+`Clipboard` is text-only), which is implemented in Rust via
+`super_native_extensions`. Two consequences for the toolchain:
+
+**1. `rustup` is mandatory, not optional.** Without it the plugin silently
+downloads *precompiled* binaries, which `pubspec.lock` does not hash-verify —
+precisely what `app/SECURITY.md` §3/§4 exist to prevent. With `rustup` present
+the build integration compiles from source instead. `app/tool/audit.sh` step 10
+**fails** when `super_clipboard` is locked and `rustup` is missing, so this is
+enforced, not merely documented.
+
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup update              # if already installed
+```
+
+The first build after a clean checkout compiles ~600 crates (~1 min on an M-series
+Mac); later builds are incremental. Android additionally auto-installs the NDK
+(~1 GB) on first build.
+
+**2. CocoaPods is back in the iOS/macOS builds.** `super_native_extensions` does
+not support Swift Package Manager, so adding it re-introduced CocoaPods into two
+otherwise SPM-only Xcode projects. `ios/Podfile{,.lock}` and
+`macos/Podfile{,.lock}` are now committed, `Runner.xcodeproj` carries Pods build
+phases, and the `Flutter-*.xcconfig` files `#include?` the generated Pods
+xcconfig. `flutter build`/`flutter run` invoke `pod install` automatically; CI
+runners need CocoaPods installed. Flutter currently warns that non-SPM plugins
+"will become an error in a future version" — if that lands before the plugin
+adopts SPM, we replace it (see SPEC-33 §4.3).
 
 ---
 
