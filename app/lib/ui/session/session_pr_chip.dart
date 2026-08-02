@@ -39,33 +39,47 @@ class SessionPrChip extends StatelessWidget {
     return InkWell(
       borderRadius: BorderRadius.circular(kRadius8),
       onTap: () => showPrSheet(context, pr, onInsertPrompt: onInsertPrompt),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: kSpace4,
-          vertical: kSpace2,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            style.glyph.build(size: kPillIconSize, color: color),
-            const SizedBox(width: 3),
-            Text(
-              '#${pr.number}',
-              style: Theme.of(context).textTheme.labelXs?.copyWith(
-                color: labelColor,
-                fontWeight: FontWeight.w600,
-              ),
+      // The chip is the only way into the PR sheet from a session, so it is a
+      // control and gets a control's target (kTouchRow). The tint stays painted
+      // around the content — only the transparent hit box is tall.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: kTouchRow),
+        // Painted at the top of the box, not centred: the chip keeps its old
+        // position tight under the session title, and the extra target height
+        // extends *downwards* into empty overlay space instead of pushing the
+        // chip away from the title.
+        child: Align(
+          alignment: Alignment.topLeft,
+          widthFactor: 1,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: kSpace4,
+              vertical: kSpace2,
             ),
-            if (verdict != null) ...[
-              const SizedBox(width: kSpace6),
-              Text(
-                verdict,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelXs?.copyWith(color: labelColor),
-              ),
-            ],
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                style.glyph.build(size: kPillIconSize, color: color),
+                const SizedBox(width: 3),
+                Text(
+                  '#${pr.number}',
+                  style: Theme.of(context).textTheme.labelXs?.copyWith(
+                    color: labelColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (verdict != null) ...[
+                  const SizedBox(width: kSpace6),
+                  Text(
+                    verdict,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.labelXs?.copyWith(color: labelColor),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );

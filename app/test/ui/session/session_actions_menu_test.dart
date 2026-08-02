@@ -152,6 +152,28 @@ void main() {
       expect(find.text('Thinking'), findsNothing);
     });
 
+    testWidgets('offers only thinking when the model list is empty', (
+      tester,
+    ) async {
+      // The mirror of the case above: an agent can advertise a thinking level
+      // without a selectable model list.
+      await _pumpMenu(tester, const SessionMeta(thinking: 'high', models: []));
+
+      expect(find.text('Thinking'), findsOneWidget);
+      expect(find.text('Model'), findsNothing);
+    });
+
+    testWidgets('keeps the divider when there is configuration above it', (
+      tester,
+    ) async {
+      await _pumpMenu(
+        tester,
+        const SessionMeta(model: _model, thinking: 'medium', models: [_model]),
+      );
+
+      expect(find.byType(PopupMenuDivider), findsOneWidget);
+    });
+
     testWidgets('leaves no dangling divider when the middle group is gone', (
       tester,
     ) async {

@@ -40,9 +40,43 @@ class PreferencesController extends StateNotifier<Map<String, Object?>> {
   static String get storageKey => _kOverridesKey;
 
   /// Builds a controller from the persisted overrides. Corrupt JSON is ignored
-  /// (treated as no overrides).
+  /// (treated as no overrides), and surviving entries are normalised — see
+  /// [_normalize].
   static PreferencesController load(SharedPreferences prefs) =>
-      PreferencesController(prefs, _decode(prefs.getString(_kOverridesKey)));
+      PreferencesController(
+        prefs,
+        _normalize(_decode(prefs.getString(_kOverridesKey))),
+      );
+
+  /// Drops stored entries that no longer represent a real override, so [get],
+  /// [isModified] and [modifiedUserFacingCount] cannot disagree.
+  ///
+  /// [set] already prunes a default-valued write, so divergence only arrives
+  /// from disk: a value written by another app version that no longer decodes
+  /// (a renamed enum, say), or one that now *equals* the default because the
+  /// shipped default changed under it. Either way [get] hands back the default
+  /// while the entry's presence claimed "modified", which showed a phantom in
+  /// the "N settings changed" count and armed Reset-all over nothing.
+  ///
+  /// Ids we do not recognise are left alone: they belong to a newer build, and
+  /// running an older one must not wipe them.
+  static Map<String, Object?> _normalize(Map<String, Object?> stored) {
+    if (stored.isEmpty) return stored;
+    final known = {for (final e in kPreferenceEntries) e.id: e};
+    final out = <String, Object?>{};
+    for (final entry in stored.entries) {
+      final known0 = known[entry.key];
+      if (known0 == null) {
+        out[entry.key] = entry.value; // unknown id — preserve verbatim
+        continue;
+      }
+      final decoded = known0.decode(entry.value);
+      if (decoded == null) continue; // no longer decodable
+      if (decoded == known0.defaultValue) continue; // now the default
+      out[entry.key] = entry.value;
+    }
+    return out;
+  }
 
   static Map<String, Object?> _decode(String? raw) {
     if (raw == null || raw.isEmpty) return const {};
@@ -70,11 +104,14 @@ class PreferencesController extends StateNotifier<Map<String, Object?>> {
   ///
   /// Internal bookkeeping entries (e.g. the remembered last section) are
   /// excluded so they don't inflate the "N settings changed" count or enable
-  /// Reset-all when no real preference has changed.
+  /// Reset-all when no real preference has changed. So are ids we don't know:
+  /// they are kept on disk for a newer build (see [_normalize]) but they are not
+  /// settings *this* build can claim the user changed.
   int get modifiedUserFacingCount {
     var count = 0;
+    final knownIds = {for (final e in kPreferenceEntries) e.id};
     for (final id in state.keys) {
-      if (!_internalIds.contains(id)) count++;
+      if (!_internalIds.contains(id) && knownIds.contains(id)) count++;
     }
     return count;
   }
@@ -102,11 +139,18 @@ class PreferencesController extends StateNotifier<Map<String, Object?>> {
 
   /// Clears every user-facing override, reverting those preferences to their
   /// defaults. Internal bookkeeping entries (e.g. the remembered last section)
-  /// are preserved.
+  /// are preserved — and so are ids this build does not recognise.
+  ///
+  /// The unknown-id case mirrors [_normalize]: an id from a newer build is
+  /// preserved on load precisely because it is not ours to delete, so Reset-all
+  /// must not be the thing that deletes it. It is also not a setting this build
+  /// could offer to reset — it does not appear in any section.
   Future<void> resetAll() async {
+    final knownIds = {for (final e in kPreferenceEntries) e.id};
     final next = <String, Object?>{
       for (final e in state.entries)
-        if (_internalIds.contains(e.key)) e.key: e.value,
+        if (_internalIds.contains(e.key) || !knownIds.contains(e.key))
+          e.key: e.value,
     };
     state = Map.unmodifiable(next);
     await _persist();

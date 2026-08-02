@@ -61,25 +61,31 @@ PrStateStyle prStateStyle(ColorScheme cs, PullRequest? pr) =>
       ),
     };
 
+/// GitHub's own CI status hues. Private: named constants exist so the two
+/// functions below cannot drift, not as API for other files. They map
+/// to them ([prRollupColor] for the aggregate verdict, [prCheckBucketColor] for
+/// a single check) and duplicated literals would let the pill's tint and the
+/// per-check list drift apart. They coincide with the diff palette but mean
+/// something different, so they stay literal here rather than borrowing
+/// `kDiffAdd`/`kDiffDel`.
+const Color _kCheckPass = Color(0xFF3FB950);
+const Color _kCheckFail = Color(0xFFF85149);
+const Color _kCheckPending = Color(0xFFD29922);
+
 /// Colour for a PR's aggregate CI verdict ([PullRequest.checkRollup]).
-///
-/// Shared with [prCheckBucketColor] so the pill's verdict tint and the
-/// per-check list can't disagree. GitHub's own check hues (they coincide with
-/// the diff palette but mean something different, so they stay literal here
-/// rather than borrowing `kDiffAdd`/`kDiffDel`).
 Color prRollupColor(ColorScheme cs, String rollup) => switch (rollup) {
-  'pass' => const Color(0xFF3FB950),
-  'fail' => const Color(0xFFF85149),
-  'pending' => const Color(0xFFD29922),
+  'pass' => _kCheckPass,
+  'fail' => _kCheckFail,
+  'pending' => _kCheckPending,
   _ => cs.outline,
 };
 
 /// Colour for a single check bucket ([PrCheck.bucket]). A cancelled check reads
 /// as a failure — it did not pass and the user must act.
 Color prCheckBucketColor(ColorScheme cs, String bucket) => switch (bucket) {
-  'pass' => const Color(0xFF3FB950),
-  'fail' || 'cancel' => const Color(0xFFF85149),
-  'pending' => const Color(0xFFD29922),
+  'pass' => _kCheckPass,
+  'fail' || 'cancel' => _kCheckFail,
+  'pending' => _kCheckPending,
   _ => cs.outline, // skipping / unknown
 };
 

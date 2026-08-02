@@ -33,7 +33,7 @@ echo "recording on $DEVICE_ID"
 
 # The tour needs a first-run app: a previous e2e run leaves paired credentials in
 # the keychain, which sends the app to a dead server instead of the demo door.
-xcrun simctl uninstall "$DEVICE_ID" dev.getmakit.app >/dev/null 2>&1 || true
+xcrun simctl uninstall "$DEVICE_ID" "$APP_BUNDLE_ID" >/dev/null 2>&1 || true
 
 REC_PID=""
 cleanup() {

@@ -75,6 +75,9 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched here rather than inside _grouped: every dependency this screen
+    // rebuilds on is then visible in one place.
+    final repos = ref.watch(reposProvider);
     // Live-sync with archive/restore happening elsewhere (e.g. a swipe on the
     // home screen) — see [_lastActiveIds].
     ref.listen<SessionsState>(sessionsProvider, (_, next) {
@@ -109,7 +112,7 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
               _refresh();
               await _future.catchError((_) => const <Session>[]);
             },
-            child: _grouped(context, sessions),
+            child: _grouped(context, sessions, repos),
           );
         },
       ),
@@ -162,8 +165,11 @@ class _ArchivedScreenState extends ConsumerState<ArchivedScreen> {
 
   /// Grouped by repo — the one dimension that matters on a phone. The server
   /// already returns newest-first, so first-seen group order reads correctly.
-  Widget _grouped(BuildContext context, List<Session> sessions) {
-    final repos = ref.watch(reposProvider);
+  Widget _grouped(
+    BuildContext context,
+    List<Session> sessions,
+    ReposState repos,
+  ) {
     final order = <String>[];
     final byRepo = <String, List<Session>>{};
     for (final s in sessions) {
