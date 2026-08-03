@@ -70,11 +70,27 @@ That is the bug fixed by `87b4941`: makit registered it and pinned the session t
 
 Failure modes (JSON-RPC errors, `code: -32600` — **not** results):
 
-| Condition | Message |
-|---|---|
-| stale/incorrect precondition | ``expected active turn id `turn_stale_0000` but found `019fc477-99ed…` `` |
-| no turn in flight | `no active turn to steer` |
-| review / compact turn | `activeTurnNotSteerable` (`NonSteerableTurnKind = review \| compact`, from the binary; not exercised live) |
+| Condition | `message` | `data.codexErrorInfo` |
+|---|---|---|
+| stale/incorrect precondition | ``expected active turn id `turn_stale_0000` but found `019fc477-99ed…` `` | — |
+| no turn in flight | `no active turn to steer` | — |
+| compact turn | `cannot steer a compact turn` | `{activeTurnNotSteerable:{turnKind:"compact"}}` |
+| review turn | `cannot steer a review turn` | `{activeTurnNotSteerable:{turnKind:"review"}}` |
+
+Both non-steerable kinds were exercised live (`thread/compact/start` and
+`review/start` on a dirty worktree), which produced two findings worth more than
+the confirmation itself:
+
+- **`activeTurnNotSteerable` is not in `message`.** It lives in
+  `data.codexErrorInfo`, so a ladder that string-matches the message would miss
+  it. This is why the implementation keys off "the request rejected", not off the
+  code — every rejection means the same thing to the caller: queue instead.
+- **A review announces a different turn id than the one it treats as active.**
+  `review/start` returns turn `X` (and codex considers `X` active), while
+  `turn/started` announces a *different* id `Y`. Steering `Y` gives the
+  precondition error naming `X`; steering `X` gives `cannot steer a review turn`.
+  Either way makit queues, because it steers `activeTurnIds[0]` — the announced
+  id — and treats any rejection as "queue". See [§Risks](#risks).
 
 ### pi over `pi-acp` (pi-acp 0.0.32) — and ACP generally
 
@@ -160,7 +176,7 @@ send.message
 | result `{turnId}` | echo `user.message`, return `true` |
 | `no active turn to steer` | the turn ended in the race window → return `false` **and** let the session layer treat the session as idle: the queue flush that follows on `idle` delivers it immediately |
 | precondition mismatch | return `false` → queue (do **not** retry with the newly-observed id: the user's message was written against what they saw) |
-| `activeTurnNotSteerable` (review/compact) | return `false` → queue |
+| `activeTurnNotSteerable` (review/compact) | return `false` → queue. Verified live via `thread/compact/start` (announced id = active id, so the adapter really does receive this error) and via `review/start` (where the announced id differs, so the adapter receives the precondition error instead — same outcome) |
 
 ### Flush
 
@@ -266,6 +282,12 @@ Keyless and deterministic, per `makit-verify-feature-end-to-end`:
 - **Agents that reject overlapping prompts** are handled by construction (makit never
   overlaps after this spec), which also means the ACP path loses pi's internal-queue
   behaviour. Net: one queue, ours, visible.
-- **`activeTurnNotSteerable` is untested against a live review/compact turn.** The ladder
-  treats every steer failure as "queue", so an unexpected error code degrades to correct
-  behaviour rather than a lost message.
+- **A review turn's announced id is not codex's active turn id** (see
+  [§Evidence](#codex-app-server-codex-cli-01460)). For steering this is harmless — both
+  ids lead to a rejection and therefore to the queue — but it means
+  `TurnStatusTracker.activeTurnIds` would hold the inner id during a review, so
+  `cancel()` would `turn/interrupt` the id codex does not consider active. **Not fixed
+  here and not currently reachable**: makit has no way to start a review or a compact turn
+  (no `review/start`, and `/compact` is not mapped for codex). It becomes real the day a
+  review/compact action is added, and should be handled then — with a live probe, not an
+  assumption.

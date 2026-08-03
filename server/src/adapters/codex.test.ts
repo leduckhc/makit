@@ -633,13 +633,42 @@ test("steer(): accepted — injects into the active turn and echoes once", async
   assert.equal(h.events.filter((e) => e.kind === "user.message").length, h.echoesBefore + 1);
 });
 
+// Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`
+// lives in `data.codexErrorInfo` — NOT in `message` — which is exactly why the
+// ladder keys off "the request rejected" rather than off string matching.
 for (const [label, error] of [
   ["no active turn", { code: -32600, message: "no active turn to steer" }],
   [
     "stale precondition",
-    { code: -32600, message: "expected active turn id `t0` but found `t1`" },
+    {
+      code: -32600,
+      message: "expected active turn id `t0` but found `t1`",
+    },
   ],
-  ["non-steerable turn", { code: -32600, message: "activeTurnNotSteerable" }],
+  [
+    "non-steerable compact turn",
+    {
+      code: -32600,
+      message: "cannot steer a compact turn",
+      data: {
+        message: "cannot steer a compact turn",
+        codexErrorInfo: { activeTurnNotSteerable: { turnKind: "compact" } },
+        additionalDetails: null,
+      },
+    },
+  ],
+  [
+    "non-steerable review turn",
+    {
+      code: -32600,
+      message: "cannot steer a review turn",
+      data: {
+        message: "cannot steer a review turn",
+        codexErrorInfo: { activeTurnNotSteerable: { turnKind: "review" } },
+        additionalDetails: null,
+      },
+    },
+  ],
 ] as const) {
   test(`steer(): ${label} — reports false and echoes nothing`, async () => {
     const h = await steerHarness(() => ({ error }));
