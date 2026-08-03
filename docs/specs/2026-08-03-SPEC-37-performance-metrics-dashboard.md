@@ -160,6 +160,8 @@ interface MetricsSampleDTO {
   storage: { eventLogBytes: number } | null;   // refreshed every 6th tick
   sampler: { cpuPercent: number | null; rssBytes: number };  // our own cost
   turnActive: boolean;              // any session mid-turn — drives the icon
+  procTableOk: boolean;             // false = `ps` failed; agents/app omitted because
+                                    // we could not look, NOT because they exited
 }
 
 interface SurfaceDTO { pid: number; rssBytes: number; cpuPercent: number | null; cpuSeconds: number; }
@@ -174,6 +176,14 @@ so a freshly-opened panel draws a populated chart immediately (the same trick as
 `GithubBudgetDTO.history`, but out-of-line because the ring holds full samples).
 
 `cpuPercent` is `null` — never `0` — when no rate is computable yet.
+
+`procTableOk: false` means the `ps` read failed. The agent rows and the app row are
+then **omitted**, because with no process table there is nothing honest to say: a row
+of zeros reads as "idle" and a missing row reads as "exited". The UI must render
+*measurement unavailable* — it knows from the sessions snapshot that agents exist, and
+silently dropping their rows is precisely how SPEC-32's PR pills used to vanish under
+rate limits. The server row stays valid throughout: it comes from
+`process.memoryUsage()`, not from `ps`.
 
 ### Subscription: a command, not a `sub` flag
 
@@ -302,6 +312,7 @@ the user's request.
 | 10 | The panel displays **its own cost** | Self-honesty is the strongest form of the claim, and it is falsifiable by the reader |
 | 11 | Sessions with no pid (stub adapter, failed spawn) are **omitted**, not zeroed | A zero is indistinguishable from a genuinely idle agent |
 | 12 | No colour for "working" | An always-on tint carries no information; colour means *cost without work* |
+| 13 | A failed `ps` sets `procTableOk: false` and **omits** the agent/app rows; the UI says *measurement unavailable* | Zeros read as "idle", missing rows read as "exited". Neither is true, and the second is the SPEC-32 vanishing-pill defect wearing a new hat |
 
 ## Phases
 

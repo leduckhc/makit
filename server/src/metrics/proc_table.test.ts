@@ -126,45 +126,49 @@ test("readProcTable invokes exec with the exact ps argv", async () => {
     calls.push({ cmd, args });
     return { code: 0, stdout: LINUX_PS, stderr: "" };
   };
-  const table = await readProcTable(exec);
+  const { ok, table } = await readProcTable(exec);
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].cmd, "ps");
   assert.deepEqual(calls[0].args, ["-axo", "pid=,ppid=,rss=,time=,comm="]);
   assert.equal(table.size, 3);
+  assert.equal(ok, true);
 });
 
 test("readProcTable returns an empty map when exec fails, never throws", async () => {
   const exec: Exec = async () => ({ code: 1, stdout: "", stderr: "ps: not found" });
-  const table = await readProcTable(exec);
+  const { table } = await readProcTable(exec);
   assert.equal(table.size, 0);
 });
 
 // ── review findings (both review passes named these the highest-value gaps) ────
 
-test("readProcTable degrades to an empty table when exec REJECTS", async () => {
-  const table = await readProcTable(async () => {
+test("readProcTable degrades to an empty table when exec REJECTS, flagged not-ok", async () => {
+  const { ok, table } = await readProcTable(async () => {
     throw new Error("spawn ps ENOENT");
   });
   assert.equal(table.size, 0);
+  assert.equal(ok, false, "the caller must be able to tell 'could not look' from 'nothing there'");
 });
 
-test("readProcTable degrades to an empty table on a non-zero exit", async () => {
-  const table = await readProcTable(async () => ({
+test("readProcTable degrades to an empty table on a non-zero exit, flagged not-ok", async () => {
+  const { ok, table } = await readProcTable(async () => ({
     code: 1,
     stdout: "      1       0   12040       01:30 systemd",
     stderr: "ps: illegal option",
   }));
   assert.equal(table.size, 0, "a failed ps must not be parsed as if it succeeded");
+  assert.equal(ok, false);
 });
 
 test("readProcTable forwards the caller's timeout to exec (a wedged ps must be bounded)", async () => {
   let seen: number | undefined = undefined;
-  await readProcTable(async (_cmd, _args, _cwd, timeoutMs) => {
+  const { ok } = await readProcTable(async (_cmd, _args, _cwd, timeoutMs) => {
     seen = timeoutMs;
     return { code: 0, stdout: "", stderr: "" };
   }, 2_000);
   assert.equal(seen, 2_000);
+  assert.equal(ok, true, "a successful ps with no matching rows is ok, not a failure");
 });
 
 test("a row with an empty comm is retained, not dropped", () => {

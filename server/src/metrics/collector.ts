@@ -57,10 +57,21 @@ export interface MetricsSampleDTO {
   app: SurfaceDTO | null;
   server: SurfaceDTO & { eventLoop: { p50: number; p99: number } };
   agents: AgentMetricsDTO[];
-  wire: { inBytesPerSec: number; outBytesPerSec: number; frames: number };
+  wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
   storage: { eventLogBytes: number } | null;
   sampler: { cpuPercent: number | null; rssBytes: number };
   turnActive: boolean;
+  /**
+   * False when `ps` could not be read this tick, in which case `agents` is empty
+   * and `app` is null **because we could not look** — not because they exited.
+   *
+   * The UI must render "measurement unavailable" rather than an empty agent list:
+   * it knows from the sessions snapshot that agents exist, and silently dropping
+   * their rows is the same defect SPEC-32 fixed for PR pills disappearing under
+   * rate limits. The server row stays valid either way — it comes from
+   * `process.memoryUsage()`, not from `ps`.
+   */
+  procTableOk: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +90,7 @@ export interface WireLike {
   sampleRates(now: number): {
     inBytesPerSec: number;
     outBytesPerSec: number;
-    frames: number;
+    framesPerSec: number;
   };
 }
 
@@ -255,19 +266,24 @@ export class MetricsCollector {
     // the whole tick runs under onTick's guard.
     const timedExec: Exec = (cmd, args, cwd, timeoutMs) =>
       this.deps.exec(cmd, args, cwd, timeoutMs ?? PS_TIMEOUT_MS);
-    const table = await readProcTable(timedExec);
+    const { ok: procTableOk, table } = await readProcTable(timedExec);
 
     // Build the ppid index ONCE and reuse it for every root (decision 3).
     const index = childIndex(table);
 
     const agentEntries = this.deps.agents();
-    const agents = agentEntries
-      .filter((a): a is AgentEntry & { pid: number } => a.pid !== undefined)
-      .map((a) => this.assembleAgent(a, table, index, nowMs, coarse));
+    // With no process table there is nothing honest to say about any agent: a row
+    // of zeros reads as "idle" and an omitted row reads as "exited", so we omit the
+    // rows and let `procTableOk` carry the reason (see MetricsSampleDTO).
+    const agents = procTableOk
+      ? agentEntries
+          .filter((a): a is AgentEntry & { pid: number } => a.pid !== undefined)
+          .map((a) => this.assembleAgent(a, table, index, nowMs, coarse))
+      : [];
 
     const appPid = this.deps.appPid();
     const app =
-      appPid === undefined
+      appPid === undefined || !procTableOk
         ? null
         : this.assembleSurface(appPid, table, index, nowMs);
 
@@ -307,6 +323,7 @@ export class MetricsCollector {
       // Derived from the full closure: a session mid-turn matters for the icon
       // even if it has no pid (and is therefore absent from `agents`).
       turnActive: agentEntries.some((a) => a.inTurn),
+      procTableOk,
     };
 
     this.tickCount++;

@@ -122,19 +122,34 @@ export function parseProcTable(stdout: string): Map<number, ProcRow> {
   return table;
 }
 
+/** Outcome of one `ps` read. */
+export interface ProcTableResult {
+  /**
+   * False when `ps` could not be read at all (spawn fault, non-zero exit).
+   *
+   * This flag is the difference between "no processes" and "we could not look",
+   * and it matters: an empty table is indistinguishable from every agent having
+   * exited, so a caller that ignored `ok` would report a working agent as gone —
+   * the same defect SPEC-32 fixed for PR pills vanishing under rate limits.
+   */
+  ok: boolean;
+  table: Map<number, ProcRow>;
+}
+
 /**
  * Run the single `ps` snapshot and parse it.
  *
  * Owns its own degrade-to-empty guarantee rather than borrowing it from the caller:
- * a rejecting `exec` (spawn fault), a non-zero exit, or empty output all yield an
+ * a rejecting `exec` (spawn fault) or a non-zero exit yield `{ok: false}` with an
  * empty table. The collector calls this at 1 Hz forever, so a metrics gap is
  * acceptable and an unhandled rejection that kills the sampler is not.
  */
-export async function readProcTable(exec: Exec, timeoutMs?: number): Promise<Map<number, ProcRow>> {
+export async function readProcTable(exec: Exec, timeoutMs?: number): Promise<ProcTableResult> {
   try {
     const { code, stdout } = await exec("ps", [...PS_ARGS], undefined, timeoutMs);
-    return code === 0 ? parseProcTable(stdout) : new Map();
+    if (code !== 0) return { ok: false, table: new Map() };
+    return { ok: true, table: parseProcTable(stdout) };
   } catch {
-    return new Map();
+    return { ok: false, table: new Map() };
   }
 }

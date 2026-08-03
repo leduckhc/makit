@@ -90,7 +90,7 @@ function harness(overrides: Partial<MetricsCollectorDeps> = {}): Harness {
     clearTimer: scheduler.clearTimer,
     self: { sample: () => SELF },
     wire: {
-      sampleRates: () => ({ inBytesPerSec: 0, outBytesPerSec: 0, frames: 0 }),
+      sampleRates: () => ({ inBytesPerSec: 0, outBytesPerSec: 0, framesPerSec: 0 }),
     },
     ledger: new CpuLedger(),
     agents: () => agents,
@@ -311,12 +311,13 @@ test("exec is called with the ps timeout bound", async () => {
 // Robustness: a throwing tick must not kill the collector.
 // ---------------------------------------------------------------------------
 
-test("a rejecting exec logs once and keeps the timer alive", async () => {
+test("a rejecting exec keeps the timer alive and flags the sample, then recovers", async () => {
   const originalError = console.error;
   let errorCount = 0;
   console.error = () => {
     errorCount++;
   };
+  void errorCount;
   try {
     let fail = true;
     const h = harness({
@@ -331,14 +332,23 @@ test("a rejecting exec logs once and keeps the timer alive", async () => {
 
     await h.scheduler.fire();
     await h.scheduler.fire();
-    assert.equal(h.samples.length, 0, "no sample assembled while exec rejects");
-    assert.equal(h.scheduler.activeId, handle, "timer stays alive after a throw");
-    assert.equal(errorCount, 1, "logs once per failure streak, not at 1 Hz");
+    // `readProcTable` owns the failure: it returns {ok:false, empty table} rather
+    // than rejecting, so ticks keep producing samples. That is deliberate — the
+    // server row comes from process.memoryUsage(), not `ps`, so it is still valid
+    // and worth showing while `ps` is broken.
+    assert.equal(h.samples.length, 2, "ticks continue; the ps failure is reported in-band");
+    assert.equal(
+      h.samples[0].procTableOk,
+      false,
+      "a ps failure must be flagged, not shown as an empty machine",
+    );
+    assert.equal(h.scheduler.activeId, handle, "timer stays alive after a failed ps");
 
-    // Recovery: a good tick produces a sample.
+    // Recovery: once `ps` works again, samples are flagged ok.
     fail = false;
     await h.scheduler.fire();
-    assert.equal(h.samples.length, 1);
+    assert.equal(h.samples.length, 3);
+    assert.equal(h.samples.at(-1)!.procTableOk, true, "recovers without a restart");
   } finally {
     console.error = originalError;
   }
@@ -416,4 +426,28 @@ test("a negative server cpuPercent from self.ts is clamped to 0", async () => {
   h.collector.start();
   await h.scheduler.fire();
   assert.equal(h.samples[0].server.cpuPercent, 0);
+});
+
+test("a failed ps must not make live agents look like they exited (SPEC-32 lesson)", async () => {
+  // Two agents are registered and running. `ps` then fails. The sample must NOT
+  // read as "no agents": that is indistinguishable from every agent having quit,
+  // which is exactly how SPEC-32's PR pills used to vanish under rate limits.
+  const h = harness({
+    exec: async () => {
+      throw new Error("ps: command not found");
+    },
+    agents: () => [
+      { sessionId: "s1", label: "pi", pid: 4242, inTurn: true },
+      { sessionId: "s2", label: "codex", pid: 4243, inTurn: false },
+    ],
+  });
+  h.collector.setWatchers(1);
+  h.collector.start();
+  await h.scheduler.fire();
+
+  const s = h.samples.at(-1)!;
+  assert.equal(s.procTableOk, false, "the reason the rows are missing must be legible");
+  assert.deepEqual(s.agents, [], "no fabricated rows either — we genuinely did not measure");
+  assert.equal(s.turnActive, true, "turn state comes from the session registry, not from ps");
+  assert.ok(s.server.rssBytes >= 0, "the server row is still valid: it never came from ps");
 });
