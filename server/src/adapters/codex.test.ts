@@ -15,6 +15,7 @@ function fakeAppServer() {
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
 
   const transport: CodexTransport = {
+    pid: undefined, // in-memory fake: no child process
     send: (line) => {
       const msg = JSON.parse(line);
       sent.push(msg);

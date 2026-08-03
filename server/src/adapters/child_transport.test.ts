@@ -278,3 +278,29 @@ test("a newline-terminated frame over the cap is dropped, not delivered", () => 
 
   assert.deepEqual(lines, ['{"ok":1}']);
 });
+
+test("pid is set to the child's pid for a real trivial spawn", () => {
+  // A real, trivial subprocess (exits immediately) — the point is only that
+  // spawnLineProcess surfaces child.pid rather than discarding it.
+  const t = spawnLineProcess({
+    command: process.execPath,
+    args: ["-e", ""],
+    cwd: process.cwd(),
+    label: "pid-probe",
+  });
+  try {
+    assert.equal(typeof t.pid, "number");
+    assert.ok((t.pid as number) > 0, "a live child has a positive OS pid");
+  } finally {
+    t.dispose();
+  }
+});
+
+test("pid is undefined when the spawn faults (no child pid)", () => {
+  // A faulted spawn leaves child.pid === undefined; propagate that honestly
+  // rather than coercing to 0 (SPEC-37 decision 11: an absent pid is omitted,
+  // not zeroed).
+  const { spawn } = fakeSpawn(); // fake child never sets .pid
+  const t = spawnLineProcess({ command: "x", cwd: "/tmp", label: "t", spawn });
+  assert.equal(t.pid, undefined);
+});
