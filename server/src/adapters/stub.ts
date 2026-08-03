@@ -112,6 +112,24 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
+    // "SLOW [ms]" → a turn that OUTLIVES a keystroke: running now, reply after
+    // `ms` (default 12s), then idle. The queue (SPEC-35/36) only exists while the
+    // agent is busy, so without this the keyless loop — and the demo — has no
+    // window in which a message can be queued, edited or reordered at all.
+    if (prompt.includes("SLOW")) {
+      const ms = Number(/SLOW\s+(\d+)/.exec(prompt)?.[1] ?? 12_000);
+      this.emit("status", "running");
+      setTimeout(() => {
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "agent.message",
+          payload: { text: `done after ${ms}ms: ${prompt}` },
+        });
+        this.emit("status", "idle");
+      }, ms);
+      return;
+    }
+
     // "STREAM" → emit running status, a few agent.message.delta tokens, then
     // the final authoritative agent.message, then idle. Exercises live token
     // streaming + the working indicator end-to-end.

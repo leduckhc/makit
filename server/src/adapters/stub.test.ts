@@ -82,3 +82,27 @@ test("an adapter with no steering primitive reports it (SPEC-35 T1)", async () =
   assert.equal(await stub.steer({ text: "mid-turn" }), false);
   assert.equal(events.length, before, "steer() must not echo or emit anything");
 });
+
+test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-36)", async () => {
+  const stub = new StubAdapter();
+  const statuses: string[] = [];
+  const events: AdapterEvent[] = [];
+  stub.on("status", (s) => statuses.push(s));
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+
+  await stub.send({ text: "SLOW 120" });
+
+  // Running immediately, and STILL running a moment later: without a turn that
+  // outlives a keystroke there is no way to demo (or e2e) a queued message.
+  assert.equal(statuses.at(-1), "running");
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(statuses.at(-1), "running");
+
+  await new Promise((r) => setTimeout(r, 160));
+  assert.equal(statuses.at(-1), "idle");
+  assert.ok(
+    events.some((e) => e.kind === "agent.message"),
+    "the turn still produces a reply",
+  );
+});
