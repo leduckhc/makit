@@ -57,6 +57,7 @@ const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "session.meta",
   "session.action_error",
   "github.budget",
+  "metrics.sample",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {

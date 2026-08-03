@@ -69,7 +69,16 @@ export type EventKind =
   // handlers (server.ts) / session.ts, which are out of this spec's scope.
   | "session.action_error"
   /** GitHub API budget snapshot (SPEC-32 §6.6) — a top-level broadcast event. */
-  | "github.budget";
+  | "github.budget"
+  /**
+   * Host-wide performance sample (SPEC-37). Like {@link github.budget}, this is
+   * a top-level broadcast event, NOT a session event: metrics describe the whole
+   * makit host (server, app, every agent tree), not one session, and they must
+   * **never** enter the append-only session log (spec decision 5). Writing them
+   * there would bloat every session's transcript and slow every resume forever,
+   * for data that is inherently ephemeral. Do not "tidy" it into `SessionEvent`.
+   */
+  | "metrics.sample";
 
 /**
  * GitHub API budget broadcast (SPEC-32 §6.6). Sent as a top-level
@@ -104,6 +113,56 @@ export interface GithubBudgetDTO {
   history: Array<{ mine: number; others: number }>;
   /** Exec vs. cache-hit counters (verifies the ≥80% call-reduction claim). */
   stats: { execs: number; cacheHits: number };
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-37 metrics DTOs — the wire contract for the `metrics.sample` event.
+//
+// These live here, next to `github.budget`, because this is where the wire
+// contract lives; `metrics/collector.ts` imports them rather than duplicating
+// the shapes. They are deliberately NOT part of `SessionEvent`: a metrics sample
+// is a host-wide broadcast that must stay out of the append-only session log
+// (spec decision 5) — see the `metrics.sample` note on {@link EventKind}.
+// ---------------------------------------------------------------------------
+
+/** One measured surface (the app, the server, or an agent tree). */
+export interface SurfaceDTO {
+  pid: number;
+  rssBytes: number;
+  /** `null` — never `0` — until a rate is computable (spec decision 2). */
+  cpuPercent: number | null;
+  cpuSeconds: number;
+}
+
+export interface AgentMetricsDTO extends SurfaceDTO {
+  sessionId: string;
+  label: string;
+  inTurn: boolean;
+  /** Omitted on coarse (idle-cadence) frames — they only colour an icon. */
+  procs?: number;
+  /** Omitted on coarse (idle-cadence) frames. */
+  uptimeMs?: number;
+}
+
+/**
+ * One performance sample, carried on the `metrics.sample` event as
+ * `{ sample: MetricsSampleDTO; history?: MetricsSampleDTO[] }`. `history` is
+ * present ONLY on the first frame after `metrics.watch {on:true}`.
+ */
+export interface MetricsSampleDTO {
+  ts: number;
+  app: SurfaceDTO | null;
+  server: SurfaceDTO & { eventLoop: { p50: number; p99: number } };
+  agents: AgentMetricsDTO[];
+  wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
+  storage: { eventLogBytes: number } | null;
+  sampler: { cpuPercent: number | null; rssBytes: number };
+  turnActive: boolean;
+  /**
+   * False when `ps` could not be read this tick, in which case `agents` is empty
+   * and `app` is null **because we could not look** — not because they exited.
+   */
+  procTableOk: boolean;
 }
 
 export interface SessionEvent {

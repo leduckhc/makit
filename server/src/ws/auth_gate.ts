@@ -43,6 +43,11 @@ export class AuthGate {
     const pair = typeof env.pair === "string" ? env.pair : "";
     const label = typeof env.label === "string" ? env.label : "device";
 
+    // SPEC-37 decision 6: accept the app's reported pid ONLY on a loopback
+    // socket. A non-loopback client's pid is ignored silently (it still
+    // connects normally) so "report your pid" never becomes "sample any pid".
+    if (client.isLocal && typeof env.pid === "number") client.appPid = env.pid;
+
     if (bearer) {
       this.handleBearer(client, env, bearer);
       return;

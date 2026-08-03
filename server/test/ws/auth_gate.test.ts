@@ -35,6 +35,8 @@ function fakeClient(authed = false): FakeClient {
     closed: null,
     authed,
     subscribed: new Set<string>(),
+    watchingMetrics: false,
+    isLocal: true,
     send: (frame) => sent.push(frame),
     close: (code, reason) => {
       client.closed = { code, reason };
@@ -151,4 +153,32 @@ test("already-trusted (localhost) hello acks without a token", () => {
   assert.ok(ack);
   assert.equal(ack!.ok, true);
   assert.equal(snapshotsFor, client);
+});
+
+// ── SPEC-37: the app's reported pid is accepted ONLY on a loopback socket ────
+
+test("hello {pid} on a loopback client sets appPid (SPEC-37 decision 6)", () => {
+  const gate = new AuthGate({ registry: fakeRegistry({}), onAuthenticated: () => {} });
+  const client = fakeClient(true);
+  (client as { isLocal: boolean }).isLocal = true;
+
+  gate.handleHello(client, hello({ pid: 4242 }));
+
+  assert.equal(client.appPid, 4242, "a loopback client's reported pid is accepted");
+});
+
+test("hello {pid} on a non-loopback client is ignored, appPid stays unset (SPEC-37 decision 6)", () => {
+  const device = { id: "dev-x", label: "phone", bearer: "good" };
+  const gate = new AuthGate({
+    registry: fakeRegistry({ bearers: { good: device } }),
+    onAuthenticated: () => {},
+  });
+  const client = fakeClient(false);
+  (client as { isLocal: boolean }).isLocal = false;
+
+  // A phone must still connect normally — the pid is simply dropped.
+  gate.handleHello(client, hello({ bearer: "good", pid: 4242 }));
+
+  assert.equal(client.authed, true, "a non-loopback client still authenticates");
+  assert.equal(client.appPid, undefined, "its reported pid is ignored");
 });

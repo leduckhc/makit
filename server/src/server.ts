@@ -54,6 +54,7 @@ import { register as registerProjectCommands } from "./ws/commands/project.js";
 import { register as registerWorktreeCommands } from "./ws/commands/worktree.js";
 import { register as registerRepoCommands } from "./ws/commands/repo.js";
 import { register as registerGithubCommands } from "./ws/commands/github.js";
+import { register as registerMetricsCommands } from "./ws/commands/metrics.js";
 import { register as registerDebugCommands } from "./ws/commands/debug.js";
 import { register as registerDiagnosticsCommands } from "./ws/commands/diagnostics.js";
 import { throttleTrailing } from "./ws/throttle.js";
@@ -63,6 +64,21 @@ import { fetchOpenPr } from "./git.js";
 import { decide } from "./github/policy.js";
 import { attachMediaRoute } from "./media/route.js";
 import { sharedMediaStore } from "./media/store.js";
+import {
+  MetricsCollector,
+  type AgentEntry,
+  type CpuUsageSnapshot,
+  type LedgerLike,
+  type SelfLike,
+} from "./metrics/collector.js";
+import type { Exec } from "./metrics/proc_table.js";
+import { createSelfProbe } from "./metrics/self.js";
+import { WireMeter } from "./metrics/wire_meter.js";
+import { CpuLedger } from "./metrics/ledger.js";
+import { run as execRun } from "./git.js";
+import { stat as fsStat } from "node:fs/promises";
+import { resolve as resolvePath } from "node:path";
+import { makitHome } from "./daemon/paths.js";
 
 export interface ServerOpts {
   host: string;
@@ -86,6 +102,24 @@ export interface ServerOpts {
    * the default unhandled-'error' crash buries the cause in a stack trace.
    */
   onListenError?: (err: NodeJS.ErrnoException, where: string) => void;
+  /**
+   * SPEC-37 metrics collector seams, injected only by tests so a sample can be
+   * driven deterministically without spawning `ps` or waiting on real timers.
+   * Production leaves this undefined and uses `ps` via `git.run`, `setInterval`,
+   * `process.cpuUsage()` and a live {@link createSelfProbe}.
+   */
+  metrics?: {
+    exec?: Exec;
+    now?: () => number;
+    setTimer?: (fn: () => void, ms: number) => unknown;
+    clearTimer?: (handle: unknown) => void;
+    self?: SelfLike;
+    wire?: WireMeter;
+    ledger?: LedgerLike & { retainOnly(keep: Iterable<number>): void };
+    cpuUsage?: () => CpuUsageSnapshot;
+    /** Overrides `MAKIT_METRICS_BACKGROUND`; default reads the env var. */
+    enabled?: boolean;
+  };
 }
 
 /** Concrete client: a {@link WsClient} backed by a live `ws` socket. */
@@ -268,6 +302,109 @@ export function startWsServer(opts: ServerOpts) {
     return ids;
   };
 
+  // -------- SPEC-37 metrics collector -------------------------------------
+  //
+  // A single host-wide collector. `agents`/`appPid`/`storage` are closures over
+  // the manager + client set (the collector never imports either), and each
+  // assembled sample is broadcast as a top-level `metrics.sample` event — NEVER
+  // written to the session log (spec decision 5). Background sampling is on at
+  // 5 s unless `MAKIT_METRICS_BACKGROUND=0`; a `metrics.watch` client bumps it to
+  // 1 Hz. The one WireMeter is shared with the socket send/receive paths below.
+  const wire = opts.metrics?.wire ?? new WireMeter();
+  const ledger: LedgerLike & { retainOnly(keep: Iterable<number>): void } =
+    opts.metrics?.ledger ?? new CpuLedger();
+  const metricsNow = opts.metrics?.now ?? (() => Date.now());
+  const metricsBackgroundOn =
+    opts.metrics?.enabled ?? process.env.MAKIT_METRICS_BACKGROUND !== "0";
+
+  // The SQLite event log, whose on-disk size is the `storage` probe — the same
+  // path `serve.ts` opens the store at (`MAKIT_DB_FILE`, else `$MAKIT_HOME/makit.db`).
+  const eventLogPath =
+    process.env.MAKIT_DB_FILE ?? resolvePath(makitHome(), "makit.db");
+
+  const countMetricsWatchers = (): number => {
+    let n = 0;
+    for (const c of clients.values()) if (c.authed && c.watchingMetrics) n++;
+    return n;
+  };
+  // The app has no self-CPU API (decision 6): its pid comes from the first
+  // loopback client that reported one in `hello`.
+  const firstAppPid = (): number | undefined => {
+    for (const c of clients.values())
+      if (c.authed && c.isLocal && c.appPid !== undefined) return c.appPid;
+    return undefined;
+  };
+  // `agents` is a closure so `metrics/` never imports the manager. `inTurn` is
+  // the existing `Session.status === "running"` (no new state invented); a
+  // pid-less session (stub adapter / failed spawn) is kept in the list — the
+  // collector omits it from per-agent rows but still counts it for `turnActive`.
+  const liveAgents = (): AgentEntry[] =>
+    manager.allSessions().map((s) => ({
+      sessionId: s.id,
+      label: s.title,
+      pid: s.agentPid,
+      inTurn: s.status === "running",
+    }));
+
+  const emitMetricsSample = (sample: unknown, extra?: Record<string, unknown>): OutgoingFrame => ({
+    t: "event",
+    id: newId("met"),
+    kind: "metrics.sample",
+    sample,
+    ...extra,
+  });
+
+  const metricsCollector = new MetricsCollector({
+    exec: opts.metrics?.exec ?? ((cmd, args, cwd, timeoutMs) => execRun(cmd, args, cwd, timeoutMs)),
+    now: metricsNow,
+    setTimer: opts.metrics?.setTimer ?? ((fn, ms) => setInterval(fn, ms)),
+    clearTimer: opts.metrics?.clearTimer ?? ((h) => clearInterval(h as NodeJS.Timeout)),
+    self: opts.metrics?.self ?? createSelfProbe(),
+    wire,
+    ledger,
+    agents: liveAgents,
+    storage: async () => ({ eventLogBytes: (await fsStat(eventLogPath)).size }),
+    appPid: firstAppPid,
+    cpuUsage: opts.metrics?.cpuUsage ?? (() => process.cpuUsage()),
+    onSample: (sample, { coarse }) => {
+      // Prune the CPU ledger to the live agent roots every tick, or a killed
+      // agent's per-root state leaks forever (spec decision 4).
+      const roots: number[] = [];
+      for (const a of liveAgents()) if (a.pid !== undefined) roots.push(a.pid);
+      ledger.retainOnly(roots);
+      // Coarse (idle-cadence) frames colour the footer icon for EVERY authed
+      // client; fine (watched) frames draw charts for watchers only.
+      const frame = emitMetricsSample(sample);
+      for (const c of clients.values()) {
+        if (!c.authed) continue;
+        if (coarse || c.watchingMetrics) c.send(frame);
+      }
+    },
+    watchedIntervalMs: 1_000,
+    idleIntervalMs: 5_000,
+    ringCapacity: 1_800,
+  });
+
+  // Recompute the watcher count and re-arm the cadence. When background sampling
+  // is off, a watcher starts the collector on demand and the last unwatch stops
+  // it again (spec §"Background sampling is a preference").
+  const recomputeMetricsWatchers = (): void => {
+    const n = countMetricsWatchers();
+    if (n > 0) metricsCollector.start();
+    metricsCollector.setWatchers(n);
+    if (n === 0 && !metricsBackgroundOn) metricsCollector.stop();
+  };
+  // Hand a freshly-subscribed watcher the ring history once, so its chart is
+  // populated immediately (the `github.budget` history trick, out-of-line).
+  const sendMetricsHistory = (client: WsClient): void => {
+    const history = metricsCollector.historyFor(metricsNow());
+    if (history.length === 0) return; // nothing sampled yet; the next tick delivers
+    client.send(emitMetricsSample(history[history.length - 1], { history }));
+  };
+
+  if (metricsBackgroundOn) metricsCollector.start();
+  https.on("close", () => metricsCollector.stop());
+
   // -------- collaborators -------------------------------------------------
 
   const hub = new SubscriptionHub({ manager });
@@ -306,12 +443,14 @@ export function startWsServer(opts: ServerOpts) {
     const remote = req.socket.remoteAddress ?? "";
     log.info(`[makit] ws connection from ${remote}`);
     const isLocal = remote === "127.0.0.1" || remote === "::1" || remote === "::ffff:127.0.0.1";
-    const state = makeClient(ws, trustLocalhost && isLocal);
+    const state = makeClient(ws, trustLocalhost && isLocal, isLocal);
     clients.set(ws, state);
     hub.register(state);
 
     ws.on("message", (raw) => {
-      const env = decodeFrame(raw.toString());
+      const text = raw.toString();
+      wire.addIn(text.length); // SPEC-37: count inbound WS bytes at the transport.
+      const env = decodeFrame(text);
       if (!env) {
         state.send({ t: "err", id: "", code: WireErrorCode.BadRequest, message: "malformed frame" });
         return;
@@ -322,6 +461,12 @@ export function startWsServer(opts: ServerOpts) {
     ws.on("close", () => {
       clients.delete(ws);
       hub.unregister(state);
+      // SPEC-37 leak guard: a panel closed by killing the window never sends
+      // `metrics.watch {on:false}`. Clear the flag and re-arm the cadence, or the
+      // collector samples at 1 Hz forever — in a feature whose point is proving
+      // makit is cheap (spec decision 7).
+      state.watchingMetrics = false;
+      recomputeMetricsWatchers();
       broadcastSnapshots();
     });
 
@@ -385,13 +530,14 @@ export function startWsServer(opts: ServerOpts) {
 
   function buildCommandRouter(): CommandRouter {
     const r = new CommandRouter();
-    const deps = { manager, gateway, broadcastSnapshots, broadcastReposSnapshot, broadcastBudget, askDevice };
+    const deps = { manager, gateway, broadcastSnapshots, broadcastReposSnapshot, broadcastBudget, askDevice, onMetricsWatchersChanged: recomputeMetricsWatchers, sendMetricsHistory };
 
     registerSessionCommands(r, deps);
     registerProjectCommands(r, deps);
     registerWorktreeCommands(r, deps);
     registerRepoCommands(r, deps);
     registerGithubCommands(r, deps);
+    registerMetricsCommands(r, deps);
 
     // In-app logging: ingest client diagnostics into the server log. Always on
     // (not dev-gated) — field crash reports from iOS are a production need.
@@ -523,14 +669,19 @@ export function startWsServer(opts: ServerOpts) {
 
   // -------- concrete client ------------------------------------------------
 
-  function makeClient(ws: WebSocket, authed: boolean): ClientState {
+  function makeClient(ws: WebSocket, authed: boolean, isLocal: boolean): ClientState {
     return {
       ws,
       authed,
+      isLocal,
+      watchingMetrics: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
-        ws.send(encodeFrame({ v: PROTOCOL_VERSION, ...frame } as Envelope));
+        const raw = encodeFrame({ v: PROTOCOL_VERSION, ...frame } as Envelope);
+        wire.addOut(raw.length); // SPEC-37: count outbound WS bytes at the transport.
+        wire.frame();
+        ws.send(raw);
       },
       close(code: number, reason: string) {
         ws.close(code, reason);

@@ -14,10 +14,10 @@
  *  - #10 the sampler reports its **own** CPU cost, measured around the tick.
  *  - #11 sessions with no pid are omitted, not zeroed.
  *
- * NOTE for T6: the DTO types below are defined locally on purpose. T6 owns
- * `server/src/protocol.ts` and will lift `MetricsSampleDTO` (and its members)
- * there next to the `github.budget` event. Do not add them to `protocol.ts`
- * from here.
+ * NOTE: the DTO types (`SurfaceDTO`, `AgentMetricsDTO`, `MetricsSampleDTO`) now
+ * live in `server/src/protocol.ts` — that is where the wire contract lives, next
+ * to the `github.budget` event. They are re-exported below so existing importers
+ * of `collector.js` keep working, but the source of truth is `protocol.ts`.
  */
 
 import {
@@ -29,50 +29,15 @@ import {
 import { readProcTable, type Exec, type ProcRow } from "./proc_table.js";
 import { Ring } from "./ring.js";
 import type { SelfSample } from "./self.js";
+import type {
+  SurfaceDTO,
+  AgentMetricsDTO,
+  MetricsSampleDTO,
+} from "../protocol.js";
 
-// ---------------------------------------------------------------------------
-// DTOs (local for now — T6 lifts these into protocol.ts).
-// ---------------------------------------------------------------------------
-
-export interface SurfaceDTO {
-  pid: number;
-  rssBytes: number;
-  /** `null` — never `0` — until a rate is computable (decision 2). */
-  cpuPercent: number | null;
-  cpuSeconds: number;
-}
-
-export interface AgentMetricsDTO extends SurfaceDTO {
-  sessionId: string;
-  label: string;
-  inTurn: boolean;
-  /** Omitted on coarse (idle-cadence) frames — they only colour an icon. */
-  procs?: number;
-  /** Omitted on coarse (idle-cadence) frames. */
-  uptimeMs?: number;
-}
-
-export interface MetricsSampleDTO {
-  ts: number;
-  app: SurfaceDTO | null;
-  server: SurfaceDTO & { eventLoop: { p50: number; p99: number } };
-  agents: AgentMetricsDTO[];
-  wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
-  storage: { eventLogBytes: number } | null;
-  sampler: { cpuPercent: number | null; rssBytes: number };
-  turnActive: boolean;
-  /**
-   * False when `ps` could not be read this tick, in which case `agents` is empty
-   * and `app` is null **because we could not look** — not because they exited.
-   *
-   * The UI must render "measurement unavailable" rather than an empty agent list:
-   * it knows from the sessions snapshot that agents exist, and silently dropping
-   * their rows is the same defect SPEC-32 fixed for PR pills disappearing under
-   * rate limits. The server row stays valid either way — it comes from
-   * `process.memoryUsage()`, not from `ps`.
-   */
-  procTableOk: boolean;
-}
+// The wire contract lives in protocol.ts (next to `github.budget`); re-export
+// so `collector.js` importers do not have to know where it moved.
+export type { SurfaceDTO, AgentMetricsDTO, MetricsSampleDTO } from "../protocol.js";
 
 // ---------------------------------------------------------------------------
 // Injected shapes.

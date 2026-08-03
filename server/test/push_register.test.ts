@@ -86,6 +86,8 @@ function fakeClient(deviceId?: string): FakeClient {
     authed: deviceId !== undefined,
     deviceId,
     subscribed: new Set<string>(),
+    watchingMetrics: false,
+    isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
   };
