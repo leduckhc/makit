@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme.dart';
 import '../../../store/prefs/preference.dart';
 import '../../../store/prefs/preferences_providers.dart';
+import '../../../ui/settings/pending_queue_setting.dart';
 import '../../../ui/widgets/pr_actions.dart';
 import 'message_navigator_prefs.dart';
 import 'section_header.dart';
@@ -26,6 +27,8 @@ class AgentsChatSection extends StatelessWidget {
     return ListView(
       children: [
         const MessageNavigatorPrefs(),
+        const SettingsSectionHeader(title: 'Pending messages'),
+        const SettingsGroup(children: [PendingQueuePlacementSetting()]),
         const SettingsSectionHeader(title: 'PR actions'),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 8),

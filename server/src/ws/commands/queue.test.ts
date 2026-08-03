@@ -103,3 +103,65 @@ test("cancel (stop) interrupts the turn AND empties the queue", async () => {
   assert.equal(h.box.cancels, 1);
   assert.equal(h.session.queuedMessages.length, 0, "stop means stop");
 });
+
+// ---- SPEC-36 ---------------------------------------------------------------
+
+test("queue.update replaces the pending text and acks", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+  const [a] = h.session.queuedMessages;
+
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: a.id, text: "a, but better" });
+
+  assert.deepEqual(h.session.queuedMessages.map((q) => q.text), ["a, but better"]);
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+  assert.ok(!h.sent.some((f) => f.t === "err"));
+});
+
+test("queue.update with empty text cancels that message", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+  const [a] = h.session.queuedMessages;
+
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: a.id, text: "  " });
+
+  assert.equal(h.session.queuedMessages.length, 0);
+});
+
+test("queue.update requires a string text, and tolerates a stale id", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: "x" });
+  assert.ok(h.sent.some((f) => f.t === "err"), "a missing `text` is a client bug");
+
+  const before = h.sent.length;
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: "gone", text: "late" });
+  assert.equal(h.session.queuedMessages.length, 1, "untouched");
+  assert.ok(
+    !h.sent.slice(before).some((f) => f.t === "err"),
+    "an id that just flushed is a race, not an error",
+  );
+});
+
+test("queue.reorder applies the new order", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  for (const t of ["a", "b", "c"]) await h.session.sendUserMessage(t);
+  const ids = h.session.queuedMessages.map((q) => q.id);
+
+  await h.cmd({ kind: "queue.reorder", sessionId: h.session.id, ids: [ids[2], ids[1], ids[0]] });
+
+  assert.deepEqual(h.session.queuedMessages.map((q) => q.text), ["c", "b", "a"]);
+  assert.ok(!h.sent.some((f) => f.t === "err"));
+});
+
+test("queue.reorder needs an array of ids", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.cmd({ kind: "queue.reorder", sessionId: h.session.id, ids: "nope" });
+  assert.ok(h.sent.some((f) => f.t === "err"));
+});

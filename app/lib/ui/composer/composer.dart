@@ -8,7 +8,6 @@ import '../../shortcuts/key_chord.dart';
 import '../../store/composer_attachments.dart';
 import '../../store/models.dart';
 import 'attachment_chips.dart';
-import 'queued_chips.dart';
 import 'slash_palette.dart';
 
 /// Composer = input bar with slash-command palette + send.
@@ -48,8 +47,7 @@ class Composer extends StatefulWidget {
     this.onRetryAttachment,
     this.readClipboardImage,
     this.onPasteImage,
-    this.queued = const [],
-    this.onCancelQueued,
+    this.pendingQueue,
   });
   final void Function(String text) onSend;
 
@@ -75,14 +73,11 @@ class Composer extends StatefulWidget {
   /// nothing, the paste falls through to the field's normal text paste.
   final void Function(Uint8List bytes, String mime, String name)? onPasteImage;
 
-  /// Messages the server is holding until the agent goes idle (SPEC-35), oldest
-  /// first. Rendered as a cancellable chip strip above the field.
-  final List<QueuedMessage> queued;
-
-  /// Cancel one pending message by its server-assigned id. Null renders the
-  /// chips without a working ✕ (no surface should do that; the callback is
-  /// optional only so the widget stays usable in isolation).
-  final ValueChanged<String>? onCancelQueued;
+  /// The pending-message queue, when the user's placement preference puts it
+  /// here (SPEC-36). A widget rather than data + callbacks so the composer stays
+  /// unaware of the queue's commands — and so the identical widget can be
+  /// mounted in the transcript instead.
+  final Widget? pendingQueue;
 
   /// When false, the composer is inert: the field + send are replaced by a
   /// muted [disabledHint] bar. Used while a session is awaiting an inline
@@ -260,15 +255,11 @@ class _ComposerState extends State<Composer> {
               onRemove: widget.onRemoveAttachment ?? (_) {},
               onRetry: widget.onRetryAttachment ?? (_) {},
             ),
-          // Same reasoning as the attachment strip: a queued message must stay
+          // Same reasoning as the attachment strip: pending messages must stay
           // visible (and cancellable) even while an inline ask has the composer
-          // disabled — otherwise it would fire once the ask is answered with no
-          // way to have stopped it (SPEC-35).
-          if (widget.queued.isNotEmpty)
-            QueuedChips(
-              queued: widget.queued,
-              onCancel: widget.onCancelQueued ?? (_) {},
-            ),
+          // disabled — otherwise one would fire once the ask is answered with no
+          // way to have stopped it (SPEC-35/36).
+          if (widget.pendingQueue != null) widget.pendingQueue!,
           Container(
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
             decoration: widget.glass ? null : BoxDecoration(color: cs.surface),

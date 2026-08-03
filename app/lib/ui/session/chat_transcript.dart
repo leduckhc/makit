@@ -16,7 +16,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
+import '../../store/elicitation.dart';
 import '../../store/models.dart';
+import '../composer/pending_queue.dart';
+import '../composer/pending_queue_slot.dart';
 import '../widgets/glass.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
@@ -209,6 +212,48 @@ TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
     awaiting
     ? TranscriptTrailer.ask
     : (running ? TranscriptTrailer.working : TranscriptTrailer.none);
+
+/// The trailing row's content, shared by both surfaces (SPEC-36).
+///
+/// Beyond the ask card / working indicator it also hosts the **inline** pending
+/// queue, which is why the queue needs no synthetic entries in [foldEvents]: the
+/// trailer is already a non-event row that SPEC-21's anchoring and SPEC-34's
+/// key→index map both account for.
+///
+/// Order is deliberate — pending messages sit ABOVE the ask/working row, so the
+/// thing the agent is doing (or asking) stays closest to the composer.
+class TranscriptTrailerRow extends StatelessWidget {
+  /// Creates the trailing row.
+  const TranscriptTrailerRow({
+    super.key,
+    required this.sessionId,
+    required this.trailer,
+    this.ask,
+  });
+
+  /// Session whose inline queue may render here.
+  final String sessionId;
+
+  /// Which indicator (if any) this row shows.
+  final TranscriptTrailer trailer;
+
+  /// The pending inline ask, when [trailer] is [TranscriptTrailer.ask].
+  final PendingAsk? ask;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      PendingQueueSlot(
+        sessionId: sessionId,
+        slot: PendingQueuePlacement.inline,
+      ),
+      if (trailer == TranscriptTrailer.ask && ask != null) AskCard(ask: ask!),
+      if (trailer == TranscriptTrailer.working) const WorkingIndicator(),
+    ],
+  );
+}
 
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the

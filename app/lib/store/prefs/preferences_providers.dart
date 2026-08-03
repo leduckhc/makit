@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
+import '../../ui/composer/pending_queue.dart';
 import 'preference.dart';
 import 'preference_entries.dart';
 import 'preferences_controller.dart';
@@ -34,6 +35,20 @@ final themeModeValueProvider = Provider<ThemeMode>((ref) {
   return ref
       .read(preferencesControllerProvider.notifier)
       .get(themeModePreference);
+});
+
+/// Where pending mid-turn messages render (SPEC-36). A provider (not only the
+/// [PreferencesRefX] extension) so shared `ui/` reads it without importing
+/// `desktop/`, on both surfaces.
+final pendingQueuePlacementProvider = Provider<PendingQueuePlacement>((ref) {
+  ref.watch(
+    preferencesControllerProvider.select(
+      (overrides) => overrides[pendingQueuePlacementPreference.id],
+    ),
+  );
+  return ref
+      .read(preferencesControllerProvider.notifier)
+      .get(pendingQueuePlacementPreference);
 });
 
 /// Current UI text scale (see [textScalePreference]).

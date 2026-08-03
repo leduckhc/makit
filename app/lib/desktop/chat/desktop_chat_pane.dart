@@ -14,7 +14,8 @@ import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_draft.dart';
 import '../../ui/composer/composer_selectors.dart';
-import '../../ui/session/ask_card.dart';
+import '../../ui/composer/pending_queue.dart';
+import '../../ui/composer/pending_queue_slot.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/navigator/message_navigator_overlay.dart';
@@ -232,7 +233,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       if (next == null || !next.freeText) _answerController.clear();
     });
     final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
-    final hasTrailer = trailer != TranscriptTrailer.none;
+    // SPEC-36: an inline pending queue keeps the trailer row alive even once the
+    // agent is idle, so the index shift stays stable while messages wait.
+    final hasTrailer =
+        trailer != TranscriptTrailer.none ||
+        ref.watch(inlineQueueVisibleProvider(sessionId));
 
     return Column(
       children: [
@@ -278,9 +283,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                                 position: position,
                                 promptImage: session.promptImage,
                               )
-                            : (trailer == TranscriptTrailer.ask
-                                  ? AskCard(ask: pendingAsk!)
-                                  : const WorkingIndicator());
+                            : TranscriptTrailerRow(
+                                sessionId: sessionId,
+                                trailer: trailer,
+                                ask: pendingAsk,
+                              );
                         // Center each row within the same readable-width cap as
                         // the composer, so the transcript column lines up with the
                         // input instead of stretching edge-to-edge. The ListView
@@ -396,11 +403,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                             )
                           : null,
                       enabled: pendingAsk == null,
-                      // SPEC-35: mid-turn messages waiting for idle.
-                      queued: session.queued,
-                      onCancelQueued: (id) => ref
-                          .read(storeControllerProvider.notifier)
-                          .cancelQueuedMessage(sessionId, id),
+                      // SPEC-36: pending messages, when the placement
+                      // preference is `pinned`.
+                      pendingQueue: PendingQueueSlot(
+                        sessionId: sessionId,
+                        slot: PendingQueuePlacement.pinned,
+                      ),
                       controller: _composerControllerFor(sessionId),
                       commands: ref.watch(commandsProvider(sessionId)),
                       onSend: (text) =>

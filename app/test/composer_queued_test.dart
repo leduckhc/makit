@@ -1,25 +1,14 @@
-/// SPEC-35 — queued mid-turn messages in the composer.
+/// The composer's pending-queue slot (SPEC-35 wire → SPEC-36 UI).
 ///
-/// A message the agent could not be steered with waits in a queue on the
-/// server; the composer shows one chip per pending message, oldest first, each
-/// cancellable. Chips live in the composer's own column (never a transcript
-/// row) so SPEC-21 anchoring and SPEC-34's index-keyed markers are untouched.
+/// The composer knows nothing about the queue's commands: it is handed a widget
+/// and renders it above the field. That is what lets the identical queue widget
+/// be mounted in the transcript instead (`PendingQueueSlot`).
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/store/models.dart';
 import 'package:makit/transport/codec.dart';
 import 'package:makit/ui/composer/composer.dart';
-import 'package:makit/ui/composer/queued_chips.dart';
-
-QueuedMessage _q(String id, String text, {int? attachmentCount}) =>
-    QueuedMessage(
-      id: id,
-      text: text,
-      queuedAt: 0,
-      attachmentCount: attachmentCount,
-    );
 
 void main() {
   test('sessions.snapshot decodes queued messages, defaulting to empty', () {
@@ -58,68 +47,48 @@ void main() {
     );
   });
 
-  testWidgets('one chip per queued message, in order', (tester) async {
+  test('a malformed queue entry is skipped, not fatal to the snapshot', () {
+    final sessions = WireCodec.decodeSessions([
+      {
+        'id': 's1',
+        'projectId': 'p',
+        'agent': 'codex',
+        'title': 't',
+        'status': 'running',
+        'policy': 'ask-on-risky',
+        'queued': [
+          {'text': 'no id'},
+          {'id': 'q2', 'text': 'fine', 'queuedAt': 1},
+          'garbage',
+        ],
+      },
+    ]);
+    expect(sessions!.single.queued.map((q) => q.id), ['q2']);
+  });
+
+  testWidgets('the composer renders the pending-queue widget it is given', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Composer(
             onSend: (_) {},
-            queued: [_q('q1', 'first'), _q('q2', 'second')],
+            pendingQueue: const Text('QUEUE HERE'),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
-
-    expect(find.byType(QueuedChip), findsNWidgets(2));
-    final texts = tester
-        .widgetList<QueuedChip>(find.byType(QueuedChip))
-        .map((c) => c.message.text)
-        .toList();
-    expect(texts, ['first', 'second']);
+    expect(find.text('QUEUE HERE'), findsOneWidget);
   });
 
-  testWidgets('no queue means no chip row at all', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: Composer(onSend: (_) {}))),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(QueuedChips), findsNothing);
-  });
-
-  testWidgets('tapping ✕ cancels that message by id', (tester) async {
-    final cancelled = <String>[];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Composer(
-            onSend: (_) {},
-            queued: [_q('q1', 'first'), _q('q2', 'second')],
-            onCancelQueued: cancelled.add,
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(
-      find.descendant(
-        of: find.byWidgetPredicate(
-          (w) => w is QueuedChip && w.message.id == 'q2',
-        ),
-        matching: find.byType(IconButton),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(cancelled, ['q2']);
-  });
-
-  testWidgets('chips show while the composer is disabled by an inline ask', (
+  testWidgets('the queue stays visible while an inline ask disables the field', (
     tester,
   ) async {
     // The messages still exist and must stay cancellable, exactly like staged
-    // attachments (SPEC-33).
+    // attachments (SPEC-33) — otherwise one would fire when the ask is answered
+    // with no way to have stopped it.
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -127,29 +96,22 @@ void main() {
             onSend: (_) {},
             enabled: false,
             disabledHint: 'Answer above…',
-            queued: [_q('q1', 'first')],
+            pendingQueue: const Text('QUEUE HERE'),
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.byType(QueuedChip), findsOneWidget);
+    expect(find.text('QUEUE HERE'), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
   });
 
-  testWidgets('an attachment count is shown on the chip', (tester) async {
+  testWidgets('no queue widget means no extra chrome', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Composer(
-            onSend: (_) {},
-            queued: [_q('q1', 'look', attachmentCount: 2)],
-          ),
-        ),
-      ),
+      MaterialApp(home: Scaffold(body: Composer(onSend: (_) {}))),
     );
     await tester.pumpAndSettle();
-    expect(find.text('2'), findsOneWidget);
+    expect(find.text('QUEUE HERE'), findsNothing);
   });
 }

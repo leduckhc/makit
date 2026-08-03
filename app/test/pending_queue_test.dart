@@ -1,0 +1,193 @@
+/// SPEC-36 — pending messages are editable, reorderable drafts, in one of two
+/// placements.
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/store/models.dart';
+import 'package:makit/ui/composer/pending_queue.dart';
+import 'package:makit/ui/composer/slash_palette.dart';
+
+QueuedMessage _q(String id, String text) =>
+    QueuedMessage(id: id, text: text, queuedAt: 0);
+
+final _commands = [
+  const SlashCmd(name: 'review', description: 'Review the tree', source: 'prompt'),
+  const SlashCmd(name: 'fix-tests', description: 'Fix the suite', source: 'prompt'),
+];
+
+/// Records what the widget asked the store to do, so the tests assert on
+/// intent rather than on transport plumbing.
+class _Calls {
+  final edits = <(String, String)>[];
+  final orders = <List<String>>[];
+  final cancels = <String>[];
+}
+
+Widget _host(List<QueuedMessage> queued, _Calls calls) => ProviderScope(
+  child: MaterialApp(
+    home: Scaffold(
+      body: Align(
+        alignment: Alignment.bottomCenter,
+        child: PendingQueue(
+          queued: queued,
+          commands: _commands,
+          onEdit: (id, text) => calls.edits.add((id, text)),
+          onReorder: (ids) => calls.orders.add(ids),
+          onCancel: calls.cancels.add,
+        ),
+      ),
+    ),
+  ),
+);
+
+void main() {
+  testWidgets('renders one ghost bubble per pending message, in order', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host([_q('q1', 'first'), _q('q2', 'second')], _Calls()));
+    await tester.pumpAndSettle();
+
+    final bubbles = tester
+        .widgetList<PendingBubble>(find.byType(PendingBubble))
+        .toList();
+    expect(bubbles.map((b) => b.message.text), ['first', 'second']);
+    expect(find.text('sends next · 1 of 2'), findsOneWidget);
+    expect(find.text('then · 2 of 2'), findsOneWidget);
+  });
+
+  testWidgets('an empty queue renders nothing', (tester) async {
+    await tester.pumpWidget(_host(const [], _Calls()));
+    await tester.pumpAndSettle();
+    expect(find.byType(PendingBubble), findsNothing);
+  });
+
+  testWidgets('↓ on the first message sends the swapped id order', (
+    tester,
+  ) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first'), _q('q2', 'second')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byWidgetPredicate(
+          (w) => w is PendingBubble && w.message.id == 'q1',
+        ),
+        matching: find.byTooltip('Send this later'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(calls.orders, [
+      ['q2', 'q1'],
+    ]);
+  });
+
+  testWidgets('↑ is inert on the first message and ↓ on the last', (
+    tester,
+  ) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'only')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Send this sooner'));
+    await tester.tap(find.byTooltip('Send this later'));
+    await tester.pumpAndSettle();
+
+    expect(calls.orders, isEmpty, reason: 'nothing to swap with');
+  });
+
+  testWidgets('tap the text to edit, Enter commits the new text', (
+    tester,
+  ) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'first, but better');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(calls.edits, [('q1', 'first, but better')]);
+    expect(find.byType(TextField), findsNothing, reason: 'editor closes');
+  });
+
+  testWidgets('committing an empty edit cancels the message', (tester) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '   ');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(calls.cancels, ['q1']);
+    expect(calls.edits, isEmpty, reason: 'a blank draft is a cancel, not an edit');
+  });
+
+  testWidgets('✕ cancels that message only', (tester) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first'), _q('q2', 'second')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.byWidgetPredicate(
+          (w) => w is PendingBubble && w.message.id == 'q2',
+        ),
+        matching: find.byTooltip('Cancel this message'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(calls.cancels, ['q2']);
+  });
+
+  testWidgets('the editor opens the slash palette — agent commands only', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host([_q('q1', 'first')], _Calls()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '/');
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SlashPalette), findsOneWidget);
+    expect(find.text('/review'), findsOneWidget);
+    // Client commands act on the app NOW; they cannot mean anything inside a
+    // message that sends later, so the palette must not offer them.
+    expect(find.text('/cancel'), findsNothing);
+    expect(find.text('/new'), findsNothing);
+  });
+
+  testWidgets('picking a slash command puts it in the editor, not straight out', (
+    tester,
+  ) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '/rev');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('/review'));
+    await tester.pumpAndSettle();
+
+    expect(calls.edits, isEmpty, reason: 'picking is not committing');
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      '/review ',
+    );
+  });
+}

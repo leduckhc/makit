@@ -543,6 +543,40 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Replace a pending message's text (SPEC-36). Empty/whitespace text is a
+   * cancel — the user cleared the field, and a blank pending message is not a
+   * thing. Returns false for an id the queue no longer holds (it was delivered
+   * between the tap and this call), which callers treat as a no-op, not an error.
+   */
+  updateQueued(id: string, text: string): boolean {
+    const entry = this.queued.find((q) => q.id === id);
+    if (!entry) return false;
+    if (!text.trim()) return this.cancelQueued(id);
+    entry.text = text;
+    this.emit("metaChanged");
+    return true;
+  }
+
+  /**
+   * Reorder the queue (SPEC-36). `ids` is a **hint**, not an assertion: the
+   * queue can flush between the user's tap and this call, so named ids take the
+   * given order first, entries the client did not mention keep their relative
+   * order after them, and unknown ids are ignored. A reorder can therefore never
+   * error or lose a message. Returns false when nothing known was named.
+   */
+  reorderQueue(ids: string[]): boolean {
+    const named = ids
+      .map((id) => this.queued.find((q) => q.id === id))
+      .filter((q): q is QueuedMessage => q !== undefined);
+    if (named.length === 0) return false;
+    const rest = this.queued.filter((q) => !named.includes(q));
+    this.queued.length = 0;
+    this.queued.push(...named, ...rest);
+    this.emit("metaChanged");
+    return true;
+  }
+
+  /**
    * Drop every pending message. Used by `cancel` (stop means stop — follow-ups
    * must not fire into an aborted context) and on adapter exit. Returns whether
    * anything was dropped.

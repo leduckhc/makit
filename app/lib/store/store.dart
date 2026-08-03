@@ -495,6 +495,39 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
+  /// Replace a pending mid-turn message's text (SPEC-36). Empty text cancels it
+  /// server-side, so the caller does not need a second command for that case.
+  void updateQueuedMessage(String sessionId, String id, String text) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qu-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'queue.update',
+              'sessionId': sessionId,
+              'id': id,
+              'text': text,
+            },
+          ),
+        );
+  }
+
+  /// Apply a new send order to the pending messages (SPEC-36). The server treats
+  /// `ids` as a hint, so a queue that flushed under the user cannot fail here.
+  void reorderQueuedMessages(String sessionId, List<String> ids) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qr-${DateTime.now().microsecondsSinceEpoch}',
+            body: {'kind': 'queue.reorder', 'sessionId': sessionId, 'ids': ids},
+          ),
+        );
+  }
+
   /// Run a built-in control action (e.g. `compact`, `thinking`) on the session.
   /// Unlike [sendMessage] this is not a user turn — the server relays it to the
   /// hosting pi extension's SDK calls; nothing is sent to the LLM as a prompt.
@@ -898,6 +931,19 @@ final commandsProvider = Provider.family<List<SlashCmd>, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.commands[sessionId] ?? const [];
+});
+
+/// Pending mid-turn messages for a session (SPEC-35/36), in send order. Empty
+/// for an unknown session, so callers never branch on null.
+final queuedMessagesProvider = Provider.family<List<QueuedMessage>, String>((
+  ref,
+  sessionId,
+) {
+  final sessions = ref.watch(storeControllerProvider).sessions;
+  for (final s in sessions) {
+    if (s.id == sessionId) return s.queued;
+  }
+  return const [];
 });
 
 /// Current model + thinking level + selectable models for a session (or null

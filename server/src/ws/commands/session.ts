@@ -202,6 +202,53 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     ctx.ack();
   });
 
+  /**
+   * Edit a pending mid-turn message (SPEC-36). Empty text cancels it. A stale id
+   * (the message flushed between the tap and this frame) acks like
+   * `queue.cancel`; a missing `text` is a real client bug and errors.
+   */
+  r.register("queue.update", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const id = ctx.env.id;
+    const text = ctx.env.text;
+    if (typeof id !== "string" || !id) {
+      ctx.err(WireErrorCode.BadRequest, "queue.update requires a string `id`");
+      return;
+    }
+    if (typeof text !== "string") {
+      ctx.err(WireErrorCode.BadRequest, "queue.update requires a string `text`");
+      return;
+    }
+    session.updateQueued(id, text);
+    ctx.ack();
+  });
+
+  /**
+   * Reorder the pending messages (SPEC-36). `ids` is a hint — see
+   * `Session.reorderQueue`: a queue that flushed under the user cannot make this
+   * fail, so only a non-array `ids` is an error.
+   */
+  r.register("queue.reorder", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const raw = ctx.env.ids;
+    if (!Array.isArray(raw)) {
+      ctx.err(WireErrorCode.BadRequest, "queue.reorder requires an array `ids`");
+      return;
+    }
+    session.reorderQueue(raw.filter((v): v is string => typeof v === "string"));
+    ctx.ack();
+  });
+
   r.register("session.kill", async (ctx) => {
     const sid = String(ctx.env.sessionId ?? "");
     try {

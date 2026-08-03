@@ -412,3 +412,54 @@ test("SPEC-35: two idle transitions in a row deliver only one queued message", a
   assert.deepEqual(f.sent, ["first", "a"]);
   assert.equal(session.queuedMessages.length, 1);
 });
+
+// ---- SPEC-36: editing + reordering pending messages -----------------------
+
+test("SPEC-36: updateQueued replaces the text; empty text cancels", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+  const [a, b] = session.queuedMessages;
+
+  assert.equal(session.updateQueued(a.id, "a, but better"), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["a, but better", "b"]);
+  assert.equal(session.updateQueued("nope", "x"), false, "unknown id is a no-op");
+
+  // Clearing the text is a cancel: a blank pending message is not a thing.
+  assert.equal(session.updateQueued(b.id, "   "), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["a, but better"]);
+
+  f.idle();
+  await settle();
+  assert.deepEqual(f.sent, ["first", "a, but better"], "the EDITED text is delivered");
+});
+
+test("SPEC-36: reorderQueue applies a full order", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  await session.sendUserMessage("first");
+  for (const t of ["a", "b", "c"]) await session.sendUserMessage(t);
+  const ids = session.queuedMessages.map((q) => q.id);
+
+  assert.equal(session.reorderQueue([ids[2], ids[0], ids[1]]), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["c", "a", "b"]);
+});
+
+test("SPEC-36: reorderQueue treats a stale id list as a hint, never an error", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  await session.sendUserMessage("first");
+  for (const t of ["a", "b", "c"]) await session.sendUserMessage(t);
+  const ids = session.queuedMessages.map((q) => q.id);
+
+  // The client names only `c`, plus an id that has since been delivered.
+  assert.equal(session.reorderQueue(["gone", ids[2]]), true);
+  assert.deepEqual(
+    session.queuedMessages.map((q) => q.text),
+    ["c", "a", "b"],
+    "named ids first, unmentioned keep their relative order, unknown ignored",
+  );
+  assert.equal(session.reorderQueue([]), false, "nothing named = nothing to do");
+});

@@ -14,10 +14,11 @@ import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_draft.dart';
 import '../composer/composer_selectors.dart';
+import '../composer/pending_queue.dart';
+import '../composer/pending_queue_slot.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import '../widgets/menu_item.dart';
-import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
 import 'navigator/message_navigator_overlay.dart';
@@ -112,7 +113,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       running: session?.status == SessionStatus.running,
       awaiting: pendingAsk != null,
     );
-    final hasTrailer = trailer != TranscriptTrailer.none;
+    // SPEC-36: an inline queue keeps the trailer alive even when the agent has
+    // gone idle with messages still pending — otherwise the row (and every
+    // index shifted by it) would disappear under the user.
+    final hasTrailer =
+        trailer != TranscriptTrailer.none ||
+        ref.watch(inlineQueueVisibleProvider(widget.sessionId));
     // Hand the current transcript shape to the sheet's jumper (read lazily by
     // its callbacks, so this must be the latest build's values).
     _items = items;
@@ -193,12 +199,20 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 // priority — Pi stays running while asking), else the
                 // "working…" indicator while running.
                 if (hasTrailer && i == 0) {
-                  return trailer == TranscriptTrailer.ask
-                      ? KeyedSubtree(
-                          key: ValueKey('ask-${pendingAsk!.requestId}'),
-                          child: transcriptRow(AskCard(ask: pendingAsk)),
-                        )
-                      : transcriptRow(const WorkingIndicator());
+                  // SPEC-36: the trailer also hosts the INLINE pending queue, so
+                  // no synthetic events are needed for it.
+                  return KeyedSubtree(
+                    key: trailer == TranscriptTrailer.ask
+                        ? ValueKey('ask-${pendingAsk!.requestId}')
+                        : null,
+                    child: transcriptRow(
+                      TranscriptTrailerRow(
+                        sessionId: widget.sessionId,
+                        trailer: trailer,
+                        ask: pendingAsk,
+                      ),
+                    ),
+                  );
                 }
                 final index = items.length - 1 - (hasTrailer ? i - 1 : i);
                 final item = items[index];
@@ -423,12 +437,12 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                   : null,
                               glass: true,
                               controller: _composerController,
-                              // SPEC-35: messages held until the agent goes
-                              // idle, cancellable until then.
-                              queued: session?.queued ?? const [],
-                              onCancelQueued: (id) => ref
-                                  .read(storeControllerProvider.notifier)
-                                  .cancelQueuedMessage(widget.sessionId, id),
+                              // SPEC-36: pending messages, when the user's
+                              // placement preference is `pinned`.
+                              pendingQueue: PendingQueueSlot(
+                                sessionId: widget.sessionId,
+                                slot: PendingQueuePlacement.pinned,
+                              ),
                               enabled: pendingAsk == null,
                               commands: ref.watch(
                                 commandsProvider(widget.sessionId),

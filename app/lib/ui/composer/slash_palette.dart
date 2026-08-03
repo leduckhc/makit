@@ -16,11 +16,21 @@ class SlashPalette extends StatelessWidget {
     required this.filter,
     required this.commands,
     required this.onPick,
+    this.includeBuiltins = true,
   });
 
   final String filter;
   final List<SlashCmd> commands;
   final ValueChanged<String> onPick;
+
+  /// Whether the built-in **client** commands (`/cancel`, `/new`, `/model`, …)
+  /// are offered. True for the composer, where they run immediately.
+  ///
+  /// False when editing a **queued** message (SPEC-36): `handleClientCommand`
+  /// intercepts those app-side and acts *now*, so inside a message that sends
+  /// *later* they cannot mean anything — offering them would promise behaviour
+  /// the send path does not implement.
+  final bool includeBuiltins;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +40,7 @@ class SlashPalette extends StatelessWidget {
         : filter.toLowerCase();
 
     // Combine builtins + agent-provided commands, dedup by name, filter.
-    final all = <SlashCmd>[..._builtins, ...commands];
+    final all = <SlashCmd>[if (includeBuiltins) ..._builtins, ...commands];
     final seen = <String>{};
     final matches = <SlashCmd>[];
     for (final c in all) {

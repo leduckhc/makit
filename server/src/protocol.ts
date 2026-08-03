@@ -369,6 +369,10 @@ export type CmdKind =
   | "session.setAgent"
   /** Drop ONE pending mid-turn message by id (SPEC-35). */
   | "queue.cancel"
+  /** Edit a pending mid-turn message; empty text cancels it (SPEC-36). */
+  | "queue.update"
+  /** Reorder the pending messages; `ids` is a hint, not an assertion (SPEC-36). */
+  | "queue.reorder"
   // repos / projects / worktrees
   | "worktree.create"
   | "worktree.createFromPr"
