@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -228,11 +229,24 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   /// LAN IP changed via DHCP), browse mDNS for a server with the **same
   /// fingerprint** — that's the only safe identity check — update the
   /// stored host:port, and reconnect there.
+  /// Authenticated `hello` body. On desktop we also advertise our OS `pid` so
+  /// the server can measure the app surface (SPEC-37); the server only trusts
+  /// it on a loopback socket and ignores it otherwise, so it is harmless — but
+  /// we never send it from web (no `dart:io` process there).
+  Map<String, dynamic> _authHelloBody(String bearer) {
+    final body = <String, dynamic>{'bearer': bearer};
+    if (!kIsWeb &&
+        (io.Platform.isMacOS || io.Platform.isWindows || io.Platform.isLinux)) {
+      body['pid'] = io.pid;
+    }
+    return body;
+  }
+
   Future<void> _connectPaired(PairedServer server) async {
     await _attachReal(
       server.wssUrl,
       fingerprint: server.fingerprint,
-      helloBody: {'bearer': server.bearer},
+      helloBody: _authHelloBody(server.bearer),
     );
     unawaited(_maybeRediscover(server));
   }
@@ -285,7 +299,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       await _attachReal(
         updated.wssUrl,
         fingerprint: updated.fingerprint,
-        helloBody: {'bearer': updated.bearer},
+        helloBody: _authHelloBody(updated.bearer),
       );
     } finally {
       _rediscovering = false;

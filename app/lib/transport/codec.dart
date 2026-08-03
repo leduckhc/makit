@@ -8,6 +8,7 @@
 library;
 
 import '../diagnostics/app_log.dart';
+import '../store/metrics.dart';
 import '../store/models.dart';
 import 'protocol.dart';
 
@@ -40,6 +41,14 @@ class SessionEventFrame extends Decoded {
 class GithubBudgetFrame extends Decoded {
   const GithubBudgetFrame(this.budget);
   final GithubBudget budget;
+}
+
+/// A decoded `metrics.sample` frame (SPEC-37). [history] is the backfill sent
+/// on the first frame after a watch begins; null on subsequent live frames.
+class MetricsSampleFrame extends Decoded {
+  const MetricsSampleFrame(this.sample, this.history);
+  final MetricsSample sample;
+  final List<MetricsSample>? history;
 }
 
 /// Stateless decoder. All methods return `null` on malformed input.
@@ -103,6 +112,32 @@ class WireCodec {
         return GithubBudgetFrame(
           GithubBudget.fromJson(Map<String, dynamic>.from(raw)),
         );
+      case 'metrics.sample':
+        // Tolerant like `github.budget`: a bad sample must `_warn` + drop, not
+        // throw into the socket. Garbage scalars make `fromJson` return null.
+        final rawSample = env.body['sample'];
+        if (rawSample is! Map) {
+          _warn('metrics.sample');
+          return null;
+        }
+        final sample = MetricsSample.fromJson(
+          Map<String, dynamic>.from(rawSample),
+        );
+        if (sample == null) {
+          _warn('metrics.sample');
+          return null;
+        }
+        final rawHistory = env.body['history'];
+        final history = rawHistory is List
+            ? rawHistory
+                  .whereType<Map<dynamic, dynamic>>()
+                  .map(
+                    (m) => MetricsSample.fromJson(Map<String, dynamic>.from(m)),
+                  )
+                  .whereType<MetricsSample>()
+                  .toList()
+            : null;
+        return MetricsSampleFrame(sample, history);
       default:
         return null;
     }
