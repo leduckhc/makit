@@ -169,6 +169,18 @@
   .pinned{border-top:1px dashed #333;padding-top:8px;margin-bottom:2px}
   .placement{font-size:11px;color:var(--muted);margin-bottom:8px}
 
+
+  /* ---------- slash palette inside an editor ---------- */
+  .slash{position:absolute;z-index:20;width:290px;background:var(--container);border:1px solid var(--hairline);
+         border-radius:10px;padding:4px;box-shadow:0 14px 30px rgba(0,0,0,.55);font-size:12px}
+  .slash .item{display:flex;gap:8px;align-items:baseline;padding:6px 8px;border-radius:7px;cursor:pointer}
+  .slash .item:hover,.slash .item.sel{background:var(--container-high)}
+  .slash .nm{color:var(--text);font-weight:600}
+  .slash .src{margin-left:auto;font-size:9.5px;color:#7a7a7a;text-transform:uppercase;letter-spacing:.06em}
+  .slash .ds{color:var(--muted);font-size:11px}
+  .slash .foot{border-top:1px solid var(--hairline);margin-top:4px;padding:6px 8px 3px;color:#7a7a7a;font-size:10.5px}
+  .slash .foot b{color:#9E9E9E}
+
   /* controls */
   .ctl{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
   .ctl button{background:var(--container);border:1px solid var(--hairline);color:var(--text);border-radius:8px;
@@ -347,6 +359,8 @@
       <h3>Why</h3>
       <ul>
         <li class="pro">Editing a queued message is strictly better than cancel + retype on a phone.</li>
+        <li class="pro">The edit field carries the <b>slash palette</b> (agent commands only) — try typing
+          <code>/</code> in a chip.</li>
         <li class="pro">Per-message <b>promote</b> exposes interrupt where it is actually wanted.</li>
         <li class="con">Speculative: nobody has yet queued three messages in makit.</li>
       </ul>
@@ -519,6 +533,10 @@
       like the message it will become.
     </p>
     <p>
+      The editor is a <b>real composer field</b>, so <code>/</code> opens the slash palette (try it) —
+      agent commands only, because client commands act on the app now, not when the message flushes.
+    </p>
+    <p>
       One decision decides the cost: do the ghosts live <b>inside the transcript</b> (scrolling away with
       it) or <b>pinned above the composer</b> (always visible)? Toggle below — the content is identical,
       the engineering is not.
@@ -557,6 +575,16 @@
         <li><b>✕</b> → drop that message only.</li>
         <li><b>Agent goes idle</b> → the top ghost becomes a real bubble.</li>
       </ul>
+      <h3>Slash commands</h3>
+      <ul>
+        <li>The editor is a real composer field: <code>/</code> opens the palette, ↑↓ + Tab/Enter pick.</li>
+        <li class="pro"><b>Agent commands only.</b> <code>/cancel</code>, <code>/new</code>,
+          <code>/model</code> are client commands — they act on the app <i>now</i>, so they have no
+          meaning inside a message that sends <i>later</i>.</li>
+        <li class="con">The palette is an <b>overlay anchored to the field</b>. Pinned: trivial. Inside the
+          transcript: <code>LayerLink</code> + <code>Overlay</code>, and if the row scrolls or gets
+          recycled while the palette is open it is anchored to nothing.</li>
+      </ul>
       <h3>Inside transcript</h3>
       <ul>
         <li class="pro">Spatially honest: the queue is the future of the conversation.</li>
@@ -585,18 +613,23 @@
 <section class="rec">
   <h2>Decision (2026-08-02)</h2>
   <ol>
-    <li><b>Chosen: G</b> — E's ghost bubbles with C's edit + reorder. A (intent-ahead composer),
-      B (grace window), D (steer seam) and F (split send) are <b>not planned</b>; they stay above for the
-      record.</li>
-    <li><b>Open:</b> placement. "Inside transcript" is what makes E appealing, and is also the variant
-      that puts editable, draggable, non-event rows inside the reversed anchored lazy list that SPEC-21
-      and SPEC-34 both depend on. "Pinned above composer" keeps the identical bubbles and mechanics with
-      none of that risk, at the price of the queue not scrolling away with the conversation.</li>
+    <li><b>Chosen: G</b> — ghost bubbles with edit + reorder (E's look, C's mechanics). A, B, D and F are
+      <b>not planned</b>; they stay above for the record.</li>
+    <li><b>Requirement:</b> the edit field is a real composer field — <code>/</code> opens the slash
+      palette, ↑↓ + Tab/Enter pick. <b>Agent commands only:</b> client commands
+      (<code>/cancel</code>, <code>/new</code>, <code>/model</code>, <code>/unpair</code>) are intercepted
+      app-side and act <i>now</i>; they cannot mean anything inside a message that sends <i>later</i>, so
+      the palette must filter them out rather than promise something the send path will not do.</li>
+    <li><b>Open:</b> placement. The slash requirement makes this sharper, not softer — the palette is an
+      overlay anchored to the field being edited. Pinned above the composer: a plain
+      <code>Overlay</code> entry. Inside the transcript: <code>LayerLink</code> +
+      <code>CompositedTransformFollower</code> on a row of a reversed lazy list that can scroll or recycle
+      underneath the open palette, on top of the anchoring concerns SPEC-21/34 already carry.</li>
     <li><b>Unchanged either way:</b> the shipped steered-bubble caption, and the rule that a queued
       message enters the event log only when it is actually delivered.</li>
   </ol>
-  <p class="no">Scroll the "inside transcript" pane up while messages are pending — that is the strongest
-    argument against it, and the cheapest one to feel.</p>
+  <p class="no">Two things worth feeling before deciding: scroll the "inside transcript" pane up with
+    messages pending, and open the slash palette in an inline ghost near the top of the pane.</p>
 </section>
 
 <script>
@@ -616,6 +649,61 @@ const assistant = (text, live) => {
 };
 const tool = (t) => { const r = el('div','row tool'); r.appendChild(el('div','dot')); r.appendChild(el('div',null,t)); return r; };
 const toBottom = (s) => { s.scrollTop = s.scrollHeight; };
+
+
+/* ---------------- slash palette for queue editors ----------------
+   Agent-provided commands only. Client commands (/cancel, /new, /model, …) are
+   deliberately absent: they act on the APP, now — a queued message is text for
+   the agent, later. Offering them would promise "run this when it flushes",
+   which the architecture does not do. */
+const AGENT_CMDS = [
+  { name: 'fix-tests', desc: 'Run the suite and fix what fails', src: 'prompt' },
+  { name: 'review', desc: 'Review the working tree', src: 'prompt' },
+  { name: 'skill:flutter-add-widget-test', desc: 'Component-level WidgetTester test', src: 'skill' },
+  { name: 'skill:dart-run-static-analysis', desc: 'dart analyze + dart fix --apply', src: 'skill' },
+  { name: 'lgtm', desc: 'Summarise the diff for review', src: 'prompt' },
+];
+function attachSlash(input, anchor, pane) {
+  let palette = null, sel = 0, matches = [];
+  const close = () => { if (palette) { palette.remove(); palette = null; } };
+  const commit = (name) => { input.value = '/' + name + ' '; close(); input.focus(); };
+
+  function render() {
+    const v = input.value;
+    if (!v.startsWith('/')) return close();
+    const q = v.slice(1).split(/\s/)[0].toLowerCase();
+    matches = AGENT_CMDS.filter(c => !q || c.name.toLowerCase().includes(q));
+    if (!matches.length) return close();
+    if (!palette) { palette = el('div','slash'); pane.appendChild(palette); }
+    sel = Math.min(sel, matches.length - 1);
+    palette.innerHTML = matches.map((c, i) =>
+      '<div class="item' + (i === sel ? ' sel' : '') + '" data-i="' + i + '">'
+      + '<span class="nm">/' + c.name + '</span><span class="ds">' + c.desc + '</span>'
+      + '<span class="src">' + c.src + '</span></div>').join('')
+      + '<div class="foot">agent commands only — <b>/cancel, /new, /model</b> act on the app now, '
+      + 'so they are not offered for a message that sends later</div>';
+    palette.onmousedown = (e) => {
+      const it = e.target.closest('.item'); if (!it) return;
+      e.preventDefault(); commit(matches[Number(it.dataset.i)].name);
+    };
+    // Anchor above the field being edited, clamped into the pane.
+    const pr = pane.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+    const h = palette.offsetHeight || 180;
+    palette.style.left = Math.max(8, Math.min(ar.left - pr.left, pr.width - 298)) + 'px';
+    palette.style.top = Math.max(8, ar.top - pr.top - h - 6) + 'px';
+  }
+  input.addEventListener('input', render);
+  input.addEventListener('keydown', (e) => {
+    if (!palette) return;
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % matches.length; render(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = (sel - 1 + matches.length) % matches.length; render(); e.preventDefault(); }
+    else if (e.key === 'Tab' || (e.key === 'Enter' && matches.length)) { commit(matches[sel].name); e.preventDefault(); e.stopPropagation(); }
+    else if (e.key === 'Escape') close();
+  });
+  input.addEventListener('blur', () => setTimeout(close, 120));
+  render();
+  return close;
+}
 
 /* ---------------- A: intent-ahead composer ---------------- */
 (() => {
@@ -731,8 +819,10 @@ const toBottom = (s) => { s.scrollTop = s.scrollHeight; };
         chip.classList.add('editing'); span.remove();
         const inp = el('input'); inp.value = text; chip.insertBefore(inp, promote);
         inp.focus();
-        const commit = () => { q[i] = inp.value.trim() || text; render(); };
-        inp.onblur = commit; inp.onkeydown = (e) => { if (e.key === 'Enter') commit(); };
+        const closeSlash = attachSlash(inp, chip, document.getElementById('c-pane'));
+        const commit = () => { closeSlash(); q[i] = inp.value.trim() || text; render(); };
+        inp.onblur = () => setTimeout(() => { if (inp.parentNode) commit(); }, 130);
+        inp.onkeydown = (e) => { if (e.key === 'Enter' && !document.querySelector('#c-pane .slash')) commit(); };
       };
       x.onclick = () => { q.splice(i, 1); render(); };
       promote.onclick = () => {
@@ -908,8 +998,11 @@ const toBottom = (s) => { s.scrollTop = s.scrollHeight; };
         txt.onclick = () => {
           const inp = el('input'); inp.value = m.text;
           b.replaceChild(inp, txt); inp.focus(); inp.select();
-          const commit = () => { m.text = inp.value.trim() || m.text; render(true); };
-          inp.onblur = commit; inp.onkeydown = (e) => { if (e.key === 'Enter') commit(); };
+          // Editing a queued message must offer slash commands, like the composer.
+          const closeSlash = attachSlash(inp, b, document.getElementById('g-pane'));
+          const commit = () => { closeSlash(); m.text = inp.value.trim() || m.text; render(true); };
+          inp.onblur = () => setTimeout(() => { if (inp.parentNode) commit(); }, 130);
+          inp.onkeydown = (e) => { if (e.key === 'Enter' && !document.querySelector('#g-pane .slash')) commit(); };
         };
         grip.ondragstart = (e) => { b.classList.add('drag'); e.dataTransfer.setData('text/plain', String(i)); };
         grip.ondragend = () => b.classList.remove('drag');
