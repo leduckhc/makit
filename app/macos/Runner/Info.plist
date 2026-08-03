@@ -27,11 +27,11 @@
 		<string>_makit._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>makit needs this to pair with your desktop server.</string>
+	<string>Makit needs this to pair with your desktop server.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>makit needs this to pair with your desktop server.</string>
+	<string>Makit needs this to pair with your desktop server.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

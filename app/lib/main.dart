@@ -245,7 +245,7 @@ class _MakitAppState extends ConsumerState<MakitApp>
     // (same approach as desktop_app.dart).
     final textScaler = TextScaler.linear(ref.watch(textScaleValueProvider));
     return MaterialApp.router(
-      title: 'makit',
+      title: 'Makit',
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ref.watch(themeModeValueProvider),
@@ -272,7 +272,7 @@ class _WorkspaceShellApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'makit',
+      title: 'Makit',
       theme: makitLightTheme,
       darkTheme: makitDarkTheme,
       themeMode: ThemeMode.system,

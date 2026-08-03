@@ -93,7 +93,7 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        'makit',
+                        'Makit',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.titleMedium
