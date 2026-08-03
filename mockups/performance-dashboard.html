@@ -957,21 +957,31 @@ document.querySelectorAll('[data-hist]').forEach(el=>{
 /* ── explainer tooltip ─────────────────────────────────────────── */
 const ex=document.getElementById('ex');
 let t=null;
+function place(el){
+  ex.innerHTML=el.getAttribute('data-tip');
+  ex.classList.add('on');
+  const r=el.getBoundingClientRect();
+  const w=ex.offsetWidth,h=ex.offsetHeight;
+  let x=r.left, y=r.top-h-8;
+  if(y<8) y=r.bottom+8;
+  if(x+w>innerWidth-10) x=innerWidth-w-10;
+  if(x<8) x=8;
+  ex.style.left=x+'px'; ex.style.top=y+'px';
+}
 document.addEventListener('mouseover',e=>{
   const el=e.target.closest('[data-tip]');
   if(!el){clearTimeout(t);ex.classList.remove('on');return;}
   clearTimeout(t);
-  t=setTimeout(()=>{
-    ex.innerHTML=el.getAttribute('data-tip');
-    ex.classList.add('on');
-    const r=el.getBoundingClientRect();
-    const w=ex.offsetWidth,h=ex.offsetHeight;
-    let x=r.left, y=r.top-h-8;
-    if(y<8) y=r.bottom+8;
-    if(x+w>innerWidth-10) x=innerWidth-w-10;
-    ex.style.left=x+'px'; ex.style.top=y+'px';
-  },260);
+  t=setTimeout(()=>place(el),260);
 });
+// Touch: the explainers carry half this mockup's content, and a phone has no
+// hover — so a tap opens the nearest explainer and a tap elsewhere closes it.
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-tip]');
+  clearTimeout(t);
+  if(!el){ex.classList.remove('on');return;}
+  place(el);
+},{passive:true});
 document.addEventListener('keydown',e=>{
   if(e.key==='g'||e.key==='G') document.body.classList.toggle('guides');
 });
