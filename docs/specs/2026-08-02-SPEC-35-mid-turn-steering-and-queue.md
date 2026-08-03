@@ -3,6 +3,7 @@
 **Status:** Proposed · **Priority:** P2 · **Branch:** `feat/mid-turn-steering`
 **Depends on:** SPEC-27 (adapter set: `pi` over `pi-acp`, `codex` over `app-server`), SPEC-29 (turn lifecycle), SPEC-33 (`send.message attachments[]`)
 **Prerequisite landed:** commit `87b4941` — `turn/started` is the only source of truth for entering a turn (see [§Evidence](#evidence--what-the-agents-actually-do)).
+**Mockups:** [`mockups/mid-turn-steer-queue.html`](../../mockups/mid-turn-steer-queue.html) — six interactive UX candidates for the composer side (A intent-ahead · B grace window · C queue tray · D steer seam · E ghost bubble · F split send), with the shipped behaviour as the baseline.
 
 **Scope:** `server/src/adapters/{adapter,codex,acp,stub}.ts`, `server/src/session.ts`,
 `server/src/protocol.ts`, `server/src/server.ts` (one new cmd), and in the app
@@ -281,6 +282,21 @@ explicit "Queue instead" affordance would need a `send.message` `mode` flag **an
 steering capability on `SessionDTO` (otherwise the button is a lie on ACP sessions) **and**
 a second gesture on two surfaces — deferred until someone actually wants to hold a message
 back on codex.
+
+**Next two candidates**, both mocked up in
+[`mockups/mid-turn-steer-queue.html`](../../mockups/mid-turn-steer-queue.html):
+
+1. **Intent-ahead composer (A)** — while the agent works, the placeholder, the send glyph
+   and a one-line hint say what pressing send will do ("Steer the current turn… / no undo"
+   vs "Queue a message… / cancellable"). Attacks the actual defect: the user cannot predict
+   an irreversible action. Needs only a `steering` capability on `SessionDTO`.
+2. **Grace window (B)** — hold a steer for ~3 s as an ordinary pending chip with a draining
+   ring, so an accidental steer can be pulled back into the composer. Converts steering's
+   one genuinely bad property into a recoverable one and reuses the queue verbatim.
+
+The mockup also records two candidates deliberately **not** planned: a queue tray with
+reorder/edit (speculative until queues exceed one message) and a ghost bubble in the
+transcript tail (buys elegance by touching SPEC-21 anchoring — exactly what chips avoid).
 
 ## Rejected alternatives
 

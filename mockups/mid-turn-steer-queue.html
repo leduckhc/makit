@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — mid-turn messages: steer vs queue (SPEC-35 UX candidates)</title>
+<style>
+  :root{
+    /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
+    --bg:#171717;
+    --container-lowest:#121212;
+    --container-low:#1E1E1E;
+    --container:#242424;
+    --container-high:#2E2E2E;   /* user bubble */
+    --container-highest:#383838;
+    --text:#F5F5F5;
+    --muted:#9E9E9E;
+    --hairline:#333333;
+    --primary:#7EE8A6;
+    --accent:#4ADE80;
+    --warn:#E8C468;
+    --danger:#E5544B;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 96px;
+  }
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 12px;max-width:960px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+  .legend{color:var(--muted);font-size:12.5px;max-width:960px;margin:0 0 12px;
+          border-left:2px solid var(--hairline);padding-left:12px}
+  .legend b{color:var(--text)}
+  .shipped{border-left-color:var(--accent)}
+
+  .variant{margin:0 0 40px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  .variant > header{padding:16px 20px;border-bottom:1px solid var(--hairline)}
+  .variant h2{font-size:15px;margin:0 0 6px;font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .tag{font-size:11px;color:#0e0e0e;background:var(--accent);border-radius:6px;padding:2px 7px;font-weight:700}
+  .tag.alt{background:var(--container-highest);color:var(--text)}
+  .tag.warn{background:var(--warn);color:#0e0e0e}
+  .variant p{margin:0;color:var(--muted);font-size:13px;max-width:980px}
+  .variant p + p{margin-top:6px}
+  .body{display:flex;align-items:stretch}
+  .stage{flex:1;padding:20px;min-width:0}
+  .notes{width:308px;flex:none;border-left:1px dashed var(--hairline);padding:20px;font-size:12px;color:var(--muted)}
+  .notes h3{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 8px;font-weight:700}
+  .notes h3+h3{margin-top:14px}
+  .notes ul{margin:0 0 12px;padding-left:16px}
+  .notes li{margin-bottom:5px}
+  .notes li b{color:var(--text);font-weight:600}
+  .pro::marker{color:var(--accent)}
+  .pro::before{content:"✓ ";color:var(--accent)}
+  .con::before{content:"✕ ";color:var(--danger)}
+  .cost{border-top:1px solid var(--hairline);padding-top:10px;margin-top:6px;color:var(--muted)}
+  .cost b{color:var(--text)}
+
+  /* ---------- chat pane ---------- */
+  .pane{position:relative;background:var(--bg);border:1px solid #000;border-radius:var(--radius);
+        height:400px;overflow:hidden}
+  .scroller{position:absolute;inset:0;overflow-y:auto;padding:16px 0 150px}
+  .scroller::-webkit-scrollbar{width:0}
+  .colinner{max-width:540px;margin:0 auto;padding:0 18px}
+  .row{margin-bottom:14px}
+  .row.user{display:flex;flex-direction:column;align-items:flex-end}
+  .bubble{background:var(--container-high);border-radius:12px 12px 4px 12px;padding:8px 12px;max-width:80%;font-size:13px}
+  .cap{font-size:10.5px;color:#8A8A8A;margin-top:3px;margin-right:2px}
+  .cap.steer::before{content:"↪ "}
+  .row.assistant .who{font-size:10.5px;color:var(--muted);margin-bottom:2px;letter-spacing:.04em}
+  .row.assistant .txt{font-size:13px;color:#DEDEDE}
+  .row.tool{font-size:12px;color:var(--muted);border:1px solid var(--hairline);border-radius:8px;
+            padding:6px 10px;background:var(--container-low);display:flex;gap:8px;align-items:center}
+  .row.tool .dot{width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none}
+  .caret{display:inline-block;width:6px;height:13px;background:var(--accent);vertical-align:-2px;
+         animation:blink 1s steps(2,start) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  /* ---------- composer ---------- */
+  .composer{position:absolute;left:0;right:0;bottom:0;padding:8px 18px 12px;
+            background:linear-gradient(to top,rgba(23,23,23,.97) 55%,rgba(23,23,23,0))}
+  .cwrap{max-width:540px;margin:0 auto}
+  .box{background:var(--container-high);border:1px solid var(--hairline);border-radius:16px;
+       padding:8px 8px 8px 12px;display:flex;gap:8px;align-items:center}
+  .box input{flex:1;background:none;border:0;outline:0;color:var(--text);font-size:13px;font-family:inherit}
+  .box input::placeholder{color:#7C7C7C}
+  .send{width:28px;height:28px;border-radius:50%;background:var(--accent);border:0;cursor:pointer;
+        display:grid;place-items:center;color:#0e0e0e;font-size:13px;flex:none;transition:background .2s,transform .12s}
+  .send:active{transform:scale(.92)}
+  .send.steer{background:var(--warn)}
+  .send.queue{background:var(--container-highest);color:var(--text)}
+  .hintbar{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);
+           padding:0 6px 5px;min-height:17px;transition:color .2s}
+  .hintbar .k{background:#000;border-radius:4px;padding:0 4px;font-size:10px}
+  .hintbar.steer{color:var(--warn)}
+  .hintbar.queue{color:#8FB7FF}
+
+  /* ---------- chips ---------- */
+  .chips{display:flex;flex-direction:column;gap:4px;padding:0 4px 5px}
+  .chip{display:flex;align-items:center;gap:8px;background:var(--container);border:1px solid var(--hairline);
+        border-radius:11px;padding:5px 6px 5px 10px;font-size:12px;color:#CFCFCF;
+        animation:chipIn .18s ease-out}
+  @keyframes chipIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .chip .grip{color:#666;cursor:grab;font-size:11px;letter-spacing:-1px}
+  .chip .txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip .x,.chip .go{background:none;border:0;color:var(--muted);cursor:pointer;font-size:12px;padding:2px 5px;border-radius:6px}
+  .chip .x:hover{color:var(--danger);background:#2a2020}
+  .chip .go:hover{color:var(--accent);background:#1e2a22}
+  .chip.editing{border-color:var(--accent)}
+  .chip.editing input{flex:1;background:none;border:0;outline:0;color:var(--text);font-size:12px;font-family:inherit}
+  .qhead{display:flex;justify-content:space-between;align-items:center;font-size:10.5px;color:var(--muted);
+         padding:0 8px 3px;letter-spacing:.06em;text-transform:uppercase}
+  .qhead button{background:none;border:0;color:var(--muted);font-size:10.5px;cursor:pointer;text-transform:none;letter-spacing:0}
+  .qhead button:hover{color:var(--danger)}
+
+  /* grace ring */
+  .grace{position:relative;width:18px;height:18px;flex:none}
+  .grace svg{transform:rotate(-90deg)}
+  .grace circle{fill:none;stroke-width:2}
+  .grace .trk{stroke:#3a3a3a}
+  .grace .bar{stroke:var(--warn);stroke-linecap:round;stroke-dasharray:44;animation:drain 3s linear forwards}
+  @keyframes drain{from{stroke-dashoffset:0}to{stroke-dashoffset:44}}
+  .chip.grace-chip{border-color:#5a4d2a;background:#231f16}
+  .chip.grace-chip .pull{background:none;border:1px solid #5a4d2a;color:var(--warn);border-radius:6px;
+                         font-size:11px;padding:2px 7px;cursor:pointer}
+
+  /* ghost bubble at the tail */
+  .row.ghost{display:flex;flex-direction:column;align-items:flex-end;opacity:.72}
+  .row.ghost .bubble{background:transparent;border:1px dashed #4a4a4a;color:#B9B9B9}
+  .row.ghost .cap{color:#8FB7FF}
+  .row.ghost .cap button{background:none;border:0;color:#8FB7FF;cursor:pointer;font-size:10.5px;text-decoration:underline}
+
+  /* steer seam */
+  .seam{display:flex;align-items:center;gap:8px;margin:10px 0;color:var(--warn);font-size:10.5px;letter-spacing:.04em}
+  .seam::before,.seam::after{content:"";height:1px;background:linear-gradient(to right,transparent,#5a4d2a,transparent);flex:1}
+
+  /* split send */
+  .split{display:flex;align-items:center;background:var(--accent);border-radius:14px;overflow:hidden;flex:none}
+  .split button{background:none;border:0;cursor:pointer;color:#0e0e0e;font-size:12px;padding:5px 9px;font-weight:600}
+  .split .sep{width:1px;align-self:stretch;background:rgba(0,0,0,.25)}
+  .menu{position:absolute;right:26px;bottom:56px;background:var(--container);border:1px solid var(--hairline);
+        border-radius:10px;padding:4px;font-size:12px;width:230px;box-shadow:0 12px 28px rgba(0,0,0,.5);display:none;z-index:9}
+  .menu.open{display:block}
+  .menu button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);
+               padding:7px 9px;border-radius:7px;cursor:pointer;font-size:12px;font-family:inherit}
+  .menu button:hover{background:var(--container-high)}
+  .menu small{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}
+
+  /* controls */
+  .ctl{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .ctl button{background:var(--container);border:1px solid var(--hairline);color:var(--text);border-radius:8px;
+              padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  .ctl button:hover{border-color:#555}
+  .ctl button.on{background:var(--container-highest);border-color:#666}
+  .ctl .seg{display:flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden}
+  .ctl .seg button{border:0;border-radius:0}
+  .ctl .seg button+button{border-left:1px solid var(--hairline)}
+  .status{margin-left:auto;font-size:11px}
+  .status b{color:var(--text)}
+
+  .rec{border:1px solid #2c4034;background:#14201a;border-radius:14px;padding:18px 20px;margin-bottom:40px}
+  .rec h2{margin:0 0 10px;font-size:15px}
+  .rec ol{margin:0;padding-left:20px;color:#CFE8D8;font-size:13px}
+  .rec li{margin-bottom:8px}
+  .rec li b{color:#fff}
+  .rec .no{color:var(--muted);margin-top:12px;font-size:12.5px}
+</style>
+</head>
+<body>
+
+<h1>Mid-turn messages — steer vs queue</h1>
+<p class="sub">
+  SPEC-35 UX candidates. The problem: you type while the agent is working, and what happens next is
+  decided by the <em>transport</em>, not by you. On codex the message is <b>steered</b> into the running
+  turn (immediate, irreversible). On an ACP agent it is <b>queued</b> until idle (cancellable). Same
+  keystroke, two consequences.
+</p>
+<p class="legend shipped">
+  <b>Shipped today:</b> one send button, always enabled while running · queued messages appear as
+  cancellable chips above the composer · a steered message is captioned
+  <code>Steered into the running turn</code> on its bubble. Everything below is a proposal on top of that.
+</p>
+<p class="legend">
+  Each card is interactive — type and press the button. The <b>agent</b> switch flips the pane between a
+  steering transport (codex) and a queue-only transport (pi/ACP), because the point of most of these
+  designs is that the user should not have to know which they are on.
+</p>
+
+<!-- ══════════════════════════════════════════════════════════════════ A -->
+<section class="variant">
+  <header>
+    <h2>A · Intent-ahead composer <span class="tag">recommended</span> <span class="tag alt">no new gesture</span></h2>
+    <p>
+      The cheapest fix for the real complaint. While the agent is working, the composer <em>says what
+      pressing send will do</em>: the placeholder and the send glyph change, and a one-line hint sits under
+      the field. Amber arrow-into-stream = will steer. Grey stack = will queue.
+    </p>
+    <p>No extra buttons, no modes, no protocol flag beyond a steering capability on the session.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="ctl">
+        <span>agent</span>
+        <div class="seg" id="a-seg">
+          <button data-agent="codex" class="on">codex (steers)</button>
+          <button data-agent="pi">pi / ACP (queues)</button>
+        </div>
+        <button id="a-toggle">toggle running</button>
+        <span class="status">state: <b id="a-state">running</b></span>
+      </div>
+      <div class="pane" id="a-pane">
+        <div class="scroller" id="a-scroll"><div class="colinner" id="a-log"></div></div>
+        <div class="composer"><div class="cwrap">
+          <div class="hintbar" id="a-hint"></div>
+          <div class="box">
+            <input id="a-input" placeholder="Message…" />
+            <button class="send" id="a-send">↑</button>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Why</h3>
+      <ul>
+        <li class="pro">Sets expectation <b>before</b> the irreversible action, not after.</li>
+        <li class="pro">Zero added pixels, zero new gestures, works identically on phone and desktop.</li>
+        <li class="pro">Teaches the concept passively — after two sessions you just know.</li>
+      </ul>
+      <h3>Risks</h3>
+      <ul>
+        <li class="con">Another moving part in the composer; must not animate on every token.</li>
+        <li class="con">Amber send button may read as "warning" — needs a real colour pass.</li>
+      </ul>
+      <div class="cost">
+        <b>Cost:</b> app-only <i>except</i> one bit: the app must know whether steering is possible →
+        <code>steering</code> on <code>SessionDTO</code> (derived from the adapter, ~15 lines server).
+        Composer: placeholder + glyph + hint driven by <code>session.status</code>.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════ B -->
+<section class="variant">
+  <header>
+    <h2>B · Grace window — "pull it back" <span class="tag">recommended</span> <span class="tag warn">fixes the real bug</span></h2>
+    <p>
+      The known complaint about codex steering is that <em>an accidental steer cannot be undone</em>.
+      makit can fix that without any protocol support: hold the message on the server for ~3 s before
+      calling <code>turn/steer</code>. During the countdown it is an ordinary pending chip with a draining
+      ring — one tap pulls it back into the composer, text intact.
+    </p>
+    <p>After the ring empties it steers for real and becomes a captioned bubble.</p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="ctl">
+        <button id="b-demo">send "actually, use Postgres"</button>
+        <span class="status">grace: <b>3 s</b> · configurable, 0 = off</span>
+      </div>
+      <div class="pane" id="b-pane">
+        <div class="scroller" id="b-scroll"><div class="colinner" id="b-log"></div></div>
+        <div class="composer"><div class="cwrap">
+          <div class="chips" id="b-chips"></div>
+          <div class="box">
+            <input id="b-input" placeholder="Message…" />
+            <button class="send steer" id="b-send">↪</button>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Why</h3>
+      <ul>
+        <li class="pro">Turns an irreversible action into a reversible one — <b>the</b> steering complaint.</li>
+        <li class="pro">Reuses the queue machinery already shipped: it is a queue entry with a timer.</li>
+        <li class="pro">Same affordance for both transports, so the asymmetry shrinks by itself.</li>
+      </ul>
+      <h3>Risks</h3>
+      <ul>
+        <li class="con">Delays a deliberate steer by 3 s — the agent may pass the step you aimed at.</li>
+        <li class="con">Needs a "send immediately" escape (double-press, or tap the ring).</li>
+      </ul>
+      <div class="cost">
+        <b>Cost:</b> server-side timer in <code>session.ts</code> around the existing
+        <code>steer()</code> call + a <code>graceMs</code> on the queue entry so the chip can render the
+        ring. No new wire concepts — a pending message already exists.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════ C -->
+<section class="variant">
+  <header>
+    <h2>C · Queue tray — reorder, edit, promote <span class="tag alt">only if queues grow</span></h2>
+    <p>
+      Today's chips are a flat list you can only cancel. If real use produces 2–4 pending messages, the
+      strip should become a small tray: drag to reorder, tap to edit before it flushes, and
+      <b>⤒ promote</b> = stop the current turn and send this one now (interrupt, the third behaviour we
+      already have but never surface per-message).
+    </p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="ctl">
+        <button id="c-add">queue another message</button>
+        <button id="c-flush">agent goes idle (flush 1)</button>
+        <span class="status">pending: <b id="c-count">3</b></span>
+      </div>
+      <div class="pane" id="c-pane">
+        <div class="scroller" id="c-scroll"><div class="colinner" id="c-log"></div></div>
+        <div class="composer"><div class="cwrap">
+          <div class="qhead"><span>waiting for the agent</span><button id="c-clear">clear all</button></div>
+          <div class="chips" id="c-chips"></div>
+          <div class="box">
+            <input id="c-input" placeholder="Message…" />
+            <button class="send queue" id="c-send">≡</button>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Why</h3>
+      <ul>
+        <li class="pro">Editing a queued message is strictly better than cancel + retype on a phone.</li>
+        <li class="pro">Per-message <b>promote</b> exposes interrupt where it is actually wanted.</li>
+        <li class="con">Speculative: nobody has yet queued three messages in makit.</li>
+      </ul>
+      <h3>Risks</h3>
+      <ul>
+        <li class="con">Drag inside a scrollable composer area is fiddly on mobile.</li>
+        <li class="con">Edit needs an id-stable update cmd (<code>queue.update</code>) — new surface.</li>
+      </ul>
+      <div class="cost">
+        <b>Cost:</b> medium. Two new cmds (<code>queue.update</code>, <code>queue.promote</code>), reorder
+        semantics on the server queue, and a real drag implementation. <b>Do not build until the
+        one-chip case has been used in anger.</b>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════ D -->
+<section class="variant">
+  <header>
+    <h2>D · Steer seam in the transcript <span class="tag alt">reading back</span></h2>
+    <p>
+      The shipped caption tells you <em>that</em> a message was steered. A seam tells you <em>where</em> it
+      landed: a hairline across the agent's output at the point the steer was injected, so a long turn
+      reads as "…this part, then I redirected it, then this part". Answers "why did it change course?"
+      three days later.
+    </p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="ctl">
+        <div class="seg" id="d-seg">
+          <button data-mode="caption" class="on">shipped: caption only</button>
+          <button data-mode="seam">proposed: + seam</button>
+        </div>
+      </div>
+      <div class="pane" id="d-pane">
+        <div class="scroller"><div class="colinner" id="d-log"></div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Why</h3>
+      <ul>
+        <li class="pro">Explains a mid-turn change of direction when re-reading a long session.</li>
+        <li class="pro">Pure render of data we already have (the echo's position in the log).</li>
+      </ul>
+      <h3>Risks</h3>
+      <ul>
+        <li class="con">Another horizontal rule in a transcript that already has tool rows.</li>
+        <li class="con">The seam is only truthful if the echo is ordered where the steer landed — it is
+          (we emit on acceptance), but streaming deltas can arrive around it.</li>
+      </ul>
+      <div class="cost">
+        <b>Cost:</b> app-only, small. A steered <code>UserMessageItem</code> already sits between the
+        agent's chunks; this is one extra row widget in <code>chat_transcript.dart</code>.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════ E -->
+<section class="variant">
+  <header>
+    <h2>E · Ghost bubble at the tail <span class="tag alt">alternative to chips</span></h2>
+    <p>
+      Instead of a chip above the composer, a queued message renders <em>where it will land</em>: a dashed,
+      dimmed bubble at the end of the transcript, captioned "sends when the agent finishes · cancel".
+      Spatially honest — the queue <i>is</i> the future of the conversation.
+    </p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="ctl">
+        <button id="e-add">queue a message</button>
+        <button id="e-flush">agent goes idle</button>
+      </div>
+      <div class="pane" id="e-pane">
+        <div class="scroller" id="e-scroll"><div class="colinner" id="e-log"></div></div>
+        <div class="composer"><div class="cwrap">
+          <div class="box">
+            <input id="e-input" placeholder="Message…" />
+            <button class="send queue" id="e-send">≡</button>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Why</h3>
+      <ul>
+        <li class="pro">Zero new chrome; uses the space the message will occupy anyway.</li>
+        <li class="pro">The transition "ghost → real bubble" on flush is self-explanatory.</li>
+      </ul>
+      <h3>Risks</h3>
+      <ul>
+        <li class="con"><b>Touches the transcript.</b> A synthetic tail row interacts with SPEC-21
+          anchoring, SPEC-34's index-keyed markers, and the trailer row (ask card / spinner).</li>
+        <li class="con">Scrolled up, you cannot see your own pending message at all — the chip is always
+          in view, this is not.</li>
+      </ul>
+      <div class="cost">
+        <b>Cost:</b> app-only but <b>risky</b>: a fake item in the folded list, or a second trailer. That
+        is exactly the class of change SPEC-21/34 warn about. Chips stay cheaper and safer.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════════ F -->
+<section class="variant">
+  <header>
+    <h2>F · Explicit choice: split send / long-press <span class="tag alt">rejected in SPEC-35</span></h2>
+    <p>
+      For comparison: the option you asked about. Send stays primary; a caret opens
+      <b>Queue instead</b> and <b>Stop &amp; send now</b>. Shown here so the cost is concrete rather than
+      hypothetical — on a queue-only agent the menu collapses to nothing, which is the tell that it needs
+      capability plumbing to avoid lying.
+    </p>
+  </header>
+  <div class="body">
+    <div class="stage">
+      <div class="ctl">
+        <div class="seg" id="f-seg">
+          <button data-agent="codex" class="on">codex</button>
+          <button data-agent="pi">pi / ACP</button>
+        </div>
+        <span class="status" id="f-note">two real choices</span>
+      </div>
+      <div class="pane" id="f-pane">
+        <div class="scroller"><div class="colinner" id="f-log"></div></div>
+        <div class="menu" id="f-menu">
+          <button data-act="queue">Queue instead<small>waits until the agent is idle</small></button>
+          <button data-act="interrupt">Stop &amp; send now<small>abandons the current turn</small></button>
+        </div>
+        <div class="composer"><div class="cwrap">
+          <div class="chips" id="f-chips"></div>
+          <div class="box">
+            <input id="f-input" placeholder="Message…" />
+            <div class="split">
+              <button id="f-send">Steer</button><div class="sep"></div><button id="f-caret">▾</button>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div class="notes">
+      <h3>Why not (yet)</h3>
+      <ul>
+        <li class="con">Needs <code>send.message.mode</code> <b>and</b> a steering capability on the DTO,
+          or the second item is a no-op on pi.</li>
+        <li class="con">Two gestures to learn for a distinction most users will never care about.</li>
+        <li class="pro">…but it is the only design that lets you <b>deliberately hold back</b> on codex.</li>
+      </ul>
+      <div class="cost">
+        <b>Cost:</b> highest of the six. Wire flag + capability + menu on two surfaces + shortcut. Revisit
+        if "let it finish first" turns out to be a frequent want.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="rec">
+  <h2>What I'd actually build</h2>
+  <ol>
+    <li><b>A (intent-ahead composer) first.</b> It attacks the actual defect — the user cannot predict an
+      irreversible action — and it costs one capability bit plus composer polish. Everything else is
+      cosmetics until this exists.</li>
+    <li><b>B (grace window) next</b>, defaulting to ~2.5–3 s on steering transports. It converts the one
+      genuinely bad property of steering into a recoverable one, reuses the queue we already have, and
+      makes both transports feel the same for the first three seconds.</li>
+    <li><b>D (seam) when a long steered session first confuses you.</b> Cheap, additive, read-time value.</li>
+    <li><b>C and E: don't.</b> C is speculative until queues routinely exceed one message; E buys spatial
+      elegance by touching the one part of the app (reversed anchored transcript) that SPEC-21/34 tell us
+      to leave alone.</li>
+  </ol>
+  <p class="no">F stays rejected until someone says "I wanted it to finish first" out loud. The shipped
+    caption is retained in every option — it is the only thing that makes the behaviour learnable.</p>
+</section>
+
+<script>
+/* ---------------- shared helpers ---------------- */
+const el = (t, c, h) => { const n = document.createElement(t); if (c) n.className = c; if (h != null) n.innerHTML = h; return n; };
+const bubble = (text, cap) => {
+  const r = el('div','row user');
+  r.appendChild(el('div','bubble', text));
+  if (cap) r.appendChild(el('div','cap ' + (cap.steer ? 'steer' : ''), cap.text));
+  return r;
+};
+const assistant = (text, live) => {
+  const r = el('div','row assistant');
+  r.appendChild(el('div','who','codex'));
+  r.appendChild(el('div','txt', text + (live ? '<span class="caret"></span>' : '')));
+  return r;
+};
+const tool = (t) => { const r = el('div','row tool'); r.appendChild(el('div','dot')); r.appendChild(el('div',null,t)); return r; };
+const toBottom = (s) => { s.scrollTop = s.scrollHeight; };
+
+/* ---------------- A: intent-ahead composer ---------------- */
+(() => {
+  const log = document.getElementById('a-log'), scroll = document.getElementById('a-scroll');
+  const input = document.getElementById('a-input'), send = document.getElementById('a-send');
+  const hint = document.getElementById('a-hint'), stateEl = document.getElementById('a-state');
+  const chipsHost = el('div','chips'); // lazily attached for the queue case
+  let agent = 'codex', running = true;
+
+  log.appendChild(bubble('add rate limiting to the upload route'));
+  log.appendChild(tool('read  server/src/media/route.ts'));
+  log.appendChild(assistant('I\'ll add a token bucket keyed by device id, then', true));
+
+  function paint() {
+    stateEl.textContent = running ? 'running' : 'idle';
+    send.className = 'send' + (!running ? '' : agent === 'codex' ? ' steer' : ' queue');
+    send.textContent = !running ? '↑' : agent === 'codex' ? '↪' : '≡';
+    input.placeholder = !running ? 'Message…' : agent === 'codex' ? 'Steer the current turn…' : 'Queue a message…';
+    hint.className = 'hintbar' + (!running ? '' : agent === 'codex' ? ' steer' : ' queue');
+    hint.innerHTML = !running ? '' : agent === 'codex'
+      ? '↪ goes into the turn already running <span class="k">no undo</span>'
+      : '≡ sends when the agent finishes <span class="k">cancellable</span>';
+  }
+  document.getElementById('a-seg').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...e.currentTarget.children].forEach(x => x.classList.toggle('on', x === b));
+    agent = b.dataset.agent; paint();
+  };
+  document.getElementById('a-toggle').onclick = () => { running = !running; paint(); };
+  send.onclick = () => {
+    const t = input.value.trim(); if (!t) return;
+    input.value = '';
+    if (!running) { log.appendChild(bubble(t)); }
+    else if (agent === 'codex') { log.appendChild(bubble(t, { steer: true, text: 'Steered into the running turn' })); }
+    else {
+      if (!chipsHost.parentNode) hint.parentNode.insertBefore(chipsHost, hint);
+      const chip = el('div','chip');
+      chip.appendChild(el('span','grip','···'));
+      chip.appendChild(el('span','txt', t));
+      const x = el('button','x','✕'); x.onclick = () => chip.remove(); chip.appendChild(x);
+      chipsHost.appendChild(chip);
+    }
+    toBottom(scroll);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') send.onclick(); };
+  paint(); toBottom(scroll);
+})();
+
+/* ---------------- B: grace window ---------------- */
+(() => {
+  const log = document.getElementById('b-log'), scroll = document.getElementById('b-scroll');
+  const chips = document.getElementById('b-chips'), input = document.getElementById('b-input');
+  log.appendChild(bubble('scaffold the schema with SQLite'));
+  log.appendChild(tool('write  server/src/storage/schema.ts'));
+  log.appendChild(assistant('Creating the tables. Next I\'ll wire the migration runner and', true));
+  toBottom(scroll);
+
+  function stage(text) {
+    const chip = el('div','chip grace-chip');
+    const ring = el('div','grace');
+    ring.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18">'
+      + '<circle class="trk" cx="9" cy="9" r="7"></circle>'
+      + '<circle class="bar" cx="9" cy="9" r="7"></circle></svg>';
+    chip.appendChild(ring);
+    chip.appendChild(el('span','txt', text));
+    const pull = el('button','pull','pull back');
+    chip.appendChild(pull);
+    const now = el('button','go','send now ↪');
+    chip.appendChild(now);
+    chips.appendChild(chip);
+
+    const fire = () => {
+      clearTimeout(timer); if (!chip.parentNode) return;
+      chip.remove();
+      log.appendChild(bubble(text, { steer: true, text: 'Steered into the running turn' }));
+      log.appendChild(assistant('Switching to Postgres — dropping the SQLite schema I just wrote and', true));
+      toBottom(scroll);
+    };
+    const timer = setTimeout(fire, 3000);
+    pull.onclick = () => { clearTimeout(timer); chip.remove(); input.value = text; input.focus(); };
+    now.onclick = fire;
+  }
+  document.getElementById('b-demo').onclick = () => stage('actually, use Postgres');
+  document.getElementById('b-send').onclick = () => {
+    const t = input.value.trim(); if (!t) return; input.value = ''; stage(t);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('b-send').onclick(); };
+})();
+
+/* ---------------- C: queue tray ---------------- */
+(() => {
+  const log = document.getElementById('c-log'), scroll = document.getElementById('c-scroll');
+  const chips = document.getElementById('c-chips'), count = document.getElementById('c-count');
+  const input = document.getElementById('c-input');
+  let q = ['also update the README', 'and add a test for the 429 path', 'then run the full suite'];
+  let extra = 0;
+
+  log.appendChild(bubble('add rate limiting to the upload route'));
+  log.appendChild(assistant('Working through the middleware now, then I\'ll', true));
+  toBottom(scroll);
+
+  function render() {
+    chips.innerHTML = ''; count.textContent = q.length;
+    q.forEach((text, i) => {
+      const chip = el('div','chip');
+      const grip = el('span','grip','···'); grip.draggable = true; chip.appendChild(grip);
+      const span = el('span','txt', text); chip.appendChild(span);
+      const promote = el('button','go','⤒'); promote.title = 'stop the current turn and send this now';
+      const x = el('button','x','✕');
+      chip.appendChild(promote); chip.appendChild(x);
+
+      span.onclick = () => {
+        chip.classList.add('editing'); span.remove();
+        const inp = el('input'); inp.value = text; chip.insertBefore(inp, promote);
+        inp.focus();
+        const commit = () => { q[i] = inp.value.trim() || text; render(); };
+        inp.onblur = commit; inp.onkeydown = (e) => { if (e.key === 'Enter') commit(); };
+      };
+      x.onclick = () => { q.splice(i, 1); render(); };
+      promote.onclick = () => {
+        q.splice(i, 1);
+        log.appendChild(el('div','row tool','⏹ turn stopped'));
+        log.appendChild(bubble(text));
+        render(); toBottom(scroll);
+      };
+      grip.ondragstart = (e) => e.dataTransfer.setData('text/plain', String(i));
+      chip.ondragover = (e) => e.preventDefault();
+      chip.ondrop = (e) => {
+        e.preventDefault();
+        const from = Number(e.dataTransfer.getData('text/plain'));
+        if (Number.isNaN(from) || from === i) return;
+        const [m] = q.splice(from, 1); q.splice(i, 0, m); render();
+      };
+      chips.appendChild(chip);
+    });
+  }
+  document.getElementById('c-add').onclick = () => { q.push('follow-up #' + (++extra)); render(); };
+  document.getElementById('c-clear').onclick = () => { q = []; render(); };
+  document.getElementById('c-flush').onclick = () => {
+    const next = q.shift(); if (!next) return;
+    log.appendChild(bubble(next)); log.appendChild(assistant('On it.', false));
+    render(); toBottom(scroll);
+  };
+  document.getElementById('c-send').onclick = () => {
+    const t = input.value.trim(); if (!t) return; input.value = ''; q.push(t); render();
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('c-send').onclick(); };
+  render();
+})();
+
+/* ---------------- D: seam ---------------- */
+(() => {
+  const log = document.getElementById('d-log');
+  let mode = 'caption';
+  function render() {
+    log.innerHTML = '';
+    log.appendChild(bubble('scaffold the schema with SQLite'));
+    log.appendChild(assistant('Created <code>sessions</code> and <code>events</code> with a composite index on (session_id, seq).', false));
+    if (mode === 'seam') log.appendChild(el('div','seam','YOU STEERED HERE'));
+    log.appendChild(bubble('actually, use Postgres', { steer: true, text: 'Steered into the running turn' }));
+    log.appendChild(assistant('Understood — replacing the SQLite DDL with Postgres, keeping the same index. The migration runner stays.', false));
+  }
+  document.getElementById('d-seg').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...e.currentTarget.children].forEach(x => x.classList.toggle('on', x === b));
+    mode = b.dataset.mode; render();
+  };
+  render();
+})();
+
+/* ---------------- E: ghost bubble ---------------- */
+(() => {
+  const log = document.getElementById('e-log'), scroll = document.getElementById('e-scroll');
+  const input = document.getElementById('e-input');
+  let ghost = null;
+  log.appendChild(bubble('add rate limiting to the upload route'));
+  log.appendChild(assistant('Adding a token bucket keyed by device id, then I\'ll', true));
+  toBottom(scroll);
+
+  function addGhost(text) {
+    if (ghost) ghost.remove();
+    ghost = el('div','row ghost');
+    ghost.appendChild(el('div','bubble', text));
+    const cap = el('div','cap','sends when the agent finishes · ');
+    const btn = el('button',null,'cancel'); btn.onclick = () => { ghost.remove(); ghost = null; };
+    cap.appendChild(btn); ghost.appendChild(cap);
+    log.appendChild(ghost); toBottom(scroll);
+  }
+  document.getElementById('e-add').onclick = () => addGhost('and add a test for the 429 path');
+  document.getElementById('e-send').onclick = () => {
+    const t = input.value.trim(); if (!t) return; input.value = ''; addGhost(t);
+  };
+  input.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('e-send').onclick(); };
+  document.getElementById('e-flush').onclick = () => {
+    if (!ghost) return;
+    const text = ghost.querySelector('.bubble').textContent;
+    ghost.remove(); ghost = null;
+    log.appendChild(bubble(text)); log.appendChild(assistant('On it.', false));
+    toBottom(scroll);
+  };
+})();
+
+/* ---------------- F: split send ---------------- */
+(() => {
+  const log = document.getElementById('f-log'), menu = document.getElementById('f-menu');
+  const input = document.getElementById('f-input'), chips = document.getElementById('f-chips');
+  const sendBtn = document.getElementById('f-send'), note = document.getElementById('f-note');
+  let agent = 'codex';
+  log.appendChild(bubble('add rate limiting to the upload route'));
+  log.appendChild(assistant('Writing the middleware now, then I\'ll wire it into the route and', true));
+
+  function paint() {
+    sendBtn.textContent = agent === 'codex' ? 'Steer' : 'Queue';
+    menu.querySelector('[data-act="queue"]').style.display = agent === 'codex' ? 'block' : 'none';
+    note.textContent = agent === 'codex' ? 'two real choices' : 'menu collapses — nothing to choose';
+  }
+  document.getElementById('f-seg').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...e.currentTarget.children].forEach(x => x.classList.toggle('on', x === b));
+    agent = b.dataset.agent; menu.classList.remove('open'); paint();
+  };
+  document.getElementById('f-caret').onclick = () => menu.classList.toggle('open');
+  const take = () => { const t = input.value.trim() || 'use Postgres instead'; input.value = ''; return t; };
+  sendBtn.onclick = () => {
+    const t = take();
+    if (agent === 'codex') log.appendChild(bubble(t, { steer: true, text: 'Steered into the running turn' }));
+    else queueChip(t);
+  };
+  function queueChip(t) {
+    const chip = el('div','chip');
+    chip.appendChild(el('span','txt', t));
+    const x = el('button','x','✕'); x.onclick = () => chip.remove(); chip.appendChild(x);
+    chips.appendChild(chip);
+  }
+  menu.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    menu.classList.remove('open');
+    const t = take();
+    if (b.dataset.act === 'queue') queueChip(t);
+    else { log.appendChild(el('div','row tool','⏹ turn stopped')); log.appendChild(bubble(t)); }
+  };
+  paint();
+})();
+</script>
+</body>
+</html>
