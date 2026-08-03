@@ -1,5 +1,5 @@
 // T1 — SPEC-34: the navigator style enum, its shared provider, and the
-// preference entries backing the desktop picker.
+// preference entries backing the desktop rail switch.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/prefs/preference_entries.dart';
@@ -22,14 +22,14 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           messageNavigatorStyleProvider.overrideWithValue(
-            MessageNavigatorStyle.outline,
+            MessageNavigatorStyle.rail,
           ),
         ],
       );
       addTearDown(container.dispose);
       expect(
         container.read(messageNavigatorStyleProvider),
-        MessageNavigatorStyle.outline,
+        MessageNavigatorStyle.rail,
       );
     });
 
@@ -85,7 +85,7 @@ void main() {
     });
   });
 
-  group('per-style option entries', () {
+  group('rail option entries', () {
     test('every entry is registered in kPreferenceEntries', () {
       final ids = kPreferenceEntries.map((e) => e.id).toSet();
       for (final id in const [
@@ -93,11 +93,6 @@ void main() {
         'chat.navigator.rail.spacing',
         'chat.navigator.rail.ripple',
         'chat.navigator.rail.encodeLength',
-        'chat.navigator.palette.searchAll',
-        'chat.navigator.crumb.autoHide',
-        'chat.navigator.crumb.counter',
-        'chat.navigator.outline.hideTools',
-        'chat.navigator.outline.showCounts',
       ]) {
         expect(ids, contains(id), reason: '$id must be persisted');
       }
@@ -108,23 +103,18 @@ void main() {
       expect(c.get(railTickSpacingPreference), 6);
       expect(c.get(railRipplePreference), isTrue);
       expect(c.get(railEncodeLengthPreference), isTrue);
-      expect(c.get(paletteSearchAllPreference), isFalse);
-      expect(c.get(crumbAutoHidePreference), isTrue);
-      expect(c.get(crumbCounterPreference), isTrue);
-      expect(c.get(outlineHideToolsPreference), isFalse);
-      expect(c.get(outlineShowCountsPreference), isTrue);
     });
 
-    // The bug the settings mockup exposed: switching style must not clear the
-    // options of the style you switched away from (SPEC-34 §schema, 3).
-    test('options survive a round trip through another style', () async {
+    // The bug the settings mockup exposed: turning the rail off must not clear
+    // its options (SPEC-34 §schema, 3).
+    test('options survive a round trip through off', () async {
       final controller = PreferencesController.ephemeral();
       await controller.set(railTickSpacingPreference, 14);
       await controller.set(railRipplePreference, false);
 
       await controller.set(
         messageNavigatorStylePreference,
-        MessageNavigatorStyle.outline,
+        MessageNavigatorStyle.off,
       );
       await controller.set(
         messageNavigatorStylePreference,

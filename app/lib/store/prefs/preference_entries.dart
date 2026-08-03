@@ -164,8 +164,8 @@ const PreferenceEntry<int> autoSplitThresholdPreference = PreferenceEntry(
   decode: _decodeInt,
 );
 
-/// SPEC-34 — which message navigator the **desktop** transcript renders. Mobile
-/// does not read this (it has a single on/off switch instead; see
+/// SPEC-34 — whether the **desktop** transcript renders the message rail. Mobile
+/// does not read this (it reaches its messages through a sheet instead; see
 /// `messageNavigatorStyleProvider`), so this is a desktop-only preference.
 const PreferenceEntry<MessageNavigatorStyle> messageNavigatorStylePreference =
     PreferenceEntry(
@@ -200,46 +200,6 @@ const PreferenceEntry<bool> railEncodeLengthPreference = PreferenceEntry(
   decode: _decodeBool,
 );
 
-/// Whether the palette searches assistant/tool rows too (false = yours only).
-const PreferenceEntry<bool> paletteSearchAllPreference = PreferenceEntry(
-  id: 'chat.navigator.palette.searchAll',
-  defaultValue: false,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
-/// Whether the breadcrumb dims itself while pinned to the newest message.
-const PreferenceEntry<bool> crumbAutoHidePreference = PreferenceEntry(
-  id: 'chat.navigator.crumb.autoHide',
-  defaultValue: true,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
-/// Whether the breadcrumb shows its "4/7" position counter.
-const PreferenceEntry<bool> crumbCounterPreference = PreferenceEntry(
-  id: 'chat.navigator.crumb.counter',
-  defaultValue: true,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
-/// Whether outline mode hides tool-call rows as well as assistant messages.
-const PreferenceEntry<bool> outlineHideToolsPreference = PreferenceEntry(
-  id: 'chat.navigator.outline.hideTools',
-  defaultValue: false,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
-/// Whether outline mode shows a per-prompt "N rows hidden" count.
-const PreferenceEntry<bool> outlineShowCountsPreference = PreferenceEntry(
-  id: 'chat.navigator.outline.showCounts',
-  defaultValue: true,
-  encode: _encodeBool,
-  decode: _decodeBool,
-);
-
 /// Every entry known to the app. Extend this list to register new preferences;
 /// nothing else needs to change to persist them.
 const List<PreferenceEntry<Object?>> kPreferenceEntries = [
@@ -263,11 +223,6 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   railTickSpacingPreference,
   railRipplePreference,
   railEncodeLengthPreference,
-  paletteSearchAllPreference,
-  crumbAutoHidePreference,
-  crumbCounterPreference,
-  outlineHideToolsPreference,
-  outlineShowCountsPreference,
 ];
 
 Object? _encodeNavigatorStyle(MessageNavigatorStyle value) => value.name;

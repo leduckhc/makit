@@ -9,6 +9,16 @@ import 'dart:convert';
 
 const protocolVersion = 1;
 
+/// Whether [value] is a media id: the sha256 of the bytes, lowercase hex — the
+/// only id shape the server's `/media` route mints or serves.
+///
+/// One definition for the whole app: the event fold, the markdown image builder,
+/// `MediaEndpoint.urlFor` (which splices the id into a URL path) and the upload
+/// response parse must agree, or an id accepted in one place renders a permanent
+/// broken image in another. Mirrors `isMediaId()` in server/src/media/store.ts.
+bool isMediaId(String value) => _mediaIdPattern.hasMatch(value);
+final RegExp _mediaIdPattern = RegExp(r'^[a-f0-9]{64}$');
+
 /// All message types on the wire.
 enum MsgType {
   hello,

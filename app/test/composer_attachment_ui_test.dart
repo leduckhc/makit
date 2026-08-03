@@ -10,6 +10,26 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 final _bytes = Uint8List.fromList([1, 2, 3]);
 
+/// The composer's attachment capability, with only the bits a test cares about
+/// overridden. [pick] null = nowhere to upload (an inert paperclip, no ⌘V).
+ComposerAttachmentsApi _api({
+  List<ComposerAttachment> staged = const [],
+  VoidCallback? pick,
+  ValueChanged<String>? remove,
+  ValueChanged<String>? retry,
+  Future<({Uint8List bytes, String mime, String name})?> Function()?
+  readClipboardImage,
+  void Function(({Uint8List bytes, String mime, String name}) image)?
+  stagePasted,
+}) => ComposerAttachmentsApi(
+  staged: staged,
+  pick: pick ?? () {},
+  remove: remove ?? (_) {},
+  retry: retry ?? (_) {},
+  readClipboardImage: readClipboardImage ?? () async => null,
+  stagePasted: stagePasted ?? (_) {},
+);
+
 ComposerAttachment _att({
   String id = 'l1',
   AttachmentStatus status = AttachmentStatus.ready,
@@ -157,7 +177,10 @@ void main() {
       final sent = <String>[];
       await tester.pumpWidget(
         _host(
-          Composer(onSend: sent.add, attachments: [_att()], onAttach: () {}),
+          Composer(
+            onSend: sent.add,
+            attachments: _api(staged: [_att()]),
+          ),
         ),
       );
       // Empty field + one ready image is a legitimate turn.
@@ -178,8 +201,9 @@ void main() {
         _host(
           Composer(
             onSend: (_) {},
-            attachments: [_att(status: AttachmentStatus.uploading)],
-            onAttach: () {},
+            attachments: _api(
+              staged: [_att(status: AttachmentStatus.uploading)],
+            ),
           ),
         ),
       );
@@ -197,8 +221,9 @@ void main() {
         _host(
           Composer(
             onSend: (_) {},
-            attachments: [_att(status: AttachmentStatus.uploading)],
-            onAttach: () {},
+            attachments: _api(
+              staged: [_att(status: AttachmentStatus.uploading)],
+            ),
           ),
         ),
       );
@@ -215,30 +240,71 @@ void main() {
     ) async {
       var tapped = 0;
       await tester.pumpWidget(
-        _host(Composer(onSend: (_) {}, onAttach: () => tapped++)),
+        _host(
+          Composer(
+            onSend: (_) {},
+            attachments: _api(pick: () => tapped++),
+          ),
+        ),
       );
       await tester.tap(find.byIcon(PhosphorIconsLight.paperclip));
       expect(tapped, 1);
     });
 
-    testWidgets('the paperclip is disabled when attaching is impossible', (
+    testWidgets('an attachment-unaware composer does not blame the server', (
       tester,
     ) async {
+      // No attachments API at all (the free-text answer composer). The clip stays
+      // visible but inert — and must NOT promise that connecting fixes it, since
+      // connecting never enables attachments here.
       await tester.pumpWidget(_host(Composer(onSend: (_) {})));
       final clip = tester.widget<IconButton>(
         find.widgetWithIcon(IconButton, PhosphorIconsLight.paperclip),
       );
-      // Null onAttach = this session cannot take attachments; the affordance
-      // stays visible but inert, with an honest tooltip.
       expect(clip.onPressed, isNull);
       expect(clip.tooltip, isNotNull);
       expect(clip.tooltip, isNot(contains('v2')));
+      expect(
+        clip.tooltip,
+        isNot(contains('server')),
+        reason: 'no connectivity fix exists for this composer',
+      );
+    });
+
+    testWidgets('a session with nowhere to upload names the real reason', (
+      tester,
+    ) async {
+      // Attachment-aware, but `pick` is null: nothing is paired, so the tooltip
+      // points at the thing the user can actually fix.
+      await tester.pumpWidget(
+        _host(
+          Composer(
+            onSend: (_) {},
+            attachments: ComposerAttachmentsApi(
+              staged: const [],
+              remove: (_) {},
+              retry: (_) {},
+              readClipboardImage: () async => null,
+              stagePasted: (_) {},
+            ),
+          ),
+        ),
+      );
+      final clip = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, PhosphorIconsLight.paperclip),
+      );
+      expect(clip.onPressed, isNull);
       expect(clip.tooltip, contains('server'));
     });
 
     testWidgets('chips are shown above the field', (tester) async {
       await tester.pumpWidget(
-        _host(Composer(onSend: (_) {}, attachments: [_att()], onAttach: () {})),
+        _host(
+          Composer(
+            onSend: (_) {},
+            attachments: _api(staged: [_att()]),
+          ),
+        ),
       );
       expect(find.byType(AttachmentChips), findsOneWidget);
       final chipY = tester.getCenter(find.byType(AttachmentChips)).dy;
@@ -247,7 +313,9 @@ void main() {
     });
 
     testWidgets('no chips row when nothing is attached', (tester) async {
-      await tester.pumpWidget(_host(Composer(onSend: (_) {}, onAttach: () {})));
+      await tester.pumpWidget(
+        _host(Composer(onSend: (_) {}, attachments: _api())),
+      );
       expect(find.byType(AttachmentChips), findsNothing);
     });
 
@@ -260,10 +328,11 @@ void main() {
         _host(
           Composer(
             onSend: (_) {},
-            onAttach: () {},
-            readClipboardImage: () async =>
-                (bytes: _bytes, mime: 'image/png', name: 'pasted.png'),
-            onPasteImage: (bytes, mime, name) => pasted = bytes,
+            attachments: _api(
+              readClipboardImage: () async =>
+                  (bytes: _bytes, mime: 'image/png', name: 'pasted.png'),
+              stagePasted: (image) => pasted = image.bytes,
+            ),
           ),
         ),
       );
@@ -283,29 +352,54 @@ void main() {
     testWidgets('⌘V is NOT claimed when the composer cannot attach images', (
       tester,
     ) async {
-      // Composers with no paste callbacks (the free-text answer composer, or a
-      // session that cannot attach) must keep the field's native paste — hijacking
-      // it there costs undo/IME behaviour and buys nothing.
+      // A composer with no attachments API (the free-text answer composer) must
+      // keep the field's native paste — hijacking it there costs undo/IME
+      // behaviour and buys nothing.
       _mockClipboard(tester, text: 'native paste');
-      await tester.pumpWidget(_host(Composer(onSend: (_) {}, onAttach: () {})));
+      await tester.pumpWidget(_host(Composer(onSend: (_) {})));
       await tester.tap(find.byType(TextField));
       await tester.pump();
 
       expect(composerClaimsPaste(tester), isFalse);
     });
 
-    testWidgets('⌘V IS claimed when an image paste is possible', (
+    testWidgets('⌘V is NOT claimed when there is nowhere to upload', (
       tester,
     ) async {
+      // Staged chips stay visible and removable, but a session that cannot
+      // stage a new image must not claim the paste either.
+      _mockClipboard(tester, text: 'native paste');
       await tester.pumpWidget(
         _host(
           Composer(
             onSend: (_) {},
-            onAttach: () {},
-            readClipboardImage: () async => null,
-            onPasteImage: (_, _, _) {},
+            attachments: ComposerAttachmentsApi(
+              staged: [_att()],
+              remove: (_) {},
+              retry: (_) {},
+              readClipboardImage: () async =>
+                  (bytes: _bytes, mime: 'image/png', name: 'x.png'),
+              stagePasted: (_) {},
+            ),
           ),
         ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+
+      expect(composerClaimsPaste(tester), isFalse);
+      expect(find.byType(AttachmentChips), findsOneWidget);
+      final clip = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, PhosphorIconsLight.paperclip),
+      );
+      expect(clip.onPressed, isNull);
+    });
+
+    testWidgets('⌘V IS claimed when an image paste is possible', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(Composer(onSend: (_) {}, attachments: _api())),
       );
       expect(composerClaimsPaste(tester), isTrue);
     });
@@ -318,9 +412,10 @@ void main() {
         _host(
           Composer(
             onSend: (_) {},
-            onAttach: () {},
-            readClipboardImage: () async => null,
-            onPasteImage: (bytes, mime, name) => pasted = bytes,
+            attachments: _api(
+              readClipboardImage: () async => null,
+              stagePasted: (image) => pasted = image.bytes,
+            ),
           ),
         ),
       );

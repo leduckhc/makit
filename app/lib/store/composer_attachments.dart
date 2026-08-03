@@ -16,6 +16,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/legacy.dart';
 
 import '../transport/media_client.dart';
+import 'chat_items.dart';
 import 'media.dart';
 
 /// Where an attachment is in its journey to the server.
@@ -94,8 +95,6 @@ class ComposerAttachments
   /// instead.
   final MediaUploader? Function() _resolveUploader;
 
-  bool get canAttach => _resolveUploader() != null;
-
   List<ComposerAttachment> forKey(String key) => state[key] ?? const [];
 
   /// Whether [key] is safe to send: no upload still in flight.
@@ -104,13 +103,15 @@ class ComposerAttachments
 
   /// The descriptors to hand to the send path — ready ones only.
   ///
-  /// Carries the real `mime` even though the wire does not need it (the server
+  /// Carries the real `mime` even though the send wire drops it (the server
   /// resolves the id against its own store): the app's OPTIMISTIC bubble is the
   /// copy that survives the seq-collision dedup, so it has to render with the
-  /// true type rather than an assumed one.
-  List<({String mediaId, String mime, String name})> wireFor(String key) => [
+  /// true type rather than an assumed one. Which of the two wire shapes each
+  /// caller needs is [MediaAttachmentRef]'s business, not this method's.
+  List<MediaAttachmentRef> wireFor(String key) => [
     for (final a in forKey(key))
-      if (a.isReady) (mediaId: a.mediaId!, mime: a.mime, name: a.name),
+      if (a.isReady)
+        MediaAttachmentRef(mediaId: a.mediaId!, mime: a.mime, name: a.name),
   ];
 
   /// Stage [bytes] under [localId] and upload them. Completes when the upload
@@ -243,6 +244,7 @@ final composerAttachmentsProvider =
     >(
       // `read`, not `watch`: see `_resolveUploader`. Widgets that need to react
       // to the endpoint appearing/disappearing watch `mediaUploaderProvider`
-      // directly (see `canAttach` in ui/composer/attachment_controller.dart).
+      // directly (see `composerAttachments` in
+      // ui/composer/attachment_controller.dart).
       (ref) => ComposerAttachments(() => ref.read(mediaUploaderProvider)),
     );

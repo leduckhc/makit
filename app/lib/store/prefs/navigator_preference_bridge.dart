@@ -1,14 +1,13 @@
-/// Bridges stored preferences to the shared message-navigator providers
-/// (SPEC-34).
+/// Bridges stored preferences to the shared message-rail providers (SPEC-34).
 ///
-/// The navigator reads its style and options as plain provider *values* that an
-/// app root overrides, rather than reading `PreferenceEntry`s itself: that keeps
+/// The rail reads its on/off state and options as plain provider *values* that
+/// an app root overrides, rather than reading `PreferenceEntry`s itself: that keeps
 /// the transcript indifferent to where the values come from, and lets a surface
 /// supply something else entirely (mobile supplies nothing — it has no navigator).
 ///
 /// Only the **desktop** root wires these up today. Nothing stops mobile from
 /// doing so — since the mobile-parity work the preference system lives here in
-/// `store/` and both surfaces load it — mobile simply has no navigator styles to
+/// `store/` and both surfaces load it — mobile simply has no rail to
 /// configure.
 library;
 
@@ -31,27 +30,6 @@ T _watch<T>(Ref ref, PreferenceEntry<T> entry) {
 /// [messageNavigatorStyleProvider] with this.
 final desktopNavigatorStyleProvider = Provider<MessageNavigatorStyle>(
   (ref) => _watch(ref, messageNavigatorStylePreference),
-);
-
-/// The stored breadcrumb options.
-final desktopBreadcrumbOptionsProvider = Provider<BreadcrumbOptions>(
-  (ref) => BreadcrumbOptions(
-    autoHide: _watch(ref, crumbAutoHidePreference),
-    counter: _watch(ref, crumbCounterPreference),
-  ),
-);
-
-/// The stored palette options.
-final desktopPaletteOptionsProvider = Provider<PaletteOptions>(
-  (ref) => PaletteOptions(searchAll: _watch(ref, paletteSearchAllPreference)),
-);
-
-/// The stored outline options.
-final desktopOutlineOptionsProvider = Provider<OutlineOptions>(
-  (ref) => OutlineOptions(
-    hideTools: _watch(ref, outlineHideToolsPreference),
-    showCounts: _watch(ref, outlineShowCountsPreference),
-  ),
 );
 
 /// The stored rail options, for overriding the shared [railOptionsProvider].

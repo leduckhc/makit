@@ -234,11 +234,18 @@ class _Fact extends StatelessWidget {
 }
 
 /// One CI check: a coloured status glyph, the workflow-qualified name, and the
-/// human status word — the same three columns as the desktop popover.
+/// human status word.
+///
+/// Used by both PR check lists — this sheet, and the desktop pill's popover,
+/// which passes [dense]. They differ only in glyph size and row padding: a
+/// hover popover is read with a mouse at desk distance, a sheet with a thumb.
 class PrCheckRow extends StatelessWidget {
-  const PrCheckRow({super.key, required this.check});
+  const PrCheckRow({super.key, required this.check, this.dense = false});
 
   final PrCheck check;
+
+  /// Tighter rows and a smaller glyph, for the desktop popover.
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -250,10 +257,14 @@ class PrCheckRow extends StatelessWidget {
         ? check.name
         : '$workflow / ${check.name}';
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: EdgeInsets.symmetric(vertical: dense ? 1.5 : 3),
       child: Row(
         children: [
-          Icon(prCheckBucketIcon(check.bucket), size: 14, color: color),
+          Icon(
+            prCheckBucketIcon(check.bucket),
+            size: dense ? 12 : 14,
+            color: color,
+          ),
           const SizedBox(width: kSpace6),
           Expanded(
             child: Text(

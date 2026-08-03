@@ -445,9 +445,6 @@ export class Session extends EventEmitter {
       // SPEC-29: a session with a persisted native id can be brought back to a
       // live agent after a server restart (the app auto-attaches cold ones).
       resumable: this.agentSessionId != null,
-      // SPEC-33: informational — drives the app's "handed over as a file" label,
-      // not the send path (which always materialises a file in v1).
-      promptImage: this.adapter.promptCapabilities.image,
       archived: this.archived,
     };
   }

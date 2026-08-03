@@ -73,6 +73,17 @@ export interface MediaStoreOpts {
 
 const SHA256_RE = /^[a-f0-9]{64}$/;
 
+/**
+ * Whether [value] is a media id: the sha256 of the bytes, lowercase hex — the
+ * only id shape this store mints, and therefore the only one it can resolve.
+ *
+ * Exported so every entry point (the store's own lookups, and `send.message`
+ * attachment parsing in `ws/commands/session.ts`) rejects the same shape.
+ */
+export function isMediaId(value: string): boolean {
+  return SHA256_RE.test(value);
+}
+
 export class MediaStore {
   private readonly dir: string;
   private readonly maxBytes: number;
@@ -127,7 +138,7 @@ export class MediaStore {
 
   /** Descriptor for a stored id, or `null` when unknown/invalid/unservable. */
   stat(mediaId: string): MediaDescriptor | null {
-    if (!SHA256_RE.test(mediaId)) return null;
+    if (!isMediaId(mediaId)) return null;
     try {
       const raw = readFileSync(join(this.dir, `${mediaId}.json`), "utf8");
       const meta = JSON.parse(raw) as MediaDescriptor;
@@ -146,7 +157,7 @@ export class MediaStore {
 
   /** Absolute blob path for a **validated** id (see {@link stat}). */
   pathOf(mediaId: string): string {
-    if (!SHA256_RE.test(mediaId)) throw new Error("invalid mediaId");
+    if (!isMediaId(mediaId)) throw new Error("invalid mediaId");
     return join(this.dir, mediaId);
   }
 

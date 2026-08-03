@@ -22,7 +22,6 @@ import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
 import 'navigator/jump_flash.dart';
-import 'navigator/outline.dart';
 import 'media_view.dart';
 import 'tool_call_card.dart';
 import 'transcript_expansion.dart';
@@ -108,24 +107,17 @@ Widget chatItemWidget(
   String sessionId,
   ChatItem item, {
   int position = -1,
-  bool promptImage = false,
 }) => switch (item) {
-  // Two SPEC-34 wrappers, both pass-throughs unless active: the outline tap
-  // (back into the full transcript) and the landing highlight after a jump.
-  UserMessageItem() => OutlineJumpable(
+  // SPEC-34: a pass-through unless active — the landing highlight after a jump.
+  UserMessageItem() => JumpFlashHighlight(
     sessionId: sessionId,
-    item: item,
-    child: JumpFlashHighlight(
-      sessionId: sessionId,
-      position: position,
-      child: ChatBubble.user(
-        text: item.text,
-        ts: item.ts,
-        attachments: item.attachments,
-        // SPEC-33: only decides whether the sent-as-a-file note shows; it
-        // does not change what was sent.
-        promptImage: promptImage,
-      ),
+    position: position,
+    child: ChatBubble.user(
+      text: item.text,
+      ts: item.ts,
+      attachments: item.attachments,
+      // SPEC-33: only decides whether the sent-as-a-file note shows; it
+      // does not change what was sent.
     ),
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),

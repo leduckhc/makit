@@ -5,6 +5,10 @@ library;
 
 import '../transport/protocol.dart';
 
+// `isMediaId` is a wire fact (see transport/protocol.dart); re-exported so the
+// event fold's consumers keep reading it from the store layer they already use.
+export '../transport/protocol.dart' show isMediaId;
+
 /// How dangerous a tool call is, as classified by the agent. Parsed at the
 /// model boundary (unknown/missing → [ToolRisk.safe]) so the UI switches on a
 /// closed set instead of raw `'safe'`/`'risky'`/`'destructive'` strings.
@@ -34,30 +38,45 @@ class MediaAttachmentRef {
   const MediaAttachmentRef({
     required this.mediaId,
     required this.mime,
-    this.sizeBytes = 0,
     this.name,
   });
 
   final String mediaId;
   final String mime;
-  final int sizeBytes;
 
   /// The name the user's file had, for a11y and the failure placeholder.
   final String? name;
+
+  /// The `send.message` form: **id + name only**. The bytes went up to
+  /// `POST /media` first and the server resolves the id against its own store
+  /// (SPEC-33 §3.3), so sending `mime` would be a claim the server ignores.
+  Map<String, Object?> toWire() => {
+    'mediaId': mediaId,
+    if (name != null) 'name': name,
+  };
+
+  /// The `user.message` payload form, for the optimistic bubble.
+  ///
+  /// Deliberately the same shape [tryParse] reads and the server's echo carries:
+  /// the optimistic copy is the one that survives the seq-collision dedup, so a
+  /// field missing here is missing from the rendered bubble forever.
+  Map<String, Object?> toEchoWire() => {
+    'mediaId': mediaId,
+    'mime': mime,
+    if (name != null) 'name': name,
+  };
 
   /// Parse one wire entry, or null when it is not usable. Skipping a malformed
   /// entry beats rendering a thumbnail that can never load.
   static MediaAttachmentRef? tryParse(Object? raw) {
     if (raw is! Map) return null;
     final id = raw['mediaId'];
-    if (id is! String || !_sha256.hasMatch(id)) return null;
+    if (id is! String || !isMediaId(id)) return null;
     final mime = raw['mime'];
-    final size = raw['sizeBytes'];
     final name = raw['name'];
     return MediaAttachmentRef(
       mediaId: id,
       mime: mime is String && mime.isNotEmpty ? mime : 'image/png',
-      sizeBytes: size is int ? size : 0,
       name: name is String && name.isNotEmpty ? name : null,
     );
   }
@@ -68,9 +87,23 @@ class MediaAttachmentRef {
     if (raw is! List) return const [];
     return [for (final e in raw) ?tryParse(e)];
   }
-}
 
-final RegExp _sha256 = RegExp(r'^[a-f0-9]{64}$');
+  // Value equality: a descriptor is its three fields, and these live in lists
+  // that widgets diff (and that tests compare wholesale).
+  @override
+  bool operator ==(Object other) =>
+      other is MediaAttachmentRef &&
+      other.mediaId == mediaId &&
+      other.mime == mime &&
+      other.name == name;
+
+  @override
+  int get hashCode => Object.hash(mediaId, mime, name);
+
+  @override
+  String toString() =>
+      'MediaAttachmentRef($mediaId, $mime${name == null ? '' : ', $name'})';
+}
 
 class UserMessageItem extends ChatItem {
   UserMessageItem({
@@ -122,7 +155,6 @@ class AgentMediaItem extends ChatItem {
     required super.ts,
     required this.mediaId,
     required this.mime,
-    this.sizeBytes = 0,
     this.alt,
     this.callId,
   });
@@ -130,7 +162,6 @@ class AgentMediaItem extends ChatItem {
   /// sha256 of the bytes — both the fetch path and the cache key.
   final String mediaId;
   final String mime;
-  final int sizeBytes;
 
   /// Description/filename for a11y and the failure placeholder.
   final String? alt;
@@ -324,7 +355,6 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
               ts: e.ts,
               mediaId: mediaId,
               mime: e.payload['mime'] as String? ?? 'image/png',
-              sizeBytes: (e.payload['sizeBytes'] as num?)?.toInt() ?? 0,
               alt: e.payload['alt'] as String?,
               callId: e.payload['callId'] as String?,
             ),
@@ -453,9 +483,3 @@ List<ChatItem> _dropMediaShownInProse(List<ChatItem> items) {
 
 /// `makit-media:<sha256>` as the server writes it into rewritten markdown.
 final RegExp _mediaUriPattern = RegExp(r'makit-media:([a-f0-9]{64})');
-
-/// A media id is the sha256 of the bytes, lowercase hex — the only shape the
-/// server's `/media` route serves. Shared by the event fold and the markdown
-/// image builder so an unfetchable id is rejected at every entry point.
-bool isMediaId(String value) => _mediaIdPattern.hasMatch(value);
-final RegExp _mediaIdPattern = RegExp(r'^[a-f0-9]{64}$');

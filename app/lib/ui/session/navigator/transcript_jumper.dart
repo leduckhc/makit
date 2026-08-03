@@ -127,7 +127,7 @@ class TranscriptJumper {
 /// A provider rather than something hanging off [TranscriptJumper] because the
 /// rows that must render the highlight are *siblings* of whatever owns the
 /// jumper (the navigator overlay, or the session screen's action menu), never its
-/// descendants — the same reason `outlineExitJumpProvider` exists.
+/// descendants.
 final jumpFlashProvider = StateProvider.family<JumpFlash?, String>(
   (ref, _) => null,
 );

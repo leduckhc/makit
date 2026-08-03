@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/chat_items.dart';
 import 'package:makit/store/models.dart';
-import 'package:makit/transport/codec.dart';
 import 'package:makit/transport/protocol.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:makit/store/media.dart';
@@ -26,12 +25,7 @@ void main() {
         _userEvent({
           'text': 'why is this misaligned?',
           'attachments': [
-            {
-              'mediaId': _id,
-              'mime': 'image/png',
-              'sizeBytes': 1234,
-              'name': 'shot.png',
-            },
+            {'mediaId': _id, 'mime': 'image/png', 'name': 'shot.png'},
           ],
         }),
       ]);
@@ -41,8 +35,20 @@ void main() {
       expect(item.attachments, hasLength(1));
       expect(item.attachments.single.mediaId, _id);
       expect(item.attachments.single.mime, 'image/png');
-      expect(item.attachments.single.sizeBytes, 1234);
       expect(item.attachments.single.name, 'shot.png');
+    });
+
+    test('the optimistic wire form round-trips back through tryParse', () {
+      // `appendOptimisticMessage` writes `toEchoWire()` into a payload that this
+      // very fold parses back, in-process. A field dropped from one side is a
+      // field missing from the rendered bubble forever, because the optimistic
+      // copy is the one that survives the seq-collision dedup.
+      const ref = MediaAttachmentRef(
+        mediaId: _id,
+        mime: 'image/jpeg',
+        name: 'shot.jpg',
+      );
+      expect(MediaAttachmentRef.tryParse(ref.toEchoWire()), ref);
     });
 
     test('history with no attachments key folds exactly as before', () {
@@ -89,22 +95,6 @@ void main() {
     });
   });
 
-  group('SessionDTO.promptImage', () {
-    test('is decoded from the sessions snapshot', () {
-      final sessions = WireCodec.decodeSessions([
-        {'id': 's1', 'projectId': 'p', 'agent': 'pi', 'promptImage': true},
-      ]);
-      expect(sessions!.single.promptImage, isTrue);
-    });
-
-    test('defaults to false when the server does not report it', () {
-      final sessions = WireCodec.decodeSessions([
-        {'id': 's1', 'projectId': 'p', 'agent': 'codex'},
-      ]);
-      expect(sessions!.single.promptImage, isFalse);
-    });
-  });
-
   group('user bubble', () {
     Widget host(Widget child) => ProviderScope(
       // No endpoint: thumbnails render their labelled placeholder instead of
@@ -120,12 +110,8 @@ void main() {
             text: 'look',
             ts: 1000,
             attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-              MediaAttachmentRef(
-                mediaId: 'b$_id',
-                mime: 'image/png',
-                sizeBytes: 1,
-              ),
+              MediaAttachmentRef(mediaId: _id, mime: 'image/png'),
+              MediaAttachmentRef(mediaId: 'b$_id', mime: 'image/png'),
             ],
           ),
         ),
@@ -133,40 +119,25 @@ void main() {
       expect(find.byType(UserAttachmentThumb), findsNWidgets(2));
     });
 
-    testWidgets('shows the hand-off note when the agent cannot see images', (
-      tester,
-    ) async {
+    testWidgets('every attachment carries the hand-off note', (tester) async {
+      // The note is a delivery receipt for THIS message, not a claim about the
+      // agent: makit always materialises a file and names it in the prompt, so
+      // the note is true of every attachment-bearing turn. It used to be hidden
+      // when the agent advertised image support — which suppressed a true
+      // statement, went stale when the model changed mid-session (support is
+      // negotiated once per agent process), and was read off the *live* session,
+      // so it would have relabelled history. When inline sending lands, the
+      // delivery must be recorded on the `user.message` event instead.
       await tester.pumpWidget(
         host(
           const ChatBubble.user(
             text: 'look',
             ts: 1000,
-            attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-            ],
-            promptImage: false,
+            attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
           ),
         ),
       );
       expect(find.text(kSentAsFileNote), findsOneWidget);
-    });
-
-    testWidgets('hides the note when the agent takes images directly', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        host(
-          const ChatBubble.user(
-            text: 'look',
-            ts: 1000,
-            attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-            ],
-            promptImage: true,
-          ),
-        ),
-      );
-      expect(find.text(kSentAsFileNote), findsNothing);
     });
 
     testWidgets('a text-only message shows no note and no strip', (
@@ -188,9 +159,7 @@ void main() {
           const ChatBubble.user(
             text: '',
             ts: 1000,
-            attachments: [
-              MediaAttachmentRef(mediaId: _id, mime: 'image/png', sizeBytes: 1),
-            ],
+            attachments: [MediaAttachmentRef(mediaId: _id, mime: 'image/png')],
           ),
         ),
       );
