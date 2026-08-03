@@ -293,7 +293,13 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       return false;
     }
     // Accepted: echo only now, so a rejected steer leaves no transcript trace.
-    this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
+    // `steered` marks the bubble in the app — the one place the user can learn
+    // that this message went into the RUNNING turn rather than starting one.
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "user.message",
+      payload: { ...turn.echo, steered: true },
+    });
     return true;
   }
 

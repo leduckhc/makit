@@ -41,6 +41,12 @@ export type EventKind =
    * than the inbound {@link WireAttachment}, which carries only an id + name. As with
    * `agent.media`, only the descriptor is carried — the app fetches bytes from
    * `GET /media/<mediaId>` — because the event log is replayed in full on resume.
+   *
+   * `payload.steered === true` (SPEC-35) marks a message that was injected into
+   * the turn that was ALREADY running instead of starting a new one. Present only
+   * on the transports that can do it (codex `turn/steer`); the app captions the
+   * bubble with it, which is the only way the user learns the difference between
+   * steering and queueing from their own transcript.
    */
   | "user.message"
   | "agent.message"

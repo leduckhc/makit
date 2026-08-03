@@ -51,12 +51,19 @@ class _Timestamp extends StatelessWidget {
 /// reply ("I see a path…") instead of leaving it mysterious.
 const String kSentAsFileNote = 'Sent as a file for the agent to open';
 
+/// Caption under a message that was injected into the turn the agent was
+/// already running, rather than starting a new one (SPEC-35). Steering vs
+/// queueing is chosen by the transport, so this caption is where the user
+/// learns which one happened.
+const String kSteeredNote = 'Steered into the running turn';
+
 class ChatBubble extends StatelessWidget {
   const ChatBubble.user({
     required this.text,
     required this.ts,
     this.attachments = const [],
     this.promptImage = false,
+    this.steered = false,
     super.key,
   });
 
@@ -69,6 +76,9 @@ class ChatBubble extends StatelessWidget {
   /// Whether the agent can see images inside the prompt. Drives only the
   /// [kSentAsFileNote] caption — makit always delivers a file today.
   final bool promptImage;
+
+  /// This message went into the turn that was already running (SPEC-35).
+  final bool steered;
 
   @override
   Widget build(BuildContext context) {
@@ -125,6 +135,16 @@ class ChatBubble extends StatelessWidget {
                 ],
               ),
             ),
+            if (steered)
+              Padding(
+                padding: const EdgeInsets.only(top: kSpace2, right: kSpace4),
+                child: Text(
+                  kSteeredNote,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelSmall?.copyWith(color: cs.outline),
+                ),
+              ),
             if (attachments.isNotEmpty && !promptImage)
               Padding(
                 padding: const EdgeInsets.only(top: kSpace2, right: kSpace4),

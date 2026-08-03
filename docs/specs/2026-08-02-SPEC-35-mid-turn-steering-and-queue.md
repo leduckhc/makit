@@ -229,8 +229,12 @@ user cannot avoid.
   queue order, each with an ✕ that sends `queue.cancel`. Chips are not transcript rows:
   they live in the composer's own column so they cannot perturb SPEC-21 anchoring or
   SPEC-34's index-keyed markers.
-- A steered message needs **no** affordance: it arrives as a normal `user.message` event
-  and appears in the transcript, which is exactly what the user expects to see.
+- A steered message needs **no** input affordance, but it does need to *say so*: the echo
+  carries `payload.steered === true` and the bubble is captioned
+  **"Steered into the running turn"** (same pattern as SPEC-33's sent-as-a-file note).
+  Steering vs queueing is chosen by the transport, not by the user, so the transcript is
+  the only honest place to teach the difference — see
+  [§Why one send button](#why-one-send-button).
 - **No optimistic bubble while the agent is busy.** The optimistic user bubble guesses
   `cursor + 1` for its seq, which only holds when the very next server event is our own
   echo. Mid-turn that seq belongs to the agent's stream, so the bubble would advance the
@@ -258,6 +262,25 @@ Keyless and deterministic, per `makit-verify-feature-end-to-end`:
   against real `codex app-server` (mid-turn send → single turn, `BANANA` inside it,
   statuses end `idle`) and against `pi-acp` (queue flushes after `end_turn`, no
   "Starting queued message" prose in the transcript because makit never overlaps prompts).
+
+## Why one send button
+
+The composer is **identical** in both modes: one send button, enabled while the agent
+works, no mode picker and no second "queue" gesture. What differs is the feedback:
+
+| | steered (codex) | queued (ACP) |
+|---|---|---|
+| Immediate feedback | the user bubble appears as soon as `turn/steer` is accepted (makit emits the echo itself) | the chip appears instantly, before anything reaches the agent |
+| Bubble caption | "Steered into the running turn" | none — it is an ordinary message once delivered |
+| Undo | none: accepted is accepted | ✕ on the chip, until it flushes |
+
+The asymmetry is real: the same keystroke has two consequences, chosen by which agent the
+session runs. The *cheap, honest* resolution won — caption the outcome so the user learns
+the behaviour from their own transcript, instead of requiring them to predict it. An
+explicit "Queue instead" affordance would need a `send.message` `mode` flag **and** a new
+steering capability on `SessionDTO` (otherwise the button is a lie on ACP sessions) **and**
+a second gesture on two surfaces — deferred until someone actually wants to hold a message
+back on codex.
 
 ## Rejected alternatives
 

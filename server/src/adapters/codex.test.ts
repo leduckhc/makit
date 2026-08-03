@@ -630,7 +630,26 @@ test("steer(): accepted — injects into the active turn and echoes once", async
     1,
     "steering must never start a second turn",
   );
+  const echo = h.events.filter((e) => e.kind === "user.message").at(-1)!;
   assert.equal(h.events.filter((e) => e.kind === "user.message").length, h.echoesBefore + 1);
+  assert.equal(
+    (echo.payload as { steered?: boolean }).steered,
+    true,
+    "a steered message is flagged so the app can say so on the bubble",
+  );
+});
+
+test("a normal turn's echo is not flagged as steered", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  await adapter.send({ text: "hi" });
+
+  const echo = events.find((e) => e.kind === "user.message")!;
+  assert.equal((echo.payload as { steered?: boolean }).steered, undefined);
 });
 
 // Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`

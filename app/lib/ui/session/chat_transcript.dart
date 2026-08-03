@@ -125,6 +125,8 @@ Widget chatItemWidget(
         // SPEC-33: only decides whether the sent-as-a-file note shows; it
         // does not change what was sent.
         promptImage: promptImage,
+        // SPEC-35: captions a message that went into the running turn.
+        steered: item.steered,
       ),
     ),
   ),

@@ -78,11 +78,17 @@ class UserMessageItem extends ChatItem {
     required super.ts,
     required this.text,
     this.attachments = const [],
+    this.steered = false,
   });
   final String text;
 
   /// Images sent with this message (SPEC-33). Empty for a text-only turn.
   final List<MediaAttachmentRef> attachments;
+
+  /// True when this message was injected into the turn that was ALREADY running
+  /// instead of starting a new one (SPEC-35). Only codex can do it; the bubble
+  /// is captioned so the user can tell steering from queueing.
+  final bool steered;
 }
 
 class AgentMessageItem extends ChatItem {
@@ -278,6 +284,7 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
             ts: e.ts,
             text: e.payload['text'] as String? ?? '',
             attachments: MediaAttachmentRef.parseList(e.payload['attachments']),
+            steered: e.payload['steered'] == true,
           ),
         );
       case EventKind.agentMessage:
