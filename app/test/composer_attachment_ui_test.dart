@@ -251,18 +251,49 @@ void main() {
       expect(tapped, 1);
     });
 
-    testWidgets('the paperclip is disabled when attaching is impossible', (
+    testWidgets('an attachment-unaware composer does not blame the server', (
       tester,
     ) async {
+      // No attachments API at all (the free-text answer composer). The clip stays
+      // visible but inert — and must NOT promise that connecting fixes it, since
+      // connecting never enables attachments here.
       await tester.pumpWidget(_host(Composer(onSend: (_) {})));
       final clip = tester.widget<IconButton>(
         find.widgetWithIcon(IconButton, PhosphorIconsLight.paperclip),
       );
-      // No attachments API = this composer cannot take attachments; the
-      // affordance stays visible but inert, with an honest tooltip.
       expect(clip.onPressed, isNull);
       expect(clip.tooltip, isNotNull);
       expect(clip.tooltip, isNot(contains('v2')));
+      expect(
+        clip.tooltip,
+        isNot(contains('server')),
+        reason: 'no connectivity fix exists for this composer',
+      );
+    });
+
+    testWidgets('a session with nowhere to upload names the real reason', (
+      tester,
+    ) async {
+      // Attachment-aware, but `pick` is null: nothing is paired, so the tooltip
+      // points at the thing the user can actually fix.
+      await tester.pumpWidget(
+        _host(
+          Composer(
+            onSend: (_) {},
+            attachments: ComposerAttachmentsApi(
+              staged: const [],
+              remove: (_) {},
+              retry: (_) {},
+              readClipboardImage: () async => null,
+              stagePasted: (_) {},
+            ),
+          ),
+        ),
+      );
+      final clip = tester.widget<IconButton>(
+        find.widgetWithIcon(IconButton, PhosphorIconsLight.paperclip),
+      );
+      expect(clip.onPressed, isNull);
       expect(clip.tooltip, contains('server'));
     });
 

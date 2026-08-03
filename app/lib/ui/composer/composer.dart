@@ -400,9 +400,15 @@ class _ComposerState extends State<Composer> {
     final pick = _staging?.pick;
     return IconButton(
       icon: const Icon(PhosphorIconsLight.paperclip),
+      // Two different disabled reasons, and only one is the user's to fix. An
+      // attachment-aware session with nowhere to upload is a connectivity gap; a
+      // composer with no attachments API at all (the free-text answer composer)
+      // will never take an image, so telling that user to connect is a promise
+      // makit cannot keep.
       tooltip: pick != null
           ? 'Attach an image'
-          // Honest about the reason rather than a vague disabled state.
+          : widget.attachments == null
+          ? 'Attachments are not available here'
           : 'Connect to your makit server to attach images',
       onPressed: pick,
     );
