@@ -1,0 +1,981 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — performance dashboard (footer pill + full panel)</title>
+<style>
+  /* Tokens lifted from app/lib/app/theme.dart (dark ramp + sanctioned hues) */
+  :root{
+    --bg:#171717;            /* surface */
+    --cLowest:#121212;
+    --cLow:#1E1E1E;
+    --c:#242424;             /* surfaceContainer — the sidebar */
+    --cHigh:#2E2E2E;
+    --cHighest:#383838;
+    --text:#F5F5F5;          /* onSurface */
+    --muted:#9E9E9E;         /* outline / onSurfaceVariant */
+    --hairline:#333333;      /* outlineVariant */
+    --accent:#4ADE80;        /* kMakitAccent  → agents */
+    --warn:#E0A72E;          /* kStatusWarning → server */
+    --caution:#E07B39;       /* kStatusCaution */
+    --err:#F85149;           /* kDiffDel */
+    --violet:#B49BFF;        /* kBoardSwatch  → app (Flutter) */
+    --sky:#6FB3E0;           /* derived, 4th series only */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+       font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+       font-size:14px;padding:32px 24px 100px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 26px;max-width:940px;line-height:1.55}
+  .sub code{background:var(--cLow);padding:1px 5px;border-radius:4px;font-size:12.5px}
+  .try{display:inline-block;background:rgba(74,222,128,.12);color:var(--accent);border-radius:7px;
+       padding:6px 11px;font-size:12px;margin:0 0 26px}
+
+  section{margin:0 0 32px;border:1px solid var(--hairline);border-radius:14px;overflow:hidden;background:#141414}
+  section > header{padding:14px 20px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px}
+  section h2{font-size:15px;margin:0;font-weight:600}
+  section header .hint{font-size:12px;color:var(--muted)}
+  .pad{padding:22px}
+  .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;font-weight:700}
+  .note{font-size:11.5px;color:var(--muted);margin-top:14px;line-height:1.6;max-width:560px}
+  .note code{background:var(--cLow);padding:1px 4px;border-radius:3px}
+  .row{display:flex;flex-wrap:wrap}
+  .col{flex:1;min-width:340px;padding:22px}
+  .col + .col{border-left:1px dashed var(--hairline)}
+  .tag{font-size:10.5px;color:#0e0e0e;border-radius:6px;padding:2px 8px;font-weight:700;letter-spacing:.04em}
+  .tag.rec{background:var(--accent)}
+  .tag.warn{background:var(--warn)}
+
+  /* ── sidebar footer strip ─────────────────────────────────────── */
+  .sbwrap{background:var(--bg);border:1px solid #000;border-radius:10px;overflow:hidden;width:316px}
+  .sbbody{height:150px;background:var(--c)}
+  .footer{display:flex;align-items:center;gap:2px;background:var(--c);
+          padding:8px 8px 8px 12px;border-top:1px solid var(--hairline)}
+  .cchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted)}
+  .cchip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .endpoint{flex:1;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:6px}
+  .ibtn{width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;
+        color:var(--muted);cursor:default;position:relative}
+  .ibtn:hover,.ibtn.hovered{background:rgba(255,255,255,.07)}
+  .ibtn.active{background:rgba(255,255,255,.11)}
+  .ibtn svg{stroke:currentColor;fill:none;stroke-width:1.4}
+  .ibtn.gh svg{fill:currentColor;stroke:none}
+  .ibtn.warm{color:var(--warn)}
+  .ibtn.hot{color:var(--err)}
+  .ibtn.off{color:#5a5a5a}
+
+  .states{display:flex;gap:26px;flex-wrap:wrap}
+  .state{text-align:center;width:104px}
+  .state .box{background:var(--c);border-radius:10px;padding:8px;display:inline-flex}
+  .state .nm{font-size:11px;color:var(--text);margin-top:8px}
+  .state .ds{font-size:10.5px;color:var(--muted);line-height:1.35;margin-top:2px}
+
+  /* ── hover tooltip (the footer one) ────────────────────────────── */
+  .tip{background:#000;border:1px solid var(--hairline);border-radius:7px;
+       padding:5px 9px;font-size:11.5px;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+  .tip .n{font-variant-numeric:tabular-nums}
+  .tip .g{color:var(--accent)}
+  .tip .w{color:var(--warn)}
+  .tip .sep{color:var(--hairline);padding:0 5px}
+  .tip .hintkey{color:var(--muted)}
+
+  /* ── explainer tooltip (data-tip driven) ───────────────────────── */
+  #ex{position:fixed;z-index:99;max-width:280px;background:#000;border:1px solid #3d3d3d;
+      border-radius:8px;padding:8px 10px;font-size:11.5px;line-height:1.5;color:#E8E8E8;
+      box-shadow:0 10px 26px rgba(0,0,0,.65);pointer-events:none;opacity:0;transition:opacity .12s}
+  #ex.on{opacity:1}
+  #ex code{background:#1c1c1c;padding:1px 4px;border-radius:3px}
+  #ex b{color:#fff;font-weight:600}
+  [data-tip]:hover{cursor:help}
+  body.guides [data-tip]{outline:1px dotted rgba(74,222,128,.35);outline-offset:1px}
+
+  /* ── popover shell ─────────────────────────────────────────────── */
+  .pop{width:300px;background:var(--cLow);border:1px solid var(--hairline);
+       border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.55);padding:12px 14px}
+  .ptop{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .ptop .mark{color:var(--muted);display:inline-flex}
+  .ptop .mark svg{stroke:currentColor;fill:none;stroke-width:1.5}
+  .ptop .ttl{font-size:12px;font-weight:600;letter-spacing:.02em;flex:1}
+  .ptop .reset{font-size:10.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  .headline{display:flex;align-items:flex-end;gap:7px;margin:2px 0 3px}
+  .headline .big{font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .headline .unit{font-size:12px;color:var(--muted);padding-bottom:2px}
+  .headline.warm .big{color:var(--warn)}
+  .headline.hot .big{color:var(--err)}
+  .caption{font-size:11px;color:var(--muted);margin:0 0 12px;line-height:1.45}
+  .caption b{color:var(--text);font-weight:600}
+
+  /* ── one metric row: label · value · sparkline ─────────────────── */
+  .m{margin:11px 0 0}
+  .m .top{display:flex;align-items:baseline;gap:6px;font-size:11.5px;margin-bottom:4px}
+  .m .top .k{color:var(--muted);flex:1;letter-spacing:.02em;display:inline-flex;align-items:center;gap:5px}
+  .m .top .v{font-variant-numeric:tabular-nums}
+  .m .top .of{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
+  .mini svg{display:block;width:100%;height:22px;overflow:visible}
+  .bar{height:4px;border-radius:2px;background:var(--cHighest);overflow:hidden;display:flex}
+  .bar i{display:block;height:100%}
+  .bar i.app{background:var(--violet)}
+  .bar i.srv{background:var(--warn)}
+  .bar i.agt{background:var(--accent)}
+
+  .legend{display:flex;gap:12px;font-size:10.5px;color:var(--muted);margin-top:10px;flex-wrap:wrap}
+  .legend b{font-weight:400;color:var(--text)}
+  .sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+  .sw.app{background:var(--violet)}
+  .sw.srv{background:var(--warn)}
+  .sw.agt{background:var(--accent)}
+  .sw.self{background:#5a5a5a}
+
+  /* ── agent rows ───────────────────────────────────────────────── */
+  .agents{margin-top:12px;border-top:1px solid var(--hairline);padding-top:10px}
+  .arow{display:flex;align-items:center;gap:8px;font-size:11px;padding:5px 0}
+  .arow .nm{flex:1;min-width:0;line-height:1.25}
+  .arow .nm .n1{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .arow .nm .sub2{display:block;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .arow .st{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:#4a4a4a}
+  .arow.busy .st{background:var(--accent);box-shadow:0 0 0 3px rgba(74,222,128,.16)}
+  .arow .num{font-variant-numeric:tabular-nums;color:var(--text);width:50px;text-align:right;flex:0 0 auto}
+  .arow .num.dim{color:var(--muted)}
+  .arow .mb{width:34px;height:4px;border-radius:2px;background:var(--cHighest);overflow:hidden;flex:0 0 auto}
+  .arow .mb i{display:block;height:100%;background:var(--accent)}
+  .arow.idle .mb i{background:#4a4a4a}
+
+  .banner{display:flex;gap:7px;align-items:flex-start;font-size:11px;line-height:1.45;
+          border-radius:8px;padding:7px 9px;margin-top:11px}
+  .banner.cool{background:rgba(74,222,128,.10);color:#8FE3AF}
+  .banner.warm{background:rgba(224,167,46,.12);color:#EBC46B}
+  .banner.hot{background:rgba(248,81,73,.13);color:#FF9A93}
+  .banner svg{flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.5;margin-top:1px}
+
+  /* ── the expander pill ─────────────────────────────────────────── */
+  .pillrow{display:flex;align-items:center;gap:8px;margin-top:12px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);
+        border:1px solid var(--hairline);border-radius:999px;padding:4px 10px 4px 9px}
+  .pill:hover{background:rgba(255,255,255,.05);color:var(--text)}
+  .pill.open{background:rgba(255,255,255,.06);color:var(--text);border-color:#454545}
+  .pill svg{stroke:currentColor;fill:none;stroke-width:1.6}
+  .pillrow .grow{flex:1}
+  .tlink{font-size:11px;color:var(--muted)}
+  .tlink.act{color:var(--accent)}
+
+  /* ── expanded detail ──────────────────────────────────────────── */
+  .details{margin-top:12px;border-top:1px solid var(--hairline);padding-top:11px}
+  .dlbl{font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
+  .spark svg{display:block;width:100%;height:44px;overflow:visible}
+  .sparkfoot{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:4px}
+  .kv{display:flex;font-size:11px;padding:3px 0;color:var(--muted)}
+  .kv .k{flex:1}
+  .kv .v{color:var(--text);font-variant-numeric:tabular-nums}
+  .actions{display:flex;gap:8px;margin-top:12px}
+  .btn{flex:1;text-align:center;font-size:11.5px;padding:6px 8px;border-radius:7px;background:var(--cHigh);color:var(--text)}
+  .btn.ghost{background:transparent;border:1px solid var(--hairline);color:var(--muted)}
+
+  /* anchored demo */
+  .anchor{position:relative;width:316px;overflow:visible}
+  .anchor .pop{position:absolute;right:6px;bottom:52px}
+  .anchor .tip{position:absolute;right:10px;bottom:50px}
+  .anchor .tail{position:absolute;right:76px;bottom:46px;width:10px;height:10px;background:var(--cLow);
+                border-right:1px solid var(--hairline);border-bottom:1px solid var(--hairline);transform:rotate(45deg)}
+  .stage{background:#0b0b0b;border:1px solid #000;border-radius:12px;padding:18px;display:flex;gap:40px;flex-wrap:wrap}
+  .stageInner{height:250px;display:flex;align-items:flex-end}
+  .stageInner.tall{height:700px}
+
+  /* ── TIER 2: dashboard pane ───────────────────────────────────── */
+  .dash{background:var(--bg);border:1px solid #000;border-radius:12px;overflow:hidden;max-width:1000px}
+  .dhead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--hairline);background:var(--c)}
+  .dhead .dt{font-size:13px;font-weight:600;flex:1}
+  .dhead .dt .sub2{font-weight:400;color:var(--muted);font-size:11px;margin-left:8px}
+  .seg{display:inline-flex;border:1px solid var(--hairline);border-radius:8px;overflow:hidden}
+  .seg span{font-size:11px;padding:4px 9px;color:var(--muted)}
+  .seg span + span{border-left:1px solid var(--hairline)}
+  .seg span.on{background:rgba(255,255,255,.08);color:var(--text)}
+  .dbody{padding:0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .cell{padding:16px 18px;border-bottom:1px solid var(--hairline)}
+  .cell + .cell{border-left:1px solid var(--hairline)}
+  .cell.full{grid-column:1 / -1;border-left:0}
+  .cell .chd{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .cell .chd .ct{font-size:11.5px;font-weight:600;letter-spacing:.02em}
+  .cell .chd .cs{font-size:10.5px;color:var(--muted);flex:1}
+  .cell .chd .cv{font-size:11.5px;font-variant-numeric:tabular-nums}
+  .chart svg{display:block;width:100%;overflow:visible}
+  .axis{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:5px}
+  .bignum{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:4px}
+  .bignum .b{min-width:104px}
+  .bignum .b .n{font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1;display:block}
+  .bignum .b .n.good{color:var(--accent)}
+  .bignum .b .n.warn{color:var(--warn)}
+  .bignum .b .l{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.35;display:block}
+
+  table.dt2{border-collapse:collapse;width:100%;font-size:11.5px}
+  table.dt2 th{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+                font-weight:700;text-align:right;padding:0 0 7px 12px;border-bottom:1px solid var(--hairline)}
+  table.dt2 th:first-child{text-align:left;padding-left:0}
+  table.dt2 td{text-align:right;padding:7px 0 7px 12px;border-bottom:1px solid #232323;font-variant-numeric:tabular-nums}
+  table.dt2 td:first-child{text-align:left;padding-left:0;font-variant-numeric:normal}
+  table.dt2 tr.tot td{border-bottom:0;color:var(--text);font-weight:600}
+  table.dt2 tr.tot td:first-child{color:var(--muted);font-weight:400}
+  table.dt2 .pn{display:inline-flex;align-items:center;gap:7px}
+  table.dt2 .pn .sw{margin:0}
+  table.dt2 .dim{color:var(--muted)}
+  table.dt2 .tree{color:var(--muted);font-size:10.5px}
+
+  .hist{display:flex;align-items:flex-end;gap:3px;height:70px}
+  .hist i{flex:1;background:var(--violet);border-radius:2px 2px 0 0;opacity:.85;display:block}
+  .hist i.over{background:var(--err)}
+  .histfoot{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:5px}
+
+  .dfoot{display:flex;align-items:center;gap:10px;padding:11px 16px;background:var(--c)}
+  .dfoot .selfcost{flex:1;font-size:10.5px;color:var(--muted);line-height:1.45}
+  .dfoot .selfcost b{color:var(--text);font-weight:600}
+
+  /* copy table */
+  table.copy{border-collapse:collapse;width:100%;font-size:12px}
+  table.copy th,table.copy td{text-align:left;vertical-align:top;padding:7px 12px 7px 0;border-bottom:1px solid #262626;line-height:1.5}
+  table.copy th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  table.copy td.el{white-space:nowrap;color:var(--text)}
+  table.copy td.tx{color:var(--muted)}
+  table.copy td.tx code{background:var(--cLow);padding:1px 4px;border-radius:3px}
+  ol.tr{margin:0;padding-left:20px;font-size:12px;color:var(--muted);line-height:1.65;max-width:820px}
+  ol.tr b{color:var(--text)}
+  ol.tr code{background:var(--cLow);padding:1px 4px;border-radius:3px}
+  ol.tr li{margin-bottom:10px}
+</style>
+</head>
+<body>
+  <h1>Performance dashboard — footer pill + full panel</h1>
+  <p class="sub">
+    The efficiency claim, made checkable. <strong>Hover</strong> the footer mark → one-line read.
+    <strong>Click</strong> → the popover: three sparklines (app / server / agents), a per-agent row list, and the
+    <em>makit total</em>. <strong>“Open dashboard”</strong> → the full panel with stacked CPU, memory, frame times,
+    event-loop lag, wire throughput, a process table and a snapshot export. Colours are sanctioned tokens from
+    <code>app/lib/app/theme.dart</code>: <span style="color:var(--violet)">violet = app</span>,
+    <span style="color:var(--warn)">amber = server</span>, <span style="color:var(--accent)">green = agents</span>.
+  </p>
+  <p class="try">Hover anything to read its explainer. Press <b>G</b> to outline every element that has one.</p>
+
+  <!-- ─────────────────────────── 1 · ICON STATES ─────────────────────────── -->
+  <section>
+    <header><h2>1 · Footer icon states</h2><span class="hint">quiet at rest — the whole point</span></header>
+    <div class="pad">
+      <div class="states">
+        <div class="state">
+          <div class="box"><span class="ibtn" data-tip="<b>Idle.</b> No turn in flight and total CPU under 2%. Same muted grey as the folder/archive/gear icons, so the footer gains no permanent coloured mark. This is the state you should see almost always — and it is the claim.">__PULSE__</span></div>
+          <div class="nm">Idle</div><div class="ds">&lt;2% CPU, no turn running. Untinted.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn" data-tip="<b>Working.</b> A turn is in flight, so CPU is expected to be high — high CPU here is <i>correct behaviour</i>, not a problem. The mark animates its pulse instead of changing colour, because nothing is wrong.">__PULSEA__</span></div>
+          <div class="nm">Working</div><div class="ds">Turn in flight. Pulse animates, no tint.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn warm" data-tip="<b>Elevated.</b> Sustained CPU or memory above budget for &gt;30s while <i>no</i> turn is running. That combination is the actual smell: something is spinning when it should be asleep.">__PULSE__</span></div>
+          <div class="nm">Elevated</div><div class="ds">Over budget &gt;30s while idle.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn hot" data-tip="<b>Pressure.</b> An agent tree above 2 GB RSS, or event-loop p99 above 100 ms — the app will feel laggy. The popover names the offending process and offers to kill its session.">__PULSE__</span></div>
+          <div class="nm">Pressure</div><div class="ds">Agent &gt;2 GB, or loop p99 &gt;100 ms.</div>
+        </div>
+        <div class="state">
+          <div class="box"><span class="ibtn off" data-tip="<b>Not sampling.</b> The collector is off (nobody is watching, and the coarse ring is disabled in settings) or unsupported on this platform. Opening the popover starts sampling.">__PULSEOFF__</span></div>
+          <div class="nm">Off</div><div class="ds">Collector disabled or unsupported.</div>
+        </div>
+      </div>
+      <p class="note" style="max-width:700px">
+        Deliberately <strong>no colour for “busy”</strong>. If the icon went amber every time an agent worked, it
+        would be amber all day and mean nothing. Colour is reserved for <em>cost without work</em> — the only
+        reading that should make you look.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 2 · HOVER ─────────────────────────── -->
+  <section>
+    <header><h2>2 · Hover → one-line tooltip</h2><span class="hint">the ambient read, no click needed</span></header>
+    <div class="pad">
+      <div class="stage">
+        <div class="stageInner">
+          <div class="sbwrap anchor">
+            <div class="sbbody"></div>
+            <div class="tip">
+              makit total <span class="n">182 MB</span><span class="sep">·</span><span class="g n">0.4%</span> CPU
+              <span class="sep">·</span><span class="hintkey">click for detail</span>
+            </div>
+            <div class="footer">
+              <span class="cchip"><span class="dot"></span>Connected</span>
+              <span class="endpoint">100.83.12.4:9787</span>
+              <span class="ibtn hovered">__PULSE__</span>
+              <span class="ibtn gh">__GH__</span>
+              <span class="ibtn">__FOLDERPLUS__</span>
+              <span class="ibtn">__ARCHIVE__</span>
+              <span class="ibtn">__GEAR__</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="max-width:660px">
+        Same shape as the neighbouring footer tooltips, so it costs no new vocabulary.
+        Working reads <em>“makit total 1.4 GB · 96% CPU · 1 turn running”</em>; pressure reads
+        <em>“codex tree 2.3 GB — highest in 30 min · click for detail”</em>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 3 · POPOVER ─────────────────────────── -->
+  <section>
+    <header><h2>3 · Click → popover (Tier 1)</h2><span class="hint">collapsed by default; the pill expands in place · hover any element for its explainer</span></header>
+    <div class="row">
+      <div class="col">
+        <div class="lbl"><span class="tag rec">DEFAULT</span> &nbsp;Collapsed · idle</div>
+        <div class="pop">
+          <div class="ptop">
+            <span class="mark">__PULSE16__</span>
+            <span class="ttl" data-tip="Live resource cost of everything makit runs on this machine: the Flutter app, the Node server, and every agent process tree they spawned. Nothing off-machine is counted.">Resource use</span>
+            <span class="reset" data-tip="Sampling only runs while this panel is open (1 Hz). When it closes, makit falls back to one coarse sample every 5 s, kept purely in memory.">1 Hz · live</span>
+          </div>
+          <div class="headline">
+            <span class="big" data-tip="Sum of resident memory across app + server + all agent trees. Resident, not virtual — the number the OS actually holds in RAM for you.">182</span>
+            <span class="unit">MB total · 0.4% CPU</span>
+          </div>
+          <p class="caption" data-tip="Idle means no turn is in flight. This is the state makit is in for most of its life, so it is the number the efficiency claim actually rests on.">idle — no turn running · <b>2 agents parked</b></p>
+
+          <div class="m">
+            <div class="top">
+              <span class="k" data-tip="The Flutter desktop UI process. Memory comes from <code>ProcessInfo.currentRss</code>; its CPU is sampled by the server, which lives on the same machine — one collector, no platform channel."><span class="sw app"></span>App (Flutter)</span>
+              <span class="v">118 MB</span><span class="of">0.3%</span>
+            </div>
+            <div class="mini" data-tip="Last 60 samples of app CPU. Small bumps are repaints; a flat line while you are not touching the UI is the goal." data-spark="app"></div>
+          </div>
+
+          <div class="m">
+            <div class="top">
+              <span class="k" data-tip="The Node server: WSS transport, session manager, SQLite event log. Its own <code>process.memoryUsage().rss</code> and CPU from <code>process.cpuUsage()</code> deltas — exact, no <code>ps</code> needed for self."><span class="sw srv"></span>Server (Node)</span>
+              <span class="v">51 MB</span><span class="of">0.1%</span>
+            </div>
+            <div class="mini" data-tip="Server CPU should be near-flat even during a turn: it forwards bytes, it does not think." data-spark="srv"></div>
+          </div>
+
+          <div class="m">
+            <div class="top">
+              <span class="k" data-tip="All agent process <b>trees</b> summed. A parked agent still holds its runtime resident — that resident cost is the honest price of instant resume."><span class="sw agt"></span>Agents (2)</span>
+              <span class="v">13 MB</span><span class="of">0.0%</span>
+            </div>
+            <div class="mini" data-tip="Green spikes are turns. Between them the line should sit on zero — &ldquo;0.0% while parked&rdquo; is the headline number." data-spark="agt"></div>
+          </div>
+
+          <div class="agents">
+            <div class="dlbl" data-tip="One row per live agent session. Sorted by memory, so the expensive one is always on top.">Per agent</div>
+            <div class="arow idle" data-tip="<b>Parked.</b> Process alive, no turn in flight, 0.0% CPU. Resume is instant because we did not kill it.">
+              <span class="st"></span>
+              <span class="nm"><span class="n1">pi · makit</span><span class="sub2">parked 12m · 1 proc</span></span>
+              <span class="mb"><i style="width:22%"></i></span>
+              <span class="num dim">9 MB</span><span class="num dim">0.0%</span>
+            </div>
+            <div class="arow idle" data-tip="<b>Parked.</b> Second session on another repo, also asleep.">
+              <span class="st"></span>
+              <span class="nm"><span class="n1">codex · pino</span><span class="sub2">parked 3m · 1 proc</span></span>
+              <span class="mb"><i style="width:9%"></i></span>
+              <span class="num dim">4 MB</span><span class="num dim">0.0%</span>
+            </div>
+          </div>
+
+          <div class="banner cool" data-tip="The comparison that makes the number mean something. Baselines are measured once on this machine by <code>makit bench</code>, not hardcoded — an unverified boast is worse than no boast.">__CHECK__<span>Idle footprint is <b>1/6</b> of the same 2 sessions in VS&nbsp;Code + terminals.</span></div>
+
+          <div class="pillrow">
+            <span class="pill" data-tip="Expand history, event-loop lag, frame times and wire throughput in place — without leaving the sidebar.">__CHART__ History __CARETDOWN__</span>
+            <span class="grow"></span>
+            <span class="tlink act" data-tip="Open the full dashboard as an in-window overlay (the mechanism Settings already uses): stacked CPU over time, per-process table, frame-time histogram, and snapshot export.">Open dashboard __ARROW__</span>
+          </div>
+        </div>
+        <p class="note">
+          Idle is the default state, so it is the state the design is tuned for: three flat sparklines, two parked
+          agents at <code>0.0%</code>, and one comparative sentence. Nothing is coloured, nothing is alarming.
+        </p>
+      </div>
+
+      <div class="col">
+        <div class="lbl">Expanded · during a turn</div>
+        <div class="pop">
+          <div class="ptop">
+            <span class="mark">__PULSE16__</span>
+            <span class="ttl">Resource use</span>
+            <span class="reset">1 Hz · live</span>
+          </div>
+          <div class="headline">
+            <span class="big" data-tip="High while a turn runs, and that is fine — the agent is doing the work you asked for. Judge idle numbers, not these.">1.42</span>
+            <span class="unit">GB total · 96% CPU</span>
+          </div>
+          <p class="caption"><b>1 turn running</b> — codex · pino, 00:41 elapsed</p>
+
+          <div class="m">
+            <div class="top"><span class="k"><span class="sw app"></span>App (Flutter)</span><span class="v">131 MB</span><span class="of">4.1%</span></div>
+            <div class="mini" data-spark="app2"></div>
+          </div>
+          <div class="m">
+            <div class="top"><span class="k"><span class="sw srv"></span>Server (Node)</span><span class="v">62 MB</span><span class="of">2.4%</span></div>
+            <div class="mini" data-spark="srv2"></div>
+          </div>
+          <div class="m">
+            <div class="top"><span class="k"><span class="sw agt"></span>Agents (2)</span><span class="v">1.23 GB</span><span class="of">89%</span></div>
+            <div class="mini" data-spark="agt2"></div>
+          </div>
+
+          <div class="agents">
+            <div class="dlbl">Per agent</div>
+            <div class="arow busy" data-tip="<b>Working.</b> 1.22 GB is the whole tree: the codex process plus the ripgrep/bash/node children it spawned for this turn. Attributing only the direct child would have reported ~180 MB — wrong by 7×.">
+              <span class="st"></span>
+              <span class="nm"><span class="n1">codex · pino</span><span class="sub2">turn 00:41 · 6 procs</span></span>
+              <span class="mb"><i style="width:96%"></i></span>
+              <span class="num">1.22 GB</span><span class="num">89%</span>
+            </div>
+            <div class="arow idle">
+              <span class="st"></span>
+              <span class="nm"><span class="n1">pi · makit</span><span class="sub2">parked 12m · 1 proc</span></span>
+              <span class="mb"><i style="width:1%"></i></span>
+              <span class="num dim">9 MB</span><span class="num dim">0.0%</span>
+            </div>
+          </div>
+
+          <div class="pillrow">
+            <span class="pill open" data-tip="Collapse again. Your choice is remembered across opens and restarts.">__CHART__ History __CARETUP__</span>
+            <span class="grow"></span>
+            <span class="tlink act">Open dashboard __ARROW__</span>
+          </div>
+
+          <div class="details">
+            <div class="dlbl" data-tip="Total CPU across all three surfaces for the last 5 minutes, one sample per second. Shaded bands mark turns, so you can see the cost of a turn and the silence between turns in one glance.">Last 5 minutes · CPU</div>
+            <div class="spark" data-tip="<b>Violet</b> app, <b>amber</b> server, <b>green</b> agents, stacked. The shaded column is the turn currently running." data-chart="popStack"></div>
+            <div class="sparkfoot"><span>−5 min</span><span>▓ turn</span><span>now</span></div>
+
+            <div class="dlbl" style="margin-top:14px" data-tip="Two numbers that prove &ldquo;responsive&rdquo; in a way CPU never can: does the UI paint on time, and does the server ever block its own event loop.">Responsiveness</div>
+            <div class="kv" data-tip="95th-percentile Flutter frame build+raster time from <code>SchedulerBinding.addTimingsCallback</code>. Under 16.7 ms means the UI held 60 fps even while the agent burned a core.">
+              <span class="k">Frame p95</span><span class="v">7.9 ms</span>
+            </div>
+            <div class="kv" data-tip="99th-percentile Node event-loop delay from <code>perf_hooks.monitorEventLoopDelay</code>. This is the single best server health metric: if it climbs, every device on the socket feels it.">
+              <span class="k">Event-loop p99</span><span class="v">1.8 ms</span>
+            </div>
+            <div class="kv" data-tip="Bytes over the WebSocket in the last second, both directions. Streaming a turn should be a few KB/s — if it is not, we are re-sending state we should have diffed.">
+              <span class="k">Wire</span><span class="v">6.1 KB/s ↓ · 0.2 ↑</span>
+            </div>
+            <div class="kv" data-tip="What this panel itself costs while open: sampling, charting and pushing frames. Shown because a meter that distorts its own measurement is not evidence. Closing the panel returns it to zero.">
+              <span class="k">This panel costs</span><span class="v">0.2% · 1.1 MB</span>
+            </div>
+          </div>
+        </div>
+        <p class="note">
+          Expanded adds history and the two numbers that actually defend “light”: <strong>frame p95</strong> and
+          <strong>event-loop p99</strong>. The last row is the panel’s own cost — self-honesty is the strongest
+          form of the claim.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 4 · IN CONTEXT ─────────────────────────── -->
+  <section>
+    <header><h2>4 · Expanded, in the footer</h2><span class="hint">worst-case height — grows upward from the last row</span></header>
+    <div class="pad">
+      <div class="stage">
+        <div class="stageInner tall">
+          <div class="sbwrap anchor">
+            <div class="sbbody" style="height:640px"></div>
+            <div class="pop">
+              <div class="ptop"><span class="mark">__PULSE16__</span><span class="ttl">Resource use</span><span class="reset">1 Hz · live</span></div>
+              <div class="headline"><span class="big">1.42</span><span class="unit">GB total · 96% CPU</span></div>
+              <p class="caption"><b>1 turn running</b> — codex · pino, 00:41 elapsed</p>
+              <div class="m">
+                <div class="top"><span class="k"><span class="sw app"></span>App (Flutter)</span><span class="v">131 MB</span><span class="of">4.1%</span></div>
+                <div class="mini" data-spark="app2"></div>
+              </div>
+              <div class="m">
+                <div class="top"><span class="k"><span class="sw srv"></span>Server (Node)</span><span class="v">62 MB</span><span class="of">2.4%</span></div>
+                <div class="mini" data-spark="srv2"></div>
+              </div>
+              <div class="m">
+                <div class="top"><span class="k"><span class="sw agt"></span>Agents (2)</span><span class="v">1.23 GB</span><span class="of">89%</span></div>
+                <div class="mini" data-spark="agt2"></div>
+              </div>
+              <div class="agents">
+                <div class="dlbl">Per agent</div>
+                <div class="arow busy">
+                  <span class="st"></span>
+                  <span class="nm"><span class="n1">codex · pino</span><span class="sub2">turn 00:41 · 6 procs</span></span>
+                  <span class="mb"><i style="width:96%"></i></span>
+                  <span class="num">1.22 GB</span><span class="num">89%</span>
+                </div>
+                <div class="arow idle">
+                  <span class="st"></span>
+                  <span class="nm"><span class="n1">pi · makit</span><span class="sub2">parked 12m · 1 proc</span></span>
+                  <span class="mb"><i style="width:1%"></i></span>
+                  <span class="num dim">9 MB</span><span class="num dim">0.0%</span>
+                </div>
+              </div>
+              <div class="pillrow">
+                <span class="pill open">__CHART__ History __CARETUP__</span>
+                <span class="grow"></span><span class="tlink act">Open dashboard __ARROW__</span>
+              </div>
+              <div class="details">
+                <div class="dlbl">Last 5 minutes · CPU</div>
+                <div class="spark" data-chart="popStack"></div>
+                <div class="sparkfoot"><span>−5 min</span><span>▓ turn</span><span>now</span></div>
+                <div class="dlbl" style="margin-top:14px">Responsiveness</div>
+                <div class="kv"><span class="k">Frame p95</span><span class="v">7.9 ms</span></div>
+                <div class="kv"><span class="k">Event-loop p99</span><span class="v">1.8 ms</span></div>
+                <div class="kv"><span class="k">Wire</span><span class="v">6.1 KB/s ↓ · 0.2 ↑</span></div>
+                <div class="kv"><span class="k">This panel costs</span><span class="v">0.2% · 1.1 MB</span></div>
+              </div>
+            </div>
+            <div class="tail"></div>
+            <div class="footer">
+              <span class="cchip"><span class="dot"></span>Connected</span>
+              <span class="endpoint">100.83.12.4:9787</span>
+              <span class="ibtn active">__PULSE__</span>
+              <span class="ibtn gh">__GH__</span>
+              <span class="ibtn">__FOLDERPLUS__</span>
+              <span class="ibtn">__ARCHIVE__</span>
+              <span class="ibtn">__GEAR__</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note" style="max-width:700px">
+        Fully expanded with 4 agent rows is ~560 px — fits above the footer at the default window height, and the
+        icon holds a pressed tint while open. In a shorter window the detail block scrolls rather than the popover
+        flipping to the side. Same rules as the GitHub budget popover.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 5 · DASHBOARD ─────────────────────────── -->
+  <section>
+    <header><h2>5 · Full dashboard (Tier 2)</h2><span class="hint">an in-window overlay, same mechanism as Settings — you need it open <em>while</em> you reproduce a load</span></header>
+    <div class="pad">
+      <div class="dash">
+        <div class="dhead">
+          <span class="dt">Performance<span class="sub2">MacBook Pro M3 Max · 36 GB · makit 0.9.2</span></span>
+          <span class="seg" data-tip="Window over the in-memory ring buffer. 30 min is the whole ring; beyond that, nothing is retained — samples are deliberately never written to the SQLite event log, which is append-only and would grow without bound.">
+            <span>1m</span><span class="on">5m</span><span>30m</span>
+          </span>
+          <span class="pill" data-tip="Freeze the charts so you can read a spike without it scrolling away. Sampling continues underneath.">__PAUSE__ Freeze</span>
+        </div>
+
+        <div class="grid">
+          <!-- CPU -->
+          <div class="cell full">
+            <div class="chd">
+              <span class="ct">CPU — stacked by process</span>
+              <span class="cs" data-tip="Percent of <b>one core</b>. On a 12-core machine the ceiling is 1200%, so 96% means &ldquo;one core busy&rdquo;, not &ldquo;machine saturated&rdquo;. The dashed line marks 100% = one full core.">% of one core · dashed = 1 core</span>
+              <span class="cv" data-tip="Current total across all three surfaces.">now <b>96%</b></span>
+            </div>
+            <div class="chart" data-chart="cpuStack" data-tip="Shaded columns are turns, drawn from the same turn-start/turn-end events the transcript uses — so cost lines up exactly with what you asked for. Between turns the stack collapses to the app's idle repaint floor."></div>
+            <div class="axis"><span>−5 min</span><span>−4</span><span>−3</span><span>−2</span><span>−1</span><span>now</span></div>
+            <div class="legend" style="margin-top:9px">
+              <span data-tip="Flutter desktop UI process."><span class="sw app"></span>app <b>4.1%</b></span>
+              <span data-tip="Node server: transport, session manager, event log."><span class="sw srv"></span>server <b>2.4%</b></span>
+              <span data-tip="All agent process trees, summed."><span class="sw agt"></span>agents <b>89%</b></span>
+              <span data-tip="The sampler's own CPU, measured and shown rather than hidden. It is a rounding error by design: one <code>ps</code> exec per tick covers every process, not one exec per process."><span class="sw self"></span>sampler <b>0.2%</b></span>
+            </div>
+          </div>
+
+          <!-- Memory -->
+          <div class="cell">
+            <div class="chd">
+              <span class="ct">Memory — resident</span>
+              <span class="cs" data-tip="Resident set size: physical RAM actually held. Virtual size is meaningless for a claim like this — modern runtimes reserve enormous address space they never touch.">RSS</span>
+              <span class="cv">now <b>1.42 GB</b></span>
+            </div>
+            <div class="chart" data-chart="mem" data-tip="Agent memory steps up during a turn and does <b>not</b> fully return — runtimes keep their heap. That plateau is the honest cost of a parked session, and this chart is where you would see a real leak: a staircase that never comes down across several turns."></div>
+            <div class="axis"><span>−5 min</span><span>−3</span><span>−1</span><span>now</span></div>
+            <div class="legend" style="margin-top:9px">
+              <span><span class="sw app"></span>app <b>131 MB</b></span>
+              <span><span class="sw srv"></span>server <b>62 MB</b></span>
+              <span><span class="sw agt"></span>agents <b>1.23 GB</b></span>
+            </div>
+          </div>
+
+          <!-- Frame times -->
+          <div class="cell">
+            <div class="chd">
+              <span class="ct">Frame time — app</span>
+              <span class="cs" data-tip="Build + raster duration per frame, from <code>SchedulerBinding.addTimingsCallback</code>. Free to collect, and far more convincing than CPU for a UI: it answers &ldquo;did it feel smooth&rdquo; rather than &ldquo;how much did it cost&rdquo;.">last 5 min · 60 fps budget 16.7 ms</span>
+            </div>
+            <div class="bignum">
+              <span class="b"><span class="n good">7.9</span><span class="l" data-tip="95% of frames finished faster than this.">p95 ms</span></span>
+              <span class="b"><span class="n good">0.04%</span><span class="l" data-tip="Frames that missed the 16.7 ms budget. Above ~0.5% you can see it as a stutter while scrolling a long transcript.">dropped</span></span>
+            </div>
+            <div class="hist" data-hist="1"></div>
+            <div class="histfoot"><span>0 ms</span><span data-tip="Everything right of this bar is a dropped frame.">16.7 ms budget ┃</span><span>33 ms+</span></div>
+          </div>
+
+          <!-- Server health -->
+          <div class="cell">
+            <div class="chd">
+              <span class="ct">Server responsiveness</span>
+              <span class="cs" data-tip="A Node server can look idle on CPU and still be unusable if one synchronous call blocks the loop. This is the metric that catches it.">event-loop delay</span>
+            </div>
+            <div class="bignum">
+              <span class="b"><span class="n good">0.4</span><span class="l">loop p50 ms</span></span>
+              <span class="b"><span class="n good">1.8</span><span class="l" data-tip="Under 10 ms is healthy; over 100 ms and every connected device feels the lag. Spikes here almost always mean a synchronous SQLite or JSON call on a hot path.">loop p99 ms</span></span>
+              <span class="b"><span class="n">6.3</span><span class="l" data-tip="WebSocket bytes per second, both directions summed. Streaming one turn should cost single-digit KB/s.">wire KB/s</span></span>
+            </div>
+            <div class="chart" data-chart="loop" data-tip="Event-loop p99 over the window. It should stay flat <i>through</i> a turn — the server forwards bytes, it does not think. A bump aligned with a turn boundary means we are doing work on the hot path that belongs off it."></div>
+            <div class="axis"><span>−5 min</span><span>now</span></div>
+          </div>
+
+          <!-- Storage / counts -->
+          <div class="cell">
+            <div class="chd">
+              <span class="ct">Footprint on disk &amp; sockets</span>
+              <span class="cs">steady state</span>
+            </div>
+            <div class="bignum">
+              <span class="b"><span class="n">18.4</span><span class="l" data-tip="Size of the SQLite event log in <code>~/.makit/</code>. It is append-only, which is why performance samples are never written to it.">event log MB</span></span>
+              <span class="b"><span class="n">2</span><span class="l" data-tip="Live agent sessions, parked or working.">sessions</span></span>
+              <span class="b"><span class="n">3</span><span class="l" data-tip="Connected devices — this desktop plus two phones on the tailnet.">sockets</span></span>
+              <span class="b"><span class="n">11</span><span class="l" data-tip="Total processes makit is responsible for: app, server, 2 agent roots, and 7 tool children.">processes</span></span>
+            </div>
+            <p class="note" style="margin-top:6px">
+              Every number here is a thing a user can shrink: prune old sessions, close a device, park an agent.
+            </p>
+          </div>
+
+          <!-- Process table -->
+          <div class="cell full">
+            <div class="chd">
+              <span class="ct">Processes</span>
+              <span class="cs" data-tip="Sorted by memory. Each agent row is a <b>tree total</b>; expand to see the tool children that make it up.">tree totals · click a row to expand children</span>
+            </div>
+            <table class="dt2">
+              <tr>
+                <th>Process</th>
+                <th data-tip="Operating-system process id, for cross-checking against Activity Monitor or <code>htop</code>. If our number disagrees with theirs, ours is wrong.">PID</th>
+                <th data-tip="Resident memory for the whole tree.">RSS</th>
+                <th data-tip="Current CPU, computed as Δcpu-time ÷ Δwall-time between two samples. <b>Not</b> <code>ps %cpu</code>, which is a lifetime average and would report ~0.5% for a process that pinned a core for 3 s ten minutes ago.">CPU</th>
+                <th data-tip="Total CPU seconds consumed since the process started. This is the honest cumulative bill — the one number that cannot be gamed by choosing a flattering sampling window.">CPU-s</th>
+                <th data-tip="How long the process has been alive.">Uptime</th>
+                <th data-tip="Processes in the tree, including the root.">Procs</th>
+              </tr>
+              <tr>
+                <td><span class="pn"><span class="sw agt"></span>codex <span class="dim">· pino</span></span><br><span class="tree">└ ripgrep, bash, node ×3</span></td>
+                <td>84117</td><td>1.22 GB</td><td>89%</td><td>41.8</td><td>7m</td><td>6</td>
+              </tr>
+              <tr>
+                <td><span class="pn"><span class="sw app"></span>makit <span class="dim">(Flutter app)</span></span></td>
+                <td>84002</td><td>131 MB</td><td>4.1%</td><td>18.2</td><td>2h 14m</td><td>1</td>
+              </tr>
+              <tr>
+                <td><span class="pn"><span class="sw srv"></span>makit-server <span class="dim">(Node)</span></span></td>
+                <td>83990</td><td>62 MB</td><td>2.4%</td><td>9.6</td><td>2h 14m</td><td>1</td>
+              </tr>
+              <tr>
+                <td><span class="pn"><span class="sw agt"></span>pi <span class="dim">· makit</span></span></td>
+                <td>84061</td><td>9 MB</td><td>0.0%</td><td>12.4</td><td>26m</td><td>1</td>
+              </tr>
+              <tr class="tot">
+                <td>makit total</td><td></td><td>1.42 GB</td><td>96%</td><td>82.0</td><td></td><td>9</td>
+              </tr>
+            </table>
+            <p class="note" style="max-width:820px">
+              <strong>CPU-seconds is the column to optimise against.</strong> Instantaneous CPU% flatters or damns
+              you depending on when you looked; cumulative CPU-seconds per turn is stable, comparable between
+              builds, and is what a perf-budget test in CI would assert on.
+            </p>
+          </div>
+        </div>
+
+        <div class="dfoot">
+          <span class="selfcost" data-tip="Cost of running this dashboard: 1 Hz sampling, one <code>ps</code> exec per tick, chart repaints, and the extra WebSocket frames. Closing the tab drops it to zero and the collector returns to one coarse sample every 5 s.">
+            Measuring costs <b>0.3% CPU</b> · <b>1.1 MB</b> while this tab is open. Closing it stops sampling.
+          </span>
+          <span class="btn ghost" data-tip="Mark the current numbers as a baseline. A later snapshot is diffed against it, so you can prove an optimisation worked instead of trusting a memory of yesterday's chart.">Set baseline</span>
+          <span class="btn ghost" data-tip="Write the whole window — every sample, every process, plus machine and version info — to JSON and a pasteable markdown summary. This export is the shareable artifact behind the efficiency claim.">__DL__ Export snapshot</span>
+        </div>
+      </div>
+      <p class="note" style="max-width:840px">
+        Deliberately <em>not</em> in here: a live process-tree graph, per-thread breakdowns, flame charts. They look
+        impressive and answer no question this dashboard exists to answer. If a number cannot change a decision —
+        park an agent, prune the log, file a perf bug — it does not earn a cell.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 6 · MEASUREMENT HONESTY ─────────────────────────── -->
+  <section>
+    <header><h2>6 · Why the naive version lies</h2><span class="hint">these three decide whether the dashboard is evidence or decoration</span></header>
+    <div class="pad">
+      <ol class="tr">
+        <li>
+          <b><code>ps -o %cpu</code> is a lifetime average, not current CPU.</b> An agent that pinned a core for
+          3 s and then idled for ten minutes reports ~0.5% forever. We must sample cumulative CPU <em>time</em>
+          and compute <code>Δcpu ÷ Δwall</code> between ticks. Get this wrong and every number on the panel is a
+          lie in your favour — which is worse than no panel.
+        </li>
+        <li>
+          <b>An agent is a process tree.</b> <code>pi</code> and <code>codex</code> spawn bash, ripgrep and node.
+          Charging only the direct child under-reports by multiples (1.22 GB → ~180 MB in the example above).
+          Fix: one <code>ps -axo pid,ppid,rss,time</code> per tick, build the ppid tree once, sum descendants per
+          agent root. One exec covers every agent — never one exec per pid.
+        </li>
+        <li>
+          <b>The meter must not distort the measurement.</b> Sample at 1 Hz only while a subscriber is watching,
+          keep a coarse 5 s ring otherwise, and <b>never</b> persist samples to the SQLite event log — it is
+          append-only. The panel shows its own cost so the reader can check that claim rather than take it.
+        </li>
+      </ol>
+      <p class="note" style="max-width:840px">
+        One more, smaller: <b>the app has no self-CPU API in Dart.</b> Memory is <code>ProcessInfo.currentRss</code>,
+        but for CPU the app sends its own <code>pid</code> in <code>hello</code>; when the app's host matches the
+        server's host — the normal desktop case — the server samples it with the same collector as everything
+        else. One code path, no platform channel. When they differ (phone on the tailnet), the app row shows
+        memory only and says so, rather than inventing a number.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 7 · TOOLTIP COPY ─────────────────────────── -->
+  <section>
+    <header><h2>7 · Explainer copy, for review</h2><span class="hint">every tooltip in one place — easier to edit as prose than by hovering</span></header>
+    <div class="pad">
+      <table class="copy">
+        <tr><th style="width:170px">Element</th><th>Tooltip</th></tr>
+        <tr><td class="el">Title</td><td class="tx">Live resource cost of everything makit runs on this machine: the Flutter app, the Node server, and every agent process tree they spawned. Nothing off-machine is counted.</td></tr>
+        <tr><td class="el">“1 Hz · live”</td><td class="tx">Sampling only runs while this panel is open (1 Hz). When it closes, makit falls back to one coarse sample every 5 s, kept purely in memory.</td></tr>
+        <tr><td class="el">Total headline</td><td class="tx">Sum of resident memory across app + server + all agent trees. Resident, not virtual — the number the OS actually holds in RAM for you.</td></tr>
+        <tr><td class="el">“idle” caption</td><td class="tx">Idle means no turn is in flight. This is the state makit is in for most of its life, so it is the number the efficiency claim actually rests on.</td></tr>
+        <tr><td class="el">App row</td><td class="tx">The Flutter desktop UI process. Memory comes from <code>ProcessInfo.currentRss</code>; its CPU is sampled by the server, which lives on the same machine — one collector, no platform channel.</td></tr>
+        <tr><td class="el">Server row</td><td class="tx">The Node server: WSS transport, session manager, SQLite event log. Its own <code>process.memoryUsage().rss</code> and CPU from <code>process.cpuUsage()</code> deltas — exact, no <code>ps</code> needed for self.</td></tr>
+        <tr><td class="el">Agents row</td><td class="tx">All agent process <em>trees</em> summed. A parked agent still holds its runtime resident — that resident cost is the honest price of instant resume.</td></tr>
+        <tr><td class="el">Agent sparkline</td><td class="tx">Green spikes are turns. Between them the line should sit on zero — “0.0% while parked” is the headline number.</td></tr>
+        <tr><td class="el">Parked agent row</td><td class="tx">Process alive, no turn in flight, 0.0% CPU. Resume is instant because we did not kill it.</td></tr>
+        <tr><td class="el">Working agent row</td><td class="tx">1.22 GB is the whole tree: the codex process plus the ripgrep/bash/node children it spawned for this turn. Attributing only the direct child would have reported ~180 MB — wrong by 7×.</td></tr>
+        <tr><td class="el">Comparison banner</td><td class="tx">The comparison that makes the number mean something. Baselines are measured once on this machine by <code>makit bench</code>, not hardcoded — an unverified boast is worse than no boast.</td></tr>
+        <tr><td class="el">CPU % axis</td><td class="tx">Percent of one core. On a 12-core machine the ceiling is 1200%, so 96% means “one core busy”, not “machine saturated”. The dashed line marks 100% = one full core.</td></tr>
+        <tr><td class="el">Turn shading</td><td class="tx">Shaded columns are turns, drawn from the same turn-start/turn-end events the transcript uses — so cost lines up exactly with what you asked for.</td></tr>
+        <tr><td class="el">Memory chart</td><td class="tx">Agent memory steps up during a turn and does not fully return — runtimes keep their heap. That plateau is the honest cost of a parked session. A real leak looks like a staircase that never comes down across several turns.</td></tr>
+        <tr><td class="el">Frame p95</td><td class="tx">95% of frames finished building and rasterising faster than this. Under 16.7 ms means the UI held 60 fps even while the agent burned a core.</td></tr>
+        <tr><td class="el">Dropped frames</td><td class="tx">Frames that missed the 16.7 ms budget. Above ~0.5% you can see it as a stutter while scrolling a long transcript.</td></tr>
+        <tr><td class="el">Event-loop p99</td><td class="tx">99th-percentile Node event-loop delay. Under 10 ms is healthy; over 100 ms and every connected device feels the lag. Spikes almost always mean a synchronous SQLite or JSON call on a hot path.</td></tr>
+        <tr><td class="el">Wire KB/s</td><td class="tx">WebSocket bytes per second, both directions. Streaming one turn should cost single-digit KB/s — if it does not, we are re-sending state we should have diffed.</td></tr>
+        <tr><td class="el">Event log MB</td><td class="tx">Size of the SQLite event log in <code>~/.makit/</code>. It is append-only, which is why performance samples are never written to it.</td></tr>
+        <tr><td class="el">CPU column</td><td class="tx">Current CPU, computed as Δcpu-time ÷ Δwall-time between two samples. Not <code>ps %cpu</code>, which is a lifetime average and would report ~0.5% for a process that pinned a core three seconds ago.</td></tr>
+        <tr><td class="el">CPU-s column</td><td class="tx">Total CPU seconds since the process started. The honest cumulative bill — the one number that cannot be gamed by choosing a flattering sampling window.</td></tr>
+        <tr><td class="el">PID column</td><td class="tx">Operating-system process id, for cross-checking against Activity Monitor or <code>htop</code>. If our number disagrees with theirs, ours is wrong.</td></tr>
+        <tr><td class="el">Range selector</td><td class="tx">Window over the in-memory ring buffer. 30 min is the whole ring; beyond that nothing is retained — samples are deliberately never written to the append-only event log.</td></tr>
+        <tr><td class="el">Freeze</td><td class="tx">Freeze the charts so you can read a spike without it scrolling away. Sampling continues underneath.</td></tr>
+        <tr><td class="el">Set baseline</td><td class="tx">Mark the current numbers as a baseline. A later snapshot is diffed against it, so you can prove an optimisation worked instead of trusting a memory of yesterday's chart.</td></tr>
+        <tr><td class="el">Export snapshot</td><td class="tx">Write the whole window — every sample, every process, plus machine and version info — to JSON and a pasteable markdown summary. This export is the shareable artifact behind the efficiency claim.</td></tr>
+        <tr><td class="el">Self-cost row</td><td class="tx">What this panel itself costs while open: sampling, charting and pushing frames. Shown because a meter that distorts its own measurement is not evidence. Closing it returns the cost to zero.</td></tr>
+      </table>
+      <p class="note" style="max-width:780px">
+        Tooltips explain rather than restate — “CPU: the CPU usage” is noise. Each answers <em>why does this number
+        matter</em> or <em>what would I do about it</em>. Same <code>Tooltip</code> widget as the rest of the app,
+        ~600 ms delay, wrapped max-width, since these are sentences.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────── 8 · INTERACTION ─────────────────────────── -->
+  <section>
+    <header><h2>8 · Interaction &amp; data summary</h2></header>
+    <div class="pad">
+      <p class="note" style="max-width:820px;margin-top:0">
+        <strong>Hover icon</strong> → one-line tooltip, ~500 ms delay.<br>
+        <strong>Click icon</strong> → popover opens collapsed and <em>starts 1 Hz sampling</em>; click-outside /
+        <code>Esc</code> dismisses and stops it.<br>
+        <strong>History pill</strong> → expands detail in place, animating height (~160 ms); state persists across
+        opens and restarts.<br>
+        <strong>Open dashboard</strong> → an in-window overlay, the same mechanism Settings uses
+        (<code>settingsOpenProvider</code> + <code>DesktopWindowBody</code>), so the chat underneath stays alive.
+        <em>Not</em> a workspace tab: <code>Tab</code> carries only a <code>sessionId</code>, and a kind tag would
+        ripple through persistence, drag/drop, group membership and pruning. Unlike Settings, the chat is left
+        <em>interactive</em> — you must be able to drive a session while watching what it costs.<br>
+        <strong>Agent row</strong> → click reveals the tool children; the row menu offers “park” and “end session”.<br>
+        <strong>Idle behaviour</strong> → with nobody watching, one coarse sample every 5 s into a 30-minute
+        in-memory ring, so the charts have history the moment you open them. Disableable in settings, in which case
+        the icon shows the <em>Off</em> state.<br>
+        <strong>Wire</strong> → a new top-level <code>metrics.sample</code> frame gated behind
+        <code>sub { metrics: true }</code> — <em>not</em> a session event kind, since metrics are host-wide and must
+        stay out of the append-only log.<br>
+        <strong>Persistence</strong> → none, by design. Ring buffers only; the sole way a sample leaves memory is
+        <em>Export snapshot</em>, at your request.
+      </p>
+    </div>
+  </section>
+
+  <div id="ex"></div>
+
+<script>
+/* ── icons ─────────────────────────────────────────────────────── */
+const GH_PATH='M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.05-.13-.36-.91.08-1.9 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44.99.13 1.77.08 1.9.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A7.995 7.995 0 0 0 16 8c0-4.42-3.58-8-8-8Z';
+/* the mark: a pulse/activity trace — reads as "live measurement", not "settings" */
+const PULSE='M3 12h3.2l2-5.2 3 10.4 2.4-7.2 1.6 2H21';
+const SVG={
+ GH:'<svg viewBox="0 0 16 16" width="17" height="17"><path d="'+GH_PATH+'"/></svg>',
+ PULSE:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="'+PULSE+'" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+ PULSEA:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="'+PULSE+'" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="46" stroke-dashoffset="0"><animate attributeName="stroke-dashoffset" values="46;0" dur="1.6s" repeatCount="indefinite"/></path></svg>',
+ PULSEOFF:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="'+PULSE+'" stroke-linejoin="round" stroke-linecap="round" opacity=".45"/><path d="M3.5 20.5 20.5 3.5" stroke-width="1.6" stroke-linecap="round"/></svg>',
+ PULSE16:'<svg viewBox="0 0 24 24" width="14" height="14"><path d="'+PULSE+'" stroke-linejoin="round" stroke-linecap="round"/></svg>',
+ FOLDERPLUS:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h6l2 2h10v10H3z"/><path d="M12 11v5M9.5 13.5h5"/></svg>',
+ ARCHIVE:'<svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 6h18v3H3zM4.5 9v10h15V9M10 12.5h4"/></svg>',
+ GEAR:'<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M4.6 7.5l1.7 1M17.7 15.5l1.7 1M4.6 16.5l1.7-1M17.7 8.5l1.7-1"/></svg>',
+ CHECK:'<svg viewBox="0 0 24 24" width="13" height="13"><path d="M5 13l4 4 10-10"/></svg>',
+ CHART:'<svg viewBox="0 0 24 24" width="12" height="12"><path d="M4 19V5M4 19h16M7.5 16l3.5-5 3 3 4.5-7"/></svg>',
+ CARETDOWN:'<svg viewBox="0 0 24 24" width="11" height="11"><path d="M6 9.5l6 6 6-6"/></svg>',
+ CARETUP:'<svg viewBox="0 0 24 24" width="11" height="11"><path d="M6 14.5l6-6 6 6"/></svg>',
+ ARROW:'<svg viewBox="0 0 24 24" width="11" height="11" style="stroke:currentColor;fill:none;stroke-width:1.7"><path d="M5 12h13M13 6.5l5.5 5.5L13 17.5"/></svg>',
+ PAUSE:'<svg viewBox="0 0 24 24" width="11" height="11"><path d="M9 5v14M15 5v14"/></svg>',
+ DL:'<svg viewBox="0 0 24 24" width="11" height="11" style="stroke:currentColor;fill:none;stroke-width:1.6"><path d="M12 4v10M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg>',
+};
+const root=document.querySelector('body');
+root.innerHTML=root.innerHTML
+ .replace(/__PULSEOFF__/g,SVG.PULSEOFF).replace(/__PULSEA__/g,SVG.PULSEA)
+ .replace(/__PULSE16__/g,SVG.PULSE16).replace(/__PULSE__/g,SVG.PULSE)
+ .replace(/__GH__/g,SVG.GH).replace(/__FOLDERPLUS__/g,SVG.FOLDERPLUS)
+ .replace(/__ARCHIVE__/g,SVG.ARCHIVE).replace(/__GEAR__/g,SVG.GEAR)
+ .replace(/__CHECK__/g,SVG.CHECK).replace(/__CHART__/g,SVG.CHART)
+ .replace(/__CARETDOWN__/g,SVG.CARETDOWN).replace(/__CARETUP__/g,SVG.CARETUP)
+ .replace(/__ARROW__/g,SVG.ARROW).replace(/__PAUSE__/g,SVG.PAUSE)
+ .replace(/__DL__/g,SVG.DL);
+
+/* ── synthetic sample data (300 s @ 1 Hz) ───────────────────────
+   Two turns: one finished (t 118-176), one running (t 259-300).
+   Numbers chosen to be *plausible*, and to make the design decisions
+   visible: agents flat at 0 between turns, memory plateauing after. */
+const N=300;
+const TURNS=[[118,176],[259,300]];
+const inTurn=t=>TURNS.some(([a,b])=>t>=a&&t<=b);
+const rnd=(s=>()=>(s=(s*16807)%2147483647)/2147483647)(7);
+
+const cpu={app:[],srv:[],agt:[]};
+const mem={app:[],srv:[],agt:[]};
+let agtMem=0.62;                       // GB, grows and plateaus
+for(let t=0;t<N;t++){
+  const busy=inTurn(t);
+  cpu.app.push(busy? 3+rnd()*3 : (rnd()<.06? .4+rnd()*1.2 : .1+rnd()*.4));
+  cpu.srv.push(busy? 1.6+rnd()*1.6 : .05+rnd()*.2);
+  cpu.agt.push(busy? 62+rnd()*38 : (rnd()<.02? rnd()*.6 : 0));
+  if(busy) agtMem=Math.min(1.23, agtMem + .006 + rnd()*.004);
+  mem.app.push(.118+ (busy? .012:0) + rnd()*.004);
+  mem.srv.push(.051+ (busy? .010:0) + rnd()*.003);
+  mem.agt.push(agtMem);
+}
+const loop=[];
+for(let t=0;t<N;t++) loop.push(inTurn(t)? 1.2+rnd()*1.4 : .3+rnd()*.5);
+
+/* ── tiny chart helpers ─────────────────────────────────────────── */
+const W=720,H=150;
+const pts=(a,w,h,max,pad=0)=>a.map((v,i)=>
+  (i/(a.length-1)*w).toFixed(1)+','+(h-pad-(v/max)*(h-pad)).toFixed(1)).join(' ');
+const turnBands=(w,h)=>TURNS.map(([a,b])=>
+  `<rect x="${(a/N*w).toFixed(1)}" y="0" width="${((b-a)/N*w).toFixed(1)}" height="${h}" fill="#ffffff" opacity=".045"/>`).join('');
+
+/* stacked area: bottom→top app, srv, agt */
+function stacked(w,h,scale){
+  const series=[['app','var(--violet)'],['srv','var(--warn)'],['agt','var(--accent)']];
+  let below=new Array(N).fill(0), out='';
+  for(const [k,col] of series){
+    const top=cpu[k].map((v,i)=>below[i]+v);
+    const up=top.map((v,i)=>(i/(N-1)*w).toFixed(1)+','+(h-Math.min(h,v/scale*h)).toFixed(1));
+    const dn=below.map((v,i)=>(i/(N-1)*w).toFixed(1)+','+(h-Math.min(h,v/scale*h)).toFixed(1)).reverse();
+    out+=`<polygon points="${up.concat(dn).join(' ')}" fill="${col}" opacity=".55"/>`+
+         `<polyline points="${up.join(' ')}" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+    below=top;
+  }
+  return out;
+}
+
+const draw={
+  cpuStack(el){
+    el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">
+      ${turnBands(W,H)}
+      <line x1="0" y1="${(H-H/1.5).toFixed(1)}" x2="${W}" y2="${(H-H/1.5).toFixed(1)}"
+            stroke="#4a4a4a" stroke-width="1" stroke-dasharray="4 4"/>
+      ${stacked(W,H,150)}
+    </svg>`;
+  },
+  mem(el){
+    const h=110, max=1.5;
+    el.innerHTML=`<svg viewBox="0 0 ${W} ${h}" preserveAspectRatio="none" style="height:${h}px">
+      ${turnBands(W,h)}
+      <polyline points="${pts(mem.agt,W,h,max)}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+      <polyline points="${pts(mem.app,W,h,max)}" fill="none" stroke="var(--violet)" stroke-width="1.4"/>
+      <polyline points="${pts(mem.srv,W,h,max)}" fill="none" stroke="var(--warn)" stroke-width="1.4"/>
+    </svg>`;
+  },
+  loop(el){
+    const h=54;
+    el.innerHTML=`<svg viewBox="0 0 ${W} ${h}" preserveAspectRatio="none" style="height:${h}px">
+      ${turnBands(W,h)}
+      <polyline points="${pts(loop,W,h,10)}" fill="none" stroke="var(--sky)" stroke-width="1.5"/>
+      <line x1="0" y1="${(h-h*1/10).toFixed(1)}" x2="${W}" y2="${(h-h*1/10).toFixed(1)}"
+            stroke="#3a3a3a" stroke-width="1" stroke-dasharray="3 3"/>
+    </svg>`;
+  },
+  popStack(el){
+    const w=272,h=44;
+    el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      ${turnBands(w,h)}${stacked(w,h,150)}
+    </svg>`;
+  },
+};
+document.querySelectorAll('[data-chart]').forEach(el=>{
+  const f=draw[el.getAttribute('data-chart')]; if(f) f(el);
+});
+
+/* popover mini sparklines: idle variants clamp to the quiet stretch */
+const idleSlice=a=>a.slice(180,255);
+const busySlice=a=>a.slice(225,300);
+const MINI={
+  app:[idleSlice(cpu.app),'var(--violet)',3],  srv:[idleSlice(cpu.srv),'var(--warn)',3],
+  /* parked agents really are 0.0% — draw the flat line, not a lucky sample */
+  agt:[idleSlice(cpu.agt).map(()=>0),'var(--accent)',3],
+  app2:[busySlice(cpu.app),'var(--violet)',8], srv2:[busySlice(cpu.srv),'var(--warn)',8],
+  agt2:[busySlice(cpu.agt),'var(--accent)',110],
+};
+document.querySelectorAll('[data-spark]').forEach(el=>{
+  const m=MINI[el.getAttribute('data-spark')]; if(!m) return;
+  const [a,col,max]=m, w=272,h=22;
+  el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <line x1="0" y1="${h-.5}" x2="${w}" y2="${h-.5}" stroke="#2e2e2e" stroke-width="1"/>
+    <polyline points="${pts(a,w,h,max,1)}" fill="none" stroke="${col}" stroke-width="1.5" stroke-linejoin="round"/>
+  </svg>`;
+});
+
+/* frame-time histogram: heavily left-skewed, a couple of dropped frames */
+document.querySelectorAll('[data-hist]').forEach(el=>{
+  // ~18k frames over 5 min at 60fps, 15 bins of ~2.2ms. Tail must be almost
+  // empty for the stated 0.04% dropped to be true: 8 frames past the budget.
+  const buckets=[40,320,2900,6100,5200,2400,900,180, 4,2,1,0,0,0,1];
+  const budget=8;                                        // 16.7ms falls here
+  const max=Math.max(...buckets);
+  el.innerHTML=buckets.map((v,i)=>
+    `<i class="${i>=budget?'over':''}" style="height:${Math.max(2,v/max*100)}%"></i>`).join('');
+});
+
+/* ── explainer tooltip ─────────────────────────────────────────── */
+const ex=document.getElementById('ex');
+let t=null;
+document.addEventListener('mouseover',e=>{
+  const el=e.target.closest('[data-tip]');
+  if(!el){clearTimeout(t);ex.classList.remove('on');return;}
+  clearTimeout(t);
+  t=setTimeout(()=>{
+    ex.innerHTML=el.getAttribute('data-tip');
+    ex.classList.add('on');
+    const r=el.getBoundingClientRect();
+    const w=ex.offsetWidth,h=ex.offsetHeight;
+    let x=r.left, y=r.top-h-8;
+    if(y<8) y=r.bottom+8;
+    if(x+w>innerWidth-10) x=innerWidth-w-10;
+    ex.style.left=x+'px'; ex.style.top=y+'px';
+  },260);
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='g'||e.key==='G') document.body.classList.toggle('guides');
+});
+addEventListener('scroll',()=>{clearTimeout(t);ex.classList.remove('on');},{passive:true});
+</script>
+</body>
+</html>
