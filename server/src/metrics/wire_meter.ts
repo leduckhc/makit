@@ -28,7 +28,12 @@ export class WireMeter {
   sampleRates(now: number): {
     inBytesPerSec: number;
     outBytesPerSec: number;
-    frames: number;
+    /**
+     * Frames per second, NOT a per-window count. A raw count would jump 5x at the
+     * 5s-to-1Hz cadence seam while the byte rates stayed smooth, so every field
+     * here is normalised the same way.
+     */
+    framesPerSec: number;
   } {
     const elapsedMs = this.lastSampleAt === null ? 0 : now - this.lastSampleAt;
     // A zero-or-negative window has no meaningful rate; report 0 rather than
@@ -39,7 +44,7 @@ export class WireMeter {
     const result = {
       inBytesPerSec: perSec(this.inBytes),
       outBytesPerSec: perSec(this.outBytes),
-      frames: this.frames,
+      framesPerSec: perSec(this.frames),
     };
 
     this.inBytes = 0;

@@ -41,7 +41,7 @@ test("descendants is cycle-safe (ppid cycle does not hang or duplicate)", () => 
   assert.deepEqual(d, [1, 2, 3]);
 });
 
-test("sumTree totals rss, cpu and proc count over the whole tree", () => {
+test("sumTree totals rss and proc count over the whole tree", () => {
   const t = table([
     row(1, 0, 100, 1),
     row(2, 1, 200, 2),
@@ -49,18 +49,27 @@ test("sumTree totals rss, cpu and proc count over the whole tree", () => {
     row(4, 2, 400, 4),
   ]);
   const idx = childIndex(t);
-  assert.deepEqual(sumTree(t, idx, 1), { rssBytes: 1000, cpuSeconds: 10, procs: 4 });
+  assert.deepEqual(sumTree(t, idx, 1), { rssBytes: 1000, procs: 4 });
 });
 
 test("orphan root (ppid not in table) sums only itself", () => {
   const t = table([row(99, 42, 500, 7)]); // ppid 42 absent
   const idx = childIndex(t);
-  assert.deepEqual(sumTree(t, idx, 99), { rssBytes: 500, cpuSeconds: 7, procs: 1 });
+  assert.deepEqual(sumTree(t, idx, 99), { rssBytes: 500, procs: 1 });
 });
 
 test("unknown root yields zeros, never a throw", () => {
   const t = table([row(1, 0, 100, 1)]);
   const idx = childIndex(t);
   assert.deepEqual(descendants(idx, 12345), [12345]);
-  assert.deepEqual(sumTree(t, idx, 12345), { rssBytes: 0, cpuSeconds: 0, procs: 0 });
+  assert.deepEqual(sumTree(t, idx, 12345), { rssBytes: 0, procs: 0 });
+});
+
+test("an unknown root that is an orphan's ppid must NOT absorb that orphan (review finding)", () => {
+  // pid 200 was reparented: its ppid 999 is not in the table. Asking for the tree
+  // of the dead pid 999 previously walked the index and returned pid 200's whole
+  // subtree, attributing a stranger's memory to a dead agent.
+  const t = table([row(200, 999, 5_000_000, 42, "rg")]);
+  const idx = childIndex(t);
+  assert.deepEqual(sumTree(t, idx, 999), { rssBytes: 0, procs: 0 });
 });

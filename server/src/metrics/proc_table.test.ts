@@ -139,3 +139,39 @@ test("readProcTable returns an empty map when exec fails, never throws", async (
   const table = await readProcTable(exec);
   assert.equal(table.size, 0);
 });
+
+// ── review findings (both review passes named these the highest-value gaps) ────
+
+test("readProcTable degrades to an empty table when exec REJECTS", async () => {
+  const table = await readProcTable(async () => {
+    throw new Error("spawn ps ENOENT");
+  });
+  assert.equal(table.size, 0);
+});
+
+test("readProcTable degrades to an empty table on a non-zero exit", async () => {
+  const table = await readProcTable(async () => ({
+    code: 1,
+    stdout: "      1       0   12040       01:30 systemd",
+    stderr: "ps: illegal option",
+  }));
+  assert.equal(table.size, 0, "a failed ps must not be parsed as if it succeeded");
+});
+
+test("readProcTable forwards the caller's timeout to exec (a wedged ps must be bounded)", async () => {
+  let seen: number | undefined = undefined;
+  await readProcTable(async (_cmd, _args, _cwd, timeoutMs) => {
+    seen = timeoutMs;
+    return { code: 0, stdout: "", stderr: "" };
+  }, 2_000);
+  assert.equal(seen, 2_000);
+});
+
+test("a row with an empty comm is retained, not dropped", () => {
+  // Losing an intermediate parent would orphan its children out of an agent's tree.
+  const table = parseProcTable("   1234       1    9600        0:01 ");
+  const row = table.get(1234);
+  assert.ok(row, "the pid must survive even with no process name");
+  assert.equal(row.ppid, 1);
+  assert.equal(row.comm, "");
+});

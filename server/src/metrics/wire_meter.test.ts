@@ -19,13 +19,13 @@ test("sampleRates computes per-second rates over a 2s window then resets", () =>
   const r = m.sampleRates(3000); // 2000ms elapsed
   assert.equal(r.inBytesPerSec, 1000);
   assert.equal(r.outBytesPerSec, 2000);
-  assert.equal(r.frames, 2);
+  assert.equal(r.framesPerSec, 1); // 2 frames over a 2s window
 
   // Accumulators reset: a subsequent window with no traffic is all zeros.
   const r2 = m.sampleRates(4000);
   assert.equal(r2.inBytesPerSec, 0);
   assert.equal(r2.outBytesPerSec, 0);
-  assert.equal(r2.frames, 0);
+  assert.equal(r2.framesPerSec, 0);
 });
 
 test("sampleRates does not divide by zero when called twice at the same now", () => {
@@ -37,8 +37,8 @@ test("sampleRates does not divide by zero when called twice at the same now", ()
   const r = m.sampleRates(5000); // zero-duration window
   assert.equal(r.inBytesPerSec, 0);
   assert.equal(r.outBytesPerSec, 0);
-  // Frames is a count, not a rate — it still reports what accumulated.
-  assert.equal(r.frames, 1);
+  // Frames is normalised like the byte rates, so a zero-duration window is 0.
+  assert.equal(r.framesPerSec, 0); // no measurable window yet
   assert.ok(Number.isFinite(r.inBytesPerSec));
   assert.ok(Number.isFinite(r.outBytesPerSec));
 });

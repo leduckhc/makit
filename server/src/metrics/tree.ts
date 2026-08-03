@@ -20,7 +20,6 @@ export interface ProcLike {
 
 export interface TreeTotals {
   rssBytes: number;
-  cpuSeconds: number;
   procs: number;
 }
 
@@ -58,24 +57,31 @@ export function descendants(index: Map<number, number[]>, root: number): number[
 }
 
 /**
- * Sum RSS, CPU seconds and process count over the whole tree rooted at `root`.
- * An unknown root yields `{0, 0, 0}` (its single synthetic pid contributes nothing
- * because it is absent from the table), never a throw.
+ * Sum RSS and process count over the whole tree rooted at `root`.
+ *
+ * Deliberately does **not** return `cpuSeconds`: summing only the pids present in
+ * this tick would silently lose every short-lived child, which is exactly the
+ * failure {@link CpuLedger} exists to prevent (SPEC-37 decision 4). CPU comes from
+ * the ledger, exclusively — two functions returning a differently-meaning
+ * `cpuSeconds` was a trap the first reviewer of this file walked into.
+ *
+ * An **unknown root yields zeros**, and does so before traversal: an absent pid can
+ * still appear as the `ppid` of an orphan, in which case walking the index would
+ * attribute that unrelated process's whole subtree to a dead agent.
  */
 export function sumTree(
   table: Map<number, ProcLike>,
   index: Map<number, number[]>,
   root: number,
 ): TreeTotals {
+  if (!table.has(root)) return { rssBytes: 0, procs: 0 };
   let rssBytes = 0;
-  let cpuSeconds = 0;
   let procs = 0;
   for (const pid of descendants(index, root)) {
     const proc = table.get(pid);
     if (!proc) continue;
     rssBytes += proc.rssBytes;
-    cpuSeconds += proc.cpuSeconds;
     procs += 1;
   }
-  return { rssBytes, cpuSeconds, procs };
+  return { rssBytes, procs };
 }

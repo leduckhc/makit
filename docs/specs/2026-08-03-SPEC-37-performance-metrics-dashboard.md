@@ -156,7 +156,7 @@ interface MetricsSampleDTO {
   app: SurfaceDTO | null;           // null until a loopback client reports a pid
   server: SurfaceDTO & { eventLoop: { p50: number; p99: number }; };
   agents: AgentMetricsDTO[];
-  wire: { inBytesPerSec: number; outBytesPerSec: number; frames: number };
+  wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
   storage: { eventLogBytes: number } | null;   // refreshed every 6th tick
   sampler: { cpuPercent: number | null; rssBytes: number };  // our own cost
   turnActive: boolean;              // any session mid-turn — drives the icon
@@ -293,7 +293,7 @@ the user's request.
 | 1 | CPU is `Δcpu-time ÷ Δwall`, from `ps -o time=`; **never** `ps -o %cpu` | `%cpu` is a lifetime average — see Background 1 |
 | 2 | `cpuPercent` is `null` on the first sample, rendered `—` | A rate needs two points; a zero would be a fabrication |
 | 3 | One `ps -axo` exec per tick, ppid index built once, descendants summed per root | Correct attribution at one fork per tick — see Background 2 |
-| 4 | A **per-pid credited-CPU ledger** makes each root's `cpuSeconds` monotonic across child churn | Diffing only pids present in both samples loses every short-lived child. Vanished pids are credited to their last observation; the unmeasured remainder is bounded by one tick |
+| 4 | A **per-root CPU ledger** (`base + Σ live`) makes each root's `cpuSeconds` monotonic across child churn *and* pid reuse | Diffing only pids present in both samples loses every short-lived child. An exited pid's final reading is banked into `base` and its entry dropped, so the total never decreases and the live map stays O(tree size) rather than O(every pid ever seen) — an unbounded map would be a slow leak in the feature that claims makit is cheap. A recycled pid (detected by a *dropped* cumulative time or a changed `comm`) starts fresh on top of `base`, so the previous owner's CPU is neither lost nor double-counted |
 | 5 | 1 Hz watched · 5 s background · 0 when disabled; **never** written to the event log | The meter must not distort the measurement — see Background 3 |
 | 6 | The app's CPU comes from the **server** sampling the pid the app reports in `hello`, accepted **only on a loopback socket** | Dart has no self-CPU API; one code path beats a platform channel, and the loopback gate stops it becoming "sample any pid" |
 | 7 | `cmd metrics.watch {on}`, not a `sub` flag; the flag is cleared on socket close | `sub` is session-scoped; a leaked flag would pin 1 Hz forever |
@@ -366,6 +366,7 @@ export JSON round-trips; the chat underneath stays interactive.
 |---|---|
 | **CPU semantics wrong → every number flatters us** | Decision 1 + rate tests at boundaries; the process table shows `PID` and `CPU-s` precisely so a user can cross-check us against Activity Monitor |
 | Short-lived children vanish between ticks, hiding real cost | Per-pid credited ledger (decision 4); residual loss bounded by one tick and stated in the tooltip copy |
+| An agent's root pid dies while still registered, and some orphan's `ppid` equals it | `sumTree` returns zeros for a root absent from the table **before** traversing the index — otherwise the dead root inherits that unrelated orphan's whole subtree (found in review; regression-tested) |
 | Orphaned grandchildren reparent to `launchd`/`init` and leave the tree | Documented limitation: they are counted until reparenting, then lost. Not worth a `pidfd`/cgroup dependency on macOS |
 | `ps` output shape differs across macOS/Linux (and `time=` uses `[dd-]hh:mm:ss` vs `mm:ss.ss`) | Fixture tests for both; the parser rejects unparsable rows individually rather than throwing away the table |
 | The meter becomes the cost | Decision 5 + the self-cost row + the manual cost check in Testing |

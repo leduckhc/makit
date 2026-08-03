@@ -93,7 +93,10 @@ export function parseProcTable(stdout: string): Map<number, ProcRow> {
   const table = new Map<number, ProcRow>();
 
   for (const line of stdout.split("\n")) {
-    const match = line.trim().match(/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/);
+    // Four leading whitespace-delimited fields, then the remainder as `comm`.
+    // `(.*)` not `(.+)`: a process with an empty name would otherwise be dropped,
+    // and losing an intermediate parent orphans its children out of an agent's tree.
+    const match = line.trim().match(/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)$/);
     if (!match) continue;
 
     const [, pidRaw, ppidRaw, rssRaw, timeRaw, comm] = match;
@@ -120,11 +123,18 @@ export function parseProcTable(stdout: string): Map<number, ProcRow> {
 }
 
 /**
- * Run the single `ps` snapshot and parse it. Best-effort: a failed or empty
- * `ps` (missing binary, non-zero exit) yields an empty table rather than a
- * throw, so a broken environment degrades to a metrics gap.
+ * Run the single `ps` snapshot and parse it.
+ *
+ * Owns its own degrade-to-empty guarantee rather than borrowing it from the caller:
+ * a rejecting `exec` (spawn fault), a non-zero exit, or empty output all yield an
+ * empty table. The collector calls this at 1 Hz forever, so a metrics gap is
+ * acceptable and an unhandled rejection that kills the sampler is not.
  */
-export async function readProcTable(exec: Exec): Promise<Map<number, ProcRow>> {
-  const { stdout } = await exec("ps", [...PS_ARGS]);
-  return parseProcTable(stdout);
+export async function readProcTable(exec: Exec, timeoutMs?: number): Promise<Map<number, ProcRow>> {
+  try {
+    const { code, stdout } = await exec("ps", [...PS_ARGS], undefined, timeoutMs);
+    return code === 0 ? parseProcTable(stdout) : new Map();
+  } catch {
+    return new Map();
+  }
 }
