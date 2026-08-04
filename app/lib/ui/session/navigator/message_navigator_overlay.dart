@@ -1,15 +1,15 @@
 /// The shared mount point for the message navigator (SPEC-34).
 ///
 /// Both the mobile `SessionScreen` and the desktop `DesktopChatPane` already
-/// wrap their transcript in a `Stack`; each adds this one child, so which
+/// wrap their transcript in a `Stack`; each adds this one child, so the
 /// affordance the user gets is decided in exactly one place instead of drifting
 /// between two surfaces.
 ///
-/// The style comes from [messageNavigatorStyleProvider], which each app root
-/// overrides with what that surface can offer — there is no platform sniffing
-/// here, and in particular **no `MediaQuery.navigationMode`**: that property is
-/// `{traditional, directional}` focus traversal for TV remotes and says nothing
-/// about whether a pointer exists.
+/// Whether the rail appears comes from [messageNavigatorStyleProvider], which
+/// each app root overrides with what that surface can offer — there is no
+/// platform sniffing here, and in particular **no `MediaQuery.navigationMode`**:
+/// that property is `{traditional, directional}` focus traversal for TV remotes
+/// and says nothing about whether a pointer exists.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,16 +17,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../store/chat_items.dart';
 import '../transcript_list.dart';
-import 'breadcrumb.dart';
 import 'navigator_style.dart';
-import 'outline.dart';
-import 'palette.dart';
 import 'rail.dart';
 import 'transcript_jumper.dart';
 import 'user_message_indices.dart';
 
-/// Everything a navigator needs. One object so all five styles share a
-/// constructor shape and none of them reaches into the store itself.
+/// Everything a navigator needs. One object so the navigator never reaches into
+/// the store itself.
 @immutable
 class MessageNavigatorContext {
   /// Bundles the transcript state a navigator renders from.
@@ -64,7 +61,7 @@ class MessageNavigatorContext {
   }
 }
 
-/// Renders whichever navigator the current surface is configured for.
+/// Renders the message rail when the current surface is configured for it.
 class MessageNavigatorOverlay extends ConsumerStatefulWidget {
   /// Creates the overlay for the transcript driven by [controller].
   const MessageNavigatorOverlay({
@@ -131,34 +128,14 @@ class _MessageNavigatorOverlayState
       hasTrailer: widget.hasTrailer,
     );
 
-    // Inset once, here, rather than in each of the five navigators: they place
-    // themselves with `Positioned` inside this padded box.
+    // Inset once, here, rather than in the navigator: it places itself with
+    // `Positioned` inside this padded box.
     return Positioned.fill(
       top: widget.topInset,
       child: Stack(
         clipBehavior: Clip.none,
-        children: [_navigator(style, navigatorContext)],
+        children: [MessageRail(context: navigatorContext)],
       ),
     );
-  }
-
-  Widget _navigator(
-    MessageNavigatorStyle style,
-    MessageNavigatorContext navigatorContext,
-  ) {
-    return switch (style) {
-      MessageNavigatorStyle.off => const SizedBox.shrink(),
-      MessageNavigatorStyle.rail => MessageRail(context: navigatorContext),
-      MessageNavigatorStyle.palette => MessagePalette(
-        context: navigatorContext,
-      ),
-      MessageNavigatorStyle.breadcrumb => MessageBreadcrumb(
-        context: navigatorContext,
-      ),
-      MessageNavigatorStyle.outline => MessageOutline(
-        sessionId: widget.sessionId,
-        context: navigatorContext,
-      ),
-    };
   }
 }

@@ -30,11 +30,11 @@ import {
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
 
-import { AcpAdapter, deriveAcpPromptCapabilities, type AcpTransport } from "./acp.js";
+import { AcpAdapter, type AcpTransport } from "./acp.js";
 import { CodexAppServerAdapter, type CodexTransport } from "./codex.js";
 import type { AdapterEvent } from "./adapter.js";
 import { MediaStore, type MediaAttachment } from "../media/store.js";
-import { ATTACHMENTS_DIR } from "../media/attach.js";
+import { ATTACHMENTS_DIR, prepareTurnOrFail } from "../media/attach.js";
 
 const png = Buffer.from("fake-png-bytes");
 
@@ -298,62 +298,53 @@ test("an attachment with no writable worktree surfaces session.error, never a si
   assert.equal(h.agentOf().prompts.length, 0, "the turn must not be sent without the image");
 });
 
-// ---------- prompt capability (T6) ------------------------------------------
-//
-// Reported, not yet acted on: v1 always uses the file hand-off, and the app uses
-// this flag only to decide whether to label the message "sent as a file"
-// (spec §3.5). The inline-image send path is a later phase (T12).
 
-test("deriveAcpPromptCapabilities reads agentCapabilities.promptCapabilities.image", () => {
-  assert.deepEqual(
-    deriveAcpPromptCapabilities({ agentCapabilities: { promptCapabilities: { image: true } } }),
-    { image: true },
+// ---------- prepareTurnOrFail ------------------------------------------------
+//
+// The failure path — "the image could not be delivered, so abandon the turn" —
+// was open-coded identically in all three adapters and asserted by nothing. It
+// now lives in one function, and here is that assertion.
+
+test("prepareTurnOrFail returns the turn when delivery succeeds", () => {
+  const { store, attachment } = storedPng();
+  const emitted: AdapterEvent[] = [];
+  const turn = prepareTurnOrFail(
+    store,
+    { text: "look", attachments: [attachment] },
+    gitWorktree(),
+    (e) => emitted.push(e),
+  );
+  assert.ok(turn, "a deliverable turn is returned");
+  assert.match(turn.promptText, /Attached files:/);
+  assert.deepEqual(emitted, [], "nothing is emitted on the happy path");
+});
+
+test("prepareTurnOrFail abandons the turn with a session.error", () => {
+  const { store, attachment } = storedPng();
+  const emitted: AdapterEvent[] = [];
+  // No worktree → nowhere to write the file. Sending anyway would prompt the
+  // agent about a path that does not exist, which is worse than an error.
+  const turn = prepareTurnOrFail(
+    store,
+    { text: "look", attachments: [attachment] },
+    undefined,
+    (e) => emitted.push(e),
+  );
+  assert.equal(turn, null, "the caller must not send this turn");
+  assert.equal(emitted.length, 1);
+  assert.equal(emitted[0].kind, "session.error");
+  assert.match(
+    String((emitted[0].payload as { message: string }).message),
+    /attachment delivery failed: .*no worktree/,
   );
 });
 
-test("deriveAcpPromptCapabilities defaults to false for anything absent or malformed", () => {
-  for (const init of [
-    undefined,
-    null,
-    {},
-    { agentCapabilities: {} },
-    { agentCapabilities: { promptCapabilities: {} } },
-    { agentCapabilities: { promptCapabilities: { image: false } } },
-    { agentCapabilities: { promptCapabilities: { image: "yes" } } }, // truthy but not true
-    { agentCapabilities: { promptCapabilities: null } },
-    "nonsense",
-  ]) {
-    assert.deepEqual(
-      deriveAcpPromptCapabilities(init),
-      { image: false },
-      `init=${JSON.stringify(init)}`,
-    );
-  }
-});
-
-test("an ACP adapter reports the negotiated prompt capability after start", async () => {
+test("prepareTurnOrFail emits nothing for a text-only turn without a worktree", () => {
+  // A session with no worktree can still hold a normal conversation: only
+  // attachment delivery needs somewhere to write.
   const { store } = storedPng();
-  let agent!: RecordingAgent;
-  const transport = pair(() => {
-    agent = new RecordingAgent();
-    (agent as unknown as { initialize: () => Promise<unknown> }).initialize = async () => ({
-      protocolVersion: 1 as const,
-      agentCapabilities: { loadSession: false, promptCapabilities: { image: true } },
-    });
-    return agent;
-  });
-  const adapter = new AcpAdapter({
-    spec: { agent: "pi", command: "x" },
-    connect: () => transport,
-    media: store,
-  });
-  assert.deepEqual(adapter.promptCapabilities, { image: false }, "false until negotiated");
-  await adapter.start({ cwd: gitWorktree(), sessionId: "m1" });
-  assert.deepEqual(adapter.promptCapabilities, { image: true });
-});
-
-test("a codex adapter reports no inline image support", async () => {
-  const { store } = storedPng();
-  const h = await codexHarness(gitWorktree(), store);
-  assert.deepEqual(h.adapter.promptCapabilities, { image: false });
+  const emitted: AdapterEvent[] = [];
+  const turn = prepareTurnOrFail(store, { text: "hi" }, undefined, (e) => emitted.push(e));
+  assert.equal(turn?.promptText, "hi");
+  assert.deepEqual(emitted, []);
 });

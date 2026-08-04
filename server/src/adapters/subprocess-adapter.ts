@@ -15,7 +15,7 @@
  */
 
 import { EventEmitter } from "node:events";
-import { NO_PROMPT_CAPABILITIES, NO_SESSION_CAPABILITIES, type AdapterEvent, type AgentAdapter, type PromptCapabilities, type SessionCapabilities, type SpawnOpts, type UserInput } from "./adapter.js";
+import { NO_SESSION_CAPABILITIES, type AdapterEvent, type AgentAdapter, type SessionCapabilities, type SpawnOpts, type UserInput } from "./adapter.js";
 import { TurnStatusTracker } from "./turn-status.js";
 
 export abstract class SubprocessAdapter extends EventEmitter implements AgentAdapter {
@@ -29,7 +29,6 @@ export abstract class SubprocessAdapter extends EventEmitter implements AgentAda
   capabilities: SessionCapabilities = { ...NO_SESSION_CAPABILITIES };
 
   /** Prompt media support (SPEC-33). Subclasses that accept images override it. */
-  promptCapabilities: PromptCapabilities = { ...NO_PROMPT_CAPABILITIES };
 
   /** Native session/thread id, set by the subclass once `start()` resolves. */
   agentSessionId?: string;

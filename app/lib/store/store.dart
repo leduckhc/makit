@@ -281,6 +281,11 @@ class StoreController extends StateNotifier<StoreState> {
         for (final sid in _subscribed) {
           _sendSub(sid);
         }
+        // Same reason, same fix, for the budget panel's fast-cadence watch: the
+        // server drops per-client watchers on disconnect, so an open panel would
+        // silently fall back to the slow 60s cadence with no way back short of
+        // closing and reopening it.
+        if (_watchingGithubBudget) unawaited(watchGithubBudget(true));
       }
     });
 
@@ -400,7 +405,7 @@ class StoreController extends StateNotifier<StoreState> {
   void appendOptimisticMessage(
     String sessionId,
     String text, {
-    List<({String mediaId, String mime, String name})> attachments = const [],
+    List<MediaAttachmentRef> attachments = const [],
   }) {
     // Replay events have not advanced the public cursor yet, so assigning the
     // next seq here could collide with buffered history. The command still goes
@@ -444,10 +449,7 @@ class StoreController extends StateNotifier<StoreState> {
           // reducer's idempotency guard, so THIS payload is what gets rendered
           // — a bubble without its thumbnails would be permanent.
           if (attachments.isNotEmpty)
-            'attachments': [
-              for (final a in attachments)
-                {'mediaId': a.mediaId, 'mime': a.mime, 'name': a.name},
-            ],
+            'attachments': [for (final a in attachments) a.toEchoWire()],
         },
       ),
     );
@@ -456,7 +458,7 @@ class StoreController extends StateNotifier<StoreState> {
   void sendMessage(
     String sessionId,
     String text, {
-    List<({String mediaId, String mime, String name})> attachments = const [],
+    List<MediaAttachmentRef> attachments = const [],
   }) {
     _ref
         .read(connectionControllerProvider.notifier)
@@ -468,13 +470,11 @@ class StoreController extends StateNotifier<StoreState> {
               'kind': 'send.message',
               'sessionId': sessionId,
               'text': text,
-              // Ids only — the bytes were uploaded to `POST /media` first, and
-              // the server resolves each id against its store (SPEC-33 §3.3).
+              // Ids only (see `toWire`) — the bytes were uploaded to
+              // `POST /media` first and the server resolves each id against its
+              // store (SPEC-33 §3.3).
               if (attachments.isNotEmpty)
-                'attachments': [
-                  for (final a in attachments)
-                    {'mediaId': a.mediaId, 'name': a.name},
-                ],
+                'attachments': [for (final a in attachments) a.toWire()],
             },
           ),
         );
@@ -838,6 +838,30 @@ class StoreController extends StateNotifier<StoreState> {
       );
     } catch (_) {
       // Swallow: the budget refreshes itself on a 60s cadence regardless.
+    }
+  }
+
+  /// Whether the budget panel is currently open here, so the watch can be
+  /// re-issued on reconnect (the server forgets it, exactly like `sub`).
+  bool _watchingGithubBudget = false;
+
+  /// Tell the server whether this client has the budget panel open (SPEC-32
+  /// §6.6). While it is, the server re-reads the exempt `/rate_limit` on a fast
+  /// cadence and pushes every snapshot, so the live counters actually move —
+  /// its idle broadcast only fires on a level/throttle change.
+  ///
+  /// Best-effort for the same reason as [refreshGithubBudget]: an older server
+  /// replies `err {unknown cmd}`, and the panel must still render, just with the
+  /// slower 60s cadence.
+  Future<void> watchGithubBudget(bool watching) async {
+    _watchingGithubBudget = watching;
+    try {
+      await _ref.read(connectionControllerProvider.notifier).request(
+        MsgType.cmd,
+        {'kind': 'github.watch', 'watching': watching},
+      );
+    } catch (_) {
+      // Swallow: without the subscription the panel is stale, not broken.
     }
   }
 

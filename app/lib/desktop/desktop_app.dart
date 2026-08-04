@@ -176,22 +176,13 @@ Future<void> runDesktopApp() async {
           (ref) => recentModelsController,
         ),
         groupsControllerProvider.overrideWith((ref) => groupsController),
-        // SPEC-34: hand the stored navigator style + rail options to the shared
+        // SPEC-34: hand the stored rail on/off + options to the shared
         // transcript providers (shared `ui/` cannot read `desktop/` prefs).
         messageNavigatorStyleProvider.overrideWith(
           (ref) => ref.watch(desktopNavigatorStyleProvider),
         ),
         railOptionsProvider.overrideWith(
           (ref) => ref.watch(desktopRailOptionsProvider),
-        ),
-        breadcrumbOptionsProvider.overrideWith(
-          (ref) => ref.watch(desktopBreadcrumbOptionsProvider),
-        ),
-        paletteOptionsProvider.overrideWith(
-          (ref) => ref.watch(desktopPaletteOptionsProvider),
-        ),
-        outlineOptionsProvider.overrideWith(
-          (ref) => ref.watch(desktopOutlineOptionsProvider),
         ),
       ],
       child: const _DesktopApp(),

@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>makit</string>
+	<string>Makit</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -33,7 +33,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Makit needs this to pair with your desktop server.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>makit needs this to pair with your desktop server.</string>
+	<string>Makit needs this to pair with your desktop server.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

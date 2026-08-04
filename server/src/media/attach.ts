@@ -27,6 +27,7 @@ import { copyFileSync, mkdirSync, readFileSync, appendFileSync, existsSync } fro
 import { dirname, join } from "node:path";
 
 import { log } from "../log.js";
+import type { SessionEvent } from "../protocol.js";
 import type { MediaAttachment, MediaStore } from "./store.js";
 
 /** Directory (relative to the worktree root) attachments are written into. */
@@ -170,6 +171,41 @@ export interface PreparedTurn {
    * path plumbing back to the person who pasted the image would be noise.
    */
   echo: Record<string, unknown>;
+}
+
+/**
+ * {@link prepareTurn}, but reporting failure the way an adapter must: emit a
+ * persisted `session.error` and return `null` so the caller abandons the turn.
+ *
+ * Exists because all three adapters (`acp`, `codex`, `stub`) need the identical
+ * eleven lines around `prepareTurn`, and had them copy-pasted — including the
+ * error message. An adapter's own `emitEvent` is private/protected, so the
+ * emitter is passed in rather than inherited. Its parameter is derived from
+ * {@link SessionEvent} (the same shape `AdapterEvent` names) rather than spelling
+ * out an inline `session.error` literal, so the wire shape stays declared in one
+ * place — `media/` deliberately does not import `adapters/`, which is the layer
+ * above it. This function only ever emits that one kind.
+ *
+ * Returning `null` (not throwing) keeps the decision at the call site: a turn
+ * whose prompt would reference an image the agent can never open is worse than
+ * no turn at all, so `send()` returns early instead of degrading to text.
+ */
+export function prepareTurnOrFail(
+  store: MediaStore,
+  input: { text: string; attachments?: readonly MediaAttachment[] },
+  worktreePath: string | undefined,
+  emit: (event: Omit<SessionEvent, "seq" | "sessionId">) => void,
+): PreparedTurn | null {
+  try {
+    return prepareTurn(store, input, worktreePath);
+  } catch (err) {
+    emit({
+      ts: Date.now(),
+      kind: "session.error",
+      payload: { message: `attachment delivery failed: ${(err as Error).message}` },
+    });
+    return null;
+  }
 }
 
 /**

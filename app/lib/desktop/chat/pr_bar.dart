@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../ui/widgets/codicons.dart';
 import '../../ui/widgets/icon_glyph.dart';
+import '../../ui/widgets/pr_sheet.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
@@ -252,19 +253,11 @@ class _PrStatusPillState extends State<PrStatusPill> {
   Widget build(BuildContext context) {
     final pr = widget.pr;
     final cs = Theme.of(context).colorScheme;
-    // A merged/closed PR is no longer about CI: its glyph and tint come from the
-    // state (shared with the sidebar row and the title strip) and the rollup dot
-    // is dropped, so stale check colours can't make a landed PR look live.
+    // Glyph from the state (shared with the sidebar row and the title strip);
+    // tints from the pill rule shared with the session chip and the home row.
     final style = prStateStyle(cs, pr);
     final isOpen = pr.state.toUpperCase() == 'OPEN';
-    final color = !isOpen
-        ? style.color
-        : pr.isDraft
-        ? cs.outline
-        : prRollupColor(cs, pr.checkRollup);
-    // Labels need WCAG AA (4.5:1), which the vivid state hues don't always clear
-    // as small text — [PrStateStyle.textColor] hands back the AA-safe variant.
-    final labelColor = !isOpen ? style.textColor : color;
+    final (icon: color, label: labelColor) = prPillColors(cs, pr);
     // Opaque tint: composite the verdict tint over the surface so the pill is
     // solid (not see-through over content behind it) while keeping the light
     // tinted look and legible same-colour foreground.
@@ -415,52 +408,12 @@ class _ChecksPopover extends StatelessWidget {
                 ),
                 if (checks.isNotEmpty) ...[
                   const SizedBox(height: kSpace4),
-                  for (final c in checks) _CheckRow(check: c),
+                  for (final c in checks) PrCheckRow(check: c, dense: true),
                 ],
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// One check line in [_ChecksPopover]: three columns — a coloured status glyph,
-/// the (workflow-qualified) name, and the human status word.
-class _CheckRow extends StatelessWidget {
-  const _CheckRow({required this.check});
-
-  final PrCheck check;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
-    final color = prCheckBucketColor(cs, check.bucket);
-    final label = check.workflowName == null || check.workflowName!.isEmpty
-        ? check.name
-        : '${check.workflowName!} / ${check.name}';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 1.5),
-      child: Row(
-        children: [
-          Icon(prCheckBucketIcon(check.bucket), size: 12, color: color),
-          const SizedBox(width: kSpace6),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: base.copyWith(color: cs.onSurface),
-            ),
-          ),
-          const SizedBox(width: kSpace12),
-          Text(
-            prCheckBucketLabel(check.bucket),
-            style: base.copyWith(color: color, fontWeight: FontWeight.w600),
-          ),
-        ],
       ),
     );
   }

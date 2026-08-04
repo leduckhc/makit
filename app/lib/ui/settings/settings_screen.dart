@@ -142,7 +142,7 @@ class SettingsScreen extends ConsumerWidget {
           ),
           ListTile(
             leading: _leadingIcon(PhosphorIconsLight.info),
-            title: const Text('makit'),
+            title: const Text('Makit'),
             subtitle: const Text('Mobile client · Protocol v$protocolVersion'),
           ),
 

@@ -10,6 +10,50 @@ import '../../store/models.dart';
 import 'attachment_chips.dart';
 import 'slash_palette.dart';
 
+/// Everything the composer needs to accept images (SPEC-33), built once per
+/// surface by `composerAttachments()` in `attachment_controller.dart`.
+///
+/// A single object because attachments are a single capability: six independent
+/// optional callbacks let a caller wire up half of it, and made every consumer
+/// re-derive "can this composer attach?" from whichever nullables it happened to
+/// hold.
+@immutable
+class ComposerAttachmentsApi {
+  /// Bundles the staged images and the four things a composer does with them.
+  const ComposerAttachmentsApi({
+    required this.staged,
+    required this.remove,
+    required this.retry,
+    required this.readClipboardImage,
+    required this.stagePasted,
+    this.pick,
+  });
+
+  /// Images staged for the next message, newest last. Rendered as a chip strip
+  /// above the field; an unsettled (uploading) one blocks sending.
+  final List<ComposerAttachment> staged;
+
+  /// Opens the attachment picker. **Null means nothing can be staged right now**
+  /// (nothing paired, so nowhere to upload): the paperclip stays visible but
+  /// inert with a tooltip that says why, and ⌘V is left to the field. Already
+  /// staged images stay removable/retryable — they must never strand invisibly.
+  final VoidCallback? pick;
+
+  /// Remove / retry a staged attachment by its `localId`.
+  final ValueChanged<String> remove;
+  final ValueChanged<String> retry;
+
+  /// Reads an image off the system clipboard, or null when there is none.
+  /// Injected so the composer stays testable and platform-free.
+  final Future<({Uint8List bytes, String mime, String name})?> Function()
+  readClipboardImage;
+
+  /// Stages a pasted image. Called only when [readClipboardImage] yielded one;
+  /// otherwise the paste falls through to the field's normal text paste.
+  final void Function(({Uint8List bytes, String mime, String name}) image)
+  stagePasted;
+}
+
 /// Composer = input bar with slash-command palette + send.
 ///
 /// Two visual states:
@@ -41,37 +85,19 @@ class Composer extends StatefulWidget {
     this.onDraftChanged,
     this.enabled = true,
     this.disabledHint,
-    this.attachments = const [],
-    this.onAttach,
-    this.onRemoveAttachment,
-    this.onRetryAttachment,
-    this.readClipboardImage,
-    this.onPasteImage,
+    this.attachments,
     this.pendingQueue,
   });
   final void Function(String text) onSend;
 
-  /// Images staged for the next message (SPEC-33), newest last. Rendered as a
-  /// chip strip above the field; an unsettled (uploading) one blocks sending.
-  final List<ComposerAttachment> attachments;
-
-  /// Opens the attachment picker. **Null means this session cannot take
-  /// attachments** — the paperclip stays visible but inert, with a tooltip that
-  /// says why, rather than accepting a file makit could not deliver.
-  final VoidCallback? onAttach;
-
-  /// Remove / retry a staged attachment by its `localId`.
-  final ValueChanged<String>? onRemoveAttachment;
-  final ValueChanged<String>? onRetryAttachment;
-
-  /// Reads an image off the system clipboard, or null when there is none.
-  /// Injected so the composer stays testable and platform-free.
-  final Future<({Uint8List bytes, String mime, String name})?> Function()?
-  readClipboardImage;
-
-  /// Called with a pasted image's bytes. When [readClipboardImage] yields
-  /// nothing, the paste falls through to the field's normal text paste.
-  final void Function(Uint8List bytes, String mime, String name)? onPasteImage;
+  /// Everything this composer needs to handle images (SPEC-33), or **null when
+  /// it is not attachment-aware at all** (the free-text answer composers): the
+  /// paperclip is then inert, no chips are shown and ⌘V is left to the field.
+  ///
+  /// One object rather than a handful of optional callbacks, so the composer
+  /// never has to re-derive "am I attachment-capable" from several nullables
+  /// that could disagree, and so the two surfaces cannot wire it up differently.
+  final ComposerAttachmentsApi? attachments;
 
   /// The pending-message queue, when the user's placement preference puts it
   /// here (SPEC-36). A widget rather than data + callbacks so the composer stays
@@ -198,10 +224,27 @@ class _ComposerState extends State<Composer> {
   /// An upload still in flight blocks sending outright — the server would
   /// reject a `mediaId` it has not stored yet, losing the whole turn.
   bool get _canSend {
-    if (widget.attachments.any((a) => a.status == AttachmentStatus.uploading)) {
+    if (_staged.any((a) => a.status == AttachmentStatus.uploading)) {
       return false;
     }
-    return _hasText || widget.attachments.any((a) => a.isReady);
+    return _hasText || _staged.any((a) => a.isReady);
+  }
+
+  /// Images staged for the next message, newest last. Empty when this composer
+  /// is not attachment-aware.
+  List<ComposerAttachment> get _staged =>
+      widget.attachments?.staged ?? const [];
+
+  /// The attachments API, but only while it can actually take a *new* image.
+  /// The single gate for the paperclip and the ⌘V claim: a composer that cannot
+  /// stage must not claim the field's native paste.
+  ///
+  /// Note this is not the same as [Composer.attachments] being non-null: a
+  /// session with staged images but nowhere left to upload to still shows (and
+  /// can remove/retry) its chips, so those never strand invisibly.
+  ComposerAttachmentsApi? get _staging {
+    final api = widget.attachments;
+    return api == null || api.pick == null ? null : api;
   }
 
   void _send() {
@@ -249,11 +292,11 @@ class _ComposerState extends State<Composer> {
           // Shown even when the composer is disabled (awaiting an inline
           // answer): the attachments still exist and may still be uploading, so
           // hiding them would strand un-removable, invisible work.
-          if (widget.attachments.isNotEmpty)
+          if (_staged.isNotEmpty)
             AttachmentChips(
-              attachments: widget.attachments,
-              onRemove: widget.onRemoveAttachment ?? (_) {},
-              onRetry: widget.onRetryAttachment ?? (_) {},
+              attachments: _staged,
+              onRemove: widget.attachments!.remove,
+              onRetry: widget.attachments!.retry,
             ),
           // Same reasoning as the attachment strip: pending messages must stay
           // visible (and cancellable) even while an inline ask has the composer
@@ -366,27 +409,32 @@ class _ComposerState extends State<Composer> {
   }
 
   Widget _buildPlus() {
-    final canAttach = widget.onAttach != null;
+    final pick = _staging?.pick;
     return IconButton(
       icon: const Icon(PhosphorIconsLight.paperclip),
-      tooltip: canAttach
+      // Two different disabled reasons, and only one is the user's to fix. An
+      // attachment-aware session with nowhere to upload is a connectivity gap; a
+      // composer with no attachments API at all (the free-text answer composer)
+      // will never take an image, so telling that user to connect is a promise
+      // makit cannot keep.
+      tooltip: pick != null
           ? 'Attach an image'
-          // Honest about the reason rather than a vague disabled state.
+          : widget.attachments == null
+          ? 'Attachments are not available here'
           : 'Connect to your makit server to attach images',
-      onPressed: widget.onAttach,
+      onPressed: pick,
     );
   }
 
   /// ⌘V/Ctrl+V: image first, otherwise the field's OWN paste. Never swallow a
   /// text paste.
   Future<void> _handlePaste() async {
-    final read = widget.readClipboardImage;
-    final onImage = widget.onPasteImage;
-    if (read == null || onImage == null) {
+    final api = _staging;
+    if (api == null) {
       await _pasteText();
       return;
     }
-    final image = await read();
+    final image = await api.readClipboardImage();
     // The clipboard read is async: this composer may be gone by now (a desktop
     // worktree switch or pane split disposes it), and touching `_ctrl` or the
     // callbacks after that throws "used after being disposed".
@@ -395,13 +443,13 @@ class _ComposerState extends State<Composer> {
       await _pasteText();
       return;
     }
-    onImage(image.bytes, image.mime, image.name);
+    api.stagePasted(image);
   }
 
   /// Text paste, done by hand.
   ///
   /// **Known tradeoff, deliberate.** Where ⌘V *is* claimed (only composers that
-  /// can attach images — see `_canPasteImages`), whether the clipboard holds an
+  /// can attach images — see `_staging`), whether the clipboard holds an
   /// image is knowable only asynchronously, so the field's native paste never
   /// runs and this stands in for it — without undo-stack or platform IME paste
   /// behaviour. Handing the intent back to the framework is not available here:
@@ -482,16 +530,12 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  /// True only when this composer can actually do something extra with ⌘V.
-  bool get _canPasteImages =>
-      widget.readClipboardImage != null && widget.onPasteImage != null;
-
   Map<ShortcutActivator, Intent> _shortcuts() {
     // ⌘V is claimed ONLY where an image paste is possible. Claiming it
     // everywhere would replace the field's native paste (undo stack, platform IME
     // behaviour) in composers that gain nothing from it — the free-text answer
     // composers, and any session that cannot attach.
-    final paste = _canPasteImages
+    final paste = _staging != null
         ? const {
             SingleActivator(LogicalKeyboardKey.keyV, meta: true):
                 _PasteIntent(),

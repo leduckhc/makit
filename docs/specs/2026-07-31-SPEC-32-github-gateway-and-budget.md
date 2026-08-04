@@ -288,8 +288,23 @@ New `EventKind: "github.budget"`, payload = `BudgetSnapshot` plus a 60-slot
 budget-level change or throttle change — **not** on every tick (it changes every
 minute; the UI is idle most of the time).
 
-Two new commands: `github.refresh` (hits the exempt endpoint) and `github.pause`
-`{paused: boolean}`.
+Three commands: `github.refresh` (hits the exempt endpoint), `github.pause`
+`{paused: boolean}`, and `github.watch` `{watching: boolean}`.
+
+`github.watch` exists because the change-gated broadcast above, right for an idle
+footer, is wrong for an *open* panel: `remaining`, `mine`, `others` and the burn
+rate move continuously without crossing a level boundary, so a panel left open
+sat on the numbers it opened with. While at least one client is watching, the
+server re-reads `/rate_limit` every `WATCH_INTERVAL_MS` (10s) and pushes each
+snapshot unconditionally **to the watchers only** (a paired phone has no budget
+panel, so it is not sent six snapshots a minute); the first read happens
+immediately on subscribe, and a read still in flight suppresses the next tick
+rather than stacking `gh` subprocesses. The
+cadence is scoped to an open panel rather than made global because the reads,
+though quota-**exempt**, each cost a `gh` subprocess through the gateway's
+concurrency gate. Watchers are per-client and dropped on disconnect, so a client
+that vanishes with the panel open cannot pin the fast loop on. The client
+re-issues `github.watch` on reconnect, exactly as it replays `sub`.
 
 ## 7 · UI (desktop sidebar footer)
 

@@ -11,10 +11,12 @@
  * (msgId/thinkId + delta + final) contract the app expects from the pi adapter.
  */
 
+import { createHash } from "node:crypto";
 import type { SessionUpdate, ToolKind } from "@agentclientprotocol/sdk";
 import type { AdapterEvent } from "./adapter.js";
 import type { MediaDescriptor } from "../media/store.js";
 import { summarizeLine } from "./summarize.js";
+import { imageBlocksIn, type ImageBlock } from "./tool_media.js";
 import { newId } from "../protocol.js";
 
 export interface AcpMapperHooks {
@@ -334,8 +336,24 @@ export class AcpEventMapper {
     for (const image of imageBlocksIn(block)) this.storeMedia(image);
   }
 
+  /**
+   * Store `block` and announce it unless that exact blob was already announced.
+   *
+   * The payload guard exists because ACP re-sends `rawOutput` **cumulatively** on
+   * every update, so a streamed screenshot would otherwise be base64-decoded and
+   * re-hashed by the store on each one. It is keyed by a digest of the whole
+   * payload: `length + first 64 chars` is not an identity — two captures of the
+   * same display share a byte-identical PNG header + IHDR, so the second image
+   * would be silently dropped.
+   *
+   * The digest is a dedup key, not a security boundary. `sha256` rather than a
+   * cheaper hash because it is what the rest of the codebase already uses for
+   * content identity (`MediaStore` derives `mediaId` the same way), it keeps
+   * static analysis quiet about weak digests, and it measures *faster* than sha1
+   * on a screenshot-sized payload here anyway.
+   */
   private storeMedia(block: ImageBlock, callId?: string): void {
-    const key = `${callId ?? ""}:${block.data.length}:${block.data.slice(0, 64)}`;
+    const key = `${callId ?? ""}:${createHash("sha256").update(block.data).digest("base64")}`;
     if (this.ingestedPayloads.has(key)) return;
     this.ingestedPayloads.add(key);
     const stored = this.hooks.putMedia?.(block.data, block.mimeType);
@@ -372,37 +390,6 @@ export class AcpEventMapper {
 }
 
 // ---------- helpers ---------------------------------------------------------
-
-/** An MCP/ACP image content block: base64 `data` + its `mimeType`. */
-interface ImageBlock {
-  data: string;
-  mimeType: string;
-}
-
-function asImageBlock(v: unknown): ImageBlock | null {
-  if (!v || typeof v !== "object") return null;
-  const b = v as { type?: unknown; data?: unknown; mimeType?: unknown };
-  if (b.type !== "image") return null;
-  if (typeof b.data !== "string" || typeof b.mimeType !== "string") return null;
-  return { data: b.data, mimeType: b.mimeType };
-}
-
-/**
- * Every image block reachable from `v`, which may be a single content block, a
- * `ContentBlock[]`, or an ACP `ToolCallContent[]` (whose items wrap the real
- * block under `.content`).
- */
-function imageBlocksIn(v: unknown): ImageBlock[] {
-  if (Array.isArray(v)) return v.flatMap(imageBlocksIn);
-  const direct = asImageBlock(v);
-  if (direct) return [direct];
-  if (v && typeof v === "object" && "content" in v) {
-    const inner = (v as { content?: unknown }).content;
-    // Guard against self-reference; only descend into a different value.
-    if (inner !== v) return imageBlocksIn(inner);
-  }
-  return [];
-}
 
 /**
  * Derive the makit tool `name` + `args` the app's renderer registry keys on

@@ -61,6 +61,32 @@ PrStateStyle prStateStyle(ColorScheme cs, PullRequest? pr) =>
       ),
     };
 
+/// The glyph tint and label tint for a **PR pill** — the desktop composer's
+/// status pill, the mobile session chip, and the home worktree row.
+///
+/// The pill's rule is not [prStateStyle]'s: a *live* PR is about whether CI is
+/// happy, so an open PR is tinted by its verdict ([prRollupColor]) and only a
+/// merged/closed one falls back to the state hue — otherwise a stale check colour
+/// would make a landed PR look live. A draft is grey either way: it is not up for
+/// review, so a red build on it is not the user's next action.
+///
+/// One function because three surfaces render this pill and they must agree. They
+/// did not: the home row tinted open PRs by state until this replaced its copy,
+/// so an open failing PR read red in a session and brand-blue on the home list.
+///
+/// Two colours because a label needs WCAG AA (4.5:1) and the vivid state hues do
+/// not always clear it as small text — see [PrStateStyle.textColor]. Callers take
+/// the *glyph* from [prStateStyle]; only the tints come from here.
+({Color icon, Color label}) prPillColors(ColorScheme cs, PullRequest pr) {
+  if (pr.state.toUpperCase() != 'OPEN') {
+    final style = prStateStyle(cs, pr);
+    return (icon: style.color, label: style.textColor);
+  }
+  if (pr.isDraft) return (icon: cs.outline, label: cs.outline);
+  final verdict = prRollupColor(cs, pr.checkRollup);
+  return (icon: verdict, label: verdict);
+}
+
 /// GitHub's own CI status hues. Private: named constants exist so the two
 /// functions below cannot drift, not as API for other files. They map
 /// to them ([prRollupColor] for the aggregate verdict, [prCheckBucketColor] for

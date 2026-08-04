@@ -993,7 +993,6 @@ class Session {
     this.branch,
     this.worktreePath,
     this.resumable = false,
-    this.promptImage = false,
     this.archived = false,
     this.orphaned = false,
     this.queued = const [],
@@ -1027,12 +1026,6 @@ class Session {
   /// after a server restart (SPEC-29). Drives auto-attach on subscribe.
   final bool resumable;
 
-  /// True when this agent accepts images *inside* the prompt (SPEC-33).
-  /// Attachments are currently always delivered as a file in the worktree, so
-  /// this only decides whether a sent message is labelled "handed over as a
-  /// file" — it does not change what is sent.
-  final bool promptImage;
-
   /// Archived (SPEC-29): hidden from the active list. Present for surfaces that
   /// explicitly list archived sessions; the active snapshot omits these.
   final bool archived;
@@ -1061,7 +1054,6 @@ class Session {
     String? branch,
     String? worktreePath,
     bool? resumable,
-    bool? promptImage,
     bool? archived,
     bool? orphaned,
     List<QueuedMessage>? queued,
@@ -1080,7 +1072,6 @@ class Session {
     branch: branch ?? this.branch,
     worktreePath: worktreePath ?? this.worktreePath,
     resumable: resumable ?? this.resumable,
-    promptImage: promptImage ?? this.promptImage,
     archived: archived ?? this.archived,
     orphaned: orphaned ?? this.orphaned,
     queued: queued ?? this.queued,

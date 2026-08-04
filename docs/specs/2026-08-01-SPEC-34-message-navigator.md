@@ -1,8 +1,19 @@
 # SPEC-34 — Message navigator (find your own messages in a long transcript)
 
-**Status:** Proposed · **Priority:** P2 · **Branch:** `feat/user-message-scroller`
+**Status:** Shipped, narrowed · **Priority:** P2 · **Branch:** `feat/user-message-scroller`
 **Depends on:** SPEC-21 (reversed anchored transcript), SPEC-24 (fold state in `expandedTranscriptRowsProvider`)
 **Mockups:** [`mockups/user-message-rail.html`](../../mockups/user-message-rail.html) (the five candidates) · [`mockups/chat-navigator-settings.html`](../../mockups/chat-navigator-settings.html) (settings + schema)
+
+> **What actually shipped (review of #126):** two affordances, not five — the desktop
+> **ripple rail** and the mobile **messages sheet**. The prompt palette, sticky
+> breadcrumb and outline mode were built as alternates behind a settings picker and
+> have been deleted, along with their options/providers/preferences. Outline mode's
+> `transcriptItemsProvider` and `OutlineJumpable` are gone too: both surfaces read
+> `chatItemsProvider` again. `MessageNavigatorStyle` is now `{off, rail}` and desktop
+> settings offer a single rail switch plus the rail's three options. Everything below
+> about the five candidates is design history; the scroll/jump machinery
+> (`transcript_jumper`, `jump_flash`, `user_message_indices`, `transcript_list`)
+> shipped as specified.
 
 **Scope:** new `app/lib/ui/session/navigator/` (shared), `app/lib/ui/session/chat_transcript.dart`,
 `app/lib/ui/session/transcript_list.dart` (read-only additions: index→offset lookup),
@@ -49,6 +60,8 @@ not a fetch.
 ## Design
 
 ### Four navigator styles, one shared spine
+
+_**Historical** — describes the five-candidate design. Only the rail and the mobile sheet ship; see the banner at the top of this file._
 
 All styles are pure consumers of two shared pieces plus a preference:
 
@@ -157,6 +170,8 @@ cached across a mode change.
 
 ### Settings — style picker + per-style options
 
+_**Historical** — describes the five-candidate design. Only the rail and the mobile sheet ship; see the banner at the top of this file._
+
 Lives in **Agents & Chat** under a `Message navigator` subsection header, blurb:
 *"How you jump back to your own messages in a long transcript."*
 
@@ -178,6 +193,8 @@ Options per style:
 | `outline` | Hide tool calls too · Show hidden-row counts |
 
 ### Preference schema
+
+_**Historical** — describes the five-candidate design. Only the rail and the mobile sheet ship; see the banner at the top of this file._
 
 ```dart
 enum MessageNavigatorStyle { off, rail, scrubber, palette, breadcrumb, outline }
@@ -290,6 +307,8 @@ Consequences to respect:
   there (it is shared now), but because mobile has no navigator styles to configure.
 
 ## Decisions (locked)
+
+_**Historical** — describes the five-candidate design. Only the rail and the mobile sheet ship; see the banner at the top of this file._
 
 | # | Decision | Rationale |
 |---|---|---|

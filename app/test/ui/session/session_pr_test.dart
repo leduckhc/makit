@@ -16,6 +16,7 @@ import 'package:makit/ui/session/session_pr_chip.dart';
 import 'package:makit/ui/session/session_screen.dart';
 import 'package:makit/ui/widgets/pr_actions.dart';
 import 'package:makit/ui/widgets/pr_sheet.dart';
+import 'package:makit/ui/widgets/pr_state_style.dart';
 
 class _EmptyStorage implements SecureStore {
   const _EmptyStorage();
@@ -257,6 +258,36 @@ void main() {
   });
 
   group('home worktree PR pill', () {
+    testWidgets('an open failing PR is verdict-tinted, like the session chip', (
+      tester,
+    ) async {
+      // Regression: this pill tinted open PRs by *state*, so an open failing PR
+      // read red in a session and brand-blue on the home list. One rule now
+      // (`prPillColors`) for all three pills.
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: PrPill(pr: _pr(rollup: 'fail')),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final cs = Theme.of(tester.element(find.byType(PrPill))).colorScheme;
+      final icon = tester.widget<Icon>(
+        find.descendant(of: find.byType(PrPill), matching: find.byType(Icon)),
+      );
+      expect(icon.color, prRollupColor(cs, 'fail'));
+      expect(
+        icon.color,
+        isNot(cs.primary),
+        reason: 'cs.primary is the open-state hue it used to paint',
+      );
+    });
+
     testWidgets('opens the same PR sheet when tapped', (tester) async {
       await tester.pumpWidget(
         ProviderScope(

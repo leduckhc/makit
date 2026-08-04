@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/store/chat_items.dart';
 import 'package:makit/store/composer_attachments.dart';
 import 'package:makit/transport/media_client.dart';
 
@@ -49,7 +50,11 @@ void main() {
     expect(a.forKey('s1').single.status, AttachmentStatus.ready);
     expect(a.isSettled('s1'), isTrue);
     expect(a.wireFor('s1'), [
-      (mediaId: 'a' * 64, mime: 'image/png', name: 'shot.png'),
+      MediaAttachmentRef(
+        mediaId: 'a' * 64,
+        mime: 'image/png',
+        name: 'shot.png',
+      ),
     ]);
   });
 
@@ -233,7 +238,6 @@ void main() {
       // A server appears. Retrying uses the NEW uploader without rebuilding.
       final up = _FakeUploader();
       current = up.fn;
-      expect(a.canAttach, isTrue);
       final retry = a.retry('s1', 'l1');
       up.succeed(0);
       await retry;
@@ -245,7 +249,6 @@ void main() {
     // Unpaired / fake-data mode: a chip stuck on a spinner forever would be the
     // worst outcome.
     final a = ComposerAttachments(() => null);
-    expect(a.canAttach, isFalse);
 
     await a.add(
       key: 's1',
@@ -277,7 +280,11 @@ void main() {
     await pending;
 
     expect(a.wireFor('s1'), [
-      (mediaId: 'a' * 64, mime: 'image/jpeg', name: 'photo.jpg'),
+      MediaAttachmentRef(
+        mediaId: 'a' * 64,
+        mime: 'image/jpeg',
+        name: 'photo.jpg',
+      ),
     ]);
   });
 
@@ -303,8 +310,8 @@ void main() {
     await Future.wait([p1, p2]);
 
     expect(a.wireFor('s1'), [
-      (mediaId: 'a' * 64, mime: 'image/png', name: '1.png'),
-      (mediaId: 'b' * 64, mime: 'image/png', name: '2.png'),
+      MediaAttachmentRef(mediaId: 'a' * 64, mime: 'image/png', name: '1.png'),
+      MediaAttachmentRef(mediaId: 'b' * 64, mime: 'image/png', name: '2.png'),
     ]);
   });
 }

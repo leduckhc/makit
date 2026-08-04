@@ -24,7 +24,6 @@ AgentMediaItem _item({String? alt, String id = 'a'}) => AgentMediaItem(
   ts: 0,
   mediaId: id * 64,
   mime: 'image/png',
-  sizeBytes: kPng.length,
   alt: alt,
 );
 
