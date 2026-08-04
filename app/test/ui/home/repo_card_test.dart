@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -162,6 +163,16 @@ Future<_FakeStore> _pump(
   return store;
 }
 
+/// Open the new-session sheet the way a user now reaches the full picker: the
+/// repo header's overflow menu. The card footer is "New worktree" — every
+/// worktree row has its own `+` for starting a session on a known branch.
+Future<void> _openNewSessionSheet(WidgetTester tester) async {
+  await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThree));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('New session').last);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets('forwards the config picks chosen in the sheet to spawnSession', (
     tester,
@@ -188,9 +199,7 @@ void main() {
       ],
     );
 
-    // Open the sheet from the footer's "New session" button.
-    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
 
     // Pick a non-default model, then Start.
     await tester.tap(find.text('GPT-5'));
@@ -214,8 +223,7 @@ void main() {
   ) async {
     final store = await _pump(tester, agents: [_agent('pi')]);
 
-    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
 
     // One harness, one branch, one worktree, no PRs, no config options: the
     // sheet still opens instead of silently spawning.
@@ -227,8 +235,7 @@ void main() {
   testWidgets('forks the worktree before spawning into it', (tester) async {
     final store = await _pump(tester, agents: [_agent('pi')]);
 
-    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
     // "New branch" is the default source, so Start forks off the base branch
     // client-side and spawns INTO the created worktree.
     await tester.tap(find.text('Start'));
@@ -246,8 +253,7 @@ void main() {
     final store = await _pump(tester, agents: [_agent('pi')]);
     store.spawnThrows = true;
 
-    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();
 

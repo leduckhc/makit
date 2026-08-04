@@ -184,8 +184,6 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                   switch (value) {
                     case 'new':
                       startSessionFlow(context, ref, repo);
-                    case 'worktree':
-                      _newWorktree(context, ref);
                     case 'attach':
                       _attachPast(context, ref);
                     case 'remove':
@@ -200,11 +198,8 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                       icon: PhosphorIconsLight.plus,
                       label: 'New session',
                     ),
-                    themedMenuItem(
-                      value: 'worktree',
-                      icon: PhosphorIconsLight.gitBranch,
-                      label: 'New worktree',
-                    ),
+                    // "New worktree" is not repeated here — the card footer
+                    // carries it, always visible and one tap away.
                     themedMenuItem(
                       value: 'attach',
                       icon: PhosphorIconsLight.arrowCounterClockwise,
@@ -282,6 +277,12 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     );
   }
 
+  /// Card-level action: add a worktree to this repo.
+  ///
+  /// Not "New session" — every worktree row carries its own `+` for that, so a
+  /// card-level session button could only mean "on some branch I haven't named
+  /// yet", which is really just creating a worktree. Starting a session on a
+  /// brand-new branch or a PR still lives in the header menu's "New session".
   Widget _footer(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     return DecoratedBox(
@@ -291,7 +292,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
         border: Border(top: BorderSide(color: cs.outlineVariant)),
       ),
       child: InkWell(
-        onTap: () => startSessionFlow(context, ref, repo),
+        onTap: () => _newWorktree(context, ref),
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: kSpace12,
@@ -302,7 +303,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
               Icon(PhosphorIconsLight.plus, size: 15, color: cs.primary),
               const SizedBox(width: kSpace6),
               Text(
-                'New session',
+                'New worktree',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: cs.primary,
                   fontWeight: FontWeight.w500,

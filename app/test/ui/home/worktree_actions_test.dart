@@ -275,14 +275,20 @@ void main() {
   });
 
   group('new worktree', () {
-    testWidgets('the repo menu offers it', (tester) async {
+    testWidgets('the card footer offers it', (tester) async {
       final repo = _repo([_wt(branch: 'main', isPrimary: true)]);
       await _pump(tester, RepoCard(repo: repo, sessions: const []));
 
+      // The footer, not the overflow menu: every worktree row has its own `+`
+      // for sessions, so the card-level action is adding a worktree.
+      expect(find.widgetWithText(InkWell, 'New worktree'), findsWidgets);
       await tester.tap(find.byTooltip('Repo actions'));
       await tester.pumpAndSettle();
-
-      expect(find.text('New worktree'), findsOneWidget);
+      expect(
+        find.text('New worktree'),
+        findsOneWidget,
+        reason: 'the menu must not repeat what the footer already shows',
+      );
     });
 
     testWidgets('creates off the chosen base branch without a session', (
@@ -294,9 +300,7 @@ void main() {
         RepoCard(repo: repo, sessions: const []),
       );
 
-      await tester.tap(find.byTooltip('Repo actions'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('New worktree'));
+      await tester.tap(find.widgetWithText(InkWell, 'New worktree').last);
       await tester.pumpAndSettle();
 
       // The sheet lists the repo's branches as fork points.
