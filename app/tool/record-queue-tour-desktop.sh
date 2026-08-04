@@ -45,7 +45,8 @@ if ! "$CUA_BIN" permissions status 2>/dev/null | grep -q "Screen Recording: ✅"
   exit 1
 fi
 
-export MAKIT_HOME="$(mktemp -d -t makit-queue-desktop-home.XXXXXX)"
+MAKIT_HOME="$(mktemp -d -t makit-queue-desktop-home.XXXXXX)"
+export MAKIT_HOME
 SERVER_LOG="$(mktemp -t makit-queue-desktop-server.XXXXXX.log)"
 SERVER_PID=""
 RECORDING=0

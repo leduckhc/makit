@@ -39,12 +39,20 @@ export type CodexTransport = ChildLineTransport;
  */
 const CODEX_HANDSHAKE_TIMEOUT = 15_000;
 
+/** Thrown when a JSON-RPC request times out waiting for a response. */
+class RequestTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RequestTimeoutError";
+  }
+}
+
 /** Rejects with a labelled error when [p] doesn't settle within [ms]. */
 function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const deadline = new Promise<T>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      () => reject(new RequestTimeoutError(`${label} timed out after ${ms}ms`)),
       ms,
     );
   });
@@ -279,7 +287,16 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
         input: [{ type: "text", text: turn.promptText, text_elements: [] }],
         expectedTurnId: turnId,
       });
-    } catch {
+    } catch (err) {
+      // A timeout means the message may have been delivered but the response was
+      // delayed. Avoid returning false (which would re-queue and duplicate the
+      // message); log the ambiguity but don't error or re-queue.
+      if (err instanceof RequestTimeoutError) {
+        log.warn(`turn/steer timed out; treating as potentially delivered (not re-queued): ${(err as Error).message}`);
+        return true;
+      }
+      // Protocol rejection (precondition mismatch, no active turn, etc.) — the
+      // steer was definitely not accepted, so return false to queue the message.
       return false;
     }
     // Accepted: echo only now, so a rejected steer leaves no transcript trace.
@@ -415,7 +432,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     return Promise.race([
       new Promise((resolve, reject) => this.pending.set(id, { resolve, reject })),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`codex.${method} timeout after ${timeoutMs}ms`)), timeoutMs),
+        setTimeout(() => reject(new RequestTimeoutError(`codex.${method} timeout after ${timeoutMs}ms`)), timeoutMs),
       ),
     ]);
   }

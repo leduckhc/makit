@@ -363,6 +363,10 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     Composer(
                       key: ValueKey('answer-${pendingAsk.requestId}'),
                       controller: _answerController,
+                      pendingQueue: PendingQueueSlot(
+                        sessionId: sessionId,
+                        slot: PendingQueuePlacement.pinned,
+                      ),
                       alwaysExpanded: true,
                       onSend: (text) =>
                           _handleSend(sessionId, text, pendingAsk),

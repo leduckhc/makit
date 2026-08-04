@@ -142,7 +142,7 @@ agent may legitimately error instead.
 6. **A queued message is not in the event log until it is sent.** The transcript echo
    still comes from the adapter at delivery time (`user.message`, as today), so a
    cancelled queue item leaves no trace and a replayed log never shows a message that was
-   never delivered. Pending state travels as a separate, non-historical event
+   never delivered. Pending state travels as `SessionDTO.queued` on the sessions snapshot
    ([§Wire](#wire-protocol)).
 7. **Attachments are materialised at delivery time, not at enqueue time.** `prepareTurn`
    writes files into the worktree (SPEC-33); doing that for a message that may be
@@ -152,8 +152,8 @@ agent may legitimately error instead.
    interrupt would fire the user's follow-ups into an aborted context. Removing a *single*
    pending message is the separate `queue.cancel` cmd.
 9. **The queue is in-memory and per live session.** It does not survive daemon restart or
-   `session.kill`; on session death, pending items are dropped and a `session.queue`
-   snapshot with an empty list is emitted. Persisting unsent intent across restarts is out
+   `session.kill`; on session death, pending items are dropped and an empty `queued` field
+   is published in the sessions snapshot. Persisting unsent intent across restarts is out
    of scope.
 
 ## Server design
@@ -166,7 +166,7 @@ send.message
   └─ adapter busy (hasActiveTurns)
        ├─ await adapter.steer(input)
        │     ├─ true                   -> done; the adapter echoes user.message
-       │     └─ false                  -> enqueue(input); emit session.queue
+       │     └─ false                  -> enqueue(input); publish sessions snapshot
        └─ (codex internal ladder, below)
 ```
 
@@ -195,9 +195,9 @@ enqueue** (checked before the busy check).
 ### Wire protocol
 
 > **Amended during implementation.** The queue was originally specified as a
-> `session.queue` event kind. It ships on the **sessions snapshot** instead — see
-> [PLAN deviation 1](./2026-08-02-SPEC-35-PLAN.md#deviations): an event kind is
-> persisted in the durable log, so a restart would replay a stale non-empty queue
+> `session.queue` event kind. It ships on the **sessions snapshot** (`SessionDTO.queued`)
+> instead — see [PLAN deviation 1](./2026-08-02-SPEC-35-PLAN.md#deviations): an event
+> kind is persisted in the durable log, so a restart would replay a stale non-empty queue
 > as ghost chips for messages the server no longer holds.
 
 ```ts
@@ -257,7 +257,7 @@ Keyless and deterministic, per `makit-verify-feature-end-to-end`:
   `queue.cancel` removes the right item and emits a snapshot; `cancel` empties the queue;
   a queued message produces its `user.message` **only** at flush; attachments are
   materialised at flush (assert no file in the worktree while pending).
-- **App:** chips render in order from `session.queue`; ✕ sends `queue.cancel`; an empty
+- **App:** chips render in order from `SessionDTO.queued`; ✕ sends `queue.cancel`; an empty
   snapshot removes the row; a steered message shows no chip.
 - **Live smoke (documented, not CI):** `/tmp/spike-steer/live-adapter.mts`-style harness
   against real `codex app-server` (mid-turn send → single turn, `BANANA` inside it,

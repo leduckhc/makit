@@ -43,7 +43,8 @@ echo "recording on $DEVICE_ID"
 # a dead server; the harness seeds its own, so start from a clean install.
 xcrun simctl uninstall "$DEVICE_ID" "$APP_BUNDLE_ID" >/dev/null 2>&1 || true
 
-export MAKIT_HOME="$(mktemp -d -t makit-queue-tour.XXXXXX)"
+MAKIT_HOME="$(mktemp -d -t makit-queue-tour.XXXXXX)"
+export MAKIT_HOME
 SERVER_LOG="$(mktemp -t makit-queue-tour-server.XXXXXX.log)"
 SERVER_PID=""
 REC_PID=""
@@ -54,8 +55,8 @@ cleanup() {
     kill -INT "$REC_PID" >/dev/null 2>&1 || true
     wait "$REC_PID" >/dev/null 2>&1 || true
   fi
-  if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" >/dev/null 2>&1; then
-    kill "$SERVER_PID" >/dev/null 2>&1 || true
+  if [[ -n "$SERVER_PID" ]]; then
+    pkill -f "e2e-server.ts --mode stub --project $ROOT" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   rm -rf "$MAKIT_HOME" >/dev/null 2>&1 || true

@@ -41,6 +41,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** Session cwd — attachments are materialised here, as on a real adapter. */
   private workspaceRoot = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
+  /** Timeout handle for SLOW turns, cleared by cancel/kill to prevent late events. */
+  private slowTimeout?: ReturnType<typeof setTimeout>;
 
   constructor(options: StubAdapterOptions = {}) {
     super();
@@ -110,7 +112,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     if (prompt.includes("SLOW")) {
       const ms = Number(/SLOW\s+(\d+)/.exec(prompt)?.[1] ?? 12_000);
       this.emit("status", "running");
-      setTimeout(() => {
+      const handle = setTimeout(() => {
+        this.slowTimeout = undefined;
         this.emitEvent({
           ts: Date.now(),
           kind: "agent.message",
@@ -118,6 +121,7 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
         });
         this.emit("status", "idle");
       }, ms);
+      this.slowTimeout = handle;
       return;
     }
 
@@ -183,6 +187,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async cancel(): Promise<void> {
+    if (this.slowTimeout !== undefined) {
+      clearTimeout(this.slowTimeout);
+      this.slowTimeout = undefined;
+    }
     this.emit("status", "idle");
   }
 
@@ -260,6 +268,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async kill(): Promise<void> {
+    if (this.slowTimeout !== undefined) {
+      clearTimeout(this.slowTimeout);
+      this.slowTimeout = undefined;
+    }
     this.emit("exit", null);
   }
 

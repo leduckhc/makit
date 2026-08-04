@@ -235,7 +235,12 @@ request. `Session.sendUserMessage` decides:
 
 - **Steer** — `adapter.steer(input)` injects it into the running turn. Only codex
   implements it (`turn/steer`, with the announced turn id as the
-  `expectedTurnId` precondition); every failure resolves `false`.
+  `expectedTurnId` precondition). The contract takes a `UserInput` (text +
+  optional attachments) and expects an active turn (`expectedTurnId`). Returns
+  `true` if the message was steered, `false` if steering failed (protocol
+  rejection, precondition mismatch, or no active turn). Attachment
+  materialization failures emit `session.error` and return `true` to prevent
+  requeueing the unmaterializable prompt (see SPEC-35 PLAN deviation tracking).
 - **Queue** — anything the adapter cannot steer waits in an in-memory FIFO on the
   Session and is delivered one message per `idle` transition. Pending messages
   ride the sessions snapshot as `SessionDTO.queued` (never the event log, so a

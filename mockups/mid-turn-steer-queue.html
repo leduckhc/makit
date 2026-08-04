@@ -525,21 +525,23 @@
 <!-- ══════════════════════════════════════════════════════════════════ G -->
 <section class="variant" id="G">
   <header>
-    <h2>G · Ghost queue, editable + reorderable <span class="tag">the build candidate</span></h2>
+    <h2>G · Ghost queue, editable + reorderable <span class="tag">shipped design (SPEC-36)</span></h2>
     <p>
       E's visual language (dashed ghost bubbles in the conversation's own column, right-aligned like your
-      real messages) with C's mechanics: <b>tap to edit</b>, <b>drag or ↑↓ to reorder</b>, ✕ to drop,
-      and a numbered caption showing send order. Nothing is a chip any more — a pending message looks
-      like the message it will become.
+      real messages) with shipped mechanics: <b>tap to edit</b>, <b>↑↓ arrow controls to reorder</b>
+      (not drag — both placements sit inside/beside a scrollable, and dragging fights the scroller),
+      ✕ to drop, and a numbered caption showing send order. Nothing is a chip any more — a pending
+      message looks like the message it will become.
     </p>
     <p>
       The editor is a <b>real composer field</b>, so <code>/</code> opens the slash palette (try it) —
       agent commands only, because client commands act on the app now, not when the message flushes.
+      The palette renders as a sibling widget above the editor, not via Overlay/LayerLink.
     </p>
     <p>
-      One decision decides the cost: do the ghosts live <b>inside the transcript</b> (scrolling away with
-      it) or <b>pinned above the composer</b> (always visible)? Toggle below — the content is identical,
-      the engineering is not.
+      Two placements shipped: <b>inside the transcript</b> (scrolling away with it, via SPEC-21's
+      trailer row) or <b>pinned above the composer</b> (always visible; the default). Toggle below —
+      the content is identical, the engineering is not.
     </p>
   </header>
   <div class="body">
@@ -822,7 +824,7 @@ function attachSlash(input, anchor, pane) {
         const closeSlash = attachSlash(inp, chip, document.getElementById('c-pane'));
         const commit = () => { closeSlash(); q[i] = inp.value.trim() || text; render(); };
         inp.onblur = () => setTimeout(() => { if (inp.parentNode) commit(); }, 130);
-        inp.onkeydown = (e) => { if (e.key === 'Enter' && !document.querySelector('#c-pane .slash')) commit(); };
+        inp.onkeydown = (e) => { if (!e.defaultPrevented && e.key === 'Enter' && !document.querySelector('#c-pane .slash')) commit(); };
       };
       x.onclick = () => { q.splice(i, 1); render(); };
       promote.onclick = () => {
@@ -1002,7 +1004,7 @@ function attachSlash(input, anchor, pane) {
           const closeSlash = attachSlash(inp, b, document.getElementById('g-pane'));
           const commit = () => { closeSlash(); m.text = inp.value.trim() || m.text; render(true); };
           inp.onblur = () => setTimeout(() => { if (inp.parentNode) commit(); }, 130);
-          inp.onkeydown = (e) => { if (e.key === 'Enter' && !document.querySelector('#g-pane .slash')) commit(); };
+          inp.onkeydown = (e) => { if (!e.defaultPrevented && e.key === 'Enter' && !document.querySelector('#g-pane .slash')) commit(); };
         };
         grip.ondragstart = (e) => { b.classList.add('drag'); e.dataTransfer.setData('text/plain', String(i)); };
         grip.ondragend = () => b.classList.remove('drag');

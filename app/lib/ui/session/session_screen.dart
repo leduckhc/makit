@@ -385,6 +385,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               key: ValueKey('answer-${pendingAsk.requestId}'),
                               glass: true,
                               controller: _answerController,
+                              pendingQueue: PendingQueueSlot(
+                                sessionId: widget.sessionId,
+                                slot: PendingQueuePlacement.pinned,
+                              ),
                               onSend: (text) => _handleSend(text, pendingAsk),
                             )
                           : Composer(

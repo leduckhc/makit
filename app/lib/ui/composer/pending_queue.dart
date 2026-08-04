@@ -166,7 +166,8 @@ class _PendingBubbleState extends State<PendingBubble> {
   }
 
   void _onChanged() {
-    final show = _ctrl!.text.startsWith('/');
+    final text = _ctrl!.text;
+    final show = text.startsWith('/') && !text.contains(RegExp(r'\s'));
     if (show != _showSlash) setState(() => _showSlash = show);
   }
 
@@ -350,12 +351,15 @@ class _OrderControls extends StatelessWidget {
       message: tip,
       child: InkWell(
         onTap: enabled ? () => onMove(delta) : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: kSpace2),
-          child: Icon(
-            icon,
-            size: 11,
-            color: enabled ? cs.onSurfaceVariant : cs.outlineVariant,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: kSpace2),
+            child: Icon(
+              icon,
+              size: 11,
+              color: enabled ? cs.onSurfaceVariant : cs.outlineVariant,
+            ),
           ),
         ),
       ),

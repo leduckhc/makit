@@ -165,14 +165,18 @@ void main() {
 
     // 4 ── edit in place, with the slash palette inside the editor.
     await tester.tap(find.text('also update the README'));
-    await pumpUntil(tester, find.byType(TextField).at(0));
+    final editorField = find.descendant(
+      of: _bubbleWithText('also update the README'),
+      matching: find.byType(TextField),
+    );
+    await pumpUntil(tester, editorField);
     await hold(tester, const Duration(milliseconds: 900));
 
-    await tester.enterText(find.byType(TextField).first, '/');
+    await tester.enterText(editorField, '/');
     await hold(tester, const Duration(milliseconds: 1200));
 
     await tester.enterText(
-      find.byType(TextField).first,
+      editorField,
       'also update the README and CHANGELOG',
     );
     await hold(tester, const Duration(milliseconds: 700));

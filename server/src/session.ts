@@ -501,17 +501,27 @@ export class Session extends EventEmitter {
     const input = { text, ...(attachments?.length ? { attachments } : {}) };
 
     // SPEC-35. Three cases, in this order:
-    //  1. a queue already exists  -> append (never overtake an earlier message,
-    //     including in the window between `idle` and the flush's next turn)
+    //  1. a queue already exists OR flushing is active -> append (never overtake
+    //     an earlier message, including in the window between `idle` and the
+    //     flush's next turn starting)
     //  2. the agent is busy       -> try to steer into the running turn
     //  3. otherwise               -> a normal fresh turn
-    if (this.queued.length > 0) {
+    if (this.queued.length > 0 || this.flushing) {
       this.enqueue(input);
       return;
     }
     if (BUSY_STATUSES.has(this.status)) {
-      if (await this.adapter.steer(input)) return;
-      this.enqueue(input);
+      const steered = await this.adapter.steer(input);
+      if (steered) return;
+      // Steer failed: re-check the queue state before deciding. If another
+      // message arrived during the async steer and started flushing, enqueue
+      // this one behind it; otherwise enqueue as the first queued message.
+      if (this.queued.length > 0 || this.flushing || BUSY_STATUSES.has(this.status)) {
+        this.enqueue(input);
+        return;
+      }
+      // The turn ended between the busy check and now; deliver immediately.
+      await this.adapter.send(input);
       return;
     }
     await this.adapter.send(input);
@@ -562,7 +572,15 @@ export class Session extends EventEmitter {
    * error or lose a message. Returns false when nothing known was named.
    */
   reorderQueue(ids: string[]): boolean {
-    const named = ids
+    // Deduplicate the incoming ids array, keeping only the first occurrence of
+    // each ID to prevent duplicate QueuedMessage entries.
+    const seen = new Set<string>();
+    const uniqueIds = ids.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    const named = uniqueIds
       .map((id) => this.queued.find((q) => q.id === id))
       .filter((q): q is QueuedMessage => q !== undefined);
     if (named.length === 0) return false;
@@ -602,9 +620,17 @@ export class Session extends EventEmitter {
         ...(next.attachments?.length ? { attachments: next.attachments } : {}),
       });
     } catch (err) {
-      // The message is gone from the queue, so the user must be told rather than
-      // left watching a chip that silently vanished.
+      // Terminal failure policy: clear the entire queue on an adapter.send
+      // rejection. A rejection means the adapter cannot accept messages (broken
+      // connection, process crash, etc.), so continuing to flush would fail
+      // repeatedly. The user is notified of both the immediate failure and the
+      // queue clearing.
       this.recordError(`queued message could not be sent: ${(err as Error)?.message ?? String(err)}`);
+      if (this.queued.length > 0) {
+        this.recordError(`clearing ${this.queued.length} remaining queued message(s) due to send failure`);
+        this.queued.length = 0;
+        this.emit("metaChanged");
+      }
     } finally {
       this.flushing = false;
     }

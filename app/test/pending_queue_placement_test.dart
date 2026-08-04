@@ -25,6 +25,7 @@ Widget _host({
       commandsProvider(_sid).overrideWithValue(const []),
     ],
   );
+  addTearDown(container.dispose);
   container
       .read(preferencesControllerProvider.notifier)
       .set(pendingQueuePlacementPreference, placement);
