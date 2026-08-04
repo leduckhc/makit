@@ -8,6 +8,8 @@
 import type { Envelope } from "../../protocol.js";
 import type { SessionManager } from "../../manager.js";
 import type { GithubGateway } from "../../github/gateway.js";
+import type { BudgetWatch } from "../../github/budget_watch.js";
+import type { WsClient } from "../client.js";
 import type { MediaStore } from "../../media/store.js";
 
 export interface CommandDeps {
@@ -21,6 +23,8 @@ export interface CommandDeps {
    * point at a temp dir without wiring a whole server.
    */
   readonly media?: MediaStore;
+  /** Re-read + broadcast fast while a client has the budget panel open (SPEC-32 §6.6). */
+  readonly budgetWatch: BudgetWatch<WsClient>;
   /** Re-send the projects + sessions snapshots to every authed client. */
   broadcastSnapshots(): void;
   /** Recompute + broadcast the repo-centric snapshot (git-only then PR-enriched). */

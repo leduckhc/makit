@@ -50,6 +50,7 @@ function routerWith(manager: Partial<CommandDeps["manager"]>): { router: Command
   const deps = {
     manager: manager as CommandDeps["manager"],
     gateway: {} as CommandDeps["gateway"],
+    budgetWatch: {} as CommandDeps["budgetWatch"],
     broadcastSnapshots: () => {},
     broadcastReposSnapshot: async () => {},
     broadcastBudget: () => {},

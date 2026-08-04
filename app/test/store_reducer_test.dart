@@ -226,6 +226,77 @@ void main() {
     });
   });
 
+  group('StoreController — github.watch survives a reconnect', () {
+    /// A container wired to [transport], with the store booted and settled.
+    Future<StoreController> boot(ProviderContainer container) async {
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      return store;
+    }
+
+    ProviderContainer containerFor(_SnapshotTransport transport) {
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    List<Envelope> watchCmds(_SnapshotTransport t) => t.sent
+        .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'github.watch')
+        .toList();
+
+    test('an open panel re-subscribes when the socket comes back', () async {
+      // The server drops per-client watchers on disconnect (exactly like `sub`),
+      // so without a replay an open panel silently falls back to the slow 60s
+      // cadence and never recovers until the user closes and reopens it.
+      final transport = _SnapshotTransport();
+      final store = await boot(containerFor(transport));
+      await store.watchGithubBudget(true);
+      transport.sent.clear();
+
+      transport.pushState(WsState.reconnecting);
+      transport.pushState(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(watchCmds(transport), hasLength(1));
+      expect(watchCmds(transport).single.body['watching'], true);
+    });
+
+    test('a closed panel is not re-subscribed on reconnect', () async {
+      final transport = _SnapshotTransport();
+      final store = await boot(containerFor(transport));
+      await store.watchGithubBudget(true);
+      await store.watchGithubBudget(false);
+      transport.sent.clear();
+
+      transport.pushState(WsState.reconnecting);
+      transport.pushState(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(watchCmds(transport), isEmpty);
+    });
+  });
+
   group('StoreController — sub carries fromSeq cursor', () {
     test('sub after seeing events replays only newer ones', () async {
       final transport = _CapturingTransport();
@@ -834,6 +905,9 @@ class _SnapshotTransport implements Transport {
   final _state = StreamController<WsState>.broadcast();
 
   void pushSnapshot(Envelope env) => _frames.add(env);
+
+  /// Drive the state stream, so a test can stage a drop + reconnect.
+  void pushState(WsState s) => _state.add(s);
 
   @override
   Future<void> connect(
