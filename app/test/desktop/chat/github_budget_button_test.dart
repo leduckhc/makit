@@ -77,6 +77,13 @@ Widget _host({
       if (onCmd != null)
         storeControllerProvider.overrideWith(
           (ref) => _SpyStoreController(ref, onCmd),
+        )
+      else
+        // Always a spy, never the real controller: opening the popover now sends
+        // `github.watch`, and the real `request` arms a 10s timeout timer that
+        // outlives the test ("A Timer is still pending...").
+        storeControllerProvider.overrideWith(
+          (ref) => _SpyStoreController(ref, (_) {}),
         ),
     ],
     child: MaterialApp(
@@ -185,6 +192,22 @@ void main() {
     expect(find.byKey(kBudgetBarGraphqlKey), findsNothing);
   });
 
+  testWidgets('bar segments fill the full track height', (tester) async {
+    // Regression: the Row defaulted to CrossAxisAlignment.center, which loosens
+    // the vertical constraint, and a childless ColoredBox then collapses to 0 —
+    // the bar was in the tree, laid out 274x4, and painted nothing.
+    await tester.pumpWidget(_host(budget: _budget()));
+    await _openPopover(tester);
+    final segments = find.descendant(
+      of: find.byKey(kBudgetBarCoreKey),
+      matching: find.byType(ColoredBox),
+    );
+    expect(segments, findsWidgets);
+    for (final element in segments.evaluate()) {
+      expect((element.renderObject! as RenderBox).size.height, 4);
+    }
+  });
+
   testWidgets('search row hidden when idle, shown when non-idle', (
     tester,
   ) async {
@@ -207,6 +230,44 @@ void main() {
     );
     await _openPopover(tester);
     expect(find.byKey(kBudgetSearchRowKey), findsOneWidget);
+  });
+
+  testWidgets(
+    'the per-minute search track is ticked, the hourly ones are not',
+    (tester) async {
+      await tester.pumpWidget(
+        _host(budget: _budget(search: _bucket(limit: 30, remaining: 24))),
+      );
+      await _openPopover(tester);
+      expect(
+        find.descendant(
+          of: find.byKey(kBudgetSearchRowKey),
+          matching: find.byKey(kBudgetTickedTrackKey),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(kBudgetBarCoreKey),
+          matching: find.byKey(kBudgetTickedTrackKey),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  group('buildTickRects', () {
+    test('lays 4px ticks on a 6px pitch, full height', () {
+      final ticks = buildTickRects(const Size(20, 4));
+      expect(ticks.map((r) => r.left).toList(), [0, 6, 12, 18]);
+      expect(ticks.every((r) => r.height == 4), isTrue);
+      // The last tick is clipped by the track width, never overhanging it.
+      expect(ticks.map((r) => r.right).toList(), [4, 10, 16, 20]);
+    });
+
+    test('a zero-width track has no ticks', () {
+      expect(buildTickRects(const Size(0, 4)), isEmpty);
+    });
   });
 
   testWidgets('throttle badge hidden when throttles empty', (tester) async {
@@ -309,6 +370,39 @@ void main() {
     expect(calls, contains('github.pause'));
   });
 
+  testWidgets('the open panel subscribes to fast budget updates, and unsubscribes', (
+    tester,
+  ) async {
+    // The server's change-gated broadcast only fires on a level/throttle change,
+    // so without this subscription an open panel sits on the numbers it opened
+    // with. Closing must withdraw it: nobody is looking any more, and each read
+    // costs a `gh` subprocess even though it spends no quota.
+    final calls = <String>[];
+    await tester.pumpWidget(_host(budget: _budget(), onCmd: calls.add));
+    expect(calls, isEmpty, reason: 'a closed panel watches nothing');
+
+    await _openPopover(tester);
+    expect(calls, ['github.watch:true']);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(calls, ['github.watch:true', 'github.watch:false']);
+  });
+
+  testWidgets('disposing with the panel open still unsubscribes', (
+    tester,
+  ) async {
+    // Esc/outside-tap are not the only ways out: navigating away or a sidebar
+    // rebuild disposes the button outright, and a leaked watcher would keep the
+    // server's fast loop running until the socket closed.
+    final calls = <String>[];
+    await tester.pumpWidget(_host(budget: _budget(), onCmd: calls.add));
+    await _openPopover(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    expect(calls, ['github.watch:true', 'github.watch:false']);
+  });
+
   testWidgets('the invariant rung is never struck through', (tester) async {
     // "Your own actions are never blocked" is a GUARANTEE, not a shed step.
     // Striking it (which raw throttles.length did once the list reached 5) would
@@ -345,6 +439,11 @@ void main() {
         githubBudgetProvider.overrideWithValue(budget),
         preferencesControllerProvider.overrideWith(
           (ref) => controller ?? PreferencesController.ephemeral(),
+        ),
+        // As in [_host]: a spy, so opening the popover's `github.watch` does not
+        // arm the real controller's request-timeout timer.
+        storeControllerProvider.overrideWith(
+          (ref) => _SpyStoreController(ref, (_) {}),
         ),
       ],
       child: MaterialApp(
@@ -578,6 +677,10 @@ class _SpyStoreController extends StoreController {
 
   @override
   Future<void> refreshGithubBudget() async => _onCmd('github.refresh');
+
+  @override
+  Future<void> watchGithubBudget(bool watching) async =>
+      _onCmd('github.watch:$watching');
 
   @override
   Future<void> setGithubPollingPaused(bool paused) async =>

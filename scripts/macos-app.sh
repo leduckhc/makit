@@ -45,7 +45,7 @@ done
 
 # Capitalized product dir: Debug / Release.
 MODE_DIR="$(tr '[:lower:]' '[:upper:]' <<< "${MODE:0:1}")${MODE:1}"
-APP="$ROOT/app/build/macos/Build/Products/$MODE_DIR/makit.app"
+APP="$ROOT/app/build/macos/Build/Products/$MODE_DIR/Makit.app"
 
 FLUTTER="${FLUTTER:-$(command -v flutter)}"
 [[ -x "$FLUTTER" ]] || {

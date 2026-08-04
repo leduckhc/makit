@@ -41,8 +41,8 @@ class _AppInfoRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return ListTile(
       leading: Icon(PhosphorIconsLight.info, color: cs.primary),
-      title: const Text('makit'),
-      subtitle: const Text('Desktop control app for the makit daemon.'),
+      title: const Text('Makit'),
+      subtitle: const Text('Desktop control app for the Makit daemon.'),
     );
   }
 }
