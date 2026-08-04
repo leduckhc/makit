@@ -176,13 +176,44 @@ test("a tick still in flight is skipped, never stacked (the gate can be busy)", 
   assert.equal(started, 2, "and the loop resumes once it completes");
 });
 
+test("re-opening during an in-flight read is served by that read, not a second one", async () => {
+  // Close-then-reopen inside one read window must not spawn a second `gh`: the
+  // read already in flight is at most a moment old, and its broadcast goes to
+  // whoever is watching when it lands — including the re-added watcher.
+  const timers = fakeTimers();
+  let started = 0;
+  const sentTo: ReadonlyArray<object>[] = [];
+  let release: (() => void) | undefined;
+  const watch = watchBudget<object>({
+    refresh: () => {
+      started += 1;
+      return new Promise<void>((r) => (release = r));
+    },
+    broadcast: (watchers) => sentTo.push(watchers),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
+  const a = {};
+  watch.add(a);
+  watch.remove(a);
+  watch.add(a);
+  assert.equal(started, 1, "no redundant read");
+
+  release?.();
+  await watch.settled();
+  assert.deepEqual(sentTo.at(-1), [a], "the in-flight read still serves the re-opened panel");
+});
+
 test("each broadcast targets the watchers only, not every client", async () => {
   // A phone paired to the same server has no budget panel at all; pushing it a
   // ~1KB snapshot (60 history slots + stats) every 10s because a desktop has the
   // panel open is pure waste on a metered link.
   const h = harness();
-  const a = {};
-  const b = {};
+  // Labelled, not bare `{}`: two structurally identical objects make a deepEqual
+  // of `[a]` pass just as well for `[b]`, so the assertions below would not
+  // actually pin down *which* client each snapshot went to.
+  const a = { client: "desktop-a" };
+  const b = { client: "desktop-b" };
   h.watch.add(a);
   await h.watch.settled();
   assert.deepEqual(h.sentTo.at(-1), [a]);

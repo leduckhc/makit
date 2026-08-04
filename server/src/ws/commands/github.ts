@@ -2,11 +2,15 @@
  * GitHub-domain `cmd` handlers (SPEC-32 §6.6): manual budget refresh, pause, and
  * the foreground watch.
  *
- * All three ack immediately, then mutate the gateway and re-broadcast the budget
- * so every connected client re-renders the footer. `github.refresh` hits the
- * quota-exempt `GET /rate_limit`, so it costs nothing; `github.pause` flips the
- * ladder to (or off) the paused rung; `github.watch` says whether this client
- * has the panel open, which is what licenses the faster read cadence.
+ * `github.refresh` and `github.pause` ack immediately, then mutate the gateway
+ * and re-broadcast the budget so every connected client re-renders the footer:
+ * refresh hits the quota-exempt `GET /rate_limit`, so it costs nothing; pause
+ * flips the ladder to (or off) the paused rung.
+ *
+ * `github.watch` touches neither. It only adds or removes this client from
+ * {@link CommandDeps.budgetWatch}, recording whether it has the panel open —
+ * which is what licenses the faster read cadence. Any snapshot that follows is
+ * the watch loop's own doing, not this handler's.
  */
 
 import type { CommandRouter } from "../command_router.js";

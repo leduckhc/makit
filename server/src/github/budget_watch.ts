@@ -96,8 +96,11 @@ export function watchBudget<W extends object>(deps: BudgetWatchDeps<W>): BudgetW
       if (closed || watchers.has(watcher)) return;
       watchers.add(watcher);
       if (watchers.size > 1) return;
-      // First watcher: read immediately so the panel opens on fresh numbers
-      // instead of waiting out a whole interval, then arm the loop.
+      // First watcher: read at once so the panel opens on fresh numbers instead
+      // of waiting out a whole interval, then arm the loop. If a read happens to
+      // be in flight (a close/re-open inside one read window), `tick` skips and
+      // that read's broadcast serves this watcher — it is moments old, and a
+      // second `gh` for the same answer is waste.
       tick();
       const handle = setTimer(tick, WATCH_INTERVAL_MS);
       handle.unref?.();
