@@ -345,9 +345,15 @@ export class AcpEventMapper {
    * payload: `length + first 64 chars` is not an identity — two captures of the
    * same display share a byte-identical PNG header + IHDR, so the second image
    * would be silently dropped.
+   *
+   * The digest is a dedup key, not a security boundary. `sha256` rather than a
+   * cheaper hash because it is what the rest of the codebase already uses for
+   * content identity (`MediaStore` derives `mediaId` the same way), it keeps
+   * static analysis quiet about weak digests, and it measures *faster* than sha1
+   * on a screenshot-sized payload here anyway.
    */
   private storeMedia(block: ImageBlock, callId?: string): void {
-    const key = `${callId ?? ""}:${createHash("sha1").update(block.data).digest("base64")}`;
+    const key = `${callId ?? ""}:${createHash("sha256").update(block.data).digest("base64")}`;
     if (this.ingestedPayloads.has(key)) return;
     this.ingestedPayloads.add(key);
     const stored = this.hooks.putMedia?.(block.data, block.mimeType);
