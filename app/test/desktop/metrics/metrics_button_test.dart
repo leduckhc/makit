@@ -42,6 +42,7 @@ MetricsSample _sample({
   bool procTableOk = true,
   bool withApp = true,
   double? samplerCpu = 0.1,
+  int? samplerRss,
   StorageMetrics? storage,
 }) => MetricsSample(
   ts: ts,
@@ -68,7 +69,7 @@ MetricsSample _sample({
     framesPerSec: 3,
   ),
   storage: storage,
-  sampler: SamplerMetrics(cpuPercent: samplerCpu, rssBytes: 2 * _mb),
+  sampler: SamplerMetrics(cpuPercent: samplerCpu, rssBytes: samplerRss),
   turnActive: turnActive,
   procTableOk: procTableOk,
 );
@@ -134,6 +135,14 @@ void main() {
       expect(formatCpu(null), '—');
       expect(formatCpu(0), '0.0%');
       expect(formatCpu(89.34), '89.3%');
+    });
+
+    test('an unknown byte figure is a dash, not a zero', () {
+      // "not separately attributable" and "measured as zero" are different
+      // claims; only the first is true of the sampler's resident size.
+      expect(formatBytesOrDash(null), '—');
+      expect(formatBytesOrDash(0), '0 B');
+      expect(formatBytesOrDash(2 * _mb), '2 MB');
     });
 
     test('bytes read as MB then GB with two decimals', () {
@@ -422,8 +431,42 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('This panel'), findsOneWidget);
-      expect(find.textContaining('0.2% CPU · 2 MB'), findsOneWidget);
+      // Decision 16: the CPU cost is real; the resident figure is unknown, and
+      // it reads as unknown instead of restating the server's RSS.
+      expect(find.textContaining('0.2% CPU · —'), findsOneWidget);
     });
+
+    /// The regression this guards: `sampler.rssBytes` used to carry
+    /// `process.memoryUsage().rss`, so the "this panel" row reported the whole
+    /// server's resident size as the measurement's own cost — the same number
+    /// already shown one row above. A dash is the honest reading.
+    testWidgets('the self-cost row never restates the server RSS', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(sample: _sample()));
+      await _open(tester);
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+
+      final row = find.descendant(
+        of: find.byKey(kMetricsSelfCostKey),
+        matching: find.byType(Text),
+      );
+      final texts = tester.widgetList<Text>(row).map((t) => t.data).join(' ');
+      expect(texts, contains('—'));
+      expect(texts, isNot(contains('51 MB')));
+    });
+
+    testWidgets(
+      'a known sampler RSS is still rendered when the server sends one',
+      (tester) async {
+        await tester.pumpWidget(_host(sample: _sample(samplerRss: 2 * _mb)));
+        await _open(tester);
+        await tester.tap(find.byKey(kMetricsHistoryPillKey));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('2 MB'), findsWidgets);
+      },
+    );
   });
 
   group('watch ref-counting', () {

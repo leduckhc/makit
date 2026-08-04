@@ -111,6 +111,27 @@ void main() {
       },
     );
 
+    test(
+      "sampler rssBytes: null survives as null — the sampler's resident share "
+      'is unknown, not zero (decision 16)',
+      () {
+        final j = _fullSample();
+        (j['sampler'] as Map)['rssBytes'] = null;
+        final s = (WireCodec.decode(_frame(j)) as MetricsSampleFrame).sample;
+        // Coercing to 0 would claim the measurement provably holds no memory;
+        // the truth is that its share of the server process is not separately
+        // attributable, which the UI must render as an em dash.
+        expect(s.sampler.rssBytes, isNull);
+      },
+    );
+
+    test('sampler rssBytes absent ⇒ null, not 0', () {
+      final j = _fullSample();
+      (j['sampler'] as Map).remove('rssBytes');
+      final s = (WireCodec.decode(_frame(j)) as MetricsSampleFrame).sample;
+      expect(s.sampler.rssBytes, isNull);
+    });
+
     test('agents absent ⇒ empty list', () {
       final j = _fullSample()..remove('agents');
       final s = (WireCodec.decode(_frame(j)) as MetricsSampleFrame).sample;

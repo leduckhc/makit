@@ -161,11 +161,17 @@ class SamplerMetrics {
 
   /// Nullable for the same reason as [SurfaceMetrics.cpuPercent].
   final double? cpuPercent;
-  final int rssBytes;
+
+  /// **Null by design** (SPEC-37 decision 16): the sampler runs inside the
+  /// server process, so its resident share is not separately attributable.
+  /// The server previously sent `process.memoryUsage().rss` here, which merely
+  /// restated the server row under an "own cost" label — the one dishonest
+  /// number in the panel that exists to make the honesty claim falsifiable.
+  final int? rssBytes;
 
   static SamplerMetrics fromJson(Map<String, dynamic> j) => SamplerMetrics(
     cpuPercent: _asDoubleOrNull(j['cpuPercent']),
-    rssBytes: _asInt(j['rssBytes']),
+    rssBytes: _asIntOrNull(j['rssBytes']),
   );
 }
 

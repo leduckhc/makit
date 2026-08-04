@@ -156,7 +156,16 @@ export interface MetricsSampleDTO {
   agents: AgentMetricsDTO[];
   wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
   storage: { eventLogBytes: number } | null;
-  sampler: { cpuPercent: number | null; rssBytes: number };
+  /**
+   * SPEC-37 decision 10 + 16 — what the measurement itself costs.
+   *
+   * `cpuPercent` is the CPU the tick burned over the *interval between* ticks
+   * (null until a second tick gives an interval). `rssBytes` is **null**: the
+   * sampler lives inside the server process, so its resident share is not
+   * separately attributable, and reporting `process.memoryUsage().rss` here
+   * merely restated the `server` row above under an "own cost" label.
+   */
+  sampler: { cpuPercent: number | null; rssBytes: number | null };
   turnActive: boolean;
   /**
    * False when `ps` could not be read this tick, in which case `agents` is empty

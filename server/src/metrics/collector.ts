@@ -143,6 +143,15 @@ export class MetricsCollector {
   private tickCount = 0;
   /** True while a tick is in flight — see {@link onTick} for why overlap is refused. */
   private ticking = false;
+
+  /**
+   * Wall clock at the previous tick's start — the denominator for the sampler's
+   * own CPU rate. The tick's execution span is NOT the right denominator: the
+   * honest question is "what fraction of a wall second does measuring cost?",
+   * and dividing by the tick's own duration answers "what fraction of the tick
+   * was busy" (~always large), overstating the meter's cost by interval/span.
+   */
+  private lastTickStartMs: number | null = null;
   /** Per-pid CPU baseline for the Δcpu ÷ Δwall rate (app + every agent). */
   private readonly cpuBaseline = new Map<number, CpuBaseline>();
   /** First wall time a pid was observed, for `uptimeMs`. */
@@ -274,7 +283,6 @@ export class MetricsCollector {
     const storage = await this.readStorage();
 
     const cpuAfter = this.deps.cpuUsage();
-    const endMs = this.deps.now();
 
     const sample: MetricsSampleDTO = {
       ts: nowMs,
@@ -298,8 +306,16 @@ export class MetricsCollector {
       wire,
       storage,
       sampler: {
-        cpuPercent: this.samplerCpuPercent(cpuBefore, cpuAfter, nowMs, endMs),
-        rssBytes: selfSample.rssBytes,
+        cpuPercent: this.samplerCpuPercent(
+          cpuBefore,
+          cpuAfter,
+          this.lastTickStartMs,
+          nowMs,
+        ),
+        // Deliberately null: see MetricsSampleDTO.sampler. The server's resident
+        // size is already the `server` row; repeating it here as "our own cost"
+        // was the panel's one dishonest number.
+        rssBytes: null,
       },
       // Derived from the full closure: a session mid-turn matters for the icon
       // even if it has no pid (and is therefore absent from `agents`).
@@ -308,6 +324,10 @@ export class MetricsCollector {
     };
 
     this.tickCount++;
+    // Advance the sampler's rate baseline. Set from the tick's START instant, not
+    // its end, so consecutive baselines are exactly one interval apart and the
+    // tick's own duration never leaks into the denominator.
+    this.lastTickStartMs = nowMs;
     // Prune the per-pid rate state to the pids we still care about. `cpuBaseline`
     // and `firstSeenMs` would otherwise grow one entry per distinct root pid ever
     // seen, for the lifetime of the server — a slow leak in the feature that claims
@@ -393,13 +413,19 @@ export class MetricsCollector {
     return nowMs - first;
   }
 
+  /**
+   * The sampler's own cost: CPU consumed *by this tick* over the wall time since
+   * the *previous* tick. `null` on the first tick — a rate needs two points
+   * (decision 2), and a fabricated 0 would read as "measuring is free".
+   */
   private samplerCpuPercent(
     before: CpuUsageSnapshot,
     after: CpuUsageSnapshot,
-    startMs: number,
-    endMs: number,
+    prevTickStartMs: number | null,
+    tickStartMs: number,
   ): number | null {
-    const dWallMs = endMs - startMs;
+    if (prevTickStartMs === null) return null;
+    const dWallMs = tickStartMs - prevTickStartMs;
     if (dWallMs <= 0) return null;
     const dCpuMicros = after.user - before.user + (after.system - before.system);
     return (dCpuMicros / (dWallMs * MICROS_PER_MS)) * PERCENT;

@@ -1026,12 +1026,15 @@ class _HistoryDetail extends ConsumerWidget {
             key: kMetricsSelfCostKey,
             label: 'This panel',
             tip:
-                'What the measurement itself costs. If this is not negligible, '
-                'the feature contradicts the claim it exists to prove — so it '
-                'is shown, not hidden.',
+                'What the measurement itself costs: the CPU one sampling tick '
+                'burns, over the interval between ticks. If this is not '
+                'negligible, the feature contradicts the claim it exists to '
+                'prove — so it is shown, not hidden. Resident size reads "—" '
+                'because the sampler runs inside the server process above and '
+                'its share of that memory is not separately attributable.',
             value:
                 '${formatCpu(sample.sampler.cpuPercent)} CPU · '
-                '${formatBytes(sample.sampler.rssBytes)}',
+                '${formatBytesOrDash(sample.sampler.rssBytes)}',
           ),
         ],
       ),
@@ -1134,6 +1137,12 @@ String formatCpu(double? percent) =>
   }
   return (bytes.toString(), 'B');
 }
+
+/// [formatBytes], or `—` when the figure is unknown. Distinct from passing 0:
+/// "not separately attributable" and "measured as zero" are different claims,
+/// and only one of them is true of the sampler's resident size.
+String formatBytesOrDash(int? bytes) =>
+    bytes == null ? '—' : formatBytes(bytes);
 
 /// Resident bytes as a single string, e.g. `118 MB` / `1.22 GB`.
 String formatBytes(int bytes) {

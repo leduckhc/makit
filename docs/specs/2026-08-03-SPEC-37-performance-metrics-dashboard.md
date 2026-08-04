@@ -158,7 +158,7 @@ interface MetricsSampleDTO {
   agents: AgentMetricsDTO[];
   wire: { inBytesPerSec: number; outBytesPerSec: number; framesPerSec: number };
   storage: { eventLogBytes: number } | null;   // refreshed every 6th tick
-  sampler: { cpuPercent: number | null; rssBytes: number };  // our own cost
+  sampler: { cpuPercent: number | null; rssBytes: number | null };  // our own cost (decision 16)
   turnActive: boolean;              // any session mid-turn — drives the icon
   procTableOk: boolean;             // false = `ps` failed; agents/app omitted because
                                     // we could not look, NOT because they exited
@@ -315,6 +315,8 @@ the user's request.
 | 13 | A failed `ps` sets `procTableOk: false` and **omits** the agent/app rows; the UI says *measurement unavailable* | Zeros read as "idle", missing rows read as "exited". Neither is true, and the second is the SPEC-32 vanishing-pill defect wearing a new hat |
 | 14 | `inTurn` is `running` **or** `awaiting-approval` **or** `awaiting-input` | Those gates mean the agent is blocked *on you*, mid-turn — `TurnTracker` still holds the turn. Calling them "parked" both mislabels the row and lets **Elevated** ("cost while no turn runs") fire against a legitimately open turn |
 | 15 | An **exited** session reports no pid, and `SessionEvent.kind` excludes the host-wide kinds at the **type** level | A dead session keeps its old child pid, and the OS recycles pids — sampling it attributes a stranger's process tree to a dead agent. And a "not a session event" comment is not a boundary; `SessionEventKind = Exclude<EventKind, "github.budget" | "metrics.sample">` plus a `decodeSessionEvent` rejection makes it one |
+
+| 16 | The sampler's **CPU** is its per-tick cost over the **interval between ticks** (null until a second tick), and its **`rssBytes` is `null`** | Both halves of decision 10's honesty row were wrong, and a live run caught it. Dividing the tick's CPU by the tick's own *execution span* answers "what fraction of the tick was busy" (~always large) rather than "what fraction of a wall second does measuring cost" — it read **3.8–5.1%** against this spec's own ≤ 0.5% budget, a ~20x overstatement, so the meter appeared to be the most expensive thing running. And `rssBytes` carried `process.memoryUsage().rss`: the **server's** resident size, the identical number already shown one row above, relabelled as "our own cost". The sampler lives inside the server process, so its resident share is not separately attributable — the panel says `—` instead of restating a number that is not about it |
 
 ## Phases
 
