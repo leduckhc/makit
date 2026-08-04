@@ -353,6 +353,7 @@ class _SplitViewState extends ConsumerState<SplitView> {
                           worktree: active.worktree,
                           showHeader: false,
                           composerFocusId: active.id,
+                          composerExpanded: widget.active,
                         ),
                       ),
                     ],
