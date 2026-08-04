@@ -57,8 +57,15 @@ class SettingsScreen extends ConsumerWidget {
                   : server == null
                   ? 'Not paired'
                   : '${server.host}:${server.port}'
-                        '${server.mdnsName == null ? '' : ' · mDNS'}',
+                        '${server.mdnsName == null ? '' : ' · mDNS'}'
+                        // Say how many others are parked, or the row reads as
+                        // though this were the only server the phone knows.
+                        '${conn.servers.length > 1 ? ' · ${conn.servers.length - 1} more' : ''}',
             ),
+            trailing: conn.useFake
+                ? null
+                : const Icon(PhosphorIconsLight.caretRight, size: 16),
+            onTap: conn.useFake ? null : () => context.go('/servers'),
           ),
           if (server != null)
             ListTile(
@@ -149,11 +156,19 @@ class SettingsScreen extends ConsumerWidget {
               color: cs.error,
             ),
             title: Text(
-              conn.useFake ? 'Exit demo' : 'Unpair this device',
+              conn.useFake
+                  ? 'Exit demo'
+                  : conn.servers.length > 1
+                  ? 'Unpair from all ${conn.servers.length} servers'
+                  : 'Unpair this device',
               style: TextStyle(color: cs.error),
             ),
             subtitle: conn.useFake
                 ? const Text('Leave fake data and return to pairing')
+                : conn.servers.length > 1
+                // Forgetting one server lives in the manager; this is the
+                // start-over button, so it must not look like the same thing.
+                ? const Text('To drop just one, use Server above')
                 : null,
             onTap: () async {
               await ref.read(connectionControllerProvider.notifier).unpair();
