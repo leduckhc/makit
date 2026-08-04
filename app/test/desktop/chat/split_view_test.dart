@@ -16,6 +16,7 @@ import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/desktop/chat/split_tree_view.dart';
 import 'package:makit/desktop/chat/split_view.dart';
 import 'package:makit/desktop/chat/worktree_starter.dart';
+import 'package:makit/store/elicitation.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 
@@ -38,8 +39,13 @@ Session _session(
   branch: worktreePath.split('/').last,
 );
 
-ProviderContainer _container({List<Session> sessions = const []}) {
+ProviderContainer _container({
+  List<Session> sessions = const [],
+  bool freeTextAsks = false,
+}) {
   return ProviderContainer(
+    // An inferred list literal, not a `List<Override>` helper: Riverpod does
+    // not export the `Override` base type.
     overrides: [
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
       eventsProvider.overrideWithValue(EventsState(const {}, const {})),
@@ -51,6 +57,26 @@ ProviderContainer _container({List<Session> sessions = const []}) {
             models: [_model],
           ),
         ),
+      // One free-text ask per session — the state that swaps each pane's
+      // normal composer for the dedicated answer composer.
+      if (freeTextAsks)
+        elicitationControllerProvider.overrideWith((ref) {
+          final c = ElicitationController(
+            respond: (_, _) {},
+            responded: const Stream<String>.empty(),
+          );
+          for (final s in sessions) {
+            c.add(
+              PendingAsk(
+                requestId: 'r-${s.id}',
+                sessionId: s.id,
+                questions: const [],
+                freeText: true,
+              ),
+            );
+          }
+          return c;
+        }),
     ],
   );
 }
@@ -77,9 +103,11 @@ Widget _tree(ProviderContainer c, {Brightness brightness = Brightness.light}) =>
 Future<ProviderContainer> _twoPanes(
   WidgetTester tester, {
   Brightness brightness = Brightness.light,
+  bool freeTextAsks = false,
 }) async {
   final c = _container(
     sessions: [_session('s1', 'Alpha'), _session('s2', 'Beta')],
+    freeTextAsks: freeTextAsks,
   );
   addTearDown(c.dispose);
   _ws(c).revealSession('s1'); // pane A: s1
@@ -119,15 +147,16 @@ Container _chipSurface(WidgetTester tester, String label) => tester
     .firstWhere((c) => c.color != null);
 
 /// The composer field of the pane hosting the tab labelled [label].
-TextField _composerField(WidgetTester tester, String label) {
+Finder _composerFinder(WidgetTester tester, String label) {
   final pane = find.ancestor(
     of: find.text(label),
     matching: find.byType(SplitView),
   );
-  return tester.widget<TextField>(
-    find.descendant(of: pane, matching: find.byType(TextField)).first,
-  );
+  return find.descendant(of: pane, matching: find.byType(TextField)).first;
 }
+
+TextField _composerField(WidgetTester tester, String label) =>
+    tester.widget<TextField>(_composerFinder(tester, label));
 
 ColorScheme _scheme(WidgetTester tester) =>
     Theme.of(tester.element(find.byType(WorkspaceView))).colorScheme;
@@ -201,6 +230,43 @@ void main() {
         expect(_composerField(tester, 'Beta').maxLines, 1);
       },
     );
+
+    testWidgets('tapping an inactive pane\'s composer activates that split and '
+        'expands it in the same gesture', (tester) async {
+      final c = await _twoPanes(tester); // pane B ("Beta") focused
+      final alphaSplitId = findTab(
+        c.read(workspaceControllerProvider).root,
+        's1',
+      )!.$1;
+
+      await tester.tap(_composerFinder(tester, 'Alpha'));
+      await tester.pumpAndSettle();
+
+      expect(c.read(workspaceControllerProvider).activeSplitId, alphaSplitId);
+      expect(_composerField(tester, 'Alpha').maxLines, greaterThan(1));
+      expect(_composerField(tester, 'Beta').maxLines, 1);
+    });
+
+    testWidgets('the free-text answer composer collapses in the unfocused pane '
+        'too, and expands when its split is activated', (tester) async {
+      final c = await _twoPanes(
+        tester,
+        freeTextAsks: true,
+      ); // pane B ("Beta") focused
+
+      expect(_composerField(tester, 'Alpha').maxLines, 1);
+      expect(_composerField(tester, 'Beta').maxLines, greaterThan(1));
+
+      final alphaSplitId = findTab(
+        c.read(workspaceControllerProvider).root,
+        's1',
+      )!.$1;
+      _ws(c).setActiveSplit(alphaSplitId);
+      await tester.pumpAndSettle();
+
+      expect(_composerField(tester, 'Alpha').maxLines, greaterThan(1));
+      expect(_composerField(tester, 'Beta').maxLines, 1);
+    });
   });
 
   group('tab chips', () {
