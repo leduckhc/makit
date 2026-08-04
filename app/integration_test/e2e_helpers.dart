@@ -59,6 +59,7 @@ Future<void> openFirstSession(WidgetTester tester) async {
 /// Type [text] into the composer and tap the send button.
 Future<void> sendComposerText(WidgetTester tester, String text) async {
   final field = find.byType(TextField).last;
+  await pumpUntil(tester, find.byType(TextField), reason: 'no composer field');
   // Tap first: `_send()` unfocuses the composer, so on the SECOND send in a
   // test `enterText` runs against an unfocused field and, under the live
   // integration binding, silently leaves the text empty (verified — the send
@@ -138,11 +139,16 @@ Future<void> closeSettings(WidgetTester tester) async {
 /// so its tile is titled after the conversation instead of "new session" — and
 /// tapping "new session" would open a *different* (empty) session.
 Future<void> openSessionContaining(WidgetTester tester, String text) async {
-  final tile = find
-      .ancestor(of: find.textContaining(text), matching: find.byType(ListTile))
-      .first;
-  await pumpUntil(tester, tile, reason: 'no session tile matching "$text"');
-  await tester.tap(tile);
+  // `.first` only AFTER the wait: `_FirstFinderMixin.filter` yields
+  // `parentCandidates.first`, so evaluating a `.first` finder on an empty match
+  // throws StateError('No element') — `pumpUntil` would blow up on its first
+  // poll instead of waiting for the tile to arrive.
+  final tiles = find.ancestor(
+    of: find.textContaining(text),
+    matching: find.byType(ListTile),
+  );
+  await pumpUntil(tester, tiles, reason: 'no session tile matching "$text"');
+  await tester.tap(tiles.first);
   // NOT pumpAndSettle: while a turn is running the working indicator animates
   // forever, so settling would block until the agent finished — long enough for
   // the very queue we came back to look at to flush.

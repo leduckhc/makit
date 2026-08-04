@@ -86,7 +86,12 @@ if [[ -z "$READY_JSON" ]]; then
 fi
 # The app pins the server's self-signed cert, so the tour needs its fingerprint
 # (same handshake as tool/e2e.sh).
-FP="$(node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write(j.fp)' <<<"$READY_JSON")"
+FP="$(node -e 'const j=JSON.parse(require("fs").readFileSync(0,"utf8")); process.stdout.write(j.fp ?? "")' <<<"$READY_JSON")"
+if [[ -z "$FP" ]]; then
+  echo "server ready line carried no cert fingerprint; log:" >&2
+  cat "$SERVER_LOG" >&2
+  exit 1
+fi
 echo "stub server ready on :$PORT"
 
 xcrun simctl io "$DEVICE_ID" recordVideo --codec h264 --force "$RAW" &
