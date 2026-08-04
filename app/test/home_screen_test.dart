@@ -204,8 +204,15 @@ void main() {
       ),
       findsOneWidget,
     );
-    // The repo card's meta row counts it as one *open* PR.
-    expect(find.text('1 PR'), findsOneWidget);
+    // The repo card's header counts it as one *open* PR — a compact pill, since
+    // the per-worktree PrPill already spells the number out.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('openPrCount')),
+        matching: find.text('1'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a merged PR pill reads as merged, not as a live PR', (

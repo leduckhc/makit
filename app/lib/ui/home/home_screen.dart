@@ -10,7 +10,6 @@ import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import 'repo_card.dart';
-import 'server_switcher.dart';
 
 /// Home screen — organised around **repos**. Each repo card surfaces its
 /// branches (worktrees), diff size, open PRs, and the sessions running in each
@@ -92,9 +91,21 @@ class HomeScreen extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: Row(
                   children: [
-                    // The title names the server whose repos are listed, and
-                    // becomes the switcher once there's more than one.
-                    const Expanded(child: ServerSwitcher()),
+                    Expanded(
+                      child: Text(
+                        'Makit',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              shadows: [
+                                Shadow(color: cs.surface, blurRadius: 6),
+                                Shadow(color: cs.surface, blurRadius: 12),
+                              ],
+                            ),
+                      ),
+                    ),
                     if (useFake) ...[
                       GlassCircleButton(
                         icon: PhosphorIconsLight.x,

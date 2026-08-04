@@ -1,136 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../app/theme.dart';
 import '../store/connection.dart';
 import '../transport/ws_client.dart';
 import '../ui/widgets/menu_item.dart';
-import 'add_server_sheet.dart';
 
-/// Server manager — the list of desktops this phone has paired with, and the
-/// one it is talking to right now.
+/// One paired server in the connect screen's list.
 ///
-/// makit keeps a single live socket (one active server at a time), so this
-/// screen is a *radio group*, not a set of toggles: tapping a row moves the
-/// connection there. Everything a user might otherwise re-pair to fix — a bad
-/// label, a stale entry — is reachable from the row's own menu, so the QR
-/// scanner is only needed for a genuinely new machine.
-class ServersScreen extends ConsumerWidget {
-  const ServersScreen({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final conn = ref.watch(connectionProvider);
-    final controller = ref.read(connectionControllerProvider.notifier);
-    final servers = conn.servers;
-    final activeId = conn.activeServer?.id;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Servers')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(kSpace12, kSpace8, kSpace12, kSpace32),
-        children: [
-          if (servers.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(kSpace24),
-              child: Text(
-                'No servers paired yet.',
-                textAlign: TextAlign.center,
-              ),
-            )
-          else
-            for (final s in servers)
-              _ServerRow(
-                key: ValueKey(s.id),
-                server: s,
-                isActive: s.id == activeId,
-                wsState: conn.wsState,
-                onSelect: () => controller.switchTo(s.id),
-                onRename: () => _rename(context, controller, s),
-                onForget: () => _forget(context, controller, s),
-              ),
-          const SizedBox(height: kSpace16),
-          FilledButton.icon(
-            icon: const Icon(PhosphorIconsLight.plus),
-            label: const Text('Add server'),
-            onPressed: () => showAddServerSheet(context),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _rename(
-    BuildContext context,
-    ConnectionController controller,
-    PairedServer server,
-  ) async {
-    final ctrl = TextEditingController(text: server.label);
-    final label = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename server'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. work mac'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (label == null || label.isEmpty) return;
-    await controller.renameServer(server.id, label);
-  }
-
-  Future<void> _forget(
-    BuildContext context,
-    ConnectionController controller,
-    PairedServer server,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Forget ${server.label}?'),
-        content: const Text(
-          'This phone will need to scan that server\'s QR code again to '
-          'reconnect. Sessions on the server are not affected.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Forget'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-    await controller.forget(server.id);
-  }
-}
-
-/// One server in the list. The active row states its live connection status
-/// rather than a generic check, because "selected" and "actually connected"
-/// come apart exactly when the user needs to know (server asleep, wrong Wi-Fi).
-class _ServerRow extends StatelessWidget {
-  const _ServerRow({
+/// The list is a *radio group*, not a set of toggles — makit keeps one live
+/// socket, so tapping a row moves the connection. The active row states its
+/// live connection status rather than a generic check, because "selected" and
+/// "actually connected" come apart exactly when the user needs to know (server
+/// asleep, wrong Wi-Fi).
+class ServerRow extends StatelessWidget {
+  const ServerRow({
     super.key,
     required this.server,
     required this.isActive,
@@ -155,18 +39,27 @@ class _ServerRow extends StatelessWidget {
     return Card(
       elevation: 0,
       margin: const EdgeInsets.only(bottom: kSpace8),
-      color: isActive ? cs.primary.withValues(alpha: 0.08) : cs.surfaceContainer,
+      color: isActive
+          ? cs.primary.withValues(alpha: 0.08)
+          : cs.surfaceContainer,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(kRadius12),
         side: BorderSide(
-          color: isActive ? cs.primary.withValues(alpha: 0.5) : cs.outlineVariant,
+          color: isActive
+              ? cs.primary.withValues(alpha: 0.5)
+              : cs.outlineVariant,
         ),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: isActive ? null : onSelect,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(kSpace12, kSpace10, kSpace4, kSpace10),
+          padding: const EdgeInsets.fromLTRB(
+            kSpace12,
+            kSpace10,
+            kSpace4,
+            kSpace10,
+          ),
           child: Row(
             children: [
               Icon(
@@ -194,9 +87,9 @@ class _ServerRow extends StatelessWidget {
                       '${server.host}:${server.port}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.outline,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: cs.outline),
                     ),
                     if (statusLabel != null) ...[
                       const SizedBox(height: kSpace4),
@@ -273,4 +166,72 @@ class _ServerRow extends StatelessWidget {
       WsState.closed || WsState.idle => ('Offline', cs.error),
     };
   }
+}
+
+/// Prompt for a new display label. Credentials and the live socket are
+/// untouched, so renaming the active server never drops the connection.
+Future<void> renameServerDialog(
+  BuildContext context,
+  ConnectionController controller,
+  PairedServer server,
+) async {
+  final ctrl = TextEditingController(text: server.label);
+  final label = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Rename server'),
+      content: TextField(
+        controller: ctrl,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'e.g. work mac'),
+        onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+  if (label == null || label.isEmpty) return;
+  await controller.renameServer(server.id, label);
+}
+
+/// Confirm before dropping a server's stored credentials — re-pairing needs
+/// physical access to that Mac's QR code, so this is not cheaply undone.
+Future<void> forgetServerDialog(
+  BuildContext context,
+  ConnectionController controller,
+  PairedServer server,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text('Forget ${server.label}?'),
+      content: const Text(
+        'This phone will need to scan that server\'s QR code again to '
+        'reconnect. Sessions on the server are not affected.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(ctx).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Forget'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  await controller.forget(server.id);
 }

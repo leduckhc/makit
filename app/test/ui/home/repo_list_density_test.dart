@@ -113,11 +113,13 @@ void main() {
 
   testWidgets('the session row is a touch-sized row', (tester) async {
     await _pump(tester);
+    // Direction C renders a session as an inset block, not a ListTile; the
+    // contract is unchanged — whatever wraps it must still clear the floor.
     final tile = find.ancestor(
       of: find.text('work on the login screen'),
-      matching: find.byType(ListTile),
+      matching: find.byType(InkWell),
     );
-    expect(tester.getSize(tile.first).height, greaterThanOrEqualTo(_kMinTouch));
+    expect(tester.getSize(tile.last).height, greaterThanOrEqualTo(_kMinTouch));
   });
 
   testWidgets(

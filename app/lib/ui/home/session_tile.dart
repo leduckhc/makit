@@ -9,79 +9,122 @@ import '../../store/store.dart';
 import '../widgets/session_status_dot.dart';
 import 'repo_chips.dart';
 
-/// A single session row inside a repo card (SPEC-19, moved from home_screen).
-/// Swipe-to-quit, tap to open. [indented] nudges it under its worktree row.
+/// A session inside a repo card, as an inset block (SPEC-19, direction C).
+///
+/// The block sits on a raised surface so a session reads as living *in* its
+/// worktree rather than as a sibling of it — the old flat list left the two
+/// ambiguous. Swipe to quit, tap to open.
 class SessionTile extends ConsumerWidget {
-  const SessionTile({super.key, required this.session, this.indented = false});
+  const SessionTile({super.key, required this.session});
   final Session session;
-  final bool indented;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    return Dismissible(
-      key: ValueKey('sess-${session.id}'),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        color: cs.errorContainer,
-        padding: const EdgeInsets.symmetric(horizontal: kSpace24),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(PhosphorIconsLight.power, color: cs.onErrorContainer),
-            const SizedBox(width: kSpace8),
-            Text(
-              'Quit',
-              style: TextStyle(
-                color: cs.onErrorContainer,
-                fontWeight: FontWeight.w600,
+    final wantsUser = _needsUser(session.status);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(kRadius8),
+      child: Dismissible(
+        key: ValueKey('sess-${session.id}'),
+        direction: DismissDirection.endToStart,
+        background: ColoredBox(
+          color: cs.errorContainer,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Icon(PhosphorIconsLight.power, color: cs.onErrorContainer),
+                const SizedBox(width: kSpace8),
+                Text(
+                  'Quit',
+                  style: TextStyle(
+                    color: cs.onErrorContainer,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        confirmDismiss: (_) => _confirmAndQuit(context, ref),
+        child: Material(
+          // A session waiting on the user tints its own block, so the card's
+          // accent bar has a visible cause once the row is expanded.
+          color: wantsUser
+              ? kStatusCaution.withValues(alpha: 0.10)
+              : cs.surfaceContainer,
+          child: InkWell(
+            onTap: () => context.go('/session/${session.id}'),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: kTouchRow),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace10,
+                  vertical: kSpace8,
+                ),
+                child: Row(
+                  children: [
+                    // Same dot as the desktop sidebar and pane header, so a
+                    // status reads identically everywhere (DESIGN.md). It also
+                    // pulses for the active states, which a pill cannot.
+                    if (session.pending)
+                      Icon(
+                        PhosphorIconsLight.pencilSimple,
+                        size: 10,
+                        color: cs.outline,
+                      )
+                    else
+                      SessionStatusDot(status: session.status),
+                    const SizedBox(width: kSpace10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  session.pending &&
+                                          session.title.trim().isEmpty
+                                      ? 'new session'
+                                      : session.title,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                              ),
+                              // The dot already carries running/idle/exited. A
+                              // word is spent only where the session is actually
+                              // waiting on the user.
+                              if (session.pending)
+                                TagChip(label: 'draft', color: cs.outline)
+                              else if (wantsUser)
+                                SessionStatusChip(status: session.status),
+                            ],
+                          ),
+                          const SizedBox(height: kSpace2),
+                          Text(
+                            session.pending
+                                ? 'Send a message to create a branch'
+                                : session.lastPreview,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: cs.outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: kSpace8),
+                    // The agent is the least urgent fact here, so it sits last
+                    // and small — the status leads.
+                    AgentAvatar(agent: session.agent, size: 22),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
-      ),
-      confirmDismiss: (_) => _confirmAndQuit(context, ref),
-      child: ListTile(
-        dense: true,
-        // Sits under its worktree's branch name (caret slot + glyph + gap), the
-        // sidebar's indentation ladder, at a touch-sized height.
-        contentPadding: EdgeInsets.only(left: indented ? 33 : 12, right: 12),
-        minTileHeight: kTouchRow,
-        visualDensity: VisualDensity.compact,
-        onTap: () => context.go('/session/${session.id}'),
-        leading: AgentAvatar(agent: session.agent),
-        title: Row(
-          children: [
-            // Same dot as the desktop sidebar and pane header, so a status
-            // reads identically everywhere (DESIGN.md). It also pulses for the
-            // active states, which a static pill could not convey.
-            if (!session.pending) ...[
-              SessionStatusDot(status: session.status),
-              const SizedBox(width: kSpace8),
-            ],
-            Expanded(
-              child: Text(
-                session.pending && session.title.trim().isEmpty
-                    ? 'new session'
-                    : session.title,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            // The dot already carries running/idle/exited. A word is spent only
-            // where the session is actually waiting on the user.
-            if (session.pending)
-              TagChip(label: 'draft', color: cs.outline)
-            else if (_needsUser(session.status))
-              SessionStatusChip(status: session.status),
-          ],
-        ),
-        subtitle: Text(
-          session.pending
-              ? 'Send a message to create a branch'
-              : session.lastPreview,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );

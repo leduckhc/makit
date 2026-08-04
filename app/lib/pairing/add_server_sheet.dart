@@ -30,8 +30,22 @@ class AddServerSheet extends ConsumerStatefulWidget {
 }
 
 class _AddServerSheetState extends ConsumerState<AddServerSheet> {
+  /// Browsed once when the sheet opens. Discovery lives here rather than on the
+  /// connect screen because a hit can't pair on its own — the advertisement
+  /// carries no token — so it is only ever a shortcut into adding.
+  Future<List<DiscoveredServer>>? _browse;
+
+  @override
+  void initState() {
+    super.initState();
+    _browse = browseLan();
+  }
+
+  void _refresh() => setState(() => _browse = browseLan());
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return SafeArea(
       child: SingleChildScrollView(
         child: Column(
@@ -49,9 +63,9 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
               child: Text(
                 'Run `makit serve` on the Mac you want to reach, then scan the '
                 'QR code it prints.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: cs.outline),
               ),
             ),
             ListTile(
@@ -65,6 +79,46 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
               title: const Text('Paste pairing URL'),
               subtitle: const Text('makit://pair?host=…'),
               onTap: _pasteUrl,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace20,
+                kSpace16,
+                kSpace12,
+                0,
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'ON THIS NETWORK',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.outline,
+                        letterSpacing: 1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _refresh,
+                    visualDensity: VisualDensity.compact,
+                    tooltip: 'Search again',
+                    icon: const Icon(
+                      PhosphorIconsLight.arrowClockwise,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: kSpace16),
+              child: DiscoveredServersList(
+                browse: _browse ?? Future.value(const []),
+                // Found, but still no token — so this is a shortcut to the
+                // scanner with the host already known to be reachable.
+                onTap: (_) => _scanQr(),
+              ),
             ),
             const SizedBox(height: kSpace8),
           ],

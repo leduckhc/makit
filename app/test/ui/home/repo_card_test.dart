@@ -189,7 +189,7 @@ void main() {
     );
 
     // Open the sheet from the footer's "New session" button.
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
     await tester.pumpAndSettle();
 
     // Pick a non-default model, then Start.
@@ -214,7 +214,7 @@ void main() {
   ) async {
     final store = await _pump(tester, agents: [_agent('pi')]);
 
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
     await tester.pumpAndSettle();
 
     // One harness, one branch, one worktree, no PRs, no config options: the
@@ -227,7 +227,7 @@ void main() {
   testWidgets('forks the worktree before spawning into it', (tester) async {
     final store = await _pump(tester, agents: [_agent('pi')]);
 
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
     await tester.pumpAndSettle();
     // "New branch" is the default source, so Start forks off the base branch
     // client-side and spawns INTO the created worktree.
@@ -246,7 +246,7 @@ void main() {
     final store = await _pump(tester, agents: [_agent('pi')]);
     store.spawnThrows = true;
 
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
+    await tester.tap(find.widgetWithText(InkWell, 'New session').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();

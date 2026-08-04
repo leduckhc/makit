@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../diagnostics/diagnostics_screen.dart';
 import '../pairing/onboarding_controller.dart';
 import '../pairing/onboarding_screen.dart';
+import '../pairing/pairing_screen.dart';
 import '../pairing/readiness.dart';
-import '../pairing/servers_screen.dart';
 import '../ui/home/archived_screen.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/session/session_screen.dart';
@@ -43,10 +43,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const HomeScreen(),
         routes: [
           GoRoute(path: 'settings', builder: (_, _) => const SettingsScreen()),
-          // Server manager. Sits under `/` (not `/pair`) because it's for a
-          // user who is already paired and wants to add or switch machines —
-          // the onboarding redirect must not pull them back into the wizard.
-          GoRoute(path: 'servers', builder: (_, _) => const ServersScreen()),
+          // The same screen the wizard shows at `/pair`, reached from Settings
+          // once paired. One server surface, two entry points — the onboarding
+          // redirect only guards `/pair`, so a paired user lands here instead of
+          // being bounced back into the wizard.
+          GoRoute(path: 'servers', builder: (_, _) => const PairingScreen()),
           GoRoute(path: 'archived', builder: (_, _) => const ArchivedScreen()),
           GoRoute(
             path: 'diagnostics',
