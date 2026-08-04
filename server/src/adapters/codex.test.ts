@@ -553,3 +553,50 @@ test("codex advertises the full session lifecycle capability set (SPEC-29)", () 
   const adapter = new CodexAppServerAdapter();
   assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
 });
+
+test("a cua-driver screenshot in an MCP tool result lands in the media store", async () => {
+  const fake = fakeAppServer();
+  const puts: { data: string; mime: string }[] = [];
+  const adapter = new CodexAppServerAdapter({
+    connect: () => fake.transport,
+    media: {
+      putBase64: (data: string, mime: string) => {
+        puts.push({ data, mime });
+        return { mediaId: "med1", mime, sizeBytes: data.length };
+      },
+    } as any,
+  });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-cu" });
+
+  fake.feed({
+    method: "item/completed",
+    params: {
+      item: {
+        type: "mcpToolCall",
+        id: "cu1",
+        server: "cua_driver",
+        tool: "computer_use",
+        arguments: { action: "capture", mode: "som" },
+        result: {
+          content: [
+            { type: "text", text: "12 elements" },
+            { type: "image", data: "UE5H", mimeType: "image/png" },
+          ],
+        },
+      },
+    },
+  });
+  await waitFor(() => events.some((e) => e.kind === "agent.media"));
+
+  assert.deepEqual(puts, [{ data: "UE5H", mime: "image/png" }]);
+  const media = events.find((e) => e.kind === "agent.media")!;
+  assert.equal((media.payload as any).mediaId, "med1");
+  assert.equal((media.payload as any).callId, "cu1");
+  // The tool row still renders its name + text output.
+  const start = events.find((e) => e.kind === "tool.call.start")!;
+  assert.equal((start.payload as any).name, "cua_driver/computer_use");
+  assert.equal((events.find((e) => e.kind === "tool.call.end")!.payload as any).output, "12 elements");
+  await adapter.kill();
+});

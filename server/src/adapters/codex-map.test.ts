@@ -85,3 +85,112 @@ test("thread/name/updated surfaces a title; error surfaces session.error", () =>
   assert.deepEqual(titles, ["My thread"]);
   assert.equal((events.find((e) => e.kind === "session.error")!.payload as any).message, "boom");
 });
+
+// ---------- MCP tool-result media (SPEC-22 parity with the ACP path) --------
+
+/** A `cua-driver`-shaped screenshot result: text summary + an image block. */
+function captureResult(callId: string, data: string) {
+  return {
+    item: {
+      type: "mcpToolCall",
+      id: callId,
+      server: "cua_driver",
+      tool: "computer_use",
+      arguments: { action: "capture" },
+      result: {
+        content: [
+          { type: "text", text: "captured 1 display" },
+          { type: "image", data, mimeType: "image/png" },
+        ],
+      },
+    },
+  };
+}
+
+function collectWithMedia() {
+  const events: AdapterEvent[] = [];
+  const puts: { data: string; mime: string }[] = [];
+  const mapper = new CodexEventMapper({
+    emit: (e) => events.push(e),
+    putMedia: (data, mime) => {
+      puts.push({ data, mime });
+      return { mediaId: `sha-${data}`, mime, sizeBytes: data.length };
+    },
+  });
+  return { events, puts, mapper };
+}
+
+test("stores images from an MCP tool result and emits agent.media before tool.call.end", () => {
+  const { events, puts, mapper } = collectWithMedia();
+  mapper.handle("item/completed", captureResult("t1", "AAAA"));
+
+  assert.deepEqual(puts, [{ data: "AAAA", mime: "image/png" }]);
+  const media = events.find((e) => e.kind === "agent.media")!;
+  assert.equal((media.payload as any).mediaId, "sha-AAAA");
+  assert.equal((media.payload as any).kind, "image");
+  assert.equal((media.payload as any).callId, "t1");
+  assert.ok(
+    events.indexOf(media) < events.findIndex((e) => e.kind === "tool.call.end"),
+    "media is announced before the tool completes",
+  );
+  // The text half of the result still lands as the tool output.
+  assert.equal((events.find((e) => e.kind === "tool.call.end")!.payload as any).output, "captured 1 display");
+});
+
+test("a refused or absent media sink never blocks the tool result", () => {
+  const noSink: AdapterEvent[] = [];
+  new CodexEventMapper({ emit: (e) => noSink.push(e) }).handle("item/completed", captureResult("t2", "BBBB"));
+  assert.equal(noSink.some((e) => e.kind === "agent.media"), false);
+  assert.equal(noSink.some((e) => e.kind === "tool.call.end"), true);
+
+  const refused: AdapterEvent[] = [];
+  new CodexEventMapper({ emit: (e) => refused.push(e), putMedia: () => null }).handle(
+    "item/completed",
+    captureResult("t3", "CCCC"),
+  );
+  assert.equal(refused.some((e) => e.kind === "agent.media"), false);
+  assert.equal(refused.some((e) => e.kind === "tool.call.end"), true);
+});
+
+test("the same blob is announced once, a new blob is announced again", () => {
+  const { events, puts, mapper } = collectWithMedia();
+  mapper.handle("item/completed", captureResult("t4", "AAAA"));
+  mapper.handle("item/completed", captureResult("t5", "AAAA"));
+  mapper.handle("item/completed", captureResult("t6", "DDDD"));
+  assert.deepEqual(
+    events.filter((e) => e.kind === "agent.media").map((e) => (e.payload as any).mediaId),
+    ["sha-AAAA", "sha-DDDD"],
+  );
+  // The store is content-addressed, so re-putting identical bytes from a
+  // different call is an idempotent no-op that resolves to the same id — the
+  // *event* is what gets deduped, exactly as on the ACP path.
+  assert.equal(puts.length, 3);
+});
+
+test("two same-length images that diverge late are both announced", () => {
+  const { events, puts, mapper } = collectWithMedia();
+  // Real captures of one display share a byte-identical PNG header + IHDR, so a
+  // dedup key built from length + a fixed-length prefix collides and silently
+  // drops the second image.
+  const a = "x".repeat(70) + "AAAA";
+  const b = "x".repeat(70) + "BBBB";
+  mapper.handle("item/completed", {
+    item: {
+      type: "mcpToolCall",
+      id: "t7",
+      server: "cua_driver",
+      tool: "get_desktop_state",
+      result: {
+        content: [
+          { type: "image", data: a, mimeType: "image/png" },
+          { type: "image", data: b, mimeType: "image/png" },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(puts.map((p) => p.data), [a, b], "both payloads must reach the store");
+  assert.deepEqual(
+    events.filter((e) => e.kind === "agent.media").map((e) => (e.payload as any).mediaId),
+    ["sha-" + a, "sha-" + b],
+  );
+});

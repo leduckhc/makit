@@ -32,6 +32,7 @@ import '../../store/prefs/preferences_providers.dart';
 const Key kBudgetBarCoreKey = ValueKey('budget-bar-core');
 const Key kBudgetBarGraphqlKey = ValueKey('budget-bar-graphql');
 const Key kBudgetSearchRowKey = ValueKey('budget-search-row');
+const Key kBudgetTickedTrackKey = ValueKey('budget-ticked-track');
 const Key kBudgetThrottleBadgeKey = ValueKey('budget-throttle-badge');
 const Key kBudgetHistoryPillKey = ValueKey('budget-history-pill');
 const Key kBudgetSparklineKey = ValueKey('budget-sparkline');
@@ -78,6 +79,17 @@ class _GithubBudgetButtonState extends ConsumerState<GithubBudgetButton> {
   final _controller = OverlayPortalController();
   bool _open = false;
 
+  /// Captured in [initState] because [dispose] must still be able to withdraw
+  /// the watch, and `ref` is unsafe once the element is unmounted. The notifier
+  /// is owned by the container, which outlives this widget.
+  late final StoreController _store;
+
+  @override
+  void initState() {
+    super.initState();
+    _store = ref.read(storeControllerProvider.notifier);
+  }
+
   void _toggle() {
     setState(() {
       if (_open) {
@@ -87,6 +99,7 @@ class _GithubBudgetButtonState extends ConsumerState<GithubBudgetButton> {
       }
       _open = !_open;
     });
+    _setWatching(_open);
   }
 
   void _close() {
@@ -95,6 +108,23 @@ class _GithubBudgetButtonState extends ConsumerState<GithubBudgetButton> {
       _controller.hide();
       _open = false;
     });
+    _setWatching(false);
+  }
+
+  /// Subscribe/unsubscribe from the server's fast budget cadence. Only an open
+  /// panel justifies it: the reads are quota-exempt but still cost a `gh`
+  /// subprocess each, and a closed panel has nobody to show the movement to.
+  void _setWatching(bool watching) {
+    _store.watchGithubBudget(watching);
+  }
+
+  @override
+  void dispose() {
+    // Esc/outside-tap route through _close, but disposal (navigating away, a
+    // sidebar rebuild) does not — a leaked watcher would keep the server's fast
+    // loop running until the socket dropped.
+    if (_open) _setWatching(false);
+    super.dispose();
   }
 
   @override
@@ -708,6 +738,10 @@ class _SpendBar extends StatelessWidget {
       child: SizedBox(
         height: 4,
         child: Row(
+          // stretch, not the default centre: a childless [ColoredBox] under a
+          // loose vertical constraint sizes to zero and paints nothing, so the
+          // bar laid out at full width and 4px tall while staying invisible.
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (mineFlex > 0)
               Expanded(
@@ -722,13 +756,54 @@ class _SpendBar extends StatelessWidget {
             if (restFlex > 0)
               Expanded(
                 flex: restFlex,
-                child: ColoredBox(color: cs.surfaceContainerHighest),
+                child: ticked
+                    ? const _TickedTrack(key: kBudgetTickedTrackKey)
+                    : ColoredBox(color: cs.surfaceContainerHighest),
               ),
           ],
         ),
       ),
     );
   }
+}
+
+/// The unspent part of a **per-minute** track: 4px ticks on a 6px pitch rather
+/// than one continuous rail, so the search bucket reads at a glance as a bucket
+/// that refills every minute and not as a slow hourly drain.
+class _TickedTrack extends StatelessWidget {
+  const _TickedTrack({super.key});
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+    painter: _TickPainter(
+      Theme.of(context).colorScheme.surfaceContainerHighest,
+    ),
+    size: Size.infinite,
+  );
+}
+
+/// The tick geometry for a track of [size], shared by the painter and its tests
+/// so there is no second implementation to drift from.
+List<Rect> buildTickRects(Size size, {double pitch = 6, double tick = 4}) => [
+  for (var x = 0.0; x < size.width; x += pitch)
+    Rect.fromLTRB(x, 0, math.min(x + tick, size.width), size.height),
+];
+
+class _TickPainter extends CustomPainter {
+  const _TickPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    for (final tick in buildTickRects(size)) {
+      canvas.drawRect(tick, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_TickPainter old) => old.color != color;
 }
 
 /// The per-minute search row (30/minute). Rendered only when non-idle: a

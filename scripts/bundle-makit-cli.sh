@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Assemble a self-contained `makit` CLI so the desktop app can ship it inside
-# `makit.app/Contents/Resources/makit/` (the resolver's preferred, zero-install
+# `Makit.app/Contents/Resources/makit/` (the resolver's preferred, zero-install
 # path — see app/lib/desktop/daemon/daemon_lifecycle.dart). No repo, no global
 # Node, and no `tsx` are required at runtime.
 #

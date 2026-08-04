@@ -1,0 +1,9 @@
+{
+  "name": "makit-pi-computer-use",
+  "private": true,
+  "type": "module",
+  "description": "Republishes an MCP desktop driver's tools as pi tools (SPEC-36).",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

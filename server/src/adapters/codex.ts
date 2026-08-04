@@ -170,6 +170,7 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.mapper = new CodexEventMapper({
       emit: (e) => this.emit("event", e),
       onTitle: (t) => this.emit("title", t),
+      putMedia: (data, mime) => this.media.putBase64(data, mime),
     });
   }
 

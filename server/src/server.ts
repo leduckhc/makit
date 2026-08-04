@@ -60,6 +60,7 @@ import { register as registerDiagnosticsCommands } from "./ws/commands/diagnosti
 import { throttleTrailing } from "./ws/throttle.js";
 import { watchWorktrees } from "./worktree_watcher.js";
 import { watchPrs } from "./pr_watcher.js";
+import { watchBudget } from "./github/budget_watch.js";
 import { fetchOpenPr } from "./git.js";
 import { decide } from "./github/policy.js";
 import { attachMediaRoute } from "./media/route.js";
@@ -234,10 +235,31 @@ export function startWsServer(opts: ServerOpts) {
     const snapshot = gateway.budget();
     return { ...snapshot, history: gateway.history(), stats: gateway.stats() };
   };
+  const budgetFrame = (): OutgoingFrame => ({
+    t: "event",
+    id: newId("gh"),
+    kind: "github.budget",
+    budget: budgetDto(),
+  });
   const broadcastBudget = (): void => {
-    const frame: OutgoingFrame = { t: "event", id: newId("gh"), kind: "github.budget", budget: budgetDto() };
+    const frame = budgetFrame();
     for (const c of clients.values()) if (c.authed) c.send(frame);
   };
+  // While a client has the budget panel open, re-read the exempt `/rate_limit`
+  // every 10s and push each snapshot: the change-gated broadcast below only
+  // fires on level/throttle changes, so an open panel would otherwise sit on the
+  // numbers it opened with. Sent only to the watchers — a client with no panel
+  // open (a phone has none at all) has no use for six snapshots a minute.
+  // Watchers are per-client and dropped on disconnect.
+  const budgetWatch = watchBudget<WsClient>({
+    refresh: () => gateway.refresh(),
+    broadcast: (watchers) => {
+      const frame = budgetFrame();
+      for (const c of watchers) if (c.authed) c.send(frame);
+    },
+  });
+  https.on("close", () => budgetWatch.close());
+
   // Last-known PR accessor for enrichPrs' retain-on-throttle (spec §6.5). Derived
   // from the same `lastEnrichedRepos` the git-only phase preserves, but keyed by
   // repo PATH + branch (not repo.id + worktree.id, which preserveLastKnownPrs
@@ -474,6 +496,9 @@ export function startWsServer(opts: ServerOpts) {
 
     ws.on("close", () => {
       clients.delete(ws);
+      // A client that closed with the panel open must not keep the fast loop
+      // alive — nothing is watching it any more.
+      budgetWatch.remove(state);
       hub.unregister(state);
       // SPEC-37 leak guard: a panel closed by killing the window never sends
       // `metrics.watch {on:false}`. Clear the flag and re-arm the cadence, or the
@@ -544,7 +569,17 @@ export function startWsServer(opts: ServerOpts) {
 
   function buildCommandRouter(): CommandRouter {
     const r = new CommandRouter();
-    const deps = { manager, gateway, broadcastSnapshots, broadcastReposSnapshot, broadcastBudget, askDevice, onMetricsWatchersChanged: recomputeMetricsWatchers, sendMetricsHistory };
+    const deps = {
+      manager,
+      gateway,
+      budgetWatch,
+      broadcastSnapshots,
+      broadcastReposSnapshot,
+      broadcastBudget,
+      askDevice,
+      onMetricsWatchersChanged: recomputeMetricsWatchers,
+      sendMetricsHistory,
+    };
 
     registerSessionCommands(r, deps);
     registerProjectCommands(r, deps);

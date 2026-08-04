@@ -220,6 +220,79 @@ test("github.refresh acks and re-broadcasts the budget (SPEC-32)", async () => {
   });
 });
 
+test("github.watch {watching:true} acks and pushes a snapshot at once (SPEC-32)", async () => {
+  await withBudgetServer(async ({ send, nextEvent }) => {
+    await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    send({ t: "cmd", id: "w1", kind: "github.watch", watching: true });
+    assert.ok(await nextEvent((e) => e.t === "ack" && e.id === "w1"), "github.watch acks");
+    // Opening the panel must not wait out an interval for its first fresh read.
+    assert.ok(
+      await nextEvent((e) => e.t === "event" && e.kind === "github.budget"),
+      "watching pushes a budget snapshot immediately",
+    );
+  });
+});
+
+test("github.watch {watching:false} acks and unregisters the watcher (SPEC-32)", async () => {
+  await withBudgetServer(async ({ send, nextEvent }) => {
+    await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    send({ t: "cmd", id: "w1", kind: "github.watch", watching: true });
+    await nextEvent((e) => e.t === "ack" && e.id === "w1");
+    await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+
+    send({ t: "cmd", id: "w2", kind: "github.watch", watching: false });
+    assert.ok(await nextEvent((e) => e.t === "ack" && e.id === "w2"), "unwatch acks");
+
+    // Prove the client was really unregistered rather than just acked, without
+    // reaching into the server for a timer: the immediate read fires only on the
+    // 0 -> 1 watcher transition (`add` returns early for a known watcher). So a
+    // second `watching:true` yielding a fresh snapshot can only mean the unwatch
+    // took effect. Whether the *interval* stops is covered by budget_watch.test.
+    send({ t: "cmd", id: "w3", kind: "github.watch", watching: true });
+    await nextEvent((e) => e.t === "ack" && e.id === "w3");
+    assert.ok(
+      await nextEvent((e) => e.t === "event" && e.kind === "github.budget"),
+      "re-watching reads immediately again, so the watcher had been dropped",
+    );
+  });
+});
+
+test("the fast snapshot goes to the watcher only, not to every client (SPEC-32)", async () => {
+  await withBudgetServer(async ({ ws, send, nextEvent }) => {
+    await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+    // A second client with no panel open — a paired phone has no budget UI at all.
+    const other = new WebSocket(ws.url, { rejectUnauthorized: false });
+    const otherBudgets: Envelope[] = [];
+    let sawFirst: (() => void) | undefined;
+    const firstSnapshot = new Promise<void>((resolve) => (sawFirst = resolve));
+    other.on("message", (raw) => {
+      const env = JSON.parse(raw.toString()) as Envelope;
+      if (env.t === "event" && env.kind === "github.budget") {
+        otherBudgets.push(env);
+        sawFirst?.();
+      }
+    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        other.on("open", () => resolve());
+        other.on("error", reject);
+      });
+      // Wait for its connect-time snapshot by event, not by clock: a fixed sleep
+      // either flakes on a slow machine or leaks that snapshot into the assertion.
+      await firstSnapshot;
+      otherBudgets.length = 0;
+
+      send({ t: "cmd", id: "w1", kind: "github.watch", watching: true });
+      await nextEvent((e) => e.t === "ack" && e.id === "w1");
+      await nextEvent((e) => e.t === "event" && e.kind === "github.budget");
+      // The watcher got its immediate snapshot; the bystander must have got none.
+      assert.deepEqual(otherBudgets, [], "a non-watching client is not pushed the fast snapshot");
+    } finally {
+      other.close();
+    }
+  });
+});
+
 test("github.pause {paused:true} flips the level to paused (SPEC-32)", async () => {
   await withBudgetServer(async ({ send, nextEvent }) => {
     // Ensure the budget is measured (so 'paused' is reachable), then pause.

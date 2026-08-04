@@ -9,6 +9,7 @@
 import type { AgentAdapter } from "./adapters/adapter.js";
 import { AcpAdapter, type AcpSpawnSpec } from "./adapters/acp.js";
 import { CodexAppServerAdapter } from "./adapters/codex.js";
+import { codexComputerUseArgs, resolveComputerUse } from "./adapters/computer_use.js";
 
 /**
  * The `pi-acp` bridge binary makit wraps pi with — it speaks ACP JSON-RPC over
@@ -29,6 +30,21 @@ export function piAcpSpec(): AcpSpawnSpec {
 }
 
 /**
+ * `codex app-server` argv for a live session: the base subcommand, plus the
+ * `-c mcp_servers.cua_driver.*` overrides when computer use is enabled (opt-in
+ * via `MAKIT_COMPUTER_USE=1` — see {@link resolveComputerUse}). The throwaway
+ * capability probes deliberately do NOT get these: they start no thread, so
+ * spawning a desktop driver for them would be pure cost.
+ */
+export function codexSpawnArgs(
+  env: Record<string, string | undefined> = process.env,
+  resolve?: (cmd: string) => string | undefined,
+): string[] {
+  const cu = resolveComputerUse(env, resolve);
+  return cu.enabled ? ["app-server", ...codexComputerUseArgs(cu.driverPath)] : ["app-server"];
+}
+
+/**
  * Construct the adapter for an agent id.
  *
  * - `pi` runs over ACP: makit wraps it with the `pi-acp` bridge (no args — the
@@ -41,7 +57,7 @@ export function buildAdapter(agentId: string): { agent: string; adapter: AgentAd
   switch (agentId) {
     case "codex":
     case "codex-native":
-      return { agent: "codex", adapter: new CodexAppServerAdapter() };
+      return { agent: "codex", adapter: new CodexAppServerAdapter({ args: codexSpawnArgs() }) };
     case "pi":
     default:
       return {

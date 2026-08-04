@@ -302,6 +302,11 @@ class StoreController extends StateNotifier<StoreState> {
         for (final sid in _subscribed) {
           _sendSub(sid);
         }
+        // Same reason, same fix, for the budget panel's fast-cadence watch: the
+        // server drops per-client watchers on disconnect, so an open panel would
+        // silently fall back to the slow 60s cadence with no way back short of
+        // closing and reopening it.
+        if (_watchingGithubBudget) unawaited(watchGithubBudget(true));
       }
     });
 
@@ -799,6 +804,30 @@ class StoreController extends StateNotifier<StoreState> {
       );
     } catch (_) {
       // Swallow: the budget refreshes itself on a 60s cadence regardless.
+    }
+  }
+
+  /// Whether the budget panel is currently open here, so the watch can be
+  /// re-issued on reconnect (the server forgets it, exactly like `sub`).
+  bool _watchingGithubBudget = false;
+
+  /// Tell the server whether this client has the budget panel open (SPEC-32
+  /// §6.6). While it is, the server re-reads the exempt `/rate_limit` on a fast
+  /// cadence and pushes every snapshot, so the live counters actually move —
+  /// its idle broadcast only fires on a level/throttle change.
+  ///
+  /// Best-effort for the same reason as [refreshGithubBudget]: an older server
+  /// replies `err {unknown cmd}`, and the panel must still render, just with the
+  /// slower 60s cadence.
+  Future<void> watchGithubBudget(bool watching) async {
+    _watchingGithubBudget = watching;
+    try {
+      await _ref.read(connectionControllerProvider.notifier).request(
+        MsgType.cmd,
+        {'kind': 'github.watch', 'watching': watching},
+      );
+    } catch (_) {
+      // Swallow: without the subscription the panel is stale, not broken.
     }
   }
 

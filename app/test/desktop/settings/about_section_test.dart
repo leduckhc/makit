@@ -18,7 +18,7 @@ void main() {
   ) async {
     await _pump(tester);
 
-    expect(find.text('makit'), findsOneWidget);
+    expect(find.text('Makit'), findsOneWidget);
     expect(find.text('Protocol version'), findsOneWidget);
     expect(find.text('v1'), findsOneWidget); // protocolVersion == 1
     expect(find.text('Documentation & source'), findsOneWidget);

@@ -9,12 +9,21 @@
  */
 
 import type { AdapterEvent } from "./adapter.js";
+import type { MediaDescriptor } from "../media/store.js";
 import { summarizeLine } from "./summarize.js";
+import { imageBlocksIn, type ImageBlock } from "./tool_media.js";
 
 export interface CodexMapperHooks {
   emit: (e: AdapterEvent) => void;
   /** Agent-driven thread rename (`thread/name/updated`). */
   onTitle?: (title: string) => void;
+  /**
+   * Persist an image block carried by an MCP tool result and return its
+   * descriptor (`null` = refused: bad mime / over cap). Injected rather than
+   * imported so this mapper stays pure and testable — same seam as the ACP
+   * mapper's hook. Absent = images are ignored.
+   */
+  putMedia?: (data: string, mime: string) => MediaDescriptor | null;
 }
 
 type Risk = "safe" | "risky" | "destructive";
@@ -22,6 +31,8 @@ type Risk = "safe" | "risky" | "destructive";
 export class CodexEventMapper {
   /** Tool-call item ids we've emitted a `tool.call.start` for. */
   private startedTools = new Set<string>();
+  /** Media ids already announced, so an identical blob is announced once. */
+  private seenMedia = new Set<string>();
 
   constructor(private readonly hooks: CodexMapperHooks) {}
 
@@ -104,6 +115,10 @@ export class CodexEventMapper {
           if (start) this.emit("tool.call.start", start);
         }
         this.startedTools.delete(item.id);
+        // Images ride along MCP tool results (a `read` of a PNG, a cua-driver
+        // screenshot). Announce them before the terminal event so the
+        // transcript order matches what happened.
+        if (item.type === "mcpToolCall") this.ingestToolMedia(item.id, item.result);
         const { exitCode, output } = this.toolResult(item);
         this.emit("tool.call.end", {
           callId: item.id,
@@ -165,6 +180,39 @@ export class CodexEventMapper {
       default:
         return { exitCode: 0, output: "" };
     }
+  }
+
+  // ---- tool-result media (SPEC-22) -----------------------------------------
+
+  /** Store every image block in `result` and emit one `agent.media` per new blob. */
+  private ingestToolMedia(callId: string, result: unknown): void {
+    if (!this.hooks.putMedia) return;
+    for (const block of imageBlocksIn(result)) this.storeMedia(block, callId);
+  }
+
+  /**
+   * Store `block` and announce it unless that exact blob was already announced.
+   *
+   * Dedup is by the store's content-addressed `mediaId` only. There is no
+   * pre-store payload guard: app-server delivers `item/completed` once per item,
+   * so a result is never re-scanned, and `putBase64` is idempotent for identical
+   * bytes. (The ACP mapper does guard, because ACP re-sends `rawOutput`
+   * cumulatively on every update.)
+   */
+  private storeMedia(block: ImageBlock, callId: string): void {
+    const stored = this.hooks.putMedia?.(block.data, block.mimeType);
+    // null = refused (bad mime / over cap / malformed). Drop it silently: the
+    // tool's text result still lands, so the turn is never blocked by media.
+    if (!stored) return;
+    if (this.seenMedia.has(stored.mediaId)) return;
+    this.seenMedia.add(stored.mediaId);
+    this.emit("agent.media", {
+      mediaId: stored.mediaId,
+      mime: stored.mime,
+      kind: "image",
+      sizeBytes: stored.sizeBytes,
+      callId,
+    });
   }
 
   private emit(kind: AdapterEvent["kind"], payload: Record<string, unknown>): void {

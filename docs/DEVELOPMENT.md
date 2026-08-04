@@ -179,14 +179,14 @@ Each desktop **build** auto-isolates against its own server so a `main` build
 and a worktree build never collide. The profile is derived from the running
 `.app`'s path (`ServerProfile.resolve`, `app/lib/desktop/daemon/server_profile.dart`):
 
-| | Installed app | Dev build (`.../app/build/macos/.../makit.app`) |
+| | Installed app | Dev build (`.../app/build/macos/.../Makit.app`) |
 |---|---|---|
 | `MAKIT_HOME` | `~/.makit` | `~/.makit-dev/<hash-of-repo-root>` |
 | Port (default) | `7777` | `7800–7899` (stable per repo path) |
 | Prefs (`NSUserDefaults`) | `flutter.` | `flutter.<hash>.` |
 | Window title / badge | `Makit` | `Makit — <folder>` + colored pill |
 
-So you just run both `makit.app`s and switch by focusing the window (Cmd-Tab);
+So you just run both `Makit.app`s and switch by focusing the window (Cmd-Tab);
 the colored badge in the sidebar header + the window title tell them apart.
 Each keeps its own daemon, pairings, sessions, and settings.
 
@@ -268,7 +268,7 @@ flutter build ipa --release
 ```sh
 cd app
 flutter build macos --release
-# → build/macos/Build/Products/Release/makit.app
+# → build/macos/Build/Products/Release/Makit.app
 ```
 
 DMG signing + notarization: see [`../BUILD_AND_DEPLOY.md`](../BUILD_AND_DEPLOY.md) §2.
