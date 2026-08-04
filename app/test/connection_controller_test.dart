@@ -10,6 +10,7 @@ import 'package:makit/transport/protocol.dart';
 import 'package:makit/transport/transport.dart';
 
 const _kPairedServerKey = 'paired_server';
+const _kServersKey = 'paired_servers';
 
 // A fingerprint long enough for the controller's `substring(0, 12)` debug log.
 const _fingerprint =
@@ -111,9 +112,20 @@ FakeSecureStorage _seededStorage({
   }),
 });
 
-PairedServer _storedServer(FakeSecureStorage storage) => PairedServer.fromJson(
-  jsonDecode(storage.data[_kPairedServerKey]!) as Map<String, dynamic>,
-);
+/// The active stored server. Seeding still uses the legacy single-server key
+/// (so these tests also cover the boot-time migration), but reads go through
+/// the current `paired_servers` record the controller writes.
+PairedServer _storedServer(FakeSecureStorage storage) {
+  final record = jsonDecode(storage.data[_kServersKey]!) as Map<String, dynamic>;
+  final servers = (record['servers'] as List)
+      .cast<Map<String, dynamic>>()
+      .map(PairedServer.fromJson)
+      .toList();
+  return servers.firstWhere(
+    (s) => s.id == record['activeId'],
+    orElse: () => servers.first,
+  );
+}
 
 BrowseLan _fixedBrowse(List<DiscoveredServer> results) =>
     ({Duration timeout = const Duration(seconds: 3)}) async => results;

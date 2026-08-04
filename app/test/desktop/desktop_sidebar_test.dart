@@ -1245,13 +1245,16 @@ void main() {
         connectionProvider.overrideWithValue(
           MakitConnState(
             wsState: WsState.connected,
-            server: PairedServer(
-              host: '127.0.0.1',
-              port: 9787,
-              fingerprint: 'f',
-              bearer: 'b',
-              label: 'srv',
-            ),
+            servers: [
+              PairedServer(
+                host: '127.0.0.1',
+                port: 9787,
+                fingerprint: 'f',
+                bearer: 'b',
+                label: 'srv',
+              ),
+            ],
+            activeId: 'f',
           ),
         ),
       ],
