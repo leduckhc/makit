@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>makit mobile — repo card directions</title>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<style>
+/* ── real makit tokens (dumped from theme.dart) ───────────────────── */
+:root{
+  --surface:#171717; --lowest:#121212; --low:#1e1e1e; --container:#242424;
+  --high:#2e2e2e; --highest:#383838;
+  --on-surface:#f5f5f5; --outline:#9e9e9e; --outline-variant:#333333;
+  --primary:#98d4a3;            /* M3-derived, what ships today */
+  --brand:#4ADE80;              /* logo green, the seed */
+  --error:#ffb4ab;
+  --warn:#E0A72E; --caution:#E07B39; --merged:#A371F7;
+  --add:#3FB950; --del:#F85149;
+  --s2:2px;--s4:4px;--s6:6px;--s8:8px;--s10:10px;--s12:12px;--s16:16px;--s20:20px;--s24:24px;
+  --r6:6px;--r8:8px;--r10:10px;--r12:12px;--r16:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:#0b0b0b; color:var(--on-surface);
+  font:400 13px/1.45 -apple-system,"SF Pro Text",system-ui,sans-serif;
+  padding:32px; -webkit-font-smoothing:antialiased;
+}
+h1{font:600 20px/1.3 inherit;margin-bottom:6px}
+h2{font:600 16px/1.3 inherit;margin:0 0 4px}
+.lede{color:var(--outline);font-size:12px;max-width:760px;margin-bottom:28px}
+.row{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;margin-bottom:40px}
+.col{width:390px}
+.cap{margin-bottom:10px}
+.cap .t{font:600 14px/1.3 inherit;display:flex;align-items:center;gap:8px}
+.cap .d{color:var(--outline);font-size:11.5px;margin-top:3px;min-height:32px}
+.badge{font:500 9.5px/1 inherit;text-transform:uppercase;letter-spacing:.08em;
+  padding:3px 6px;border-radius:var(--r6);background:var(--high);color:var(--outline)}
+.badge.now{background:#2a2118;color:var(--warn)}
+.badge.pick{background:#17512b;color:#b4f1be}
+
+/* phone frame */
+.phone{
+  width:390px;background:var(--surface);border-radius:28px;padding:0;
+  border:1px solid #2a2a2a;overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.55);
+}
+.screen{padding:10px 12px 16px}
+
+/* top bar */
+.topbar{display:flex;align-items:center;gap:6px;padding:8px 12px 10px}
+.title{font:600 16px/1.2 inherit;display:flex;align-items:center;gap:5px;flex:1;min-width:0}
+.title .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.title i{color:var(--outline);font-size:15px}
+.gbtn{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.07);
+  border:1px solid rgba(255,255,255,.10);display:grid;place-items:center;flex:none}
+.gbtn i{font-size:19px;color:var(--on-surface)}
+
+/* ── glass card (baseline) ─────────────────────────────────────────── */
+.glass{
+  background:rgba(24,24,24,.5);backdrop-filter:blur(18px);
+  border:1px solid rgba(255,255,255,.14);border-radius:var(--r16);
+  box-shadow:0 8px 24px rgba(0,0,0,.15);margin-bottom:8px;overflow:hidden;
+}
+.hr{height:1px;background:var(--outline-variant);border:0}
+
+/* repo header */
+.rhead{display:flex;align-items:center;gap:8px;padding:6px 4px 6px 12px;min-height:44px}
+.rhead .caret{font-size:14px;color:var(--outline)}
+.rhead .folder{font-size:17px;color:var(--outline)}
+.rhead .nm{font:700 13px/1.3 inherit;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rhead .dots{font-size:18px;color:var(--on-surface);padding:8px}
+
+/* stat strip */
+.strip{display:flex;gap:12px;flex-wrap:wrap;padding:0 16px 8px 36px}
+.meta{display:flex;align-items:center;gap:4px;color:var(--outline);font-size:12px}
+.meta i{font-size:14px}
+.meta.p{color:var(--primary)}
+
+/* worktree row */
+.wt{display:flex;align-items:center;gap:0;padding:0 8px 0 12px;min-height:44px}
+.wt .caret{width:18px;font-size:12px;color:var(--outline);text-align:center;flex:none}
+.wt .bg{font-size:15px;color:var(--outline);flex:none}
+.wt .bg.alt{color:var(--primary)}
+.wt .nm{font:500 13px/1.3 inherit;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wt .star{font-size:15px;color:var(--primary);margin-left:5px;flex:none}
+.wt .sp{flex:1}
+.plus{width:32px;height:44px;display:grid;place-items:center;flex:none}
+.plus i{font-size:16px;color:var(--outline)}
+
+/* meta line under a worktree */
+.wmeta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 8px 6px 51px}
+.chip{font:600 10px/1 inherit;padding:3px 8px;border-radius:var(--r8);display:inline-flex;align-items:center;gap:3px}
+.chip i{font-size:11px}
+.tag{background:rgba(158,158,158,.15);color:var(--outline)}
+.pr{background:rgba(152,212,163,.14);color:var(--primary)}
+.pr.m{background:rgba(163,113,247,.14);color:var(--merged)}
+.diff{font:400 10px/1 ui-monospace,"SF Mono",Menlo,monospace;display:flex;gap:5px}
+.diff .a{color:var(--add)} .diff .d{color:var(--del)}
+.age{font:300 11px/1 inherit;color:var(--outline)}
+
+/* session tile */
+.sess{display:flex;align-items:center;gap:8px;padding:4px 12px 4px 33px;min-height:44px}
+.av{width:32px;height:32px;border-radius:50%;background:var(--highest);flex:none;
+  display:grid;place-items:center;font:600 12px/1 inherit;color:var(--on-surface);overflow:hidden}
+.av img{width:100%;height:100%;object-fit:cover}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.dot.run{background:var(--primary);box-shadow:0 0 0 3px rgba(152,212,163,.18)}
+.dot.idle{background:var(--outline)}
+.dot.appr{background:var(--caution);box-shadow:0 0 0 3px rgba(224,123,57,.2)}
+.sbody{min-width:0;flex:1}
+.stitle{display:flex;align-items:center;gap:8px}
+.stitle .tx{font:400 13px/1.3 inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sprev{color:var(--outline);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chip.appr{background:rgba(224,123,57,.15);color:var(--caution)}
+
+/* footer */
+.foot{padding:0 8px 4px}
+.tbtn{display:inline-flex;align-items:center;gap:6px;color:var(--primary);
+  font:500 13px/1 inherit;padding:10px 8px}
+.tbtn i{font-size:16px}
+.drafts{font:500 11px/1 inherit;color:var(--outline);letter-spacing:.09em;padding:6px 16px 0 12px}
+
+/* ══ DIRECTION B — inset grouped ══════════════════════════════════ */
+.b-sect{display:flex;align-items:center;gap:8px;padding:14px 6px 7px}
+.b-sect .folder{font-size:15px;color:var(--outline)}
+.b-sect .nm{font:600 12px/1 inherit;letter-spacing:.02em;flex:1}
+.b-sect .ct{font:500 11px/1 inherit;color:var(--outline)}
+.b-sect .dots{font-size:17px;color:var(--outline)}
+.b-card{background:var(--low);border-radius:var(--r12);overflow:hidden}
+.b-row{display:flex;align-items:center;gap:10px;padding:9px 10px 9px 12px;min-height:52px}
+.b-row + .b-row{box-shadow:inset 0 1px 0 var(--outline-variant)}
+.b-lead{width:22px;display:grid;place-items:center;flex:none}
+.b-lead i{font-size:16px;color:var(--outline)}
+.b-lead i.alt{color:var(--primary)}
+.b-mid{min-width:0;flex:1}
+.b-nm{font:500 13px/1.25 inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  display:flex;align-items:center;gap:5px}
+.b-sub{display:flex;gap:8px;align-items:center;margin-top:3px;flex-wrap:wrap}
+.b-plus{width:30px;height:30px;border-radius:50%;background:var(--high);
+  display:grid;place-items:center;flex:none}
+.b-plus i{font-size:14px;color:var(--on-surface)}
+.b-sesswrap{padding:0 0 0 44px;background:var(--lowest)}
+.b-sess{display:flex;align-items:center;gap:9px;padding:8px 12px 8px 0;min-height:44px;
+  box-shadow:inset 0 1px 0 var(--outline-variant)}
+.b-add{display:flex;align-items:center;gap:7px;padding:11px 12px;color:var(--primary);
+  font:500 13px/1 inherit;box-shadow:inset 0 1px 0 var(--outline-variant)}
+.b-add i{font-size:15px}
+
+/* ══ DIRECTION C — status-forward ═════════════════════════════════ */
+.c-card{background:var(--low);border-radius:var(--r12);overflow:hidden;margin-bottom:10px;
+  border:1px solid var(--outline-variant)}
+.c-head{display:flex;align-items:center;gap:9px;padding:11px 6px 11px 13px}
+.c-head .folder{font-size:16px;color:var(--outline)}
+.c-head .nm{font:600 14px/1.2 inherit;flex:1}
+.c-pill{font:600 10px/1 inherit;padding:4px 7px;border-radius:999px;
+  background:rgba(152,212,163,.14);color:var(--primary);display:flex;align-items:center;gap:4px}
+.c-pill i{font-size:11px}
+.c-head .dots{font-size:17px;color:var(--outline);padding:6px}
+.c-row{display:flex;gap:0;border-top:1px solid var(--outline-variant);position:relative}
+.c-bar{width:3px;flex:none;background:transparent}
+.c-bar.act{background:var(--primary)}
+.c-bar.wait{background:var(--caution)}
+.c-in{flex:1;min-width:0;padding:10px 8px 10px 11px}
+.c-l1{display:flex;align-items:center;gap:6px}
+.c-l1 .bg{font-size:15px;color:var(--outline);flex:none}
+.c-l1 .bg.alt{color:var(--primary)}
+.c-l1 .nm{font:500 13px/1.25 inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.c-l2{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:5px;padding-left:21px}
+.c-sess{display:flex;align-items:center;gap:8px;margin-top:8px;margin-left:21px;
+  padding:7px 9px;background:var(--container);border-radius:var(--r8)}
+.c-foot{display:flex;align-items:center;gap:7px;padding:10px 13px;
+  border-top:1px solid var(--outline-variant);color:var(--primary);font:500 13px/1 inherit}
+.c-foot i{font-size:15px}
+.note{margin-top:6px;padding:10px 12px;background:#161616;border-left:2px solid var(--warn);
+  border-radius:0 var(--r8) var(--r8) 0;font-size:11.5px;color:#cfcfcf}
+.note b{color:var(--warn)}
+</style>
+</head>
+<body>
+
+<h1>Repo card — 3 directions</h1>
+<p class="lede">
+  Same data in every frame: repo <b>makit</b>, three worktrees (one current+dirty, one with an open PR
+  and a session awaiting approval, one quiet), one idle session. Colours, type and spacing are the real
+  tokens dumped from <code>theme.dart</code> — including <code>primary #98d4a3</code>, which is what
+  actually ships today.
+</p>
+
+<div class="row">
+
+  <!-- ═══════════ BASELINE ═══════════ -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge now">ships now</span> Baseline</div>
+      <div class="d">Glass card, full-bleed hairlines, meta as plain text, one flat list. This is after my icon + overflow fixes.</div>
+    </div>
+    <div class="phone"><div class="screen">
+      <div class="topbar">
+        <div class="title"><span class="nm">work mac</span><i class="ph-light ph-caret-up-down"></i></div>
+        <div class="gbtn"><i class="ph-light ph-archive-box"></i></div>
+        <div class="gbtn"><i class="ph-light ph-folder-plus"></i></div>
+        <div class="gbtn"><i class="ph-light ph-gear-six"></i></div>
+      </div>
+
+      <div class="glass">
+        <div class="rhead">
+          <i class="caret ph-light ph-caret-down"></i>
+          <i class="folder ph-light ph-folder"></i>
+          <span class="nm">makit</span>
+          <i class="dots ph ph-dots-three"></i>
+        </div>
+        <div class="strip">
+          <span class="meta"><i class="ph-light ph-flag"></i>main</span>
+          <span class="meta"><i class="ph-light ph-git-branch"></i>2 active</span>
+          <span class="meta p"><i class="ph-light ph-git-pull-request"></i>1 PR</span>
+        </div>
+        <hr class="hr">
+
+        <div class="wt">
+          <i class="caret ph-light ph-caret-down"></i>
+          <i class="bg ph-light ph-git-branch"></i>
+          <span class="nm">main</span>
+          <i class="star ph-fill ph-star"></i>
+          <span class="sp"></span>
+          <span class="plus"><i class="ph-light ph-plus"></i></span>
+        </div>
+        <div class="wmeta">
+          <span class="chip tag">default</span>
+          <span class="diff"><span class="a">+12</span><span class="d">−3</span></span>
+          <span class="age">5h ago</span>
+        </div>
+        <div class="sess">
+          <div class="av"><img src="pi.svg" alt=""></div>
+          <div class="sbody">
+            <div class="stitle"><span class="tx">Wire the server switcher</span></div>
+            <div class="sprev">Updated connection.dart</div>
+          </div>
+          <span class="dot idle"></span>
+        </div>
+
+        <div class="wt">
+          <i class="caret ph-light ph-caret-down"></i>
+          <i class="bg alt ph-light ph-git-branch"></i>
+          <span class="nm">feat/mobile-redesign</span>
+          <span class="sp"></span>
+          <span class="plus"><i class="ph-light ph-plus"></i></span>
+        </div>
+        <div class="wmeta">
+          <span class="diff"><span class="a">+421</span><span class="d">−88</span></span>
+          <span class="chip pr"><i class="ph-light ph-git-pull-request"></i>PR #132</span>
+          <span class="age">2d ago</span>
+        </div>
+        <div class="sess">
+          <div class="av"><img src="codex.svg" alt=""></div>
+          <div class="sbody">
+            <div class="stitle"><span class="tx">Align repo card icons</span><span class="chip appr">approve</span></div>
+            <div class="sprev">Needs approval to run flutter test</div>
+          </div>
+          <span class="dot appr"></span>
+        </div>
+
+        <div class="wt">
+          <span class="caret"></span>
+          <i class="bg alt ph-light ph-git-branch"></i>
+          <span class="nm">fix/pairing-timeout</span>
+          <span class="sp"></span>
+          <span class="plus"><i class="ph-light ph-plus"></i></span>
+        </div>
+        <div class="wmeta"><span class="age">9d ago</span></div>
+
+        <div class="foot"><span class="tbtn"><i class="ph-light ph-plus"></i>New session</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ═══════════ A ═══════════ -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge">A</span> Quieter glass</div>
+      <div class="d">Same anatomy, less noise: hairlines dropped, meta indented under its branch, brand green restored for accents. Lowest-risk change.</div>
+    </div>
+    <div class="phone"><div class="screen">
+      <div class="topbar">
+        <div class="title"><span class="nm">work mac</span><i class="ph-light ph-caret-up-down"></i></div>
+        <div class="gbtn"><i class="ph-light ph-archive-box"></i></div>
+        <div class="gbtn"><i class="ph-light ph-folder-plus"></i></div>
+        <div class="gbtn"><i class="ph-light ph-gear-six"></i></div>
+      </div>
+
+      <div class="glass" style="background:rgba(26,26,26,.55);border-color:rgba(255,255,255,.09)">
+        <div class="rhead" style="padding-top:10px;padding-bottom:2px">
+          <i class="caret ph-light ph-caret-down"></i>
+          <i class="folder ph-light ph-folder"></i>
+          <span class="nm" style="font-size:14px">makit</span>
+          <i class="dots ph ph-dots-three" style="color:var(--outline)"></i>
+        </div>
+        <div class="strip" style="padding-bottom:10px">
+          <span class="meta"><i class="ph-light ph-flag"></i>main</span>
+          <span class="meta"><i class="ph-light ph-git-branch"></i>2 active</span>
+          <span class="meta" style="color:var(--brand)"><i class="ph-light ph-git-pull-request"></i>1 PR</span>
+        </div>
+
+        <div class="wt">
+          <i class="caret ph-light ph-caret-down"></i>
+          <i class="bg ph-light ph-git-branch"></i>
+          <span class="nm">main</span>
+          <i class="star ph-fill ph-star" style="color:var(--brand)"></i>
+          <span class="sp"></span>
+          <span class="plus"><i class="ph-light ph-plus"></i></span>
+        </div>
+        <div class="wmeta">
+          <span class="chip tag">default</span>
+          <span class="diff"><span class="a">+12</span><span class="d">−3</span></span>
+          <span class="age">5h ago</span>
+        </div>
+        <div class="sess">
+          <div class="av"><img src="pi.svg" alt=""></div>
+          <div class="sbody">
+            <div class="stitle"><span class="tx">Wire the server switcher</span></div>
+            <div class="sprev">Updated connection.dart</div>
+          </div>
+          <span class="dot idle"></span>
+        </div>
+
+        <div class="wt" style="margin-top:2px">
+          <i class="caret ph-light ph-caret-down"></i>
+          <i class="bg ph-light ph-git-branch" style="color:var(--brand)"></i>
+          <span class="nm">feat/mobile-redesign</span>
+          <span class="sp"></span>
+          <span class="plus"><i class="ph-light ph-plus"></i></span>
+        </div>
+        <div class="wmeta">
+          <span class="diff"><span class="a">+421</span><span class="d">−88</span></span>
+          <span class="chip pr" style="background:rgba(74,222,128,.14);color:var(--brand)"><i class="ph-light ph-git-pull-request"></i>PR #132</span>
+          <span class="age">2d ago</span>
+        </div>
+        <div class="sess">
+          <div class="av"><img src="codex.svg" alt=""></div>
+          <div class="sbody">
+            <div class="stitle"><span class="tx">Align repo card icons</span><span class="chip appr">approve</span></div>
+            <div class="sprev">Needs approval to run flutter test</div>
+          </div>
+          <span class="dot appr"></span>
+        </div>
+
+        <div class="wt" style="margin-top:2px">
+          <span class="caret"></span>
+          <i class="bg ph-light ph-git-branch" style="color:var(--brand)"></i>
+          <span class="nm">fix/pairing-timeout</span>
+          <span class="sp"></span>
+          <span class="plus"><i class="ph-light ph-plus"></i></span>
+        </div>
+        <div class="wmeta"><span class="age">9d ago</span></div>
+
+        <div class="foot"><span class="tbtn" style="color:var(--brand)"><i class="ph-light ph-plus"></i>New session</span></div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ═══════════ B ═══════════ -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge">B</span> Inset grouped (iOS-native)</div>
+      <div class="d">Repo becomes a section header <i>outside</i> the card; worktrees are solid list rows with a filled <code>+</code>. Two-line rows, no glass. Reads like Settings/Mail.</div>
+    </div>
+    <div class="phone"><div class="screen" style="padding-top:10px">
+      <div class="topbar">
+        <div class="title"><span class="nm">work mac</span><i class="ph-light ph-caret-up-down"></i></div>
+        <div class="gbtn"><i class="ph-light ph-archive-box"></i></div>
+        <div class="gbtn"><i class="ph-light ph-folder-plus"></i></div>
+        <div class="gbtn"><i class="ph-light ph-gear-six"></i></div>
+      </div>
+
+      <div class="b-sect">
+        <i class="folder ph-light ph-folder"></i>
+        <span class="nm">makit</span>
+        <span class="ct">main · 1 PR</span>
+        <i class="dots ph ph-dots-three"></i>
+      </div>
+
+      <div class="b-card">
+        <div class="b-row">
+          <span class="b-lead"><i class="ph-light ph-git-branch"></i></span>
+          <div class="b-mid">
+            <div class="b-nm">main <i class="ph-fill ph-star" style="font-size:12px;color:var(--brand)"></i></div>
+            <div class="b-sub">
+              <span class="chip tag">default</span>
+              <span class="diff"><span class="a">+12</span><span class="d">−3</span></span>
+              <span class="age">5h</span>
+            </div>
+          </div>
+          <span class="b-plus"><i class="ph-bold ph-plus"></i></span>
+        </div>
+        <div class="b-sesswrap">
+          <div class="b-sess">
+            <span class="dot idle"></span>
+            <div class="sbody"><div class="stitle"><span class="tx">Wire the server switcher</span></div></div>
+          </div>
+        </div>
+
+        <div class="b-row">
+          <span class="b-lead"><i class="alt ph-light ph-git-branch"></i></span>
+          <div class="b-mid">
+            <div class="b-nm">feat/mobile-redesign</div>
+            <div class="b-sub">
+              <span class="chip pr" style="background:rgba(74,222,128,.14);color:var(--brand)"><i class="ph-light ph-git-pull-request"></i>#132</span>
+              <span class="diff"><span class="a">+421</span><span class="d">−88</span></span>
+              <span class="age">2d</span>
+            </div>
+          </div>
+          <span class="b-plus"><i class="ph-bold ph-plus"></i></span>
+        </div>
+        <div class="b-sesswrap">
+          <div class="b-sess">
+            <span class="dot appr"></span>
+            <div class="sbody"><div class="stitle"><span class="tx">Align repo card icons</span><span class="chip appr">approve</span></div></div>
+          </div>
+        </div>
+
+        <div class="b-row">
+          <span class="b-lead"><i class="alt ph-light ph-git-branch"></i></span>
+          <div class="b-mid">
+            <div class="b-nm">fix/pairing-timeout</div>
+            <div class="b-sub"><span class="age">9d ago · no changes</span></div>
+          </div>
+          <span class="b-plus"><i class="ph-bold ph-plus"></i></span>
+        </div>
+
+        <div class="b-add"><i class="ph-light ph-git-branch"></i>New worktree…</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- ═══════════ C ═══════════ -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge">C</span> Status-forward</div>
+      <div class="d">Solid card, 3px left accent bar per worktree encoding state (green=working, orange=wants you). Sessions nest as inset blocks. Most “dashboard”.</div>
+    </div>
+    <div class="phone"><div class="screen" style="padding-top:10px">
+      <div class="topbar">
+        <div class="title"><span class="nm">work mac</span><i class="ph-light ph-caret-up-down"></i></div>
+        <div class="gbtn"><i class="ph-light ph-archive-box"></i></div>
+        <div class="gbtn"><i class="ph-light ph-folder-plus"></i></div>
+        <div class="gbtn"><i class="ph-light ph-gear-six"></i></div>
+      </div>
+
+      <div class="c-card">
+        <div class="c-head">
+          <i class="folder ph-light ph-folder"></i>
+          <span class="nm">makit</span>
+          <span class="c-pill" style="background:rgba(74,222,128,.14);color:var(--brand)">
+            <i class="ph-light ph-git-pull-request"></i>1</span>
+          <i class="dots ph ph-dots-three"></i>
+        </div>
+
+        <div class="c-row">
+          <span class="c-bar act"></span>
+          <div class="c-in">
+            <div class="c-l1">
+              <i class="bg ph-light ph-git-branch"></i>
+              <span class="nm">main</span>
+              <i class="ph-fill ph-star" style="font-size:12px;color:var(--brand)"></i>
+              <span class="plus" style="width:26px;height:26px"><i class="ph-light ph-plus"></i></span>
+            </div>
+            <div class="c-l2">
+              <span class="chip tag">default</span>
+              <span class="diff"><span class="a">+12</span><span class="d">−3</span></span>
+              <span class="age">5h ago</span>
+            </div>
+            <div class="c-sess">
+              <span class="dot idle"></span>
+              <div class="sbody"><div class="stitle"><span class="tx">Wire the server switcher</span></div>
+              <div class="sprev">Updated connection.dart</div></div>
+              <div class="av" style="width:22px;height:22px"><img src="pi.svg" alt=""></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="c-row">
+          <span class="c-bar wait"></span>
+          <div class="c-in">
+            <div class="c-l1">
+              <i class="bg alt ph-light ph-git-branch" style="color:var(--brand)"></i>
+              <span class="nm">feat/mobile-redesign</span>
+              <span class="plus" style="width:26px;height:26px"><i class="ph-light ph-plus"></i></span>
+            </div>
+            <div class="c-l2">
+              <span class="chip pr" style="background:rgba(74,222,128,.14);color:var(--brand)"><i class="ph-light ph-git-pull-request"></i>PR #132</span>
+              <span class="diff"><span class="a">+421</span><span class="d">−88</span></span>
+              <span class="age">2d ago</span>
+            </div>
+            <div class="c-sess" style="background:rgba(224,123,57,.10)">
+              <span class="dot appr"></span>
+              <div class="sbody"><div class="stitle"><span class="tx">Align repo card icons</span><span class="chip appr">approve</span></div>
+              <div class="sprev">Needs approval to run flutter test</div></div>
+              <div class="av" style="width:22px;height:22px"><img src="codex.svg" alt=""></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="c-row">
+          <span class="c-bar"></span>
+          <div class="c-in">
+            <div class="c-l1">
+              <i class="bg alt ph-light ph-git-branch" style="color:var(--brand)"></i>
+              <span class="nm">fix/pairing-timeout</span>
+              <span class="plus" style="width:26px;height:26px"><i class="ph-light ph-plus"></i></span>
+            </div>
+            <div class="c-l2"><span class="age">9d ago · clean</span></div>
+          </div>
+        </div>
+
+        <div class="c-foot"><i class="ph-light ph-plus"></i>New session</div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
+
+<div class="note">
+  <b>Note on the green.</b> Every accent above except “Baseline” uses the brand green
+  <code>#4ADE80</code>. What ships today is <code>#98d4a3</code> — Material 3’s
+  <code>ColorScheme.fromSeed</code> desaturates the logo green into a pale sage for the dark
+  scheme. Compare the “1 PR” and “New session” colour in Baseline vs A: I suspect this washed-out
+  accent is a large part of what reads as dated, independent of layout.
+</div>
+
+</body>
+</html>
