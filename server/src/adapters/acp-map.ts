@@ -15,6 +15,7 @@ import type { SessionUpdate, ToolKind } from "@agentclientprotocol/sdk";
 import type { AdapterEvent } from "./adapter.js";
 import type { MediaDescriptor } from "../media/store.js";
 import { summarizeLine } from "./summarize.js";
+import { imageBlocksIn, type ImageBlock } from "./tool_media.js";
 import { newId } from "../protocol.js";
 
 export interface AcpMapperHooks {
@@ -372,37 +373,6 @@ export class AcpEventMapper {
 }
 
 // ---------- helpers ---------------------------------------------------------
-
-/** An MCP/ACP image content block: base64 `data` + its `mimeType`. */
-interface ImageBlock {
-  data: string;
-  mimeType: string;
-}
-
-function asImageBlock(v: unknown): ImageBlock | null {
-  if (!v || typeof v !== "object") return null;
-  const b = v as { type?: unknown; data?: unknown; mimeType?: unknown };
-  if (b.type !== "image") return null;
-  if (typeof b.data !== "string" || typeof b.mimeType !== "string") return null;
-  return { data: b.data, mimeType: b.mimeType };
-}
-
-/**
- * Every image block reachable from `v`, which may be a single content block, a
- * `ContentBlock[]`, or an ACP `ToolCallContent[]` (whose items wrap the real
- * block under `.content`).
- */
-function imageBlocksIn(v: unknown): ImageBlock[] {
-  if (Array.isArray(v)) return v.flatMap(imageBlocksIn);
-  const direct = asImageBlock(v);
-  if (direct) return [direct];
-  if (v && typeof v === "object" && "content" in v) {
-    const inner = (v as { content?: unknown }).content;
-    // Guard against self-reference; only descend into a different value.
-    if (inner !== v) return imageBlocksIn(inner);
-  }
-  return [];
-}
 
 /**
  * Derive the makit tool `name` + `args` the app's renderer registry keys on
