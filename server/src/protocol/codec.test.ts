@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { decodeUIResponse } from "./codec.js";
+import { decodeSessionEvent, decodeUIResponse } from "./codec.js";
 import type { Envelope } from "../protocol.js";
 
 /** Build a minimal `srv.response` envelope carrying the given flat fields. */
@@ -91,4 +91,20 @@ test("decodeUIResponse rejects input with a non-string value", () => {
 test("decodeUIResponse rejects a non-record input", () => {
   assert.equal(decodeUIResponse(null), null);
   assert.equal(decodeUIResponse("nope" as unknown as Envelope), null);
+});
+
+test("decodeSessionEvent REJECTS host-wide broadcast kinds (SPEC-37 decision 5)", () => {
+  // metrics.sample and github.budget are host-wide events. If either could be
+  // decoded as a session event it could be appended to the append-only log and
+  // replayed on every resume — forever, at 1 Hz. This is the runtime half of the
+  // SessionEventKind boundary; the type half is enforced by tsc.
+  for (const kind of ["metrics.sample", "github.budget"]) {
+    assert.equal(
+      decodeSessionEvent({ seq: 1, sessionId: "s", ts: 0, kind, payload: {} }),
+      null,
+      `${kind} must not decode as a session event`,
+    );
+  }
+  // A genuine session kind still decodes.
+  assert.ok(decodeSessionEvent({ seq: 1, sessionId: "s", ts: 0, kind: "agent.message", payload: {} }));
 });

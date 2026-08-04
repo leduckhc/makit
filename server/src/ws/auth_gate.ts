@@ -46,7 +46,12 @@ export class AuthGate {
     // SPEC-37 decision 6: accept the app's reported pid ONLY on a loopback
     // socket. A non-loopback client's pid is ignored silently (it still
     // connects normally) so "report your pid" never becomes "sample any pid".
-    if (client.isLocal && typeof env.pid === "number") client.appPid = env.pid;
+    // Only a positive safe integer is a pid. Without this, NaN/0/-1/Infinity from a
+    // loopback client became `appPid` and the collector rendered a plausible app row
+    // for a process that cannot exist.
+    if (client.isLocal && typeof env.pid === "number" && Number.isSafeInteger(env.pid) && env.pid > 0) {
+      client.appPid = env.pid;
+    }
 
     if (bearer) {
       this.handleBearer(client, env, bearer);

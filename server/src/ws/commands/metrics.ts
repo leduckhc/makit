@@ -16,8 +16,13 @@ import type { CommandDeps } from "./deps.js";
 export function register(r: CommandRouter, deps: CommandDeps): void {
   r.register("metrics.watch", async (ctx) => {
     ctx.ack();
-    ctx.client.watchingMetrics = ctx.env.on === true;
+    const on = ctx.env.on === true;
+    const wasWatching = ctx.client.watchingMetrics;
+    ctx.client.watchingMetrics = on;
     deps.onMetricsWatchersChanged();
-    if (ctx.client.watchingMetrics) deps.sendMetricsHistory(ctx.client);
+    // History only on a false -> true transition. A client that re-sends {on:true}
+    // (a rebuild, a reconnect handler firing twice) would otherwise be shipped up
+    // to 30 minutes of samples again on every repeat.
+    if (on && !wasWatching) deps.sendMetricsHistory(ctx.client);
   });
 }

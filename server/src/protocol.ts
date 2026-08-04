@@ -165,11 +165,22 @@ export interface MetricsSampleDTO {
   procTableOk: boolean;
 }
 
+/**
+ * The kinds that may appear **inside a session's event log**.
+ *
+ * `github.budget` and `metrics.sample` are host-wide broadcasts, not session
+ * events: the log is append-only and replayed in full on every resume, so a
+ * per-second metrics row would grow it without bound and slow every resume.
+ * Excluding them here makes that a **compile-time** boundary instead of a comment
+ * a future contributor can miss (review finding).
+ */
+export type SessionEventKind = Exclude<EventKind, "github.budget" | "metrics.sample">;
+
 export interface SessionEvent {
   seq: number;
   sessionId: string;
   ts: number;
-  kind: EventKind;
+  kind: SessionEventKind;
   payload: Record<string, unknown>;
 }
 

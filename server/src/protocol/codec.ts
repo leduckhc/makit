@@ -13,6 +13,7 @@ import {
   type EventKind,
   type MsgType,
   type SessionEvent,
+  type SessionEventKind,
 } from "../protocol.js";
 import type { UIResponse } from "../uicall.js";
 
@@ -72,6 +73,17 @@ function isEventKind(value: unknown): value is EventKind {
   return typeof value === "string" && EVENT_KINDS.has(value as EventKind);
 }
 
+/**
+ * Host-wide broadcast kinds that must never be decoded as a session event
+ * (SPEC-37 decision 5 / SPEC-32): the session log is append-only and replayed in
+ * full on resume. This is the runtime half of the {@link SessionEventKind} type.
+ */
+const HOST_ONLY_KINDS = new Set<string>(["github.budget", "metrics.sample"]);
+
+function isSessionEventKind(value: unknown): value is SessionEventKind {
+  return isEventKind(value) && !HOST_ONLY_KINDS.has(value);
+}
+
 /** Serialize an envelope to a wire frame string. */
 export function encodeFrame(env: Envelope): string {
   return JSON.stringify(env);
@@ -109,7 +121,7 @@ export function decodeSessionEvent(value: unknown): SessionEvent | null {
   if (typeof value.seq !== "number") return null;
   if (typeof value.sessionId !== "string") return null;
   if (typeof value.ts !== "number") return null;
-  if (!isEventKind(value.kind)) return null;
+  if (!isSessionEventKind(value.kind)) return null;
   if (!isRecord(value.payload)) return null;
   return {
     seq: value.seq,

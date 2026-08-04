@@ -313,6 +313,8 @@ the user's request.
 | 11 | Sessions with no pid (stub adapter, failed spawn) are **omitted**, not zeroed | A zero is indistinguishable from a genuinely idle agent |
 | 12 | No colour for "working" | An always-on tint carries no information; colour means *cost without work* |
 | 13 | A failed `ps` sets `procTableOk: false` and **omits** the agent/app rows; the UI says *measurement unavailable* | Zeros read as "idle", missing rows read as "exited". Neither is true, and the second is the SPEC-32 vanishing-pill defect wearing a new hat |
+| 14 | `inTurn` is `running` **or** `awaiting-approval` **or** `awaiting-input` | Those gates mean the agent is blocked *on you*, mid-turn — `TurnTracker` still holds the turn. Calling them "parked" both mislabels the row and lets **Elevated** ("cost while no turn runs") fire against a legitimately open turn |
+| 15 | An **exited** session reports no pid, and `SessionEvent.kind` excludes the host-wide kinds at the **type** level | A dead session keeps its old child pid, and the OS recycles pids — sampling it attributes a stranger's process tree to a dead agent. And a "not a session event" comment is not a boundary; `SessionEventKind = Exclude<EventKind, "github.budget" | "metrics.sample">` plus a `decodeSessionEvent` rejection makes it one |
 
 ## Phases
 

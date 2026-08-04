@@ -342,8 +342,18 @@ export function startWsServer(opts: ServerOpts) {
     manager.allSessions().map((s) => ({
       sessionId: s.id,
       label: s.title,
-      pid: s.agentPid,
-      inTurn: s.status === "running",
+      // An exited session keeps its old child pid, and the OS reuses pids: sampling
+      // it would attribute an unrelated process tree to a dead agent. Report no pid
+      // instead, which the collector already handles by omitting the row.
+      pid: s.status === "exited" ? undefined : s.agentPid,
+      // A turn is in flight through the interactive gates too: `awaiting-approval`
+      // and `awaiting-input` mean the agent is BLOCKED ON YOU mid-turn, not parked.
+      // Calling those "parked" would both mislabel the row and let the Elevated
+      // signal ("cost while no turn runs") fire against a legitimately open turn.
+      inTurn:
+        s.status === "running" ||
+        s.status === "awaiting-approval" ||
+        s.status === "awaiting-input",
     }));
 
   const emitMetricsSample = (sample: unknown, extra?: Record<string, unknown>): OutgoingFrame => ({

@@ -16,9 +16,13 @@ import { EventEmitter } from "node:events";
 import type { AgentAdapter } from "./adapters/adapter.js";
 
 /** Minimal in-process adapter whose events can be driven from the test. */
-function fakeAdapter(): AgentAdapter {
+function fakeAdapter(pid?: number): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as unknown as { agent: string }).agent = "stub";
+  // SPEC-37: acp/codex expose `agentPid` structurally (it is deliberately not on
+  // the AgentAdapter contract). A double without it makes every metrics agent-row
+  // test vacuous, so opt in explicitly where a test needs a pid.
+  if (pid !== undefined) (e as unknown as { agentPid: number }).agentPid = pid;
   (e as unknown as { start: () => Promise<void> }).start = async () => {};
   (e as unknown as { send: () => Promise<void> }).send = async () => {};
   (e as unknown as { cancel: () => Promise<void> }).cancel = async () => {};
@@ -272,7 +276,12 @@ async function withMetricsServer(
   process.env.MAKIT_HOME = home;
   const cert = await loadOrCreateCert();
   const registry = new DeviceRegistry();
-  const manager = new SessionManager({ projects: [project], adapterFactory: () => fakeAdapter() });
+  // Use this process's own pid: it genuinely exists in the `ps` table, so agent rows
+  // are actually populated and assertions about them are not vacuous.
+  const manager = new SessionManager({
+    projects: [project],
+    adapterFactory: () => fakeAdapter(process.pid),
+  });
 
   let tickFn: (() => void | Promise<void>) | null = null;
   let armedMs: number | null = null;
@@ -487,4 +496,49 @@ test("REGRESSION: driving samples never grows any session's event log (SPEC-37 d
       );
     }
   });
+});
+
+test("an exited session contributes no pid — a reused pid must not be attributed to it (SPEC-37)", async () => {
+  await withMetricsServer(async ({ connect, driveTick, manager }) => {
+    const projectId = manager.listProjects()[0].id;
+    const session = await manager.spawnPiSession(projectId);
+    const c = await connect();
+    c.send({ t: "cmd", id: "w1", kind: "metrics.watch", on: true });
+    await c.nextEvent((e) => e.t === "ack" && e.id === "w1");
+
+    // Mark the session exited. Its old child pid is still on the adapter, and the
+    // OS recycles pids — sampling it would attribute a stranger's process tree to
+    // a dead agent.
+    session.backfill([{ ts: Date.now(), kind: "session.status", payload: { status: "exited" } }]);
+    assert.equal(session.status, "exited", "precondition: the session really is exited");
+    c.metricsFrames.length = 0;
+    await driveTick();
+    await c.nextEvent((e) => e.kind === "metrics.sample");
+
+    const sample = c.metricsFrames.at(-1)?.sample as { agents: Array<{ sessionId: string }> };
+    assert.ok(
+      !sample.agents.some((a) => a.sessionId === session.id),
+      "an exited session must not appear as a live agent row",
+    );
+  });
+});
+
+test("a non-integer pid over loopback is rejected (SPEC-37 decision 6)", async () => {
+  // 0, negatives, fractions, NaN and Infinity are all `typeof "number"`. Without a
+  // safe-integer check each became `appPid` and the collector rendered a plausible
+  // app row for a process that cannot exist.
+  for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await withMetricsServer(async ({ connect, driveTick }) => {
+      const c = await connect();
+      c.send({ t: "hello", id: "h1", pid: bad });
+      await c.nextEvent((e) => e.t === "hello.ack" && e.id === "h1");
+      c.send({ t: "cmd", id: "w", kind: "metrics.watch", on: true });
+      await c.nextEvent((e) => e.t === "ack" && e.id === "w");
+      c.metricsFrames.length = 0;
+      await driveTick();
+      await c.nextEvent((e) => e.kind === "metrics.sample");
+      const sample = c.metricsFrames.at(-1)?.sample as { app: unknown };
+      assert.equal(sample.app, null, `pid ${String(bad)} must not produce an app row`);
+    });
+  }
 });
