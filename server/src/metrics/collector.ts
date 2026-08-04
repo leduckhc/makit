@@ -141,6 +141,8 @@ export class MetricsCollector {
   private watchers = 0;
 
   private tickCount = 0;
+  /** True while a tick is in flight — see {@link onTick} for why overlap is refused. */
+  private ticking = false;
   /** Per-pid CPU baseline for the Δcpu ÷ Δwall rate (app + every agent). */
   private readonly cpuBaseline = new Map<number, CpuBaseline>();
   /** First wall time a pid was observed, for `uptimeMs`. */
@@ -184,6 +186,11 @@ export class MetricsCollector {
   }
 
   /** History for a freshly-subscribed watcher: the last 30 minutes of samples. */
+  /** Pids with retained rate state — for tests asserting the absence of a leak. */
+  get trackedPidCount(): number {
+    return this.cpuBaseline.size;
+  }
+
   historyFor(now: number): MetricsSampleDTO[] {
     return this.ring.sinceMs(now, HISTORY_WINDOW_MS);
   }
@@ -209,6 +216,13 @@ export class MetricsCollector {
    * ignores the return value.
    */
   private readonly onTick = async (): Promise<void> => {
+    // `setInterval` does not await an async callback, and the 800ms `ps` cap bounds
+    // only the exec — not the self probe, the fs.stat, or assembly. Under event-loop
+    // congestion (exactly when these numbers matter) a tick can outlive its interval,
+    // and two overlapping ticks would race on the CPU baselines and interleave their
+    // `cpuUsage()` reads, producing a garbage `sampler` figure. Skip instead.
+    if (this.ticking) return;
+    this.ticking = true;
     try {
       await this.tick();
       this.errorLogged = false;
@@ -217,6 +231,8 @@ export class MetricsCollector {
         this.errorLogged = true;
         console.error("[metrics] collector tick failed; timer kept alive", err);
       }
+    } finally {
+      this.ticking = false;
     }
   };
 
@@ -292,6 +308,16 @@ export class MetricsCollector {
     };
 
     this.tickCount++;
+    // Prune the per-pid rate state to the pids we still care about. `cpuBaseline`
+    // and `firstSeenMs` would otherwise grow one entry per distinct root pid ever
+    // seen, for the lifetime of the server — a slow leak in the feature that claims
+    // makit is cheap (the same defect decision 4 forbids for the ledger, which
+    // server.ts already prunes).
+    const livePids = new Set<number>(agentEntries.map((a) => a.pid).filter((p): p is number => p !== undefined));
+    if (appPid !== undefined) livePids.add(appPid);
+    for (const pid of this.cpuBaseline.keys()) if (!livePids.has(pid)) this.cpuBaseline.delete(pid);
+    for (const pid of this.firstSeenMs.keys()) if (!livePids.has(pid)) this.firstSeenMs.delete(pid);
+
     this.ring.push(sample);
     this.deps.onSample(sample, { coarse });
   }

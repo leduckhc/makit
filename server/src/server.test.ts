@@ -327,6 +327,8 @@ interface MetricsConn {
   send: (frame: Record<string, unknown>) => void;
   nextEvent: (pred: (env: Envelope) => boolean) => Promise<Envelope>;
   metricsFrames: Envelope[];
+  /** Every frame received, for assertions about what must NOT be sent. */
+  allFrames: Envelope[];
   ping: () => Promise<void>;
 }
 
@@ -335,9 +337,11 @@ async function openMetricsConn(port: number): Promise<MetricsConn> {
   const pending: Array<{ pred: (e: Envelope) => boolean; resolve: (e: Envelope) => void }> = [];
   const buffered: Envelope[] = [];
   const metricsFrames: Envelope[] = [];
+  const allFrames: Envelope[] = [];
   const pongs = new Set<string>();
   ws.on("message", (raw) => {
     const env = JSON.parse(raw.toString()) as Envelope;
+    allFrames.push(env);
     if (env.t === "event" && env.kind === "metrics.sample") metricsFrames.push(env);
     if (env.t === "pong") pongs.add(env.id);
     const i = pending.findIndex((p) => p.pred(env));
@@ -364,7 +368,7 @@ async function openMetricsConn(port: number): Promise<MetricsConn> {
     ws.on("open", () => resolve());
     ws.on("error", reject);
   });
-  return { ws, send, nextEvent, metricsFrames, ping };
+  return { ws, send, nextEvent, metricsFrames, allFrames, ping };
 }
 
 test("metrics.watch {on:true} acks then a sample WITH history arrives; the next has none (SPEC-37)", async () => {
@@ -465,6 +469,21 @@ test("REGRESSION: driving samples never grows any session's event log (SPEC-37 d
       assert.ok(
         !s.events.some((ev) => ev.kind.startsWith("metrics.")),
         "no session event carries a metrics.* kind",
+      );
+    }
+    // The above two assertions only inspect the log. A future edit that routed
+    // samples through SubscriptionHub.fanout would keep the log clean and still be
+    // wrong — fanout wraps events as `session.event` frames, which the app replays
+    // as transcript content. Assert on what actually went over the wire instead of
+    // trusting the log alone (review finding: the log-only guard was half-theatre).
+    const sessionEventFrames = c.allFrames.filter(
+      (f) => f.t === "event" && f.kind === "session.event",
+    );
+    for (const f of sessionEventFrames) {
+      const ev = (f as { event?: { kind?: string } }).event;
+      assert.ok(
+        !(ev?.kind ?? "").startsWith("metrics."),
+        "a metrics sample must never be delivered as a session.event",
       );
     }
   });

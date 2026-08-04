@@ -371,6 +371,10 @@ export function startWsServer(opts: ServerOpts) {
       // agent's per-root state leaks forever (spec decision 4).
       const roots: number[] = [];
       for (const a of liveAgents()) if (a.pid !== undefined) roots.push(a.pid);
+      // The app is a ledger root too (its CPU comes from the same ps→ledger path).
+      // Omitting it evicted its credited-so-far CPU on every single tick.
+      const appRoot = firstAppPid();
+      if (appRoot !== undefined) roots.push(appRoot);
       ledger.retainOnly(roots);
       // Coarse (idle-cadence) frames colour the footer icon for EVERY authed
       // client; fine (watched) frames draw charts for watchers only.

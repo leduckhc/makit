@@ -382,6 +382,9 @@ export JSON round-trips; the chat underneath stays interactive.
 | `ps` output shape differs across macOS/Linux (and `time=` uses `[dd-]hh:mm:ss` vs `mm:ss.ss`) | Fixture tests for both; the parser rejects unparsable rows individually rather than throwing away the table |
 | The meter becomes the cost | Decision 5 + the self-cost row + the manual cost check in Testing |
 | 1 Hz pinned forever by a client that closed without unwatching | Flag cleared in `ws.on("close")`, asserted in `server.test.ts` |
+| A tick outliving its interval, so two ticks race the CPU baselines | The `ps` timeout bounds only the exec, not the whole tick, so the collector refuses re-entry while a tick is in flight (found in review; regression-tested) |
+| Per-pid rate state accumulating across session churn | `cpuBaseline`/`firstSeenMs` are pruned to live pids every tick, and the ledger is pruned via `retainOnly` including the app root (found in review; leak-tested with 50 sessions) |
+| **An adapter that never emits a terminal status pins `running`** | Then `turnActive` stays true, the icon animates forever and the **Elevated** state — "cost while *not* working" — can never fire, silently hiding the exact regression this feature exists to catch. Not currently guarded; the shared `TurnTracker` (`adapters/turn-status.ts`) is the single place that must always settle, and it is tested there |
 | Reporting a pid becomes a "sample any pid" primitive | Loopback-only acceptance (decision 6) |
 | Dashboard overlay competes with Settings for the same z-space | Both are `DesktopWindowBody` children; opening Settings closes the dashboard (single-overlay invariant, tested) |
 | Charts drawn from a mixed-cadence ring look uneven at the 5 s → 1 Hz seam | Samples carry `ts`; painters interpolate on time, not index — tested with a ring that straddles a cadence change |

@@ -451,3 +451,58 @@ test("a failed ps must not make live agents look like they exited (SPEC-32 lesso
   assert.equal(s.turnActive, true, "turn state comes from the session registry, not from ps");
   assert.ok(s.server.rssBytes >= 0, "the server row is still valid: it never came from ps");
 });
+
+// ── review findings (pass 1 on the server phase) ──────────────────────────────
+
+test("per-pid rate state is pruned to live pids (no slow leak across session churn)", async () => {
+  const h = harness();
+  h.collector.setWatchers(1);
+  h.collector.start();
+
+  // 50 sessions come and go, one per tick, each with a distinct root pid.
+  for (let i = 0; i < 50; i++) {
+    const pid = 5000 + i;
+    h.setAgents([{ sessionId: `s${i}`, label: "pi", pid, inTurn: false }]);
+    h.setStdout(`  ${pid}     1   10240      0:01 pi`);
+    await h.scheduler.fire();
+  }
+
+  // Only the currently-live pid keeps rate state, not all 50 ever seen.
+  assert.equal(
+    h.collector.trackedPidCount,
+    1,
+    "cpuBaseline/firstSeenMs must not grow one entry per pid ever seen",
+  );
+});
+
+test("overlapping ticks are refused (a slow tick must not race its successor)", async () => {
+  // A mutable holder, not a plain `let`: TS narrows an assigned-in-callback
+  // variable to `never` at the call site.
+  const gate: { open: () => void } = { open: () => {} };
+  let execCalls = 0;
+  const h = harness({
+    exec: async () => {
+      execCalls++;
+      // First tick hangs until we release it; a second fire must be a no-op.
+      if (execCalls === 1) {
+        await new Promise<void>((resolve) => {
+          gate.open = resolve;
+        });
+      }
+      return { code: 0, stdout: "", stderr: "" };
+    },
+  });
+  h.collector.setWatchers(1);
+  h.collector.start();
+
+  const firstTick = h.scheduler.fire(); // hangs inside exec
+  await Promise.resolve();
+  await h.scheduler.fire(); // must be skipped, not interleaved
+  assert.equal(execCalls, 1, "a second tick must not start while the first is in flight");
+
+  gate.open();
+  await firstTick;
+  // Once the first tick finished, the next one runs normally.
+  await h.scheduler.fire();
+  assert.equal(execCalls, 2);
+});
