@@ -26,20 +26,22 @@ SessionEvent _userMessage({required bool steered}) => SessionEvent(
 
 void main() {
   test('foldEvents carries the steered flag onto the item', () {
-    final steered = foldEvents([_userMessage(steered: true)])
-        .whereType<UserMessageItem>()
-        .single;
+    final steered = foldEvents([
+      _userMessage(steered: true),
+    ]).whereType<UserMessageItem>().single;
     expect(steered.steered, isTrue);
 
-    final plain = foldEvents([_userMessage(steered: false)])
-        .whereType<UserMessageItem>()
-        .single;
+    final plain = foldEvents([
+      _userMessage(steered: false),
+    ]).whereType<UserMessageItem>().single;
     expect(plain.steered, isFalse);
   });
 
   testWidgets('a steered bubble is captioned', (tester) async {
     await tester.pumpWidget(
-      _host(const ChatBubble.user(text: 'do X instead', ts: 1000, steered: true)),
+      _host(
+        const ChatBubble.user(text: 'do X instead', ts: 1000, steered: true),
+      ),
     );
     expect(find.text(kSteeredNote), findsOneWidget);
   });
@@ -56,9 +58,9 @@ void main() {
   ) async {
     // The wiring, not just the widget: a steered event must reach the bubble
     // through foldEvents + chatItemWidget, which is what both surfaces render.
-    final item = foldEvents([_userMessage(steered: true)])
-        .whereType<UserMessageItem>()
-        .single;
+    final item = foldEvents([
+      _userMessage(steered: true),
+    ]).whereType<UserMessageItem>().single;
     await tester.pumpWidget(
       ProviderScope(child: _host(chatItemWidget('s1', item))),
     );

@@ -588,7 +588,12 @@ void main() {
         ]);
         store.subscribeSession(_sid);
         transport.pushAck(id: 's-$_sid');
-        transport.pushEvent(seq: 1, sessionId: _sid, kind: 'user.message', text: 'long task');
+        transport.pushEvent(
+          seq: 1,
+          sessionId: _sid,
+          kind: 'user.message',
+          text: 'long task',
+        );
         await Future<void>.delayed(Duration.zero);
 
         store.appendOptimisticMessage(_sid, 'mid-turn');

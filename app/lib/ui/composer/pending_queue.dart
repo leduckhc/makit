@@ -259,10 +259,7 @@ class _PendingBubbleState extends State<PendingBubble> {
                             controller: _ctrl,
                             focusNode: _focus,
                             autofocus: true,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: cs.onSurface,
-                            ),
+                            style: TextStyle(fontSize: 13, color: cs.onSurface),
                             decoration: const InputDecoration(
                               isDense: true,
                               border: InputBorder.none,
@@ -321,9 +318,9 @@ class _PendingBubbleState extends State<PendingBubble> {
             padding: const EdgeInsets.only(top: kSpace2, right: kSpace4),
             child: Text(
               caption,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: cs.outline,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: cs.outline),
             ),
           ),
         ],
@@ -367,12 +364,7 @@ class _OrderControls extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         arrow(PhosphorIconsLight.caretUp, canMoveUp, -1, 'Send this sooner'),
-        arrow(
-          PhosphorIconsLight.caretDown,
-          canMoveDown,
-          1,
-          'Send this later',
-        ),
+        arrow(PhosphorIconsLight.caretDown, canMoveDown, 1, 'Send this later'),
       ],
     );
   }

@@ -38,10 +38,8 @@ Future<void> hold(WidgetTester tester, [Duration d = _beat]) async {
   }
 }
 
-Finder _bubbleWithText(String text) => find.ancestor(
-  of: find.text(text),
-  matching: find.byType(PendingBubble),
-);
+Finder _bubbleWithText(String text) =>
+    find.ancestor(of: find.text(text), matching: find.byType(PendingBubble));
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -101,7 +99,10 @@ void main() {
     );
     await hold(tester, const Duration(milliseconds: 700));
     await tester.testTextInput.receiveAction(TextInputAction.done);
-    await pumpUntil(tester, _bubbleWithText('also update the README and CHANGELOG'));
+    await pumpUntil(
+      tester,
+      _bubbleWithText('also update the README and CHANGELOG'),
+    );
     await hold(tester);
 
     // 5 ── cancel one (queue.cancel): a pending message leaves no transcript
@@ -130,7 +131,10 @@ void main() {
     await hold(tester);
     await closeSettings(tester);
     await openSessionContaining(tester, 'upload route');
-    await pumpUntil(tester, _bubbleWithText('also update the README and CHANGELOG'));
+    await pumpUntil(
+      tester,
+      _bubbleWithText('also update the README and CHANGELOG'),
+    );
     await hold(tester);
 
     // 7 ── the turn ends and the survivor flushes: ghost becomes a real message.

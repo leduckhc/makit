@@ -34,9 +34,15 @@ Widget _host({
       home: Scaffold(
         body: Column(
           children: [
-            PendingQueueSlot(sessionId: _sid, slot: PendingQueuePlacement.inline),
+            PendingQueueSlot(
+              sessionId: _sid,
+              slot: PendingQueuePlacement.inline,
+            ),
             Spacer(),
-            PendingQueueSlot(sessionId: _sid, slot: PendingQueuePlacement.pinned),
+            PendingQueueSlot(
+              sessionId: _sid,
+              slot: PendingQueuePlacement.pinned,
+            ),
           ],
         ),
       ),
@@ -45,9 +51,15 @@ Widget _host({
 }
 
 void main() {
-  test('the placement preference defaults to pinned — the visible-always floor', () {
-    expect(pendingQueuePlacementPreference.defaultValue, PendingQueuePlacement.pinned);
-  });
+  test(
+    'the placement preference defaults to pinned — the visible-always floor',
+    () {
+      expect(
+        pendingQueuePlacementPreference.defaultValue,
+        PendingQueuePlacement.pinned,
+      );
+    },
+  );
 
   test('an unknown stored value falls back to the default, never crashes', () {
     expect(pendingQueuePlacementPreference.decode('sideways'), isNull);
@@ -78,7 +90,11 @@ void main() {
       matching: find.byType(PendingBubble),
     );
     expect(rendered, findsOneWidget);
-    expect(find.byType(PendingBubble), findsOneWidget, reason: 'exactly one place');
+    expect(
+      find.byType(PendingBubble),
+      findsOneWidget,
+      reason: 'exactly one place',
+    );
   });
 
   testWidgets('inline renders in the transcript slot only', (tester) async {
@@ -93,7 +109,8 @@ void main() {
     expect(
       find.descendant(
         of: find.byWidgetPredicate(
-          (w) => w is PendingQueueSlot && w.slot == PendingQueuePlacement.inline,
+          (w) =>
+              w is PendingQueueSlot && w.slot == PendingQueuePlacement.inline,
         ),
         matching: find.byType(PendingBubble),
       ),
@@ -151,7 +168,8 @@ void main() {
     expect(
       find.descendant(
         of: find.byWidgetPredicate(
-          (w) => w is PendingQueueSlot && w.slot == PendingQueuePlacement.pinned,
+          (w) =>
+              w is PendingQueueSlot && w.slot == PendingQueuePlacement.pinned,
         ),
         matching: find.byType(PendingBubble),
       ),
@@ -164,12 +182,17 @@ void main() {
     expect(
       find.descendant(
         of: find.byWidgetPredicate(
-          (w) => w is PendingQueueSlot && w.slot == PendingQueuePlacement.inline,
+          (w) =>
+              w is PendingQueueSlot && w.slot == PendingQueuePlacement.inline,
         ),
         matching: find.byType(PendingBubble),
       ),
       findsOneWidget,
     );
-    expect(find.byType(PendingBubble), findsOneWidget, reason: 'moved, not cloned');
+    expect(
+      find.byType(PendingBubble),
+      findsOneWidget,
+      reason: 'moved, not cloned',
+    );
   });
 }

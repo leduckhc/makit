@@ -24,7 +24,8 @@ final inlineQueueVisibleProvider = Provider.family<bool, String>((
   ref,
   sessionId,
 ) {
-  if (ref.watch(pendingQueuePlacementProvider) != PendingQueuePlacement.inline) {
+  if (ref.watch(pendingQueuePlacementProvider) !=
+      PendingQueuePlacement.inline) {
     return false;
   }
   return ref.watch(queuedMessagesProvider(sessionId)).isNotEmpty;

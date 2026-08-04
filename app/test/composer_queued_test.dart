@@ -109,7 +109,9 @@ void main() {
 
   testWidgets('no queue widget means no extra chrome', (tester) async {
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: Composer(onSend: (_) {}))),
+      MaterialApp(
+        home: Scaffold(body: Composer(onSend: (_) {})),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('QUEUE HERE'), findsNothing);

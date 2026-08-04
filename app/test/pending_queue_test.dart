@@ -13,8 +13,16 @@ QueuedMessage _q(String id, String text) =>
     QueuedMessage(id: id, text: text, queuedAt: 0);
 
 final _commands = [
-  const SlashCmd(name: 'review', description: 'Review the tree', source: 'prompt'),
-  const SlashCmd(name: 'fix-tests', description: 'Fix the suite', source: 'prompt'),
+  const SlashCmd(
+    name: 'review',
+    description: 'Review the tree',
+    source: 'prompt',
+  ),
+  const SlashCmd(
+    name: 'fix-tests',
+    description: 'Fix the suite',
+    source: 'prompt',
+  ),
 ];
 
 /// Records what the widget asked the store to do, so the tests assert on
@@ -46,7 +54,9 @@ void main() {
   testWidgets('renders one ghost bubble per pending message, in order', (
     tester,
   ) async {
-    await tester.pumpWidget(_host([_q('q1', 'first'), _q('q2', 'second')], _Calls()));
+    await tester.pumpWidget(
+      _host([_q('q1', 'first'), _q('q2', 'second')], _Calls()),
+    );
     await tester.pumpAndSettle();
 
     final bubbles = tester
@@ -67,7 +77,9 @@ void main() {
     tester,
   ) async {
     final calls = _Calls();
-    await tester.pumpWidget(_host([_q('q1', 'first'), _q('q2', 'second')], calls));
+    await tester.pumpWidget(
+      _host([_q('q1', 'first'), _q('q2', 'second')], calls),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -130,12 +142,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(calls.cancels, ['q1']);
-    expect(calls.edits, isEmpty, reason: 'a blank draft is a cancel, not an edit');
+    expect(
+      calls.edits,
+      isEmpty,
+      reason: 'a blank draft is a cancel, not an edit',
+    );
   });
 
   testWidgets('✕ cancels that message only', (tester) async {
     final calls = _Calls();
-    await tester.pumpWidget(_host([_q('q1', 'first'), _q('q2', 'second')], calls));
+    await tester.pumpWidget(
+      _host([_q('q1', 'first'), _q('q2', 'second')], calls),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -170,24 +188,25 @@ void main() {
     expect(find.text('/new'), findsNothing);
   });
 
-  testWidgets('picking a slash command puts it in the editor, not straight out', (
-    tester,
-  ) async {
-    final calls = _Calls();
-    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'picking a slash command puts it in the editor, not straight out',
+    (tester) async {
+      final calls = _Calls();
+      await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('first'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '/rev');
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('/review'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('first'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '/rev');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('/review'));
+      await tester.pumpAndSettle();
 
-    expect(calls.edits, isEmpty, reason: 'picking is not committing');
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller?.text,
-      '/review ',
-    );
-  });
+      expect(calls.edits, isEmpty, reason: 'picking is not committing');
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller?.text,
+        '/review ',
+      );
+    },
+  );
 }
