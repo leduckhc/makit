@@ -118,6 +118,17 @@ Container _chipSurface(WidgetTester tester, String label) => tester
     )
     .firstWhere((c) => c.color != null);
 
+/// The composer field of the pane hosting the tab labelled [label].
+TextField _composerField(WidgetTester tester, String label) {
+  final pane = find.ancestor(
+    of: find.text(label),
+    matching: find.byType(SplitView),
+  );
+  return tester.widget<TextField>(
+    find.descendant(of: pane, matching: find.byType(TextField)).first,
+  );
+}
+
 ColorScheme _scheme(WidgetTester tester) =>
     Theme.of(tester.element(find.byType(WorkspaceView))).colorScheme;
 
@@ -164,6 +175,32 @@ void main() {
       expect(_paneColor(tester, 'Alpha'), cs.surface);
       expect(_paneColor(tester, 'Beta'), cs.surfaceContainerLow);
     });
+  });
+
+  group('unfocused pane composer', () {
+    testWidgets('the unfocused pane shows a 1-line composer; the focused pane '
+        'keeps the full multiline form', (tester) async {
+      await _twoPanes(tester); // pane B ("Beta") focused
+
+      expect(_composerField(tester, 'Alpha').maxLines, 1);
+      expect(_composerField(tester, 'Beta').maxLines, greaterThan(1));
+    });
+
+    testWidgets(
+      'activating the other split moves the expanded composer to it',
+      (tester) async {
+        final c = await _twoPanes(tester);
+        final alphaSplitId = findTab(
+          c.read(workspaceControllerProvider).root,
+          's1',
+        )!.$1;
+        _ws(c).setActiveSplit(alphaSplitId);
+        await tester.pumpAndSettle();
+
+        expect(_composerField(tester, 'Alpha').maxLines, greaterThan(1));
+        expect(_composerField(tester, 'Beta').maxLines, 1);
+      },
+    );
   });
 
   group('tab chips', () {
