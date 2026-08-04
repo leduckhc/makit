@@ -11,6 +11,7 @@
  * (msgId/thinkId + delta + final) contract the app expects from the pi adapter.
  */
 
+import { createHash } from "node:crypto";
 import type { SessionUpdate, ToolKind } from "@agentclientprotocol/sdk";
 import type { AdapterEvent } from "./adapter.js";
 import type { MediaDescriptor } from "../media/store.js";
@@ -335,8 +336,18 @@ export class AcpEventMapper {
     for (const image of imageBlocksIn(block)) this.storeMedia(image);
   }
 
+  /**
+   * Store `block` and announce it unless that exact blob was already announced.
+   *
+   * The payload guard exists because ACP re-sends `rawOutput` **cumulatively** on
+   * every update, so a streamed screenshot would otherwise be base64-decoded and
+   * re-hashed by the store on each one. It is keyed by a digest of the whole
+   * payload: `length + first 64 chars` is not an identity — two captures of the
+   * same display share a byte-identical PNG header + IHDR, so the second image
+   * would be silently dropped.
+   */
   private storeMedia(block: ImageBlock, callId?: string): void {
-    const key = `${callId ?? ""}:${block.data.length}:${block.data.slice(0, 64)}`;
+    const key = `${callId ?? ""}:${createHash("sha1").update(block.data).digest("base64")}`;
     if (this.ingestedPayloads.has(key)) return;
     this.ingestedPayloads.add(key);
     const stored = this.hooks.putMedia?.(block.data, block.mimeType);

@@ -144,3 +144,22 @@ test("a driver advertising none of the default set still yields its tools", () =
   // Forward compatibility: a renamed roster must not silently register nothing.
   assert.deepEqual(selectTools(["future_tool_a", "future_tool_b"], {}), ["future_tool_a", "future_tool_b"]);
 });
+
+test("after the driver exits, the next call fails at once instead of waiting for the deadline", async () => {
+  const c = new McpStdioClient({ command: process.execPath, args: [FAKE], timeoutMs: 5_000 });
+  await c.start();
+
+  // The driver dies mid-request: that call fails with the exit reason.
+  const crashed = await c.call("crash", {});
+  assert.equal(crashed.isError, true);
+
+  // A *subsequent* call must not be written to the dead child's stdin (an
+  // unhandled EPIPE can take down the whole pi process) and must not sit until
+  // the request deadline expires.
+  const startedAt = Date.now();
+  const res = await c.call("click", { element: 1 });
+  assert.equal(res.isError, true);
+  assert.match((res.content[0] as any).text, /not running/);
+  assert.ok(Date.now() - startedAt < 1_000, `waited ${Date.now() - startedAt}ms; expected an immediate failure`);
+  await c.dispose();
+});

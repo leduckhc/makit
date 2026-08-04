@@ -166,3 +166,31 @@ test("the same blob is announced once, a new blob is announced again", () => {
   // *event* is what gets deduped, exactly as on the ACP path.
   assert.equal(puts.length, 3);
 });
+
+test("two same-length images that diverge late are both announced", () => {
+  const { events, puts, mapper } = collectWithMedia();
+  // Real captures of one display share a byte-identical PNG header + IHDR, so a
+  // dedup key built from length + a fixed-length prefix collides and silently
+  // drops the second image.
+  const a = "x".repeat(70) + "AAAA";
+  const b = "x".repeat(70) + "BBBB";
+  mapper.handle("item/completed", {
+    item: {
+      type: "mcpToolCall",
+      id: "t7",
+      server: "cua_driver",
+      tool: "get_desktop_state",
+      result: {
+        content: [
+          { type: "image", data: a, mimeType: "image/png" },
+          { type: "image", data: b, mimeType: "image/png" },
+        ],
+      },
+    },
+  });
+  assert.deepEqual(puts.map((p) => p.data), [a, b], "both payloads must reach the store");
+  assert.deepEqual(
+    events.filter((e) => e.kind === "agent.media").map((e) => (e.payload as any).mediaId),
+    ["sha-" + a, "sha-" + b],
+  );
+});

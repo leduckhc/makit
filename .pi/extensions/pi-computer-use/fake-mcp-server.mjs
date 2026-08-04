@@ -69,6 +69,11 @@ function handle(msg) {
           ],
         });
       }
+      if (name === "crash") {
+        // Exit without replying: lets a test observe the client's behaviour after
+        // the driver dies mid-flight.
+        process.exit(0);
+      }
       if (name === "click") {
         return reply(msg.id, { content: [{ type: "text", text: `clicked ${args?.element}` }] });
       }

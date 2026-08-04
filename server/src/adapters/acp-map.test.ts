@@ -737,3 +737,22 @@ test("an array rawInput does not count as usable args", () => {
   } as unknown as SessionUpdate);
   assert.deepEqual(events.filter((e) => e.kind === "tool.call.start"), []);
 });
+
+test("two same-length images that diverge late are both announced", () => {
+  const { events, puts, mapper } = collectWithMedia();
+  // Same collision class as the codex path: length + a fixed-length prefix is
+  // not an identity. The cumulative-update guard must stay, but keyed exactly.
+  const a = "y".repeat(70) + "AAAA";
+  const b = "y".repeat(70) + "BBBB";
+  mapper.handle({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "c9",
+    status: "completed",
+    content: [
+      { type: "content", content: { type: "image", data: a, mimeType: "image/png" } },
+      { type: "content", content: { type: "image", data: b, mimeType: "image/png" } },
+    ],
+  } as never);
+  assert.deepEqual(puts.map((p) => p.data), [a, b], "both payloads must reach the store");
+  assert.equal(events.filter((e) => e.kind === "agent.media").length, 2);
+});

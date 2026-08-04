@@ -76,8 +76,13 @@ export class McpStdioClient {
     // stderr is the server's log channel, not protocol — drained so a chatty
     // driver cannot fill its pipe buffer and deadlock.
     child.stderr.resume();
-    child.on("exit", () => this.failAll(new Error("computer-use driver exited")));
-    child.on("error", (err) => this.failAll(err));
+    // A dead child must be uninstalled, not just have its waiters failed: a later
+    // `request()` would otherwise pass the `if (!child)` guard, write to a closed
+    // stdin (an unhandled EPIPE can take down the whole pi process) and then sit
+    // until the request deadline instead of failing at once.
+    child.stdin.on("error", () => this.retire(child, new Error("computer-use driver stdin failed")));
+    child.on("exit", () => this.retire(child, new Error("computer-use driver exited")));
+    child.on("error", (err) => this.retire(child, err));
 
     const init = (await this.request("initialize", {
       protocolVersion: PROTOCOL_VERSION,
@@ -167,6 +172,16 @@ export class McpStdioClient {
   private failAll(err: Error): void {
     for (const { reject } of this.pending.values()) reject(err);
     this.pending.clear();
+  }
+
+  /**
+   * Drop `child` as the active driver and fail its in-flight requests. Guarded on
+   * identity so a late event from an already-replaced child cannot retire its
+   * successor.
+   */
+  private retire(child: ChildProcessWithoutNullStreams, err: Error): void {
+    if (this.child === child) this.child = undefined;
+    this.failAll(err);
   }
 }
 

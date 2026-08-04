@@ -22,13 +22,17 @@
  * - `MAKIT_CUA_DRIVER_CMD=/path/to/cua-driver` — override binary resolution
  *   (local builds / CI), mirroring Hermes' `HERMES_CUA_DRIVER_CMD`.
  *
- * Only the codex adapter is wired: `codex app-server` accepts `-c` config
- * overrides, so the server is declared per-spawn without touching the user's
- * `~/.codex/config.toml`. The pi path has no route — `pi-acp` accepts ACP
+ * Only the codex adapter is wired **here**: `codex app-server` accepts `-c`
+ * config overrides, so the server is declared per-spawn without touching the
+ * user's `~/.codex/config.toml`.
+ *
+ * pi is served by a different mechanism, not by this module. `pi-acp` accepts ACP
  * `mcpServers` and silently ignores it (verified against pi-acp 0.0.32:
- * `mcpCapabilities: {http:false, sse:false}`), because pi has no MCP client.
- * For pi, cua's documented fallback is one-shot `cua-driver call …` from pi's
- * own shell tool, which needs nothing from makit.
+ * `mcpCapabilities: {http:false, sse:false}`) because pi has no MCP client of its
+ * own, so there is nothing for the ACP adapter to configure. Instead the repo
+ * ships a pi extension at `.pi/extensions/pi-computer-use/`, which speaks stdio
+ * MCP itself and republishes each driver tool as `computer_<tool>`. It reads the
+ * same `MAKIT_COMPUTER_USE` / `MAKIT_CUA_DRIVER_CMD` env contract as this module.
  */
 
 import { resolveBinPath } from "./catalog.js";

@@ -31,8 +31,6 @@ type Risk = "safe" | "risky" | "destructive";
 export class CodexEventMapper {
   /** Tool-call item ids we've emitted a `tool.call.start` for. */
   private startedTools = new Set<string>();
-  /** Payload keys already stored, so one result never double-emits. */
-  private ingestedPayloads = new Set<string>();
   /** Media ids already announced, so an identical blob is announced once. */
   private seenMedia = new Set<string>();
 
@@ -192,10 +190,16 @@ export class CodexEventMapper {
     for (const block of imageBlocksIn(result)) this.storeMedia(block, callId);
   }
 
+  /**
+   * Store `block` and announce it unless that exact blob was already announced.
+   *
+   * Dedup is by the store's content-addressed `mediaId` only. There is no
+   * pre-store payload guard: app-server delivers `item/completed` once per item,
+   * so a result is never re-scanned, and `putBase64` is idempotent for identical
+   * bytes. (The ACP mapper does guard, because ACP re-sends `rawOutput`
+   * cumulatively on every update.)
+   */
   private storeMedia(block: ImageBlock, callId: string): void {
-    const key = `${callId}:${block.data.length}:${block.data.slice(0, 64)}`;
-    if (this.ingestedPayloads.has(key)) return;
-    this.ingestedPayloads.add(key);
     const stored = this.hooks.putMedia?.(block.data, block.mimeType);
     // null = refused (bad mime / over cap / malformed). Drop it silently: the
     // tool's text result still lands, so the turn is never blocked by media.

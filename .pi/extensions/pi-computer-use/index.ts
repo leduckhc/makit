@@ -15,7 +15,7 @@
  * into the media store (SPEC-22).
  *
  * Install (once):
- *   ln -s "$PWD/server/extensions/pi-computer-use" ~/.pi/agent/extensions/pi-computer-use
+ *   ln -s "$PWD/.pi/extensions/pi-computer-use" ~/.pi/agent/extensions/pi-computer-use
  * Enable (per shell / per makit daemon):
  *   MAKIT_COMPUTER_USE=1
  *
