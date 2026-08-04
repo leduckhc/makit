@@ -1,0 +1,121 @@
+/// Flutter frame-timing collector for the metrics panel (SPEC-37 Tier 1).
+///
+/// Registers a [SchedulerBinding] timings callback into a fixed 600-frame ring
+/// and derives p50/p95/dropped from it. The callback is registered **only while
+/// the panel is watching** and removed on release/dispose: a leaked
+/// `addTimingsCallback` runs for the process lifetime, so it is a permanent cost
+/// in the one feature whose entire point is proving makit is cheap. The add/
+/// remove hooks are injectable so a test can count registrations without a real
+/// binding.
+library;
+
+import 'package:flutter/scheduler.dart';
+
+/// Ring capacity — 600 frames ≈ 10 s at 60 fps, enough for a stable p95 without
+/// holding minutes of history the panel never shows.
+const int kFrameRingCapacity = 600;
+
+/// A frame slower than this (ms) is "dropped" — one 60 fps budget (16.7 ms).
+const double kFrameBudgetMs = 1000 / 60;
+
+/// p50/p95 frame build+raster time and the dropped-frame count over the ring.
+class FrameStats {
+  const FrameStats({
+    required this.p50Ms,
+    required this.p95Ms,
+    required this.dropped,
+    required this.sampleCount,
+  });
+
+  final double p50Ms;
+  final double p95Ms;
+  final int dropped;
+  final int sampleCount;
+
+  static const empty = FrameStats(
+    p50Ms: 0,
+    p95Ms: 0,
+    dropped: 0,
+    sampleCount: 0,
+  );
+}
+
+/// Signatures matching [SchedulerBinding.addTimingsCallback] /
+/// `removeTimingsCallback`, injected so tests count without a live binding.
+typedef AddTimingsCallback = void Function(TimingsCallback callback);
+typedef RemoveTimingsCallback = void Function(TimingsCallback callback);
+
+/// Collects frame totals into a ring and exposes [stats]. Idempotent
+/// [register]/[dispose] — double-registering would double-count every frame.
+class FrameTimingsCollector {
+  FrameTimingsCollector({
+    AddTimingsCallback? add,
+    RemoveTimingsCallback? remove,
+  }) : _add = add ?? SchedulerBinding.instance.addTimingsCallback,
+       _remove = remove ?? SchedulerBinding.instance.removeTimingsCallback;
+
+  final AddTimingsCallback _add;
+  final RemoveTimingsCallback _remove;
+
+  // A plain growable list used as a ring: writes wrap at [kFrameRingCapacity],
+  // so it never exceeds capacity and never shifts (O(1) per frame at 60 fps).
+  final List<double> _totalsMs = <double>[];
+  int _cursor = 0;
+
+  TimingsCallback? _callback;
+
+  /// Whether the callback is currently registered (for tests/diagnostics).
+  bool get isRegistered => _callback != null;
+
+  /// Register the timings callback. No-op if already registered.
+  void register() {
+    if (_callback != null) return;
+    void handler(List<FrameTiming> timings) => _onTimings(timings);
+    _callback = handler;
+    _add(handler);
+  }
+
+  /// Remove the callback. No-op if not registered. Safe to call from dispose.
+  void dispose() {
+    final callback = _callback;
+    if (callback == null) return;
+    _remove(callback);
+    _callback = null;
+  }
+
+  void _onTimings(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      final ms = timing.totalSpan.inMicroseconds / 1000.0;
+      if (_totalsMs.length < kFrameRingCapacity) {
+        _totalsMs.add(ms);
+      } else {
+        _totalsMs[_cursor] = ms;
+        _cursor = (_cursor + 1) % kFrameRingCapacity;
+      }
+    }
+  }
+
+  /// Current p50/p95/dropped over the ring, or [FrameStats.empty] before any
+  /// frame has been recorded.
+  FrameStats get stats {
+    if (_totalsMs.isEmpty) return FrameStats.empty;
+    final sorted = List<double>.of(_totalsMs)..sort();
+    var dropped = 0;
+    for (final ms in sorted) {
+      if (ms > kFrameBudgetMs) dropped++;
+    }
+    return FrameStats(
+      p50Ms: _percentile(sorted, 0.50),
+      p95Ms: _percentile(sorted, 0.95),
+      dropped: dropped,
+      sampleCount: sorted.length,
+    );
+  }
+
+  /// Nearest-rank percentile of an already-sorted list.
+  static double _percentile(List<double> sorted, double q) {
+    if (sorted.isEmpty) return 0;
+    final rank = (q * (sorted.length - 1)).round();
+    return sorted[rank];
+  }
+}

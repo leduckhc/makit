@@ -1,0 +1,545 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/metrics/metrics_button.dart';
+import 'package:makit/desktop/metrics/metrics_dashboard_open.dart';
+import 'package:makit/desktop/metrics/metrics_icon_state.dart';
+import 'package:makit/store/metrics.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+
+const int _mb = 1024 * 1024;
+
+AgentMetrics _agent({
+  required String label,
+  int pid = 100,
+  int rssBytes = 9 * _mb,
+  double? cpuPercent = 0,
+  bool inTurn = false,
+  int? procs = 1,
+  int? uptimeMs = 12 * 60 * 1000,
+  String sessionId = 's1',
+}) => AgentMetrics(
+  pid: pid,
+  rssBytes: rssBytes,
+  cpuPercent: cpuPercent,
+  cpuSeconds: 3,
+  sessionId: sessionId,
+  label: label,
+  inTurn: inTurn,
+  procs: procs,
+  uptimeMs: uptimeMs,
+);
+
+MetricsSample _sample({
+  int ts = 100000,
+  double? appCpu = 0.3,
+  double? serverCpu = 0.1,
+  List<AgentMetrics>? agents,
+  bool turnActive = false,
+  bool procTableOk = true,
+  bool withApp = true,
+  double? samplerCpu = 0.1,
+  StorageMetrics? storage,
+}) => MetricsSample(
+  ts: ts,
+  app: withApp
+      ? SurfaceMetrics(
+          pid: 1,
+          rssBytes: 118 * _mb,
+          cpuPercent: appCpu,
+          cpuSeconds: 4,
+        )
+      : null,
+  server: ServerMetrics(
+    pid: 2,
+    rssBytes: 51 * _mb,
+    cpuPercent: serverCpu,
+    cpuSeconds: 2,
+    eventLoopP50: 1.2,
+    eventLoopP99: 1.8,
+  ),
+  agents: agents ?? [_agent(label: 'pi · makit')],
+  wire: const WireMetrics(
+    inBytesPerSec: 2048,
+    outBytesPerSec: 1024,
+    framesPerSec: 3,
+  ),
+  storage: storage,
+  sampler: SamplerMetrics(cpuPercent: samplerCpu, rssBytes: 2 * _mb),
+  turnActive: turnActive,
+  procTableOk: procTableOk,
+);
+
+Widget _host({
+  MetricsSample? sample,
+  List<MetricsSample>? history,
+  MetricsWatchController? watch,
+  PreferencesController? prefs,
+  double width = 900,
+  double height = 700,
+}) => ProviderScope(
+  overrides: [
+    metricsProvider.overrideWithValue(sample),
+    metricsHistoryProvider.overrideWithValue(
+      history ?? (sample == null ? const [] : [sample]),
+    ),
+    // Always overridden: the real controller issues a `cmd` over the socket,
+    // which leaves a pending request timer and fails every test that merely
+    // opens the panel.
+    metricsWatchControllerProvider.overrideWithValue(
+      watch ?? MetricsWatchController((_) {}),
+    ),
+    preferencesControllerProvider.overrideWith(
+      (ref) => prefs ?? PreferencesController.ephemeral(),
+    ),
+  ],
+  child: MaterialApp(
+    home: Scaffold(
+      body: Center(
+        child: SizedBox(
+          width: width,
+          height: height,
+          // Bottom-anchored like the real footer, so the popover opens upward.
+          child: const Align(
+            alignment: Alignment.bottomRight,
+            child: MetricsButton(),
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
+Future<void> _open(WidgetTester tester) async {
+  await tester.tap(find.byIcon(PhosphorIconsLight.pulse).first);
+  await tester.pumpAndSettle();
+}
+
+/// Opens without settling. Required whenever a turn is running: decision 12 shows
+/// "working" as a *repeating* glyph animation instead of a tint, so the tree never
+/// reaches a settled state and `pumpAndSettle` would time out.
+Future<void> _openWhileWorking(WidgetTester tester) async {
+  await tester.tap(find.byIcon(PhosphorIconsLight.pulse).first);
+  await tester.pump(const Duration(milliseconds: 16));
+}
+
+void main() {
+  group('formatting', () {
+    /// Decision 2: a null rate is `—`. A `0.0%` would read as a *measured* idle,
+    /// which is a different and unearned claim.
+    test('a null cpuPercent renders an em dash, never 0.0%', () {
+      expect(formatCpu(null), '—');
+      expect(formatCpu(0), '0.0%');
+      expect(formatCpu(89.34), '89.3%');
+    });
+
+    test('bytes read as MB then GB with two decimals', () {
+      expect(formatBytes(118 * _mb), '118 MB');
+      expect(formatBytes((1.22 * 1024 * _mb).round()), '1.22 GB');
+      expect(formatBytes(900), '900 B');
+    });
+
+    test('durations are coarse: seconds, minutes, then hours', () {
+      expect(formatDuration(45000), '45s');
+      expect(formatDuration(12 * 60 * 1000), '12m');
+      expect(formatDuration((3 * 60 + 4) * 60 * 1000), '3h 04m');
+    });
+  });
+
+  group('totals', () {
+    test('total RSS sums app, server and every agent tree', () {
+      final s = _sample(
+        agents: [
+          _agent(label: 'a', rssBytes: 10 * _mb),
+          _agent(label: 'b', rssBytes: 5 * _mb),
+        ],
+      );
+      expect(metricsTotalRssBytes(s), (118 + 51 + 10 + 5) * _mb);
+    });
+
+    /// A surface whose rate is not yet computable must contribute *nothing*,
+    /// not a zero — otherwise the total silently understates real load.
+    test('agents CPU is null when no agent has a computable rate', () {
+      final s = _sample(
+        agents: [
+          _agent(label: 'a', cpuPercent: null),
+          _agent(label: 'b', cpuPercent: null),
+        ],
+      );
+      expect(metricsAgentsCpuPercent(s), isNull);
+    });
+
+    test('agents CPU sums only the measurable ones', () {
+      final s = _sample(
+        agents: [
+          _agent(label: 'a', cpuPercent: null),
+          _agent(label: 'b', cpuPercent: 2.5),
+        ],
+      );
+      expect(metricsAgentsCpuPercent(s), 2.5);
+    });
+  });
+
+  group('window', () {
+    /// The ring mixes 1 Hz and 5 s samples, so the window must be selected by
+    /// time. Taking a fixed *count* would silently show 25 minutes of coarse
+    /// history under a "last 5 minutes" label.
+    test('keeps only samples within the window, by timestamp', () {
+      final history = [
+        _sample(ts: 1000),
+        _sample(ts: 200000),
+        _sample(ts: 400000),
+      ];
+      final window = metricsWindow(history, 400000, 5 * 60 * 1000);
+      expect(window.map((s) => s.ts), [200000, 400000]);
+    });
+  });
+
+  group('popover', () {
+    testWidgets('renders the pulse glyph in the footer', (tester) async {
+      await tester.pumpWidget(_host(sample: _sample()));
+      expect(find.byIcon(PhosphorIconsLight.pulse), findsOneWidget);
+    });
+
+    testWidgets('opens on tap and closes on Esc', (tester) async {
+      await tester.pumpWidget(_host(sample: _sample()));
+      expect(find.byKey(kMetricsPopoverKey), findsNothing);
+
+      await _open(tester);
+      expect(find.byKey(kMetricsPopoverKey), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(kMetricsPopoverKey), findsNothing);
+    });
+
+    testWidgets('closes on an outside tap', (tester) async {
+      await tester.pumpWidget(_host(sample: _sample()));
+      await _open(tester);
+      expect(find.byKey(kMetricsPopoverKey), findsOneWidget);
+
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kMetricsPopoverKey), findsNothing);
+    });
+
+    testWidgets('headline totals every surface', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            agents: [_agent(label: 'pi', rssBytes: 9 * _mb)],
+          ),
+        ),
+      );
+      await _open(tester);
+      // 118 + 51 + 9 = 178 MB, 0.3 + 0.1 + 0.0 = 0.4% CPU.
+      expect(find.text('178'), findsOneWidget);
+      expect(find.textContaining('MB total · 0.4% CPU'), findsOneWidget);
+    });
+
+    testWidgets('an unmeasurable app CPU renders — rather than 0.0%', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            appCpu: null,
+            serverCpu: null,
+            agents: [_agent(label: 'pi', cpuPercent: null)],
+          ),
+        ),
+      );
+      await _open(tester);
+      // Every surface row, plus the headline's total, must read the dash.
+      expect(find.text('—'), findsWidgets);
+      expect(find.textContaining('0.0%'), findsNothing);
+    });
+
+    /// Decision 13 — the SPEC-32 vanishing-pill defect in a new hat. A failed
+    /// `ps` must say so; it must not render zeros (which read as "idle") and
+    /// must not silently drop the agents (which reads as "exited").
+    testWidgets('a failed process table says measurement unavailable', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(sample: _sample(procTableOk: false, agents: const [])),
+      );
+      await _open(tester);
+
+      expect(find.byKey(kMetricsUnavailableKey), findsOneWidget);
+      expect(find.textContaining('Measurement unavailable'), findsOneWidget);
+      expect(find.byKey(kMetricsAgentListKey), findsNothing);
+      // The server row survives — it needs no `ps` — which is what proves this
+      // is a measurement failure rather than an empty machine.
+      expect(find.text('Server (Node)'), findsOneWidget);
+      expect(find.text('51 MB'), findsOneWidget);
+    });
+
+    testWidgets('agent rows are sorted by resident size, largest first', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            agents: [
+              _agent(label: 'small · a', rssBytes: 4 * _mb, sessionId: 'a'),
+              _agent(label: 'huge · b', rssBytes: 900 * _mb, sessionId: 'b'),
+              _agent(label: 'mid · c', rssBytes: 40 * _mb, sessionId: 'c'),
+            ],
+          ),
+        ),
+      );
+      await _open(tester);
+
+      final dy = <String, double>{};
+      for (final label in ['huge · b', 'mid · c', 'small · a']) {
+        dy[label] = tester.getTopLeft(find.text(label)).dy;
+      }
+      expect(dy['huge · b']!, lessThan(dy['mid · c']!));
+      expect(dy['mid · c']!, lessThan(dy['small · a']!));
+    });
+
+    testWidgets('a long agent label does not overflow the 300pt popover', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            agents: [
+              _agent(
+                label:
+                    'codex · a-very-long-repository-name-that-would-run-off '
+                    'the-edge-of-the-panel',
+              ),
+            ],
+          ),
+        ),
+      );
+      await _open(tester);
+      // A RenderFlex overflow would have been recorded as an exception here.
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(kMetricsPopoverKey), findsOneWidget);
+    });
+
+    testWidgets('coarse frames omit procs/uptime without printing 0', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            agents: [_agent(label: 'pi · makit', procs: null, uptimeMs: null)],
+          ),
+        ),
+      );
+      await _open(tester);
+      expect(find.text('parked'), findsOneWidget);
+      expect(find.textContaining('0 proc'), findsNothing);
+      expect(find.textContaining('up 0s'), findsNothing);
+    });
+
+    testWidgets('an in-turn agent reads as in turn, not parked', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            turnActive: true,
+            agents: [_agent(label: 'codex · pino', inTurn: true, procs: 6)],
+          ),
+        ),
+      );
+      await _openWhileWorking(tester);
+      expect(find.textContaining('in turn'), findsWidgets);
+      expect(
+        find.textContaining('1 turn running — codex · pino'),
+        findsOneWidget,
+      );
+    });
+
+    /// A11y: the rows are a `Row` of `Text`s plus a `CustomPaint`, which a screen
+    /// reader cannot assemble into a reading. Each row states its own numbers.
+    testWidgets('surface and agent rows carry semantic labels with numbers', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(agents: [_agent(label: 'pi · makit', cpuPercent: 0)]),
+        ),
+      );
+      await _open(tester);
+
+      expect(
+        find.bySemanticsLabel('Server (Node), 51 MB resident, 0.1% CPU'),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          'pi · makit, parked · up 12m · 1 proc, 9 MB resident, 0.0% CPU',
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('before the first sample the panel says so, without zeros', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(sample: null));
+      await _open(tester);
+      expect(find.text('—'), findsOneWidget);
+      expect(find.textContaining('No reading yet'), findsOneWidget);
+      expect(find.textContaining('MB total'), findsNothing);
+    });
+  });
+
+  group('History expander', () {
+    testWidgets('collapsed by default; the pill reveals the detail', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(storage: const StorageMetrics(eventLogBytes: 4096)),
+        ),
+      );
+      await _open(tester);
+      expect(find.byKey(kMetricsSelfCostKey), findsNothing);
+
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+      expect(find.byKey(kMetricsSelfCostKey), findsOneWidget);
+    });
+
+    /// Decision 10: the panel displays its own cost. If this row can be removed
+    /// without a test failing, the honesty claim is unenforced.
+    testWidgets('the detail shows the sampler\'s own cost', (tester) async {
+      await tester.pumpWidget(_host(sample: _sample(samplerCpu: 0.2)));
+      await _open(tester);
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text('This panel'), findsOneWidget);
+      expect(find.textContaining('0.2% CPU · 2 MB'), findsOneWidget);
+    });
+  });
+
+  group('watch ref-counting', () {
+    /// The panel raises the sampler to 1 Hz only while it is open. A leaked
+    /// watch would pin 1 Hz forever, in the feature whose claim is that makit is
+    /// cheap when nobody is looking.
+    testWidgets('opening watches and closing releases', (tester) async {
+      final sent = <bool>[];
+      await tester.pumpWidget(
+        _host(sample: _sample(), watch: MetricsWatchController(sent.add)),
+      );
+      expect(sent, isEmpty);
+
+      await _open(tester);
+      expect(sent, [true]);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(sent, [true, false]);
+    });
+
+    testWidgets('a dispose while open still releases the watch', (
+      tester,
+    ) async {
+      final sent = <bool>[];
+      await tester.pumpWidget(
+        _host(sample: _sample(), watch: MetricsWatchController(sent.add)),
+      );
+      await _open(tester);
+      expect(sent, [true]);
+
+      // Tear the whole tree down with the popover still showing.
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      expect(sent, [true, false]);
+    });
+
+    testWidgets('toggling twice does not stack watches', (tester) async {
+      final sent = <bool>[];
+      final controller = MetricsWatchController(sent.add);
+      await tester.pumpWidget(_host(sample: _sample(), watch: controller));
+
+      await _open(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      await _open(tester);
+
+      expect(sent, [true, false, true]);
+      expect(controller.watcherCount, 1);
+    });
+  });
+
+  group('Open dashboard', () {
+    testWidgets('sets the dashboard flag and dismisses the popover', (
+      tester,
+    ) async {
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            metricsProvider.overrideWithValue(_sample()),
+            metricsHistoryProvider.overrideWithValue([_sample()]),
+            metricsWatchControllerProvider.overrideWithValue(
+              MetricsWatchController((_) {}),
+            ),
+            preferencesControllerProvider.overrideWith(
+              (ref) => PreferencesController.ephemeral(),
+            ),
+          ],
+          child: Consumer(
+            builder: (ctx, ref, _) {
+              container = ProviderScope.containerOf(ctx);
+              return const MaterialApp(
+                home: Scaffold(
+                  body: Align(
+                    alignment: Alignment.bottomRight,
+                    child: MetricsButton(),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await _open(tester);
+      expect(container.read(metricsDashboardOpenProvider), isFalse);
+
+      await tester.tap(find.byKey(kMetricsOpenDashboardKey));
+      await tester.pumpAndSettle();
+
+      expect(container.read(metricsDashboardOpenProvider), isTrue);
+      expect(find.byKey(kMetricsPopoverKey), findsNothing);
+    });
+  });
+
+  group('tooltip', () {
+    test('names the state and carries the headline numbers', () {
+      final s = _sample();
+      expect(
+        metricsTooltip(s, MetricsIconState.idle),
+        contains('idle · 178 MB total · 0.4% CPU'),
+      );
+    });
+
+    test('a failed process table is reported as unavailable, not as idle', () {
+      expect(
+        metricsTooltip(_sample(procTableOk: false), MetricsIconState.idle),
+        contains('measurement unavailable'),
+      );
+    });
+
+    test('no sample reads as not measured yet', () {
+      expect(
+        metricsTooltip(null, MetricsIconState.off),
+        'Resource use — not measured yet',
+      );
+    });
+  });
+}
