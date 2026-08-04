@@ -6,6 +6,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../widgets/session_status_dot.dart';
 import 'repo_chips.dart';
 
 /// A single session row inside a repo card (SPEC-19, moved from home_screen).
@@ -52,6 +53,13 @@ class SessionTile extends ConsumerWidget {
         leading: AgentAvatar(agent: session.agent),
         title: Row(
           children: [
+            // Same dot as the desktop sidebar and pane header, so a status
+            // reads identically everywhere (DESIGN.md). It also pulses for the
+            // active states, which a static pill could not convey.
+            if (!session.pending) ...[
+              SessionStatusDot(status: session.status),
+              const SizedBox(width: kSpace8),
+            ],
             Expanded(
               child: Text(
                 session.pending && session.title.trim().isEmpty
@@ -60,9 +68,11 @@ class SessionTile extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
+            // The dot already carries running/idle/exited. A word is spent only
+            // where the session is actually waiting on the user.
             if (session.pending)
               TagChip(label: 'draft', color: cs.outline)
-            else if (session.status != SessionStatus.idle)
+            else if (_needsUser(session.status))
               SessionStatusChip(status: session.status),
           ],
         ),
@@ -76,6 +86,13 @@ class SessionTile extends ConsumerWidget {
       ),
     );
   }
+
+  /// Statuses that are a request for the user, not just progress — these keep
+  /// their spelled-out chip next to the dot.
+  static bool _needsUser(SessionStatus s) =>
+      s == SessionStatus.awaitingInput ||
+      s == SessionStatus.awaitingApproval ||
+      s == SessionStatus.error;
 
   /// Confirms the archive, then requests it and only reports the row as
   /// dismissed once the server acknowledges. Returning false on failure keeps

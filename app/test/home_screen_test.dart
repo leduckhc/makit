@@ -286,7 +286,7 @@ void main() {
     expect(find.text('1 PR'), findsNothing);
   });
 
-  testWidgets('a session under its worktree surfaces a status chip', (
+  testWidgets('a session under its worktree surfaces its status as a dot', (
     tester,
   ) async {
     final repo = _repo(
@@ -311,7 +311,11 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('running'), findsOneWidget);
+    // Same as the desktop sidebar: progress states are the dot's job, so the
+    // word "running" is not also spelled out. The tooltip/semantics keep it
+    // from being a colour-only signal.
+    expect(find.text('running'), findsNothing);
+    expect(find.byTooltip('running'), findsOneWidget);
   });
 
   testWidgets('a pending session shows in a Drafts section with a draft tag', (
@@ -362,7 +366,7 @@ void main() {
 
     expect(find.text('Resume session'), findsNothing);
 
-    await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThreeVertical));
+    await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThree));
     await tester.pumpAndSettle();
 
     expect(find.text('New session'), findsWidgets);

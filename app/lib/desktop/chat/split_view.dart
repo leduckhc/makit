@@ -14,7 +14,7 @@ import 'groups/groups_controller.dart';
 import 'panes/split_node.dart';
 import 'panes/workspace_controller.dart';
 import 'selected_session.dart';
-import 'session_status_dot.dart';
+import '../../ui/widgets/session_status_dot.dart';
 
 /// Height of a [Split]'s tab strip.
 const double _kTabBarHeight = 30;

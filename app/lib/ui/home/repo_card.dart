@@ -10,8 +10,8 @@ import '../widgets/glass.dart';
 import '../widgets/menu_item.dart';
 import '../widgets/searchable_list_sheet.dart';
 import '../widgets/sheet_header.dart';
-import 'new_session_sheet.dart';
 import 'repo_chips.dart';
+import 'start_session.dart';
 import 'session_tile.dart';
 import 'worktree_row.dart';
 
@@ -140,7 +140,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
               ),
               const SizedBox(width: kSpace6),
               Icon(
-                PhosphorIconsLight.folderStar,
+                PhosphorIconsLight.folder,
                 size: 17,
                 color: theme.colorScheme.outline,
               ),
@@ -161,7 +161,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
               const Spacer(),
               PopupMenuButton<String>(
                 icon: Icon(
-                  PhosphorIconsRegular.dotsThreeVertical,
+                  PhosphorIconsRegular.dotsThree,
                   size: 18,
                   color: theme.colorScheme.onSurface,
                 ),
@@ -170,7 +170,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                 onSelected: (value) {
                   switch (value) {
                     case 'new':
-                      _newSession(context, ref);
+                      startSessionFlow(context, ref, repo);
                     case 'worktree':
                       _newWorktree(context, ref);
                     case 'attach':
@@ -189,7 +189,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                     ),
                     themedMenuItem(
                       value: 'worktree',
-                      icon: PhosphorIconsLight.treeStructure,
+                      icon: PhosphorIconsLight.gitBranch,
                       label: 'New worktree',
                     ),
                     themedMenuItem(
@@ -226,7 +226,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     final active = repo.activeWorktreeCount;
     if (active > 0) {
       items.add(
-        _metaText(context, PhosphorIconsLight.treeStructure, '$active active'),
+        _metaText(context, PhosphorIconsLight.gitBranch, '$active active'),
       );
     }
     if (repo.openPrCount > 0) {
@@ -282,7 +282,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
       child: Align(
         alignment: Alignment.centerLeft,
         child: TextButton.icon(
-          onPressed: () => _newSession(context, ref),
+          onPressed: () => startSessionFlow(context, ref, repo),
           icon: const Icon(PhosphorIconsLight.plus, size: 16),
           label: const Text('New session'),
           style: TextButton.styleFrom(
@@ -361,100 +361,6 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not create worktree: $e')),
-      );
-    }
-  }
-
-  /// Configure and start a session: the sheet always opens (one door for every
-  /// new session), then the chosen worktree is resolved — created for a new
-  /// branch or a PR — before the session spawns into it.
-  Future<void> _newSession(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final store = ref.read(storeControllerProvider.notifier);
-    final branches = branchOptionsForRepo(repo);
-    final worktrees = sortWorktreesForDisplay(repo.worktrees);
-    // A worktree created for this spawn is removed if the spawn then fails, so
-    // a retry doesn't orphan it.
-    String? createdWorktree;
-    try {
-      final agents = await store.fetchAgents();
-      final selectable = agents.where((a) => a.available).toList();
-      // Open PRs power the "From PR" worktree source; best-effort (an empty or
-      // failed lookup just hides that option). Bounded so a slow `gh` can't
-      // stall opening the sheet.
-      List<OpenPr> openPrs = const [];
-      try {
-        openPrs = await store
-            .listOpenPrs(repo.id)
-            .timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => const <OpenPr>[],
-            );
-      } catch (_) {
-        openPrs = const [];
-      }
-
-      if (!context.mounted) return;
-      final choice = await showModalBottomSheet<NewSessionChoice>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (ctx) => NewSessionSheet(
-          agents: selectable,
-          branches: branches,
-          worktrees: worktrees,
-          openPrs: openPrs,
-          initialBranch: branches.isEmpty ? null : branches.first,
-        ),
-      );
-      if (choice == null) return;
-
-      String? worktreePath;
-      String? branch;
-      switch (choice.source) {
-        case WorktreeSource.existing:
-          worktreePath = choice.worktreePath;
-          for (final w in worktrees) {
-            if (w.path == worktreePath) branch = w.branch;
-          }
-        case WorktreeSource.newBranch:
-          final wt = await store.createWorktree(
-            repo.id,
-            baseBranch:
-                choice.baseBranch ?? (branches.isEmpty ? null : branches.first),
-          );
-          worktreePath = wt.path;
-          branch = wt.branch;
-          createdWorktree = wt.path;
-        case WorktreeSource.fromPr:
-          if (choice.prNumber == null) return;
-          final wt = await store.createWorktreeFromPr(
-            repo.id,
-            choice.prNumber!,
-          );
-          worktreePath = wt.path;
-          branch = wt.branch;
-          createdWorktree = wt.path;
-      }
-
-      final newId = await store.spawnSession(
-        repo.id,
-        agent: choice.agent,
-        worktreePath: worktreePath,
-        branch: branch,
-        configOptions: choice.configOptions.isEmpty
-            ? null
-            : choice.configOptions,
-      );
-      createdWorktree = null; // spawned — the worktree now hosts a session.
-      if (!context.mounted) return;
-      context.go('/session/$newId');
-    } catch (e) {
-      if (createdWorktree != null) {
-        await store.removeWorktree(repo.id, createdWorktree).catchError((_) {});
-      }
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not start session: $e')),
       );
     }
   }

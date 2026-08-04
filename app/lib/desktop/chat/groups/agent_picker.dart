@@ -18,7 +18,7 @@ import '../../../store/store.dart';
 import '../new_worktree_dialog.dart';
 import '../panes/split_node.dart';
 import '../panes/workspace_controller.dart';
-import '../session_status_dot.dart';
+import '../../../ui/widgets/session_status_dot.dart';
 import 'group.dart';
 import 'group_providers.dart';
 import 'groups_controller.dart';
