@@ -59,6 +59,48 @@ Map<String, dynamic> _srv(String host, String fp, String label) => {
   'label': label,
 };
 
+ProviderContainer _container() {
+  final container = ProviderContainer(
+    overrides: [
+      connectionControllerProvider.overrideWith(
+        (ref) => ConnectionController(
+          _Storage({
+            'paired_servers':
+                '{"servers":[${_json(_srv('10.0.0.1', _fpA, 'work'))},'
+                '${_json(_srv('10.0.0.2', _fpB, 'home'))}],'
+                '"activeId":"$_fpA"}',
+          }),
+          transportFactory: _Transport.new,
+          browseLan: ({Duration timeout = const Duration(seconds: 3)}) async =>
+              [],
+          rediscoverStall: const Duration(seconds: 30),
+        ),
+      ),
+    ],
+  );
+  addTearDown(container.dispose);
+  return container;
+}
+
+/// Pretend a snapshot from the currently-active server landed.
+void _seedRepo(StoreController store, String name) {
+  store.state = store.state.copyWith(
+    repos: [
+      RepoInfo(
+        id: name,
+        name: name,
+        path: '/$name',
+        pinned: false,
+        lastActivityAt: 0,
+        isGitRepo: true,
+        defaultBranch: 'main',
+        currentBranch: 'main',
+        worktrees: const [],
+      ),
+    ],
+  );
+}
+
 void main() {
   test('switching servers clears repos cached from the previous one', () async {
     final container = ProviderContainer(
@@ -84,22 +126,7 @@ void main() {
     final store = container.read(storeControllerProvider.notifier);
     await Future<void>.delayed(Duration.zero);
 
-    // Pretend server A's snapshot landed.
-    store.state = store.state.copyWith(
-      repos: const [
-        RepoInfo(
-          id: 'a-only',
-          name: 'lives-on-server-a',
-          path: '/a',
-          pinned: false,
-          lastActivityAt: 0,
-          isGitRepo: true,
-          defaultBranch: 'main',
-          currentBranch: 'main',
-          worktrees: [],
-        ),
-      ],
-    );
+    _seedRepo(store, 'lives-on-server-a');
     expect(container.read(reposProvider).repos, hasLength(1));
 
     await container.read(connectionControllerProvider.notifier).switchTo(_fpB);
@@ -110,6 +137,73 @@ void main() {
       container.read(reposProvider).repos,
       isEmpty,
       reason: "server A's repos must not linger under server B",
+    );
+  });
+
+  test('unpairing clears the desktop\'s cached repos', () async {
+    final container = _container();
+    final store = container.read(storeControllerProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+    _seedRepo(store, 'lives-on-server-a');
+
+    await container.read(connectionControllerProvider.notifier).unpair();
+    await Future<void>.delayed(Duration.zero);
+
+    // Nothing is paired, so there is no server those repos could belong to.
+    expect(container.read(reposProvider).repos, isEmpty);
+  });
+
+  test(
+    'arriving at a desktop from unpaired clears whatever was cached',
+    () async {
+      final container = _container();
+      final conn = container.read(connectionControllerProvider.notifier);
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      // Unpaired, but with stale rows still in the store — the state right after
+      // an unpair that left data behind.
+      await conn.unpair();
+      _seedRepo(store, 'left-over-from-before');
+      expect(container.read(reposProvider).repos, hasLength(1));
+
+      // Now a server becomes active (what pairWith does on a successful
+      // handshake). null -> C is the other half of the transition an
+      // "both ids non-null" guard skipped.
+      conn.state = MakitConnState(
+        servers: [
+          PairedServer(
+            host: '10.0.0.9',
+            port: 8443,
+            fingerprint: _fpB,
+            bearer: 'b',
+            label: 'freshly paired',
+          ),
+        ],
+        activeId: _fpB,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(reposProvider).repos, isEmpty);
+    },
+  );
+
+  test('reconnecting to the SAME server keeps its data', () async {
+    final container = _container();
+    final conn = container.read(connectionControllerProvider.notifier);
+    final store = container.read(storeControllerProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+    _seedRepo(store, 'lives-on-server-a');
+
+    // A blip must not blank the screen: switchTo the already-active server is
+    // the closest reachable stand-in for a reconnect.
+    await conn.switchTo(_fpA);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      container.read(reposProvider).repos,
+      hasLength(1),
+      reason: 'clearing must key on the server, not on socket churn',
     );
   });
 }

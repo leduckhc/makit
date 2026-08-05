@@ -283,9 +283,14 @@ class StoreController extends StateNotifier<StoreState> {
       //
       // Keyed on the active server, not on the socket: a reconnect to the *same*
       // server must keep its data, or every network blip would blank the screen.
+      //
+      // Any change of identity counts, including to and from null. Requiring
+      // both sides to be non-null skipped exactly the transitions that matter:
+      // unpair (A -> null) left A's repos cached, and pairing a different
+      // desktop afterwards (null -> C) skipped too, so C inherited A's list.
       final prevId = prev?.activeServer?.id;
       final nextId = next.activeServer?.id;
-      if (prevId != null && nextId != null && prevId != nextId) {
+      if (prevId != nextId) {
         _subscribed.clear();
         _awaitingReplay.clear();
         _replayBuffer.clear();
