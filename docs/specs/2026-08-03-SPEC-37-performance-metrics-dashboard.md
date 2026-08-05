@@ -378,6 +378,35 @@ export JSON round-trips; the chat underneath stays interactive.
   sampler's own row must read ≤ 0.5% CPU on the dev machine. If our own meter
   cannot stay under budget, the feature contradicts the claim it exists to prove.
 
+  **Measured — PASS.** Release build of the macOS app + its own dev-profile
+  server, 110 consecutive idle samples at 1 Hz (M-series MacBook Pro):
+
+  | figure | value |
+  |---|---|
+  | sampler row, worst **30 s rolling mean** | **0.395%** (budget 0.5%) |
+  | sampler row, p50 / p95 | 0.344% / 0.475% |
+  | sampler row, single-sample max | 1.148% |
+
+  The budget is met on the sustained basis that matters; isolated single ticks
+  exceed it (a `ps` that took longer, or the every-6th-tick `fs.stat`), which is
+  why the row is read as a rate over the interval rather than per tick.
+
+  Cross-checked **independently of the feature's own arithmetic**, by diffing the
+  server process's cumulative `ps` CPU time across three modes for 60 s each:
+
+  | mode | server CPU | marginal cost of sampling |
+  |---|---|---|
+  | sampling off (`MAKIT_METRICS_BACKGROUND=0`, no watcher) | 0.567% | — |
+  | background only (5 s) | 0.700% | **+0.13%** |
+  | one watcher (1 Hz) | 1.200% | **+0.63%** |
+
+  That +0.63% is *larger* than the 0.395% the sampler row reports, and the gap is
+  real rather than an error: the row measures the collector tick only, while
+  opening the panel also costs one `metrics.sample` broadcast per second
+  (encode + socket write) which is attributed to the wire row, not to the
+  sampler. Worth stating plainly — the honest total cost of watching is ~0.6% of
+  one core, of which ~0.4% is the measurement itself.
+
 ## Risks
 
 | Risk | Mitigation |
@@ -398,13 +427,30 @@ export JSON round-trips; the chat underneath stays interactive.
 
 ## Open questions
 
-- **Q1 — background sampling default.** Spec assumes `metrics.background = true`
-  at 5 s so the icon can carry state. The alternative (off until first open) makes
-  the idle cost exactly zero but reduces the icon to decoration. Confirm before P1.
-- **Q2 — Elevated threshold.** Spec assumes *> 2% total CPU sustained 30 s while
-  idle*. That number should be measured on a real idle makit before it is frozen;
-  if idle genuinely sits at 0.4%, 2% is a reasonable 5× headroom, but it is the
-  one threshold that will produce false positives if wrong.
+- **Q1 — background sampling default. RESOLVED: keep `true`.** Measured marginal
+  cost of the 5 s background cadence is **+0.13% CPU** (0.567% → 0.700% on the
+  server process, 60 s samples). That buys a footer icon that carries real state;
+  turning it off to save an eighth of a percent would reduce the icon to
+  decoration, which is the trade the spec already argued against.
+- **Q2 — Elevated threshold. RESOLVED: keep *> 2% sustained 30 s while idle*.**
+  Measured on a release build, 110 consecutive idle samples at 1 Hz, using the
+  *sustained* statistic the predicate actually tests rather than a percentile:
+
+  | threshold | idle samples above it | longest unbroken run |
+  |---|---|---|
+  | > 1.0% | 27% | 5 s |
+  | > 1.5% | 13% | 1 s |
+  | > 2.0% | 5% | **1 s** |
+  | > 3.0% | 3% | 1 s |
+
+  Worst **30 s rolling mean** of total idle CPU: **1.13%**.
+
+  So 2% sustained for 30 s never comes close to firing at idle — the longest
+  unbroken second-by-second excursion above 2% was 1 s, and the worst half-minute
+  average is 1.13%, giving ~1.8× headroom. Percentiles alone would have looked
+  alarming here (p95 = 2.34%, max 8.4%), which is exactly why the gate is a
+  sustained run and not a percentile: idle CPU on a real machine is spiky, and a
+  spike is not a regression.
 - **Q3 — comparison banner.** The mockup's "1/6 of VS Code + terminals" line is
   the most persuasive element and the least defensible without `makit bench`.
   Spec says omit it in v1. Confirm — or accept a measured-once-per-machine
