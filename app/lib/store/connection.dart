@@ -400,11 +400,12 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     unawaited(_maybeRediscover(server));
   }
 
-  bool _rediscovering = false;
+  final Map<String, bool> _rediscoveringByServer = {};
 
   Future<void> _maybeRediscover(PairedServer server) async {
-    if (_rediscovering) return;
-    _rediscovering = true;
+    final fp = server.fingerprint;
+    if (_rediscoveringByServer[fp] ?? false) return;
+    _rediscoveringByServer[fp] = true;
     try {
       // Give the first attempt a brief window to succeed.
       await Future<void>.delayed(_rediscoverStall);
@@ -457,7 +458,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
         helloBody: {'bearer': updated.bearer},
       );
     } finally {
-      _rediscovering = false;
+      _rediscoveringByServer[fp] = false;
     }
   }
 

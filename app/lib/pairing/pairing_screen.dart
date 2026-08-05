@@ -29,6 +29,14 @@ class PairingScreen extends ConsumerStatefulWidget {
 }
 
 class _PairingScreenState extends ConsumerState<PairingScreen> {
+  /// Make [id] active and go to its repos. Without this the root is a dead end:
+  /// the router no longer forwards `/` → `/repos` (that would break the back
+  /// arrow), so tapping a server has to do the navigating itself.
+  Future<void> _enter(ConnectionController controller, String id) async {
+    await controller.switchTo(id);
+    if (mounted) context.go(kRouteRepos);
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -76,7 +84,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   server: s,
                   isActive: s.id == activeId,
                   wsState: conn.wsState,
-                  onSelect: () => controller.switchTo(s.id),
+                  onSelect: () => _enter(controller, s.id),
                   onRename: () => renameServerDialog(context, controller, s),
                   onForget: () => forgetServerDialog(context, controller, s),
                 ),

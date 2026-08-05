@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:makit/pairing/onboarding_controller.dart';
 import 'package:makit/pairing/pairing_screen.dart';
 import 'package:makit/pairing/readiness.dart';
@@ -101,10 +102,19 @@ Future<ProviderContainer> _pump(
 }) async {
   final container = _container(servers: servers);
   container.read(connectionControllerProvider);
+  final router = GoRouter(
+    routes: [
+      GoRoute(path: '/', builder: (_, _) => const PairingScreen()),
+      GoRoute(
+        path: '/repos',
+        builder: (_, _) => const Scaffold(body: Text('repo list')),
+      ),
+    ],
+  );
   await tester.pumpWidget(
     UncontrolledProviderScope(
       container: container,
-      child: const MaterialApp(home: PairingScreen()),
+      child: MaterialApp.router(routerConfig: router),
     ),
   );
   await tester.pumpAndSettle();
@@ -157,7 +167,9 @@ void main() {
       expect(find.text('Connect to your Mac'), findsNothing);
     });
 
-    testWidgets('tapping an inactive server switches to it', (tester) async {
+    testWidgets('tapping an inactive server switches to it and enters', (
+      tester,
+    ) async {
       final c = await _pump(tester, servers: _twoServers);
       expect(c.read(connectionProvider).activeServer?.label, 'work mac');
 
@@ -165,6 +177,22 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(c.read(connectionProvider).activeServer?.label, 'home mac');
+      // The root no longer forwards to the repos on its own, so the row has to.
+      expect(find.text('repo list'), findsOneWidget);
+    });
+
+    testWidgets('tapping the ALREADY-active server still enters it', (
+      tester,
+    ) async {
+      final c = await _pump(tester, servers: _twoServers);
+
+      // Previously disabled, which left a paired user with no way forward from
+      // the root at all — the repo list was reachable only by cold restart.
+      await tester.tap(find.text('work mac'));
+      await tester.pumpAndSettle();
+
+      expect(c.read(connectionProvider).activeServer?.label, 'work mac');
+      expect(find.text('repo list'), findsOneWidget);
     });
 
     testWidgets('renaming a server updates it in place', (tester) async {

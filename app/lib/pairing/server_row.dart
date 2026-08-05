@@ -27,6 +27,9 @@ class ServerRow extends StatelessWidget {
   final PairedServer server;
   final bool isActive;
   final WsState wsState;
+
+  /// Make this server active (a no-op if it already is) and open its repos.
+  /// The active row is tappable too — "enter" is the action, not "select".
   final VoidCallback onSelect;
   final VoidCallback onRename;
   final VoidCallback onForget;
@@ -52,7 +55,7 @@ class ServerRow extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: isActive ? null : onSelect,
+        onTap: onSelect,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
             kSpace12,

@@ -275,6 +275,24 @@ class StoreController extends StateNotifier<StoreState> {
     // (server restart, hot restart, network blip) until the user manually
     // navigates back into the session screen.
     _ref.listen<MakitConnState>(connectionControllerProvider, (prev, next) {
+      // Switching servers invalidates everything cached: repos, sessions and
+      // transcripts all belonged to the old desktop. Snapshots replace wholesale
+      // once they arrive, but until then the list would still show the previous
+      // server's repos — and if the new one is unreachable, indefinitely, with
+      // taps dispatching against sessions that live somewhere else.
+      //
+      // Keyed on the active server, not on the socket: a reconnect to the *same*
+      // server must keep its data, or every network blip would blank the screen.
+      final prevId = prev?.activeServer?.id;
+      final nextId = next.activeServer?.id;
+      if (prevId != null && nextId != null && prevId != nextId) {
+        _subscribed.clear();
+        _awaitingReplay.clear();
+        _replayBuffer.clear();
+        _watchingGithubBudget = false;
+        state = StoreState.empty();
+      }
+
       final wasConnected = prev?.wsState == WsState.connected;
       final nowConnected = next.wsState == WsState.connected;
       if (!wasConnected && nowConnected) {

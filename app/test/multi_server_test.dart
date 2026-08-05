@@ -346,6 +346,47 @@ void main() {
     });
   });
 
+  group('rediscovery is per server', () {
+    // The in-flight guard used to be one controller-wide bool: with A's
+    // rediscovery parked in its browse, switching to B returned immediately and
+    // B never rediscovered at all until a manual retry.
+    test(
+      "a server in flight does not block the next server's rediscovery",
+      () async {
+        final browsedFor = <String>[];
+        final gate = Completer<List<DiscoveredServer>>();
+        final firstBrowse = Completer<void>();
+
+        final controller = ConnectionController(
+          _twoServers(),
+          transportFactory: () => FakeTransport(emitConnected: false),
+          browseLan: ({Duration timeout = const Duration(seconds: 3)}) {
+            // Which server is being rediscovered is inferrable from the active one.
+            browsedFor.add('browse');
+            if (!firstBrowse.isCompleted) firstBrowse.complete();
+            return gate.future;
+          },
+          rediscoverStall: Duration.zero,
+        );
+        await Future<void>.delayed(Duration.zero);
+        await firstBrowse.future;
+        expect(browsedFor, hasLength(1), reason: "A's browse is in flight");
+
+        // Switch while A is still parked. B must run its own discovery.
+        await controller.switchTo(_fpB);
+        await pumpEventQueue();
+
+        expect(
+          browsedFor.length,
+          greaterThanOrEqualTo(2),
+          reason:
+              "B's rediscovery must not be swallowed by A's in-flight guard",
+        );
+        controller.dispose();
+      },
+    );
+  });
+
   group('rediscovery races a rename', () {
     // A rename keeps the same fingerprint, so the activeId guard cannot catch it:
     // rediscovery captures `server` at entry and, seconds later, splices

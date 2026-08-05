@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../app/theme.dart';
@@ -9,6 +10,7 @@ import 'device_name.dart';
 import 'mdns_browser.dart';
 import 'pair_info.dart';
 import 'qr_scanner_screen.dart';
+import '../app/routes.dart';
 
 /// Add another server: scan its QR, or paste the pairing URL it printed.
 ///
@@ -141,7 +143,9 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
     final parent = widget.parentContext;
     if (!parent.mounted) return;
     navigator.pop(); // dismiss the sheet before pairing feedback
-    await pairAndReport(parent, ref, info);
+    if (await pairAndReport(parent, ref, info) && parent.mounted) {
+      parent.go(kRouteRepos);
+    }
   }
 
   Future<void> _pasteUrl() async {
@@ -163,7 +167,9 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
       return;
     }
     navigator.pop();
-    await pairAndReport(parent, ref, info);
+    if (await pairAndReport(parent, ref, info) && parent.mounted) {
+      parent.go(kRouteRepos);
+    }
   }
 }
 
@@ -237,6 +243,9 @@ Future<bool> pairAndReport(
     }
     if (context.mounted) {
       messenger.showSnackBar(const SnackBar(content: Text('Paired!')));
+      // Navigate to the repo list. This fires redirect checks, but make it explicit
+      // so first-time users never get stuck on the pairing screen.
+      context.go('/repos');
     }
     return true;
   } catch (e) {

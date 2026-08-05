@@ -10,7 +10,7 @@
 // just enough that a silently broken step fails the run instead of filming a
 // blank screen.
 //
-// Run under `tool/record-tour.sh integration_test/tour/redesign_tour.dart`.
+// Run under `tool/record-tour.sh /tmp/mobile-redesign-tour.mp4 integration_test/tour/redesign_tour.dart`.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

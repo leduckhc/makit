@@ -8,6 +8,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_card.dart';
+import 'package:makit/ui/home/start_session.dart';
 
 /// In-memory secure storage so ConnectionController boots without platform
 /// channels (mirrors the desktop dialog test).
@@ -46,8 +47,15 @@ class _FakeStore extends StoreController {
     removedWorktrees.add(path);
   }
 
+  /// How many times the flow started: the sheet opens only after this resolves,
+  /// which is the window a second tap can slip through.
+  int agentFetches = 0;
+
   @override
-  Future<List<AgentDescriptor>> fetchAgents() async => agents;
+  Future<List<AgentDescriptor>> fetchAgents() async {
+    agentFetches++;
+    return agents;
+  }
 
   @override
   Future<List<OpenPr>> listOpenPrs(String projectId) async => const [];
@@ -173,6 +181,10 @@ Future<void> _openNewSessionSheet(WidgetTester tester) async {
 }
 
 void main() {
+  // Order-independence: the guard is library-level, so a leftover from one test
+  // would silently disable the flow in the next.
+  setUp(resetStartSessionFlowGuard);
+
   testWidgets('forwards the config picks chosen in the sheet to spawnSession', (
     tester,
   ) async {
@@ -261,5 +273,27 @@ void main() {
     expect(store.createdFrom, ['main']);
     expect(store.removedWorktrees, ['/tmp/demo-wt']);
     expect(find.textContaining('Could not start session'), findsOneWidget);
+  });
+
+  testWidgets('a double tap on + starts one session flow, not two', (
+    tester,
+  ) async {
+    final store = await _pump(tester, agents: [_agent('pi')]);
+
+    // The `+` awaits fetchAgents before the sheet appears, so an impatient
+    // second tap in that window used to open a second sheet — and could then
+    // create a second worktree and spawn twice.
+    final plus = find.byKey(const Key('newSessionInWorktree-/tmp/demo'));
+    expect(plus, findsWidgets);
+    await tester.tap(plus.first, warnIfMissed: false);
+    await tester.tap(plus.first, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(store.agentFetches, 1, reason: 'the second tap must be swallowed');
+    expect(find.text('Start'), findsOneWidget, reason: 'exactly one sheet');
+
+    // Dismiss so the flow completes and releases the guard.
+    await tester.tapAt(const Offset(400, 40));
+    await tester.pumpAndSettle();
   });
 }
