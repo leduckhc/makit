@@ -13,6 +13,7 @@ import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_draft.dart';
 import '../composer/composer_selectors.dart';
+import '../composer/context_usage.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import '../widgets/menu_item.dart';
@@ -424,6 +425,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                     sessionId: widget.sessionId,
                                   ),
                                 ],
+                                // SPEC-37: shown for every agent — it reads
+                                // usage, not config — so it sits outside the
+                                // configOptions branch.
+                                ContextUsageButton(sessionId: widget.sessionId),
                               ],
                             ),
                     ),

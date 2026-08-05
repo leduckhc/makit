@@ -115,7 +115,13 @@ enum EventKind {
   sessionError,
   sessionCommands,
   sessionMeta,
-  sessionActionError;
+  sessionActionError,
+
+  /// Context-window + cost snapshot for a session (SPEC-37). Latest-wins chrome,
+  /// never a chat item. Sourced from codex's `thread/tokenUsage/updated`, an ACP
+  /// `usage_update`, or — for pi, which reports none of this over ACP — the
+  /// `.pi/extensions/pi-usage` reporter.
+  sessionUsage;
 
   String get wire => switch (this) {
     EventKind.userMessage => 'user.message',
@@ -132,6 +138,7 @@ enum EventKind {
     EventKind.sessionCommands => 'session.commands',
     EventKind.sessionMeta => 'session.meta',
     EventKind.sessionActionError => 'session.action_error',
+    EventKind.sessionUsage => 'session.usage',
   };
 
   static EventKind? fromWire(String s) {

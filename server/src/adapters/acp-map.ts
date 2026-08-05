@@ -140,8 +140,36 @@ export class AcpEventMapper {
         return;
       }
 
+      case "usage_update": {
+        // Context window + cost for the session (SPEC-37). ACP reports only
+        // aggregates — no per-category breakdown — so `totals` stays absent here.
+        // Flush first: the message that consumed these tokens must land before
+        // the snapshot that counts it.
+        this.flushAll();
+        const u = update as unknown as {
+          used?: unknown;
+          size?: unknown;
+          cost?: { amount?: unknown; currency?: unknown };
+        };
+        const used = typeof u.used === "number" ? u.used : undefined;
+        const size = typeof u.size === "number" ? u.size : undefined;
+        if (used === undefined && size === undefined) return;
+        const cost =
+          typeof u.cost?.amount === "number" && typeof u.cost?.currency === "string"
+            ? { amount: u.cost.amount, currency: u.cost.currency }
+            : undefined;
+        // Every field is omitted rather than zeroed when unmeasured.
+        this.emit("session.usage", {
+          ...(used !== undefined ? { contextTokens: used } : {}),
+          ...(size !== undefined ? { contextWindow: size } : {}),
+          ...(cost ? { cost } : {}),
+          measuredAt: Date.now(),
+        });
+        return;
+      }
+
       // plan / plan_update / plan_removed / current_mode_update /
-      // config_option_update / usage_update: no makit event yet — ignore.
+      // config_option_update: no makit event yet — ignore.
       default:
         return;
     }
