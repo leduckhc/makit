@@ -9,6 +9,7 @@ import '../ui/widgets/makit_mark.dart';
 import 'add_server_sheet.dart';
 import 'onboarding_controller.dart';
 import 'server_row.dart';
+import '../app/routes.dart';
 
 /// The one server surface: first run *and* management.
 ///
@@ -103,7 +104,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                 ref
                     .read(onboardingControllerProvider.notifier)
                     .skipNotifications();
-                context.go('/');
+                context.go(kRouteRepos);
               },
             ),
           ],

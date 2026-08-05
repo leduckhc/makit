@@ -24,6 +24,7 @@ import 'navigator/messages_sheet.dart';
 import 'navigator/transcript_jumper.dart';
 import 'session_pr_chip.dart';
 import 'transcript_list.dart';
+import '../../app/routes.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({super.key, required this.sessionId});
@@ -272,7 +273,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   children: [
                     GlassCircleButton(
                       icon: PhosphorIconsLight.arrowLeft,
-                      onTap: () => context.go('/'),
+                      onTap: () => context.go(kRouteRepos),
                     ),
                     const SizedBox(width: kSpace12),
                     Expanded(
@@ -571,7 +572,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       await ref
           .read(storeControllerProvider.notifier)
           .archiveSession(widget.sessionId);
-      if (mounted) context.go('/');
+      if (mounted) context.go(kRouteRepos);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not archive: $e')));
     }

@@ -97,12 +97,15 @@ Future<ProviderContainer> _pump(
   container.read(connectionControllerProvider);
   // A router is needed because unpair navigates to /pair afterwards.
   final router = GoRouter(
+    initialLocation: '/repos',
     routes: [
-      GoRoute(path: '/', builder: (_, _) => const SettingsScreen()),
+      // Settings sits under the repo list; unpairing pops out to the root,
+      // which is the connect/servers page.
       GoRoute(
-        path: '/pair',
+        path: '/',
         builder: (_, _) => const Scaffold(body: Text('pair screen')),
       ),
+      GoRoute(path: '/repos', builder: (_, _) => const SettingsScreen()),
     ],
   );
   await tester.pumpWidget(

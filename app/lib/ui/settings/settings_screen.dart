@@ -11,6 +11,7 @@ import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
 import 'notification_settings.dart';
 import 'appearance_settings.dart';
+import '../../app/routes.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -29,7 +30,7 @@ class SettingsScreen extends ConsumerWidget {
         title: const Text('Settings'),
         leading: IconButton(
           icon: const Icon(PhosphorIconsLight.arrowLeft),
-          onPressed: () => context.go('/'),
+          onPressed: () => context.go(kRouteRepos),
         ),
       ),
       body: ListView(
@@ -65,7 +66,7 @@ class SettingsScreen extends ConsumerWidget {
             trailing: conn.useFake
                 ? null
                 : const Icon(PhosphorIconsLight.caretRight, size: 16),
-            onTap: conn.useFake ? null : () => context.go('/servers'),
+            onTap: conn.useFake ? null : () => context.go(kRouteRoot),
           ),
           if (server != null)
             ListTile(
@@ -114,7 +115,7 @@ class SettingsScreen extends ConsumerWidget {
               '${sessions.length} session${sessions.length == 1 ? '' : 's'}',
             ),
             trailing: const Icon(PhosphorIconsLight.caretRight),
-            onTap: () => context.go('/'),
+            onTap: () => context.go(kRouteRepos),
           ),
 
           const Divider(),
@@ -141,7 +142,7 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Diagnostics'),
             subtitle: const Text('View, copy, and send app logs'),
             trailing: const Icon(PhosphorIconsLight.caretRight),
-            onTap: () => context.go('/diagnostics'),
+            onTap: () => context.go(kRouteDiagnostics),
           ),
           ListTile(
             leading: _leadingIcon(PhosphorIconsLight.info),
@@ -177,7 +178,7 @@ class SettingsScreen extends ConsumerWidget {
               // lose, so it still exits on one tap.
               if (!conn.useFake && !await _confirmUnpair(context, conn)) return;
               await ref.read(connectionControllerProvider.notifier).unpair();
-              if (context.mounted) context.go('/pair');
+              if (context.mounted) context.go(kRouteRoot);
             },
           ),
         ],

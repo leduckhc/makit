@@ -9,6 +9,10 @@ import 'session_tile.dart';
 import 'start_session.dart';
 import 'worktree_actions.dart';
 
+/// Width of the trailing control column (the `+` here, the repo menu in the
+/// card header). Shared so the two glyphs sit on the same vertical line.
+const double kTrailingControl = 30;
+
 /// Width of the accent bar down a worktree's leading edge.
 const double _kAccentBar = 3;
 
@@ -299,7 +303,10 @@ class _NewSessionButton extends StatelessWidget {
           // Same as PrPill / _Caret: the tap box fills the row height while the
           // painted glyph stays small, so the control is reachable by thumb
           // without fattening the list.
-          constraints: const BoxConstraints(minWidth: 30, minHeight: kTouchRow),
+          constraints: const BoxConstraints(
+            minWidth: kTrailingControl,
+            minHeight: kTouchRow,
+          ),
           child: Center(
             child: Icon(PhosphorIconsLight.plus, size: 16, color: cs.outline),
           ),

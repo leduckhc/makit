@@ -6,6 +6,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import 'new_session_sheet.dart';
 import 'repo_chips.dart';
+import '../../app/routes.dart';
 
 /// Configure and start a session in [repo], then navigate to it.
 ///
@@ -101,7 +102,7 @@ Future<void> startSessionFlow(
     );
     createdWorktree = null; // spawned — the worktree now hosts a session.
     if (!context.mounted) return;
-    context.go('/session/$newId');
+    context.go(routeForSession(newId));
   } catch (e) {
     if (createdWorktree != null) {
       await store.removeWorktree(repo.id, createdWorktree).catchError((_) {});

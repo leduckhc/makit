@@ -9,6 +9,7 @@ import '../../store/models.dart';
 import '../../store/store.dart';
 import '../widgets/session_status_dot.dart';
 import 'repo_chips.dart';
+import '../../app/routes.dart';
 
 /// A session inside a repo card, as an inset block (SPEC-19, direction C).
 ///
@@ -73,7 +74,7 @@ class SessionTile extends ConsumerWidget {
               ? kStatusCaution.withValues(alpha: 0.10)
               : cs.surfaceContainer,
           child: InkWell(
-            onTap: () => context.go('/session/${session.id}'),
+            onTap: () => context.go(routeForSession(session.id)),
             // Swipe is not an accessible gesture: it is invisible to assistive
             // tech and awkward one-handed. Long-press reaches the same confirm
             // dialog, matching WorktreeRow, which already long-presses for its

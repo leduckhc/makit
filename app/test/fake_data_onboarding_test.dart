@@ -64,7 +64,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(container.read(onboardingStepProvider), OnboardingStep.ready);
-    expect(container.read(routerProvider).state.matchedLocation, '/');
+    // Home is the repo list, pushed on top of the connect page.
+    expect(container.read(routerProvider).state.matchedLocation, '/repos');
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(button, findsNothing);
 

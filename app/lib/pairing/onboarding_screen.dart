@@ -6,10 +6,15 @@ import 'onboarding_controller.dart';
 import 'pairing_screen.dart';
 import 'readiness.dart';
 
-/// SPEC-09 Slice 1 — the first-run wizard. Renders the first unsatisfied gate:
-/// [OnboardingStep.pair] (scan/paste) or [OnboardingStep.notifications]
-/// (skippable enable prompt). The [OnboardingStep.ready] case never renders —
-/// the router redirects to Home before it can.
+/// The app's root screen (`/`), beneath the repo list.
+///
+/// Mostly this *is* the connect/servers surface — [PairingScreen] — which the
+/// user can reach at any time by backing out of the repos. The one exception is
+/// the notifications gate (SPEC-09 Slice 1), a skippable detour shown while that
+/// gate is the first unsatisfied onboarding step.
+///
+/// Unlike before, [OnboardingStep.ready] renders too: the root is a real
+/// destination now, not a wizard the router forwards away from.
 class OnboardingScreen extends ConsumerWidget {
   const OnboardingScreen({super.key});
 
@@ -17,12 +22,11 @@ class OnboardingScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final step = ref.watch(onboardingStepProvider);
     return switch (step) {
-      OnboardingStep.pair => const PairingScreen(),
       OnboardingStep.notifications => const _NotificationsStep(),
-      // Router redirects away before this renders; a spinner is a safe stand-in.
-      OnboardingStep.ready => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      // Both `pair` and `ready` land on the server surface: it already adapts,
+      // showing the hero when nothing is paired and the picker once servers
+      // exist.
+      OnboardingStep.pair || OnboardingStep.ready => const PairingScreen(),
     };
   }
 }

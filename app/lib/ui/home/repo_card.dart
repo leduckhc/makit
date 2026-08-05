@@ -13,6 +13,7 @@ import 'repo_chips.dart';
 import 'start_session.dart';
 import 'session_tile.dart';
 import 'worktree_row.dart';
+import '../../app/routes.dart';
 
 /// A repo card on the home screen: header, stat strip, its worktree rows,
 /// drafts, and a "new session" footer (SPEC-19, moved from home_screen).
@@ -163,68 +164,68 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                 ),
               ),
               const SizedBox(width: kSpace8),
-              // The header carries only what the rows can't: the repo's default
-              // branch and its open-PR count. Per-worktree state lives on the
-              // rows, so the old stat strip's "N active" was restating the bars
-              // right below it.
-              if (repo.defaultBranch != null) ...[
-                // Bounded so a long default branch (release/…-rc4) ellipsizes
-                // rather than overflowing the header on a narrow phone.
-                Flexible(
-                  child: _metaText(
-                    context,
-                    PhosphorIconsLight.flag,
-                    repo.defaultBranch!,
-                  ),
-                ),
-                const SizedBox(width: kSpace8),
-              ],
+              // Trailing cluster, flush right: the open-PR count and the menu.
+              // The default branch used to sit here too, but the star on the
+              // worktree row already marks the primary checkout, so naming it
+              // again was the same fact twice.
               if (repo.openPrCount > 0) ...[
                 _prCountPill(context, repo.openPrCount),
-                const SizedBox(width: kSpace4),
+                const SizedBox(width: kSpace6),
               ],
-              PopupMenuButton<String>(
-                icon: Icon(
-                  PhosphorIconsRegular.dotsThree,
-                  size: 18,
-                  color: cs.outline,
+              // Pinned to the same width as the rows' `+` (and zero-padded, since
+              // PopupMenuButton otherwise keeps IconButton's own inset) so the
+              // menu glyph and the `+` glyphs share one vertical line down the
+              // card's right edge. Guarded by `repo_card_header_test.dart`.
+              SizedBox(
+                width: kTrailingControl,
+                child: PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: kTrailingControl,
+                    minHeight: kTouchRow,
+                  ),
+                  icon: Icon(
+                    PhosphorIconsRegular.dotsThree,
+                    size: 18,
+                    color: cs.outline,
+                  ),
+                  tooltip: 'Repo actions',
+                  popUpAnimationStyle: AnimationStyle.noAnimation,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'new':
+                        startSessionFlow(context, ref, repo);
+                      case 'attach':
+                        _attachPast(context, ref);
+                      case 'remove':
+                        _confirmRemove(context, ref);
+                    }
+                  },
+                  itemBuilder: (context) {
+                    final cs = Theme.of(context).colorScheme;
+                    return [
+                      themedMenuItem(
+                        value: 'new',
+                        icon: PhosphorIconsLight.plus,
+                        label: 'New session',
+                      ),
+                      // "New worktree" is not repeated here — the card footer
+                      // carries it, always visible and one tap away.
+                      themedMenuItem(
+                        value: 'attach',
+                        icon: PhosphorIconsLight.arrowCounterClockwise,
+                        label: 'Resume session',
+                      ),
+                      const PopupMenuDivider(),
+                      themedMenuItem(
+                        value: 'remove',
+                        icon: PhosphorIconsLight.trash,
+                        label: 'Remove from makit',
+                        color: cs.error,
+                      ),
+                    ];
+                  },
                 ),
-                tooltip: 'Repo actions',
-                popUpAnimationStyle: AnimationStyle.noAnimation,
-                onSelected: (value) {
-                  switch (value) {
-                    case 'new':
-                      startSessionFlow(context, ref, repo);
-                    case 'attach':
-                      _attachPast(context, ref);
-                    case 'remove':
-                      _confirmRemove(context, ref);
-                  }
-                },
-                itemBuilder: (context) {
-                  final cs = Theme.of(context).colorScheme;
-                  return [
-                    themedMenuItem(
-                      value: 'new',
-                      icon: PhosphorIconsLight.plus,
-                      label: 'New session',
-                    ),
-                    // "New worktree" is not repeated here — the card footer
-                    // carries it, always visible and one tap away.
-                    themedMenuItem(
-                      value: 'attach',
-                      icon: PhosphorIconsLight.arrowCounterClockwise,
-                      label: 'Resume session',
-                    ),
-                    const PopupMenuDivider(),
-                    themedMenuItem(
-                      value: 'remove',
-                      icon: PhosphorIconsLight.trash,
-                      label: 'Remove from makit',
-                      color: cs.error,
-                    ),
-                  ];
-                },
               ),
             ],
           ),
@@ -325,30 +326,6 @@ class _RepoCardState extends ConsumerState<RepoCard> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _metaText(
-    BuildContext context,
-    IconData icon,
-    String text, {
-    Color? color,
-  }) {
-    final c = color ?? Theme.of(context).colorScheme.outline;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: c),
-        const SizedBox(width: kSpace4),
-        Flexible(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
-          ),
-        ),
-      ],
     );
   }
 
@@ -511,7 +488,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     try {
       final sid = await store.attachSession(repo.id, chosen.piSessionId);
       if (!context.mounted) return;
-      context.go('/session/$sid');
+      context.go(routeForSession(sid));
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not attach session: $e')),

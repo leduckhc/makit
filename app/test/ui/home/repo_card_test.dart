@@ -133,7 +133,7 @@ Future<_FakeStore> _pump(
         ),
       ),
       GoRoute(
-        path: '/session/:id',
+        path: '/repos/session/:id',
         builder: (context, state) =>
             Scaffold(body: Text('session ${state.pathParameters['id']}')),
       ),
