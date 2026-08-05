@@ -453,6 +453,9 @@ List<ChatItem> foldEvents(Iterable<SessionEvent> events) {
       case EventKind.sessionActionError:
         // Action error — handled by store, surfaces as a snackbar, not a chat item.
         break;
+      case EventKind.sessionUsage:
+        // Context/cost snapshot (SPEC-37) — handled by store, rendered as chrome.
+        break;
     }
   }
   return _dropMediaShownInProse(items);

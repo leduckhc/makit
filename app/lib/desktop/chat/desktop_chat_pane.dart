@@ -13,6 +13,7 @@ import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_draft.dart';
 import '../../ui/composer/composer_selectors.dart';
+import '../../ui/composer/context_usage.dart';
 import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
@@ -409,6 +410,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           ComposerThinkingSelector(sessionId: sessionId),
                           ComposerModeSelector(sessionId: sessionId),
                         ],
+                        // SPEC-37: shown for every agent — it reads usage, not
+                        // config — so it sits outside the configOptions branch.
+                        ContextUsageButton(sessionId: sessionId, desktop: true),
                       ],
                       focusNode: widget.composerFocusId == null
                           ? null

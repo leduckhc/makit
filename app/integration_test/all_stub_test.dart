@@ -16,6 +16,7 @@
 // stub-server state accumulates the same way it did across the split files.
 import 'stub/ask_wizard_e2e_test.dart' as ask_wizard;
 import 'stub/attachment_paste_test.dart' as attachment_paste;
+import 'stub/context_usage_test.dart' as context_usage;
 import 'stub/markdown_render_test.dart' as markdown_render;
 import 'stub/smoke_ask_question_test.dart' as smoke_ask_question;
 import 'stub/smoke_pairing_test.dart' as smoke_pairing;
@@ -25,6 +26,7 @@ import 'stub/streaming_test.dart' as streaming;
 void main() {
   ask_wizard.main();
   attachment_paste.main();
+  context_usage.main();
   markdown_render.main();
   smoke_ask_question.main();
   smoke_pairing.main();

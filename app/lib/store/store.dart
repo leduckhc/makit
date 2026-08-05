@@ -103,6 +103,7 @@ class StoreState {
     required this.commands,
     required this.meta,
     required this.actionErrors,
+    required this.usage,
     this.githubBudget,
     this.sessionsLoaded = false,
   });
@@ -116,6 +117,7 @@ class StoreState {
     commands: const {},
     meta: const {},
     actionErrors: const {},
+    usage: const {},
   );
 
   final List<Project> projects;
@@ -133,6 +135,11 @@ class StoreState {
   /// Last action error per session, from `session.action_error`. Used to
   /// surface transient error snackbars without adding chat items.
   final Map<String, ActionError> actionErrors;
+
+  /// Per-session context-window + cost snapshot from `session.usage` (SPEC-37).
+  /// Absent until the agent reports its first reading; pi only reports at all
+  /// when `.pi/extensions/pi-usage` is installed.
+  final Map<String, SessionUsage> usage;
 
   /// Latest GitHub API budget snapshot (SPEC-32), or null until the first
   /// `github.budget` frame arrives. A fresh client renders an `unknown` icon
@@ -153,6 +160,7 @@ class StoreState {
     Map<String, List<SlashCmd>>? commands,
     Map<String, SessionMeta>? meta,
     Map<String, ActionError>? actionErrors,
+    Map<String, SessionUsage>? usage,
     GithubBudget? githubBudget,
     bool? sessionsLoaded,
   }) => StoreState(
@@ -164,6 +172,7 @@ class StoreState {
     commands: commands ?? this.commands,
     meta: meta ?? this.meta,
     actionErrors: actionErrors ?? this.actionErrors,
+    usage: usage ?? this.usage,
     githubBudget: githubBudget ?? this.githubBudget,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
   );
@@ -219,6 +228,17 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
       Map<String, dynamic>.from(ev.payload),
     );
     return state.copyWith(meta: meta, cursors: cursors);
+  }
+
+  // session.usage updates the context-usage indicator, not chat (SPEC-37).
+  // Latest-wins by whole-snapshot replacement: every update carries the complete
+  // picture, so merging would resurrect a reading the agent stopped sending.
+  if (ev.kind == EventKind.sessionUsage) {
+    final usage = Map<String, SessionUsage>.from(state.usage);
+    usage[ev.sessionId] = SessionUsage.fromJson(
+      Map<String, dynamic>.from(ev.payload),
+    );
+    return state.copyWith(usage: usage, cursors: cursors);
   }
 
   // session.action_error carries a transient error from the pi extension.
@@ -910,6 +930,16 @@ final sessionMetaProvider = Provider.family<SessionMeta?, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.meta[sessionId];
+});
+
+/// Latest context-window + cost snapshot for a session (SPEC-37), or null until
+/// the agent reports one. Null must render as "unknown", not as an empty bar.
+final sessionUsageProvider = Provider.family<SessionUsage?, String>((
+  ref,
+  sessionId,
+) {
+  final s = ref.watch(storeControllerProvider);
+  return s.usage[sessionId];
 });
 
 /// Last action error for a session (or null if none has arrived). Changes
