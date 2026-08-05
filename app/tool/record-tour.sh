@@ -5,10 +5,11 @@
 # integration_test/tour/mobile_parity_tour.dart drives the UI, then re-encodes
 # the result to a shareable mp4 with ffmpeg.
 #
-# Usage: tool/record-tour.sh [output.mp4]
+# Usage: tool/record-tour.sh [output.mp4] [tour.dart]
 set -euo pipefail
 
 OUT="${1:-/tmp/mobile-parity-tour.mp4}"
+TOUR="${2:-integration_test/tour/mobile_parity_tour.dart}"
 RAW="$(mktemp -t makit-tour.XXXXXX).mov"
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_BUNDLE_ID="dev.getmakit.app"
@@ -33,7 +34,10 @@ echo "recording on $DEVICE_ID"
 
 # The tour needs a first-run app: a previous e2e run leaves paired credentials in
 # the keychain, which sends the app to a dead server instead of the demo door.
+# Uninstalling does NOT clear the keychain on iOS, so reset that too — otherwise
+# the tour films a Home bound to a dead server instead of the connect screen.
 xcrun simctl uninstall "$DEVICE_ID" "$APP_BUNDLE_ID" >/dev/null 2>&1 || true
+xcrun simctl keychain "$DEVICE_ID" reset >/dev/null 2>&1 || true
 
 REC_PID=""
 cleanup() {
@@ -51,14 +55,14 @@ trap cleanup EXIT
 # once the app is actually running on the device (below).
 TOUR_LOG="$(mktemp -t makit-tour-log.XXXXXX)"
 (cd "$APP_DIR" && "$FLUTTER_BIN" test --no-pub \
-  -d "$DEVICE_ID" integration_test/tour/mobile_parity_tour.dart) \
+  -d "$DEVICE_ID" "$TOUR") \
   >"$TOUR_LOG" 2>&1 &
 TOUR_PID=$!
 
 app_running() {
   # `flutter test` prints the test name once the app is up on the device and the
   # harness has connected, which is exactly when there is something to film.
-  grep -q 'mobile parity tour' "$TOUR_LOG" 2>/dev/null
+  grep -qE 'mobile (parity|redesign) tour' "$TOUR_LOG" 2>/dev/null
 }
 
 echo "waiting for the app to launch..."

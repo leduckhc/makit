@@ -91,7 +91,8 @@ void main() {
     expect(container.read(connectionProvider).useFake, isFalse);
     expect(container.read(connectionProvider).paired, isFalse);
     expect(container.read(onboardingStepProvider), OnboardingStep.pair);
-    expect(container.read(routerProvider).state.matchedLocation, '/pair');
+    // The connect/servers page is the root now, not a '/pair' leaf.
+    expect(container.read(routerProvider).state.matchedLocation, '/');
     expect(find.byType(PairingScreen), findsOneWidget);
     expect(find.byType(HomeScreen), findsNothing);
     expect(find.text('Open with fake data'), findsOneWidget);

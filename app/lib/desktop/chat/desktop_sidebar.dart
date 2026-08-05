@@ -20,7 +20,7 @@ import 'groups/groups_controller.dart';
 import 'new_worktree_dialog.dart';
 import 'selected_session.dart';
 import 'server_profile_badge.dart';
-import 'session_status_dot.dart';
+import '../../ui/widgets/session_status_dot.dart';
 import 'split_view.dart' show SessionDragData;
 import 'title_bar_strip.dart';
 

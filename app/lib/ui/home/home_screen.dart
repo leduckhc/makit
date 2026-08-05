@@ -10,6 +10,7 @@ import '../project/folder_browser.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import 'repo_card.dart';
+import '../../app/routes.dart';
 
 /// Home screen — organised around **repos**. Each repo card surfaces its
 /// branches (worktrees), diff size, open PRs, and the sessions running in each
@@ -114,7 +115,7 @@ class HomeScreen extends ConsumerWidget {
                           await ref
                               .read(connectionControllerProvider.notifier)
                               .unpair();
-                          if (context.mounted) context.go('/pair');
+                          if (context.mounted) context.go(kRouteRoot);
                         },
                       ),
                       const SizedBox(width: kSpace6),
@@ -122,7 +123,7 @@ class HomeScreen extends ConsumerWidget {
                     GlassCircleButton(
                       icon: PhosphorIconsLight.archiveBox,
                       tooltip: 'Archived sessions',
-                      onTap: () => context.go('/archived'),
+                      onTap: () => context.go(kRouteArchived),
                     ),
                     const SizedBox(width: kSpace6),
                     GlassCircleButton(
@@ -134,7 +135,7 @@ class HomeScreen extends ConsumerWidget {
                     GlassCircleButton(
                       icon: PhosphorIconsLight.gearSix,
                       tooltip: 'Settings',
-                      onTap: () => context.go('/settings'),
+                      onTap: () => context.go(kRouteSettings),
                     ),
                     const SizedBox(width: kSpace6),
                     const ConnectionChip(circular: true),

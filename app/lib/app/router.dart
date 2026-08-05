@@ -10,6 +10,7 @@ import '../ui/home/archived_screen.dart';
 import '../ui/home/home_screen.dart';
 import '../ui/session/session_screen.dart';
 import '../ui/settings/settings_screen.dart';
+import 'routes.dart';
 
 /// Exposed so widgets sitting in `MaterialApp.builder` (above the Navigator)
 /// can still push dialogs via the router's Navigator.
@@ -24,33 +25,50 @@ final routerProvider = Provider<GoRouter>((ref) {
   // `refreshListenable` re-runs redirects when `paired` actually changes.
   return GoRouter(
     navigatorKey: makitNavigatorKey,
-    initialLocation: '/',
+    // Launch goes straight to the working surface. Because `repos` is a child of
+    // `/`, go_router still builds the connect page beneath it, so the back arrow
+    // reaches the server picker without costing a tap on every launch.
+    initialLocation: kRouteRepos,
     redirect: (context, state) {
-      // Onboarding is complete only at the `ready` step (paired + notification
-      // gate resolved). Until then, keep the user on `/pair` (the wizard).
+      // Until onboarding completes, the root is the only place to be: it shows
+      // the connect screen (or the notifications gate) and nothing else is
+      // reachable without credentials.
       final ready = ref.read(onboardingStepProvider) == OnboardingStep.ready;
-      final goingToPair = state.matchedLocation == '/pair';
-      if (!ready && !goingToPair) return '/pair';
-      if (ready && goingToPair) return '/';
+      final atRoot = state.matchedLocation == kRouteRoot;
+      if (!ready && !atRoot) return kRouteRoot;
+      // Ready: deliberately do NOT forward `/` → `/repos`. Forwarding would make
+      // the back arrow bounce straight forward again, which is the whole point
+      // of putting the connect page underneath.
       return null;
     },
     refreshListenable: ref.watch(onboardingListenableProvider),
     routes: [
-      GoRoute(path: '/pair', builder: (_, _) => const OnboardingScreen()),
       GoRoute(
-        path: '/',
-        builder: (_, _) => const HomeScreen(),
+        path: kRouteRoot,
+        builder: (_, _) => const OnboardingScreen(),
         routes: [
-          GoRoute(path: 'settings', builder: (_, _) => const SettingsScreen()),
-          GoRoute(path: 'archived', builder: (_, _) => const ArchivedScreen()),
           GoRoute(
-            path: 'diagnostics',
-            builder: (_, _) => const DiagnosticsScreen(),
-          ),
-          GoRoute(
-            path: 'session/:id',
-            builder: (_, s) =>
-                SessionScreen(sessionId: s.pathParameters['id']!),
+            path: 'repos',
+            builder: (_, _) => const HomeScreen(),
+            routes: [
+              GoRoute(
+                path: 'settings',
+                builder: (_, _) => const SettingsScreen(),
+              ),
+              GoRoute(
+                path: 'archived',
+                builder: (_, _) => const ArchivedScreen(),
+              ),
+              GoRoute(
+                path: 'diagnostics',
+                builder: (_, _) => const DiagnosticsScreen(),
+              ),
+              GoRoute(
+                path: 'session/:id',
+                builder: (_, s) =>
+                    SessionScreen(sessionId: s.pathParameters['id']!),
+              ),
+            ],
           ),
         ],
       ),

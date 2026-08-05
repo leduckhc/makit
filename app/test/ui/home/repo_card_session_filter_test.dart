@@ -94,7 +94,9 @@ Future<void> _pump(WidgetTester tester, List<Session> sessions) async {
       child: MaterialApp.router(routerConfig: router),
     ),
   );
-  await tester.pumpAndSettle();
+  // Not pumpAndSettle: a running session's SessionStatusDot pulses forever,
+  // so settling would never complete.
+  await tester.pump();
 }
 
 void main() {

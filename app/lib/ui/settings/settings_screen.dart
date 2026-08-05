@@ -11,6 +11,7 @@ import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
 import 'notification_settings.dart';
 import 'appearance_settings.dart';
+import '../../app/routes.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -29,7 +30,7 @@ class SettingsScreen extends ConsumerWidget {
         title: const Text('Settings'),
         leading: IconButton(
           icon: const Icon(PhosphorIconsLight.arrowLeft),
-          onPressed: () => context.go('/'),
+          onPressed: () => context.go(kRouteRepos),
         ),
       ),
       body: ListView(
@@ -57,8 +58,15 @@ class SettingsScreen extends ConsumerWidget {
                   : server == null
                   ? 'Not paired'
                   : '${server.host}:${server.port}'
-                        '${server.mdnsName == null ? '' : ' · mDNS'}',
+                        '${server.mdnsName == null ? '' : ' · mDNS'}'
+                        // Say how many others are parked, or the row reads as
+                        // though this were the only server the phone knows.
+                        '${conn.servers.length > 1 ? ' · ${conn.servers.length - 1} more' : ''}',
             ),
+            trailing: conn.useFake
+                ? null
+                : const Icon(PhosphorIconsLight.caretRight, size: 16),
+            onTap: conn.useFake ? null : () => context.go(kRouteRoot),
           ),
           if (server != null)
             ListTile(
@@ -107,7 +115,7 @@ class SettingsScreen extends ConsumerWidget {
               '${sessions.length} session${sessions.length == 1 ? '' : 's'}',
             ),
             trailing: const Icon(PhosphorIconsLight.caretRight),
-            onTap: () => context.go('/'),
+            onTap: () => context.go(kRouteRepos),
           ),
 
           const Divider(),
@@ -134,7 +142,7 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('Diagnostics'),
             subtitle: const Text('View, copy, and send app logs'),
             trailing: const Icon(PhosphorIconsLight.caretRight),
-            onTap: () => context.go('/diagnostics'),
+            onTap: () => context.go(kRouteDiagnostics),
           ),
           ListTile(
             leading: _leadingIcon(PhosphorIconsLight.info),
@@ -149,15 +157,28 @@ class SettingsScreen extends ConsumerWidget {
               color: cs.error,
             ),
             title: Text(
-              conn.useFake ? 'Exit demo' : 'Unpair this device',
+              conn.useFake
+                  ? 'Exit demo'
+                  : conn.servers.length > 1
+                  ? 'Unpair from all ${conn.servers.length} servers'
+                  : 'Unpair this device',
               style: TextStyle(color: cs.error),
             ),
             subtitle: conn.useFake
                 ? const Text('Leave fake data and return to pairing')
+                : conn.servers.length > 1
+                // Forgetting one server lives in the manager; this is the
+                // start-over button, so it must not look like the same thing.
+                ? const Text('To drop just one server, open the Server list')
                 : null,
             onTap: () async {
+              // Confirm first: this destroys strictly more credentials than the
+              // per-server Forget (which already asks), and re-pairing needs
+              // physical access to each Mac's QR code. Demo mode has nothing to
+              // lose, so it still exits on one tap.
+              if (!conn.useFake && !await _confirmUnpair(context, conn)) return;
               await ref.read(connectionControllerProvider.notifier).unpair();
-              if (context.mounted) context.go('/pair');
+              if (context.mounted) context.go(kRouteRoot);
             },
           ),
         ],
@@ -210,4 +231,43 @@ class _SectionHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Confirm dropping every paired server, naming the scope so this cannot be
+/// mistaken for the single-server Forget in the server list.
+Future<bool> _confirmUnpair(BuildContext context, MakitConnState conn) async {
+  final many = conn.servers.length > 1;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(
+        many
+            ? 'Unpair from all ${conn.servers.length} servers?'
+            : 'Unpair this device?',
+      ),
+      content: Text(
+        many
+            ? 'All ${conn.servers.length} paired servers will be forgotten. '
+                  'This phone will need to scan each one\'s QR code again to '
+                  'reconnect. Sessions on the servers are not affected.'
+            : 'This phone will need to scan the QR code again to reconnect. '
+                  'Sessions on the server are not affected.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(ctx).colorScheme.error,
+            foregroundColor: Theme.of(ctx).colorScheme.onError,
+          ),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Unpair'),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
 }

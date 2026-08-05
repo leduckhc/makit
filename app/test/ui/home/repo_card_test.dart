@@ -8,6 +8,7 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/repo_card.dart';
+import 'package:makit/ui/home/start_session.dart';
 
 /// In-memory secure storage so ConnectionController boots without platform
 /// channels (mirrors the desktop dialog test).
@@ -46,8 +47,15 @@ class _FakeStore extends StoreController {
     removedWorktrees.add(path);
   }
 
+  /// How many times the flow started: the sheet opens only after this resolves,
+  /// which is the window a second tap can slip through.
+  int agentFetches = 0;
+
   @override
-  Future<List<AgentDescriptor>> fetchAgents() async => agents;
+  Future<List<AgentDescriptor>> fetchAgents() async {
+    agentFetches++;
+    return agents;
+  }
 
   @override
   Future<List<OpenPr>> listOpenPrs(String projectId) async => const [];
@@ -133,7 +141,7 @@ Future<_FakeStore> _pump(
         ),
       ),
       GoRoute(
-        path: '/session/:id',
+        path: '/repos/session/:id',
         builder: (context, state) =>
             Scaffold(body: Text('session ${state.pathParameters['id']}')),
       ),
@@ -162,7 +170,21 @@ Future<_FakeStore> _pump(
   return store;
 }
 
+/// Open the new-session sheet the way a user now reaches the full picker: the
+/// repo header's overflow menu. The card footer is "New worktree" — every
+/// worktree row has its own `+` for starting a session on a known branch.
+Future<void> _openNewSessionSheet(WidgetTester tester) async {
+  await tester.tap(find.byTooltip('Repo actions'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('New session').last);
+  await tester.pumpAndSettle();
+}
+
 void main() {
+  // Order-independence: the guard is library-level, so a leftover from one test
+  // would silently disable the flow in the next.
+  setUp(resetStartSessionFlowGuard);
+
   testWidgets('forwards the config picks chosen in the sheet to spawnSession', (
     tester,
   ) async {
@@ -188,9 +210,7 @@ void main() {
       ],
     );
 
-    // Open the sheet from the footer's "New session" button.
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
 
     // Pick a non-default model, then Start.
     await tester.tap(find.text('GPT-5'));
@@ -214,8 +234,7 @@ void main() {
   ) async {
     final store = await _pump(tester, agents: [_agent('pi')]);
 
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
 
     // One harness, one branch, one worktree, no PRs, no config options: the
     // sheet still opens instead of silently spawning.
@@ -227,8 +246,7 @@ void main() {
   testWidgets('forks the worktree before spawning into it', (tester) async {
     final store = await _pump(tester, agents: [_agent('pi')]);
 
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
     // "New branch" is the default source, so Start forks off the base branch
     // client-side and spawns INTO the created worktree.
     await tester.tap(find.text('Start'));
@@ -246,8 +264,7 @@ void main() {
     final store = await _pump(tester, agents: [_agent('pi')]);
     store.spawnThrows = true;
 
-    await tester.tap(find.widgetWithText(TextButton, 'New session'));
-    await tester.pumpAndSettle();
+    await _openNewSessionSheet(tester);
     await tester.tap(find.text('Start'));
     await tester.pumpAndSettle();
 
@@ -256,5 +273,27 @@ void main() {
     expect(store.createdFrom, ['main']);
     expect(store.removedWorktrees, ['/tmp/demo-wt']);
     expect(find.textContaining('Could not start session'), findsOneWidget);
+  });
+
+  testWidgets('a double tap on + starts one session flow, not two', (
+    tester,
+  ) async {
+    final store = await _pump(tester, agents: [_agent('pi')]);
+
+    // The `+` awaits fetchAgents before the sheet appears, so an impatient
+    // second tap in that window used to open a second sheet — and could then
+    // create a second worktree and spawn twice.
+    final plus = find.byKey(const Key('newSessionInWorktree-/tmp/demo'));
+    expect(plus, findsWidgets);
+    await tester.tap(plus.first, warnIfMissed: false);
+    await tester.tap(plus.first, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(store.agentFetches, 1, reason: 'the second tap must be swallowed');
+    expect(find.text('Start'), findsOneWidget, reason: 'exactly one sheet');
+
+    // Dismiss so the flow completes and releases the guard.
+    await tester.tapAt(const Offset(400, 40));
+    await tester.pumpAndSettle();
   });
 }

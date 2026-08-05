@@ -880,7 +880,7 @@ class ModelConfigPill extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.labelSmall?.copyWith(
-          color: on ? kMakitAccent : cs.onSurfaceVariant,
+          color: on ? cs.primary : cs.onSurfaceVariant,
         ),
       ),
     );
