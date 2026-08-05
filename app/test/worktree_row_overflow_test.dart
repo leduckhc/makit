@@ -71,16 +71,19 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _host([repo], [
-        Session(
-          id: 's1',
-          projectId: 'p1',
-          agent: 'pi',
-          title: 'a session with a long enough title to crowd the row',
-          status: SessionStatus.awaitingApproval,
-          policy: ApprovalPolicy.askOnRisky,
-        ),
-      ]),
+      _host(
+        [repo],
+        [
+          Session(
+            id: 's1',
+            projectId: 'p1',
+            agent: 'pi',
+            title: 'a session with a long enough title to crowd the row',
+            status: SessionStatus.awaitingApproval,
+            policy: ApprovalPolicy.askOnRisky,
+          ),
+        ],
+      ),
     );
     await tester.pump();
 

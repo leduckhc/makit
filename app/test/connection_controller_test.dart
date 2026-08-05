@@ -116,7 +116,8 @@ FakeSecureStorage _seededStorage({
 /// (so these tests also cover the boot-time migration), but reads go through
 /// the current `paired_servers` record the controller writes.
 PairedServer _storedServer(FakeSecureStorage storage) {
-  final record = jsonDecode(storage.data[_kServersKey]!) as Map<String, dynamic>;
+  final record =
+      jsonDecode(storage.data[_kServersKey]!) as Map<String, dynamic>;
   final servers = (record['servers'] as List)
       .cast<Map<String, dynamic>>()
       .map(PairedServer.fromJson)

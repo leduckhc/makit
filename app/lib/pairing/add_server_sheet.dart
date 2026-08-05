@@ -165,9 +165,9 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
     if (url == null || url.isEmpty || !mounted) return;
     final info = PairInfo.tryParse(url);
     if (info == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not a makit pairing URL.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Not a makit pairing URL.')));
       return;
     }
     navigator.pop();
@@ -258,11 +258,13 @@ class DiscoveredServersList extends StatelessWidget {
           children: [
             for (final s in servers)
               ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: kSpace4,
-                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: kSpace4),
                 leading: Icon(PhosphorIconsLight.hardDrives, color: cs.outline),
-                title: Text(s.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                title: Text(
+                  s.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 subtitle: Text('${s.host}:${s.port}'),
                 trailing: const Icon(PhosphorIconsLight.qrCode, size: 18),
                 onTap: () => onTap(s),

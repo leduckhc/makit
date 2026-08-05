@@ -14,10 +14,8 @@ import 'package:makit/transport/transport.dart';
 
 /// The connect screen is now the single server surface: first run *and*
 /// management. It lists paired servers, adds new ones, and offers demo data.
-const _fpA =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const _fpB =
-    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const _fpA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _fpB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 class _Transport implements Transport {
   final _frames = StreamController<Envelope>.broadcast();
@@ -86,8 +84,8 @@ ProviderContainer _container({required List<Map<String, dynamic>> servers}) {
         (ref) => ConnectionController(
           storage,
           transportFactory: _Transport.new,
-          browseLan:
-              ({Duration timeout = const Duration(seconds: 3)}) async => [],
+          browseLan: ({Duration timeout = const Duration(seconds: 3)}) async =>
+              [],
           rediscoverStall: Duration.zero,
         ),
       ),

@@ -60,8 +60,8 @@ Future<void> startSessionFlow(
         branches: branches,
         worktrees: worktrees,
         openPrs: openPrs,
-        initialBranch: worktree?.branch ??
-            (branches.isEmpty ? null : branches.first),
+        initialBranch:
+            worktree?.branch ?? (branches.isEmpty ? null : branches.first),
         initialWorktreePath: worktree?.path,
       ),
     );

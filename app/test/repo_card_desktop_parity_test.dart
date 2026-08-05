@@ -12,7 +12,10 @@ import 'package:makit/ui/home/new_session_sheet.dart';
 /// DESIGN.md makes `prStateStyle`/`gitBranch` the shared branch glyph and
 /// `folder` the repo glyph, so a concept cannot look like two different things
 /// depending on which screen you opened.
-Widget _host({required List<RepoInfo> repos, List<Session> sessions = const []}) {
+Widget _host({
+  required List<RepoInfo> repos,
+  List<Session> sessions = const [],
+}) {
   return ProviderScope(
     overrides: [
       reposProvider.overrideWithValue(ReposState(repos)),
@@ -78,10 +81,7 @@ void main() {
       await tester.pump();
 
       expect(find.byIcon(PhosphorIconsRegular.dotsThree), findsOneWidget);
-      expect(
-        find.byIcon(PhosphorIconsRegular.dotsThreeVertical),
-        findsNothing,
-      );
+      expect(find.byIcon(PhosphorIconsRegular.dotsThreeVertical), findsNothing);
     });
   });
 

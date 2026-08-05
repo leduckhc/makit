@@ -165,7 +165,11 @@ class _RepoCardState extends ConsumerState<RepoCard> {
               // rows, so the old stat strip's "N active" was restating the bars
               // right below it.
               if (repo.defaultBranch != null) ...[
-                _metaText(context, PhosphorIconsLight.flag, repo.defaultBranch!),
+                _metaText(
+                  context,
+                  PhosphorIconsLight.flag,
+                  repo.defaultBranch!,
+                ),
                 const SizedBox(width: kSpace8),
               ],
               if (repo.openPrCount > 0) ...[

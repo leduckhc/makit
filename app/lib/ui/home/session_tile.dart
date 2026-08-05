@@ -110,8 +110,9 @@ class SessionTile extends ConsumerWidget {
                                 : session.lastPreview,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(color: cs.outline),
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(color: cs.outline),
                           ),
                         ],
                       ),

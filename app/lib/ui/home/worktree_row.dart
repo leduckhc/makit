@@ -61,7 +61,10 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
     final age = branchAgeLabel(worktree.committedAt);
     final accent = worktreeAccent(sessions);
     final hasMeta =
-        isDefault || worktree.hasChanges || worktree.pr != null || age.isNotEmpty;
+        isDefault ||
+        worktree.hasChanges ||
+        worktree.pr != null ||
+        age.isNotEmpty;
 
     return Container(
       // The accent is a left border rather than a stretched child: it needs no
@@ -71,10 +74,7 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(color: cs.outlineVariant),
-          left: BorderSide(
-            color: accentColor(cs, accent),
-            width: _kAccentBar,
-          ),
+          left: BorderSide(color: accentColor(cs, accent), width: _kAccentBar),
         ),
       ),
       child: Column(
@@ -133,18 +133,13 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
                     ),
                     if (isCurrent) ...[
                       const SizedBox(width: 5),
-                      Icon(
-                        PhosphorIconsFill.star,
-                        size: 13,
-                        color: cs.primary,
-                      ),
+                      Icon(PhosphorIconsFill.star, size: 13, color: cs.primary),
                     ],
                     if (canFold)
                       _Caret(
                         key: Key('worktreeCaret-${worktree.path}'),
                         expanded: _expanded,
-                        onPressed: () =>
-                            setState(() => _expanded = !_expanded),
+                        onPressed: () => setState(() => _expanded = !_expanded),
                       ),
                     // Start a session on *this* branch. Without it the only way
                     // in was the card-level "New session", which reopens the

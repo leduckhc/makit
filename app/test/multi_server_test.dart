@@ -13,10 +13,8 @@ import 'package:makit/transport/transport.dart';
 const _kLegacyKey = 'paired_server';
 const _kServersKey = 'paired_servers';
 
-const _fpA =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-const _fpB =
-    'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+const _fpA = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _fpB = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 class FakeTransport implements Transport {
   FakeTransport({this.emitConnected = true});
@@ -128,32 +126,34 @@ List<Map<String, dynamic>> _storedServers(FakeSecureStorage s) =>
 
 void main() {
   group('legacy migration', () {
-    test('a single legacy paired_server becomes a one-entry server list',
-        () async {
-      final storage = FakeSecureStorage({
-        _kLegacyKey: jsonEncode(
-          _serverJson(host: '192.168.1.10', fingerprint: _fpA, label: 'imac'),
-        ),
-      });
-      final controller = _controller(storage);
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'a single legacy paired_server becomes a one-entry server list',
+      () async {
+        final storage = FakeSecureStorage({
+          _kLegacyKey: jsonEncode(
+            _serverJson(host: '192.168.1.10', fingerprint: _fpA, label: 'imac'),
+          ),
+        });
+        final controller = _controller(storage);
+        await Future<void>.delayed(Duration.zero);
 
-      // Migrated into the new list, still active, creds preserved — nobody
-      // has to re-pair after upgrading.
-      expect(controller.state.servers, hasLength(1));
-      expect(controller.state.servers.single.fingerprint, _fpA);
-      expect(controller.state.activeServer?.host, '192.168.1.10');
-      expect(controller.state.activeServer?.bearer, 'bearer-$_fpA');
-      expect(controller.state.paired, isTrue);
+        // Migrated into the new list, still active, creds preserved — nobody
+        // has to re-pair after upgrading.
+        expect(controller.state.servers, hasLength(1));
+        expect(controller.state.servers.single.fingerprint, _fpA);
+        expect(controller.state.activeServer?.host, '192.168.1.10');
+        expect(controller.state.activeServer?.bearer, 'bearer-$_fpA');
+        expect(controller.state.paired, isTrue);
 
-      // Persisted in the new shape, and the legacy key is gone so there is
-      // only ever one source of truth.
-      expect(_storedServers(storage), hasLength(1));
-      expect(_storedRecord(storage)['activeId'], _fpA);
-      expect(storage.data.containsKey(_kLegacyKey), isFalse);
+        // Persisted in the new shape, and the legacy key is gone so there is
+        // only ever one source of truth.
+        expect(_storedServers(storage), hasLength(1));
+        expect(_storedRecord(storage)['activeId'], _fpA);
+        expect(storage.data.containsKey(_kLegacyKey), isFalse);
 
-      controller.dispose();
-    });
+        controller.dispose();
+      },
+    );
 
     test('no stored server at all leaves the app unpaired', () async {
       final controller = _controller(FakeSecureStorage());
@@ -189,28 +189,30 @@ void main() {
   });
 
   group('switchTo', () {
-    test('tears down the old socket and connects to the chosen server',
-        () async {
-      final transports = <FakeTransport>[];
-      final storage = _twoServers();
-      final controller = _controller(storage, transports: transports);
-      await Future<void>.delayed(Duration.zero);
-      expect(transports.single.connectedUrls, ['wss://10.0.0.1:8443']);
+    test(
+      'tears down the old socket and connects to the chosen server',
+      () async {
+        final transports = <FakeTransport>[];
+        final storage = _twoServers();
+        final controller = _controller(storage, transports: transports);
+        await Future<void>.delayed(Duration.zero);
+        expect(transports.single.connectedUrls, ['wss://10.0.0.1:8443']);
 
-      await controller.switchTo(_fpB);
+        await controller.switchTo(_fpB);
 
-      // Old transport closed, new one pointed at B with B's bearer.
-      expect(transports[0].closed, isTrue);
-      expect(transports, hasLength(2));
-      expect(transports[1].connectedUrls, ['wss://10.0.0.2:8443']);
-      expect(transports[1].helloBodies.single['bearer'], 'bearer-$_fpB');
-      expect(controller.state.activeServer?.fingerprint, _fpB);
+        // Old transport closed, new one pointed at B with B's bearer.
+        expect(transports[0].closed, isTrue);
+        expect(transports, hasLength(2));
+        expect(transports[1].connectedUrls, ['wss://10.0.0.2:8443']);
+        expect(transports[1].helloBodies.single['bearer'], 'bearer-$_fpB');
+        expect(controller.state.activeServer?.fingerprint, _fpB);
 
-      // The choice survives a restart.
-      expect(_storedRecord(storage)['activeId'], _fpB);
+        // The choice survives a restart.
+        expect(_storedRecord(storage)['activeId'], _fpB);
 
-      controller.dispose();
-    });
+        controller.dispose();
+      },
+    );
 
     test('switching to the already-active server does not reconnect', () async {
       final transports = <FakeTransport>[];
@@ -237,38 +239,42 @@ void main() {
   });
 
   group('forget', () {
-    test('forgetting an inactive server keeps the connection untouched',
-        () async {
-      final transports = <FakeTransport>[];
-      final storage = _twoServers();
-      final controller = _controller(storage, transports: transports);
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'forgetting an inactive server keeps the connection untouched',
+      () async {
+        final transports = <FakeTransport>[];
+        final storage = _twoServers();
+        final controller = _controller(storage, transports: transports);
+        await Future<void>.delayed(Duration.zero);
 
-      await controller.forget(_fpB);
+        await controller.forget(_fpB);
 
-      expect(controller.state.servers, hasLength(1));
-      expect(controller.state.activeServer?.fingerprint, _fpA);
-      expect(transports, hasLength(1), reason: 'active socket untouched');
-      expect(_storedServers(storage), hasLength(1));
-      controller.dispose();
-    });
+        expect(controller.state.servers, hasLength(1));
+        expect(controller.state.activeServer?.fingerprint, _fpA);
+        expect(transports, hasLength(1), reason: 'active socket untouched');
+        expect(_storedServers(storage), hasLength(1));
+        controller.dispose();
+      },
+    );
 
-    test('forgetting the active server falls over to a remaining one',
-        () async {
-      final transports = <FakeTransport>[];
-      final storage = _twoServers();
-      final controller = _controller(storage, transports: transports);
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'forgetting the active server falls over to a remaining one',
+      () async {
+        final transports = <FakeTransport>[];
+        final storage = _twoServers();
+        final controller = _controller(storage, transports: transports);
+        await Future<void>.delayed(Duration.zero);
 
-      await controller.forget(_fpA);
+        await controller.forget(_fpA);
 
-      expect(controller.state.servers, hasLength(1));
-      expect(controller.state.activeServer?.fingerprint, _fpB);
-      expect(transports, hasLength(2));
-      expect(transports[1].connectedUrls, ['wss://10.0.0.2:8443']);
-      expect(controller.state.paired, isTrue);
-      controller.dispose();
-    });
+        expect(controller.state.servers, hasLength(1));
+        expect(controller.state.activeServer?.fingerprint, _fpB);
+        expect(transports, hasLength(2));
+        expect(transports[1].connectedUrls, ['wss://10.0.0.2:8443']);
+        expect(controller.state.paired, isTrue);
+        controller.dispose();
+      },
+    );
 
     test('forgetting the last server leaves the app unpaired', () async {
       final storage = _twoServers();
@@ -299,8 +305,9 @@ void main() {
         'studio',
       );
       expect(transports, hasLength(1));
-      final stored = _storedServers(storage)
-          .firstWhere((s) => s['fingerprint'] == _fpB);
+      final stored = _storedServers(
+        storage,
+      ).firstWhere((s) => s['fingerprint'] == _fpB);
       expect(stored['label'], 'studio');
       controller.dispose();
     });
