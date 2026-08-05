@@ -25,4 +25,22 @@ export interface WsClient {
   deviceLabel?: string;
   /** Registry id of the paired device, once authenticated (for `devices.list`). */
   deviceId?: string;
+  /**
+   * True while this client is watching metrics (`metrics.watch {on:true}`).
+   * Cleared on socket close so a panel closed by killing the window cannot pin
+   * the collector at 1 Hz forever (SPEC-37 decision 7).
+   */
+  watchingMetrics: boolean;
+  /**
+   * True when the socket's remote address is loopback. Gates acceptance of the
+   * app's reported pid in `hello` (SPEC-37 decision 6) — a non-loopback client
+   * must connect normally but may not ask us to sample an arbitrary pid.
+   */
+  readonly isLocal: boolean;
+  /**
+   * The app process pid this (loopback) client reported in `hello`, used to
+   * measure the app's CPU/RSS from the server. Undefined until reported and for
+   * every non-loopback client.
+   */
+  appPid?: number;
 }

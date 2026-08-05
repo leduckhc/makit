@@ -174,6 +174,16 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     });
   }
 
+  /**
+   * Root pid of the codex app-server process tree, or `undefined` before
+   * `start()` and for a faulted spawn (SPEC-37). A per-adapter getter (not a
+   * widened `AgentAdapter` contract) keeps the pid concern on the only adapters
+   * that spawn a child — see the note on {@link AcpAdapter.agentPid}.
+   */
+  get agentPid(): number | undefined {
+    return this.transport?.pid;
+  }
+
   async start(opts: SpawnOpts): Promise<void> {
     this.makitSessionId = opts.sessionId ?? "";
     this.askUser = opts.askUser;

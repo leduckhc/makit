@@ -96,6 +96,14 @@ export interface ChildExitInfo {
  * `CodexTransport` is a direct alias of this shape; `AcpTransport` wraps it.
  */
 export interface ChildLineTransport {
+  /**
+   * The OS pid of the spawned child, or `undefined` when the spawn faulted
+   * (Node leaves `child.pid` undefined on a failed spawn). Surfaced so the
+   * metrics collector can attribute a whole process tree to its root pid
+   * (SPEC-37). Propagated honestly — never coerced to 0, since 0 is
+   * indistinguishable from a genuinely idle agent (decision 11).
+   */
+  readonly pid: number | undefined;
   /** Send one raw line (a trailing newline is appended). */
   send(line: string): void;
   /** Register a listener for each inbound LF-delimited line (multiple allowed). */
@@ -230,6 +238,7 @@ export function spawnLineProcess(opts: SpawnLineOptions): ChildLineTransport {
   child.on("error", settleStreamEnd);
 
   return {
+    pid: child.pid,
     send: (line: string) => {
       const stdin = child.stdin;
       if (!stdin || stdin.destroyed) return;

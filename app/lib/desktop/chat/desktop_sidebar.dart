@@ -10,6 +10,7 @@ import '../../ui/home/repo_chips.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
+import '../metrics/metrics_button.dart';
 import 'archived_sidebar_view.dart';
 import 'connection_endpoint.dart';
 import 'github_budget_button.dart';
@@ -1085,6 +1086,7 @@ class _Footer extends ConsumerWidget {
               ],
             ),
           ),
+          const MetricsButton(),
           const GithubBudgetButton(),
           IconButton(
             tooltip: 'Add repo',

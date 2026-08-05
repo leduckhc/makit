@@ -237,3 +237,15 @@ test("lazy hydrateFrom is retained when the loader throws, and retried on next a
   assert.equal(session.events[0].payload.text, "old");
   assert.equal(calls, 2, "loader retried exactly once after the failure");
 });
+
+test("agentPid is undefined for an adapter with no child process (stub/fake)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  assert.equal(session.agentPid, undefined);
+});
+
+test("agentPid returns the adapter's pid when the adapter exposes one", () => {
+  const adapter = fakeAdapter();
+  (adapter as any).agentPid = 4242;
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+  assert.equal(session.agentPid, 4242);
+});

@@ -8,6 +8,7 @@ import '../transport/codec.dart';
 import '../transport/protocol.dart';
 import '../transport/ws_client.dart';
 import 'connection.dart';
+import 'metrics.dart';
 import 'models.dart';
 
 class ProjectsState {
@@ -104,6 +105,7 @@ class StoreState {
     required this.meta,
     required this.actionErrors,
     this.githubBudget,
+    this.metrics = const [],
     this.sessionsLoaded = false,
   });
 
@@ -139,6 +141,10 @@ class StoreState {
   /// while this is null.
   final GithubBudget? githubBudget;
 
+  /// Bounded ring of performance samples (SPEC-37), oldest first. Capped at
+  /// [_metricsCap]; empty until the first `metrics.sample` frame.
+  final List<MetricsSample> metrics;
+
   /// Whether a `sessions.snapshot` has been received. Distinguishes "the server
   /// has no sessions" from "we haven't heard from the server yet", which an
   /// empty [sessions] list alone cannot.
@@ -154,6 +160,7 @@ class StoreState {
     Map<String, SessionMeta>? meta,
     Map<String, ActionError>? actionErrors,
     GithubBudget? githubBudget,
+    List<MetricsSample>? metrics,
     bool? sessionsLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
@@ -165,9 +172,17 @@ class StoreState {
     meta: meta ?? this.meta,
     actionErrors: actionErrors ?? this.actionErrors,
     githubBudget: githubBudget ?? this.githubBudget,
+    metrics: metrics ?? this.metrics,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
   );
 }
+
+/// Max metrics samples retained (30 min at 1 Hz). Drop-oldest beyond this.
+const int _metricsCap = 1800;
+
+/// Trim [list] to the trailing [_metricsCap] samples (drop-oldest).
+List<MetricsSample> _boundedMetrics(List<MetricsSample> list) =>
+    list.length <= _metricsCap ? list : list.sublist(list.length - _metricsCap);
 
 /// Pure state transition: fold a decoded wire frame into a new [StoreState].
 /// No I/O, no logging, no side effects — this is what the reducer test locks
@@ -176,6 +191,12 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
   ProjectsSnapshot(:final projects) => state.copyWith(projects: projects),
   ReposSnapshot(:final repos) => state.copyWith(repos: repos),
   GithubBudgetFrame(:final budget) => state.copyWith(githubBudget: budget),
+  // `history` replaces the ring (backfill on watch); a lone sample appends.
+  MetricsSampleFrame(:final sample, :final history) => state.copyWith(
+    metrics: _boundedMetrics(
+      history != null ? [...history, sample] : [...state.metrics, sample],
+    ),
+  ),
   SessionsSnapshot(:final sessions) => state.copyWith(
     sessions: sessions,
     sessionsLoaded: true,
