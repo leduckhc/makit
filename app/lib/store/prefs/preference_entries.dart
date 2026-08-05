@@ -176,7 +176,7 @@ const PreferenceEntry<MessageNavigatorStyle> messageNavigatorStylePreference =
       decode: _decodeNavigatorStyle,
     );
 
-/// Where a session's pending mid-turn messages render (SPEC-36). Read by BOTH
+/// Where a session's pending mid-turn messages render (SPEC-38). Read by BOTH
 /// surfaces, unlike the navigator style: a phone is exactly where a queue
 /// matters, so this is not a desktop-only preference.
 ///

@@ -1,7 +1,7 @@
 # SPEC-37 — Queue tray: a second presentation, and promote
 
 **Status:** Implemented · **Priority:** P2 · **Branch:** `feat/steering-vs-queuing`
-**Depends on:** SPEC-35 (the queue), SPEC-36 (edit / reorder / placements)
+**Depends on:** SPEC-35 (the queue), SPEC-38 (edit / reorder / placements)
 **Mockups:** [`mockups/mid-turn-steer-queue.html`](../../mockups/mid-turn-steer-queue.html) §C — the tray, with ⤒ promote.
 
 **Scope:** `server/src/session.ts`, `server/src/ws/commands/session.ts`,
@@ -13,7 +13,7 @@
 
 ## Why this exists
 
-SPEC-36 shipped variant **E** (ghost bubbles) twice — `pinned` and `inline` —
+SPEC-38 shipped variant **E** (ghost bubbles) twice — `pinned` and `inline` —
 and grafted C's *edit + reorder* onto it. What it did **not** ship was variant
 **C** itself: the compact tray, and the one action only the tray had —
 **promote (⤒)**: *stop the current turn and send this message now*.
@@ -32,7 +32,7 @@ message** instead of at the whole queue.
    the placement to the only question a slot can answer — "does the chosen
    placement live *here*" — so the tray needs no third mount and the transcript's
    trailer (`inlineQueueVisibleProvider`, SPEC-21/34 index shifting) stays exactly
-   as SPEC-36 left it.
+   as SPEC-38 left it.
 3. **Promote is composed from primitives that already exist**: move to the head
    (`reorderQueue`), then abort (`adapter.cancel()`). Delivery still happens in
    `flushNext` on the adapter's own `idle`, so promote inherits the flush
@@ -80,7 +80,7 @@ there for every other command. Left alone deliberately; it wants a guard in
 ## What is NOT here
 
 - **Drag to reorder.** The tray keeps ↑↓ for the same reason the bubbles do
-  (SPEC-36 decision 6): both sit inside or beside a scrollable.
+  (SPEC-38 decision 6): both sit inside or beside a scrollable.
 - **Promote on the ghost bubbles.** The tray is the "work list" reading, where an
   interrupt belongs; a bubble that looks like a message you already sent is the
   wrong place to hang "abort the turn". Reconsider if users go looking for it

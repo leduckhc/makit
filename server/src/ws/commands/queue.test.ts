@@ -104,7 +104,7 @@ test("cancel (stop) interrupts the turn AND empties the queue", async () => {
   assert.equal(h.session.queuedMessages.length, 0, "stop means stop");
 });
 
-// ---- SPEC-36 ---------------------------------------------------------------
+// ---- SPEC-38 ---------------------------------------------------------------
 
 test("queue.update replaces the pending text and acks", async () => {
   const h = harness();

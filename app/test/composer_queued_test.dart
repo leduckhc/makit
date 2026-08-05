@@ -1,4 +1,4 @@
-/// The composer's pending-queue slot (SPEC-35 wire → SPEC-36 UI).
+/// The composer's pending-queue slot (SPEC-35 wire → SPEC-38 UI).
 ///
 /// The composer knows nothing about the queue's commands: it is handed a widget
 /// and renders it above the field. That is what lets the identical queue widget

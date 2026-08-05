@@ -1,4 +1,4 @@
-/// The pending-message queue (SPEC-36) — messages you sent while the agent was
+/// The pending-message queue (SPEC-38) — messages you sent while the agent was
 /// busy that could not be steered into the running turn.
 ///
 /// Each one renders as a **ghost bubble**: dashed, right-aligned, in the
@@ -59,6 +59,7 @@ class PendingQueue extends StatelessWidget {
     required this.onEdit,
     required this.onReorder,
     required this.onCancel,
+    required this.onPromote,
   });
 
   /// Pending messages, in send order.
@@ -77,6 +78,9 @@ class PendingQueue extends StatelessWidget {
 
   /// Drop one message.
   final ValueChanged<String> onCancel;
+
+  /// Interrupt the running turn so one message is delivered next (SPEC-37).
+  final ValueChanged<String> onPromote;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +110,7 @@ class PendingQueue extends StatelessWidget {
               commands: commands,
               onEdit: (text) => onEdit(queued[i].id, text),
               onCancel: () => onCancel(queued[i].id),
+              onPromote: () => onPromote(queued[i].id),
               onMove: (delta) => _move(i, delta),
             ),
         ],
@@ -137,6 +142,7 @@ class PendingBubble extends StatefulWidget {
     required this.commands,
     required this.onEdit,
     required this.onCancel,
+    required this.onPromote,
     required this.onMove,
   });
 
@@ -157,6 +163,9 @@ class PendingBubble extends StatefulWidget {
 
   /// Drop this message.
   final VoidCallback onCancel;
+
+  /// Send this one now: the server interrupts the running turn (SPEC-37).
+  final VoidCallback onPromote;
 
   /// Move by `-1` (sooner) or `+1` (later).
   final ValueChanged<int> onMove;
@@ -240,7 +249,7 @@ class _PendingBubbleState extends State<PendingBubble> {
                 child: SlashPalette(
                   filter: _ctrl!.text,
                   commands: widget.commands,
-                  // SPEC-36: agent commands only — client commands run now, and
+                  // SPEC-38: agent commands only — client commands run now, and
                   // this message runs later.
                   includeBuiltins: false,
                   onPick: _pickSlash,
@@ -324,6 +333,20 @@ class _PendingBubbleState extends State<PendingBubble> {
                       ),
                     ),
                   ],
+                  // Hidden (not disabled) while editing: the server has not
+                  // seen the new text, so promoting would interrupt the turn to
+                  // deliver the OLD message.
+                  if (!editing)
+                    IconButton(
+                      onPressed: widget.onPromote,
+                      tooltip: 'Stop the current turn and send this now',
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 14,
+                      icon: Icon(
+                        PhosphorIconsLight.arrowLineUp,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                   IconButton(
                     onPressed: editing ? _commit : widget.onCancel,
                     tooltip: editing ? 'Done' : 'Cancel this message',
@@ -354,7 +377,7 @@ class _PendingBubbleState extends State<PendingBubble> {
 }
 
 /// The ↑ / ↓ order controls. Buttons rather than a drag handle on purpose
-/// (SPEC-36 decision 6): both placements sit inside or beside a scrollable, and
+/// (SPEC-38 decision 6): both placements sit inside or beside a scrollable, and
 /// on a phone a drag there fights the scroller.
 class _OrderControls extends StatelessWidget {
   const _OrderControls({

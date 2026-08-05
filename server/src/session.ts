@@ -550,7 +550,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Replace a pending message's text (SPEC-36). Empty/whitespace text is a
+   * Replace a pending message's text (SPEC-38). Empty/whitespace text is a
    * cancel — the user cleared the field, and a blank pending message is not a
    * thing. Returns false for an id the queue no longer holds (it was delivered
    * between the tap and this call), which callers treat as a no-op, not an error.
@@ -565,7 +565,7 @@ export class Session extends EventEmitter {
   }
 
   /**
-   * Reorder the queue (SPEC-36). `ids` is a **hint**, not an assertion: the
+   * Reorder the queue (SPEC-38). `ids` is a **hint**, not an assertion: the
    * queue can flush between the user's tap and this call, so named ids take the
    * given order first, entries the client did not mention keep their relative
    * order after them, and unknown ids are ignored. A reorder can therefore never

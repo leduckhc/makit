@@ -26,7 +26,7 @@ class SlashPalette extends StatelessWidget {
   /// Whether the built-in **client** commands (`/cancel`, `/new`, `/model`, …)
   /// are offered. True for the composer, where they run immediately.
   ///
-  /// False when editing a **queued** message (SPEC-36): `handleClientCommand`
+  /// False when editing a **queued** message (SPEC-38): `handleClientCommand`
   /// intercepts those app-side and acts *now*, so inside a message that sends
   /// *later* they cannot mean anything — offering them would promise behaviour
   /// the send path does not implement.

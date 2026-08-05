@@ -1,4 +1,9 @@
-# SPEC-36 — Pending queue: editable, reorderable, two placements
+# SPEC-38 — Pending queue: editable, reorderable, two placements
+
+> **Renumbered from SPEC-36.** `main` landed a different SPEC-36 (computer use,
+> `2026-08-04-SPEC-36-computer-use.md`) while this branch was open, so two specs
+> claimed the number and every `SPEC-36` in the code was ambiguous. This one moved
+> because it had fewer references outside the branch.
 
 **Status:** Proposed · **Priority:** P2 · **Branch:** `feat/pending-queue-ui`
 **Depends on:** SPEC-35 (the queue itself), SPEC-21 (reversed anchored transcript + trailer row), SPEC-34 (index-keyed navigator), SPEC-27 (`session.commands`)

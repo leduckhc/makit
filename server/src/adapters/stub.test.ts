@@ -83,7 +83,7 @@ test("an adapter with no steering primitive reports it (SPEC-35 T1)", async () =
   assert.equal(events.length, before, "steer() must not echo or emit anything");
 });
 
-test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-36)", async () => {
+test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-38)", async () => {
   const stub = new StubAdapter();
   const statuses: string[] = [];
   const events: AdapterEvent[] = [];

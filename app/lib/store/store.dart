@@ -501,7 +501,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Replace a pending mid-turn message's text (SPEC-36). Empty text cancels it
+  /// Replace a pending mid-turn message's text (SPEC-38). Empty text cancels it
   /// server-side, so the caller does not need a second command for that case.
   void updateQueuedMessage(String sessionId, String id, String text) {
     _ref
@@ -542,7 +542,7 @@ class StoreController extends StateNotifier<StoreState> {
         );
   }
 
-  /// Apply a new send order to the pending messages (SPEC-36). The server treats
+  /// Apply a new send order to the pending messages (SPEC-38). The server treats
   /// `ids` as a hint, so a queue that flushed under the user cannot fail here.
   void reorderQueuedMessages(String sessionId, List<String> ids) {
     _ref

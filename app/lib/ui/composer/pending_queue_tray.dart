@@ -217,7 +217,7 @@ class _TrayRowState extends State<TrayRow> {
                 filter: _ctrl!.text,
                 commands: widget.commands,
                 // Agent commands only: a client command would run now, and this
-                // message runs later (SPEC-36).
+                // message runs later (SPEC-38).
                 includeBuiltins: false,
                 onPick: _pickSlash,
               ),

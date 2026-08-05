@@ -37,7 +37,7 @@ final themeModeValueProvider = Provider<ThemeMode>((ref) {
       .get(themeModePreference);
 });
 
-/// Where pending mid-turn messages render (SPEC-36). A provider (not only the
+/// Where pending mid-turn messages render (SPEC-38). A provider (not only the
 /// [PreferencesRefX] extension) so shared `ui/` reads it without importing
 /// `desktop/`, on both surfaces.
 final pendingQueuePlacementProvider = Provider<PendingQueuePlacement>((ref) {

@@ -1,4 +1,4 @@
-/// The pending-queue placement setting (SPEC-36) — shared by both surfaces.
+/// The pending-queue placement setting (SPEC-38) — shared by both surfaces.
 ///
 /// One control, one blurb, one place to change the copy: desktop mounts it in
 /// Settings › Agents & Chat, the phone in its own settings list. There is
@@ -34,8 +34,7 @@ class PendingQueuePlacementSetting extends ConsumerWidget {
               'Where a message you sent while the agent was busy waits. In the '
               'transcript it sits in the conversation and scrolls away with it; '
               'above the composer it stays put. The compact tray trades the '
-              'conversation look for a work list — and is the only one that can '
-              'stop the current turn to send a waiting message now.',
+              'conversation look for a work list.',
             ),
             const SizedBox(height: kSpace8),
             Align(

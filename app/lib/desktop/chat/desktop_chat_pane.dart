@@ -225,7 +225,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       if (next == null || !next.freeText) _answerController.clear();
     });
     final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
-    // SPEC-36: an inline pending queue keeps the trailer row alive even once the
+    // SPEC-38: an inline pending queue keeps the trailer row alive even once the
     // agent is idle, so the index shift stays stable while messages wait.
     final hasTrailer =
         trailer != TranscriptTrailer.none ||
@@ -383,7 +383,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       // left to the field's text handling.
                       attachments: composerAttachments(context, ref, sessionId),
                       enabled: pendingAsk == null,
-                      // SPEC-36: pending messages, when the placement
+                      // SPEC-38: pending messages, when the placement
                       // preference is `pinned`.
                       pendingQueue: PendingQueueSlot(
                         sessionId: sessionId,

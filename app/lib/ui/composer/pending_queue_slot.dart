@@ -1,4 +1,4 @@
-/// The one place that decides WHERE the pending queue renders (SPEC-36).
+/// The one place that decides WHERE the pending queue renders (SPEC-38).
 ///
 /// Both surfaces mount this twice — once in the composer column, once in the
 /// transcript's trailer row — passing which [slot] that instance is. Exactly one
@@ -75,6 +75,7 @@ class PendingQueueSlot extends ConsumerWidget {
       onEdit: (id, text) => store.updateQueuedMessage(sessionId, id, text),
       onReorder: (ids) => store.reorderQueuedMessages(sessionId, ids),
       onCancel: (id) => store.cancelQueuedMessage(sessionId, id),
+      onPromote: (id) => store.promoteQueuedMessage(sessionId, id),
     );
   }
 }

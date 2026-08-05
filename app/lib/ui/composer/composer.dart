@@ -100,7 +100,7 @@ class Composer extends StatefulWidget {
   final ComposerAttachmentsApi? attachments;
 
   /// The pending-message queue, when the user's placement preference puts it
-  /// here (SPEC-36). A widget rather than data + callbacks so the composer stays
+  /// here (SPEC-38). A widget rather than data + callbacks so the composer stays
   /// unaware of the queue's commands — and so the identical widget can be
   /// mounted in the transcript instead.
   final Widget? pendingQueue;

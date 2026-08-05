@@ -103,7 +103,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       running: session?.status == SessionStatus.running,
       awaiting: pendingAsk != null,
     );
-    // SPEC-36: an inline queue keeps the trailer alive even when the agent has
+    // SPEC-38: an inline queue keeps the trailer alive even when the agent has
     // gone idle with messages still pending — otherwise the row (and every
     // index shifted by it) would disappear under the user.
     final hasTrailer =
@@ -189,7 +189,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 // priority — Pi stays running while asking), else the
                 // "working…" indicator while running.
                 if (hasTrailer && i == 0) {
-                  // SPEC-36: the trailer also hosts the INLINE pending queue, so
+                  // SPEC-38: the trailer also hosts the INLINE pending queue, so
                   // no synthetic events are needed for it.
                   return KeyedSubtree(
                     key: trailer == TranscriptTrailer.ask
@@ -405,7 +405,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               ),
                               glass: true,
                               controller: _composerController,
-                              // SPEC-36: pending messages, when the user's
+                              // SPEC-38: pending messages, when the user's
                               // placement preference is `pinned`.
                               pendingQueue: PendingQueueSlot(
                                 sessionId: widget.sessionId,

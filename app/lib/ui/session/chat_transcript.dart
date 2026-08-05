@@ -203,7 +203,7 @@ TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
     ? TranscriptTrailer.ask
     : (running ? TranscriptTrailer.working : TranscriptTrailer.none);
 
-/// The trailing row's content, shared by both surfaces (SPEC-36).
+/// The trailing row's content, shared by both surfaces (SPEC-38).
 ///
 /// Beyond the ask card / working indicator it also hosts the **inline** pending
 /// queue, which is why the queue needs no synthetic entries in [foldEvents]: the

@@ -409,9 +409,9 @@ test("SPEC-35: two idle transitions in a row deliver only one queued message", a
   assert.equal(session.queuedMessages.length, 1);
 });
 
-// ---- SPEC-36: editing + reordering pending messages -----------------------
+// ---- SPEC-38: editing + reordering pending messages -----------------------
 
-test("SPEC-36: updateQueued replaces the text; empty text cancels", async () => {
+test("SPEC-38: updateQueued replaces the text; empty text cancels", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   await session.sendUserMessage("first");
@@ -432,7 +432,7 @@ test("SPEC-36: updateQueued replaces the text; empty text cancels", async () => 
   assert.deepEqual(f.sent, ["first", "a, but better"], "the EDITED text is delivered");
 });
 
-test("SPEC-36: reorderQueue applies a full order", async () => {
+test("SPEC-38: reorderQueue applies a full order", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   await session.sendUserMessage("first");
@@ -443,7 +443,7 @@ test("SPEC-36: reorderQueue applies a full order", async () => {
   assert.deepEqual(session.queuedMessages.map((q) => q.text), ["c", "a", "b"]);
 });
 
-test("SPEC-36: reorderQueue treats a stale id list as a hint, never an error", async () => {
+test("SPEC-38: reorderQueue treats a stale id list as a hint, never an error", async () => {
   const f = turnAdapter();
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
   await session.sendUserMessage("first");

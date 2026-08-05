@@ -1,4 +1,4 @@
-/// SPEC-36 — placement: the pending queue renders in exactly one of two slots,
+/// SPEC-38 — placement: the pending queue renders in exactly one of two slots,
 /// chosen by a preference that both surfaces read.
 library;
 

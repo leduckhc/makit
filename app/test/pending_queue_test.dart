@@ -1,4 +1,4 @@
-/// SPEC-36 — pending messages are editable, reorderable drafts, in one of two
+/// SPEC-38 — pending messages are editable, reorderable drafts, in one of two
 /// placements.
 library;
 
@@ -31,6 +31,7 @@ class _Calls {
   final edits = <(String, String)>[];
   final orders = <List<String>>[];
   final cancels = <String>[];
+  final promotes = <String>[];
 }
 
 Widget _host(List<QueuedMessage> queued, _Calls calls) => ProviderScope(
@@ -44,6 +45,7 @@ Widget _host(List<QueuedMessage> queued, _Calls calls) => ProviderScope(
           onEdit: (id, text) => calls.edits.add((id, text)),
           onReorder: (ids) => calls.orders.add(ids),
           onCancel: calls.cancels.add,
+          onPromote: calls.promotes.add,
         ),
       ),
     ),
@@ -70,6 +72,7 @@ void main() {
                   onEdit: (_, _) {},
                   onReorder: (_) {},
                   onCancel: (_) {},
+                  onPromote: (_) {},
                 ),
               ),
             ),
@@ -258,4 +261,45 @@ void main() {
       );
     },
   );
+
+  testWidgets('⤒ on a ghost bubble promotes exactly that message', (
+    tester,
+  ) async {
+    final calls = _Calls();
+    await tester.pumpWidget(
+      _host([_q('q1', 'first'), _q('q2', 'second')], calls),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('second'),
+          matching: find.byType(PendingBubble),
+        ),
+        matching: find.byTooltip('Stop the current turn and send this now'),
+      ),
+    );
+
+    expect(calls.promotes, ['q2']);
+    expect(calls.cancels, isEmpty, reason: 'promote is not a cancel');
+    expect(calls.orders, isEmpty, reason: 'the reorder is the server\'s to do');
+  });
+
+  testWidgets('promote is unavailable mid-edit on a bubble too', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host([_q('q1', 'first')], _Calls()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+
+    // The server has not seen the edited text yet, so promoting now would
+    // interrupt the turn to deliver the OLD message.
+    expect(
+      find.byTooltip('Stop the current turn and send this now'),
+      findsNothing,
+    );
+  });
 }

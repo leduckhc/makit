@@ -362,9 +362,9 @@ export type CmdKind =
   | "session.setAgent"
   /** Drop ONE pending mid-turn message by `queuedId` (SPEC-35). */
   | "queue.cancel"
-  /** Edit a pending mid-turn message; empty text cancels it (SPEC-36). */
+  /** Edit a pending mid-turn message; empty text cancels it (SPEC-38). */
   | "queue.update"
-  /** Reorder the pending messages; `ids` is a hint, not an assertion (SPEC-36). */
+  /** Reorder the pending messages; `ids` is a hint, not an assertion (SPEC-38). */
   | "queue.reorder"
   /** Interrupt the turn so ONE pending message is delivered next (SPEC-37). */
   | "queue.promote"

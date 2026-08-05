@@ -211,7 +211,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Edit a pending mid-turn message (SPEC-36). Empty text cancels it. A stale id
+   * Edit a pending mid-turn message (SPEC-38). Empty text cancels it. A stale id
    * (the message flushed between the tap and this frame) acks like
    * `queue.cancel`; a missing `text` is a real client bug and errors.
    */
@@ -267,7 +267,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Reorder the pending messages (SPEC-36). `ids` is a hint — see
+   * Reorder the pending messages (SPEC-38). `ids` is a hint — see
    * `Session.reorderQueue`: a queue that flushed under the user cannot make this
    * fail, so only a non-array `ids` is an error.
    */
