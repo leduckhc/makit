@@ -33,14 +33,22 @@ List<SlashCmd> get _builtins =>
 /// composer needs the same list to move its highlight, and two independently
 /// computed orderings would let Tab pick a different command than the one
 /// under the highlight.
-List<SlashCmd> filterSlashCommands(String filter, List<SlashCmd> commands) {
+List<SlashCmd> filterSlashCommands(
+  String filter,
+  List<SlashCmd> commands, {
+  bool includeBuiltins = true,
+}) {
   final q = filter.startsWith('/')
       ? filter.substring(1).toLowerCase()
       : filter.toLowerCase();
 
   final seen = <String>{};
   final matches = <SlashCmd>[];
-  for (final c in [..._builtins, ...commands]) {
+  // SPEC-38: the built-in **client** commands (`/cancel`, `/new`, `/model`, …)
+  // are excluded when editing a QUEUED message. `handleClientCommand` intercepts
+  // those app-side and acts *now*, so inside a message that sends later they
+  // would promise behaviour the send path does not implement.
+  for (final c in [if (includeBuiltins) ..._builtins, ...commands]) {
     if (!seen.add(c.name)) continue;
     if (q.isEmpty ||
         c.name.toLowerCase().contains(q) ||

@@ -54,6 +54,14 @@ export abstract class SubprocessAdapter extends EventEmitter implements AgentAda
   abstract cancel(): Promise<void>;
   abstract kill(signal?: NodeJS.Signals): Promise<void>;
 
+  /**
+   * No mid-turn injection by default (SPEC-35): the caller queues instead.
+   * Only codex overrides this (`turn/steer`).
+   */
+  async steer(_input: UserInput): Promise<boolean> {
+    return false;
+  }
+
   /** Emit one normalized adapter event; the server fills in seq + sessionId. */
   protected emitEvent(e: AdapterEvent): void {
     this.emit("event", e);

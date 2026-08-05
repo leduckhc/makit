@@ -179,7 +179,111 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
     }
+    // SPEC-35: stop means stop. Pending mid-turn messages are dropped rather
+    // than fired into the context the user just aborted.
+    session.clearQueue();
     await session.adapter.cancel();
+    ctx.ack();
+  });
+
+  /**
+   * Drop ONE pending mid-turn message (SPEC-35). An id the server no longer
+   * holds is a race the user cannot avoid — the message was flushed between the
+   * tap and this frame — so it acks instead of erroring.
+   */
+  r.register("queue.cancel", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // `queuedId`, not `id`: the app's Envelope spreads the command body OVER the
+    // frame's own `id`, so a body field called `id` silently replaces the request
+    // id and no ack can ever be correlated with its command.
+    const id = ctx.env.queuedId;
+    if (typeof id !== "string" || !id) {
+      ctx.err(WireErrorCode.BadRequest, "queue.cancel requires a string `queuedId`");
+      return;
+    }
+    session.cancelQueued(id);
+    ctx.ack();
+  });
+
+  /**
+   * Edit a pending mid-turn message (SPEC-38). Empty text cancels it. A stale id
+   * (the message flushed between the tap and this frame) acks like
+   * `queue.cancel`; a missing `text` is a real client bug and errors.
+   */
+  r.register("queue.update", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // See queue.cancel: the message id travels as `queuedId` so it cannot
+    // clobber the frame's request id.
+    const id = ctx.env.queuedId;
+    const text = ctx.env.text;
+    if (typeof id !== "string" || !id) {
+      ctx.err(WireErrorCode.BadRequest, "queue.update requires a string `queuedId`");
+      return;
+    }
+    if (typeof text !== "string") {
+      ctx.err(WireErrorCode.BadRequest, "queue.update requires a string `text`");
+      return;
+    }
+    session.updateQueued(id, text);
+    ctx.ack();
+  });
+
+  /**
+   * Send ONE pending message now (SPEC-39 — the tray's ⤒): interrupt the running
+   * turn so the promoted message is delivered next, keeping the rest queued.
+   *
+   * This is `cancel`'s per-message opposite, so it must not borrow its
+   * queue-clearing: a stale id (flushed between the tap and this frame) acks
+   * without aborting anything, because interrupting a turn the user did not
+   * choose to stop destroys work. A missing id is a real client bug.
+   */
+  r.register("queue.promote", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // `queuedId`, not `id`: the app's Envelope spreads the command body OVER the
+    // frame's own `id`, so a body field called `id` silently replaces the request
+    // id and no ack can ever be correlated with its command.
+    const id = ctx.env.queuedId;
+    if (typeof id !== "string" || !id) {
+      ctx.err(WireErrorCode.BadRequest, "queue.promote requires a string `queuedId`");
+      return;
+    }
+    await session.promoteQueued(id);
+    ctx.ack();
+  });
+
+  /**
+   * Reorder the pending messages (SPEC-38). `ids` is a hint — see
+   * `Session.reorderQueue`: a queue that flushed under the user cannot make this
+   * fail, so only a non-array `ids` is an error.
+   */
+  r.register("queue.reorder", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    const raw = ctx.env.ids;
+    if (!Array.isArray(raw)) {
+      ctx.err(WireErrorCode.BadRequest, "queue.reorder requires an array `ids`");
+      return;
+    }
+    session.reorderQueue(raw.filter((v): v is string => typeof v === "string"));
     ctx.ack();
   });
 

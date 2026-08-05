@@ -1349,3 +1349,12 @@ test("a genuine tool approval is not hijacked by a rawInput.method field", async
   assert.equal(asked[0].kind, "confirmAction");
   assert.equal(outcome, "ok");
 });
+
+test("acp cannot steer: ACP has no mid-turn injection primitive (SPEC-35 T1)", async () => {
+  const { adapter, events } = pairWithNewSession({ sessionId: "acp-sess-1" });
+  await adapter.start({ cwd: process.cwd(), sessionId: "makit-1" });
+  const before = events.length;
+
+  assert.equal(await adapter.steer({ text: "mid-turn" }), false);
+  assert.equal(events.length, before, "steer() must not echo or emit anything");
+});

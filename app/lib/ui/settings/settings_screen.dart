@@ -10,6 +10,7 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../../transport/transport.dart';
 import 'notification_settings.dart';
+import 'pending_queue_setting.dart';
 import 'appearance_settings.dart';
 import '../../app/routes.dart';
 
@@ -123,6 +124,9 @@ class SettingsScreen extends ConsumerWidget {
           const AppearanceSettingsSection(),
 
           const Divider(),
+          const _SectionHeader('Chat'),
+          const PendingQueuePlacementSetting(),
+          const Divider(height: 1),
           const _SectionHeader('Notifications'),
           const NotificationSettingsSection(),
 

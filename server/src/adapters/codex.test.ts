@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { CodexAppServerAdapter, defaultConnect, probeCodexConfigOptions, projectCodexModelList, buildCodexConfigOptions, projectCodexThreadList, type CodexTransport } from "./codex.js";
@@ -9,10 +9,11 @@ import type { UICall, UIResponse } from "../uicall.js";
  * A controllable fake `codex app-server`: auto-replies to the adapter's
  * requests and lets the test push notifications / server-requests in.
  */
-function fakeAppServer() {
+function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown } } = {}) {
   let lineCb: (l: string) => void = () => {};
   const sent: any[] = [];
   const feed = (obj: unknown) => lineCb(JSON.stringify(obj));
+  let turnSeq = 0;
 
   const transport: CodexTransport = {
     pid: undefined, // in-memory fake: no child process
@@ -21,6 +22,13 @@ function fakeAppServer() {
       sent.push(msg);
       // Auto-respond to client → server requests.
       if (msg.method && msg.id !== undefined) {
+        // `turn/steer` is scripted per-test: it is the one method whose ERROR
+        // shapes are load-bearing (SPEC-35 §Evidence).
+        if (msg.method === "turn/steer" && opts.steer) {
+          const scripted = opts.steer();
+          queueMicrotask(() => feed({ id: msg.id, ...scripted }));
+          return;
+        }
         const result = respond(msg.method);
         if (result !== undefined) queueMicrotask(() => feed({ id: msg.id, result }));
       }
@@ -41,8 +49,11 @@ function fakeAppServer() {
         return { thread: { id: "th1" } };
       case "thread/resume":
         return { thread: { id: "th-resumed" } };
+      // Real codex hands back a FRESH turn id for every `turn/start`, even when
+      // a turn is already in flight (in which case the message is folded into
+      // the active turn and the returned id is never announced on the wire).
       case "turn/start":
-        return { turn: { id: "t1" } };
+        return { turn: { id: `t${++turnSeq}` } };
       case "turn/interrupt":
         return {};
       case "model/list":
@@ -126,6 +137,39 @@ test("initializes, starts a thread, runs a turn, and streams a message", async (
   assert.equal((events.find((e) => e.kind === "user.message")!.payload as any).text, "hi");
   assert.ok(statuses.includes("running"));
   await waitFor(() => statuses.at(-1) === "idle");
+});
+
+test("a mid-turn send does not leave a phantom turn in flight", async () => {
+  // A `turn/start` sent while a turn is active is folded by codex into the
+  // active turn: the id it returns is never announced (`turn/started`) nor
+  // completed. Registering it would pin the tracker to `running` forever.
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const statuses: string[] = [];
+  adapter.on("status", (s) => statuses.push(s));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  await adapter.send({ text: "long task" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t1" } } });
+  await waitFor(() => statuses.at(-1) === "running");
+
+  // User types again while the agent is still working.
+  await adapter.send({ text: "actually, do X instead" });
+  await waitFor(() => fake.sent.filter((m) => m.method === "turn/start").length === 2);
+
+  // Only the original turn ever completes.
+  fake.feed({ method: "turn/completed", params: { turn: { id: "t1" } } });
+  await waitFor(() => statuses.at(-1) === "idle");
+
+  // And a cancel targets the announced turn, never the unannounced id.
+  await adapter.send({ text: "more" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t3" } } });
+  await waitFor(() => statuses.at(-1) === "running");
+  await adapter.cancel();
+  assert.deepEqual(
+    fake.sent.filter((m) => m.method === "turn/interrupt").map((m) => m.params.turnId),
+    ["t3"],
+  );
 });
 
 test("maps native requestUserInput to askUserQuestion and returns answers by question id", async () => {
@@ -554,6 +598,116 @@ test("codex advertises the full session lifecycle capability set (SPEC-29)", () 
   assert.deepEqual(adapter.capabilities, { resume: true, load: false, list: true, delete: true, fork: true, archive: true });
 });
 
+/**
+ * SPEC-35 T2 — `turn/steer`. Ids and error strings are verbatim from the live
+ * spike against codex-cli 0.146.0 (spec §Evidence), so a protocol change shows
+ * up here as a failure rather than as a silently-queued message in production.
+ */
+async function steerHarness(steer: () => { result?: unknown; error?: unknown }) {
+  const fake = fakeAppServer({ steer });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+  await adapter.send({ text: "long task" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t1" } } });
+  await waitFor(() => fake.sent.some((m) => m.method === "turn/start"));
+  const echoesBefore = events.filter((e) => e.kind === "user.message").length;
+  return { fake, adapter, events, echoesBefore };
+}
+
+test("steer(): accepted — injects into the active turn and echoes once", async () => {
+  const h = await steerHarness(() => ({ result: { turnId: "t1" } }));
+
+  assert.equal(await h.adapter.steer({ text: "do X instead" }), true);
+
+  const steers = h.fake.sent.filter((m) => m.method === "turn/steer");
+  assert.equal(steers.length, 1);
+  assert.equal(steers[0].params.threadId, "th1");
+  assert.equal(steers[0].params.expectedTurnId, "t1", "precondition = the ANNOUNCED turn id");
+  assert.deepEqual(steers[0].params.input, [{ type: "text", text: "do X instead", text_elements: [] }]);
+  assert.equal(
+    h.fake.sent.filter((m) => m.method === "turn/start").length,
+    1,
+    "steering must never start a second turn",
+  );
+  const echo = h.events.filter((e) => e.kind === "user.message").at(-1)!;
+  assert.equal(h.events.filter((e) => e.kind === "user.message").length, h.echoesBefore + 1);
+  assert.equal(
+    (echo.payload as { steered?: boolean }).steered,
+    true,
+    "a steered message is flagged so the app can say so on the bubble",
+  );
+});
+
+test("a normal turn's echo is not flagged as steered", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m1" });
+
+  await adapter.send({ text: "hi" });
+
+  const echo = events.find((e) => e.kind === "user.message")!;
+  assert.equal((echo.payload as { steered?: boolean }).steered, undefined);
+});
+
+// Error objects verbatim from live codex (spec §Evidence). `activeTurnNotSteerable`
+// lives in `data.codexErrorInfo` — NOT in `message` — which is exactly why the
+// ladder keys off "the request rejected" rather than off string matching.
+for (const [label, error] of [
+  ["no active turn", { code: -32600, message: "no active turn to steer" }],
+  [
+    "stale precondition",
+    {
+      code: -32600,
+      message: "expected active turn id `t0` but found `t1`",
+    },
+  ],
+  [
+    "non-steerable compact turn",
+    {
+      code: -32600,
+      message: "cannot steer a compact turn",
+      data: {
+        message: "cannot steer a compact turn",
+        codexErrorInfo: { activeTurnNotSteerable: { turnKind: "compact" } },
+        additionalDetails: null,
+      },
+    },
+  ],
+  [
+    "non-steerable review turn",
+    {
+      code: -32600,
+      message: "cannot steer a review turn",
+      data: {
+        message: "cannot steer a review turn",
+        codexErrorInfo: { activeTurnNotSteerable: { turnKind: "review" } },
+        additionalDetails: null,
+      },
+    },
+  ],
+] as const) {
+  test(`steer(): ${label} — reports false and echoes nothing`, async () => {
+    const h = await steerHarness(() => ({ error }));
+
+    assert.equal(await h.adapter.steer({ text: "do X instead" }), false);
+    assert.equal(
+      h.events.filter((e) => e.kind === "user.message").length,
+      h.echoesBefore,
+      "a message that was not delivered must not appear in the transcript",
+    );
+    assert.equal(
+      h.events.filter((e) => e.kind === "session.error").length,
+      0,
+      "a queueable steer failure is not a session error",
+    );
+    assert.equal(h.fake.sent.filter((m) => m.method === "turn/start").length, 1);
+  });
+}
+
 test("a cua-driver screenshot in an MCP tool result lands in the media store", async () => {
   const fake = fakeAppServer();
   const puts: { data: string; mime: string }[] = [];
@@ -598,5 +752,77 @@ test("a cua-driver screenshot in an MCP tool result lands in the media store", a
   const start = events.find((e) => e.kind === "tool.call.start")!;
   assert.equal((start.payload as any).name, "cua_driver/computer_use");
   assert.equal((events.find((e) => e.kind === "tool.call.end")!.payload as any).output, "12 elements");
+  await adapter.kill();
+});
+
+test("a timed-out request cleans up its pending entry (and a normal one its timer)", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-leak" });
+  const pending = (adapter as unknown as { pending: Map<number, unknown> }).pending;
+  const before = pending.size;
+
+  // A request nothing will ever answer, with a timeout short enough to test.
+  const req = (
+    adapter as unknown as {
+      request: (m: string, p: unknown, t?: number) => Promise<unknown>;
+    }
+  ).request("thread/never", {}, 20);
+  assert.equal(pending.size, before + 1, "the request is tracked while in flight");
+  await assert.rejects(req, /timeout after 20ms/);
+  assert.equal(
+    pending.size,
+    before,
+    "a timed-out request must not leave its entry behind — repeated timeouts grew the map forever",
+  );
+
+  // And the happy path leaves nothing tracked either — `thread/start` is one the
+  // fake answers, so this exercises the resolve side.
+  await (
+    adapter as unknown as { request: (m: string, p: unknown, t?: number) => Promise<unknown> }
+  ).request("thread/start", {}, 5_000);
+  assert.equal(pending.size, before, "a resolved request clears its entry (and its timer)");
+  await adapter.kill();
+});
+
+test("steer(): a TIMED-OUT steer still echoes, so the message is not lost silently", async () => {
+  // The timeout is ambiguous — codex may have folded the message into the turn or
+  // dropped it — and `steer` returns true either way so the session does not
+  // re-queue and duplicate it. Without an echo, that ambiguity cost the user their
+  // message with no trace at all.
+  //
+  // Mocked timers, because the adapter's own timeout is 15s: `steer` is scripted
+  // to never answer, then the clock is driven past the deadline.
+  // An empty scripted reply: the fake writes `{ id }` with neither `result` nor
+  // `error`, which `handleLine` ignores — so the request never settles and the
+  // adapter's own timeout is the only way out.
+  const fake = fakeAppServer({ steer: () => ({}) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-timeout" });
+  await adapter.send({ text: "long task" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t1" } } });
+  await waitFor(() => fake.sent.some((m) => m.method === "turn/start"));
+  const before = events.filter((e) => e.kind === "user.message").length;
+
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const steered = (adapter as unknown as { steer: (i: { text: string }) => Promise<boolean> }).steer({
+      text: "do X instead",
+    });
+    mock.timers.tick(15_001);
+    assert.equal(await steered, true, "a timed-out steer must not be re-queued");
+  } finally {
+    mock.timers.reset();
+  }
+
+  const echoes = events.filter((e) => e.kind === "user.message");
+  assert.equal(
+    echoes.length,
+    before + 1,
+    "the message must be visible even when the steer's fate is unknown",
+  );
+  assert.equal((echoes.at(-1)!.payload as { steered?: boolean }).steered, true);
   await adapter.kill();
 });

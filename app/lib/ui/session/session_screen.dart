@@ -13,11 +13,12 @@ import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_draft.dart';
 import '../composer/composer_selectors.dart';
+import 'ask_card.dart';
 import '../composer/context_usage.dart';
+import '../composer/pending_queue_slot.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
 import '../widgets/menu_item.dart';
-import 'ask_card.dart';
 import 'chat_metrics.dart';
 import 'chat_transcript.dart';
 import 'navigator/message_navigator_overlay.dart';
@@ -167,6 +168,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
+              // Deliberately CONSTANT: this is the reversed list's leading pad,
+              // so changing it mid-session shifts the content the user is
+              // reading (SPEC-21 anchoring). The queue is bounded instead — see
+              // `PendingQueue`'s max height — so it cannot grow without limit
+              // over the transcript.
               padding: EdgeInsets.only(
                 top: topInset + 60,
                 bottom: MediaQuery.of(context).padding.bottom + 200,
@@ -185,6 +191,9 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 // priority — Pi stays running while asking), else the
                 // "working…" indicator while running.
                 if (hasTrailer && i == 0) {
+                  // Inlined (main removed `TranscriptTrailerRow`): with SPEC-39's
+                  // deletion of the in-transcript queue the trailer is just the
+                  // ask card or the working indicator again.
                   return trailer == TranscriptTrailer.ask
                       ? KeyedSubtree(
                           key: ValueKey('ask-${pendingAsk!.requestId}'),
@@ -359,6 +368,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   children: [
                     JumpToNewestButton(scroll: _scroll),
                     const SizedBox(height: kSpace8),
+                    // ABOVE the composer, not inside it: mounted as a Composer
+                    // child, every queued message inflated the composer's own
+                    // glass box and ate the room the field and transcript need.
+                    // As a sibling it also stays visible while an inline ask
+                    // disables the composer, which is why it was put inside in
+                    // the first place (SPEC-35/38).
+                    PendingQueueSlot(sessionId: widget.sessionId),
                     GlassSurface(
                       borderRadius: 28,
                       // Unified design-system glass (see DESIGN.md) — same recipe
@@ -389,6 +405,8 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               ),
                               glass: true,
                               controller: _composerController,
+                              // SPEC-38: pending messages, when the user's
+                              // placement preference is `pinned`.
                               enabled: pendingAsk == null,
                               commands: ref.watch(
                                 commandsProvider(widget.sessionId),

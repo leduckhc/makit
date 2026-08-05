@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/main.dart' as app;
 
@@ -48,16 +49,27 @@ Future<void> _skipNotificationsStep(WidgetTester tester) async {
 /// Open the first session in the list (the stub server pre-creates one
 /// "new session" entry).
 Future<void> openFirstSession(WidgetTester tester) async {
-  final sessionTile = find.widgetWithText(ListTile, 'new session').first;
-  await pumpUntil(tester, sessionTile, reason: 'no "new session" tile found');
-  await tester.tap(sessionTile);
+  // `.first` only AFTER the wait — see openSessionContaining: evaluating a
+  // `.first` finder with no matches throws StateError instead of returning
+  // empty, which would make this wait crash rather than wait.
+  final tiles = find.widgetWithText(ListTile, 'new session');
+  await pumpUntil(tester, tiles, reason: 'no "new session" tile found');
+  await tester.tap(tiles.first);
   await tester.pumpAndSettle();
   await pumpUntil(tester, find.byType(TextField));
 }
 
 /// Type [text] into the composer and tap the send button.
 Future<void> sendComposerText(WidgetTester tester, String text) async {
-  await tester.enterText(find.byType(TextField).last, text);
+  final field = find.byType(TextField).last;
+  await pumpUntil(tester, find.byType(TextField), reason: 'no composer field');
+  // Tap first: `_send()` unfocuses the composer, so on the SECOND send in a
+  // test `enterText` runs against an unfocused field and, under the live
+  // integration binding, silently leaves the text empty (verified — the send
+  // button then never appears). A tap restores focus and the input connection.
+  await tester.tap(field);
+  await tester.pump(const Duration(milliseconds: 100));
+  await tester.enterText(field, text);
   await tester.pump();
   // Target the send button by key, not by icon. Two arrowUp icons exist in the
   // composer's AnimatedSwitcher (ValueKey('send') and ValueKey('send-disabled'),
@@ -99,4 +111,58 @@ Future<void> pumpUntil(
     'After ${timeout.inSeconds}s, visible Text widgets were:\n'
     '  ${visibleTexts.join('\n  ')}',
   );
+}
+
+/// Navigate from a session to the phone's Settings screen and back.
+///
+/// Used by the queue tour (SPEC-38) to film the placement preference moving the
+/// pending queue between the composer and the transcript. Goes via Home because
+/// that is the only route with a Settings entry point — filming the real path a
+/// user takes is the point of a tour.
+Future<void> openSettings(WidgetTester tester) async {
+  // Leave the session. Neither back control is a Material/Cupertino back button
+  // (`pageBack()` fails, and there is no 'Back' tooltip): the session screen's
+  // is a GlassCircleButton and Settings' an IconButton, both drawn with the
+  // same arrowLeft glyph — so tap the glyph.
+  await tapBack(tester);
+  final gear = find.byTooltip('Settings');
+  await pumpUntil(tester, gear, reason: 'no Settings button on Home');
+  await tester.tap(gear.first);
+  await tester.pump(const Duration(milliseconds: 500));
+}
+
+/// Return from Settings to the first session.
+Future<void> closeSettings(WidgetTester tester) async {
+  await tapBack(tester);
+}
+
+/// Re-open a session by a fragment of the text on its home-screen tile.
+///
+/// Not [openFirstSession]: once a session has a message it is no longer a draft,
+/// so its tile is titled after the conversation instead of "new session" — and
+/// tapping "new session" would open a *different* (empty) session.
+Future<void> openSessionContaining(WidgetTester tester, String text) async {
+  // `.first` only AFTER the wait: `_FirstFinderMixin.filter` yields
+  // `parentCandidates.first`, so evaluating a `.first` finder on an empty match
+  // throws StateError('No element') — `pumpUntil` would blow up on its first
+  // poll instead of waiting for the tile to arrive.
+  final tiles = find.ancestor(
+    of: find.textContaining(text),
+    matching: find.byType(ListTile),
+  );
+  await pumpUntil(tester, tiles, reason: 'no session tile matching "$text"');
+  await tester.tap(tiles.first);
+  // NOT pumpAndSettle: while a turn is running the working indicator animates
+  // forever, so settling would block until the agent finished — long enough for
+  // the very queue we came back to look at to flush.
+  await tester.pump(const Duration(milliseconds: 400));
+  await pumpUntil(tester, find.byType(TextField));
+}
+
+/// Tap the screen's back affordance (arrowLeft glyph) and let the route settle.
+Future<void> tapBack(WidgetTester tester) async {
+  final back = find.byIcon(PhosphorIconsLight.arrowLeft);
+  await pumpUntil(tester, back, reason: 'no back arrow on screen');
+  await tester.tap(back.first);
+  await tester.pump(const Duration(milliseconds: 400));
 }

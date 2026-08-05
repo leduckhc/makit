@@ -485,6 +485,22 @@ class StoreController extends StateNotifier<StoreState> {
     // echo renders it once, ordered after the startup events.
     final idx = state.sessions.indexWhere((s) => s.id == sessionId);
     if (idx >= 0 && state.sessions[idx].pending) return;
+    // SPEC-35: while the agent is working, the next seq belongs to ITS stream.
+    // The message is about to be steered into the running turn (echoed a moment
+    // later, with a seq we cannot guess) or queued (echoed only when it is
+    // finally delivered, or never if cancelled) — so a bubble at cursor+1 would
+    // advance the cursor past a real event and the reducer would drop it. The
+    // queue chip above the composer is the feedback here, not a chat bubble.
+    //
+    // `status != idle` is NOT sufficient: `Session.sendUserMessage` enqueues
+    // whenever a queue exists or a flush is in flight, *whatever* the status —
+    // so an idle session with messages still pending queues this one too, and a
+    // bubble here would be a lie that also eats the next real seq.
+    if (idx >= 0 &&
+        (state.sessions[idx].status != SessionStatus.idle ||
+            state.sessions[idx].queued.isNotEmpty)) {
+      return;
+    }
     // Inject a local user bubble immediately so the input doesn't feel hung.
     // The optimistic event takes the next seq after the cursor; the server's
     // user.message echo arrives with the SAME seq (the server assigns seqs in
@@ -533,6 +549,82 @@ class StoreController extends StateNotifier<StoreState> {
               if (attachments.isNotEmpty)
                 'attachments': [for (final a in attachments) a.toWire()],
             },
+          ),
+        );
+  }
+
+  /// Cancel ONE pending mid-turn message (SPEC-35). Fire-and-forget: the
+  /// authoritative queue arrives on the next sessions snapshot, and a message
+  /// that flushed between the tap and this frame is simply gone.
+  void cancelQueuedMessage(String sessionId, String id) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qc-${DateTime.now().microsecondsSinceEpoch}',
+            // `queuedId`, not `id`: [Envelope.toJson] spreads the body over the
+            // frame, so a body key called `id` overwrites the request id above.
+            body: {
+              'kind': 'queue.cancel',
+              'sessionId': sessionId,
+              'queuedId': id,
+            },
+          ),
+        );
+  }
+
+  /// Replace a pending mid-turn message's text (SPEC-38). Empty text cancels it
+  /// server-side, so the caller does not need a second command for that case.
+  void updateQueuedMessage(String sessionId, String id, String text) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qu-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'queue.update',
+              'sessionId': sessionId,
+              'queuedId': id,
+              'text': text,
+            },
+          ),
+        );
+  }
+
+  /// Send ONE pending message now (SPEC-39): the server interrupts the running
+  /// turn so this message is delivered next, keeping the rest queued.
+  ///
+  /// Fire-and-forget like its siblings; a message that flushed between the tap
+  /// and this frame is a no-op server-side, and deliberately does NOT abort the
+  /// turn on the strength of a stale tap.
+  void promoteQueuedMessage(String sessionId, String id) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qp-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'queue.promote',
+              'sessionId': sessionId,
+              'queuedId': id,
+            },
+          ),
+        );
+  }
+
+  /// Apply a new send order to the pending messages (SPEC-38). The server treats
+  /// `ids` as a hint, so a queue that flushed under the user cannot fail here.
+  void reorderQueuedMessages(String sessionId, List<String> ids) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qr-${DateTime.now().microsecondsSinceEpoch}',
+            body: {'kind': 'queue.reorder', 'sessionId': sessionId, 'ids': ids},
           ),
         );
   }
@@ -964,6 +1056,19 @@ final commandsProvider = Provider.family<List<SlashCmd>, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.commands[sessionId] ?? const [];
+});
+
+/// Pending mid-turn messages for a session (SPEC-35/36), in send order. Empty
+/// for an unknown session, so callers never branch on null.
+final queuedMessagesProvider = Provider.family<List<QueuedMessage>, String>((
+  ref,
+  sessionId,
+) {
+  final sessions = ref.watch(storeControllerProvider).sessions;
+  for (final s in sessions) {
+    if (s.id == sessionId) return s.queued;
+  }
+  return const [];
 });
 
 /// Current model + thinking level + selectable models for a session (or null

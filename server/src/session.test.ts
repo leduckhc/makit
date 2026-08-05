@@ -238,6 +238,348 @@ test("lazy hydrateFrom is retained when the loader throws, and retried on next a
   assert.equal(calls, 2, "loader retried exactly once after the failure");
 });
 
+// ---- SPEC-35: mid-turn messages (steer vs queue) --------------------------
+
+/**
+ * A fake adapter with the SPEC-35 surface: records what it was sent, and lets a
+ * test decide whether steering is available (codex) or not (ACP/stub).
+ */
+function turnAdapter(opts: { steer?: boolean } = {}) {
+  const a = fakeAdapter();
+  const sent: string[] = [];
+  const steered: string[] = [];
+  const state = { steerable: opts.steer === true };
+  (a as any).send = async (input: { text: string }) => {
+    sent.push(input.text);
+    a.emit("status", "running");
+    a.emit("event", { ts: Date.now(), kind: "user.message", payload: { text: input.text } });
+  };
+  (a as any).steer = async (input: { text: string }) => {
+    if (!state.steerable) return false;
+    steered.push(input.text);
+    a.emit("event", { ts: Date.now(), kind: "user.message", payload: { text: input.text } });
+    return true;
+  };
+  return { adapter: a, sent, steered, state, idle: () => a.emit("status", "idle") };
+}
+
+const settle = () => new Promise((r) => setTimeout(r, 5));
+
+test("SPEC-35: a mid-turn message is steered when the adapter can steer", async () => {
+  const f = turnAdapter({ steer: true });
+  const session = new Session({ projectId: "p", agent: "codex", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("mid-turn");
+
+  assert.deepEqual(f.sent, ["first"], "no second turn was started");
+  assert.deepEqual(f.steered, ["mid-turn"]);
+  assert.equal(session.queuedMessages.length, 0, "a steered message is never queued");
+});
+
+test("SPEC-35: a mid-turn message is queued when the adapter cannot steer", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  const metas: number[] = [];
+  session.on("metaChanged", () => metas.push(session.queuedMessages.length));
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("later");
+
+  assert.deepEqual(f.sent, ["first"]);
+  assert.equal(session.queuedMessages.length, 1);
+  assert.equal(session.queuedMessages[0].text, "later");
+  assert.ok(metas.includes(1), "the queue change is broadcast");
+  assert.equal(
+    session.events.filter((e) => e.kind === "user.message").length,
+    1,
+    "a queued message is not in the transcript until it is delivered",
+  );
+});
+
+test("SPEC-35: the queue flushes one message per idle, FIFO", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+  await session.sendUserMessage("c");
+  assert.equal(session.queuedMessages.length, 3);
+
+  f.idle();
+  await settle();
+  assert.deepEqual(f.sent, ["first", "a"]);
+  assert.equal(session.queuedMessages.length, 2);
+
+  f.idle();
+  await settle();
+  f.idle();
+  await settle();
+  assert.deepEqual(f.sent, ["first", "a", "b", "c"]);
+  assert.equal(session.queuedMessages.length, 0);
+});
+
+test("SPEC-35: a non-empty queue takes priority even if the adapter looks idle", async () => {
+  // Steering is unavailable for the first mid-turn message (e.g. codex refused
+  // a review turn), so it queues; then it becomes available again.
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "codex", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("queued");
+  f.state.steerable = true;
+  // The turn ends, but the flush has not run yet: a new message must neither
+  // overtake the one already waiting nor be steered past it.
+  session.status = "idle";
+  await session.sendUserMessage("newer");
+
+  assert.deepEqual(
+    session.queuedMessages.map((q) => q.text),
+    ["queued", "newer"],
+  );
+  assert.deepEqual(f.steered, [], "no steering while a queue exists");
+});
+
+test("SPEC-35: cancelQueued removes one message; clearQueue empties it", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+  const [a, b] = session.queuedMessages;
+
+  assert.equal(session.cancelQueued(a.id), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["b"]);
+  assert.equal(session.cancelQueued("nope"), false, "unknown id is a no-op");
+
+  assert.equal(session.clearQueue(), true);
+  assert.equal(session.queuedMessages.length, 0);
+  assert.equal(session.clearQueue(), false, "already empty");
+  assert.ok(b);
+
+  f.idle();
+  await settle();
+  assert.deepEqual(f.sent, ["first"], "cancelled messages are never delivered");
+});
+
+test("SPEC-35: an adapter exit drops pending messages", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("never sent");
+  f.adapter.emit("exit", 0);
+
+  assert.equal(session.queuedMessages.length, 0);
+});
+
+test("SPEC-35: queued messages are exposed on the DTO", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("waiting", [
+    { mediaId: "a".repeat(64), mime: "image/png", sizeBytes: 1 },
+  ]);
+
+  assert.deepEqual(
+    session.toDTO().queued.map((q) => ({ text: q.text, attachmentCount: q.attachmentCount })),
+    [{ text: "waiting", attachmentCount: 1 }],
+  );
+});
+
+test("SPEC-35: two idle transitions in a row deliver only one queued message", async () => {
+  // TurnStatusTracker settles to idle on more than one path (turn completed, a
+  // failed turn/start, an approval leaving with no turn left), so a duplicate
+  // `idle` must not fire two turns at once.
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+
+  f.idle();
+  f.idle();
+  await settle();
+
+  assert.deepEqual(f.sent, ["first", "a"]);
+  assert.equal(session.queuedMessages.length, 1);
+});
+
+// ---- SPEC-38: editing + reordering pending messages -----------------------
+
+test("SPEC-38: updateQueued replaces the text; empty text cancels", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+  const [a, b] = session.queuedMessages;
+
+  assert.equal(session.updateQueued(a.id, "a, but better"), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["a, but better", "b"]);
+  assert.equal(session.updateQueued("nope", "x"), false, "unknown id is a no-op");
+
+  // Clearing the text is a cancel: a blank pending message is not a thing.
+  assert.equal(session.updateQueued(b.id, "   "), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["a, but better"]);
+
+  f.idle();
+  await settle();
+  assert.deepEqual(f.sent, ["first", "a, but better"], "the EDITED text is delivered");
+});
+
+test("SPEC-38: reorderQueue applies a full order", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  await session.sendUserMessage("first");
+  for (const t of ["a", "b", "c"]) await session.sendUserMessage(t);
+  const ids = session.queuedMessages.map((q) => q.id);
+
+  assert.equal(session.reorderQueue([ids[2], ids[0], ids[1]]), true);
+  assert.deepEqual(session.queuedMessages.map((q) => q.text), ["c", "a", "b"]);
+});
+
+test("SPEC-38: reorderQueue treats a stale id list as a hint, never an error", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+  await session.sendUserMessage("first");
+  for (const t of ["a", "b", "c"]) await session.sendUserMessage(t);
+  const ids = session.queuedMessages.map((q) => q.id);
+
+  // The client names only `c`, plus an id that has since been delivered.
+  assert.equal(session.reorderQueue(["gone", ids[2]]), true);
+  assert.deepEqual(
+    session.queuedMessages.map((q) => q.text),
+    ["c", "a", "b"],
+    "named ids first, unmentioned keep their relative order, unknown ignored",
+  );
+  assert.equal(session.reorderQueue([]), false, "nothing named = nothing to do");
+});
+
+// ---- SPEC-39: promote (the queue tray's ⤒) --------------------------------
+
+test("SPEC-39: promoteQueued interrupts the turn and sends THAT message next", async () => {
+  const f = turnAdapter();
+  const cancels: number[] = [];
+  (f.adapter as any).cancel = async () => {
+    cancels.push(Date.now());
+    // A real adapter reports idle once the turn is actually aborted.
+    f.adapter.emit("status", "idle");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("long running task");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+  const [, b] = session.queuedMessages;
+
+  assert.equal(await session.promoteQueued(b.id), true);
+  await settle();
+
+  assert.equal(cancels.length, 1, "the running turn is interrupted");
+  assert.deepEqual(f.sent, ["long running task", "b"], "the promoted message goes first");
+  assert.deepEqual(
+    session.queuedMessages.map((q) => q.text),
+    ["a"],
+    "promote keeps the rest of the queue — unlike cancel, which drops it",
+  );
+});
+
+test("SPEC-39: promoting the head is still an interrupt, not a no-op", async () => {
+  const f = turnAdapter();
+  (f.adapter as any).cancel = async () => f.adapter.emit("status", "idle");
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("only");
+  const [only] = session.queuedMessages;
+
+  assert.equal(await session.promoteQueued(only.id), true);
+  await settle();
+  assert.deepEqual(f.sent, ["first", "only"]);
+  assert.equal(session.queuedMessages.length, 0);
+});
+
+test("SPEC-39: promoting an id the queue no longer holds is a no-op, not an interrupt", async () => {
+  const f = turnAdapter();
+  let cancels = 0;
+  (f.adapter as any).cancel = async () => {
+    cancels += 1;
+    f.adapter.emit("status", "idle");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("queued");
+
+  assert.equal(await session.promoteQueued("flushed-already"), false);
+  await settle();
+  assert.equal(cancels, 0, "an unknown id must not abort the user's turn");
+  assert.deepEqual(f.sent, ["first"]);
+  assert.equal(session.queuedMessages.length, 1);
+});
+
+// ---- terminal failure + the queue cap -------------------------------------
+
+test("SPEC-35: an adapter.send rejection drops the queue AND names what was lost", async () => {
+  const f = turnAdapter();
+  let failNext = false;
+  (f.adapter as any).send = async (input: { text: string }) => {
+    if (failNext) throw new Error("child process is gone");
+    f.sent.push(input.text);
+    f.adapter.emit("status", "running");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("the one that fails");
+  await session.sendUserMessage("collateral damage");
+  assert.equal(session.queuedMessages.length, 2);
+
+  failNext = true;
+  f.idle();
+  await settle();
+
+  assert.equal(session.queuedMessages.length, 0, "the queue is dropped, not retried");
+  const errors = session.events
+    .filter((e) => e.kind === "session.error")
+    .map((e) => (e.payload as { message: string }).message);
+  assert.ok(
+    errors.some((m) => m.includes("child process is gone") && m.includes("the one that fails")),
+    `the failed message's text must be recoverable from the error: ${errors.join(" | ")}`,
+  );
+  assert.ok(
+    errors.some((m) => m.includes("collateral damage")),
+    `a dropped message the user never saw fail must be named too: ${errors.join(" | ")}`,
+  );
+});
+
+test("SPEC-35: the queue is capped, and the refusal names the message", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  for (let i = 0; i < 60; i++) await session.sendUserMessage(`queued ${i}`);
+
+  assert.equal(session.queuedMessages.length, 50, "capped at MAX_QUEUED_MESSAGES");
+  assert.deepEqual(
+    session.queuedMessages.at(-1)?.text,
+    "queued 49",
+    "the OLDEST accepted messages are kept; the newest are refused",
+  );
+  const errors = session.events
+    .filter((e) => e.kind === "session.error")
+    .map((e) => (e.payload as { message: string }).message);
+  assert.ok(
+    errors.some((m) => m.includes("already waiting") && m.includes("queued 50")),
+    `the refused message must be named: ${errors.slice(0, 2).join(" | ")}`,
+  );
+});
+
 test("agentPid is undefined for an adapter with no child process (stub/fake)", () => {
   const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
   assert.equal(session.agentPid, undefined);

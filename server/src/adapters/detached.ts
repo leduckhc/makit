@@ -34,6 +34,11 @@ export class DetachedAdapter extends EventEmitter implements AgentAdapter {
     });
   }
 
+  /** A cold session has no turn to steer into (SPEC-35). */
+  async steer(_input: UserInput): Promise<boolean> {
+    return false;
+  }
+
   async cancel(): Promise<void> {}
 
   async kill(): Promise<void> {

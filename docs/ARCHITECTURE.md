@@ -187,6 +187,14 @@ export interface AgentAdapter {
   readonly agent: string;             // "codex" | "pi" | ...
   start(opts: SpawnOpts): Promise<void>;
   send(input: UserInput): Promise<void>;          // user message / keystrokes
+  // SPEC-35: inject into the RUNNING turn instead of starting a new one.
+  // `true`  = delivered (the adapter echoed it; the Session must not requeue)
+  // `false` = refused for any reason (no steer primitive, no active turn, a
+  //           stale `expectedTurnId`, a non-steerable turn kind) → queue it
+  // Exception: an attachment that cannot be materialised returns `true` after
+  // emitting `session.error` — the prompt is undeliverable, so requeueing it
+  // would fail forever (see the SPEC-35 plan's deviation note).
+  steer(input: UserInput): Promise<boolean>;
   approve(callId: string, decision: ApprovalDecision): Promise<void>;
   cancel(): Promise<void>;
   kill(signal?: NodeJS.Signals): Promise<void>;
@@ -227,6 +235,29 @@ session uses:
 
 - Deterministic fake (fixed-delay echo + markdown sample reply) used by the
   app's E2E suite; no real agent involved.
+
+### 5.5 Mid-turn messages: steer vs queue (SPEC-35)
+
+A message submitted while a turn is in flight is never sent as an overlapping
+request. `Session.sendUserMessage` decides:
+
+- **Steer** — `adapter.steer(input)` injects it into the running turn. Only codex
+  implements it (`turn/steer`, with the announced turn id as the
+  `expectedTurnId` precondition). The contract takes a `UserInput` (text +
+  optional attachments) and expects an active turn (`expectedTurnId`). Returns
+  `true` if the message was steered, `false` if steering failed (protocol
+  rejection, precondition mismatch, or no active turn). Attachment
+  materialization failures emit `session.error` and return `true` to prevent
+  requeueing the unmaterializable prompt (see SPEC-35 PLAN deviation tracking).
+- **Queue** — anything the adapter cannot steer waits in an in-memory FIFO on the
+  Session and is delivered one message per `idle` transition. Pending messages
+  ride the sessions snapshot as `SessionDTO.queued` (never the event log, so a
+  restart cannot replay a stale queue) and are cancellable via `queue.cancel`;
+  `cancel` (stop) drops the whole queue.
+
+A turn is only ever "in flight" because the agent said so — `turn/started` /
+ACP's prompt lifecycle. codex's `turn/start` reply is deliberately ignored: sent
+mid-turn it returns a turn id that is never announced or completed.
 
 *(The original PTY-vs-native Spike 0 in §10 predates World A/B/D and is
 historical — makit ships pi-only, so the PTY/Codex/Claude comparison there
