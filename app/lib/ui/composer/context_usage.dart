@@ -167,6 +167,10 @@ class _RingPainter extends CustomPainter {
 /// Width of the desktop details popover.
 const double kUsagePanelWidth = 300;
 
+/// Tap-target size for the ring, matching the composer's send button (36px) so
+/// the footer's two bare icon controls agree.
+const double kUsageTargetSize = 36;
+
 /// Composer-footer control for context usage (SPEC-37): a [ContextUsageRing]
 /// that opens [ContextUsageDetails] on tap.
 ///
@@ -246,8 +250,15 @@ class ContextUsageButton extends ConsumerWidget {
     );
   }
 
-  /// The 32pt tap target shared by both presentations — matching the footer's
-  /// `[+]` button rather than the labelled pills.
+  /// The tap target shared by both presentations — a bare icon control like the
+  /// footer's `[+]` and send buttons, not a labelled pill.
+  ///
+  /// [kUsageTargetSize] rather than the 18px ring itself: an 18px hit area is not
+  /// a thumb target. It matches the send button's deliberately compact footprint
+  /// in this same row (see `Composer._buildSendSlot`), so the two bare controls
+  /// are the same size. Note this row is NOT on the [kTouchRow] 44px scale — that
+  /// is for list rows, and the composer explicitly tuned these controls smaller
+  /// because the Material default "read oversized on phone".
   Widget _target(
     BuildContext context, {
     required Widget ring,
@@ -257,8 +268,12 @@ class ContextUsageButton extends ConsumerWidget {
     message: tooltip,
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: SizedBox(width: 32, height: 32, child: Center(child: ring)),
+      borderRadius: BorderRadius.circular(kUsageTargetSize / 2),
+      child: SizedBox(
+        width: kUsageTargetSize,
+        height: kUsageTargetSize,
+        child: Center(child: ring),
+      ),
     ),
   );
 

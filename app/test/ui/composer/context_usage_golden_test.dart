@@ -5,6 +5,8 @@
 // Worth having as a golden rather than only assertions: the ring is a
 // CustomPainter whose whole job is legibility at 18px, and the panel's value is
 // its layout. Neither is provable by finding text.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
@@ -78,6 +80,19 @@ Widget _ringLadder() => Row(
 );
 
 void main() {
+  // Goldens that contain TEXT are platform-dependent: macOS (where these were
+  // generated) rasterizes glyphs differently than the Linux CI runner, which
+  // showed up as a 2.3–3.2% pixel diff. Same convention as
+  // `test/desktop/chat/open_in_ide_golden_test.dart`; regenerate with:
+  //   flutter test --update-goldens test/ui/composer/context_usage_golden_test.dart
+  //
+  // The ring ladder is deliberately NOT skipped. It is pure geometry with no
+  // glyphs, it matched byte-for-byte on the Linux runner, and it is the golden
+  // that actually guards the CustomPainter — the thing most likely to regress
+  // unnoticed. Blanket-skipping it off macOS would give CI no coverage of the
+  // ring at all.
+  final skipOffMac = !Platform.isMacOS;
+
   testWidgets('ring ladder at the real 18px footer size', (tester) async {
     // physicalSize is in PHYSICAL pixels, so it must be scaled by the DPR:
     // 6 rings × (18 + 2×8 padding) + 2×20 scene padding ≈ 245 logical.
@@ -124,6 +139,6 @@ void main() {
         find.byType(ContextUsageDetails),
         matchesGoldenFile('goldens/spec37_panel_$name.png'),
       );
-    });
+    }, skip: skipOffMac);
   }
 }

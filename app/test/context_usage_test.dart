@@ -210,6 +210,28 @@ void main() {
     });
   });
 
+  group('ContextUsageButton — tap target', () {
+    testWidgets('is a thumb target, not the bare 18px ring', (tester) async {
+      // The ring is 18px; hit areas are not. This matches the send button's
+      // deliberately compact 36px footprint in the same footer row, so the two
+      // bare icon controls agree. (Not kTouchRow/44 — that is the list-row scale,
+      // and the composer tuned these controls down on purpose.)
+      final c = _container(_codex);
+      addTearDown(c.dispose);
+      await tester.pumpWidget(_wrap(c));
+
+      final target = tester.getSize(
+        find.ancestor(
+          of: find.byType(ContextUsageRing),
+          matching: find.byType(InkWell),
+        ),
+      );
+      expect(target.width, kUsageTargetSize);
+      expect(target.height, kUsageTargetSize);
+      expect(kUsageTargetSize, greaterThanOrEqualTo(36.0));
+    });
+  });
+
   group('ContextUsageButton — opening the details', () {
     testWidgets('the numbers are NOT in the footer, only behind the tap', (
       tester,

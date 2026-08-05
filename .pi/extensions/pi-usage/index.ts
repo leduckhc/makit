@@ -50,17 +50,28 @@ export default async function activate(pi: PiHost): Promise<void> {
   const bridge = resolveBridge(process.env);
   if (!bridge) return;
 
-  let last: UsagePayload | undefined;
+  /** The last payload the bridge ACCEPTED — never merely one we attempted. */
+  let lastAccepted: UsagePayload | undefined;
 
   pi.on("message_end", (event, ctx) => {
     if (event?.message?.role !== "assistant") return;
     const payload = buildUsage(ctx.getContextUsage?.(), event.message.usage?.cost);
-    if (!payload || !isWorthSending(last, payload)) return;
-    last = payload;
+    if (!payload || !isWorthSending(lastAccepted, payload)) return;
 
     // Fire-and-forget. A usage snapshot is strictly cosmetic, so a bridge that
     // has gone away (server restarted, session ended) must never surface as an
     // error in the user's pi session or delay the turn.
+    //
+    // `lastAccepted` is recorded ONLY on a 2xx. Recording it up front would let a
+    // rejected post (stale bearer after a server restart, a validation 400) count
+    // as delivered, and the dedupe would then suppress every identical retry —
+    // stranding the session with no usage until the numbers happened to change.
+    // `fetch` does not throw on 4xx/5xx, so the status must be checked explicitly.
+    //
+    // No in-flight guard on purpose: `message_end` fires once per assistant
+    // message and this POST is loopback, so overlap is vanishingly unlikely — and
+    // dropping a NEWER reading to protect against it would strand a stale number,
+    // which is worse than the duplicate post it avoids (the server is latest-wins).
     void fetch(`${bridge.url}/usage`, {
       method: "POST",
       headers: {
@@ -68,8 +79,13 @@ export default async function activate(pi: PiHost): Promise<void> {
         authorization: `Bearer ${bridge.token}`,
       },
       body: JSON.stringify({ sessionId: bridge.sessionId, usage: payload }),
-    }).catch((err: unknown) => {
-      pi.log?.(`[usage] report failed (${(err as Error)?.message ?? err})`);
-    });
+    })
+      .then((res) => {
+        if (res.ok) lastAccepted = payload;
+        else pi.log?.(`[usage] bridge rejected the report (HTTP ${res.status})`);
+      })
+      .catch((err: unknown) => {
+        pi.log?.(`[usage] report failed (${(err as Error)?.message ?? err})`);
+      });
   });
 }
