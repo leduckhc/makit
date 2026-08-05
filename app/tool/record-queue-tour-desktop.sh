@@ -19,7 +19,9 @@ OUT="${1:-/tmp/makit-pending-queue-desktop.mp4}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SERVER_DIR="$ROOT/server"
 APP_DIR="$ROOT/app"
-PORT="9787"
+# Overridable: 9787 is the shared e2e port, so a run in ANOTHER worktree holds
+# it and this one dies at startup ("port is already in use").
+PORT="${MAKIT_E2E_PORT:-9787}"
 BEARER="e2e-token"
 # NOT under /tmp: cua-driver's path-scope check rejects an output dir whose
 # ancestor is a symlink (/tmp → /private/tmp) with
@@ -57,7 +59,7 @@ cleanup() {
     RECORDING=0
   fi
   if [[ -n "$SERVER_PID" ]]; then
-    pkill -f "e2e-server.ts --mode stub --project $ROOT" >/dev/null 2>&1 || true
+    pkill -f "e2e-server.ts --mode stub --port $PORT --project $ROOT" >/dev/null 2>&1 || true
   fi
   rm -rf "$MAKIT_HOME" >/dev/null 2>&1 || true
   rm -f "$SERVER_LOG" >/dev/null 2>&1 || true
@@ -66,7 +68,7 @@ trap cleanup EXIT INT TERM
 
 (
   cd "$SERVER_DIR"
-  pnpm exec tsx test/e2e-server.ts --mode stub --project "$ROOT"
+  pnpm exec tsx test/e2e-server.ts --mode stub --port "$PORT" --project "$ROOT"
 ) >"$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 
@@ -118,8 +120,18 @@ WIN_W=1280
 WIN_H=860
 FRAME_FILE="$REC_DIR/window-frame.json"
 (
-  for _ in $(seq 1 60); do
-    PID="$(pgrep -f "Build/Products/Debug/Makit.app/Contents/MacOS/Makit" | head -1)"
+  # 240 tries, not 60: the macOS build+launch can eat a minute on its own, and a
+  # loop that expires first leaves the recorder filming the developer's desktop.
+  #
+  # Every substitution here ends in `|| true`. Under `set -euo pipefail` a
+  # `pgrep | head` pipeline that matches nothing fails the whole assignment, and
+  # this subshell died on its FIRST iteration — before the app had even launched
+  # — which is why the window was never found in any run.
+  for _ in $(seq 1 240); do
+    PID="$(pgrep -f "Build/Products/Debug/Makit.app/Contents/MacOS/Makit" | head -1 || true)"
+    # Diagnosable on failure: without this, "no window frame" gives no clue
+    # whether the process, the window, or set_window_frame was the problem.
+    echo "$(date +%T) pid=${PID:-none}" >>"$REC_DIR/window-hunt.log"
     if [[ -n "$PID" ]]; then
       "$CUA_BIN" bring_to_front "{\"pid\":$PID}" >/dev/null 2>&1 || true
       WID="$("$CUA_BIN" list_windows '{}' 2>/dev/null \
@@ -127,22 +139,24 @@ FRAME_FILE="$REC_DIR/window-frame.json"
             try{const j=JSON.parse(s);
               const w=(j.windows??[]).find(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200);
               process.stdout.write(String(w?.window_id??""));}catch{}
-          })')"
+          })' || true)"
+      echo "$(date +%T) pid=$PID wid=${WID:-none}" >>"$REC_DIR/window-hunt.log"
       if [[ -n "$WID" ]]; then
-        if "$CUA_BIN" set_window_frame \
-            "{\"pid\":$PID,\"window_id\":$WID,\"x\":$WIN_X,\"y\":$WIN_Y,\"width\":$WIN_W,\"height\":$WIN_H}" \
-            >/dev/null 2>&1; then
-          echo "{\"x\":$WIN_X,\"y\":$WIN_Y,\"width\":$WIN_W,\"height\":$WIN_H}" >"$FRAME_FILE"
-        else
-          # Could not resize (a Flutter test window may refuse): crop to wherever
-          # it actually is, so the footage still frames the app.
-          "$CUA_BIN" list_windows '{}' 2>/dev/null \
-            | PID="$PID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
-                try{const j=JSON.parse(s);
-                  const w=(j.windows??[]).find(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200);
-                  if(w)process.stdout.write(JSON.stringify(w.bounds));}catch{}
-              })' >"$FRAME_FILE"
-        fi
+        "$CUA_BIN" set_window_frame \
+          "{\"pid\":$PID,\"window_id\":$WID,\"x\":$WIN_X,\"y\":$WIN_Y,\"width\":$WIN_W,\"height\":$WIN_H}" \
+          >/dev/null 2>&1 || true
+        # ALWAYS read the geometry back, never trust the requested frame. A run
+        # that wrote the *requested* rectangle cropped 1280x860 out of the
+        # developer's desktop — browser, terminals, everything — because the move
+        # reported success while the window stayed where it was. The crop must
+        # describe where this pid's window actually IS.
+        sleep 1
+        "$CUA_BIN" list_windows '{}' 2>/dev/null \
+          | PID="$PID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+              try{const j=JSON.parse(s);
+                const w=(j.windows??[]).find(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200);
+                if(w)process.stdout.write(JSON.stringify(w.bounds));}catch{}
+            })' >"$FRAME_FILE" || true
         break
       fi
     fi
@@ -171,8 +185,15 @@ sleep 1
 RECORDING=0
 
 RAW="$REC_DIR/recording.mp4"
-if [[ ! -s "$RAW" ]]; then
-  echo "cua-driver produced no video at $RAW" >&2
+# `stop_recording` returns before the file is finalised: the mp4's `moov` atom is
+# written last, so an immediate copy yields a same-size file ffmpeg cannot open
+# ("moov atom not found"). Wait until it actually demuxes.
+for _ in $(seq 1 60); do
+  [[ -s "$RAW" ]] && ffprobe -v error -show_entries format=duration -of csv=p=0 "$RAW" >/dev/null 2>&1 && break
+  sleep 1
+done
+if ! ffprobe -v error -show_entries format=duration -of csv=p=0 "$RAW" >/dev/null 2>&1; then
+  echo "cua-driver produced no readable video at $RAW" >&2
   exit 1
 fi
 # Crop to the window frame recorded above, scaled for a Retina capture (the mp4
@@ -188,13 +209,30 @@ if [[ -s "$FRAME_FILE" ]]; then
     const r=n=>Math.max(2,Math.round(n*k/2)*2);
     process.stdout.write(`${r(b.width)}:${r(b.height)}:${r(b.x)}:${r(b.y)}`);' "$FRAME_FILE" 2>/dev/null || true)"
 fi
-if command -v ffmpeg >/dev/null 2>&1 && [[ -n "$CROP" ]]; then
-  ffmpeg -y -loglevel error -i "$RAW" -vf "crop=$CROP" \
-    -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$OUT"
-else
-  echo "no window frame captured — keeping the full-display capture" >&2
-  cp "$RAW" "$OUT"
+# Fail CLOSED. A full-display capture of someone's Mac is not a fallback: this
+# script once shipped a recording of the developer's own windows (including an
+# unrelated app with personal data) because the window lookup expired and the
+# uncropped file was kept "so there is something". Without a verified window
+# frame the footage is destroyed instead.
+if [[ -z "$CROP" ]]; then
+  # Delete the VIDEO, keep the hunt log: the previous version removed the whole
+  # directory and took the only evidence of why the window was never found.
+  rm -f "$RAW" "$OUT"
+  echo "window hunt log: $REC_DIR/window-hunt.log" >&2
+  echo "could not locate the Makit test window — footage DELETED rather than" >&2
+  echo "kept, because an uncropped capture films the whole desktop." >&2
+  exit 1
 fi
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  rm -f "$RAW"
+  echo "ffmpeg is required to crop the capture to the app window" >&2
+  exit 1
+fi
+ffmpeg -y -loglevel error -i "$RAW" -vf "crop=$CROP" \
+  -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$OUT"
+# The uncropped original contains everything else that was on screen; it is not
+# an artifact anyone asked for.
+rm -f "$RAW"
 
 if [[ $TOUR_STATUS -ne 0 ]]; then
   echo "tour failed (status $TOUR_STATUS); footage kept at $OUT" >&2

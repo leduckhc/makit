@@ -99,6 +99,14 @@ void main() {
   ) async {
     // Same handshake the mobile client uses: the harness seeds paired creds
     // (host/port/bearer/cert fingerprint) and the store connects on first read.
+    // cua-driver reads the accessibility tree to find and front this window,
+    // which turns Flutter's semantics ON mid-test — and the test then fails at
+    // teardown with "A SemanticsHandle was active at the end of the test" even
+    // though the camera path completed. Owning a handle here means the tour
+    // disposes it, instead of the harness noticing a stray one.
+    final semantics = tester.ensureSemantics();
+    addTearDown(semantics.dispose);
+
     await seedTestPairingIfRequested();
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -165,8 +173,13 @@ void main() {
 
     // 4 ── edit in place, with the slash palette inside the editor.
     await tester.tap(find.text('also update the README'));
+    // Anchored on "the bubble that has an editor open", NOT on the message's
+    // text: `_bubbleWithText` matches a Text/EditableText carrying that string,
+    // and the first keystroke replaces it — so a text-anchored finder matches
+    // zero widgets exactly when the tour needs it, and `enterText` throws
+    // `Bad state: No element`. Only one editor is ever open at a time.
     final editorField = find.descendant(
-      of: _bubbleWithText('also update the README'),
+      of: find.byType(PendingBubble),
       matching: find.byType(TextField),
     );
     await pumpUntil(tester, editorField);
@@ -175,10 +188,7 @@ void main() {
     await tester.enterText(editorField, '/');
     await hold(tester, const Duration(milliseconds: 1200));
 
-    await tester.enterText(
-      editorField,
-      'also update the README and CHANGELOG',
-    );
+    await tester.enterText(editorField, 'also update the README and CHANGELOG');
     await hold(tester, const Duration(milliseconds: 700));
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await pumpUntil(

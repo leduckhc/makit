@@ -16,7 +16,9 @@ RAW="$(mktemp -t makit-queue-tour.XXXXXX).mov"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SERVER_DIR="$ROOT/server"
 APP_DIR="$ROOT/app"
-PORT="9787"
+# Overridable: 9787 is the shared e2e port, so a run in ANOTHER worktree holds
+# it and this one dies at startup ("port is already in use").
+PORT="${MAKIT_E2E_PORT:-9787}"
 BEARER="e2e-token"
 APP_BUNDLE_ID="dev.getmakit.app"
 
@@ -56,7 +58,7 @@ cleanup() {
     wait "$REC_PID" >/dev/null 2>&1 || true
   fi
   if [[ -n "$SERVER_PID" ]]; then
-    pkill -f "e2e-server.ts --mode stub --project $ROOT" >/dev/null 2>&1 || true
+    pkill -f "e2e-server.ts --mode stub --port $PORT --project $ROOT" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   rm -rf "$MAKIT_HOME" >/dev/null 2>&1 || true
@@ -65,7 +67,7 @@ trap cleanup EXIT INT TERM
 
 (
   cd "$SERVER_DIR"
-  pnpm exec tsx test/e2e-server.ts --mode stub --project "$ROOT"
+  pnpm exec tsx test/e2e-server.ts --mode stub --port "$PORT" --project "$ROOT"
 ) >"$SERVER_LOG" 2>&1 &
 SERVER_PID="$!"
 
