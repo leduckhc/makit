@@ -754,3 +754,33 @@ test("a cua-driver screenshot in an MCP tool result lands in the media store", a
   assert.equal((events.find((e) => e.kind === "tool.call.end")!.payload as any).output, "12 elements");
   await adapter.kill();
 });
+
+test("a timed-out request cleans up its pending entry (and a normal one its timer)", async () => {
+  const fake = fakeAppServer();
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-leak" });
+  const pending = (adapter as unknown as { pending: Map<number, unknown> }).pending;
+  const before = pending.size;
+
+  // A request nothing will ever answer, with a timeout short enough to test.
+  const req = (
+    adapter as unknown as {
+      request: (m: string, p: unknown, t?: number) => Promise<unknown>;
+    }
+  ).request("thread/never", {}, 20);
+  assert.equal(pending.size, before + 1, "the request is tracked while in flight");
+  await assert.rejects(req, /timeout after 20ms/);
+  assert.equal(
+    pending.size,
+    before,
+    "a timed-out request must not leave its entry behind — repeated timeouts grew the map forever",
+  );
+
+  // And the happy path leaves nothing tracked either — `thread/start` is one the
+  // fake answers, so this exercises the resolve side.
+  await (
+    adapter as unknown as { request: (m: string, p: unknown, t?: number) => Promise<unknown> }
+  ).request("thread/start", {}, 5_000);
+  assert.equal(pending.size, before, "a resolved request clears its entry (and its timer)");
+  await adapter.kill();
+});

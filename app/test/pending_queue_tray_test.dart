@@ -301,4 +301,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(SlashPalette), findsNothing);
   });
+
+  testWidgets('committing an unchanged edit sends nothing', (tester) async {
+    // Enter on an untouched row used to fire `queue.update` and a sessions
+    // snapshot for a no-op (the bubble editor already suppressed this).
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(calls.edits, isEmpty);
+    expect(calls.cancels, isEmpty);
+  });
+
+  testWidgets(
+    'committing whitespace-only padding around the SAME text is a no-op',
+    (tester) async {
+      final calls = _Calls();
+      await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('first'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '  first  ');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+
+      expect(calls.edits, isEmpty, reason: 'trimmed, it is the same message');
+    },
+  );
 }

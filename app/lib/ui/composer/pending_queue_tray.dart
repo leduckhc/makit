@@ -192,9 +192,13 @@ class _TrayRowState extends State<TrayRow> {
     });
     // Commit last: an empty text is a cancel server-side, and this row is gone
     // by the time the snapshot comes back either way.
-    // Trimmed like the bubble's editor: the server only trims to decide
-    // "empty means cancel", and would otherwise store the padding verbatim.
-    if (commit) widget.onEdit(text.trim());
+    //
+    // Trimmed like the bubble's editor (the server only trims to decide "empty
+    // means cancel", and would otherwise store the padding), and skipped
+    // entirely when nothing changed — Enter on an untouched row was sending a
+    // `queue.update` and a sessions snapshot for no reason.
+    final next = text.trim();
+    if (commit && next != widget.message.text) widget.onEdit(next);
   }
 
   void _pickSlash(String cmd) {

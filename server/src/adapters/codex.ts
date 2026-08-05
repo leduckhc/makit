@@ -439,12 +439,27 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private request(method: string, params: unknown, timeoutMs = 15_000): Promise<unknown> {
     const id = this.nextId++;
     this.write({ method, id, params });
-    return Promise.race([
-      new Promise((resolve, reject) => this.pending.set(id, { resolve, reject })),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new RequestTimeoutError(`codex.${method} timeout after ${timeoutMs}ms`)), timeoutMs),
-      ),
-    ]);
+    // NOT `Promise.race` over a bare setTimeout: the loser of that race was never
+    // cleaned up, so a timed-out request left its `pending` entry behind forever
+    // (unbounded growth for a client that can make requests time out — every
+    // `turn/steer` goes through here), and a request that answered normally left
+    // a live 15s timer. One promise, both sides tidy up.
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new RequestTimeoutError(`codex.${method} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      });
+    });
   }
 
   private notify(method: string, params: unknown): void {
