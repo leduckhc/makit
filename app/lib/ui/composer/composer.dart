@@ -250,6 +250,13 @@ class _ComposerState extends State<Composer> {
   List<SlashCmd> get _slashMatches =>
       filterSlashCommands(_ctrl.text, widget.commands);
 
+  /// [_slashIndex] clamped to [count] rows. The agent can re-push a shorter
+  /// command list with no keystroke to reset the raw index, which would leave
+  /// the palette with nothing highlighted while Tab still committed a row. Both
+  /// readers go through here so they cannot disagree.
+  int _selectedIndex(int count) =>
+      count == 0 ? 0 : _slashIndex.clamp(0, count - 1);
+
   /// ↑/↓ move the highlight (wrapping), Tab picks it, Esc dismisses. Handled
   /// here, above the field, so these keys reach the palette before the text
   /// field's caret movement and the app's Tab focus traversal claim them.
@@ -266,7 +273,7 @@ class _ComposerState extends State<Composer> {
     }
     final matches = _slashMatches;
     if (matches.isEmpty) return KeyEventResult.ignored;
-    final index = _slashIndex.clamp(0, matches.length - 1);
+    final index = _selectedIndex(matches.length);
     if (key == LogicalKeyboardKey.arrowDown) {
       setState(() => _slashIndex = (index + 1) % matches.length);
       return KeyEventResult.handled;
@@ -410,12 +417,16 @@ class _ComposerState extends State<Composer> {
   /// to the top of the composer box.
   ///
   /// Its height is capped to the space actually free above the composer (which
-  /// already excludes the keyboard, since the composer sits above it) minus the
-  /// status bar and a top-bar allowance — the old half-the-screen cap ignored
-  /// all three and pushed the first, best-matching rows off the top of the
-  /// screen on a phone. The allowance matters because this renders in the app's
-  /// [Overlay], i.e. *above* the mobile floating glass bar, which it would
-  /// otherwise cover on a short (landscape) viewport.
+  /// already excludes the keyboard, since the composer sits above it) — the old
+  /// half-the-screen cap ignored the keyboard and the safe area and pushed the
+  /// first, best-matching rows off the top of the screen on a phone.
+  ///
+  /// Two ceilings, because "don't cover the bar" and "stay on screen" are not
+  /// equally important. Normally the popover also clears the mobile floating
+  /// glass bar, which it renders *above* (it is in the app's [Overlay]). When
+  /// that leaves less than one row, it may cover the bar — briefly, while
+  /// picking a command — but it must never cross the hard ceiling and go
+  /// off-screen, and when even that has no room for a row it does not render.
   Widget _buildPalette(BuildContext ctx, double width) {
     final box = _boxKey.currentContext?.findRenderObject() as RenderBox?;
     // No measurement, no popover: a guessed height is how the old code pushed
@@ -423,8 +434,14 @@ class _ComposerState extends State<Composer> {
     // already-laid-out composer — so there is nothing to fall back for.
     if (box == null || !box.hasSize) return const SizedBox.shrink();
     final media = MediaQuery.of(ctx);
-    final ceiling = media.padding.top + kToolbarHeight + kSpace8;
-    final free = box.localToGlobal(Offset.zero).dy - ceiling;
+    final composerTop = box.localToGlobal(Offset.zero).dy;
+    final onScreen = composerTop - media.padding.top - kSpace8;
+    if (onScreen < kSlashRowHeight) return const SizedBox.shrink();
+    final belowTopBar = onScreen - kToolbarHeight;
+    final maxHeight = math.min(
+      kSlashPaletteMaxHeight,
+      math.max(belowTopBar, kSlashRowHeight),
+    );
     return Align(
       // The overlay lays its children out tightly to the whole screen; aligning
       // loosens that so the popover below can size to its own content and
@@ -440,11 +457,8 @@ class _ComposerState extends State<Composer> {
           width: width,
           child: SlashPalette(
             matches: _slashMatches,
-            selectedIndex: _slashIndex,
-            maxHeight: math.max(
-              kSlashRowHeight,
-              math.min(kSlashPaletteMaxHeight, free),
-            ),
+            selectedIndex: _selectedIndex(_slashMatches.length),
+            maxHeight: maxHeight,
             onPick: _onSlashPicked,
           ),
         ),

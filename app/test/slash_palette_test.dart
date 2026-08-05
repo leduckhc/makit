@@ -170,6 +170,97 @@ void main() {
       expect(row.bottom, lessThanOrEqualTo(list.bottom));
     });
 
+    testWidgets('keeps the highlight valid when the command list shrinks', (
+      tester,
+    ) async {
+      // The agent can re-push a shorter command list (commandsProvider) with no
+      // keystroke to reset the index. A stale index must not leave the palette
+      // with nothing highlighted while Tab still commits some other row.
+      late StateSetter setOuter;
+      var shrunk = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                setOuter = setState;
+                return Column(
+                  children: [
+                    const Expanded(child: ColoredBox(color: Color(0xFF000000))),
+                    Composer(
+                      onSend: _noop,
+                      commands: shrunk ? const <SlashCmd>[] : commands,
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      await openPalette(tester);
+
+      // Land on the last row of the long list.
+      final long = filterSlashCommands('/', commands);
+      for (var i = 0; i < long.length - 1; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+      }
+      expect(selectedCommandName(tester), long.last.name);
+
+      // The agent drops its commands; only the builtins remain.
+      setOuter(() => shrunk = true);
+      await tester.pumpAndSettle();
+
+      // Still exactly one highlighted row...
+      expect(find.byKey(kSlashSelectedRowKey), findsOneWidget);
+      final highlighted = selectedCommandName(tester);
+
+      // ...and Tab commits that row, not a different one.
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '/$highlighted ',
+      );
+    });
+
+    testWidgets(
+      'never rises above the viewport when free space is under a row',
+      (tester) async {
+        // Bugbot's case: free space above the composer is positive but smaller
+        // than one row. The one-row floor must not let the popover climb off the
+        // top of the screen — the whole point of the change.
+        tester.view.physicalSize = const Size(800, 230);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          wrap(const Composer(onSend: _noop, commands: commands)),
+        );
+        await openPalette(tester);
+
+        if (find.byType(SlashPalette).evaluate().isNotEmpty) {
+          expect(tester.getRect(find.byType(SlashPalette)).top, isNonNegative);
+        }
+      },
+    );
+
+    testWidgets('renders nothing when there is no room for even one row', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 190);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        wrap(const Composer(onSend: _noop, commands: commands)),
+      );
+      await openPalette(tester);
+
+      // A popover that would cover the whole viewport is worse than none: the
+      // field still takes the typed command.
+      expect(find.byType(SlashPalette), findsNothing);
+    });
+
     testWidgets('escape dismisses the palette, leaving the text alone', (
       tester,
     ) async {
