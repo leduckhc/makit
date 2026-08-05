@@ -274,6 +274,20 @@ int metricsTotalRssBytes(MetricsSample s) {
   return total;
 }
 
+/// [metricsTotalRssBytes], or **null** when the process table could not be read.
+///
+/// With no `ps` the app and agent rows are missing, so summing what is left
+/// yields the server's own figure — and presenting that as the makit total is
+/// the decision-13 lie one level up from the rows it was written for. Every
+/// caller that says the word "total" must use this rather than the raw sum.
+int? metricsKnownTotalRssBytes(MetricsSample s) =>
+    s.procTableOk ? metricsTotalRssBytes(s) : null;
+
+/// [metricsTotalCpuPercent], or null when the process table could not be read
+/// (see [metricsKnownTotalRssBytes]).
+double? metricsKnownTotalCpuPercent(MetricsSample s) =>
+    s.procTableOk ? metricsTotalCpuPercent(s) : null;
+
 /// Sum of the agents' resident bytes.
 int metricsAgentsRssBytes(MetricsSample s) {
   var total = 0;

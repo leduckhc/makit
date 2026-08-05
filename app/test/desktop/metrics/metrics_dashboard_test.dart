@@ -562,6 +562,18 @@ void main() {
       expect(md, contains('No samples recorded'));
     });
 
+    test('markdown headline totals read unknown when ps failed', () {
+      final md = metricsExportMarkdown(
+        history: [_sample(procTableOk: false, agents: const [])],
+        appVersion: 'v',
+        platform: 'p',
+      );
+      // "Total" bullets must not quote a server-only figure as the whole.
+      expect(md, contains('**Total CPU:** —'));
+      expect(md, contains('**Total resident:** —'));
+      expect(md, contains('unknown (not zero)'));
+    });
+
     test('markdown flags an unreadable process table', () {
       final md = metricsExportMarkdown(
         history: [_sample(procTableOk: false)],
@@ -706,6 +718,56 @@ void main() {
         expect(find.text('makit total'), findsNothing);
       },
     );
+
+    /// Bugbot (PR #136): the F3 fix covered the process-table total row and the
+    /// footprint cell but MISSED the header subtitle and the memory legend, which
+    /// kept labelling a server-only figure as the makit total. Same class of
+    /// defect, three call sites further on — so the honesty now lives in the
+    /// helpers (`metricsKnownTotal*`) rather than at each call site.
+    testWidgets('a failed process table shows no total in the header or legend', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        // withApp:false mirrors what the server actually sends when `ps` fails:
+        // the app and agent rows are omitted because it could not look.
+        _host(
+          history: [
+            _sample(procTableOk: false, withApp: false, agents: const []),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The header must not present the server's 62 MB as the machine total.
+      expect(find.textContaining('62 MB total'), findsNothing);
+      expect(find.textContaining('measurement unavailable'), findsOneWidget);
+
+      List<String?> legendRow(String label) {
+        final row = find
+            .ancestor(of: find.text(label), matching: find.byType(Row))
+            .first;
+        return tester
+            .widgetList<Text>(
+              find.descendant(of: row, matching: find.byType(Text)),
+            )
+            .map((t) => t.data)
+            .toList();
+      }
+
+      // The `total` entry reads as unknown...
+      expect(legendRow('total '), contains('—'));
+
+    });
+
+    testWidgets('a readable process table still shows the real total', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(history: [_sample()]));
+      await tester.pumpAndSettle();
+      // 131 (app) + 62 (server) + 220 (agent) = 413 MB.
+      expect(find.textContaining('413 MB total'), findsOneWidget);
+      expect(find.textContaining('measurement unavailable'), findsNothing);
+    });
 
     testWidgets('holds the watch and the timings callback while open', (
       tester,

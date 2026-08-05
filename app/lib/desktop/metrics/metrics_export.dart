@@ -14,7 +14,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../store/metrics.dart';
-import 'metrics_button.dart' show formatBytes, metricsTotalRssBytes;
+import 'metrics_button.dart'
+    show
+        formatBytes,
+        formatBytesOrDash,
+        metricsKnownTotalCpuPercent,
+        metricsKnownTotalRssBytes,
+        metricsTotalRssBytes;
 import 'metrics_icon_state.dart' show metricsTotalCpuPercent;
 
 /// Schema version of the exported artifact. Bumped when the shape changes, so a
@@ -159,9 +165,13 @@ String metricsExportMarkdown({
     '- **Build:** $appVersion · $platform',
     '- **Window:** ${history.length} samples over '
         '${(spanMs / 1000).round()}s',
-    '- **Total CPU:** ${cpu(metricsTotalCpuPercent(latest))} now · '
+    // "now" uses the KNOWN totals: a failed final `ps` must not be quoted as a
+    // whole-machine figure. The peaks are computed across the window, so samples
+    // that were measurable still contribute.
+    '- **Total CPU:** ${cpu(metricsKnownTotalCpuPercent(latest))} now · '
         '${cpu(peakCpu)} peak',
-    '- **Total resident:** ${formatBytes(metricsTotalRssBytes(latest))} now · '
+    '- **Total resident:** '
+        '${formatBytesOrDash(metricsKnownTotalRssBytes(latest))} now · '
         '${formatBytes(peakRss)} peak',
     '- **Server event loop:** p50 '
         '${latest.server.eventLoopP50.toStringAsFixed(1)}ms · p99 '

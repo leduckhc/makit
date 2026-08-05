@@ -191,8 +191,12 @@ class _Header extends StatelessWidget {
             child: Text(
               latest == null
                   ? 'waiting for the first sample'
-                  : '${formatBytes(metricsTotalRssBytes(latest!))} total · '
-                        '${formatCpu(metricsTotalCpuPercent(latest!))} CPU',
+                  : latest!.procTableOk
+                  ? '${formatBytes(metricsTotalRssBytes(latest!))} total · '
+                        '${formatCpu(metricsTotalCpuPercent(latest!))} CPU'
+                  // Not a partial total: with no process table there is no
+                  // honest headline to give (decision 13).
+                  : 'measurement unavailable — process table unreadable',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -499,7 +503,11 @@ class _MemoryCell extends StatelessWidget {
                 kMakitAccent,
                 formatBytes(metricsAgentsRssBytes(latest)),
               ),
-              ('total', cs.outline, formatBytes(metricsTotalRssBytes(latest))),
+              (
+                'total',
+                cs.outline,
+                formatBytesOrDash(metricsKnownTotalRssBytes(latest)),
+              ),
             ],
           ),
         ],
