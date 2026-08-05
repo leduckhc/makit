@@ -151,10 +151,24 @@ String metricsExportMarkdown({
   }
   final latest = history.last;
   final spanMs = history.last.ts - history.first.ts;
-  final peakCpu = metricsPeakOf(history, metricsTotalCpuPercent);
-  final peakRss = history
-      .map(metricsTotalRssBytes)
-      .fold<int>(0, (a, b) => b > a ? b : a);
+
+  // Peaks are computed over the MEASURABLE samples only. A tick whose `ps` failed
+  // sums to the server alone, and while a max over partial data cannot overstate
+  // the true peak, a window where nothing was measurable would otherwise report
+  // the server's own figure as a whole-machine peak — a number beside an unknown
+  // "now" (decision 13). None measurable ⇒ the peak is unknown, not zero.
+  final measured = [
+    for (final s in history)
+      if (s.procTableOk) s,
+  ];
+  final unmeasured = history.length - measured.length;
+  final peakCpu = metricsPeakOf(measured, metricsTotalCpuPercent);
+  final peakRss = measured.isEmpty
+      ? null
+      : measured
+            .map(metricsTotalRssBytes)
+            .fold<int>(0, (a, b) => b > a ? b : a);
+  // The sampler measures itself without `ps`, so its peak spans every sample.
   final peakSampler = metricsPeakOf(history, (s) => s.sampler.cpuPercent);
 
   String cpu(double? v) => v == null ? '—' : '${v.toStringAsFixed(1)}%';
@@ -163,16 +177,18 @@ String metricsExportMarkdown({
     '### makit performance snapshot',
     '',
     '- **Build:** $appVersion · $platform',
+    // The unmeasured count is disclosed so a peak drawn from fewer samples than
+    // the window is not read as a full-window peak.
     '- **Window:** ${history.length} samples over '
-        '${(spanMs / 1000).round()}s',
-    // "now" uses the KNOWN totals: a failed final `ps` must not be quoted as a
-    // whole-machine figure. The peaks are computed across the window, so samples
-    // that were measurable still contribute.
+        '${(spanMs / 1000).round()}s'
+        '${unmeasured > 0 ? ' · $unmeasured unmeasured (ps failed)' : ''}',
+    // Both "now" and "peak" use the KNOWN totals: a failed `ps` must never be
+    // quoted as a whole-machine figure.
     '- **Total CPU:** ${cpu(metricsKnownTotalCpuPercent(latest))} now · '
         '${cpu(peakCpu)} peak',
     '- **Total resident:** '
         '${formatBytesOrDash(metricsKnownTotalRssBytes(latest))} now · '
-        '${formatBytes(peakRss)} peak',
+        '${formatBytesOrDash(peakRss)} peak',
     '- **Server event loop:** p50 '
         '${latest.server.eventLoopP50.toStringAsFixed(1)}ms · p99 '
         '${latest.server.eventLoopP99.toStringAsFixed(1)}ms',

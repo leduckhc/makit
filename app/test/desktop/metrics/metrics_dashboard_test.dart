@@ -574,6 +574,69 @@ void main() {
       expect(md, contains('unknown (not zero)'));
     });
 
+    /// Bugbot follow-up (PR #136): "now" was made unknown when `ps` failed, but
+    /// the PEAKS still summed every sample including the unmeasurable ones, so a
+    /// numeric peak could sit beside an unknown "now". A max over partial data
+    /// cannot overstate the true peak, but when NO sample was measurable it
+    /// reports the server's own figure as a whole-machine peak.
+    test('peaks ignore samples whose process table failed', () {
+      final md = metricsExportMarkdown(
+        history: [
+          // Measurable, and the larger figures — these must win the peak.
+          _sample(ts: 1000),
+          // Unmeasurable: contributes nothing, not a server-only partial.
+          _sample(
+            ts: 2000,
+            procTableOk: false,
+            withApp: false,
+            agents: const [],
+          ),
+        ],
+        appVersion: 'v',
+        platform: 'p',
+      );
+      // 131 + 62 + 220 = 413 MB from the measurable sample.
+      expect(md, contains('413 MB peak'));
+      // The window discloses that it did not measure everything, so a peak drawn
+      // from fewer samples than the window is not mistaken for a full-window one.
+      expect(md, contains('1 unmeasured'));
+    });
+
+    test('peaks read unknown when NO sample was measurable', () {
+      final md = metricsExportMarkdown(
+        history: [
+          _sample(
+            ts: 1000,
+            procTableOk: false,
+            withApp: false,
+            agents: const [],
+          ),
+          _sample(
+            ts: 2000,
+            procTableOk: false,
+            withApp: false,
+            agents: const [],
+          ),
+        ],
+        appVersion: 'v',
+        platform: 'p',
+      );
+      expect(md, contains('**Total CPU:** — now · — peak'));
+      expect(md, contains('**Total resident:** — now · — peak'));
+      // 62 MB is the server's own resident size; it must never appear as a peak.
+      expect(md, isNot(contains('62 MB peak')));
+    });
+
+    test('a fully measurable window says nothing about unmeasured samples', () {
+      final md = metricsExportMarkdown(
+        history: [_sample(ts: 1000), _sample(ts: 2000)],
+        appVersion: 'v',
+        platform: 'p',
+      );
+      expect(md, contains('2 samples over'));
+      expect(md, isNot(contains('unmeasured')));
+    });
+
     test('markdown flags an unreadable process table', () {
       final md = metricsExportMarkdown(
         history: [_sample(procTableOk: false)],
