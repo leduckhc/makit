@@ -742,9 +742,17 @@ void main() {
       expect(find.textContaining('62 MB total'), findsNothing);
       expect(find.textContaining('measurement unavailable'), findsOneWidget);
 
+      // Scoped to the memory cell: the CPU cell has its own 'server ' legend
+      // entry, so an unscoped finder reads percentages instead of bytes.
       List<String?> legendRow(String label) {
         final row = find
-            .ancestor(of: find.text(label), matching: find.byType(Row))
+            .ancestor(
+              of: find.descendant(
+                of: find.byKey(kDashboardMemoryCellKey),
+                matching: find.text(label),
+              ),
+              matching: find.byType(Row),
+            )
             .first;
         return tester
             .widgetList<Text>(
@@ -755,8 +763,11 @@ void main() {
       }
 
       // The `total` entry reads as unknown...
-      expect(legendRow('total '), contains('—'));
-
+      expect(legendRow('total '), containsAll(<String>['total ', '—']));
+      // ...while the SERVER entry keeps its real figure: it needs no `ps`, so
+      // dashing it would be the opposite error. Without this, "dash everything
+      // when ps fails" would pass the test above and lose a valid measurement.
+      expect(legendRow('server '), contains('62 MB'));
     });
 
     testWidgets('a readable process table still shows the real total', (
