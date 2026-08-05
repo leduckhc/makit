@@ -13,10 +13,9 @@
 //   3. reorder them with ↓
 //   4. edit one in place, and open the slash palette inside the editor
 //   5. cancel one
-//   6. switch the placement setting to "In the transcript" and see it move
-//   7. switch it again to "Compact tray" — mockup variant C, the work-list look
-//   8. queue another message and reorder inside the tray
-//   9. ⤒ promote: interrupt the running turn so THAT message is sent next, and
+//   6. switch the presentation to "Compact tray" — mockup variant C
+//   7. queue another message and reorder inside the tray
+//   8. ⤒ promote: interrupt the running turn so THAT message is sent next, and
 //      watch the rest of the queue survive behind it (SPEC-37)
 //
 // Each step holds still for a beat so the recording is watchable, and asserts
@@ -121,27 +120,7 @@ void main() {
     expect(find.byType(PendingBubble), findsNWidgets(1));
     await hold(tester);
 
-    // 6 ── the placement preference: the same queue, in the transcript instead.
-    await openSettings(tester);
-    // The Chat section is below the fold on a phone: scroll it into view, or the
-    // tap lands off-screen and is silently swallowed (only a warning).
-    await tester.scrollUntilVisible(
-      find.text('In the transcript'),
-      120,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await hold(tester, const Duration(milliseconds: 900));
-    await tester.tap(find.text('In the transcript'));
-    await hold(tester);
-    await closeSettings(tester);
-    await openSessionContaining(tester, 'upload route');
-    await pumpUntil(
-      tester,
-      _bubbleWithText('also update the README and CHANGELOG'),
-    );
-    await hold(tester);
-
-    // 7 ── the tray (variant C): the same queue as a compact work list.
+    // 6 ── the tray (variant C): the same queue as a compact work list.
     await openSettings(tester);
     await tester.scrollUntilVisible(
       find.text('Compact tray'),
@@ -157,7 +136,7 @@ void main() {
     expect(find.text('1 message waiting'), findsOneWidget);
     await hold(tester);
 
-    // 8 ── a second message, then reorder inside the tray.
+    // 7 ── a second message, then reorder inside the tray.
     await sendComposerText(tester, 'and squash the migration');
     await pumpUntil(tester, find.text('2 messages waiting'));
     await hold(tester);
@@ -172,7 +151,7 @@ void main() {
     );
     await hold(tester);
 
-    // 9 ── promote: the one action only this branch has. It stops the turn in
+    // 8 ── promote: the one action only this branch has. It stops the turn in
     // flight (the SLOW task never finishes) so THIS message goes next, and the
     // other stays queued — where `cancel` would have dropped both.
     await tester.tap(

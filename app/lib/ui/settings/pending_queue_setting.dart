@@ -31,10 +31,10 @@ class PendingQueuePlacementSetting extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Where a message you sent while the agent was busy waits. In the '
-              'transcript it sits in the conversation and scrolls away with it; '
-              'above the composer it stays put. The compact tray trades the '
-              'conversation look for a work list.',
+              'How a message you sent while the agent was busy is shown while it '
+              'waits. Both sit above the composer, where they cannot scroll away: '
+              'hollow bubbles in the conversation\'s own column, or a compact '
+              'work list.',
             ),
             const SizedBox(height: kSpace8),
             Align(
@@ -45,10 +45,6 @@ class PendingQueuePlacementSetting extends ConsumerWidget {
                   ButtonSegment(
                     value: PendingQueuePlacement.pinned,
                     label: Text('Above the composer'),
-                  ),
-                  ButtonSegment(
-                    value: PendingQueuePlacement.inline,
-                    label: Text('In the transcript'),
                   ),
                   ButtonSegment(
                     value: PendingQueuePlacement.tray,

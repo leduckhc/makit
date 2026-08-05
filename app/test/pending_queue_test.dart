@@ -362,4 +362,62 @@ void main() {
       reason: 'a three-word message should not need half the pane',
     );
   });
+
+  testWidgets('the bubble is hollow — outline only, no fill', (tester) async {
+    await tester.pumpWidget(_host([_q('q1', 'ship it')], _Calls()));
+    await tester.pumpAndSettle();
+
+    // Hollow is the whole visual distinction from a SENT message: same column,
+    // same shape, no fill. A filled bubble reads as "already said".
+    final box = tester.widget<Container>(
+      find
+          .descendant(
+            of: find.byType(PendingBubble),
+            matching: find.byType(Container),
+          )
+          .first,
+    );
+    final decoration = box.decoration as BoxDecoration;
+    expect(
+      decoration.color,
+      anyOf(isNull, const Color(0x00000000)),
+      reason: 'a pending bubble must not be filled like a sent one',
+    );
+    expect(decoration.border, isNotNull, reason: 'the outline carries it');
+  });
+
+  testWidgets('the four controls sit together, not spread across the bubble', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host([_q('q1', 'ship it'), _q('q2', 'then this')], _Calls()),
+    );
+    await tester.pumpAndSettle();
+
+    Rect rectFor(String tooltip) => tester.getRect(
+      find
+          .descendant(
+            of: find.byType(PendingBubble).first,
+            matching: find.byTooltip(tooltip),
+          )
+          .first,
+    );
+
+    final order = [
+      rectFor('Send this sooner'),
+      rectFor('Send this later'),
+      rectFor('Stop the current turn and send this now'),
+      rectFor('Cancel this message'),
+    ];
+    for (var i = 1; i < order.length; i++) {
+      final gap = order[i].left - order[i - 1].right;
+      expect(
+        gap,
+        lessThanOrEqualTo(2.0),
+        reason:
+            'control $i sits ${gap.toStringAsFixed(0)}px from its neighbour; '
+            'the group used to straddle the text with 8px gaps',
+      );
+    }
+  });
 }

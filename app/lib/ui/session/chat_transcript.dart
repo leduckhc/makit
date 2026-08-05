@@ -18,8 +18,6 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/elicitation.dart';
 import '../../store/models.dart';
-import '../composer/pending_queue.dart';
-import '../composer/pending_queue_slot.dart';
 import '../widgets/glass.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
@@ -235,10 +233,6 @@ class TranscriptTrailerRow extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     mainAxisSize: MainAxisSize.min,
     children: [
-      PendingQueueSlot(
-        sessionId: sessionId,
-        slot: PendingQueuePlacement.inline,
-      ),
       if (trailer == TranscriptTrailer.ask && ask != null) AskCard(ask: ask!),
       if (trailer == TranscriptTrailer.working) const WorkingIndicator(),
     ],

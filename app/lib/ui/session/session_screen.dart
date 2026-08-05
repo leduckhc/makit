@@ -103,12 +103,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       running: session?.status == SessionStatus.running,
       awaiting: pendingAsk != null,
     );
-    // SPEC-38: an inline queue keeps the trailer alive even when the agent has
-    // gone idle with messages still pending — otherwise the row (and every
-    // index shifted by it) would disappear under the user.
-    final hasTrailer =
-        trailer != TranscriptTrailer.none ||
-        ref.watch(inlineQueueVisibleProvider(widget.sessionId));
+    final hasTrailer = trailer != TranscriptTrailer.none;
     // Hand the current transcript shape to the sheet's jumper (read lazily by
     // its callbacks, so this must be the latest build's values).
     _items = items;

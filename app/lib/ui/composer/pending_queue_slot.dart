@@ -14,24 +14,6 @@ import '../../store/store.dart';
 import 'pending_queue.dart';
 import 'pending_queue_tray.dart';
 
-/// Whether the inline (in-transcript) queue has anything to show for [sessionId].
-///
-/// The transcript needs this *before* it builds rows: the trailer row occupies
-/// index 0 of the reversed list, and `transcriptChildIndexFinder` shifts every
-/// other index by it (SPEC-21/34). An inline queue must therefore be counted in
-/// `hasTrailer`, or the trailer would vanish the moment the agent goes idle with
-/// messages still pending.
-final inlineQueueVisibleProvider = Provider.family<bool, String>((
-  ref,
-  sessionId,
-) {
-  if (ref.watch(pendingQueuePlacementProvider) !=
-      PendingQueuePlacement.inline) {
-    return false;
-  }
-  return ref.watch(queuedMessagesProvider(sessionId)).isNotEmpty;
-});
-
 /// Renders the session's pending queue when the user's placement preference
 /// matches this instance's [slot]; builds nothing otherwise.
 class PendingQueueSlot extends ConsumerWidget {
@@ -50,11 +32,10 @@ class PendingQueueSlot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Compare mount points, not placements: `tray` renders in the `pinned`
-    // slot, so a slot must ask "does the chosen placement live HERE", not "is it
-    // literally me".
+    // Both placements live in this one mount point (above the composer), so the
+    // slot only decides WHICH of them renders.
     final placement = ref.watch(pendingQueuePlacementProvider);
-    if (placement.mountPoint != slot) return const SizedBox.shrink();
+    if (placement != slot) return const SizedBox.shrink();
     final queued = ref.watch(queuedMessagesProvider(sessionId));
     if (queued.isEmpty) return const SizedBox.shrink();
 

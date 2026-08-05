@@ -22,31 +22,19 @@ import '../session/chat_metrics.dart';
 import 'slash_palette.dart';
 
 /// Where the pending queue is rendered.
+/// Where (and how) a pending mid-turn message is shown.
+///
+/// There were three; `inline` — the queue living in the transcript's trailer row
+/// — is gone. It was the placement that had to touch SPEC-21's anchoring and
+/// SPEC-34's index map to exist at all, and it bought nothing the pinned bubbles
+/// do not: a queue that scrolls away is a queue you forget you armed.
 enum PendingQueuePlacement {
-  /// Directly above the composer field — always visible, never scrolls away.
+  /// Hollow ghost bubbles directly above the composer — always visible.
   pinned,
 
-  /// At the end of the transcript (its trailer row), in the conversation flow —
-  /// scrolls with the conversation, so it can leave the viewport.
-  inline,
-
-  /// A compact work list above the composer (mockup variant C) — tighter than
-  /// the bubbles, and the only presentation that offers **promote**: stop the
-  /// current turn and send this message now.
+  /// A compact work list above the composer (mockup variant C): tighter than the
+  /// bubbles, same actions.
   tray,
-}
-
-/// Where a placement actually mounts.
-///
-/// [PendingQueuePlacement] mixes two questions — *where* the queue lives and
-/// *how* it looks — because the user picks one thing, not two. This collapses it
-/// back to the only question the mount points care about: `tray` and `pinned`
-/// both live above the composer, `inline` lives in the transcript.
-extension PendingQueueMount on PendingQueuePlacement {
-  /// The slot this placement renders in.
-  PendingQueuePlacement get mountPoint => this == PendingQueuePlacement.inline
-      ? PendingQueuePlacement.inline
-      : PendingQueuePlacement.pinned;
 }
 
 /// A stack of [PendingBubble]s, oldest (next to send) first.
@@ -262,8 +250,10 @@ class _PendingBubbleState extends State<PendingBubble> {
             ),
             child: Container(
               decoration: BoxDecoration(
-                color: cs.surfaceContainerHigh,
-                // Dashed border signals "not sent yet".
+                // HOLLOW on purpose: same column, same shape and same corner
+                // notch as ChatBubble.user, but no fill. That single difference
+                // is what separates "waiting to send" from "already sent" —
+                // filling it made a pending message read as a sent one.
                 border: Border.all(
                   color: editing ? cs.primary : cs.outlineVariant,
                   width: 1,
@@ -283,15 +273,6 @@ class _PendingBubbleState extends State<PendingBubble> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Reorder lives inside the bubble, but as a compact side-by-side
-                  // pair: it was dropped when the bubble was slimmed down, which
-                  // took ↑↓ (and SPEC-38's reorder) with it.
-                  if (!editing)
-                    _OrderControls(
-                      canMoveUp: widget.position > 0,
-                      canMoveDown: widget.position < widget.total - 1,
-                      onMove: widget.onMove,
-                    ),
                   Flexible(
                     child: editing
                         ? TextField(
@@ -331,29 +312,39 @@ class _PendingBubbleState extends State<PendingBubble> {
                       ),
                     ),
                   ],
-                  // Hidden (not disabled) while editing: the server has not
-                  // seen the new text, so promoting would interrupt the turn to
-                  // deliver the OLD message.
-                  if (!editing)
-                    IconButton(
-                      onPressed: widget.onPromote,
+                  // ONE tight group, all four the same size, no gaps: ↑↓ used to
+                  // sit on the far side of the text from ⤒✕, so on any message
+                  // longer than a word the controls read as two unrelated pairs.
+                  if (!editing) ...[
+                    _BubbleAction(
+                      icon: PhosphorIconsLight.caretUp,
+                      tooltip: 'Send this sooner',
+                      onTap: widget.position > 0
+                          ? () => widget.onMove(-1)
+                          : null,
+                    ),
+                    _BubbleAction(
+                      icon: PhosphorIconsLight.caretDown,
+                      tooltip: 'Send this later',
+                      onTap: widget.position < widget.total - 1
+                          ? () => widget.onMove(1)
+                          : null,
+                    ),
+                    // Hidden (not disabled) while editing: the server has not
+                    // seen the new text, so promoting would interrupt the turn
+                    // to deliver the OLD message.
+                    _BubbleAction(
+                      icon: PhosphorIconsLight.arrowLineUp,
                       tooltip: 'Stop the current turn and send this now',
-                      visualDensity: VisualDensity.compact,
-                      iconSize: 14,
-                      icon: Icon(
-                        PhosphorIconsLight.arrowLineUp,
-                        color: cs.onSurfaceVariant,
-                      ),
+                      onTap: widget.onPromote,
                     ),
-                  IconButton(
-                    onPressed: editing ? _commit : widget.onCancel,
+                  ],
+                  _BubbleAction(
+                    icon: editing
+                        ? PhosphorIconsLight.check
+                        : PhosphorIconsLight.x,
                     tooltip: editing ? 'Done' : 'Cancel this message',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 14,
-                    icon: Icon(
-                      editing ? PhosphorIconsLight.check : PhosphorIconsLight.x,
-                      color: cs.onSurfaceVariant,
-                    ),
+                    onTap: editing ? _commit : widget.onCancel,
                   ),
                 ],
               ),
@@ -374,53 +365,49 @@ class _PendingBubbleState extends State<PendingBubble> {
   }
 }
 
-/// The ↑ / ↓ order controls. Buttons rather than a drag handle on purpose
-/// (SPEC-38 decision 6): both placements sit inside or beside a scrollable, and
-/// on a phone a drag there fights the scroller.
-class _OrderControls extends StatelessWidget {
-  const _OrderControls({
-    required this.canMoveUp,
-    required this.canMoveDown,
-    required this.onMove,
+/// One control inside a ghost bubble: ↑, ↓, ⤒ or ✕.
+///
+/// All four are the same 26px box so the group reads as a group. **Known
+/// tradeoff:** that is under the 44px platform minimum for a touch target. A
+/// ghost bubble has to read as the message it will become (SPEC-38), and 44px
+/// boxes made it more than twice the height of the sent bubble. The text itself
+/// is a full-height target for the primary action (edit), and every action here
+/// is reversible.
+///
+/// Buttons, not a drag handle, for reordering (SPEC-38 decision 6): both
+/// placements sit inside or beside a scrollable, where a drag fights the
+/// scroller on a phone.
+class _BubbleAction extends StatelessWidget {
+  const _BubbleAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
   });
 
-  final bool canMoveUp;
-  final bool canMoveDown;
-  final ValueChanged<int> onMove;
+  final IconData icon;
+  final String tooltip;
+
+  /// Null renders the control dimmed and inert (e.g. ↑ on the first message).
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    Widget arrow(IconData icon, bool enabled, int delta, String tip) => Tooltip(
-      message: tip,
+    return Tooltip(
+      message: tooltip,
       child: InkWell(
-        onTap: enabled ? () => onMove(delta) : null,
-        // 30px, side by side.
-        //
-        // **Known tradeoff.** 44px is the platform minimum touch target and this
-        // is under it. A ghost bubble has to read as the message it will become,
-        // and a stacked pair of 44px targets made it 128px tall against the sent
-        // bubble's 58px — a control panel, not a message. The text itself stays a
-        // full-height target for the primary action (edit), and every action here
-        // is reversible.
+        onTap: onTap,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
           child: Center(
             child: Icon(
               icon,
-              size: 11,
-              color: enabled ? cs.onSurfaceVariant : cs.outlineVariant,
+              size: 12,
+              color: onTap == null ? cs.outlineVariant : cs.onSurfaceVariant,
             ),
           ),
         ),
       ),
-    );
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        arrow(PhosphorIconsLight.caretUp, canMoveUp, -1, 'Send this sooner'),
-        arrow(PhosphorIconsLight.caretDown, canMoveDown, 1, 'Send this later'),
-      ],
     );
   }
 }

@@ -1,5 +1,14 @@
 # SPEC-38 — Pending queue: editable, reorderable, two placements
 
+> **Superseded in part by SPEC-37.** The `inline` placement described below — the
+> queue rendered inside the transcript's trailer row — was **removed**: it was the
+> only placement that had to touch SPEC-21's anchoring and SPEC-34's index map,
+> and a queue that scrolls out of view is a queue you forget you armed. The
+> preference now chooses between hollow ghost bubbles and the compact tray, both
+> above the composer. Everything about editing, reordering and the slash palette
+> still stands, and the trailer-row reasoning is kept because it is why `inline`
+> looked cheap.
+>
 > **Renumbered from SPEC-36.** `main` landed a different SPEC-36 (computer use,
 > `2026-08-04-SPEC-36-computer-use.md`) while this branch was open, so two specs
 > claimed the number and every `SPEC-36` in the code was ambiguous. This one moved

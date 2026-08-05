@@ -225,11 +225,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       if (next == null || !next.freeText) _answerController.clear();
     });
     final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
-    // SPEC-38: an inline pending queue keeps the trailer row alive even once the
-    // agent is idle, so the index shift stays stable while messages wait.
-    final hasTrailer =
-        trailer != TranscriptTrailer.none ||
-        ref.watch(inlineQueueVisibleProvider(sessionId));
+    final hasTrailer = trailer != TranscriptTrailer.none;
 
     return Column(
       children: [
