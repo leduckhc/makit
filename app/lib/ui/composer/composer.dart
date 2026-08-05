@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -173,7 +174,16 @@ class _ComposerState extends State<Composer> {
       widget.controller ?? TextEditingController();
   late final FocusNode _focus = widget.focusNode ?? FocusNode();
   final _fieldKey = GlobalKey(); // stable element across compact↔expanded swap
+  /// Anchors the slash palette to the composer box: it floats in the app's
+  /// [Overlay] instead of sitting in this Column, so opening it never resizes
+  /// the transcript above (desktop) or the bottom stack (mobile).
+  final _paletteLink = LayerLink();
+  final _paletteController = OverlayPortalController();
+  final _boxKey = GlobalKey(); // composer box, measured to cap palette height
   bool _showSlash = false;
+
+  /// Highlighted row in the palette, driven by ↑/↓ and picked by Tab.
+  int _slashIndex = 0;
   bool _hasText = false;
   bool _isFocused = false;
 
@@ -202,15 +212,83 @@ class _ComposerState extends State<Composer> {
   void _onFocusChanged() {
     final focused = _focus.hasFocus;
     if (focused != _isFocused) setState(() => _isFocused = focused);
+    // A popover anchored to a composer the user has just left (on mobile it
+    // collapses back to one line) would hang over the transcript with nothing
+    // to type into.
+    if (!focused && _showSlash) {
+      setState(() => _showSlash = false);
+      _syncPalette();
+    }
   }
 
   void _onChanged(String value) {
     // Show palette while the user is typing the command name itself
     // (everything up to the first whitespace).
     final showSlash = value.startsWith('/') && !value.contains(RegExp(r'\s'));
-    // Always rebuild while the palette is (or becomes) open so the filter
-    // prop on SlashPalette reflects the latest text.
-    setState(() => _showSlash = showSlash);
+    // Always rebuild while the palette is (or becomes) open so the matches and
+    // the overlay's position reflect the latest text.
+    setState(() {
+      _showSlash = showSlash;
+      // The match list changed under the highlight; start from the best match.
+      _slashIndex = 0;
+    });
+    _syncPalette();
+  }
+
+  /// Mirrors [_showSlash] onto the overlay. Called after the `setState`s that
+  /// flip it, never during build (the controller mutates the portal's state).
+  void _syncPalette() {
+    if (_showSlash && !_paletteController.isShowing) {
+      _paletteController.show();
+    } else if (!_showSlash && _paletteController.isShowing) {
+      _paletteController.hide();
+    }
+  }
+
+  /// The commands the palette is currently showing, in its order — shared with
+  /// the palette so Tab can never pick a different row than the highlighted one.
+  List<SlashCmd> get _slashMatches =>
+      filterSlashCommands(_ctrl.text, widget.commands);
+
+  /// [_slashIndex] clamped to [count] rows. The agent can re-push a shorter
+  /// command list with no keystroke to reset the raw index, which would leave
+  /// the palette with nothing highlighted while Tab still committed a row. Both
+  /// readers go through here so they cannot disagree.
+  int _selectedIndex(int count) =>
+      count == 0 ? 0 : _slashIndex.clamp(0, count - 1);
+
+  /// ↑/↓ move the highlight (wrapping), Tab picks it, Esc dismisses. Handled
+  /// here, above the field, so these keys reach the palette before the text
+  /// field's caret movement and the app's Tab focus traversal claim them.
+  KeyEventResult _onPaletteKey(FocusNode _, KeyEvent event) {
+    if (!_showSlash) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.escape) {
+      setState(() => _showSlash = false);
+      _syncPalette();
+      return KeyEventResult.handled;
+    }
+    final matches = _slashMatches;
+    if (matches.isEmpty) return KeyEventResult.ignored;
+    final index = _selectedIndex(matches.length);
+    if (key == LogicalKeyboardKey.arrowDown) {
+      setState(() => _slashIndex = (index + 1) % matches.length);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowUp) {
+      setState(
+        () => _slashIndex = (index - 1 + matches.length) % matches.length,
+      );
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.tab) {
+      _onSlashPicked(matches[index].invocation);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   /// Whether there is something to send: text, or at least one stored image.
@@ -248,12 +326,18 @@ class _ComposerState extends State<Composer> {
     // Dismiss the composer + keyboard so focus returns to the chat content.
     _focus.unfocus();
     setState(() => _showSlash = false);
+    _syncPalette();
   }
 
   void _onSlashPicked(String cmd) {
     _ctrl.text = '$cmd ';
     _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
     setState(() => _showSlash = false);
+    _syncPalette();
+    // Restore focus: when the palette row is tapped (on desktop), the
+    // pointer-down outside the TextField unfocuses it before onTap fires.
+    // Re-focus here so the user can continue typing immediately.
+    _focus.requestFocus();
   }
 
   /// Whether to show the full (multiline + footer) form: always on desktop,
@@ -273,47 +357,111 @@ class _ComposerState extends State<Composer> {
         : cs.surfaceContainerHigh;
     return SafeArea(
       top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_showSlash)
-            SlashPalette(
-              filter: _ctrl.text,
-              commands: widget.commands,
-              onPick: _onSlashPicked,
-            ),
-          // Shown even when the composer is disabled (awaiting an inline
-          // answer): the attachments still exist and may still be uploading, so
-          // hiding them would strand un-removable, invisible work.
-          if (_staged.isNotEmpty)
-            AttachmentChips(
-              attachments: _staged,
-              onRemove: widget.attachments!.remove,
-              onRetry: widget.attachments!.retry,
-            ),
-          Container(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
-            decoration: widget.glass ? null : BoxDecoration(color: cs.surface),
-            child: AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.bottomCenter,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: boxColor,
-                  borderRadius: BorderRadius.circular(kRadius16),
+      child: LayoutBuilder(
+        // The composer's own width, handed to the overlaid palette so the
+        // popover lines up with the box it belongs to.
+        builder: (context, constraints) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Shown even when the composer is disabled (awaiting an inline
+            // answer): the attachments still exist and may still be uploading, so
+            // hiding them would strand un-removable, invisible work.
+            if (_staged.isNotEmpty)
+              AttachmentChips(
+                attachments: _staged,
+                onRemove: widget.attachments!.remove,
+                onRetry: widget.attachments!.retry,
+              ),
+            OverlayPortal(
+              controller: _paletteController,
+              overlayChildBuilder: (ctx) =>
+                  _buildPalette(ctx, constraints.maxWidth),
+              child: CompositedTransformTarget(
+                link: _paletteLink,
+                child: Container(
+                  key: _boxKey,
+                  padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+                  decoration: widget.glass
+                      ? null
+                      : BoxDecoration(color: cs.surface),
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: boxColor,
+                        borderRadius: BorderRadius.circular(kRadius16),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: kSpace4,
+                        vertical: kSpace4,
+                      ),
+                      child: !widget.enabled
+                          ? _buildDisabled(cs)
+                          : (_expanded
+                                ? _buildExpanded(cs)
+                                : _buildCompact(cs)),
+                    ),
+                  ),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: kSpace4,
-                  vertical: kSpace4,
-                ),
-                child: !widget.enabled
-                    ? _buildDisabled(cs)
-                    : (_expanded ? _buildExpanded(cs) : _buildCompact(cs)),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The slash palette, floating in the [Overlay] with its bottom edge pinned
+  /// to the top of the composer box.
+  ///
+  /// Its height is capped to the space actually free above the composer (which
+  /// already excludes the keyboard, since the composer sits above it) — the old
+  /// half-the-screen cap ignored the keyboard and the safe area and pushed the
+  /// first, best-matching rows off the top of the screen on a phone.
+  ///
+  /// Two ceilings, because "don't cover the bar" and "stay on screen" are not
+  /// equally important. Normally the popover also clears the mobile floating
+  /// glass bar, which it renders *above* (it is in the app's [Overlay]). When
+  /// that leaves less than one row, it may cover the bar — briefly, while
+  /// picking a command — but it must never cross the hard ceiling and go
+  /// off-screen, and when even that has no room for a row it does not render.
+  Widget _buildPalette(BuildContext ctx, double width) {
+    final box = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    // No measurement, no popover: a guessed height is how the old code pushed
+    // rows off-screen. Unreachable in practice — the palette only opens into an
+    // already-laid-out composer — so there is nothing to fall back for.
+    if (box == null || !box.hasSize) return const SizedBox.shrink();
+    final media = MediaQuery.of(ctx);
+    final composerTop = box.localToGlobal(Offset.zero).dy;
+    final onScreen = composerTop - media.padding.top - kSpace8;
+    if (onScreen < kSlashRowHeight) return const SizedBox.shrink();
+    final belowTopBar = onScreen - kToolbarHeight;
+    final maxHeight = math.min(
+      kSlashPaletteMaxHeight,
+      math.max(belowTopBar, kSlashRowHeight),
+    );
+    return Align(
+      // The overlay lays its children out tightly to the whole screen; aligning
+      // loosens that so the popover below can size to its own content and
+      // honour the width/height caps (and so the follower anchors to the
+      // popover's own bottom edge, not the screen's).
+      alignment: Alignment.topLeft,
+      child: CompositedTransformFollower(
+        link: _paletteLink,
+        targetAnchor: Alignment.topLeft,
+        followerAnchor: Alignment.bottomLeft,
+        offset: const Offset(0, -kSpace4),
+        child: SizedBox(
+          width: width,
+          child: SlashPalette(
+            matches: _slashMatches,
+            selectedIndex: _selectedIndex(_slashMatches.length),
+            maxHeight: maxHeight,
+            onPick: _onSlashPicked,
           ),
-        ],
+        ),
       ),
     );
   }
@@ -564,62 +712,71 @@ class _ComposerState extends State<Composer> {
   }
 
   Widget _buildField() {
-    return Shortcuts(
-      shortcuts: _shortcuts(),
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          _SendIntent: CallbackAction<_SendIntent>(
-            onInvoke: (_) {
-              _send();
-              return null;
-            },
-          ),
-          _NewlineIntent: CallbackAction<_NewlineIntent>(
-            onInvoke: (_) {
-              _insertNewline();
-              return null;
-            },
-          ),
-          _PasteIntent: CallbackAction<_PasteIntent>(
-            onInvoke: (_) {
-              unawaited(_handlePaste());
-              return null;
-            },
-          ),
-        },
-        child: ScrollConfiguration(
-          // Hide the input's scrollbar; the field still scrolls once it grows
-          // past its max line count.
-          behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-          child: TextField(
-            key:
-                _fieldKey, // stable element across compact↔expanded reparenting
-            controller: _ctrl,
-            focusNode: _focus,
-            // Compact = exactly 1 line; expanded starts 3 rows tall and
-            // auto-grows with the caret up to a max, then scrolls internally.
-            // The max is trimmed to 6 lines on narrow viewports (<600px) so the
-            // composer can't eat the transcript on small windows/phones.
-            minLines: _expanded ? 3 : 1,
-            maxLines: _expanded
-                ? (MediaQuery.of(context).size.width < 600 ? 6 : 10)
-                : 1,
-            textCapitalization: TextCapitalization.sentences,
-            // Return behavior is driven by _shortcuts(): unconfigured (mobile)
-            // keeps the native Return-inserts-newline action, with sending via
-            // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
-            // configured (desktop), Return itself may send instead.
-            textInputAction: TextInputAction.newline,
-            onChanged: _onChanged,
-            // Transparent: the shared composer box supplies the background, so
-            // the field, selectors, [+] and send all sit on one static surface.
-            decoration: const InputDecoration(
-              hintText: 'Message…',
-              filled: false,
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: kSpace8,
-                vertical: kSpace10,
+    return Focus(
+      // Palette keys only; this node never takes focus itself, it just sits in
+      // the field's focus chain so it sees keys first.
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: _onPaletteKey,
+      child: Shortcuts(
+        shortcuts: _shortcuts(),
+        child: Actions(
+          actions: <Type, Action<Intent>>{
+            _SendIntent: CallbackAction<_SendIntent>(
+              onInvoke: (_) {
+                _send();
+                return null;
+              },
+            ),
+            _NewlineIntent: CallbackAction<_NewlineIntent>(
+              onInvoke: (_) {
+                _insertNewline();
+                return null;
+              },
+            ),
+            _PasteIntent: CallbackAction<_PasteIntent>(
+              onInvoke: (_) {
+                unawaited(_handlePaste());
+                return null;
+              },
+            ),
+          },
+          child: ScrollConfiguration(
+            // Hide the input's scrollbar; the field still scrolls once it grows
+            // past its max line count.
+            behavior: ScrollConfiguration.of(
+              context,
+            ).copyWith(scrollbars: false),
+            child: TextField(
+              key:
+                  _fieldKey, // stable element across compact↔expanded reparenting
+              controller: _ctrl,
+              focusNode: _focus,
+              // Compact = exactly 1 line; expanded starts 3 rows tall and
+              // auto-grows with the caret up to a max, then scrolls internally.
+              // The max is trimmed to 6 lines on narrow viewports (<600px) so the
+              // composer can't eat the transcript on small windows/phones.
+              minLines: _expanded ? 3 : 1,
+              maxLines: _expanded
+                  ? (MediaQuery.of(context).size.width < 600 ? 6 : 10)
+                  : 1,
+              textCapitalization: TextCapitalization.sentences,
+              // Return behavior is driven by _shortcuts(): unconfigured (mobile)
+              // keeps the native Return-inserts-newline action, with sending via
+              // the send button or ⌘/Ctrl+Enter; when sendChord/newlineChord are
+              // configured (desktop), Return itself may send instead.
+              textInputAction: TextInputAction.newline,
+              onChanged: _onChanged,
+              // Transparent: the shared composer box supplies the background, so
+              // the field, selectors, [+] and send all sit on one static surface.
+              decoration: const InputDecoration(
+                hintText: 'Message…',
+                filled: false,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: kSpace8,
+                  vertical: kSpace10,
+                ),
               ),
             ),
           ),
