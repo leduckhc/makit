@@ -218,6 +218,81 @@ void main() {
       );
     });
 
+    // Mirrors SessionScreen's mobile layout: the transcript unfocuses the
+    // composer when tapped, and the composer floats at the bottom of a Stack.
+    // A palette tap must reach the row, not that GestureDetector.
+    Widget wrapMobile(Widget composer) => MaterialApp(
+      home: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: const ColoredBox(color: Color(0xFF000000)),
+            ),
+            Positioned(left: 0, right: 0, bottom: 0, child: composer),
+          ],
+        ),
+      ),
+    );
+
+    testWidgets('tapping a row picks it on iOS, keeping the keyboard up', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      await tester.pumpWidget(
+        wrapMobile(const Composer(onSend: _noop, commands: commands)),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '/fix');
+      await tester.pumpAndSettle();
+
+      // Frames between touch-down and lift-off, as on a real finger.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('/fix-tests')),
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '/fix-tests ',
+      );
+      // The overlay row absorbed the touch: the transcript's unfocus-on-tap
+      // never ran, so the keyboard stays up for the command's arguments.
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+        isTrue,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('tapping the transcript on iOS closes the palette', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+      await tester.pumpWidget(
+        wrapMobile(const Composer(onSend: _noop, commands: commands)),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '/fix');
+      await tester.pumpAndSettle();
+      expect(find.byType(SlashPalette), findsOneWidget);
+
+      // Esc does not exist on a phone, so tapping away is the only dismissal.
+      await tester.tapAt(const Offset(200, 100));
+      await tester.pumpAndSettle();
+      expect(find.byType(SlashPalette), findsNothing);
+
+      debugDefaultTargetPlatformOverride = null;
+    });
+
     testWidgets('clicking a row picks it on desktop, where a pointer down '
         'outside a TextField unfocuses it', (tester) async {
       // The palette lives in the Overlay, i.e. outside the field's TapRegion.
