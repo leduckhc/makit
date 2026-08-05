@@ -106,3 +106,16 @@ test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-38)", asyn
     "the turn still produces a reply",
   );
 });
+
+test("a plain echo is a whole turn (running → idle), so a queue keeps draining", async () => {
+  const a = new StubAdapter();
+  const statuses: string[] = [];
+  a.on("status", (s: string) => statuses.push(s));
+  await a.start({ cwd: process.cwd(), sessionId: "s-turn" });
+  statuses.length = 0;
+
+  await a.send({ text: "hello" });
+  await new Promise((r) => setTimeout(r, 120));
+
+  assert.deepEqual(statuses, ["running", "idle"]);
+});

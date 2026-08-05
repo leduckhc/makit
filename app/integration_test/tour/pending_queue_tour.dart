@@ -14,7 +14,10 @@
 //   4. edit one in place, and open the slash palette inside the editor
 //   5. cancel one
 //   6. switch the placement setting to "In the transcript" and see it move
-//   7. let the turn finish and watch the survivor flush into a real message
+//   7. switch it again to "Compact tray" — mockup variant C, the work-list look
+//   8. queue another message and reorder inside the tray
+//   9. ⤒ promote: interrupt the running turn so THAT message is sent next, and
+//      watch the rest of the queue survive behind it (SPEC-37)
 //
 // Each step holds still for a beat so the recording is watchable, and asserts
 // just enough that a broken step fails the run instead of filming a blank
@@ -23,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:makit/ui/composer/pending_queue.dart';
+import 'package:makit/ui/composer/pending_queue_tray.dart';
 
 import '../e2e_helpers.dart';
 
@@ -137,18 +141,56 @@ void main() {
     );
     await hold(tester);
 
-    // 7 ── the turn ends and the survivor flushes: ghost becomes a real message.
+    // 7 ── the tray (variant C): the same queue as a compact work list.
+    await openSettings(tester);
+    await tester.scrollUntilVisible(
+      find.text('Compact tray'),
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await hold(tester, const Duration(milliseconds: 700));
+    await tester.tap(find.text('Compact tray'));
+    await hold(tester);
+    await closeSettings(tester);
+    await openSessionContaining(tester, 'upload route');
+    await pumpUntil(tester, find.byType(PendingQueueTray));
+    expect(find.text('1 message waiting'), findsOneWidget);
+    await hold(tester);
+
+    // 8 ── a second message, then reorder inside the tray.
+    await sendComposerText(tester, 'and squash the migration');
+    await pumpUntil(tester, find.text('2 messages waiting'));
+    await hold(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('and squash the migration'),
+          matching: find.byType(TrayRow),
+        ),
+        matching: find.byTooltip('Send this sooner'),
+      ),
+    );
+    await hold(tester);
+
+    // 9 ── promote: the one action only this branch has. It stops the turn in
+    // flight (the SLOW task never finishes) so THIS message goes next, and the
+    // other stays queued — where `cancel` would have dropped both.
+    await tester.tap(
+      find.byTooltip('Stop the current turn and send this now').first,
+    );
     await pumpUntil(
       tester,
-      find.textContaining('done after'),
-      timeout: const Duration(seconds: 120),
+      find.textContaining('echo: and squash the migration'),
+      timeout: const Duration(seconds: 30),
     );
+    await hold(tester);
+    // The survivor is still pending, and flushes on its own turn.
     await pumpUntil(
       tester,
       find.textContaining('echo: also update the README and CHANGELOG'),
       timeout: const Duration(seconds: 30),
     );
-    expect(find.byType(PendingBubble), findsNothing, reason: 'queue drained');
+    expect(find.byType(TrayRow), findsNothing, reason: 'queue drained');
     await hold(tester, const Duration(seconds: 2));
   });
 }

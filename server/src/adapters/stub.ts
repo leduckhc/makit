@@ -172,12 +172,18 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }
 
 
+    // A turn, not just a reply: running → echo → idle, like every real adapter.
+    // Without the idle the SESSION never gets the transition that flushes the
+    // next queued message, so a queue of two stalled after the first — visible
+    // only in the live loop (the unit tests drive `idle` by hand).
+    this.emit("status", "running");
     setTimeout(() => {
       this.emitEvent({
         ts: Date.now(),
         kind: "agent.message",
         payload: { text: `echo: ${prompt}` },
       });
+      this.emit("status", "idle");
     }, echoDelayMs);
   }
 
