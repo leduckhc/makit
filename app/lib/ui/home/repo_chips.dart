@@ -296,3 +296,49 @@ String branchAgeLabel(DateTime? committedAt) {
   if (d.inDays < 365) return '${(d.inDays / 30).floor()}mo ago';
   return '${(d.inDays / 365).floor()}y ago';
 }
+
+/// What a worktree's accent bar says about it (SPEC-19, direction C). Ordered
+/// by urgency; [worktreeAccent] resolves a worktree's sessions to one of these.
+enum WorktreeAccent {
+  /// A session is blocked on the user — approve a tool call, answer a question.
+  wantsYou,
+
+  /// A session ended badly and nobody has looked at it.
+  failed,
+
+  /// An agent is working. Nothing for the user to do yet.
+  working,
+
+  /// Nothing running; the branch is just sitting there.
+  none,
+}
+
+/// Resolve the accent for a worktree from the sessions living in it.
+///
+/// Precedence is deliberate: a request for the user always wins, because the bar
+/// exists to be scanned down a long list and "someone is waiting on me" is the
+/// only state with a deadline. A failure outranks progress for the same reason.
+/// Drafts are excluded — a pending session has not started, so colouring its
+/// branch would promise activity that isn't there.
+WorktreeAccent worktreeAccent(List<Session> sessions) {
+  var failed = false;
+  var working = false;
+  for (final s in sessions) {
+    if (s.pending) continue;
+    switch (s.status) {
+      case SessionStatus.awaitingInput:
+      case SessionStatus.awaitingApproval:
+        return WorktreeAccent.wantsYou; // nothing outranks this
+      case SessionStatus.error:
+        failed = true;
+      case SessionStatus.running:
+        working = true;
+      case SessionStatus.idle:
+      case SessionStatus.exited:
+        break;
+    }
+  }
+  if (failed) return WorktreeAccent.failed;
+  if (working) return WorktreeAccent.working;
+  return WorktreeAccent.none;
+}

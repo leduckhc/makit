@@ -130,6 +130,10 @@ async function main(): Promise<void> {
       });
       return env as unknown as UIResponse;
     },
+    // Parity with serve.ts (SPEC-37): without this the harness would silently
+    // bypass the pi-usage route, so a real-mode run would "pass" while the
+    // extension's reports went nowhere.
+    onUsage: (sessionId, usage) => manager.getSession(sessionId)?.recordUsage(usage),
   });
   manager.setBridge({
     url: bridge.url,

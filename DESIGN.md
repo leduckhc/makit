@@ -40,9 +40,18 @@ pure grey in `theme.dart`. Values below are `light` / `dark`.
 > is what keeps them hueless.
 
 ### Brand & semantic
-- `--color-primary`: `#4ADE80` · `oklch(80.0% 0.182 151.7)` (seed-derived per
-  mode) — brand green: logo, send button, links, active states,
-  connection/status dot, "ok" check.
+- `--color-primary`: **dark** `#4ADE80` · `oklch(80.0% 0.182 151.7)` (the logo
+  green itself) / **light** `#316a41` · `oklch(43.4% 0.096 154.0)` (seed-derived)
+  — brand green: logo, send button, links, active states, connection/status dot,
+  "ok" check, the repo card's worktree accent bar.
+  Resolved **per mode** in `theme.dart`, and the two modes differ for a reason:
+  `fromSeed` maps the seed to a pale sage (`#98d4a3`) in dark, which reads washed
+  out against the neutral ramp, so dark pins the brand green directly — it
+  already clears AA there (10.3:1 as a label, 7.5:1 for `on-primary` on a primary
+  fill). Light **cannot**: the brand green is only ~1.7:1 on `#FAFAFA`, so it
+  keeps the derived dark green. `kMakitAccent` is the single definition of the
+  brand green (the logo mark reads it too, so logo and `primary` cannot drift).
+  Guarded by `test/theme_contrast_test.dart`.
 - `--color-on-primary`: M3-derived — content on a primary fill.
 - **Status semantics.** Beyond the neutral ramp + brand green, these tuned hues
   are the *only* sanctioned colours (defined in `theme.dart`, read by

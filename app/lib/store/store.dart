@@ -104,6 +104,7 @@ class StoreState {
     required this.commands,
     required this.meta,
     required this.actionErrors,
+    required this.usage,
     this.githubBudget,
     this.metrics = const [],
     this.sessionsLoaded = false,
@@ -118,6 +119,7 @@ class StoreState {
     commands: const {},
     meta: const {},
     actionErrors: const {},
+    usage: const {},
   );
 
   final List<Project> projects;
@@ -135,6 +137,11 @@ class StoreState {
   /// Last action error per session, from `session.action_error`. Used to
   /// surface transient error snackbars without adding chat items.
   final Map<String, ActionError> actionErrors;
+
+  /// Per-session context-window + cost snapshot from `session.usage` (SPEC-37).
+  /// Absent until the agent reports its first reading; pi only reports at all
+  /// when `.pi/extensions/pi-usage` is installed.
+  final Map<String, SessionUsage> usage;
 
   /// Latest GitHub API budget snapshot (SPEC-32), or null until the first
   /// `github.budget` frame arrives. A fresh client renders an `unknown` icon
@@ -159,6 +166,7 @@ class StoreState {
     Map<String, List<SlashCmd>>? commands,
     Map<String, SessionMeta>? meta,
     Map<String, ActionError>? actionErrors,
+    Map<String, SessionUsage>? usage,
     GithubBudget? githubBudget,
     List<MetricsSample>? metrics,
     bool? sessionsLoaded,
@@ -171,6 +179,7 @@ class StoreState {
     commands: commands ?? this.commands,
     meta: meta ?? this.meta,
     actionErrors: actionErrors ?? this.actionErrors,
+    usage: usage ?? this.usage,
     githubBudget: githubBudget ?? this.githubBudget,
     metrics: metrics ?? this.metrics,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
@@ -242,6 +251,17 @@ StoreState reduceEvent(StoreState state, SessionEvent ev) {
     return state.copyWith(meta: meta, cursors: cursors);
   }
 
+  // session.usage updates the context-usage indicator, not chat (SPEC-37).
+  // Latest-wins by whole-snapshot replacement: every update carries the complete
+  // picture, so merging would resurrect a reading the agent stopped sending.
+  if (ev.kind == EventKind.sessionUsage) {
+    final usage = Map<String, SessionUsage>.from(state.usage);
+    usage[ev.sessionId] = SessionUsage.fromJson(
+      Map<String, dynamic>.from(ev.payload),
+    );
+    return state.copyWith(usage: usage, cursors: cursors);
+  }
+
   // session.action_error carries a transient error from the pi extension.
   // Store the latest per-session so the UI can surface it as a snackbar.
   if (ev.kind == EventKind.sessionActionError) {
@@ -296,6 +316,29 @@ class StoreController extends StateNotifier<StoreState> {
     // (server restart, hot restart, network blip) until the user manually
     // navigates back into the session screen.
     _ref.listen<MakitConnState>(connectionControllerProvider, (prev, next) {
+      // Switching servers invalidates everything cached: repos, sessions and
+      // transcripts all belonged to the old desktop. Snapshots replace wholesale
+      // once they arrive, but until then the list would still show the previous
+      // server's repos — and if the new one is unreachable, indefinitely, with
+      // taps dispatching against sessions that live somewhere else.
+      //
+      // Keyed on the active server, not on the socket: a reconnect to the *same*
+      // server must keep its data, or every network blip would blank the screen.
+      //
+      // Any change of identity counts, including to and from null. Requiring
+      // both sides to be non-null skipped exactly the transitions that matter:
+      // unpair (A -> null) left A's repos cached, and pairing a different
+      // desktop afterwards (null -> C) skipped too, so C inherited A's list.
+      final prevId = prev?.activeServer?.id;
+      final nextId = next.activeServer?.id;
+      if (prevId != nextId) {
+        _subscribed.clear();
+        _awaitingReplay.clear();
+        _replayBuffer.clear();
+        _watchingGithubBudget = false;
+        state = StoreState.empty();
+      }
+
       final wasConnected = prev?.wsState == WsState.connected;
       final nowConnected = next.wsState == WsState.connected;
       if (!wasConnected && nowConnected) {
@@ -1036,6 +1079,16 @@ final sessionMetaProvider = Provider.family<SessionMeta?, String>((
 ) {
   final s = ref.watch(storeControllerProvider);
   return s.meta[sessionId];
+});
+
+/// Latest context-window + cost snapshot for a session (SPEC-37), or null until
+/// the agent reports one. Null must render as "unknown", not as an empty bar.
+final sessionUsageProvider = Provider.family<SessionUsage?, String>((
+  ref,
+  sessionId,
+) {
+  final s = ref.watch(storeControllerProvider);
+  return s.usage[sessionId];
 });
 
 /// Last action error for a session (or null if none has arrived). Changes

@@ -24,11 +24,15 @@ ProviderContainer _container(MakitConnState state) {
   return container;
 }
 
+/// A connection state paired with exactly [s] and connected to it.
+MakitConnState _pairedWith(PairedServer s) =>
+    MakitConnState(servers: [s], activeId: s.id);
+
 void main() {
   test(
     'a loopback self-paired desktop gets a pinned, bearer-authed endpoint',
     () {
-      final c = _container(MakitConnState(server: _server()));
+      final c = _container(_pairedWith(_server()));
       final endpoint = c.read(mediaEndpointProvider)!;
 
       expect(endpoint.base, 'https://127.0.0.1:9787');
@@ -44,7 +48,7 @@ void main() {
   );
 
   test('a phone paired over Tailscale/LAN derives the same shape', () {
-    final c = _container(MakitConnState(server: _server(host: '100.64.0.7')));
+    final c = _container(_pairedWith(_server(host: '100.64.0.7')));
     expect(c.read(mediaEndpointProvider)!.base, 'https://100.64.0.7:9787');
   });
 

@@ -200,13 +200,16 @@ void main() {
 
     const fingerprint = 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99';
     final connected = MakitConnState(
-      server: PairedServer(
-        host: 'h',
-        port: 7788,
-        fingerprint: fingerprint,
-        bearer: 'b',
-        label: 'Mac',
-      ),
+      servers: [
+        PairedServer(
+          host: 'h',
+          port: 7788,
+          fingerprint: fingerprint,
+          bearer: 'b',
+          label: 'Mac',
+        ),
+      ],
+      activeId: fingerprint,
     );
     await _pump(tester, config: await makeConfig(), connection: connected);
 

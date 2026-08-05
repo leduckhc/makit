@@ -204,8 +204,15 @@ void main() {
       ),
       findsOneWidget,
     );
-    // The repo card's meta row counts it as one *open* PR.
-    expect(find.text('1 PR'), findsOneWidget);
+    // The repo card's header counts it as one *open* PR — a compact pill, since
+    // the per-worktree PrPill already spells the number out.
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('openPrCount')),
+        matching: find.text('1'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a merged PR pill reads as merged, not as a live PR', (
@@ -286,7 +293,7 @@ void main() {
     expect(find.text('1 PR'), findsNothing);
   });
 
-  testWidgets('a session under its worktree surfaces a status chip', (
+  testWidgets('a session under its worktree surfaces its status as a dot', (
     tester,
   ) async {
     final repo = _repo(
@@ -311,7 +318,11 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('running'), findsOneWidget);
+    // Same as the desktop sidebar: progress states are the dot's job, so the
+    // word "running" is not also spelled out. The tooltip/semantics keep it
+    // from being a colour-only signal.
+    expect(find.text('running'), findsNothing);
+    expect(find.byTooltip('running'), findsOneWidget);
   });
 
   testWidgets('a pending session shows in a Drafts section with a draft tag', (
@@ -362,7 +373,7 @@ void main() {
 
     expect(find.text('Resume session'), findsNothing);
 
-    await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThreeVertical));
+    await tester.tap(find.byTooltip('Repo actions'));
     await tester.pumpAndSettle();
 
     expect(find.text('New session'), findsWidgets);

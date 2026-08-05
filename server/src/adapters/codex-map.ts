@@ -60,13 +60,52 @@ export class CodexEventMapper {
         if (typeof name === "string" && name.trim()) this.hooks.onTitle?.(name.trim());
         return;
       }
+      case "thread/tokenUsage/updated":
+        this.onTokenUsage(params?.tokenUsage);
+        return;
       case "error": {
         this.emit("session.error", { message: turnErrorText(params?.error) });
         return;
       }
       default:
-        return; // turn/*, plan/delta, token usage, warnings, etc. — ignored for now
+        return; // turn/*, plan/delta, warnings, etc. — ignored for now
     }
+  }
+
+  /**
+   * `thread/tokenUsage/updated` → one `session.usage` snapshot (SPEC-37).
+   *
+   * codex sends this once per turn with BOTH a cumulative `total` and the single
+   * `last` request. Only `last` describes context occupancy: its `inputTokens`
+   * already contains the entire conversation plus the system prompt and tool
+   * definitions, whereas `total` accumulates across turns and would cross 100%
+   * of the window on a long session that never neared compaction. So `last`
+   * feeds `contextTokens` and `total` feeds `totals` (billing), never the
+   * reverse. codex prices nothing, so there is no `cost` on this path.
+   */
+  private onTokenUsage(usage: any): void {
+    const last = usage?.last;
+    if (!last || typeof last.totalTokens !== "number") return;
+    const total = usage.total;
+    const window = usage.modelContextWindow;
+    this.emit("session.usage", {
+      contextTokens: last.totalTokens,
+      // Omitted rather than zeroed when unknown: a 0 window renders as a full bar.
+      ...(typeof window === "number" ? { contextWindow: window } : {}),
+      ...(total
+        ? {
+            totals: {
+              total: total.totalTokens,
+              input: total.inputTokens,
+              cachedInput: total.cachedInputTokens,
+              cacheWrite: total.cacheWriteInputTokens,
+              output: total.outputTokens,
+              reasoning: total.reasoningOutputTokens,
+            },
+          }
+        : {}),
+      measuredAt: Date.now(),
+    });
   }
 
   /** Reset per-turn tool bookkeeping (called by the adapter on turn end). */

@@ -74,6 +74,12 @@ export type EventKind =
   // live consumer; wiring the producer belongs in the `session.action`/`cancel`
   // handlers (server.ts) / session.ts, which are out of this spec's scope.
   | "session.action_error"
+  /**
+   * Context-window + cost snapshot for this session (SPEC-37). Latest-wins:
+   * every update carries the whole picture, so the app keeps only the newest
+   * and replay needs no folding. See {@link SessionUsageDTO}.
+   */
+  | "session.usage"
   /** GitHub API budget snapshot (SPEC-32 §6.6) — a top-level broadcast event. */
   | "github.budget"
   /**
@@ -85,6 +91,59 @@ export type EventKind =
    * for data that is inherently ephemeral. Do not "tidy" it into `SessionEvent`.
    */
   | "metrics.sample";
+
+/**
+ * Normalized context/cost usage for one session (SPEC-37), unified across three
+ * sources that each report a different subset:
+ *
+ * - **codex** `thread/tokenUsage/updated` — full token breakdown + window, no cost.
+ * - **ACP** `usage_update` — `used`/`size`/`cost` only, no breakdown.
+ * - **pi** via `.pi/extensions/pi-usage` over the loopback bridge — pi reports
+ *   nothing over ACP, so the extension reads `ctx.getContextUsage()` itself.
+ *
+ * Hence every field but `measuredAt` is optional, and **absent is not zero**: a
+ * field we never measured must render as unknown, never as `0` (the same rule
+ * {@link GithubBucketDTO} follows — a zeroed bar and an unknown bar mean
+ * opposite things).
+ */
+export interface SessionUsageDTO {
+  /**
+   * Tokens currently occupying the context window — what to draw against
+   * {@link contextWindow}.
+   *
+   * NOTE for codex: this is the LAST request's total, never the session total.
+   * The last request's input already contains the whole conversation plus the
+   * system prompt and tool definitions, whereas the session total accumulates
+   * across turns and would cross 100% of the window on a long session that
+   * never came close to compaction.
+   */
+  contextTokens?: number;
+  /** Context window size in tokens, when the agent reports one. */
+  contextWindow?: number;
+  /**
+   * Cumulative session totals — **billing**, not context occupancy. Deliberately
+   * kept apart from {@link contextTokens} so the two can never be drawn against
+   * the same bar.
+   */
+  totals?: SessionUsageTotals;
+  /** Cumulative session cost, when the agent prices its own calls. */
+  cost?: { amount: number; currency: string };
+  /** Epoch ms this snapshot was measured. */
+  measuredAt: number;
+}
+
+/** Cumulative per-category token counts for a session (SPEC-37). */
+export interface SessionUsageTotals {
+  total?: number;
+  input?: number;
+  /** Input tokens served from the provider's prompt cache. */
+  cachedInput?: number;
+  /** Input tokens written INTO the cache. */
+  cacheWrite?: number;
+  output?: number;
+  /** Reasoning/thinking output tokens, when billed separately. */
+  reasoning?: number;
+}
 
 /**
  * GitHub API budget broadcast (SPEC-32 §6.6). Sent as a top-level

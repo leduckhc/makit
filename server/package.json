@@ -18,7 +18,7 @@
     "dev": "tsx watch src/index.ts serve",
     "start": "tsx src/index.ts serve",
     "build": "tsc -p .",
-    "typecheck": "tsc -p . --noEmit && tsc -p ../.pi/extensions/pi-computer-use --noEmit",
+    "typecheck": "tsc -p . --noEmit && tsc -p ../.pi/extensions/pi-computer-use --noEmit && tsc -p ../.pi/extensions/pi-usage --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\" \"test/**/*.test.ts\" \"../.pi/extensions/**/*.test.ts\"",
     "test:watch": "node --import tsx --test --watch \"src/**/*.test.ts\" \"test/**/*.test.ts\"",
     "e2e:verify-pi": "tsx test/fake-model/verify-pi.ts",

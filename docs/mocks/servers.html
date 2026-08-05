@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>makit mobile — servers &amp; pairing</title>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<style>
+:root{
+  --surface:#171717;--lowest:#121212;--low:#1e1e1e;--container:#242424;
+  --high:#2e2e2e;--highest:#383838;
+  --on-surface:#f5f5f5;--outline:#9e9e9e;--outline-variant:#333333;
+  --primary:#98d4a3;--brand:#4ADE80;--error:#ffb4ab;
+  --warn:#E0A72E;--caution:#E07B39;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0b0b0b;color:var(--on-surface);
+  font:400 13px/1.45 -apple-system,"SF Pro Text",system-ui,sans-serif;padding:20px;
+  -webkit-font-smoothing:antialiased}
+.cap{margin-bottom:10px;width:390px}
+.cap .t{font:600 14px/1.3 inherit;display:flex;align-items:center;gap:8px}
+.cap .d{color:var(--outline);font-size:11.5px;margin-top:3px}
+.badge{font:500 9.5px/1 inherit;text-transform:uppercase;letter-spacing:.08em;
+  padding:3px 6px;border-radius:6px;background:var(--high);color:var(--outline)}
+.badge.now{background:#2a1a1a;color:#e08b8b}
+.row{display:flex;gap:24px;align-items:flex-start;flex-wrap:nowrap}
+.col{width:390px}
+.phone{width:390px;height:720px;background:var(--surface);border-radius:28px;
+  border:1px solid #2a2a2a;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.55);
+  display:flex;flex-direction:column}
+
+/* nav bar */
+.nav{display:flex;align-items:center;gap:10px;padding:14px 12px 10px;flex:none}
+.nav i.back{font-size:20px;color:var(--on-surface)}
+.nav .t{font:600 16px/1.2 inherit}
+.body{flex:1;overflow:hidden;padding:0 12px}
+
+/* ── server row (manager) ─────────────────────────────── */
+.srv{display:flex;align-items:center;gap:12px;padding:10px 4px 10px 12px;
+  background:var(--container);border:1px solid var(--outline-variant);
+  border-radius:12px;margin-bottom:8px}
+.srv.on{background:rgba(74,222,128,.08);border-color:rgba(74,222,128,.45)}
+.srv .ic{font-size:22px;color:var(--outline);flex:none}
+.srv.on .ic{color:var(--brand)}
+.srv .mid{flex:1;min-width:0}
+.srv .nm{font:600 13px/1.3 inherit}
+.srv .sub{font:400 12px/1.3 inherit;color:var(--outline);margin-top:2px}
+.srv .st{display:flex;align-items:center;gap:6px;margin-top:4px}
+.srv .st .d{width:7px;height:7px;border-radius:50%;background:var(--brand)}
+.srv .st .l{font:600 11px/1 inherit;color:var(--brand)}
+.srv .st.off .d{background:var(--error)} .srv .st.off .l{color:var(--error)}
+.srv .dots{font-size:20px;color:var(--on-surface);padding:8px}
+.addbtn{display:flex;align-items:center;justify-content:center;gap:8px;
+  background:var(--brand);color:#00250f;font:600 14px/1 inherit;
+  padding:15px;border-radius:12px;margin-top:8px}
+.addbtn i{font-size:17px}
+
+/* ── first-run pairing ────────────────────────────────── */
+.hero{text-align:center;padding:26px 12px 0}
+.mark{font:700 30px/1 inherit;color:var(--brand);letter-spacing:-.02em}
+.h1{font:600 20px/1.3 inherit;margin-top:20px}
+.h2{font:400 13px/1.5 inherit;color:var(--outline);margin-top:8px;padding:0 14px}
+.cta{display:flex;align-items:center;justify-content:center;gap:9px;
+  background:var(--brand);color:#00250f;font:600 14px/1 inherit;
+  padding:17px;border-radius:12px;margin:28px 0 8px}
+.cta i{font-size:19px}
+.tlink{display:flex;align-items:center;justify-content:center;gap:7px;
+  color:var(--brand);font:500 13px/1 inherit;padding:11px}
+.tlink i{font-size:15px}
+.sect{display:flex;align-items:center;gap:8px;margin:22px 0 4px;padding:0 4px}
+.sect .l{font:600 11px/1 inherit;color:var(--outline);letter-spacing:.09em;flex:1}
+.sect i{font-size:17px;color:var(--outline)}
+.disc{display:flex;align-items:center;gap:12px;padding:11px 4px}
+.disc .ic{font-size:20px;color:var(--outline)}
+.disc .mid{flex:1;min-width:0}
+.disc .nm{font:400 13px/1.3 inherit}
+.disc .sub{font:400 12px/1.3 inherit;color:var(--outline)}
+.disc .qr{font-size:17px;color:var(--outline)}
+.devcard{margin-top:22px;padding:16px;background:rgba(56,56,56,.5);
+  border:1px solid var(--outline-variant);border-radius:12px}
+.devcard .h{display:flex;align-items:center;gap:6px;font:600 14px/1 inherit}
+.devcard .h i{font-size:16px;color:#a2ced8}
+.devcard .p{font:400 12px/1.45 inherit;color:var(--outline);margin-top:6px}
+.tonal{display:inline-block;margin-top:12px;background:#17512b;color:#b4f1be;
+  font:500 13px/1 inherit;padding:12px 18px;border-radius:10px}
+
+/* ── switcher sheet ──────────────────────────────────── */
+.dim{position:relative;height:100%;background:var(--surface)}
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.5)}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--low);
+  border-radius:16px 16px 0 0;padding-bottom:10px}
+.grab{width:32px;height:4px;border-radius:2px;background:var(--highest);
+  margin:8px auto 4px}
+.sh{font:600 16px/1.2 inherit;padding:10px 20px 12px}
+.li{display:flex;align-items:center;gap:14px;padding:12px 20px;min-height:56px}
+.li .ic{font-size:21px;color:var(--outline);flex:none}
+.li.on .ic{color:var(--brand)}
+.li .mid{flex:1;min-width:0}
+.li .nm{font:400 14px/1.3 inherit}
+.li .sub{font:400 12px/1.3 inherit;color:var(--outline);margin-top:1px}
+.li .ck{font-size:16px;color:var(--brand)}
+.sep{height:1px;background:var(--outline-variant);margin:6px 0}
+/* faded home behind sheet */
+.ghost{padding:12px;opacity:.55}
+.gh-top{display:flex;align-items:center;gap:6px;margin-bottom:12px}
+.gh-top .t{font:600 16px/1 inherit;flex:1;display:flex;gap:5px;align-items:center}
+.gh-top .t i{font-size:14px;color:var(--outline)}
+.gh-btn{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.07)}
+.gh-card{background:rgba(26,26,26,.6);border:1px solid rgba(255,255,255,.09);
+  border-radius:16px;height:150px}
+</style>
+</head>
+<body>
+<div style="max-width:1180px;margin:0 0 22px;padding:12px 14px;background:#2a1a1a;
+  border-left:3px solid #e08b8b;border-radius:0 8px 8px 0;font-size:12px;color:#e8cccc">
+  <b>Archived — does not match what ships.</b> Review chose to fold the manager into the
+  connect screen (one surface: server list + Add&nbsp;server + demo data) and to drop both the
+  separate <code>/servers</code> manager and the home-title switcher. Kept only as a record of
+  what was compared. See <code>docs/mocks/README.md</code>.
+</div>
+<div class="row">
+
+  <!-- 1. first-run pairing -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge now">superseded</span> First run — connect</div>
+      <div class="d">One primary action. Discovery is honest that it’s a shortcut into the scanner, not a one-tap pair.</div>
+    </div>
+    <div class="phone"><div class="body">
+      <div class="hero">
+        <div class="mark">makit</div>
+        <div class="h1">Connect to your Mac</div>
+        <div class="h2">Run <code>makit serve</code> in a terminal, then scan the QR code it prints.</div>
+      </div>
+      <div class="cta"><i class="ph-light ph-qr-code"></i>Scan QR code</div>
+      <div class="tlink"><i class="ph-light ph-clipboard"></i>Paste pairing URL instead</div>
+      <div class="sect"><span class="l">ON THIS NETWORK</span><i class="ph-light ph-arrow-clockwise"></i></div>
+      <div class="disc">
+        <i class="ic ph-light ph-hard-drives"></i>
+        <div class="mid"><div class="nm">khanhs-macbook-pro</div><div class="sub">100.115.244.74:9787</div></div>
+        <i class="qr ph-light ph-qr-code"></i>
+      </div>
+      <div class="devcard">
+        <div class="h"><i class="ph-light ph-flask"></i>No Mac handy?</div>
+        <div class="p">Explore the app with seeded demo data. Nothing is sent anywhere.</div>
+        <div class="tonal">Open with fake data</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- 2. server manager -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge now">removed</span> /servers — manager</div>
+      <div class="d">Radio group, not toggles: tap moves the connection. Only the active row claims a live status. Rename/Forget in the row menu.</div>
+    </div>
+    <div class="phone">
+      <div class="nav"><i class="back ph-light ph-arrow-left"></i><span class="t">Servers</span></div>
+      <div class="body">
+        <div class="srv on">
+          <i class="ic ph-fill ph-hard-drives"></i>
+          <div class="mid">
+            <div class="nm">work mac</div>
+            <div class="sub">10.0.0.1:8443</div>
+            <div class="st"><span class="d"></span><span class="l">Connected</span></div>
+          </div>
+          <i class="dots ph ph-dots-three"></i>
+        </div>
+        <div class="srv">
+          <i class="ic ph-light ph-hard-drives"></i>
+          <div class="mid">
+            <div class="nm">home mac</div>
+            <div class="sub">100.94.12.8:8443</div>
+          </div>
+          <i class="dots ph ph-dots-three"></i>
+        </div>
+        <div class="srv">
+          <i class="ic ph-light ph-hard-drives"></i>
+          <div class="mid">
+            <div class="nm">studio</div>
+            <div class="sub">192.168.1.44:8443</div>
+          </div>
+          <i class="dots ph ph-dots-three"></i>
+        </div>
+        <div class="addbtn"><i class="ph-bold ph-plus"></i>Add server</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. switcher sheet -->
+  <div class="col">
+    <div class="cap">
+      <div class="t"><span class="badge now">removed</span> Home title → switcher</div>
+      <div class="d">The title names the server whose repos you’re looking at, and becomes the switcher at 2+. Caret only appears when there’s a choice.</div>
+    </div>
+    <div class="phone"><div class="dim">
+      <div class="ghost">
+        <div class="gh-top">
+          <div class="t">work mac <i class="ph-light ph-caret-up-down"></i></div>
+          <div class="gh-btn"></div><div class="gh-btn"></div><div class="gh-btn"></div>
+        </div>
+        <div class="gh-card"></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sh">Switch server</div>
+        <div class="li on">
+          <i class="ic ph-fill ph-hard-drives"></i>
+          <div class="mid"><div class="nm">work mac</div><div class="sub">10.0.0.1:8443</div></div>
+          <i class="ck ph-bold ph-check"></i>
+        </div>
+        <div class="li">
+          <i class="ic ph-light ph-hard-drives"></i>
+          <div class="mid"><div class="nm">home mac</div><div class="sub">100.94.12.8:8443</div></div>
+        </div>
+        <div class="li">
+          <i class="ic ph-light ph-hard-drives"></i>
+          <div class="mid"><div class="nm">studio</div><div class="sub">192.168.1.44:8443</div></div>
+        </div>
+        <div class="sep"></div>
+        <div class="li">
+          <i class="ic ph-light ph-gear-six"></i>
+          <div class="mid"><div class="nm">Manage servers</div></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+
+</div>
+</body>
+</html>

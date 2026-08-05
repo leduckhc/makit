@@ -57,6 +57,7 @@ const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "session.commands",
   "session.meta",
   "session.action_error",
+  "session.usage",
   "github.budget",
   "metrics.sample",
 ]);

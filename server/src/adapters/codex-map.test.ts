@@ -194,3 +194,91 @@ test("two same-length images that diverge late are both announced", () => {
     ["sha-" + a, "sha-" + b],
   );
 });
+
+// ---- SPEC-37: context usage -------------------------------------------------
+
+/**
+ * Payload shape + numbers taken from a real `codex app-server` spike (two turns
+ * on the default model), so the assertions below are ground truth rather than a
+ * guess at the schema.
+ */
+const TOKEN_USAGE_TURN2 = {
+  threadId: "th1",
+  turnId: "t2",
+  tokenUsage: {
+    total: {
+      totalTokens: 39000,
+      inputTokens: 38990,
+      cachedInputTokens: 19200,
+      cacheWriteInputTokens: 0,
+      outputTokens: 10,
+      reasoningOutputTokens: 0,
+    },
+    last: {
+      totalTokens: 19508,
+      inputTokens: 19503,
+      cachedInputTokens: 19200,
+      cacheWriteInputTokens: 0,
+      outputTokens: 5,
+      reasoningOutputTokens: 0,
+    },
+    modelContextWindow: 258400,
+  },
+};
+
+test("maps thread/tokenUsage/updated to session.usage with the window", () => {
+  const { events, mapper } = collect();
+  mapper.handle("thread/tokenUsage/updated", TOKEN_USAGE_TURN2);
+
+  const usage = events.filter((e) => e.kind === "session.usage");
+  assert.equal(usage.length, 1, "one snapshot per notification");
+  const p = usage[0].payload as any;
+  assert.equal(p.contextWindow, 258400);
+  assert.equal(typeof p.measuredAt, "number");
+});
+
+test("context occupancy is the LAST request's total, not the session total", () => {
+  // The regression this guards: `total` accumulates across turns, so drawing it
+  // against the window reads ~15% full when the context is ~7.5% full, and
+  // crosses 100% on a long session that never neared compaction.
+  const { events, mapper } = collect();
+  mapper.handle("thread/tokenUsage/updated", TOKEN_USAGE_TURN2);
+
+  const p = events.find((e) => e.kind === "session.usage")!.payload as any;
+  assert.equal(p.contextTokens, 19508, "must be last.totalTokens");
+  assert.notEqual(p.contextTokens, 39000, "must NOT be total.totalTokens");
+});
+
+test("carries cumulative totals separately for billing", () => {
+  const { events, mapper } = collect();
+  mapper.handle("thread/tokenUsage/updated", TOKEN_USAGE_TURN2);
+
+  const p = events.find((e) => e.kind === "session.usage")!.payload as any;
+  assert.deepEqual(p.totals, {
+    total: 39000,
+    input: 38990,
+    cachedInput: 19200,
+    cacheWrite: 0,
+    output: 10,
+    reasoning: 0,
+  });
+});
+
+test("omits contextWindow when codex reports none rather than sending 0", () => {
+  // A zeroed window would render as a full bar; unknown must stay unknown.
+  const { events, mapper } = collect();
+  mapper.handle("thread/tokenUsage/updated", {
+    ...TOKEN_USAGE_TURN2,
+    tokenUsage: { ...TOKEN_USAGE_TURN2.tokenUsage, modelContextWindow: null },
+  });
+
+  const p = events.find((e) => e.kind === "session.usage")!.payload as any;
+  assert.ok(!("contextWindow" in p), "absent, not zero");
+  assert.equal(p.contextTokens, 19508);
+});
+
+test("ignores a malformed tokenUsage instead of emitting a hollow snapshot", () => {
+  const { events, mapper } = collect();
+  mapper.handle("thread/tokenUsage/updated", { threadId: "th1", turnId: "t1" });
+  assert.equal(events.filter((e) => e.kind === "session.usage").length, 0);
+});

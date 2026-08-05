@@ -1,0 +1,9 @@
+{
+  "name": "makit-pi-usage",
+  "private": true,
+  "type": "module",
+  "description": "Reports pi's context-window + cost readings to the makit server (SPEC-37).",
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

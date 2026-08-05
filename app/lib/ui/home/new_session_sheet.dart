@@ -58,6 +58,7 @@ class NewSessionSheet extends StatefulWidget {
     this.worktrees = const [],
     this.openPrs = const [],
     this.initialBranch,
+    this.initialWorktreePath,
   });
 
   final List<AgentDescriptor> agents;
@@ -65,6 +66,13 @@ class NewSessionSheet extends StatefulWidget {
   final List<Worktree> worktrees;
   final List<OpenPr> openPrs;
   final String? initialBranch;
+
+  /// Pre-select this existing worktree and open on the "Existing" source.
+  ///
+  /// Set when the sheet is opened from a worktree row's `+`: the user already
+  /// said which branch they meant, so asking again would be the one question
+  /// they've already answered.
+  final String? initialWorktreePath;
 
   @override
   State<NewSessionSheet> createState() => _NewSessionSheetState();
@@ -84,11 +92,17 @@ class _NewSessionSheetState extends State<NewSessionSheet> {
   @override
   void initState() {
     super.initState();
-    _source = WorktreeSource.newBranch;
+    // A caller-named worktree means the worktree decision is already made.
+    final targeted =
+        widget.initialWorktreePath != null &&
+        widget.worktrees.any((w) => w.path == widget.initialWorktreePath);
+    _source = targeted ? WorktreeSource.existing : WorktreeSource.newBranch;
     _branch =
         widget.initialBranch ??
         (widget.branches.isEmpty ? null : widget.branches.first);
-    _worktreePath = widget.worktrees.isEmpty ? null : _defaultWorktree().path;
+    _worktreePath = targeted
+        ? widget.initialWorktreePath
+        : (widget.worktrees.isEmpty ? null : _defaultWorktree().path);
     _agent = widget.agents.isEmpty ? null : widget.agents.first.id;
   }
 

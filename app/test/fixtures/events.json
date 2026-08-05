@@ -165,5 +165,28 @@
    "alt": "probe-shot.png",
    "callId": "c1"
   }
+ },
+ {
+  "seq": 15,
+  "sessionId": "s1",
+  "ts": 14001,
+  "kind": "session.usage",
+  "payload": {
+   "contextTokens": 19508,
+   "contextWindow": 258400,
+   "totals": {
+    "total": 39000,
+    "input": 38990,
+    "cachedInput": 19200,
+    "cacheWrite": 0,
+    "output": 10,
+    "reasoning": 0
+   },
+   "cost": {
+    "amount": 0.42,
+    "currency": "USD"
+   },
+   "measuredAt": 14001
+  }
  }
 ]

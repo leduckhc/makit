@@ -13,7 +13,9 @@ import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_draft.dart';
 import '../../ui/composer/composer_selectors.dart';
+import '../../ui/composer/context_usage.dart';
 import '../../ui/composer/pending_queue_slot.dart';
+import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/navigator/message_navigator_overlay.dart';
@@ -278,11 +280,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                                 item!,
                                 position: position,
                               )
-                            : TranscriptTrailerRow(
-                                sessionId: sessionId,
-                                trailer: trailer,
-                                ask: pendingAsk,
-                              );
+                            : (trailer == TranscriptTrailer.ask
+                                  ? AskCard(ask: pendingAsk!)
+                                  : const WorkingIndicator());
                         // Center each row within the same readable-width cap as
                         // the composer, so the transcript column lines up with the
                         // input instead of stretching edge-to-edge. The ListView
@@ -417,6 +417,9 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           ComposerThinkingSelector(sessionId: sessionId),
                           ComposerModeSelector(sessionId: sessionId),
                         ],
+                        // SPEC-37: shown for every agent — it reads usage, not
+                        // config — so it sits outside the configOptions branch.
+                        ContextUsageButton(sessionId: sessionId, desktop: true),
                       ],
                       focusNode: widget.composerFocusId == null
                           ? null

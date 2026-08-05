@@ -244,11 +244,18 @@ class _PendingBubbleState extends State<PendingBubble> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(kRadius12),
                 child: SlashPalette(
-                  filter: _ctrl!.text,
-                  commands: widget.commands,
-                  // SPEC-38: agent commands only — client commands run now, and
-                  // this message runs later.
-                  includeBuiltins: false,
+                  // main's palette takes the matches (and the highlight) from its
+                  // caller so Tab and the visible highlight cannot disagree. A
+                  // queue editor has no keyboard navigation, so the first match is
+                  // always the highlighted one.
+                  matches: filterSlashCommands(
+                    _ctrl!.text,
+                    widget.commands,
+                    // Agent commands only — client commands run NOW, and this
+                    // message runs later (SPEC-38).
+                    includeBuiltins: false,
+                  ),
+                  selectedIndex: 0,
                   onPick: _pickSlash,
                 ),
               ),

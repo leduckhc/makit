@@ -6,14 +6,14 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
-import '../widgets/glass.dart';
 import '../widgets/menu_item.dart';
 import '../widgets/searchable_list_sheet.dart';
 import '../widgets/sheet_header.dart';
-import 'new_session_sheet.dart';
 import 'repo_chips.dart';
+import 'start_session.dart';
 import 'session_tile.dart';
 import 'worktree_row.dart';
+import '../../app/routes.dart';
 
 /// A repo card on the home screen: header, stat strip, its worktree rows,
 /// drafts, and a "new session" footer (SPEC-19, moved from home_screen).
@@ -68,31 +68,39 @@ class _RepoCardState extends ConsumerState<RepoCard> {
         : worktrees.take(_maxCollapsed).toList();
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: kSpace8),
-      child: GlassSurface(
-        borderRadius: 16,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(context, ref, theme),
-            _statStrip(context, theme),
-            if (_expanded) ...[
-              const Divider(height: 1),
-              for (final wt in visible)
-                WorktreeRow(
-                  key: ValueKey(wt.path),
-                  repo: repo,
-                  worktree: wt,
-                  sessions: wt.sessionIds
-                      .map((id) => byId[id])
-                      .whereType<Session>()
-                      .toList(),
-                ),
-              if (showMore) _showMoreToggle(context, worktrees.length),
-              if (drafts.isNotEmpty) _draftsSection(context, drafts),
-              _footer(context, ref),
+      padding: const EdgeInsets.only(bottom: kSpace10),
+      child: DecoratedBox(
+        // Solid card, not glass: the accent bars are this card's signal, and a
+        // translucent surface let scrolling content bleed through and muddy
+        // them.
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(kRadius12),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(kRadius12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(context, ref, theme),
+              if (_expanded) ...[
+                for (final wt in visible)
+                  WorktreeRow(
+                    key: ValueKey(wt.path),
+                    repo: repo,
+                    worktree: wt,
+                    sessions: wt.sessionIds
+                        .map((id) => byId[id])
+                        .whereType<Session>()
+                        .toList(),
+                  ),
+                if (showMore) _showMoreToggle(context, worktrees.length),
+                if (drafts.isNotEmpty) _draftsSection(context, drafts),
+                _footer(context, ref),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -119,6 +127,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
   }
 
   Widget _header(BuildContext context, WidgetRef ref, ThemeData theme) {
+    final cs = theme.colorScheme;
     return InkWell(
       // Whole header toggles disclosure. The overflow menu below sits on top of
       // it and swallows its own taps, so the two never fight.
@@ -135,77 +144,88 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                 child: Icon(
                   PhosphorIconsLight.caretDown,
                   size: 14,
-                  color: theme.colorScheme.outline,
+                  color: cs.outline,
                 ),
               ),
               const SizedBox(width: kSpace6),
-              Icon(
-                PhosphorIconsLight.folderStar,
-                size: 17,
-                color: theme.colorScheme.outline,
-              ),
+              Icon(PhosphorIconsLight.folder, size: 17, color: cs.outline),
               const SizedBox(width: kSpace8),
-              Flexible(
+              // Expanded, not Flexible+Spacer: the name absorbs the slack and
+              // pushes the meta right, and both shrink instead of overflowing
+              // when the repo name and default branch are long together.
+              Expanded(
                 child: Text(
                   repo.name,
                   // Bold carries the hierarchy, as in the sidebar — a repo is a
                   // name, so no all-caps tracking, and it sits one step above
                   // the branch rather than being a page title.
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0,
-                  ),
+                  style: theme.textTheme.titleSmall,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
-              PopupMenuButton<String>(
-                icon: Icon(
-                  PhosphorIconsRegular.dotsThreeVertical,
-                  size: 18,
-                  color: theme.colorScheme.onSurface,
+              const SizedBox(width: kSpace8),
+              // Trailing cluster, flush right: the open-PR count and the menu.
+              // The default branch used to sit here too, but the star on the
+              // worktree row already marks the primary checkout, so naming it
+              // again was the same fact twice.
+              if (repo.openPrCount > 0) ...[
+                _prCountPill(context, repo.openPrCount),
+                const SizedBox(width: kSpace6),
+              ],
+              // Pinned to the same width as the rows' `+` (and zero-padded, since
+              // PopupMenuButton otherwise keeps IconButton's own inset) so the
+              // menu glyph and the `+` glyphs share one vertical line down the
+              // card's right edge. Guarded by `repo_card_header_test.dart`.
+              SizedBox(
+                width: kTrailingControl,
+                child: PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: kTrailingControl,
+                    minHeight: kTouchRow,
+                  ),
+                  icon: Icon(
+                    PhosphorIconsRegular.dotsThree,
+                    size: 18,
+                    color: cs.outline,
+                  ),
+                  tooltip: 'Repo actions',
+                  popUpAnimationStyle: AnimationStyle.noAnimation,
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'new':
+                        startSessionFlow(context, ref, repo);
+                      case 'attach':
+                        _attachPast(context, ref);
+                      case 'remove':
+                        _confirmRemove(context, ref);
+                    }
+                  },
+                  itemBuilder: (context) {
+                    final cs = Theme.of(context).colorScheme;
+                    return [
+                      themedMenuItem(
+                        value: 'new',
+                        icon: PhosphorIconsLight.plus,
+                        label: 'New session',
+                      ),
+                      // "New worktree" is not repeated here — the card footer
+                      // carries it, always visible and one tap away.
+                      themedMenuItem(
+                        value: 'attach',
+                        icon: PhosphorIconsLight.arrowCounterClockwise,
+                        label: 'Resume session',
+                      ),
+                      const PopupMenuDivider(),
+                      themedMenuItem(
+                        value: 'remove',
+                        icon: PhosphorIconsLight.trash,
+                        label: 'Remove from makit',
+                        color: cs.error,
+                      ),
+                    ];
+                  },
                 ),
-                tooltip: 'Repo actions',
-                popUpAnimationStyle: AnimationStyle.noAnimation,
-                onSelected: (value) {
-                  switch (value) {
-                    case 'new':
-                      _newSession(context, ref);
-                    case 'worktree':
-                      _newWorktree(context, ref);
-                    case 'attach':
-                      _attachPast(context, ref);
-                    case 'remove':
-                      _confirmRemove(context, ref);
-                  }
-                },
-                itemBuilder: (context) {
-                  final cs = Theme.of(context).colorScheme;
-                  return [
-                    themedMenuItem(
-                      value: 'new',
-                      icon: PhosphorIconsLight.plus,
-                      label: 'New session',
-                    ),
-                    themedMenuItem(
-                      value: 'worktree',
-                      icon: PhosphorIconsLight.treeStructure,
-                      label: 'New worktree',
-                    ),
-                    themedMenuItem(
-                      value: 'attach',
-                      icon: PhosphorIconsLight.arrowCounterClockwise,
-                      label: 'Resume session',
-                    ),
-                    const PopupMenuDivider(),
-                    themedMenuItem(
-                      value: 'remove',
-                      icon: PhosphorIconsLight.trash,
-                      label: 'Remove from makit',
-                      color: cs.error,
-                    ),
-                  ];
-                },
               ),
             ],
           ),
@@ -214,45 +234,39 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     );
   }
 
-  Widget _statStrip(BuildContext context, ThemeData theme) {
-    final outline = theme.colorScheme.outline;
-    final items = <Widget>[];
-
-    if (repo.defaultBranch != null) {
-      items.add(
-        _metaText(context, PhosphorIconsLight.flag, repo.defaultBranch!),
-      );
-    }
-    final active = repo.activeWorktreeCount;
-    if (active > 0) {
-      items.add(
-        _metaText(context, PhosphorIconsLight.treeStructure, '$active active'),
-      );
-    }
-    if (repo.openPrCount > 0) {
-      items.add(
-        _metaText(
-          context,
-          // Open PRs, so the pull-request symbol — not `gitMerge`, which now
-          // means "merged" everywhere else (see [prStateStyle]).
-          PhosphorIconsLight.gitPullRequest,
-          '${repo.openPrCount} PR${repo.openPrCount > 1 ? 's' : ''}',
-          color: theme.colorScheme.primary,
-        ),
-      );
-    }
-    if (items.isEmpty) {
-      items.add(
-        Text(
-          repo.isGitRepo ? 'clean' : 'not a git repo',
-          style: theme.textTheme.bodySmall?.copyWith(color: outline),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12 + 14 + kSpace6, 0, 16, kSpace8),
-      child: Wrap(spacing: kSpace12, runSpacing: kSpace4, children: items),
+  /// Open-PR count as a pill, so the header shows repo-level state at a glance
+  /// without a second row. Uses the pull-request symbol, not `gitMerge`, which
+  /// means "merged" everywhere else (see [prStateStyle]).
+  Widget _prCountPill(BuildContext context, int count) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('openPrCount'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: kSpace8,
+        vertical: kSpace2,
+      ),
+      decoration: BoxDecoration(
+        color: cs.primary.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(kRadius8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            PhosphorIconsLight.gitPullRequest,
+            size: kPillIconSize,
+            color: cs.primary,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '$count',
+            style: Theme.of(context).textTheme.labelXs?.copyWith(
+              color: cs.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -260,9 +274,8 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Divider(height: 1),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, kSpace6, 16, 0),
+          padding: const EdgeInsets.fromLTRB(12, kSpace8, 16, kSpace2),
           child: Text(
             'DRAFTS',
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
@@ -276,41 +289,43 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     );
   }
 
+  /// Card-level action: add a worktree to this repo.
+  ///
+  /// Not "New session" — every worktree row carries its own `+` for that, so a
+  /// card-level session button could only mean "on some branch I haven't named
+  /// yet", which is really just creating a worktree. Starting a session on a
+  /// brand-new branch or a PR still lives in the header menu's "New session".
   Widget _footer(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, kSpace4),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: TextButton.icon(
-          onPressed: () => _newSession(context, ref),
-          icon: const Icon(PhosphorIconsLight.plus, size: 16),
-          label: const Text('New session'),
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            foregroundColor: Theme.of(context).colorScheme.primary,
+    final cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      // Hairline only here: it closes the card and separates the action from the
+      // last worktree. Between rows the accent bars already do the dividing.
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: cs.outlineVariant)),
+      ),
+      child: InkWell(
+        key: const Key('newWorktreeFooter'),
+        onTap: () => _newWorktree(context, ref),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: kSpace12,
+            vertical: kSpace10,
+          ),
+          child: Row(
+            children: [
+              Icon(PhosphorIconsLight.plus, size: 15, color: cs.primary),
+              const SizedBox(width: kSpace6),
+              Text(
+                'New worktree',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: cs.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
-
-  Widget _metaText(
-    BuildContext context,
-    IconData icon,
-    String text, {
-    Color? color,
-  }) {
-    final c = color ?? Theme.of(context).colorScheme.outline;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: c),
-        const SizedBox(width: kSpace4),
-        Text(
-          text,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
-        ),
-      ],
     );
   }
 
@@ -361,100 +376,6 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not create worktree: $e')),
-      );
-    }
-  }
-
-  /// Configure and start a session: the sheet always opens (one door for every
-  /// new session), then the chosen worktree is resolved — created for a new
-  /// branch or a PR — before the session spawns into it.
-  Future<void> _newSession(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final store = ref.read(storeControllerProvider.notifier);
-    final branches = branchOptionsForRepo(repo);
-    final worktrees = sortWorktreesForDisplay(repo.worktrees);
-    // A worktree created for this spawn is removed if the spawn then fails, so
-    // a retry doesn't orphan it.
-    String? createdWorktree;
-    try {
-      final agents = await store.fetchAgents();
-      final selectable = agents.where((a) => a.available).toList();
-      // Open PRs power the "From PR" worktree source; best-effort (an empty or
-      // failed lookup just hides that option). Bounded so a slow `gh` can't
-      // stall opening the sheet.
-      List<OpenPr> openPrs = const [];
-      try {
-        openPrs = await store
-            .listOpenPrs(repo.id)
-            .timeout(
-              const Duration(seconds: 2),
-              onTimeout: () => const <OpenPr>[],
-            );
-      } catch (_) {
-        openPrs = const [];
-      }
-
-      if (!context.mounted) return;
-      final choice = await showModalBottomSheet<NewSessionChoice>(
-        context: context,
-        showDragHandle: true,
-        isScrollControlled: true,
-        builder: (ctx) => NewSessionSheet(
-          agents: selectable,
-          branches: branches,
-          worktrees: worktrees,
-          openPrs: openPrs,
-          initialBranch: branches.isEmpty ? null : branches.first,
-        ),
-      );
-      if (choice == null) return;
-
-      String? worktreePath;
-      String? branch;
-      switch (choice.source) {
-        case WorktreeSource.existing:
-          worktreePath = choice.worktreePath;
-          for (final w in worktrees) {
-            if (w.path == worktreePath) branch = w.branch;
-          }
-        case WorktreeSource.newBranch:
-          final wt = await store.createWorktree(
-            repo.id,
-            baseBranch:
-                choice.baseBranch ?? (branches.isEmpty ? null : branches.first),
-          );
-          worktreePath = wt.path;
-          branch = wt.branch;
-          createdWorktree = wt.path;
-        case WorktreeSource.fromPr:
-          if (choice.prNumber == null) return;
-          final wt = await store.createWorktreeFromPr(
-            repo.id,
-            choice.prNumber!,
-          );
-          worktreePath = wt.path;
-          branch = wt.branch;
-          createdWorktree = wt.path;
-      }
-
-      final newId = await store.spawnSession(
-        repo.id,
-        agent: choice.agent,
-        worktreePath: worktreePath,
-        branch: branch,
-        configOptions: choice.configOptions.isEmpty
-            ? null
-            : choice.configOptions,
-      );
-      createdWorktree = null; // spawned — the worktree now hosts a session.
-      if (!context.mounted) return;
-      context.go('/session/$newId');
-    } catch (e) {
-      if (createdWorktree != null) {
-        await store.removeWorktree(repo.id, createdWorktree).catchError((_) {});
-      }
-      messenger.showSnackBar(
-        SnackBar(content: Text('Could not start session: $e')),
       );
     }
   }
@@ -567,7 +488,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
     try {
       final sid = await store.attachSession(repo.id, chosen.piSessionId);
       if (!context.mounted) return;
-      context.go('/session/$sid');
+      context.go(routeForSession(sid));
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not attach session: $e')),

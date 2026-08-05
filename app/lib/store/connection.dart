@@ -46,6 +46,24 @@ class PairedServer {
 
   String get wssUrl => 'wss://$host:$port';
 
+  /// Stable identity for this server across restarts and DHCP moves.
+  ///
+  /// The TLS cert fingerprint is the only field that identifies the *machine*
+  /// rather than where it currently sits — host/port drift, labels are
+  /// user-editable. It's already what mDNS rediscovery matches on, so reusing
+  /// it keeps one notion of "same server" everywhere.
+  String get id => fingerprint;
+
+  PairedServer copyWith({String? host, int? port, String? label}) =>
+      PairedServer(
+        host: host ?? this.host,
+        port: port ?? this.port,
+        fingerprint: fingerprint,
+        bearer: bearer,
+        label: label ?? this.label,
+        mdnsName: mdnsName,
+      );
+
   Map<String, dynamic> toJson() => {
     'host': host,
     'port': port,
@@ -67,26 +85,51 @@ class PairedServer {
 
 class MakitConnState {
   MakitConnState({
-    this.server,
+    this.servers = const [],
+    this.activeId,
     this.wsState = WsState.idle,
     this.useFake = false,
     this.lastError,
     this.pushRegistered = false,
   });
 
-  final PairedServer? server;
+  /// Every server this device has paired with. Only [activeServer] holds a live
+  /// socket — the rest are parked credentials the user can switch to.
+  final List<PairedServer> servers;
+
+  /// [PairedServer.id] of the server currently connected. A stale id (e.g. the
+  /// server was forgotten) resolves to the first entry rather than to nothing,
+  /// so the app never sits paired-but-serverless.
+  final String? activeId;
+
   final WsState wsState;
   final bool useFake;
   final String? lastError;
+
+  /// The server the live socket belongs to, or null when nothing is paired.
+  PairedServer? get activeServer {
+    if (servers.isEmpty) return null;
+    for (final s in servers) {
+      if (s.id == activeId) return s;
+    }
+    return servers.first;
+  }
+
+  /// Back-compat alias — most call sites only ever cared about the active one.
+  PairedServer? get server => activeServer;
+
+  /// True when the user has a choice worth surfacing a switcher for.
+  bool get hasMultipleServers => servers.length > 1;
 
   /// True once this device has sent `push.register` on the current connection
   /// (SPEC-07). Resets on reconnect; used by Settings to show wake status.
   final bool pushRegistered;
 
-  bool get paired => server != null || useFake || _wsUrl.isNotEmpty;
+  bool get paired => activeServer != null || useFake || _wsUrl.isNotEmpty;
 
   MakitConnState copyWith({
-    PairedServer? server,
+    List<PairedServer>? servers,
+    String? activeId,
     WsState? wsState,
     bool? useFake,
     String? lastError,
@@ -95,7 +138,8 @@ class MakitConnState {
     bool clearServer = false,
     bool clearPushRegistered = false,
   }) => MakitConnState(
-    server: clearServer ? null : (server ?? this.server),
+    servers: clearServer ? const [] : (servers ?? this.servers),
+    activeId: clearServer ? null : (activeId ?? this.activeId),
     wsState: wsState ?? this.wsState,
     useFake: useFake ?? this.useFake,
     lastError: clearError ? null : (lastError ?? this.lastError),
@@ -105,7 +149,12 @@ class MakitConnState {
   );
 }
 
+/// Legacy single-server key, written by builds before multi-server support.
+/// Read once at boot and migrated into [_kServersKey], then deleted.
 const _kPairedServerKey = 'paired_server';
+
+/// Current key: `{"servers": [...], "activeId": "<fingerprint>"}`.
+const _kServersKey = 'paired_servers';
 
 /// Signature of the mDNS LAN browse used for rediscovery. Mirrors the
 /// top-level [browseLan] so it can be swapped for a fake in tests.
@@ -197,22 +246,136 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       );
       return;
     }
-    final raw = await _storage.read(key: _kPairedServerKey);
-    if (raw != null) {
-      try {
-        final server = PairedServer.fromJson(
-          jsonDecode(raw) as Map<String, dynamic>,
-        );
-        state = state.copyWith(server: server);
-        await _connectPaired(server);
-        return;
-      } catch (_) {
-        await _storage.delete(key: _kPairedServerKey);
-      }
+    final (servers, activeId) = await _loadServers();
+    if (servers.isNotEmpty) {
+      state = state.copyWith(servers: servers, activeId: activeId);
+      await _connectPaired(state.activeServer!);
+      return;
     }
     // No paired server, no dev override → leave transport unattached.
     // User lands on /pair. If they tap "Open with fake data" we'll attach
     // the FakeServer then.
+  }
+
+  /// Read the server list, migrating a legacy single-server record if that's
+  /// all we find. Corrupt records are dropped rather than crashing the boot.
+  Future<(List<PairedServer>, String?)> _loadServers() async {
+    final raw = await _storage.read(key: _kServersKey);
+    if (raw != null) {
+      try {
+        final j = jsonDecode(raw) as Map<String, dynamic>;
+        final servers = (j['servers'] as List)
+            .map((e) => PairedServer.fromJson(e as Map<String, dynamic>))
+            .toList();
+        if (servers.isNotEmpty) return (servers, j['activeId'] as String?);
+      } catch (_) {
+        // Fall through to the legacy path, then to "unpaired".
+      }
+      await _storage.delete(key: _kServersKey);
+    }
+
+    // Migration: a pre-multi-server build's single record becomes entry one.
+    final legacy = await _storage.read(key: _kPairedServerKey);
+    if (legacy != null) {
+      try {
+        final server = PairedServer.fromJson(
+          jsonDecode(legacy) as Map<String, dynamic>,
+        );
+        await _persistServers([server], server.id);
+        await _storage.delete(key: _kPairedServerKey);
+        appLog.info('conn', 'migrated legacy paired server → server list');
+        return ([server], server.id);
+      } catch (_) {
+        await _storage.delete(key: _kPairedServerKey);
+      }
+    }
+    return (const <PairedServer>[], null);
+  }
+
+  /// Write the whole list. Removing the key entirely when empty keeps
+  /// "unpaired" a single unambiguous state on disk.
+  Future<void> _persistServers(
+    List<PairedServer> servers,
+    String? activeId,
+  ) async {
+    if (servers.isEmpty) {
+      await _storage.delete(key: _kServersKey);
+      return;
+    }
+    await _storage.write(
+      key: _kServersKey,
+      value: jsonEncode({
+        'servers': [for (final s in servers) s.toJson()],
+        'activeId': ?activeId,
+      }),
+    );
+  }
+
+  /// Persist [servers]/[activeId] and mirror them into state in one step, so
+  /// disk and memory can't drift.
+  Future<void> _commitServers(
+    List<PairedServer> servers,
+    String? activeId,
+  ) async {
+    await _persistServers(servers, activeId);
+    state = servers.isEmpty
+        ? state.copyWith(clearServer: true)
+        : state.copyWith(servers: servers, activeId: activeId);
+  }
+
+  /// Make [id] the live server. No-op when it's already active (so the UI can
+  /// call this unconditionally) or unknown.
+  Future<void> switchTo(String id) async {
+    final target = state.servers.where((s) => s.id == id).firstOrNull;
+    if (target == null) return;
+    if (state.activeServer?.id == id && state.wsState != WsState.idle) return;
+    appLog.info('conn', 'switching to server "${target.label}"');
+    await _commitServers(state.servers, id);
+    await _connectPaired(target);
+  }
+
+  /// Drop a server's stored credentials. Forgetting the active one fails over
+  /// to whatever remains rather than stranding the user on an empty Home.
+  Future<void> forget(String id) async {
+    final wasActive = state.activeServer?.id == id;
+    final remaining = state.servers.where((s) => s.id != id).toList();
+    if (remaining.length == state.servers.length) return;
+
+    if (remaining.isEmpty) {
+      await _commitServers(const [], null);
+      await _detach();
+      return;
+    }
+    if (!wasActive) {
+      await _commitServers(remaining, state.activeId);
+      return;
+    }
+    final next = remaining.first;
+    await _commitServers(remaining, next.id);
+    await _connectPaired(next);
+  }
+
+  /// Rename a server for display only — credentials and the live socket are
+  /// untouched, so renaming the active server never drops the connection.
+  Future<void> renameServer(String id, String label) async {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) return;
+    final updated = [
+      for (final s in state.servers)
+        if (s.id == id) s.copyWith(label: trimmed) else s,
+    ];
+    await _commitServers(updated, state.activeId);
+  }
+
+  /// Close the live socket and any fake, without touching stored creds.
+  Future<void> _detach() async {
+    await _ws?.close();
+    _ws = null;
+    _wsSub?.cancel();
+    _wsStateSub?.cancel();
+    _fake?.stop();
+    _fake = null;
+    state = state.copyWith(wsState: WsState.idle, useFake: false);
   }
 
   /// Public entrypoint for the pairing screen's "Open with fake data".
@@ -264,21 +427,29 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     unawaited(_maybeRediscover(server));
   }
 
-  bool _rediscovering = false;
+  final Map<String, bool> _rediscoveringByServer = {};
 
   Future<void> _maybeRediscover(PairedServer server) async {
-    if (_rediscovering) return;
-    _rediscovering = true;
+    final fp = server.fingerprint;
+    if (_rediscoveringByServer[fp] ?? false) return;
+    _rediscoveringByServer[fp] = true;
     try {
       // Give the first attempt a brief window to succeed.
       await Future<void>.delayed(_rediscoverStall);
       if (state.wsState == WsState.connected) return;
+      // The user may have switched servers while we slept. Checking `wsState`
+      // alone is not enough — a switch that is still `connecting` would let
+      // this task carry on with a now-stale server.
+      if (state.activeServer?.id != server.id) return;
 
       appLog.info(
         'conn',
         'connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
       );
       final found = await _browseLan(timeout: const Duration(seconds: 4));
+      // Browsing takes seconds, so re-check: by now the live socket may belong
+      // to another server, and re-attaching would drag it back to this one.
+      if (state.activeServer?.id != server.id) return;
       final matches = found
           .where((d) => d.fingerprint == server.fingerprint)
           .toList();
@@ -296,26 +467,25 @@ class ConnectionController extends StateNotifier<MakitConnState> {
         'conn',
         'mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
       );
-      final updated = PairedServer(
-        host: match.host,
-        port: match.port,
-        fingerprint: server.fingerprint,
-        bearer: server.bearer,
-        label: server.label,
-        mdnsName: server.mdnsName,
-      );
-      await _storage.write(
-        key: _kPairedServerKey,
-        value: jsonEncode(updated.toJson()),
-      );
-      state = state.copyWith(server: updated, clearError: true);
+      // Base the update on the current entry (not the captured `server`) so a
+      // concurrent rename during the browse window isn't overwritten.
+      final current =
+          state.servers.where((s) => s.id == server.id).firstOrNull ?? server;
+      final updated = current.copyWith(host: match.host, port: match.port);
+      // Rewrite just this entry; the other servers' records are untouched.
+      final servers = [
+        for (final s in state.servers)
+          if (s.id == updated.id) updated else s,
+      ];
+      await _persistServers(servers, state.activeId);
+      state = state.copyWith(servers: servers, clearError: true);
       await _attachReal(
         updated.wssUrl,
         fingerprint: updated.fingerprint,
         helloBody: _authHelloBody(updated.bearer),
       );
     } finally {
-      _rediscovering = false;
+      _rediscoveringByServer[fp] = false;
     }
   }
 
@@ -437,11 +607,19 @@ class ConnectionController extends StateNotifier<MakitConnState> {
         });
 
     // Persist + switch the live connection over to the new paired creds.
-    await _storage.write(
-      key: _kPairedServerKey,
-      value: jsonEncode(result.toJson()),
+    // Re-pairing a server we already know (same fingerprint) replaces that
+    // entry rather than adding a duplicate with a stale bearer.
+    final servers = [
+      for (final s in state.servers)
+        if (s.id != result.id) s,
+      result,
+    ];
+    await _persistServers(servers, result.id);
+    state = state.copyWith(
+      servers: servers,
+      activeId: result.id,
+      clearError: true,
     );
-    state = state.copyWith(server: result, clearError: true);
     await _attachReal(
       result.wssUrl,
       fingerprint: result.fingerprint,
@@ -538,7 +716,10 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     );
   }
 
+  /// Forget every server and drop the connection — the "start over" path.
+  /// [forget] is the per-server version.
   Future<void> unpair() async {
+    await _storage.delete(key: _kServersKey);
     await _storage.delete(key: _kPairedServerKey);
     await _ws?.close();
     _ws = null;

@@ -97,7 +97,7 @@ Future<_FakeStore> _runNew(WidgetTester tester, Session session) async {
         ),
       ),
       GoRoute(
-        path: '/session/:id',
+        path: '/repos/session/:id',
         builder: (context, state) =>
             Scaffold(body: Text('session ${state.pathParameters['id']}')),
       ),

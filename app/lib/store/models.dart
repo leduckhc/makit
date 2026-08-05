@@ -509,6 +509,125 @@ class OpenPr {
   );
 }
 
+/// Context-window + cost snapshot for one session (SPEC-37), pushed via the
+/// `session.usage` event.
+///
+/// Every reading is nullable because the three sources report different subsets:
+/// codex sends a full token breakdown and window but no cost, ACP sends only
+/// used/size/cost, and pi (which reports nothing over ACP) sends what
+/// `ctx.getContextUsage()` knows. **Null means unmeasured, never zero** — the
+/// same rule [BudgetBucket] follows, because a zeroed bar and an unknown bar
+/// mean opposite things.
+class SessionUsage {
+  const SessionUsage({
+    this.contextTokens,
+    this.contextWindow,
+    this.totals,
+    this.cost,
+    required this.measuredAt,
+  });
+
+  /// Tokens currently occupying the context window — the numerator of
+  /// [fraction]. This is the last request's total, not the session total.
+  final int? contextTokens;
+
+  /// Context window size in tokens, when the agent reports one.
+  final int? contextWindow;
+
+  /// Cumulative session token counts — **billing**, not context occupancy.
+  /// Deliberately a separate field so it can never be drawn against
+  /// [contextWindow].
+  final SessionUsageTotals? totals;
+
+  /// Cumulative session cost, when the agent prices its own calls.
+  final UsageCost? cost;
+
+  /// Epoch ms this snapshot was measured (0 when the server omitted it).
+  final int measuredAt;
+
+  /// Share of the context window in use, or null when either half is unmeasured.
+  ///
+  /// Clamped to 1.0: providers occasionally report a context slightly past the
+  /// advertised window, which would otherwise overflow the bar.
+  double? get fraction {
+    final used = contextTokens;
+    final window = contextWindow;
+    if (used == null || window == null || window <= 0) return null;
+    return (used / window).clamp(0.0, 1.0);
+  }
+
+  static int? _int(Object? v) => v is num ? v.toInt() : null;
+
+  static SessionUsage fromJson(Map<String, dynamic> j) => SessionUsage(
+    contextTokens: _int(j['contextTokens']),
+    contextWindow: _int(j['contextWindow']),
+    totals: j['totals'] is Map
+        ? SessionUsageTotals.fromJson(
+            Map<String, dynamic>.from(j['totals'] as Map),
+          )
+        : null,
+    cost: j['cost'] is Map
+        ? UsageCost.fromJson(Map<String, dynamic>.from(j['cost'] as Map))
+        : null,
+    measuredAt: _int(j['measuredAt']) ?? 0,
+  );
+}
+
+/// Cumulative per-category token counts for a session (SPEC-37) — what the
+/// session has *billed*, as opposed to what currently occupies the context.
+/// Only codex reports these; every field is null for the other agents.
+class SessionUsageTotals {
+  const SessionUsageTotals({
+    this.total,
+    this.input,
+    this.cachedInput,
+    this.cacheWrite,
+    this.output,
+    this.reasoning,
+  });
+
+  final int? total;
+  final int? input;
+
+  /// Input tokens served from the provider's prompt cache.
+  final int? cachedInput;
+
+  /// Input tokens written *into* the cache.
+  final int? cacheWrite;
+  final int? output;
+
+  /// Reasoning/thinking output tokens, when billed separately.
+  final int? reasoning;
+
+  static SessionUsageTotals fromJson(Map<String, dynamic> j) {
+    int? at(String k) => j[k] is num ? (j[k] as num).toInt() : null;
+    return SessionUsageTotals(
+      total: at('total'),
+      input: at('input'),
+      cachedInput: at('cachedInput'),
+      cacheWrite: at('cacheWrite'),
+      output: at('output'),
+      reasoning: at('reasoning'),
+    );
+  }
+}
+
+/// Cumulative session cost. Both halves are required: an amount with no currency
+/// cannot be rendered honestly, so a partial cost is treated as no cost at all.
+class UsageCost {
+  const UsageCost({required this.amount, required this.currency});
+
+  final double amount;
+  final String currency;
+
+  static UsageCost? fromJson(Map<String, dynamic> j) {
+    final amount = j['amount'];
+    final currency = j['currency'];
+    if (amount is! num || currency is! String) return null;
+    return UsageCost(amount: amount.toDouble(), currency: currency);
+  }
+}
+
 /// Health of the GitHub API budget, driven server-side by time-to-empty rather
 /// than percentage remaining (SPEC-32 §6.1). `unknown` means never measured
 /// (distinct from a real, measured value) and drives a dimmed icon.

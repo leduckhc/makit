@@ -31,27 +31,34 @@ const _hairlineDark = Color(0xFF333333);
 
 ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final scheme =
-      ColorScheme.fromSeed(
-        seedColor: kMakitAccent,
-        brightness: brightness,
-      ).copyWith(
-        // Neutral (C=0) surface ramp — keeps M3 elevation stepping, drops the tint.
-        surface: dark ? _surfaceDark : _surfaceLight,
-        onSurface: dark ? _onSurfaceDark : _onSurfaceLight,
-        onSurfaceVariant: dark ? _mutedDark : _mutedLight,
-        outline: dark ? _mutedDark : _mutedLight,
-        outlineVariant: dark ? _hairlineDark : _hairlineLight,
-        surfaceContainerLowest: dark
-            ? _containerLowestDark
-            : _containerLowestLight,
-        surfaceContainerLow: dark ? _containerLowDark : _containerLowLight,
-        surfaceContainer: dark ? _containerDark : _containerLight,
-        surfaceContainerHigh: dark ? _containerHighDark : _containerHighLight,
-        surfaceContainerHighest: dark
-            ? _containerHighestDark
-            : _containerHighestLight,
-      );
+  final seeded = ColorScheme.fromSeed(
+    seedColor: kMakitAccent,
+    brightness: brightness,
+  );
+  final scheme = seeded.copyWith(
+    // Dark mode shows the logo green itself. `fromSeed`'s tonal mapping lands on
+    // a pale sage (#98d4a3) that reads washed out against the neutral ramp, and
+    // desaturating buys nothing here: the brand green already clears WCAG AA on
+    // #171717 (10.3:1 as a label, 7.5:1 for `onPrimary` on a primary fill).
+    //
+    // Light mode must NOT: the brand green is only ~1.7:1 on #FAFAFA, so it
+    // keeps the seed-derived dark green. Hence `primary` is resolved per mode
+    // rather than pinned to one constant. Guarded by `theme_contrast_test.dart`.
+    primary: dark ? kMakitAccent : seeded.primary,
+    // Neutral (C=0) surface ramp — keeps M3 elevation stepping, drops the tint.
+    surface: dark ? _surfaceDark : _surfaceLight,
+    onSurface: dark ? _onSurfaceDark : _onSurfaceLight,
+    onSurfaceVariant: dark ? _mutedDark : _mutedLight,
+    outline: dark ? _mutedDark : _mutedLight,
+    outlineVariant: dark ? _hairlineDark : _hairlineLight,
+    surfaceContainerLowest: dark ? _containerLowestDark : _containerLowestLight,
+    surfaceContainerLow: dark ? _containerLowDark : _containerLowLight,
+    surfaceContainer: dark ? _containerDark : _containerLight,
+    surfaceContainerHigh: dark ? _containerHighDark : _containerHighLight,
+    surfaceContainerHighest: dark
+        ? _containerHighestDark
+        : _containerHighestLight,
+  );
   final baseTypography = dark
       ? Typography.material2021().white
       : Typography.material2021().black;

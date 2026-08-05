@@ -3,13 +3,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../app/theme.dart';
 import '../store/connection.dart';
-import 'device_name.dart';
-import 'mdns_browser.dart';
+import '../ui/widgets/makit_mark.dart';
+import 'add_server_sheet.dart';
 import 'onboarding_controller.dart';
-import 'pair_info.dart';
-import 'qr_scanner_screen.dart';
+import 'server_row.dart';
+import '../app/routes.dart';
 
+/// The one server surface: first run *and* management.
+///
+/// Nothing paired → a hero plus "Add server". Once servers exist the hero steps
+/// aside and the same screen becomes the picker: tap a row to move the live
+/// connection there, use its menu to rename or forget. Keeping both jobs on one
+/// screen means there is a single place the user learns, and no second manager
+/// screen to find.
+///
+/// Reached as `/pair` while onboarding (the router forces it) and as `/servers`
+/// from Settings once paired.
 class PairingScreen extends ConsumerStatefulWidget {
   const PairingScreen({super.key});
 
@@ -18,223 +29,141 @@ class PairingScreen extends ConsumerStatefulWidget {
 }
 
 class _PairingScreenState extends ConsumerState<PairingScreen> {
-  Future<List<DiscoveredServer>>? _browse;
-
-  @override
-  void initState() {
-    super.initState();
-    _browse = browseLan();
-  }
-
-  void _refresh() {
-    setState(() {
-      _browse = browseLan();
-    });
-  }
-
-  Future<void> _pair(PairInfo info) async {
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-    try {
-      final label = await deviceName();
-      await ref
-          .read(connectionControllerProvider.notifier)
-          .pairWith(info, label: label);
-      if (!mounted) return;
-      Navigator.of(context).pop(); // close spinner
-      messenger.showSnackBar(const SnackBar(content: Text('Paired!')));
-      context.go('/');
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      messenger.showSnackBar(SnackBar(content: Text('Pair failed: $e')));
-    }
-  }
-
-  Future<void> _scanQr() async {
-    final info = await Navigator.of(context).push<PairInfo>(
-      MaterialPageRoute(builder: (_) => const QrScannerScreen()),
-    );
-    if (info == null) return;
-    await _pair(info);
-  }
-
-  Future<void> _pasteUrl() async {
-    final ctrl = TextEditingController();
-    final url = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Paste pairing URL'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'makit://pair?host=…'),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Pair'),
-          ),
-        ],
-      ),
-    );
-    if (url == null || url.isEmpty) return;
-    final info = PairInfo.tryParse(url);
-    if (info == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Not a makit pairing URL.')));
-      return;
-    }
-    await _pair(info);
+  /// Make [id] active and go to its repos. Without this the root is a dead end:
+  /// the router no longer forwards `/` → `/repos` (that would break the back
+  /// arrow), so tapping a server has to do the navigating itself.
+  Future<void> _enter(ConnectionController controller, String id) async {
+    await controller.switchTo(id);
+    if (mounted) context.go(kRouteRepos);
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final conn = ref.watch(connectionProvider);
+    final controller = ref.read(connectionControllerProvider.notifier);
+    final servers = conn.servers;
+    final activeId = conn.activeServer?.id;
+    final firstRun = servers.isEmpty;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pair with desktop'),
-        actions: [
-          IconButton(
-            onPressed: _refresh,
-            icon: const Icon(PhosphorIconsLight.arrowClockwise),
+      // No back arrow on first run: there is nowhere behind it. Once paired the
+      // screen is pushed from Settings and gets the standard one.
+      appBar: firstRun ? null : AppBar(title: const Text('Servers')),
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            kSpace20,
+            firstRun ? kSpace32 : kSpace12,
+            kSpace20,
+            kSpace24,
           ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const SizedBox(height: 8),
-          Center(
-            child: Text(
-              'Run `makit serve` on your Mac.\nScan the QR it prints, or pick the server below.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            icon: const Icon(PhosphorIconsLight.qrCode),
-            label: const Text('Scan QR'),
-            onPressed: _scanQr,
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            icon: const Icon(PhosphorIconsLight.clipboard),
-            label: const Text('Paste pairing URL'),
-            onPressed: _pasteUrl,
-          ),
-          const SizedBox(height: 24),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(
-              'On this network',
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-          ),
-          const SizedBox(height: 8),
-          FutureBuilder<List<DiscoveredServer>>(
-            future: _browse,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              final servers = snapshot.data ?? const [];
-              if (servers.isEmpty) {
-                return const Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Text(
-                    'No servers found. Make sure `makit serve` is running on the same Wi-Fi.',
-                  ),
-                );
-              }
-              return Column(
-                children: servers
-                    .map(
-                      (s) => Card(
-                        child: ListTile(
-                          leading: const Icon(PhosphorIconsLight.hardDrives),
-                          title: Text(s.name),
-                          subtitle: Text(
-                            '${s.host}:${s.port}\nfp ${_short(s.fingerprint)}',
-                          ),
-                          isThreeLine: true,
-                          trailing: const Icon(PhosphorIconsLight.qrCode),
-                          onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Found via mDNS. Still need to scan the QR to get a pairing token.',
-                                ),
-                              ),
-                            );
-                            _scanQr();
-                          },
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          Card(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Dev mode',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Skip pairing and open the app with seeded fake data. Useful for UI iteration when no server is around.',
-                  ),
-                  const SizedBox(height: 8),
-                  FilledButton.tonal(
-                    onPressed: () {
-                      ref
-                          .read(connectionControllerProvider.notifier)
-                          .useFakeServer();
-                      // Fake data is a dev shortcut that bypasses pairing
-                      // entirely. Attaching the fake makes `paired` true, but
-                      // the router only routes to Home once onboarding reaches
-                      // `ready` — which still requires the notifications gate.
-                      // Clear that gate too so Home actually sticks instead of
-                      // the redirect bouncing back to the notifications step.
-                      ref
-                          .read(onboardingControllerProvider.notifier)
-                          .skipNotifications();
-                      context.go('/');
-                    },
-                    child: const Text('Open with fake data'),
-                  ),
-                ],
+          children: [
+            if (firstRun) ...[
+              Center(child: MakitMark(size: 56, color: cs.primary)),
+              const SizedBox(height: kSpace20),
+              Text(
+                'Connect to your Mac',
+                textAlign: TextAlign.center,
+                style: text.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              const SizedBox(height: kSpace8),
+              Text(
+                'Run makit serve in a terminal, then add it below.',
+                textAlign: TextAlign.center,
+                style: text.bodyMedium?.copyWith(color: cs.outline),
+              ),
+              const SizedBox(height: kSpace32),
+            ] else
+              for (final s in servers)
+                ServerRow(
+                  key: ValueKey(s.id),
+                  server: s,
+                  isActive: s.id == activeId,
+                  wsState: conn.wsState,
+                  onSelect: () => _enter(controller, s.id),
+                  onRename: () => renameServerDialog(context, controller, s),
+                  onForget: () => forgetServerDialog(context, controller, s),
+                ),
+
+            const SizedBox(height: kSpace8),
+            FilledButton.icon(
+              icon: const Icon(PhosphorIconsLight.plus),
+              label: const Text('Add server'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(52),
+                textStyle: text.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              onPressed: () => showAddServerSheet(context),
             ),
+
+            const SizedBox(height: kSpace32),
+            _DevModeCard(
+              onOpen: () {
+                ref.read(connectionControllerProvider.notifier).useFakeServer();
+                // Fake data bypasses pairing, which satisfies `paired` but not
+                // the notifications gate — clear that too or the redirect
+                // bounces straight back here.
+                ref
+                    .read(onboardingControllerProvider.notifier)
+                    .skipNotifications();
+                context.go(kRouteRepos);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DevModeCard extends StatelessWidget {
+  const _DevModeCard({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(kSpace16),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(kRadius12),
+        border: Border.all(color: cs.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(PhosphorIconsLight.flask, size: 16, color: cs.tertiary),
+              const SizedBox(width: kSpace6),
+              Text(
+                'No Mac handy?',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ],
+          ),
+          const SizedBox(height: kSpace6),
+          Text(
+            'Explore the app with seeded demo data. Nothing is sent anywhere.',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.outline),
+          ),
+          const SizedBox(height: kSpace12),
+          FilledButton.tonal(
+            onPressed: onOpen,
+            child: const Text('Open with fake data'),
           ),
         ],
       ),
     );
   }
-
-  String _short(String fp) => fp.length > 16
-      ? '${fp.substring(0, 8)}…${fp.substring(fp.length - 8)}'
-      : fp;
 }

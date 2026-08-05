@@ -18,6 +18,7 @@ import '../../store/store.dart';
 import '../../transport/protocol.dart';
 import '../widgets/sheet_header.dart';
 import '../widgets/searchable_list_sheet.dart';
+import '../../app/routes.dart';
 
 typedef ClientCmdHandler =
     Future<void> Function(
@@ -96,7 +97,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
               branch: session.branch,
             );
         if (!context.mounted) return;
-        context.go('/session/$newId');
+        context.go(routeForSession(newId));
       } catch (e) {
         messenger.showSnackBar(
           SnackBar(content: Text('Could not spawn session: $e')),
@@ -124,7 +125,7 @@ final List<ClientCommand> clientCommands = <ClientCommand>[
     handler: (context, ref, {required sessionId, required arg}) async {
       await ref.read(connectionControllerProvider.notifier).unpair();
       if (!context.mounted) return;
-      context.go('/pair');
+      context.go(kRouteRoot);
     },
   ),
   ClientCommand(

@@ -13,6 +13,8 @@ import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_draft.dart';
 import '../composer/composer_selectors.dart';
+import 'ask_card.dart';
+import '../composer/context_usage.dart';
 import '../composer/pending_queue_slot.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
@@ -24,6 +26,7 @@ import 'navigator/messages_sheet.dart';
 import 'navigator/transcript_jumper.dart';
 import 'session_pr_chip.dart';
 import 'transcript_list.dart';
+import '../../app/routes.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({super.key, required this.sessionId});
@@ -188,20 +191,15 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                 // priority — Pi stays running while asking), else the
                 // "working…" indicator while running.
                 if (hasTrailer && i == 0) {
-                  // SPEC-38: the trailer also hosts the INLINE pending queue, so
-                  // no synthetic events are needed for it.
-                  return KeyedSubtree(
-                    key: trailer == TranscriptTrailer.ask
-                        ? ValueKey('ask-${pendingAsk!.requestId}')
-                        : null,
-                    child: transcriptRow(
-                      TranscriptTrailerRow(
-                        sessionId: widget.sessionId,
-                        trailer: trailer,
-                        ask: pendingAsk,
-                      ),
-                    ),
-                  );
+                  // Inlined (main removed `TranscriptTrailerRow`): with SPEC-39's
+                  // deletion of the in-transcript queue the trailer is just the
+                  // ask card or the working indicator again.
+                  return trailer == TranscriptTrailer.ask
+                      ? KeyedSubtree(
+                          key: ValueKey('ask-${pendingAsk!.requestId}'),
+                          child: transcriptRow(AskCard(ask: pendingAsk)),
+                        )
+                      : transcriptRow(const WorkingIndicator());
                 }
                 final index = items.length - 1 - (hasTrailer ? i - 1 : i);
                 final item = items[index];
@@ -285,7 +283,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   children: [
                     GlassCircleButton(
                       icon: PhosphorIconsLight.arrowLeft,
-                      onTap: () => context.go('/'),
+                      onTap: () => context.go(kRouteRepos),
                     ),
                     const SizedBox(width: kSpace12),
                     Expanded(
@@ -446,6 +444,10 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                     sessionId: widget.sessionId,
                                   ),
                                 ],
+                                // SPEC-37: shown for every agent — it reads
+                                // usage, not config — so it sits outside the
+                                // configOptions branch.
+                                ContextUsageButton(sessionId: widget.sessionId),
                               ],
                             ),
                     ),
@@ -593,7 +595,7 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
       await ref
           .read(storeControllerProvider.notifier)
           .archiveSession(widget.sessionId);
-      if (mounted) context.go('/');
+      if (mounted) context.go(kRouteRepos);
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Could not archive: $e')));
     }
