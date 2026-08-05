@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
-/// Brand colors for the makit mark. Kept local so the mark renders the same
-/// regardless of the app theme (which is still seeded blue pending a design
-/// pass — see app/theme.dart).
-const Color makitAccent = Color(0xFF4ADE80);
+import '../../app/theme.dart';
+
+/// Frame colour for the mark's dark backdrop. The accent comes from
+/// [kMakitAccent] in `app/theme.dart` — one definition of the brand green, so
+/// the logo and `colorScheme.primary` cannot drift apart.
 const Color makitFrame = Color(0xFF171717); // design-system dark bg
 
 /// Static makit mark — the `o//` winner (B4: medium head + two thick forward
@@ -13,7 +14,7 @@ const Color makitFrame = Color(0xFF171717); // design-system dark bg
 ///
 /// Renders in a 160x100 logical space, fit (contain) into the given size.
 class MakitMark extends StatelessWidget {
-  const MakitMark({super.key, this.size = 80, this.color = makitAccent});
+  const MakitMark({super.key, this.size = 80, this.color = kMakitAccent});
 
   final double size;
   final Color color;
@@ -40,7 +41,7 @@ class MakitClapMark extends StatefulWidget {
   const MakitClapMark({
     super.key,
     this.size = 160,
-    this.color = makitAccent,
+    this.color = kMakitAccent,
     this.running = true,
   });
 
