@@ -70,7 +70,9 @@ class PendingQueue extends StatelessWidget {
         bottom: kSpace4,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        // Left, not right (where sent user bubbles live): a pending message has
+        // not been said yet, and mirroring the sent side made it read as one.
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < queued.length; i++)
@@ -208,7 +210,7 @@ class _PendingBubbleState extends State<PendingBubble> {
     return Padding(
       padding: const EdgeInsets.only(bottom: kSpace4),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           if (editing && _showSlash)
@@ -237,11 +239,13 @@ class _PendingBubbleState extends State<PendingBubble> {
                 border: Border.all(
                   color: editing ? cs.primary : cs.outlineVariant,
                 ),
+                // The notched corner is the one nearest the edge the bubble
+                // hugs, so it points at its own side (now the left).
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(kChatRadiusLarge),
                   topRight: Radius.circular(kChatRadiusLarge),
-                  bottomLeft: Radius.circular(kChatRadiusLarge),
-                  bottomRight: Radius.circular(4),
+                  bottomLeft: Radius.circular(4),
+                  bottomRight: Radius.circular(kChatRadiusLarge),
                 ),
               ),
               padding: const EdgeInsets.only(left: kSpace8, right: kSpace2),
@@ -316,7 +320,7 @@ class _PendingBubbleState extends State<PendingBubble> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(top: kSpace2, right: kSpace4),
+            padding: const EdgeInsets.only(top: kSpace2, left: kSpace4),
             child: Text(
               caption,
               style: Theme.of(

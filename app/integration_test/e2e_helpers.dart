@@ -49,9 +49,12 @@ Future<void> _skipNotificationsStep(WidgetTester tester) async {
 /// Open the first session in the list (the stub server pre-creates one
 /// "new session" entry).
 Future<void> openFirstSession(WidgetTester tester) async {
-  final sessionTile = find.widgetWithText(ListTile, 'new session').first;
-  await pumpUntil(tester, sessionTile, reason: 'no "new session" tile found');
-  await tester.tap(sessionTile);
+  // `.first` only AFTER the wait — see openSessionContaining: evaluating a
+  // `.first` finder with no matches throws StateError instead of returning
+  // empty, which would make this wait crash rather than wait.
+  final tiles = find.widgetWithText(ListTile, 'new session');
+  await pumpUntil(tester, tiles, reason: 'no "new session" tile found');
+  await tester.tap(tiles.first);
   await tester.pumpAndSettle();
   await pumpUntil(tester, find.byType(TextField));
 }

@@ -51,6 +51,54 @@ Widget _host(List<QueuedMessage> queued, _Calls calls) => ProviderScope(
 );
 
 void main() {
+  testWidgets('ghost bubbles hug the LEFT edge, unlike sent user messages', (
+    tester,
+  ) async {
+    // A 600px-wide host, because the queue shrink-wraps under a loose parent —
+    // where "left" and "right" are the same 8px gutter and nothing is provable.
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 600,
+                child: PendingQueue(
+                  queued: [_q('q1', 'first')],
+                  commands: _commands,
+                  onEdit: (_, _) {},
+                  onReorder: (_) {},
+                  onCancel: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // A pending message is not a sent one: sent user bubbles are right-aligned,
+    // so the queue sits on the opposite side and reads as "not yours yet".
+    final queue = tester.getRect(find.byType(PendingQueue));
+    final bubble = tester.getRect(find.byType(PendingBubble));
+    expect(
+      bubble.left - queue.left,
+      lessThan(queue.width / 4),
+      reason: 'bubble should start near the queue\'s left edge',
+    );
+    expect(
+      queue.right - bubble.right,
+      greaterThan(queue.width / 4),
+      reason: 'bubble should NOT be flushed to the right edge',
+    );
+
+    // The caption tracks the bubble it belongs to.
+    final caption = tester.getRect(find.text('sends next · 1 of 1'));
+    expect(caption.left - queue.left, lessThan(queue.width / 4));
+  });
+
   testWidgets('renders one ghost bubble per pending message, in order', (
     tester,
   ) async {
