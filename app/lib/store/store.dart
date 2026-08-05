@@ -490,7 +490,13 @@ class StoreController extends StateNotifier<StoreState> {
           Envelope(
             t: MsgType.cmd,
             id: 'qc-${DateTime.now().microsecondsSinceEpoch}',
-            body: {'kind': 'queue.cancel', 'sessionId': sessionId, 'id': id},
+            // `queuedId`, not `id`: [Envelope.toJson] spreads the body over the
+            // frame, so a body key called `id` overwrites the request id above.
+            body: {
+              'kind': 'queue.cancel',
+              'sessionId': sessionId,
+              'queuedId': id,
+            },
           ),
         );
   }
@@ -507,8 +513,30 @@ class StoreController extends StateNotifier<StoreState> {
             body: {
               'kind': 'queue.update',
               'sessionId': sessionId,
-              'id': id,
+              'queuedId': id,
               'text': text,
+            },
+          ),
+        );
+  }
+
+  /// Send ONE pending message now (SPEC-37): the server interrupts the running
+  /// turn so this message is delivered next, keeping the rest queued.
+  ///
+  /// Fire-and-forget like its siblings; a message that flushed between the tap
+  /// and this frame is a no-op server-side, and deliberately does NOT abort the
+  /// turn on the strength of a stale tap.
+  void promoteQueuedMessage(String sessionId, String id) {
+    _ref
+        .read(connectionControllerProvider.notifier)
+        .send(
+          Envelope(
+            t: MsgType.cmd,
+            id: 'qp-${DateTime.now().microsecondsSinceEpoch}',
+            body: {
+              'kind': 'queue.promote',
+              'sessionId': sessionId,
+              'queuedId': id,
             },
           ),
         );

@@ -33,7 +33,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: Composer(controller: ctrl, alwaysExpanded: true, onSend: (_) {}),
+          body: Composer(
+            controller: ctrl,
+            alwaysExpanded: true,
+            onSend: (_) {},
+          ),
         ),
       ),
     );
@@ -99,7 +103,11 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: Composer(controller: ctrl, alwaysExpanded: true, onSend: (_) {}),
+          body: Composer(
+            controller: ctrl,
+            alwaysExpanded: true,
+            onSend: (_) {},
+          ),
         ),
       ),
     );

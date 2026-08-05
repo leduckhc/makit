@@ -29,6 +29,24 @@ enum PendingQueuePlacement {
   /// At the end of the transcript (its trailer row), in the conversation flow —
   /// scrolls with the conversation, so it can leave the viewport.
   inline,
+
+  /// A compact work list above the composer (mockup variant C) — tighter than
+  /// the bubbles, and the only presentation that offers **promote**: stop the
+  /// current turn and send this message now.
+  tray,
+}
+
+/// Where a placement actually mounts.
+///
+/// [PendingQueuePlacement] mixes two questions — *where* the queue lives and
+/// *how* it looks — because the user picks one thing, not two. This collapses it
+/// back to the only question the mount points care about: `tray` and `pinned`
+/// both live above the composer, `inline` lives in the transcript.
+extension PendingQueueMount on PendingQueuePlacement {
+  /// The slot this placement renders in.
+  PendingQueuePlacement get mountPoint => this == PendingQueuePlacement.inline
+      ? PendingQueuePlacement.inline
+      : PendingQueuePlacement.pinned;
 }
 
 /// A stack of [PendingBubble]s, oldest (next to send) first.

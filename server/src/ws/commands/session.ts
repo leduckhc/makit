@@ -198,9 +198,12 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
     }
-    const id = ctx.env.id;
+    // `queuedId`, not `id`: the app's Envelope spreads the command body OVER the
+    // frame's own `id`, so a body field called `id` silently replaces the request
+    // id and no ack can ever be correlated with its command.
+    const id = ctx.env.queuedId;
     if (typeof id !== "string" || !id) {
-      ctx.err(WireErrorCode.BadRequest, "queue.cancel requires a string `id`");
+      ctx.err(WireErrorCode.BadRequest, "queue.cancel requires a string `queuedId`");
       return;
     }
     session.cancelQueued(id);
@@ -219,10 +222,12 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.NoSuchSession, "no such session");
       return;
     }
-    const id = ctx.env.id;
+    // See queue.cancel: the message id travels as `queuedId` so it cannot
+    // clobber the frame's request id.
+    const id = ctx.env.queuedId;
     const text = ctx.env.text;
     if (typeof id !== "string" || !id) {
-      ctx.err(WireErrorCode.BadRequest, "queue.update requires a string `id`");
+      ctx.err(WireErrorCode.BadRequest, "queue.update requires a string `queuedId`");
       return;
     }
     if (typeof text !== "string") {
@@ -230,6 +235,34 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       return;
     }
     session.updateQueued(id, text);
+    ctx.ack();
+  });
+
+  /**
+   * Send ONE pending message now (SPEC-37 — the tray's ⤒): interrupt the running
+   * turn so the promoted message is delivered next, keeping the rest queued.
+   *
+   * This is `cancel`'s per-message opposite, so it must not borrow its
+   * queue-clearing: a stale id (flushed between the tap and this frame) acks
+   * without aborting anything, because interrupting a turn the user did not
+   * choose to stop destroys work. A missing id is a real client bug.
+   */
+  r.register("queue.promote", async (ctx) => {
+    const sid = String(ctx.env.sessionId ?? "");
+    const session = sid ? manager.getSession(sid) : undefined;
+    if (!session) {
+      ctx.err(WireErrorCode.NoSuchSession, "no such session");
+      return;
+    }
+    // `queuedId`, not `id`: the app's Envelope spreads the command body OVER the
+    // frame's own `id`, so a body field called `id` silently replaces the request
+    // id and no ack can ever be correlated with its command.
+    const id = ctx.env.queuedId;
+    if (typeof id !== "string" || !id) {
+      ctx.err(WireErrorCode.BadRequest, "queue.promote requires a string `queuedId`");
+      return;
+    }
+    await session.promoteQueued(id);
     ctx.ack();
   });
 

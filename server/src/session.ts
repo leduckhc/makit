@@ -592,6 +592,28 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Send one pending message NOW: interrupt the running turn, then let the
+   * normal flush deliver that message first (SPEC-37 — the tray's ⤒).
+   *
+   * Deliberately *not* built on `cancel`'s path: the `cancel` command clears the
+   * whole queue ("stop means stop"), which is the opposite of what promote
+   * means. Promote reuses the two primitives that already exist — move to the
+   * head, then abort — so the message still goes out through `flushNext` on the
+   * adapter's own `idle`, and the rest of the queue survives behind it.
+   *
+   * Returns false, WITHOUT interrupting, when the id is not queued: that is the
+   * race where the message flushed between the tap and this frame, and aborting
+   * the user's turn on the strength of a stale tap would destroy work they never
+   * asked to lose.
+   */
+  async promoteQueued(id: string): Promise<boolean> {
+    if (!this.queued.some((q) => q.id === id)) return false;
+    this.reorderQueue([id]);
+    await this.adapter.cancel();
+    return true;
+  }
+
+  /**
    * Drop every pending message. Used by `cancel` (stop means stop — follow-ups
    * must not fire into an aborted context) and on adapter exit. Returns whether
    * anything was dropped.

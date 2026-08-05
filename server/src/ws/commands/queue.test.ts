@@ -67,7 +67,7 @@ test("queue.cancel drops exactly the named pending message", async () => {
   await h.session.sendUserMessage("b");
   const [a] = h.session.queuedMessages;
 
-  await h.cmd({ kind: "queue.cancel", sessionId: h.session.id, id: a.id });
+  await h.cmd({ kind: "queue.cancel", sessionId: h.session.id, queuedId: a.id });
 
   assert.deepEqual(h.session.queuedMessages.map((q) => q.text), ["b"]);
   assert.ok(h.sent.some((f) => f.t === "ack"));
@@ -78,7 +78,7 @@ test("queue.cancel with an unknown id is an ack, not an error", async () => {
   await h.session.sendUserMessage("first");
   await h.session.sendUserMessage("a");
 
-  await h.cmd({ kind: "queue.cancel", sessionId: h.session.id, id: "nope" });
+  await h.cmd({ kind: "queue.cancel", sessionId: h.session.id, queuedId: "nope" });
 
   assert.equal(h.session.queuedMessages.length, 1);
   assert.ok(h.sent.some((f) => f.t === "ack"));
@@ -87,7 +87,7 @@ test("queue.cancel with an unknown id is an ack, not an error", async () => {
 
 test("queue.cancel on an unknown session errors", async () => {
   const h = harness();
-  await h.cmd({ kind: "queue.cancel", sessionId: "ghost", id: "x" });
+  await h.cmd({ kind: "queue.cancel", sessionId: "ghost", queuedId: "x" });
   assert.ok(h.sent.some((f) => f.t === "err"));
 });
 
@@ -112,7 +112,7 @@ test("queue.update replaces the pending text and acks", async () => {
   await h.session.sendUserMessage("a");
   const [a] = h.session.queuedMessages;
 
-  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: a.id, text: "a, but better" });
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, queuedId: a.id, text: "a, but better" });
 
   assert.deepEqual(h.session.queuedMessages.map((q) => q.text), ["a, but better"]);
   assert.ok(h.sent.some((f) => f.t === "ack"));
@@ -125,7 +125,7 @@ test("queue.update with empty text cancels that message", async () => {
   await h.session.sendUserMessage("a");
   const [a] = h.session.queuedMessages;
 
-  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: a.id, text: "  " });
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, queuedId: a.id, text: "  " });
 
   assert.equal(h.session.queuedMessages.length, 0);
 });
@@ -135,11 +135,11 @@ test("queue.update requires a string text, and tolerates a stale id", async () =
   await h.session.sendUserMessage("first");
   await h.session.sendUserMessage("a");
 
-  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: "x" });
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, queuedId: "x" });
   assert.ok(h.sent.some((f) => f.t === "err"), "a missing `text` is a client bug");
 
   const before = h.sent.length;
-  await h.cmd({ kind: "queue.update", sessionId: h.session.id, id: "gone", text: "late" });
+  await h.cmd({ kind: "queue.update", sessionId: h.session.id, queuedId: "gone", text: "late" });
   assert.equal(h.session.queuedMessages.length, 1, "untouched");
   assert.ok(
     !h.sent.slice(before).some((f) => f.t === "err"),
@@ -164,4 +164,78 @@ test("queue.reorder needs an array of ids", async () => {
   await h.session.sendUserMessage("first");
   await h.cmd({ kind: "queue.reorder", sessionId: h.session.id, ids: "nope" });
   assert.ok(h.sent.some((f) => f.t === "err"));
+});
+
+// ---- SPEC-37: queue.promote (the tray's ⤒) --------------------------------
+
+test("queue.promote interrupts the turn and leaves the rest of the queue", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+  await h.session.sendUserMessage("b");
+  const [, b] = h.session.queuedMessages;
+
+  await h.cmd({ kind: "queue.promote", sessionId: h.session.id, queuedId: b.id });
+
+  assert.equal(h.box.cancels, 1, "the running turn is aborted");
+  assert.deepEqual(
+    h.session.queuedMessages.map((q) => q.text),
+    ["b", "a"],
+    "the promoted message is at the head; `a` survives behind it",
+  );
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+});
+
+test("queue.promote with a stale id acks WITHOUT aborting the turn", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+
+  await h.cmd({ kind: "queue.promote", sessionId: h.session.id, queuedId: "flushed" });
+
+  assert.equal(h.box.cancels, 0, "a stale tap must not destroy in-flight work");
+  assert.deepEqual(h.session.queuedMessages.map((q) => q.text), ["a"]);
+  assert.ok(h.sent.some((f) => f.t === "ack"));
+  assert.ok(!h.sent.some((f) => f.t === "err"));
+});
+
+test("queue.promote without a queuedId is a client bug and errors", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+
+  await h.cmd({ kind: "queue.promote", sessionId: h.session.id });
+
+  assert.ok(h.sent.some((f) => f.t === "err"));
+  assert.equal(h.box.cancels, 0);
+});
+
+test("cancel still drops the whole queue — promote is the per-message opposite", async () => {
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+  await h.session.sendUserMessage("b");
+
+  await h.cmd({ kind: "cancel", sessionId: h.session.id });
+
+  assert.equal(h.session.queuedMessages.length, 0);
+  assert.equal(h.box.cancels, 1);
+});
+
+test("a queue command's ack carries the REQUEST id, not the message id", async () => {
+  // Regression: the app's Envelope spreads the command body over the frame, so a
+  // body field named `id` replaced the request id — the ack then came back
+  // labelled with the queued message's id and could never be correlated. The
+  // message id travels as `queuedId` for exactly this reason.
+  const h = harness();
+  await h.session.sendUserMessage("first");
+  await h.session.sendUserMessage("a");
+  const [a] = h.session.queuedMessages;
+
+  await h.cmd({ kind: "queue.cancel", sessionId: h.session.id, queuedId: a.id });
+
+  const ack = h.sent.find((f) => f.t === "ack");
+  assert.ok(ack);
+  assert.equal(ack.id, "1", "the ack answers the request, not the message");
+  assert.notEqual(ack.id, a.id);
 });

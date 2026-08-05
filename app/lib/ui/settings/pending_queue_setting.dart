@@ -33,7 +33,9 @@ class PendingQueuePlacementSetting extends ConsumerWidget {
             const Text(
               'Where a message you sent while the agent was busy waits. In the '
               'transcript it sits in the conversation and scrolls away with it; '
-              'above the composer it stays put.',
+              'above the composer it stays put. The compact tray trades the '
+              'conversation look for a work list — and is the only one that can '
+              'stop the current turn to send a waiting message now.',
             ),
             const SizedBox(height: kSpace8),
             Align(
@@ -48,6 +50,10 @@ class PendingQueuePlacementSetting extends ConsumerWidget {
                   ButtonSegment(
                     value: PendingQueuePlacement.inline,
                     label: Text('In the transcript'),
+                  ),
+                  ButtonSegment(
+                    value: PendingQueuePlacement.tray,
+                    label: Text('Compact tray'),
                   ),
                 ],
                 selected: {placement},

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../store/prefs/preferences_providers.dart';
 import '../../store/store.dart';
 import 'pending_queue.dart';
+import 'pending_queue_tray.dart';
 
 /// Whether the inline (in-transcript) queue has anything to show for [sessionId].
 ///
@@ -49,13 +50,25 @@ class PendingQueueSlot extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(pendingQueuePlacementProvider) != slot) {
-      return const SizedBox.shrink();
-    }
+    // Compare mount points, not placements: `tray` renders in the `pinned`
+    // slot, so a slot must ask "does the chosen placement live HERE", not "is it
+    // literally me".
+    final placement = ref.watch(pendingQueuePlacementProvider);
+    if (placement.mountPoint != slot) return const SizedBox.shrink();
     final queued = ref.watch(queuedMessagesProvider(sessionId));
     if (queued.isEmpty) return const SizedBox.shrink();
 
     final store = ref.read(storeControllerProvider.notifier);
+    if (placement == PendingQueuePlacement.tray) {
+      return PendingQueueTray(
+        queued: queued,
+        commands: ref.watch(commandsProvider(sessionId)),
+        onEdit: (id, text) => store.updateQueuedMessage(sessionId, id, text),
+        onReorder: (ids) => store.reorderQueuedMessages(sessionId, ids),
+        onCancel: (id) => store.cancelQueuedMessage(sessionId, id),
+        onPromote: (id) => store.promoteQueuedMessage(sessionId, id),
+      );
+    }
     return PendingQueue(
       queued: queued,
       commands: ref.watch(commandsProvider(sessionId)),

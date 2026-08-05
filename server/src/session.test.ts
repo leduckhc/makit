@@ -459,3 +459,66 @@ test("SPEC-36: reorderQueue treats a stale id list as a hint, never an error", a
   );
   assert.equal(session.reorderQueue([]), false, "nothing named = nothing to do");
 });
+
+// ---- SPEC-37: promote (the queue tray's ⤒) --------------------------------
+
+test("SPEC-37: promoteQueued interrupts the turn and sends THAT message next", async () => {
+  const f = turnAdapter();
+  const cancels: number[] = [];
+  (f.adapter as any).cancel = async () => {
+    cancels.push(Date.now());
+    // A real adapter reports idle once the turn is actually aborted.
+    f.adapter.emit("status", "idle");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("long running task");
+  await session.sendUserMessage("a");
+  await session.sendUserMessage("b");
+  const [, b] = session.queuedMessages;
+
+  assert.equal(await session.promoteQueued(b.id), true);
+  await settle();
+
+  assert.equal(cancels.length, 1, "the running turn is interrupted");
+  assert.deepEqual(f.sent, ["long running task", "b"], "the promoted message goes first");
+  assert.deepEqual(
+    session.queuedMessages.map((q) => q.text),
+    ["a"],
+    "promote keeps the rest of the queue — unlike cancel, which drops it",
+  );
+});
+
+test("SPEC-37: promoting the head is still an interrupt, not a no-op", async () => {
+  const f = turnAdapter();
+  (f.adapter as any).cancel = async () => f.adapter.emit("status", "idle");
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("only");
+  const [only] = session.queuedMessages;
+
+  assert.equal(await session.promoteQueued(only.id), true);
+  await settle();
+  assert.deepEqual(f.sent, ["first", "only"]);
+  assert.equal(session.queuedMessages.length, 0);
+});
+
+test("SPEC-37: promoting an id the queue no longer holds is a no-op, not an interrupt", async () => {
+  const f = turnAdapter();
+  let cancels = 0;
+  (f.adapter as any).cancel = async () => {
+    cancels += 1;
+    f.adapter.emit("status", "idle");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("queued");
+
+  assert.equal(await session.promoteQueued("flushed-already"), false);
+  await settle();
+  assert.equal(cancels, 0, "an unknown id must not abort the user's turn");
+  assert.deepEqual(f.sent, ["first"]);
+  assert.equal(session.queuedMessages.length, 1);
+});

@@ -294,9 +294,16 @@ back on codex.
    ring, so an accidental steer can be pulled back into the composer. Converts steering's
    one genuinely bad property into a recoverable one and reuses the queue verbatim.
 
-The mockup also records two candidates deliberately **not** planned: a queue tray with
+The mockup also recorded two candidates as deliberately **not** planned: a queue tray with
 reorder/edit (speculative until queues exceed one message) and a ghost bubble in the
 transcript tail (buys elegance by touching SPEC-21 anchoring — exactly what chips avoid).
+
+**Both were subsequently built**, and the reasoning above did not survive contact: the ghost
+bubble in SPEC-36 (which found the trailer row already paid for the anchoring cost) and the
+tray in SPEC-37 (whose ⤒ promote turned out to be the one queue action nothing else offered).
+This paragraph is kept rather than deleted because the *shape* of the misjudgement is worth
+seeing: both were dismissed as speculative UI, and both earned their place by exposing a
+behaviour — not a look — that the chips could not express.
 
 ## Rejected alternatives
 

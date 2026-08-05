@@ -690,6 +690,81 @@ void main() {
     );
   });
 
+  group('StoreController — queue commands (SPEC-35/36/37)', () {
+    /// Every queue command carries the MESSAGE id as `queuedId`.
+    ///
+    /// Regression: [Envelope.toJson] spreads the command body over the frame, so
+    /// a body field named `id` silently replaced the request id — the ack came
+    /// back labelled with the queued message and could never be matched to the
+    /// command that caused it.
+    test(
+      'carry the message id as queuedId, leaving the request id intact',
+      () async {
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        store.cancelQueuedMessage(_sid, 'q1');
+        store.updateQueuedMessage(_sid, 'q2', 'edited');
+        store.promoteQueuedMessage(_sid, 'q3');
+        store.reorderQueuedMessages(_sid, ['q3', 'q2']);
+        await Future<void>.delayed(Duration.zero);
+
+        final cmds = transport.sent
+            .where((e) => e.t == MsgType.cmd)
+            .where((e) => (e.body['kind'] as String).startsWith('queue.'))
+            .toList();
+        expect(cmds.map((e) => e.body['kind']), [
+          'queue.cancel',
+          'queue.update',
+          'queue.promote',
+          'queue.reorder',
+        ]);
+
+        for (final cmd in cmds) {
+          // What actually goes on the wire — `toJson`, not `body`, is where the
+          // shadowing happened.
+          final wire = cmd.toJson();
+          expect(
+            wire['id'],
+            cmd.id,
+            reason: '${cmd.body['kind']} must not overwrite the request id',
+          );
+          expect(wire['id'], isNot(anyOf('q1', 'q2', 'q3')));
+        }
+        expect(cmds[0].toJson()['queuedId'], 'q1');
+        expect(cmds[1].toJson()['queuedId'], 'q2');
+        expect(cmds[1].toJson()['text'], 'edited');
+        expect(cmds[2].toJson()['queuedId'], 'q3');
+        expect(cmds[3].toJson()['ids'], ['q3', 'q2']);
+      },
+    );
+  });
+
   group('StoreController — repo refresh after project add', () {
     test('addProject requests repo.refresh after server ack', () async {
       final transport = _SnapshotTransport();
