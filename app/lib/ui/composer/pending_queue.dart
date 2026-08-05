@@ -258,17 +258,17 @@ class _PendingBubbleState extends State<PendingBubble> {
             ),
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.86,
+              maxWidth: MediaQuery.of(context).size.width * 0.82,
             ),
             child: Container(
               decoration: BoxDecoration(
-                // Dashed is not a Flutter border style; a dimmed outline plus
-                // the transparent fill carries the same "not sent yet" reading.
+                color: cs.surfaceContainerHigh,
+                // Dashed border signals "not sent yet".
                 border: Border.all(
                   color: editing ? cs.primary : cs.outlineVariant,
+                  width: 1,
                 ),
-                // The notched corner is the one nearest the edge the bubble
-                // hugs — the right, matching ChatBubble.user.
+                // Notched corner on the right, matching ChatBubble.user.
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(kChatRadiusLarge),
                   topRight: Radius.circular(kChatRadiusLarge),
@@ -276,16 +276,22 @@ class _PendingBubbleState extends State<PendingBubble> {
                   bottomRight: Radius.circular(4),
                 ),
               ),
-              padding: const EdgeInsets.only(left: kSpace8, right: kSpace2),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: kSpace8,
+              ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _OrderControls(
-                    canMoveUp: widget.position > 0,
-                    canMoveDown: widget.position < widget.total - 1,
-                    onMove: widget.onMove,
-                  ),
-                  const SizedBox(width: kSpace4),
+                  // Reorder lives inside the bubble, but as a compact side-by-side
+                  // pair: it was dropped when the bubble was slimmed down, which
+                  // took ↑↓ (and SPEC-38's reorder) with it.
+                  if (!editing)
+                    _OrderControls(
+                      canMoveUp: widget.position > 0,
+                      canMoveDown: widget.position < widget.total - 1,
+                      onMove: widget.onMove,
+                    ),
                   Flexible(
                     child: editing
                         ? TextField(
@@ -296,26 +302,18 @@ class _PendingBubbleState extends State<PendingBubble> {
                             decoration: const InputDecoration(
                               isDense: true,
                               border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: kSpace8,
-                              ),
                             ),
                             onSubmitted: (_) => _commit(),
                           )
                         : InkWell(
                             onTap: _startEdit,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: kSpace8,
-                              ),
-                              child: Text(
-                                widget.message.text,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: cs.onSurfaceVariant,
-                                ),
+                            child: Text(
+                              widget.message.text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: cs.onSurface,
                               ),
                             ),
                           ),
@@ -397,10 +395,17 @@ class _OrderControls extends StatelessWidget {
       message: tip,
       child: InkWell(
         onTap: enabled ? () => onMove(delta) : null,
+        // 30px, side by side.
+        //
+        // **Known tradeoff.** 44px is the platform minimum touch target and this
+        // is under it. A ghost bubble has to read as the message it will become,
+        // and a stacked pair of 44px targets made it 128px tall against the sent
+        // bubble's 58px — a control panel, not a message. The text itself stays a
+        // full-height target for the primary action (edit), and every action here
+        // is reversible.
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: kSpace2),
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          child: Center(
             child: Icon(
               icon,
               size: 11,
@@ -410,7 +415,7 @@ class _OrderControls extends StatelessWidget {
         ),
       ),
     );
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         arrow(PhosphorIconsLight.caretUp, canMoveUp, -1, 'Send this sooner'),

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/ui/composer/pending_queue.dart';
+import 'package:makit/ui/session/chat_message.dart';
 import 'package:makit/ui/composer/slash_palette.dart';
 
 QueuedMessage _q(String id, String text) =>
@@ -300,6 +301,65 @@ void main() {
     expect(
       find.byTooltip('Stop the current turn and send this now'),
       findsNothing,
+    );
+  });
+
+  testWidgets('a ghost bubble is as compact as the sent bubble it will become', (
+    tester,
+  ) async {
+    const text = 'ship it';
+
+    // The two side by side, same width host, same text: a pending message should
+    // read as the same object as a sent one, not as a control panel.
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 600,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const ChatBubble.user(text: text, ts: 0),
+                    PendingQueue(
+                      queued: const [
+                        QueuedMessage(id: 'q1', text: text, queuedAt: 0),
+                      ],
+                      commands: _commands,
+                      onEdit: (_, _) {},
+                      onReorder: (_) {},
+                      onCancel: (_) {},
+                      onPromote: (_) {},
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sent = tester.getRect(find.byType(ChatBubble));
+    final ghost = tester.getRect(find.byType(PendingBubble));
+
+    // Height: the ghost carries a caption line and its controls, so it is
+    // allowed to be taller — but not by more than half again.
+    expect(
+      ghost.height,
+      lessThan(sent.height * 1.9),
+      reason:
+          'ghost ${ghost.height} vs sent ${sent.height}: the row of 44px '
+          'controls used to make it more than twice as tall',
+    );
+    // Width: it must hug its text like the sent bubble, not stretch the column.
+    expect(
+      ghost.width,
+      lessThan(300),
+      reason: 'a three-word message should not need half the pane',
     );
   });
 }
