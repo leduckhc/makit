@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:makit/store/secure_store.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -240,6 +241,47 @@ void main() {
         controller.dispose();
       },
     );
+  });
+
+  /// SPEC-37 decision 6: the app has no self-CPU API, so the SERVER samples the
+  /// pid the app reports in `hello` (trusting it only on a loopback socket).
+  /// Without that pid the dashboard's "App (Flutter)" row can only ever read
+  /// "—" — which is exactly what it did, because two of the four hello paths
+  /// omitted it. The pid is therefore added in `_attachReal`, the single funnel
+  /// every path goes through, so no future caller can forget it.
+  group('hello advertises the app pid (SPEC-37 decision 6)', () {
+    test('every connect path reports a usable pid', () async {
+      final storage = _seededStorage();
+      final transports = <FakeTransport>[];
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: true);
+          transports.add(t);
+          return t;
+        },
+        browseLan: _fixedBrowse(const []),
+        rediscoverStall: Duration.zero,
+      );
+
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(transports, isNotEmpty);
+      final bodies = transports.first.helloBodies;
+      expect(bodies, isNotEmpty, reason: 'a hello must have been sent');
+      final body = bodies.first;
+
+      // The bearer is still carried; the pid is additive.
+      expect(body['bearer'], 'bearer-token');
+      final reported = body['pid'];
+      expect(reported, isA<int>(), reason: 'the server ignores a non-integer');
+      // The server rejects 0, negatives and non-integers, so a "sent but
+      // useless" pid would be as bad as none at all.
+      expect(reported as int, greaterThan(0));
+      expect(reported, io.pid, reason: 'our OWN pid, not an arbitrary number');
+
+      controller.dispose();
+    });
   });
 
   group('ConnectionController app-lifecycle reconnect (B10)', () {

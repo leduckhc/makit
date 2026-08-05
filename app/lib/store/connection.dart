@@ -187,11 +187,12 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 
   Future<void> _boot() async {
     if (_wsUrl.isNotEmpty) {
-      // Dev override: connect directly, no pairing.
+      // Dev override: connect directly, no pairing. Still send the desktop pid
+      // so the server can measure the app surface (SPEC-37).
       await _attachReal(
         _wsUrl,
         fingerprint: _wsFp.isEmpty ? null : _wsFp,
-        helloBody: const {},
+        helloBody: _authHelloBodyNoBearer(),
       );
       return;
     }
@@ -235,6 +236,17 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   /// we never send it from web (no `dart:io` process there).
   Map<String, dynamic> _authHelloBody(String bearer) {
     final body = <String, dynamic>{'bearer': bearer};
+    if (!kIsWeb &&
+        (io.Platform.isMacOS || io.Platform.isWindows || io.Platform.isLinux)) {
+      body['pid'] = io.pid;
+    }
+    return body;
+  }
+
+  /// Hello body without bearer (used for dev override, which has no pairing).
+  /// Still sends the desktop pid so the server can measure the app surface.
+  Map<String, dynamic> _authHelloBodyNoBearer() {
+    final body = <String, dynamic>{};
     if (!kIsWeb &&
         (io.Platform.isMacOS || io.Platform.isWindows || io.Platform.isLinux)) {
       body['pid'] = io.pid;
@@ -424,7 +436,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     await _attachReal(
       result.wssUrl,
       fingerprint: result.fingerprint,
-      helloBody: {'bearer': result.bearer},
+      helloBody: _authHelloBody(result.bearer),
     );
     return result;
   }
