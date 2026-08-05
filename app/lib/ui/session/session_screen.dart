@@ -13,7 +13,6 @@ import '../composer/client_commands.dart';
 import '../composer/composer.dart';
 import '../composer/composer_draft.dart';
 import '../composer/composer_selectors.dart';
-import '../composer/pending_queue.dart';
 import '../composer/pending_queue_slot.dart';
 import '../widgets/connection_chip.dart';
 import '../widgets/glass.dart';
@@ -382,7 +381,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               controller: _answerController,
                               pendingQueue: PendingQueueSlot(
                                 sessionId: widget.sessionId,
-                                slot: PendingQueuePlacement.pinned,
                               ),
                               onSend: (text) => _handleSend(text, pendingAsk),
                             )
@@ -404,7 +402,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               // placement preference is `pinned`.
                               pendingQueue: PendingQueueSlot(
                                 sessionId: widget.sessionId,
-                                slot: PendingQueuePlacement.pinned,
                               ),
                               enabled: pendingAsk == null,
                               commands: ref.watch(

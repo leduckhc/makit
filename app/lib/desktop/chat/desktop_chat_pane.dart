@@ -13,7 +13,6 @@ import '../../ui/composer/client_commands.dart';
 import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_draft.dart';
 import '../../ui/composer/composer_selectors.dart';
-import '../../ui/composer/pending_queue.dart';
 import '../../ui/composer/pending_queue_slot.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
@@ -359,10 +358,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     Composer(
                       key: ValueKey('answer-${pendingAsk.requestId}'),
                       controller: _answerController,
-                      pendingQueue: PendingQueueSlot(
-                        sessionId: sessionId,
-                        slot: PendingQueuePlacement.pinned,
-                      ),
+                      pendingQueue: PendingQueueSlot(sessionId: sessionId),
                       alwaysExpanded: true,
                       onSend: (text) =>
                           _handleSend(sessionId, text, pendingAsk),
@@ -381,10 +377,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       enabled: pendingAsk == null,
                       // SPEC-38: pending messages, when the placement
                       // preference is `pinned`.
-                      pendingQueue: PendingQueueSlot(
-                        sessionId: sessionId,
-                        slot: PendingQueuePlacement.pinned,
-                      ),
+                      pendingQueue: PendingQueueSlot(sessionId: sessionId),
                       controller: _composerControllerFor(sessionId),
                       commands: ref.watch(commandsProvider(sessionId)),
                       onSend: (text) =>

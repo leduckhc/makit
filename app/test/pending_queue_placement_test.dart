@@ -37,7 +37,7 @@ ProviderContainer _container(PendingQueuePlacement placement) {
   return container;
 }
 
-/// Both slots mounted at once, as both surfaces do: exactly one may render.
+/// The mount point exactly as both surfaces mount it: once, no slot argument.
 Widget _host(ProviderContainer container) => UncontrolledProviderScope(
   container: container,
   child: const MaterialApp(
@@ -45,8 +45,7 @@ Widget _host(ProviderContainer container) => UncontrolledProviderScope(
       body: Column(
         children: [
           Spacer(),
-          PendingQueueSlot(sessionId: _sid, slot: PendingQueuePlacement.pinned),
-          PendingQueueSlot(sessionId: _sid, slot: PendingQueuePlacement.tray),
+          PendingQueueSlot(sessionId: _sid),
         ],
       ),
     ),
@@ -132,14 +131,7 @@ void main() {
             body: Column(
               children: [
                 PendingQueuePlacementSetting(),
-                PendingQueueSlot(
-                  sessionId: _sid,
-                  slot: PendingQueuePlacement.pinned,
-                ),
-                PendingQueueSlot(
-                  sessionId: _sid,
-                  slot: PendingQueuePlacement.tray,
-                ),
+                PendingQueueSlot(sessionId: _sid),
               ],
             ),
           ),

@@ -1,9 +1,15 @@
-/// The one place that decides WHERE the pending queue renders (SPEC-38).
+/// The one place that decides HOW the pending queue renders (SPEC-37/38).
 ///
-/// Both surfaces mount this twice — once in the composer column, once in the
-/// transcript's trailer row — passing which [slot] that instance is. Exactly one
-/// of them renders, so the placement rule lives here instead of being duplicated
-/// across four call sites (mobile + desktop × two slots) where it could drift.
+/// There is exactly ONE mount point — above the composer — since SPEC-37 removed
+/// the in-transcript placement. So this widget takes no slot argument: it reads
+/// the preference and builds the presentation it names, and the two surfaces
+/// (mobile session screen, desktop chat pane) mount it once each.
+///
+/// It used to take a `slot` and compare it against the preference. That let the
+/// tests mount a combination of slots the app does not have — they stayed green
+/// while the tray never rendered in the running app, because the composer only
+/// ever mounted the `pinned` slot. A parameter that can disagree with reality is
+/// a parameter worth deleting.
 library;
 
 import 'package:flutter/material.dart';
@@ -14,49 +20,48 @@ import '../../store/store.dart';
 import 'pending_queue.dart';
 import 'pending_queue_tray.dart';
 
-/// Renders the session's pending queue when the user's placement preference
-/// matches this instance's [slot]; builds nothing otherwise.
+/// Renders this session's pending messages in the presentation the user chose,
+/// or nothing when the queue is empty.
 class PendingQueueSlot extends ConsumerWidget {
-  /// Creates a placement-gated queue slot.
-  const PendingQueueSlot({
-    super.key,
-    required this.sessionId,
-    required this.slot,
-  });
+  /// Creates the queue mount point.
+  const PendingQueueSlot({super.key, required this.sessionId});
 
-  /// The session whose queue this slot would show.
+  /// The session whose queue this shows.
   final String sessionId;
-
-  /// Which placement this mount point represents.
-  final PendingQueuePlacement slot;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Both placements live in this one mount point (above the composer), so the
-    // slot only decides WHICH of them renders.
-    final placement = ref.watch(pendingQueuePlacementProvider);
-    if (placement != slot) return const SizedBox.shrink();
     final queued = ref.watch(queuedMessagesProvider(sessionId));
     if (queued.isEmpty) return const SizedBox.shrink();
 
+    final placement = ref.watch(pendingQueuePlacementProvider);
+    final commands = ref.watch(commandsProvider(sessionId));
     final store = ref.read(storeControllerProvider.notifier);
-    if (placement == PendingQueuePlacement.tray) {
-      return PendingQueueTray(
+
+    void edit(String id, String text) =>
+        store.updateQueuedMessage(sessionId, id, text);
+    void reorder(List<String> ids) =>
+        store.reorderQueuedMessages(sessionId, ids);
+    void cancel(String id) => store.cancelQueuedMessage(sessionId, id);
+    void promote(String id) => store.promoteQueuedMessage(sessionId, id);
+
+    return switch (placement) {
+      PendingQueuePlacement.tray => PendingQueueTray(
         queued: queued,
-        commands: ref.watch(commandsProvider(sessionId)),
-        onEdit: (id, text) => store.updateQueuedMessage(sessionId, id, text),
-        onReorder: (ids) => store.reorderQueuedMessages(sessionId, ids),
-        onCancel: (id) => store.cancelQueuedMessage(sessionId, id),
-        onPromote: (id) => store.promoteQueuedMessage(sessionId, id),
-      );
-    }
-    return PendingQueue(
-      queued: queued,
-      commands: ref.watch(commandsProvider(sessionId)),
-      onEdit: (id, text) => store.updateQueuedMessage(sessionId, id, text),
-      onReorder: (ids) => store.reorderQueuedMessages(sessionId, ids),
-      onCancel: (id) => store.cancelQueuedMessage(sessionId, id),
-      onPromote: (id) => store.promoteQueuedMessage(sessionId, id),
-    );
+        commands: commands,
+        onEdit: edit,
+        onReorder: reorder,
+        onCancel: cancel,
+        onPromote: promote,
+      ),
+      PendingQueuePlacement.pinned => PendingQueue(
+        queued: queued,
+        commands: commands,
+        onEdit: edit,
+        onReorder: reorder,
+        onCancel: cancel,
+        onPromote: promote,
+      ),
+    };
   }
 }
