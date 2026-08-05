@@ -6,11 +6,8 @@
 /// A bubble can be edited in place (with the slash palette), moved earlier or
 /// later in the queue, or dropped.
 ///
-/// This widget is deliberately **placement-agnostic** and callback-driven: the
-/// same instance is mounted either in the composer column or inside the
-/// transcript's trailer row, decided by
-/// [PendingQueuePlacement]. Keeping the store out of it means one widget, one
-/// set of tests, and no `desktop/` import from shared `ui/`.
+/// This widget is deliberately callback-driven: `PendingQueueSlot` owns the store
+/// wiring, so this file has one widget, one set of tests, and no store import.
 library;
 
 import 'package:flutter/material.dart';
@@ -20,22 +17,6 @@ import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../session/chat_metrics.dart';
 import 'slash_palette.dart';
-
-/// Where the pending queue is rendered.
-/// Where (and how) a pending mid-turn message is shown.
-///
-/// There were three; `inline` — the queue living in the transcript's trailer row
-/// — is gone. It was the placement that had to touch SPEC-21's anchoring and
-/// SPEC-34's index map to exist at all, and it bought nothing the pinned bubbles
-/// do not: a queue that scrolls away is a queue you forget you armed.
-enum PendingQueuePlacement {
-  /// Hollow ghost bubbles directly above the composer — always visible.
-  pinned,
-
-  /// A compact work list above the composer (mockup variant C): tighter than the
-  /// bubbles, same actions.
-  tray,
-}
 
 /// A stack of [PendingBubble]s, oldest (next to send) first.
 class PendingQueue extends StatelessWidget {
@@ -87,14 +68,15 @@ class PendingQueue extends StatelessWidget {
       // — that is the reversed list's LEADING pad, and changing it mid-session
       // shifts what the user is reading (SPEC-21 anchoring; measured 36px in the
       // anchor tests when I tried). So the queue takes at most a third of the
-      // viewport and scrolls internally, `reverse: true` so the next-to-send
-      // bubble is the one that stays in view.
+      // viewport and scrolls internally. NOT `reverse: true`: the children are
+      // oldest-first, so a reversed viewport opens at the BOTTOM — the last
+      // message queued — and scrolls the next-to-send one off the top, which is
+      // the opposite of what matters.
       child: ConstrainedBox(
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height / 3,
         ),
         child: SingleChildScrollView(
-          reverse: true,
           child: Column(
             // Right, like the sent user bubbles these become: the queue is the
             // user's own column, and the hollow outline (not the side) is what
@@ -181,6 +163,15 @@ class PendingBubble extends StatefulWidget {
 }
 
 class _PendingBubbleState extends State<PendingBubble> {
+  /// True once ⤒ has been tapped for this message.
+  ///
+  /// Promote interrupts the running turn, so a double-tap would abort twice —
+  /// the second time against whatever turn the flush had just started. The
+  /// server ignores a stale id, but it cannot tell a stale id from a second
+  /// deliberate promote, so the guard belongs here. It lives for the lifetime of
+  /// this bubble, which the queue snapshot replaces as soon as the promote
+  /// lands.
+  bool _promoted = false;
   TextEditingController? _ctrl;
   final _focus = FocusNode();
   bool _showSlash = false;
@@ -354,7 +345,12 @@ class _PendingBubbleState extends State<PendingBubble> {
                     _BubbleAction(
                       icon: PhosphorIconsLight.arrowLineUp,
                       tooltip: 'Stop the current turn and send this now',
-                      onTap: widget.onPromote,
+                      onTap: _promoted
+                          ? null
+                          : () {
+                              setState(() => _promoted = true);
+                              widget.onPromote();
+                            },
                     ),
                   ],
                   _BubbleAction(

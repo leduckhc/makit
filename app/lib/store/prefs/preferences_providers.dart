@@ -5,7 +5,7 @@ import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 
-import '../../ui/composer/pending_queue.dart';
+import '../../store/models.dart';
 import 'preference.dart';
 import 'preference_entries.dart';
 import 'preferences_controller.dart';

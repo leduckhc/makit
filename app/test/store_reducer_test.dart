@@ -690,6 +690,67 @@ void main() {
     );
   });
 
+  group('StoreController — optimistic bubbles vs the queue', () {
+    test('an IDLE session with a queue gets no optimistic bubble', () async {
+      // The server enqueues whenever a queue exists or a flush is in flight,
+      // whatever the status — so a bubble here would claim the message was sent
+      // AND eat the seq the next real event needs.
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      transport.pushSessions([
+        {
+          'id': _sid,
+          'projectId': 'p1',
+          'agent': 'pi',
+          // Idle, but with one message still waiting to be delivered.
+          'status': 'idle',
+          'queued': [
+            {'id': 'q1', 'text': 'waiting', 'queuedAt': 1},
+          ],
+        },
+      ]);
+      store.subscribeSession(_sid);
+      transport.pushAck(id: 's-$_sid');
+      await Future<void>.delayed(Duration.zero);
+
+      store.appendOptimisticMessage(_sid, 'and another');
+      await Future<void>.delayed(Duration.zero);
+
+      final events = container.read(storeControllerProvider).events[_sid];
+      expect(
+        events?.where((e) => e.kind == EventKind.userMessage) ?? const [],
+        isEmpty,
+        reason: 'the queue is the feedback here, not a chat bubble',
+      );
+    });
+  });
+
   group('StoreController — queue commands (SPEC-35/36/37)', () {
     /// Every queue command carries the MESSAGE id as `queuedId`.
     ///

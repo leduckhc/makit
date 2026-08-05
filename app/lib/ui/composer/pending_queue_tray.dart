@@ -75,13 +75,14 @@ class PendingQueueTray extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: kSpace4),
         // Bounded like the bubbles, and for the same reason: on the phone this
         // floats over the transcript, and the transcript's bottom pad cannot grow
-        // to compensate without shifting what the user is reading (SPEC-21).
+        // to compensate without shifting what the user is reading (SPEC-21). Not
+        // reversed: rows are oldest-first, so the top of the viewport is the row
+        // that sends next.
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(context).size.height / 3,
           ),
           child: SingleChildScrollView(
-            reverse: true,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -166,6 +167,9 @@ class TrayRow extends StatefulWidget {
 }
 
 class _TrayRowState extends State<TrayRow> {
+  /// True once ⤒ has been tapped — see `_PendingBubbleState._promoted`: promote
+  /// aborts the running turn, so a double-tap would abort twice.
+  bool _promoted = false;
   TextEditingController? _ctrl;
   FocusNode? _focus;
   bool _showSlash = false;
@@ -188,7 +192,9 @@ class _TrayRowState extends State<TrayRow> {
     });
     // Commit last: an empty text is a cancel server-side, and this row is gone
     // by the time the snapshot comes back either way.
-    if (commit) widget.onEdit(text);
+    // Trimmed like the bubble's editor: the server only trims to decide
+    // "empty means cancel", and would otherwise store the padding verbatim.
+    if (commit) widget.onEdit(text.trim());
   }
 
   void _pickSlash(String cmd) {
@@ -267,7 +273,11 @@ class _TrayRowState extends State<TrayRow> {
                           contentPadding: EdgeInsets.zero,
                         ),
                         onChanged: (t) {
-                          final show = t.startsWith('/') && !t.contains(' ');
+                          // Any whitespace, not just a space: a tab or a
+                          // pasted newline left the palette open over the
+                          // arguments (matches PendingBubble._onChanged).
+                          final show =
+                              t.startsWith('/') && !t.contains(RegExp(r'\s'));
                           if (show != _showSlash) {
                             setState(() => _showSlash = show);
                           }
@@ -290,7 +300,12 @@ class _TrayRowState extends State<TrayRow> {
               _TrayIcon(
                 icon: PhosphorIconsLight.arrowLineUp,
                 tooltip: 'Stop the current turn and send this now',
-                onTap: editing ? null : widget.onPromote,
+                onTap: editing || _promoted
+                    ? null
+                    : () {
+                        setState(() => _promoted = true);
+                        widget.onPromote();
+                      },
               ),
               _TrayIcon(
                 icon: PhosphorIconsLight.x,

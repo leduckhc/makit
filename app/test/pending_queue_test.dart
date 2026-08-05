@@ -420,4 +420,42 @@ void main() {
       );
     }
   });
+
+  testWidgets('a double-tap on ⤒ promotes once, not twice', (tester) async {
+    // Promote aborts the running turn; twice would abort the turn the flush had
+    // just started.
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    final promote = find.byTooltip('Stop the current turn and send this now');
+    await tester.tap(promote);
+    await tester.pump();
+    await tester.tap(promote, warnIfMissed: false);
+    await tester.pump();
+
+    expect(calls.promotes, ['q1']);
+  });
+
+  testWidgets('the queue opens on the message that sends NEXT', (tester) async {
+    // A tall queue scrolls internally; oldest-first children mean the top of the
+    // viewport is the next-to-send message. `reverse: true` used to open at the
+    // bottom, showing the LAST message queued.
+    await tester.pumpWidget(
+      _host([
+        for (var i = 0; i < 12; i++) _q('q$i', 'message number $i'),
+      ], _Calls()),
+    );
+    await tester.pumpAndSettle();
+
+    final scroller = tester.widget<SingleChildScrollView>(
+      find.byType(SingleChildScrollView),
+    );
+    expect(scroller.reverse, isFalse);
+    expect(
+      find.text('sends next · 1 of 12'),
+      findsOneWidget,
+      reason: 'the caption of the next-to-send message must be in view',
+    );
+  });
 }

@@ -427,7 +427,16 @@ class StoreController extends StateNotifier<StoreState> {
     // finally delivered, or never if cancelled) — so a bubble at cursor+1 would
     // advance the cursor past a real event and the reducer would drop it. The
     // queue chip above the composer is the feedback here, not a chat bubble.
-    if (idx >= 0 && state.sessions[idx].status != SessionStatus.idle) return;
+    //
+    // `status != idle` is NOT sufficient: `Session.sendUserMessage` enqueues
+    // whenever a queue exists or a flush is in flight, *whatever* the status —
+    // so an idle session with messages still pending queues this one too, and a
+    // bubble here would be a lie that also eats the next real seq.
+    if (idx >= 0 &&
+        (state.sessions[idx].status != SessionStatus.idle ||
+            state.sessions[idx].queued.isNotEmpty)) {
+      return;
+    }
     // Inject a local user bubble immediately so the input doesn't feel hung.
     // The optimistic event takes the next seq after the cursor; the server's
     // user.message echo arrives with the SAME seq (the server assigns seqs in

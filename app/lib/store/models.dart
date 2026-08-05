@@ -1081,6 +1081,19 @@ class Session {
 /// One message waiting for the agent to go idle (SPEC-35). [attachmentCount] is
 /// a count, not descriptors: the chip only needs to say "and an image", and the
 /// bytes are already safe in the server's media store.
+/// Where (and how) a pending mid-turn message is shown (SPEC-38).
+///
+/// Originally three; `inline` (in the transcript trailer) was removed because
+/// it required touching SPEC-21's anchoring and added no value over pinned.
+enum PendingQueuePlacement {
+  /// Hollow ghost bubbles directly above the composer — always visible.
+  pinned,
+
+  /// A compact work list above the composer (mockup variant C): tighter than
+  /// the bubbles, same actions.
+  tray,
+}
+
 class QueuedMessage {
   const QueuedMessage({
     required this.id,

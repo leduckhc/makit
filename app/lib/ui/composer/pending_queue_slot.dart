@@ -15,6 +15,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../store/models.dart' show PendingQueuePlacement;
 import '../../store/prefs/preferences_providers.dart';
 import '../../store/store.dart';
 import 'pending_queue.dart';

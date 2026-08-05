@@ -59,7 +59,7 @@ message** instead of at the whole queue.
 
 ## Wire
 
-```
+```text
 queue.promote { sessionId, queuedId }  → ack (always; a stale id changes nothing)
 ```
 

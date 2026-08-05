@@ -121,6 +121,21 @@ export interface SessionInit {
   hydrateFrom?: () => SessionEvent[];
 }
 
+/**
+ * Hard ceiling on pending mid-turn messages per session (SPEC-35).
+ *
+ * The queue is in-memory and appendable by any authenticated client for as long
+ * as it can keep the agent busy, so it needs a bound. High enough that no real
+ * user meets it.
+ */
+const MAX_QUEUED_MESSAGES = 50;
+
+/** First 80 chars of a queued message, for an error the user can act on. */
+function preview(text: string): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  return one.length > 80 ? `${one.slice(0, 79)}…` : one;
+}
+
 export class Session extends EventEmitter {
   readonly id: string;
   readonly projectId: string;
@@ -535,6 +550,16 @@ export class Session extends EventEmitter {
   }
 
   private enqueue(input: { text: string; attachments?: MediaAttachment[] }): void {
+    // Bounded: the queue is in-memory and a client can append to it for as long
+    // as it can keep a session busy. Refusing the newest message (rather than
+    // dropping the oldest) keeps the promise the queue makes about the messages
+    // it already accepted, and tells the user which one did not make it.
+    if (this.queued.length >= MAX_QUEUED_MESSAGES) {
+      this.recordError(
+        `not queued — ${MAX_QUEUED_MESSAGES} messages are already waiting: ${preview(input.text)}`,
+      );
+      return;
+    }
     this.queued.push({ id: randomUUID(), queuedAt: Date.now(), ...input });
     // Queue state rides the sessions snapshot (see SessionDTO.queued).
     this.emit("metaChanged");
@@ -647,11 +672,19 @@ export class Session extends EventEmitter {
       // connection, process crash, etc.), so continuing to flush would fail
       // repeatedly. The user is notified of both the immediate failure and the
       // queue clearing.
-      this.recordError(`queued message could not be sent: ${(err as Error)?.message ?? String(err)}`);
+      // The message is already off the queue (shifted above) and the rest are
+      // about to be dropped, so the error text is the ONLY record the user has
+      // of what they typed — name them.
+      this.recordError(
+        `queued message could not be sent: ${(err as Error)?.message ?? String(err)} — ${preview(next.text)}`,
+      );
       if (this.queued.length > 0) {
-        this.recordError(`clearing ${this.queued.length} remaining queued message(s) due to send failure`);
-        this.queued.length = 0;
-        this.emit("metaChanged");
+        const dropped = this.queued.map((q) => preview(q.text)).join(" · ");
+        this.recordError(
+          `dropped ${this.queued.length} queued message(s) after the send failure: ${dropped}`,
+        );
+        // `clearQueue()` rather than a second copy of its body.
+        this.clearQueue();
       }
     } finally {
       this.flushing = false;

@@ -98,16 +98,21 @@ void main() {
 
     // 4 ── edit in place, with the slash palette inside the editor.
     await tester.tap(find.text('also update the README'));
-    await pumpUntil(tester, find.byType(TextField).at(0));
+    // Anchored on "the bubble that has an editor open", not on finder order: the
+    // composer's own TextField is mounted too, and `.first` only happens to be
+    // the editor because the queue sits above the composer in the tree. Not on
+    // the message TEXT either — the first keystroke replaces it.
+    final editor = find.descendant(
+      of: find.byType(PendingBubble),
+      matching: find.byType(TextField),
+    );
+    await pumpUntil(tester, editor);
     await hold(tester, const Duration(milliseconds: 900));
 
-    await tester.enterText(find.byType(TextField).first, '/');
+    await tester.enterText(editor, '/');
     await hold(tester, const Duration(milliseconds: 1200));
 
-    await tester.enterText(
-      find.byType(TextField).first,
-      'also update the README and CHANGELOG',
-    );
+    await tester.enterText(editor, 'also update the README and CHANGELOG');
     await hold(tester, const Duration(milliseconds: 700));
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await pumpUntil(

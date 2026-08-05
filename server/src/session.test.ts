@@ -522,3 +522,60 @@ test("SPEC-37: promoting an id the queue no longer holds is a no-op, not an inte
   assert.deepEqual(f.sent, ["first"]);
   assert.equal(session.queuedMessages.length, 1);
 });
+
+// ---- terminal failure + the queue cap -------------------------------------
+
+test("SPEC-35: an adapter.send rejection drops the queue AND names what was lost", async () => {
+  const f = turnAdapter();
+  let failNext = false;
+  (f.adapter as any).send = async (input: { text: string }) => {
+    if (failNext) throw new Error("child process is gone");
+    f.sent.push(input.text);
+    f.adapter.emit("status", "running");
+  };
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  await session.sendUserMessage("the one that fails");
+  await session.sendUserMessage("collateral damage");
+  assert.equal(session.queuedMessages.length, 2);
+
+  failNext = true;
+  f.idle();
+  await settle();
+
+  assert.equal(session.queuedMessages.length, 0, "the queue is dropped, not retried");
+  const errors = session.events
+    .filter((e) => e.kind === "session.error")
+    .map((e) => (e.payload as { message: string }).message);
+  assert.ok(
+    errors.some((m) => m.includes("child process is gone") && m.includes("the one that fails")),
+    `the failed message's text must be recoverable from the error: ${errors.join(" | ")}`,
+  );
+  assert.ok(
+    errors.some((m) => m.includes("collateral damage")),
+    `a dropped message the user never saw fail must be named too: ${errors.join(" | ")}`,
+  );
+});
+
+test("SPEC-35: the queue is capped, and the refusal names the message", async () => {
+  const f = turnAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
+
+  await session.sendUserMessage("first");
+  for (let i = 0; i < 60; i++) await session.sendUserMessage(`queued ${i}`);
+
+  assert.equal(session.queuedMessages.length, 50, "capped at MAX_QUEUED_MESSAGES");
+  assert.deepEqual(
+    session.queuedMessages.at(-1)?.text,
+    "queued 49",
+    "the OLDEST accepted messages are kept; the newest are refused",
+  );
+  const errors = session.events
+    .filter((e) => e.kind === "session.error")
+    .map((e) => (e.payload as { message: string }).message);
+  assert.ok(
+    errors.some((m) => m.includes("already waiting") && m.includes("queued 50")),
+    `the refused message must be named: ${errors.slice(0, 2).join(" | ")}`,
+  );
+});

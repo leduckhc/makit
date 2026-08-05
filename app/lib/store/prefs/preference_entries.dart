@@ -7,7 +7,7 @@ library;
 
 import 'package:flutter/material.dart' show ThemeMode;
 
-import '../../../ui/composer/pending_queue.dart';
+import '../models.dart' show PendingQueuePlacement;
 import '../../../ui/session/navigator/navigator_style.dart';
 import 'preference.dart';
 

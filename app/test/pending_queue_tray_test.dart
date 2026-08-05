@@ -252,4 +252,53 @@ void main() {
     // A client command would run NOW; this message runs later.
     expect(find.text('/cancel'), findsNothing);
   });
+
+  testWidgets('a double-tap on ⤒ promotes once, not twice', (tester) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    final promote = find.byTooltip('Stop the current turn and send this now');
+    await tester.tap(promote);
+    await tester.pump();
+    await tester.tap(promote, warnIfMissed: false);
+    await tester.pump();
+
+    expect(calls.promotes, ['q1']);
+  });
+
+  testWidgets('an edit commits trimmed text, like the bubble editor', (
+    tester,
+  ) async {
+    final calls = _Calls();
+    await tester.pumpWidget(_host([_q('q1', 'first')], calls));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '  padded on both sides  ');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(calls.edits, [('q1', 'padded on both sides')]);
+  });
+
+  testWidgets('any whitespace after a slash command closes the palette', (
+    tester,
+  ) async {
+    // A tab or a pasted newline used to leave the palette open over the
+    // arguments, because only a literal space was tested for.
+    await tester.pumpWidget(_host([_q('q1', 'first')], _Calls()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('first'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '/review');
+    await tester.pumpAndSettle();
+    expect(find.byType(SlashPalette), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '/review\tthe diff');
+    await tester.pumpAndSettle();
+    expect(find.byType(SlashPalette), findsNothing);
+  });
 }

@@ -187,6 +187,14 @@ export interface AgentAdapter {
   readonly agent: string;             // "codex" | "pi" | ...
   start(opts: SpawnOpts): Promise<void>;
   send(input: UserInput): Promise<void>;          // user message / keystrokes
+  // SPEC-35: inject into the RUNNING turn instead of starting a new one.
+  // `true`  = delivered (the adapter echoed it; the Session must not requeue)
+  // `false` = refused for any reason (no steer primitive, no active turn, a
+  //           stale `expectedTurnId`, a non-steerable turn kind) → queue it
+  // Exception: an attachment that cannot be materialised returns `true` after
+  // emitting `session.error` — the prompt is undeliverable, so requeueing it
+  // would fail forever (see the SPEC-35 plan's deviation note).
+  steer(input: UserInput): Promise<boolean>;
   approve(callId: string, decision: ApprovalDecision): Promise<void>;
   cancel(): Promise<void>;
   kill(signal?: NodeJS.Signals): Promise<void>;

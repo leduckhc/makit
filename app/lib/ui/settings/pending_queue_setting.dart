@@ -10,9 +10,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
+import '../../store/models.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
-import '../composer/pending_queue.dart';
 
 /// A labelled segmented control bound to [pendingQueuePlacementPreference].
 class PendingQueuePlacementSetting extends ConsumerWidget {
