@@ -106,4 +106,35 @@ void main() {
     // The server acked, so the row is dismissed.
     expect(find.text('Wire up pairing'), findsNothing);
   });
+
+  // Swipe is invisible to assistive tech and awkward one-handed, so quit must
+  // also be reachable without it.
+  testWidgets('long-press reaches the same quit confirmation', (tester) async {
+    await _pumpTile(tester, killFails: false);
+
+    await tester.longPress(find.text('Wire up pairing'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Quit session?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('quit is published as a semantics action for screen readers', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await _pumpTile(tester, killFails: false);
+
+    // The action exists in the semantics tree, so VoiceOver/TalkBack can invoke
+    // it without any gesture.
+    expect(
+      tester
+          .getSemantics(find.byType(SessionTile))
+          .getSemanticsData()
+          .customSemanticsActionIds,
+      isNotEmpty,
+    );
+    handle.dispose();
+  });
 }

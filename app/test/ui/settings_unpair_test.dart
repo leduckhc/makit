@@ -157,6 +157,9 @@ void main() {
 
     expect(c.read(connectionProvider).servers, isEmpty);
     expect(c.read(connectionProvider).paired, isFalse);
+    // …and the user is taken to pairing. Clearing the list while leaving them
+    // on Settings would be a dead end.
+    expect(find.text('pair screen'), findsOneWidget);
   });
 
   testWidgets('a single paired server is also confirmed before unpairing', (

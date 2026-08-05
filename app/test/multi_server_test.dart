@@ -350,9 +350,16 @@ void main() {
     // Rediscovery runs unawaited: it sleeps for the stall window, then browses
     // mDNS for up to 4s. A `switchTo` inside that window must not be undone by
     // the in-flight task re-attaching to the server it started from.
+    //
+    // The browse is gated on a Completer rather than timed, so the stale path is
+    // guaranteed to run *after* the switch — a fixed delay could let a loaded
+    // runner finish rediscovery first and pass without exercising anything.
     test('a switch during the stall window wins', () async {
       final transports = <FakeTransport>[];
+      final browseGate = Completer<List<DiscoveredServer>>();
+      final browseCalled = Completer<void>();
       final storage = _twoServers();
+
       final controller = ConnectionController(
         storage,
         // Never connects, so rediscovery always proceeds past its stall check.
@@ -361,34 +368,48 @@ void main() {
           transports.add(t);
           return t;
         },
-        // A's fingerprint is found at a NEW address, which is exactly what
-        // would tempt the stale task to re-attach to A.
-        browseLan: ({Duration timeout = const Duration(seconds: 3)}) async => [
-          DiscoveredServer(
-            name: 'makit._tcp.local',
-            host: '10.9.9.9',
-            port: 9999,
-            fingerprint: _fpA,
-          ),
-        ],
-        rediscoverStall: const Duration(milliseconds: 20),
+        browseLan: ({Duration timeout = const Duration(seconds: 3)}) {
+          if (!browseCalled.isCompleted) browseCalled.complete();
+          return browseGate.future;
+        },
+        rediscoverStall: Duration.zero,
       );
       await Future<void>.delayed(Duration.zero);
 
-      // Switch to B while A's rediscovery is still sleeping.
+      // Rediscovery for A has begun and is parked inside the browse.
+      await browseCalled.future;
+
+      // Switch to B while A's rediscovery is still awaiting its browse result.
       await controller.switchTo(_fpB);
       expect(controller.state.activeServer?.fingerprint, _fpB);
 
-      // Let A's rediscovery finish its stall + browse.
-      await Future<void>.delayed(const Duration(milliseconds: 120));
+      // Now release the browse with A's fingerprint at a NEW address — exactly
+      // what would tempt the stale task to re-attach to A.
+      browseGate.complete([
+        DiscoveredServer(
+          name: 'makit._tcp.local',
+          host: '10.9.9.9',
+          port: 9999,
+          fingerprint: _fpA,
+        ),
+      ]);
+      // Drain the continuation that runs after the browse completes.
+      await pumpEventQueue();
 
-      // B is still active and the last socket opened is B's — not A's new
-      // address.
+      // B is still active, and the last socket opened is B's — not A's new
+      // address. A's record must also be left alone.
       expect(controller.state.activeServer?.fingerprint, _fpB);
       expect(
         transports.last.connectedUrls.last,
         'wss://10.0.0.2:8443',
         reason: 'a stale rediscovery must not re-point the live socket at A',
+      );
+      expect(
+        _storedServers(
+          storage,
+        ).firstWhere((e) => e['fingerprint'] == _fpA)['host'],
+        '10.0.0.1',
+        reason: 'the stale task must not rewrite the server it abandoned',
       );
       controller.dispose();
     });

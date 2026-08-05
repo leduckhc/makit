@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
@@ -22,6 +23,23 @@ class SessionTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final wantsUser = _needsUser(session.status);
+    return Semantics(
+      // Screen readers can neither swipe nor long-press, so quit is published
+      // as a custom action instead of being gesture-only.
+      customSemanticsActions: <CustomSemanticsAction, VoidCallback>{
+        const CustomSemanticsAction(label: 'Quit session'): () =>
+            _confirmAndQuit(context, ref),
+      },
+      child: _body(context, ref, cs, wantsUser),
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme cs,
+    bool wantsUser,
+  ) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(kRadius8),
       child: Dismissible(
@@ -56,6 +74,11 @@ class SessionTile extends ConsumerWidget {
               : cs.surfaceContainer,
           child: InkWell(
             onTap: () => context.go('/session/${session.id}'),
+            // Swipe is not an accessible gesture: it is invisible to assistive
+            // tech and awkward one-handed. Long-press reaches the same confirm
+            // dialog, matching WorktreeRow, which already long-presses for its
+            // actions.
+            onLongPress: () => _confirmAndQuit(context, ref),
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: kTouchRow),
               child: Padding(
