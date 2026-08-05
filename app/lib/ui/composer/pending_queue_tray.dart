@@ -73,38 +73,49 @@ class PendingQueueTray extends StatelessWidget {
           border: Border.all(color: cs.outlineVariant),
         ),
         padding: const EdgeInsets.symmetric(vertical: kSpace4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(
-                left: kSpace8,
-                right: kSpace8,
-                bottom: kSpace2,
-              ),
-              child: Text(
-                queued.length == 1
-                    ? '1 message waiting'
-                    : '${queued.length} messages waiting',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-              ),
+        // Bounded like the bubbles, and for the same reason: on the phone this
+        // floats over the transcript, and the transcript's bottom pad cannot grow
+        // to compensate without shifting what the user is reading (SPEC-21).
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height / 3,
+          ),
+          child: SingleChildScrollView(
+            reverse: true,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: kSpace8,
+                    right: kSpace8,
+                    bottom: kSpace2,
+                  ),
+                  child: Text(
+                    queued.length == 1
+                        ? '1 message waiting'
+                        : '${queued.length} messages waiting',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                for (var i = 0; i < queued.length; i++)
+                  TrayRow(
+                    key: ValueKey(queued[i].id),
+                    message: queued[i],
+                    position: i,
+                    total: queued.length,
+                    commands: commands,
+                    onEdit: (text) => onEdit(queued[i].id, text),
+                    onCancel: () => onCancel(queued[i].id),
+                    onPromote: () => onPromote(queued[i].id),
+                    onMove: (delta) => _move(i, delta),
+                  ),
+              ],
             ),
-            for (var i = 0; i < queued.length; i++)
-              TrayRow(
-                key: ValueKey(queued[i].id),
-                message: queued[i],
-                position: i,
-                total: queued.length,
-                commands: commands,
-                onEdit: (text) => onEdit(queued[i].id, text),
-                onCancel: () => onCancel(queued[i].id),
-                onPromote: () => onPromote(queued[i].id),
-                onMove: (delta) => _move(i, delta),
-              ),
-          ],
+          ),
         ),
       ),
     );

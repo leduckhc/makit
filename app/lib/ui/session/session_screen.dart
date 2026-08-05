@@ -165,6 +165,11 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
               // Leave room so the first/last items clear the floating glass bars
               // (bottom = safe-area inset + composer height + a breathing gap).
               // Expanded composer is ~160px; use 200 for comfortable clearance.
+              // Deliberately CONSTANT: this is the reversed list's leading pad,
+              // so changing it mid-session shifts the content the user is
+              // reading (SPEC-21 anchoring). The queue is bounded instead — see
+              // `PendingQueue`'s max height — so it cannot grow without limit
+              // over the transcript.
               padding: EdgeInsets.only(
                 top: topInset + 60,
                 bottom: MediaQuery.of(context).padding.bottom + 200,

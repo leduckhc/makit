@@ -79,29 +79,47 @@ class PendingQueue extends StatelessWidget {
         right: kSpace8,
         bottom: kSpace4,
       ),
-      child: Column(
-        // Right, like the sent user bubbles it will become: the queue is the
-        // user's own column, and the dashed outline (not the side) is what says
-        // "not sent yet".
-        crossAxisAlignment: CrossAxisAlignment.end,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (var i = 0; i < queued.length; i++)
-            PendingBubble(
-              // Keyed by the server-assigned id so element reuse cannot pair a
-              // bubble (or an open editor) with a different message as the
-              // queue drains or reorders.
-              key: ValueKey(queued[i].id),
-              message: queued[i],
-              position: i,
-              total: queued.length,
-              commands: commands,
-              onEdit: (text) => onEdit(queued[i].id, text),
-              onCancel: () => onCancel(queued[i].id),
-              onPromote: () => onPromote(queued[i].id),
-              onMove: (delta) => _move(i, delta),
-            ),
-        ],
+      // Bounded, and scrollable past the bound.
+      //
+      // On the phone the composer is a floating overlay, so the queue floats over
+      // the transcript: unbounded, it would cover the conversation one bubble at
+      // a time. Growing the transcript's bottom padding instead is not an option
+      // — that is the reversed list's LEADING pad, and changing it mid-session
+      // shifts what the user is reading (SPEC-21 anchoring; measured 36px in the
+      // anchor tests when I tried). So the queue takes at most a third of the
+      // viewport and scrolls internally, `reverse: true` so the next-to-send
+      // bubble is the one that stays in view.
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height / 3,
+        ),
+        child: SingleChildScrollView(
+          reverse: true,
+          child: Column(
+            // Right, like the sent user bubbles these become: the queue is the
+            // user's own column, and the hollow outline (not the side) is what
+            // says "not sent yet".
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < queued.length; i++)
+                PendingBubble(
+                  // Keyed by the server-assigned id so element reuse cannot pair
+                  // a bubble (or an open editor) with a different message as the
+                  // queue drains or reorders.
+                  key: ValueKey(queued[i].id),
+                  message: queued[i],
+                  position: i,
+                  total: queued.length,
+                  commands: commands,
+                  onEdit: (text) => onEdit(queued[i].id, text),
+                  onCancel: () => onCancel(queued[i].id),
+                  onPromote: () => onPromote(queued[i].id),
+                  onMove: (delta) => _move(i, delta),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
