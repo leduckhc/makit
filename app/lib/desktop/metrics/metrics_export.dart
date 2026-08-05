@@ -8,6 +8,10 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../../store/metrics.dart';
 import 'metrics_button.dart' show formatBytes, metricsTotalRssBytes;
@@ -115,6 +119,17 @@ double? metricsPeakOf(
   return peak;
 }
 
+/// Makes [value] safe inside a markdown table cell.
+///
+/// A session label is user data — it is the agent plus the repo/worktree name —
+/// so an unescaped `|` silently adds columns and corrupts the table in whatever
+/// PR or issue the snapshot was pasted into.
+String metricsEscapeCell(String value) => value
+    .replaceAll(r'\', r'\\')
+    .replaceAll('|', r'\|')
+    .replaceAll('\n', ' ')
+    .replaceAll('\r', ' ');
+
 /// A pasteable markdown summary — the form a perf claim actually travels in
 /// (a PR comment, an issue). Leads with the headline numbers so the reader does
 /// not have to parse JSON to see whether anything regressed.
@@ -170,7 +185,7 @@ String metricsExportMarkdown({
           '${cpu(latest.server.cpuPercent)} | '
           '${latest.server.cpuSeconds.toStringAsFixed(1)} |',
       for (final a in latest.agents)
-        '| ${a.label} | ${a.pid} | ${formatBytes(a.rssBytes)} | '
+        '| ${metricsEscapeCell(a.label)} | ${a.pid} | ${formatBytes(a.rssBytes)} | '
             '${cpu(a.cpuPercent)} | ${a.cpuSeconds.toStringAsFixed(1)} |',
     ],
     '',
@@ -178,4 +193,37 @@ String metricsExportMarkdown({
       '> ⚠️ The process table could not be read for the final sample, so app '
           'and agent rows are unknown (not zero).',
   ].join('\n');
+}
+
+/// Writes [contents] under [filename] and returns the absolute path.
+///
+/// Injected via [metricsSnapshotWriterProvider] so the export path is testable
+/// without touching a filesystem — and so a test can prove the **whole ring**
+/// leaves the app, which is the part a clipboard summary cannot carry.
+typedef MetricsSnapshotWriter =
+    Future<String> Function(String filename, String contents);
+
+/// Default writer: the app-support directory, beside the log file.
+///
+/// Deliberately not a save dialog. The artifact is a bug-report attachment, so
+/// the useful behaviour is "always land somewhere predictable and tell me where",
+/// and a dialog turns one click into three. This is still the only path by which
+/// a sample reaches disk, and only on an explicit click (decision 5).
+Future<String> writeMetricsSnapshot(String filename, String contents) async {
+  final dir = await getApplicationSupportDirectory();
+  final file = File('${dir.path}/$filename');
+  await file.writeAsString(contents, flush: true);
+  return file.path;
+}
+
+/// The snapshot writer. Overridden in tests to capture the artifact.
+final metricsSnapshotWriterProvider = Provider<MetricsSnapshotWriter>(
+  (ref) => writeMetricsSnapshot,
+);
+
+/// `metrics-YYYYMMDD-HHMMSS.json`, from [at] in local time.
+String metricsSnapshotFilename(DateTime at) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  return 'metrics-${at.year}${two(at.month)}${two(at.day)}'
+      '-${two(at.hour)}${two(at.minute)}${two(at.second)}.json';
 }

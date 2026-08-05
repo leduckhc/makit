@@ -51,8 +51,17 @@ class FrameStats {
 typedef AddTimingsCallback = void Function(TimingsCallback callback);
 typedef RemoveTimingsCallback = void Function(TimingsCallback callback);
 
-/// Collects frame totals into a ring and exposes [stats]. Idempotent
-/// [register]/[dispose] — double-registering would double-count every frame.
+/// Collects frame totals into a ring and exposes [stats].
+///
+/// Ownership is **ref-counted** ([acquire]/[release]), like
+/// `MetricsWatchController`. Two surfaces own this collector — the Tier 1
+/// popover and the Tier 2 dashboard — and the normal handoff has both open for a
+/// moment, since "Open dashboard →" opens the panel and then dismisses the
+/// popover. With a plain idempotent register plus an unconditional remove, that
+/// dismissal unregistered the callback out from under the dashboard, which then
+/// displayed frozen frame stats for as long as it stayed open. A single shared
+/// registration is still correct (two would double-count every frame); what was
+/// missing was counting the owners.
 class FrameTimingsCollector {
   FrameTimingsCollector({
     AddTimingsCallback? add,
@@ -69,20 +78,40 @@ class FrameTimingsCollector {
   int _cursor = 0;
 
   TimingsCallback? _callback;
+  int _owners = 0;
 
   /// Whether the callback is currently registered (for tests/diagnostics).
   bool get isRegistered => _callback != null;
 
-  /// Register the timings callback. No-op if already registered.
-  void register() {
-    if (_callback != null) return;
+  /// Live owners; exposed for tests/diagnostics.
+  int get ownerCount => _owners;
+
+  /// Claim collection. Registers the callback on the 0→1 transition only.
+  void acquire() {
+    _owners++;
+    if (_owners > 1) return;
     void handler(List<FrameTiming> timings) => _onTimings(timings);
     _callback = handler;
     _add(handler);
   }
 
-  /// Remove the callback. No-op if not registered. Safe to call from dispose.
-  void dispose() {
+  /// Give up one claim. Removes the callback only when the last owner leaves; a
+  /// release with no owners is a no-op (never a spurious remove). Safe to call
+  /// from `State.dispose`.
+  void release() {
+    if (_owners == 0) return;
+    _owners--;
+    if (_owners > 0) return;
+    final callback = _callback;
+    if (callback == null) return;
+    _remove(callback);
+    _callback = null;
+  }
+
+  /// Unconditional teardown for the provider's own disposal: drops the callback
+  /// whatever the count, so a container teardown cannot leak it.
+  void disposeAll() {
+    _owners = 0;
     final callback = _callback;
     if (callback == null) return;
     _remove(callback);
@@ -132,10 +161,10 @@ class FrameTimingsCollector {
 /// A provider so the metrics surfaces share a single ring (two panels must not
 /// double-count frames) and so tests can inject counting add/remove hooks
 /// instead of a live [SchedulerBinding]. Whoever registers is responsible for
-/// releasing: see `MetricsButton`, which ties registration to the same
-/// open/close lifecycle as the 1 Hz metrics watch.
+/// releasing: `MetricsButton` and `MetricsDashboard` each acquire while open and
+/// release on dismiss, mirroring the 1 Hz metrics watch.
 final frameTimingsProvider = Provider<FrameTimingsCollector>((ref) {
   final collector = FrameTimingsCollector();
-  ref.onDispose(collector.dispose);
+  ref.onDispose(collector.disposeAll);
   return collector;
 });

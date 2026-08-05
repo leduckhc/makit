@@ -99,7 +99,7 @@ class _MetricsButtonState extends ConsumerState<MetricsButton>
     // while somebody is looking — the same rule as the 1 Hz cadence itself.
     final frames = ref.read(frameTimingsProvider);
     _frames = frames;
-    frames.register();
+    frames.acquire();
   }
 
   void _releaseWatch() {
@@ -110,7 +110,7 @@ class _MetricsButtonState extends ConsumerState<MetricsButton>
     controller?.release();
     // A leaked addTimingsCallback runs for the process lifetime, which is a
     // permanent cost in the feature that claims makit is cheap.
-    frames?.dispose();
+    frames?.release();
   }
 
   void _toggle() {

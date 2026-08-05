@@ -180,12 +180,20 @@ class StackedAreaPainter extends CustomPainter {
     return null;
   }
 
-  @override
-  void paint(Canvas canvas, Size size) {
+  /// One filled polygon per contiguous run of measured points, per series,
+  /// bottom band first. Exposed so tests can assert the real geometry instead of
+  /// merely proving `paint` did not throw.
+  ///
+  /// A gap **splits** the band. Skipping the null and carrying the polygon across
+  /// it drew a filled region over a period that was never measured, which reads
+  /// as interpolated data — the same fabrication decisions 2 and 16 forbid for a
+  /// single number.
+  List<Path> bandPaths(Size size) {
+    final out = <Path>[];
     final timeline = _timeline;
-    if (timeline.isEmpty) return;
+    if (timeline.isEmpty) return out;
     final peak = maxY ?? stackedPeak();
-    if (peak == null || peak <= 0) return;
+    if (peak == null || peak <= 0) return out;
     final t0 = timeline.first;
     final t1 = timeline.last;
 
@@ -193,33 +201,68 @@ class StackedAreaPainter extends CustomPainter {
     final baseline = <int, double>{for (final ts in timeline) ts: 0};
 
     for (final s in series) {
-      final path = Path();
-      final top = <Offset>[];
-      final bottom = <Offset>[];
+      // Accumulate a run, flushing it whenever a gap interrupts the series.
+      var top = <Offset>[];
+      var bottom = <Offset>[];
+
+      void flush() {
+        // A single point has no area; a degenerate polygon would paint nothing
+        // anyway, so it is dropped rather than emitted as an invisible path.
+        if (top.length < 2) {
+          top = <Offset>[];
+          bottom = <Offset>[];
+          return;
+        }
+        final path = Path()..moveTo(bottom.first.dx, bottom.first.dy);
+        for (final o in top) {
+          path.lineTo(o.dx, o.dy);
+        }
+        for (final o in bottom.reversed) {
+          path.lineTo(o.dx, o.dy);
+        }
+        path.close();
+        out.add(path);
+        top = <Offset>[];
+        bottom = <Offset>[];
+      }
+
       for (final ts in timeline) {
         final v = _valueAt(s.points, ts);
-        if (v == null) continue;
+        if (v == null) {
+          flush();
+          continue;
+        }
         final base = baseline[ts]!;
         final x = metricX(ts, t0, t1, size.width);
         bottom.add(Offset(x, _y(base, peak, size.height)));
         top.add(Offset(x, _y(base + v, peak, size.height)));
         baseline[ts] = base + v;
       }
-      if (top.isEmpty) continue;
-      path.moveTo(bottom.first.dx, bottom.first.dy);
-      for (final o in top) {
-        path.lineTo(o.dx, o.dy);
+      flush();
+    }
+    return out;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paths = bandPaths(size);
+    // Bands are emitted series-major, so recover each band's colour by walking
+    // the same order: one entry per contiguous run within each series.
+    var i = 0;
+    for (final s in series) {
+      final runs = _runCount(s.points, size);
+      for (var r = 0; r < runs && i < paths.length; r++, i++) {
+        canvas.drawPath(
+          paths[i],
+          Paint()..color = s.color.withValues(alpha: 0.75),
+        );
       }
-      for (final o in bottom.reversed) {
-        path.lineTo(o.dx, o.dy);
-      }
-      path.close();
-      canvas.drawPath(path, Paint()..color = s.color.withValues(alpha: 0.75));
     }
 
+    final peak = maxY ?? stackedPeak();
     final grid = gridColor;
     final at = gridAtY;
-    if (grid != null && at != null && at <= peak) {
+    if (peak != null && peak > 0 && grid != null && at != null && at <= peak) {
       final y = _y(at, peak, size.height);
       canvas.drawLine(
         Offset(0, y),
@@ -229,6 +272,23 @@ class StackedAreaPainter extends CustomPainter {
           ..strokeWidth = 1,
       );
     }
+  }
+
+  /// Number of paintable runs [points] contributes, matching [bandPaths]'s
+  /// flush rule (runs shorter than two points have no area).
+  int _runCount(List<MetricPoint> points, Size size) {
+    var runs = 0;
+    var len = 0;
+    for (final ts in _timeline) {
+      if (_valueAt(points, ts) == null) {
+        if (len >= 2) runs++;
+        len = 0;
+      } else {
+        len++;
+      }
+    }
+    if (len >= 2) runs++;
+    return runs;
   }
 
   static double _y(double v, double peak, double height) =>
@@ -307,27 +367,41 @@ class HistogramPainter extends CustomPainter {
   /// Index at which bars start counting as over the frame budget.
   final int budgetBucket;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (buckets.isEmpty) return;
+  /// The bars this painter will draw, each tagged with whether it is over
+  /// budget. Exposed so a test can assert real geometry and colour banding
+  /// rather than only that `paint` did not throw.
+  List<({Rect rect, bool overBudget})> barRects(Size size) {
+    final out = <({Rect rect, bool overBudget})>[];
+    if (buckets.isEmpty) return out;
     var peak = 0;
     for (final c in buckets) {
       if (c > peak) peak = c;
     }
-    if (peak <= 0) return;
+    if (peak <= 0) return out;
     final slot = size.width / buckets.length;
     const gap = 1.0;
     for (var i = 0; i < buckets.length; i++) {
       final h = (buckets[i] / peak) * size.height;
       if (h <= 0) continue;
-      canvas.drawRect(
-        Rect.fromLTWH(
+      out.add((
+        rect: Rect.fromLTWH(
           i * slot,
           size.height - h,
           (slot - gap).clamp(1, slot),
           h,
         ),
-        Paint()..color = i >= budgetBucket ? overBudgetColor : color,
+        overBudget: i >= budgetBucket,
+      ));
+    }
+    return out;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (final bar in barRects(size)) {
+      canvas.drawRect(
+        bar.rect,
+        Paint()..color = bar.overBudget ? overBudgetColor : color,
       );
     }
   }

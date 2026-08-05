@@ -48,8 +48,12 @@ const Key kDashboardEmptyKey = ValueKey('metrics-dashboard-empty');
 /// bucket boundary so "over budget" is a visible cliff rather than a judgement.
 const List<double> kFrameBucketEdgesMs = [4, 8, 12, 16.7, 24, 33, 50];
 
-/// Index of the first over-budget bucket.
-const int kFrameBudgetBucket = 3;
+/// Index of the first **wholly** over-budget bucket.
+///
+/// Bucketing is `<= edge`, so bucket 3 is `(12, 16.7]` — still inside the 60 fps
+/// budget. Pointing this at 3 painted every 13 ms frame, and an exactly-16.7 ms
+/// frame, as though it had been dropped.
+const int kFrameBudgetBucket = 4;
 
 /// The Tier 2 dashboard overlay.
 class MetricsDashboard extends ConsumerStatefulWidget {
@@ -89,14 +93,14 @@ class _MetricsDashboardState extends ConsumerState<MetricsDashboard> {
     watch.watch();
     final frames = ref.read(frameTimingsProvider);
     _frames = frames;
-    frames.register();
+    frames.acquire();
   }
 
   @override
   void dispose() {
     _held?.release();
     _held = null;
-    _frames?.dispose();
+    _frames?.release();
     _frames = null;
     super.dispose();
   }
@@ -692,9 +696,19 @@ class _FootprintCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final storage = metricsLatestStorage(history, latest);
+    // `procs` is absent on coarse (background-cadence) frames. Counting a null as
+    // exactly 1 turned an unknown into a precise-looking total, which is the same
+    // fabrication decision 13 forbids for a failed `ps`. If any row is unknown the
+    // sum is unknown.
     var procs = 0;
+    var procsKnown = latest.procTableOk;
     for (final a in latest.agents) {
-      procs += a.procs ?? 1;
+      final p = a.procs;
+      if (p == null) {
+        procsKnown = false;
+      } else {
+        procs += p;
+      }
     }
     return _Cell(
       key: kDashboardFootprintCellKey,
@@ -710,8 +724,13 @@ class _FootprintCell extends StatelessWidget {
                 : (storage.eventLogBytes / (1024 * 1024)).toStringAsFixed(1),
             unit: 'event log MB',
           ),
-          _Big(value: '${latest.agents.length}', unit: 'agents'),
-          _Big(value: '$procs', unit: 'processes'),
+          // With no readable process table we cannot say there are zero agents —
+          // the sessions snapshot knows they exist, we just could not measure them.
+          _Big(
+            value: latest.procTableOk ? '${latest.agents.length}' : '—',
+            unit: 'agents',
+          ),
+          _Big(value: procsKnown ? '$procs' : '—', unit: 'processes'),
           _Big(
             value: (latest.wire.framesPerSec).toStringAsFixed(1),
             unit: 'frames/s',
@@ -932,18 +951,28 @@ class _ProcTotalRow extends StatelessWidget {
     final theme = Theme.of(context);
     var cpuSeconds = latest.server.cpuSeconds + (latest.app?.cpuSeconds ?? 0);
     var procs = 1 + (latest.app == null ? 0 : 1);
+    // A total is only a total if every part was measured. With no process table
+    // the app and agent rows are missing, so summing what is left would present
+    // the SERVER's numbers under a "makit total" label — precisely the reading
+    // decision 13 exists to prevent.
+    var known = latest.procTableOk;
     for (final a in latest.agents) {
       cpuSeconds += a.cpuSeconds;
-      procs += a.procs ?? 1;
+      final p = a.procs;
+      if (p == null) {
+        known = false;
+      } else {
+        procs += p;
+      }
     }
     final cells = <String>[
-      'makit total',
+      known ? 'makit total' : 'makit total (incomplete)',
       '',
-      formatBytes(metricsTotalRssBytes(latest)),
-      formatCpu(metricsTotalCpuPercent(latest)),
-      cpuSeconds.toStringAsFixed(1),
+      known ? formatBytes(metricsTotalRssBytes(latest)) : '—',
+      known ? formatCpu(metricsTotalCpuPercent(latest)) : '—',
+      known ? cpuSeconds.toStringAsFixed(1) : '—',
       '',
-      '$procs',
+      known ? '$procs' : '—',
     ];
     final style = theme.textTheme.bodySmall?.copyWith(
       fontWeight: FontWeight.w600,
@@ -1025,7 +1054,7 @@ class _Footer extends ConsumerWidget {
             key: kDashboardExportKey,
             onPressed: history.isEmpty
                 ? null
-                : () => _copyExport(context, history),
+                : () => _copyExport(context, ref, history),
             icon: const Icon(PhosphorIconsLight.download, size: 14),
             label: const Text('Export snapshot'),
             style: OutlinedButton.styleFrom(
@@ -1039,21 +1068,73 @@ class _Footer extends ConsumerWidget {
     );
   }
 
-  /// Copies the markdown summary to the clipboard: the form a perf claim
-  /// actually travels in (a PR comment, an issue). The JSON body is available
-  /// from [metricsExportJsonString] for callers that want a file.
-  void _copyExport(BuildContext context, List<MetricsSample> history) {
+  /// Exports **both** halves of the artifact, because they answer different
+  /// questions: the markdown summary goes to the clipboard (the form a perf claim
+  /// travels in — a PR comment, an issue), and the full ring plus any stored
+  /// baseline is written to disk as round-trippable JSON.
+  ///
+  /// Copying markdown alone was a real defect: the headline numbers left the app
+  /// but the samples behind them could not, so nobody could re-examine or diff
+  /// them. This is still the only path from a sample to disk, and only on an
+  /// explicit click (decision 5).
+  Future<void> _copyExport(
+    BuildContext context,
+    WidgetRef ref,
+    List<MetricsSample> history,
+  ) async {
     final md = metricsExportMarkdown(
       history: history,
       appVersion: 'makit',
       platform: defaultTargetPlatform.name,
       baseline: baseline,
     );
-    Clipboard.setData(ClipboardData(text: md));
+    // Captured BEFORE the first await: the messenger must not be looked up from a
+    // context that may have been unmounted while the file was being written.
     final messenger = ScaffoldMessenger.maybeOf(context);
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('Snapshot copied as markdown')),
+
+    // The two halves are independent and must fail independently: a clipboard
+    // that refuses (no platform handler, a locked pasteboard) must not cost the
+    // user the JSON artifact, and vice versa.
+    //
+    // The file is written FIRST and deliberately: it is the half that cannot be
+    // reconstructed later (the ring is bounded and moves on), whereas the
+    // markdown can be regenerated by pressing the button again. Sequencing it
+    // behind an await on a platform channel would make the irreplaceable half
+    // depend on the reproducible one.
+    final json = metricsExportJsonString(
+      history: history,
+      appVersion: 'makit',
+      platform: defaultTargetPlatform.name,
+      baseline: baseline,
     );
+    String? path;
+    try {
+      path = await ref.read(metricsSnapshotWriterProvider)(
+        metricsSnapshotFilename(DateTime.now()),
+        json,
+      );
+    } catch (_) {
+      path = null;
+    }
+
+    var copied = true;
+    try {
+      await Clipboard.setData(ClipboardData(text: md));
+    } catch (_) {
+      copied = false;
+    }
+    final String message;
+    if (copied && path != null) {
+      message = 'Copied as markdown · JSON written to $path';
+    } else if (copied) {
+      message = 'Copied as markdown — could not write the JSON snapshot';
+    } else if (path != null) {
+      message = 'JSON written to $path — could not copy to the clipboard';
+    } else {
+      message =
+          'Export failed — neither the clipboard nor the file was written';
+    }
+    messenger?.showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

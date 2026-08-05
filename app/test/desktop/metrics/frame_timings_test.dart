@@ -18,6 +18,59 @@ FrameTiming _frame(double ms) {
 }
 
 void main() {
+  /// Two surfaces own this collector — the Tier 1 popover and the Tier 2
+  /// dashboard — and the normal handoff has BOTH open at once for a moment
+  /// ("Open dashboard →" opens the panel, then dismisses the popover). An
+  /// idempotent register + unconditional remove silently unregistered the
+  /// collector out from under the surface that was still watching, so the
+  /// dashboard showed frozen frame stats forever. Ownership is therefore
+  /// ref-counted, exactly like `MetricsWatchController`.
+  group('ref-counted ownership', () {
+    test(
+      'a second owner does not re-register, and the first release keeps it',
+      () {
+        final added = <TimingsCallback>[];
+        final removed = <TimingsCallback>[];
+        final c = FrameTimingsCollector(add: added.add, remove: removed.add);
+
+        c.acquire();
+        c.acquire();
+        expect(added, hasLength(1), reason: 'one callback for two owners');
+
+        c.release();
+        expect(
+          removed,
+          isEmpty,
+          reason: 'one owner remains — must keep counting',
+        );
+        expect(c.isRegistered, isTrue);
+
+        c.release();
+        expect(removed, hasLength(1));
+        expect(c.isRegistered, isFalse);
+      },
+    );
+
+    test('a release with no owners is a no-op, never a spurious remove', () {
+      final removed = <TimingsCallback>[];
+      final c = FrameTimingsCollector(add: (_) {}, remove: removed.add);
+      c.release();
+      c.release();
+      expect(removed, isEmpty);
+      expect(c.ownerCount, 0);
+    });
+
+    test('re-acquiring after the last release registers again', () {
+      final added = <TimingsCallback>[];
+      final c = FrameTimingsCollector(add: added.add, remove: (_) {});
+      c.acquire();
+      c.release();
+      c.acquire();
+      expect(added, hasLength(2));
+      expect(c.ownerCount, 1);
+    });
+  });
+
   /// Counting add/remove is the whole point: a leaked `addTimingsCallback` runs
   /// for the process lifetime, which is a permanent cost in the feature that
   /// claims makit is cheap.
@@ -30,11 +83,11 @@ void main() {
         final c = FrameTimingsCollector(add: added.add, remove: removed.add);
 
         expect(c.isRegistered, isFalse);
-        c.register();
+        c.acquire();
         expect(added, hasLength(1));
         expect(c.isRegistered, isTrue);
 
-        c.dispose();
+        c.release();
         expect(removed, hasLength(1));
         expect(removed.single, same(added.single));
         expect(c.isRegistered, isFalse);
@@ -46,8 +99,8 @@ void main() {
       () {
         final added = <TimingsCallback>[];
         final c = FrameTimingsCollector(add: added.add, remove: (_) {});
-        c.register();
-        c.register();
+        c.acquire();
+        c.acquire();
         expect(added, hasLength(1));
       },
     );
@@ -58,22 +111,22 @@ void main() {
         final removed = <TimingsCallback>[];
         final c = FrameTimingsCollector(add: (_) {}, remove: removed.add);
 
-        c.dispose();
+        c.release();
         expect(removed, isEmpty);
 
-        c.register();
-        c.dispose();
-        c.dispose();
+        c.acquire();
+        c.release();
+        c.release();
         expect(removed, hasLength(1));
       },
     );
 
-    test('re-register after dispose registers again', () {
+    test('re-acquire after release registers again', () {
       final added = <TimingsCallback>[];
       final c = FrameTimingsCollector(add: added.add, remove: (_) {});
-      c.register();
-      c.dispose();
-      c.register();
+      c.acquire();
+      c.release();
+      c.acquire();
       expect(added, hasLength(2));
     });
   });
@@ -83,7 +136,7 @@ void main() {
     FrameTimingsCollector collectorFed(List<double> frames) {
       TimingsCallback? cb;
       final c = FrameTimingsCollector(add: (f) => cb = f, remove: (_) {})
-        ..register();
+        ..acquire();
       cb!(frames.map(_frame).toList());
       return c;
     }
