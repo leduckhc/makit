@@ -29,6 +29,7 @@ import '../../store/metrics.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
 import 'charts.dart';
+import 'frame_timings.dart';
 import 'metrics_dashboard_open.dart';
 import 'metrics_icon_state.dart';
 
@@ -86,18 +87,30 @@ class _MetricsButtonState extends ConsumerState<MetricsButton>
   /// the watch would leak exactly in the teardown path that most needs it.
   MetricsWatchController? _held;
 
+  /// Cached for the same reason as [_held]: `dispose` cannot read `ref`.
+  FrameTimingsCollector? _frames;
+
   void _acquireWatch() {
     if (_held != null) return;
     final controller = ref.read(metricsWatchControllerProvider);
     _held = controller;
     controller.watch();
+    // Frame timings cost a callback on every frame, so they are collected only
+    // while somebody is looking — the same rule as the 1 Hz cadence itself.
+    final frames = ref.read(frameTimingsProvider);
+    _frames = frames;
+    frames.register();
   }
 
   void _releaseWatch() {
     final controller = _held;
-    if (controller == null) return;
+    final frames = _frames;
     _held = null;
-    controller.release();
+    _frames = null;
+    controller?.release();
+    // A leaked addTimingsCallback runs for the process lifetime, which is a
+    // permanent cost in the feature that claims makit is cheap.
+    frames?.dispose();
   }
 
   void _toggle() {
@@ -425,6 +438,21 @@ class MetricsPopover extends ConsumerWidget {
 double? metricsAgentsCpuPercentOf(MetricsSample s) =>
     metricsAgentsCpuPercent(s);
 
+/// The most recent measured event-log size: [latest]'s own figure, else the
+/// newest non-null one in [history]. Null only when storage was never measured
+/// — which is not zero bytes, so the caller omits the row rather than printing
+/// a size nobody measured.
+StorageMetrics? metricsLatestStorage(
+  List<MetricsSample> history,
+  MetricsSample latest,
+) {
+  if (latest.storage case final s?) return s;
+  for (var i = history.length - 1; i >= 0; i--) {
+    if (history[i].storage case final s?) return s;
+  }
+  return null;
+}
+
 /// The tail of [history] within [windowMs] of [nowMs]. Time-based, not a fixed
 /// count, because the ring mixes 1 Hz and 5 s samples.
 List<MetricsSample> metricsWindow(
@@ -626,11 +654,21 @@ class _StatusLine extends StatelessWidget {
     final working = sample.agents.where((a) => a.inTurn).toList();
     final parked = sample.agents.length - working.length;
     final String text;
-    if (working.isEmpty) {
+    // `turnActive` — not the agent rows — decides whether a turn is open. The
+    // collector omits sessions with no pid (decision 11) but still reports
+    // turnActive for them, so deriving this from `agents` alone printed "idle"
+    // while the footer glyph animated as Working: one panel making two
+    // contradictory claims. The rows only decide how specific the copy can be.
+    if (!sample.turnActive) {
       text = parked == 0
           ? 'idle — no agents running'
           : 'idle — no turn running · '
                 '$parked agent${parked == 1 ? '' : 's'} parked';
+    } else if (working.isEmpty) {
+      // A turn is open in a session we cannot measure (no pid: a stub adapter,
+      // or a spawn whose pid we never saw). Say exactly that instead of naming
+      // a session we have no numbers for.
+      text = 'turn running — not attributable to a measured process';
     } else {
       final names = working.map((a) => a.label).join(', ');
       text =
@@ -995,6 +1033,15 @@ class _HistoryDetail extends ConsumerWidget {
           const SizedBox(height: kSpace10),
           const _SectionLabel('RESPONSIVENESS'),
           _StatRow(
+            label: 'Frame p95',
+            tip:
+                'How long the UI took to build and raster its slowest frames, '
+                'from SchedulerBinding.addTimingsCallback. Under 16.7 ms means '
+                'the UI held 60 fps even while an agent burned a core — the '
+                'claim this panel exists to check.',
+            value: formatFrameStats(ref.read(frameTimingsProvider).stats),
+          ),
+          _StatRow(
             label: 'Event-loop p99',
             tip:
                 'From the server\'s monitorEventLoopDelay. The single best '
@@ -1011,7 +1058,9 @@ class _HistoryDetail extends ConsumerWidget {
                 '${formatBytes(sample.wire.inBytesPerSec.round())}/s in · '
                 '${formatBytes(sample.wire.outBytesPerSec.round())}/s out',
           ),
-          if (sample.storage case final storage?)
+          // Storage refreshes every 6th tick, so the latest sample is usually
+          // null; the last measurement stays true until a newer one lands.
+          if (metricsLatestStorage(history, sample) case final storage?)
             _StatRow(
               label: 'Event log',
               tip:
@@ -1115,6 +1164,16 @@ class _Explain extends StatelessWidget {
 }
 
 // ─────────────────────────────── helpers ──────────────────────────────────
+
+/// Frame p95 plus a dropped count, or `—` when no frame has been timed yet.
+///
+/// An untimed ring must not read `0.0 ms`: no measurement is not a fast frame,
+/// and this row's whole purpose is to be checkable.
+String formatFrameStats(FrameStats stats) {
+  if (stats.sampleCount == 0) return '—';
+  final p95 = '${stats.p95Ms.toStringAsFixed(1)} ms';
+  return stats.dropped == 0 ? p95 : '$p95 · ${stats.dropped} dropped';
+}
 
 /// CPU% for display: `—` when no rate is computable yet (decision 2 — never
 /// coerce a null rate to `0.0%`, which reads as a measured idle).

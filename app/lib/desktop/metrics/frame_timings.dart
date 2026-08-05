@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Ring capacity — 600 frames ≈ 10 s at 60 fps, enough for a stable p95 without
 /// holding minutes of history the panel never shows.
@@ -119,3 +120,16 @@ class FrameTimingsCollector {
     return sorted[rank];
   }
 }
+
+/// The one frame-timings collector for the process.
+///
+/// A provider so the metrics surfaces share a single ring (two panels must not
+/// double-count frames) and so tests can inject counting add/remove hooks
+/// instead of a live [SchedulerBinding]. Whoever registers is responsible for
+/// releasing: see `MetricsButton`, which ties registration to the same
+/// open/close lifecycle as the 1 Hz metrics watch.
+final frameTimingsProvider = Provider<FrameTimingsCollector>((ref) {
+  final collector = FrameTimingsCollector();
+  ref.onDispose(collector.dispose);
+  return collector;
+});

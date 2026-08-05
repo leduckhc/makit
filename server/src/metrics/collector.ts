@@ -170,6 +170,10 @@ export class MetricsCollector {
     // A restart has no baselines: the next tick's rates are `null` (decision 2).
     this.cpuBaseline.clear();
     this.firstSeenMs.clear();
+    // Including the sampler's own baseline. Leaving it set divided the next
+    // tick's CPU by an interval spanning the entire stopped gap, so the meter
+    // reported a fabricated near-zero cost for its first post-restart sample.
+    this.lastTickStartMs = null;
     this.arm(this.intervalForWatchers());
   }
 

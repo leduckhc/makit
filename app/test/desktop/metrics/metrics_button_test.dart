@@ -1,7 +1,10 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/metrics/frame_timings.dart';
 import 'package:makit/desktop/metrics/metrics_button.dart';
 import 'package:makit/desktop/metrics/metrics_dashboard_open.dart';
 import 'package:makit/desktop/metrics/metrics_icon_state.dart';
@@ -78,6 +81,7 @@ Widget _host({
   MetricsSample? sample,
   List<MetricsSample>? history,
   MetricsWatchController? watch,
+  FrameTimingsCollector? frames,
   PreferencesController? prefs,
   double width = 900,
   double height = 700,
@@ -93,6 +97,7 @@ Widget _host({
     metricsWatchControllerProvider.overrideWithValue(
       watch ?? MetricsWatchController((_) {}),
     ),
+    if (frames != null) frameTimingsProvider.overrideWithValue(frames),
     preferencesControllerProvider.overrideWith(
       (ref) => prefs ?? PreferencesController.ephemeral(),
     ),
@@ -143,6 +148,22 @@ void main() {
       expect(formatBytesOrDash(null), '—');
       expect(formatBytesOrDash(0), '0 B');
       expect(formatBytesOrDash(2 * _mb), '2 MB');
+    });
+
+    test('frame stats read as a dash until a frame is timed, never 0.0 ms', () {
+      expect(formatFrameStats(FrameStats.empty), '—');
+      expect(
+        formatFrameStats(
+          const FrameStats(p50Ms: 4, p95Ms: 7.9, dropped: 0, sampleCount: 10),
+        ),
+        '7.9 ms',
+      );
+      expect(
+        formatFrameStats(
+          const FrameStats(p50Ms: 4, p95Ms: 40, dropped: 3, sampleCount: 10),
+        ),
+        '40.0 ms · 3 dropped',
+      );
     });
 
     test('bytes read as MB then GB with two decimals', () {
@@ -368,6 +389,51 @@ void main() {
       );
     });
 
+    /// F3 (review): `turnActive` is the authoritative turn signal. The collector
+    /// deliberately omits sessions with no pid (decision 11) while still setting
+    /// `turnActive`, so reading working state off `agents` alone made the panel
+    /// print "idle" while the footer glyph animated as Working — one panel
+    /// asserting two contradictory things.
+    testWidgets(
+      'a turn with no measurable agent still reads as running, not idle',
+      (tester) async {
+        await tester.pumpWidget(
+          _host(sample: _sample(turnActive: true, agents: const [])),
+        );
+        await _openWhileWorking(tester);
+
+        expect(find.textContaining('idle'), findsNothing);
+        expect(find.textContaining('turn running'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a named in-turn agent is still named', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(
+            turnActive: true,
+            agents: [_agent(label: 'codex · pino', inTurn: true)],
+          ),
+        ),
+      );
+      await _openWhileWorking(tester);
+      expect(
+        find.textContaining('1 turn running — codex · pino'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no turn plus parked agents still reads idle', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          sample: _sample(agents: [_agent(label: 'pi · makit')]),
+        ),
+      );
+      await _open(tester);
+      expect(find.textContaining('idle — no turn running'), findsOneWidget);
+      expect(find.textContaining('1 agent parked'), findsOneWidget);
+    });
+
     /// A11y: the rows are a `Row` of `Text`s plus a `CustomPaint`, which a screen
     /// reader cannot assemble into a reading. Each row states its own numbers.
     testWidgets('surface and agent rows carry semantic labels with numbers', (
@@ -420,6 +486,41 @@ void main() {
       await tester.tap(find.byKey(kMetricsHistoryPillKey));
       await tester.pumpAndSettle();
       expect(find.byKey(kMetricsSelfCostKey), findsOneWidget);
+    });
+
+    /// F4 (review): the server refreshes `storage` only every 6th tick, so at
+    /// 1 Hz the latest sample carries null five times out of six. Reading only
+    /// the latest sample made the Event log row appear, vanish for ~5s, and
+    /// reappear. The last measurement is still the truth until a newer one lands.
+    testWidgets(
+      'the event log row survives ticks that did not refresh storage',
+      (tester) async {
+        final measured = _sample(
+          ts: 1000,
+          storage: const StorageMetrics(eventLogBytes: 4096),
+        );
+        final unmeasured = _sample(ts: 2000);
+        await tester.pumpWidget(
+          _host(sample: unmeasured, history: [measured, unmeasured]),
+        );
+        await _open(tester);
+        await tester.tap(find.byKey(kMetricsHistoryPillKey));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Event log'), findsOneWidget);
+        expect(find.textContaining('4 kB'), findsOneWidget);
+      },
+    );
+
+    testWidgets('the event log row is absent when storage was never measured', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(sample: _sample()));
+      await _open(tester);
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+      // Never measured is not "0 bytes" — say nothing rather than invent a size.
+      expect(find.text('Event log'), findsNothing);
     });
 
     /// Decision 10: the panel displays its own cost. If this row can be removed
@@ -516,6 +617,117 @@ void main() {
 
       expect(sent, [true, false, true]);
       expect(controller.watcherCount, 1);
+    });
+  });
+
+  /// F1 (review): the collector existed, was unit-tested, and was wired to
+  /// nothing — so the panel promised "UI frame times" in its History tooltip and
+  /// never registered Flutter's timings callback. A unit test that never asserts
+  /// the unit is REACHED passes happily while the feature is absent.
+  group('frame timings wiring', () {
+    ({
+      FrameTimingsCollector collector,
+      List<TimingsCallback> added,
+      List<TimingsCallback> removed,
+    })
+    spy() {
+      final added = <TimingsCallback>[];
+      final removed = <TimingsCallback>[];
+      return (
+        collector: FrameTimingsCollector(add: added.add, remove: removed.add),
+        added: added,
+        removed: removed,
+      );
+    }
+
+    testWidgets('opening the popover registers the timings callback', (
+      tester,
+    ) async {
+      final s = spy();
+      await tester.pumpWidget(_host(sample: _sample(), frames: s.collector));
+      expect(s.added, isEmpty, reason: 'must not register while closed');
+
+      await _open(tester);
+      expect(s.added, hasLength(1));
+      expect(s.collector.isRegistered, isTrue);
+    });
+
+    testWidgets('closing the popover removes it again', (tester) async {
+      final s = spy();
+      await tester.pumpWidget(_host(sample: _sample(), frames: s.collector));
+      await _open(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(s.removed, hasLength(1));
+      expect(s.removed.single, same(s.added.single));
+      expect(s.collector.isRegistered, isFalse);
+    });
+
+    testWidgets(
+      'a dispose while open still removes it — a leaked callback is permanent',
+      (tester) async {
+        final s = spy();
+        await tester.pumpWidget(_host(sample: _sample(), frames: s.collector));
+        await _open(tester);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+
+        expect(s.removed, hasLength(1));
+        expect(s.collector.isRegistered, isFalse);
+      },
+    );
+
+    testWidgets('the History detail renders the measured frame p95', (
+      tester,
+    ) async {
+      final added = <TimingsCallback>[];
+      final collector = FrameTimingsCollector(add: added.add, remove: (_) {});
+      await tester.pumpWidget(_host(sample: _sample(), frames: collector));
+      await _open(tester);
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+
+      // Feed frames as the binding would.
+      added.single([
+        for (final ms in <double>[4, 5, 6, 40])
+          FrameTiming(
+            vsyncStart: 0,
+            buildStart: 0,
+            buildFinish: (ms * 500).round(),
+            rasterStart: (ms * 500).round(),
+            rasterFinish: (ms * 1000).round(),
+            rasterFinishWallTime: (ms * 1000).round(),
+          ),
+      ]);
+      // The row reads the ring during build, so it refreshes when the panel
+      // rebuilds — in production that is the next `metrics.sample`, ~1/s. It is
+      // deliberately NOT a per-frame notifier: rebuilding this panel at 60fps
+      // would make the meter the cost it exists to measure. Collapse+expand is
+      // the cheapest way to force that rebuild in a test.
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Frame p95'), findsOneWidget);
+      expect(find.textContaining('40.0 ms'), findsOneWidget);
+      // One frame over the 16.7ms budget must be reported as dropped.
+      expect(find.textContaining('1 dropped'), findsOneWidget);
+    });
+
+    testWidgets('frame stats read as — before any frame is measured', (
+      tester,
+    ) async {
+      final collector = FrameTimingsCollector(add: (_) {}, remove: (_) {});
+      await tester.pumpWidget(_host(sample: _sample(), frames: collector));
+      await _open(tester);
+      await tester.tap(find.byKey(kMetricsHistoryPillKey));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Frame p95'), findsOneWidget);
+      // Not "0.0 ms": no frame has been timed, which is not a fast frame.
+      expect(find.textContaining('0.0 ms'), findsNothing);
     });
   });
 

@@ -372,7 +372,7 @@ test("historyFor returns the samples pushed within the 30-minute window", async 
   assert.deepEqual(history.map((s) => s.ts), [1_000, 2_000]);
 });
 
-test("sampler cpu is null on the first tick \u2014 a rate needs an interval", async () => {
+test("sampler cpu is null on the first tick — a rate needs an interval", async () => {
   const h = harness();
   h.collector.setWatchers(1);
   h.collector.start();
@@ -403,14 +403,45 @@ test("sampler cpu is its tick cost over the sampling INTERVAL, not the tick span
   // The tick burned 5,000us of CPU and a full second of wall clock elapsed
   // since the previous tick: 5ms/1000ms = 0.5% of one core.
   //
-  // Dividing by the tick's own execution span instead (the original defect) reported ~10% \u2014 a 20x
+  // Dividing by the tick's own execution span instead (the original defect) reported ~10% — a 20x
   // overstatement that made the panel's own row breach the spec's 0.5% budget
   // and read as though the meter were the most expensive thing running. The
   // denominator is the interval between measurements, as in SelfProbe.sample.
   assert.equal(h.samples[1].sampler.cpuPercent, 0.5);
 });
 
-test("sampler rss is null \u2014 process RSS is not the measurement's own cost", async () => {
+test("a restart discards the sampler's rate baseline too", async () => {
+  // stop() + start() happens whenever background sampling is switched off and a
+  // watcher later reopens the panel. start()'s own comment promises "a restart
+  // has no baselines: the next tick's rates are null" — that must hold for the
+  // sampler's baseline too, or the first rate after a restart is divided by an
+  // interval spanning the whole idle gap.
+  const times = [1_000, 2_000, 9_999_000];
+  const cpus: CpuUsageSnapshot[] = [
+    { user: 0, system: 0 },
+    { user: 5_000, system: 0 },
+    { user: 5_000, system: 0 },
+    { user: 10_000, system: 0 },
+    { user: 10_000, system: 0 },
+    { user: 15_000, system: 0 },
+  ];
+  const h = harness({
+    now: () => times.shift()!,
+    cpuUsage: () => cpus.shift()!,
+  });
+  h.collector.setWatchers(1);
+  h.collector.start();
+  await h.scheduler.fire();
+  await h.scheduler.fire();
+  assert.equal(h.samples[1].sampler.cpuPercent, 0.5);
+
+  h.collector.stop();
+  h.collector.start();
+  await h.scheduler.fire();
+  assert.equal(h.samples[2].sampler.cpuPercent, null);
+});
+
+test("sampler rss is null — process RSS is not the measurement's own cost", async () => {
   const h = harness();
   h.collector.setWatchers(1);
   h.collector.start();
@@ -418,8 +449,8 @@ test("sampler rss is null \u2014 process RSS is not the measurement's own cost",
 
   const sample = h.samples[0];
   // This row claims to state what the measurement itself costs. Reporting
-  // process.memoryUsage().rss there restated the SERVER's resident size \u2014 the
-  // identical number already shown one row above \u2014 which made decision 10's
+  // process.memoryUsage().rss there restated the SERVER's resident size — the
+  // identical number already shown one row above — which made decision 10's
   // honesty row the least honest thing in the panel. The sampler's resident
   // share is not separately attributable in-process, so it reports unknown
   // rather than a plausible-looking duplicate.
