@@ -131,37 +131,46 @@ class _SlashPaletteState extends State<SlashPalette> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return _Card(
-      child: widget.matches.isEmpty
-          ? Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: kSpace12,
-                vertical: kSpace12,
-              ),
-              child: Text(
-                'No matching commands — skills appear once the agent finishes '
-                'loading.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-              ),
-            )
-          : ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: widget.maxHeight),
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.symmetric(vertical: kSpace8),
-                shrinkWrap: true,
-                itemExtent: kSlashRowHeight,
-                itemCount: widget.matches.length,
-                itemBuilder: (context, i) => _CmdRow(
-                  key: i == widget.selectedIndex ? kSlashSelectedRowKey : null,
-                  cmd: widget.matches[i],
-                  selected: i == widget.selectedIndex,
-                  onPick: widget.onPick,
+    return TextFieldTapRegion(
+      // The palette lives in the Overlay, i.e. outside the composer field's own
+      // tap region, and on desktop a TextField's default `onTapOutside`
+      // unfocuses it on pointer *down*. That fired the composer's focus-loss
+      // dismissal and disposed the row mid-click, so the pick never landed.
+      // Joining the field's region keeps focus (and the caret) where it is.
+      child: _Card(
+        child: widget.matches.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: kSpace12,
+                  vertical: kSpace12,
+                ),
+                child: Text(
+                  'No matching commands — skills appear once the agent finishes '
+                  'loading.',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                ),
+              )
+            : ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: widget.maxHeight),
+                child: ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.symmetric(vertical: kSpace8),
+                  shrinkWrap: true,
+                  itemExtent: kSlashRowHeight,
+                  itemCount: widget.matches.length,
+                  itemBuilder: (context, i) => _CmdRow(
+                    key: i == widget.selectedIndex
+                        ? kSlashSelectedRowKey
+                        : null,
+                    cmd: widget.matches[i],
+                    selected: i == widget.selectedIndex,
+                    onPick: widget.onPick,
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }

@@ -327,6 +327,10 @@ class _ComposerState extends State<Composer> {
     _ctrl.selection = TextSelection.collapsed(offset: _ctrl.text.length);
     setState(() => _showSlash = false);
     _syncPalette();
+    // Restore focus: when the palette row is tapped (on desktop), the
+    // pointer-down outside the TextField unfocuses it before onTap fires.
+    // Re-focus here so the user can continue typing immediately.
+    _focus.requestFocus();
   }
 
   /// Whether to show the full (multiline + footer) form: always on desktop,

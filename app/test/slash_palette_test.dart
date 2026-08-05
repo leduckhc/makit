@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -215,6 +216,45 @@ void main() {
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         '/fix-tests ',
       );
+    });
+
+    testWidgets('clicking a row picks it on desktop, where a pointer down '
+        'outside a TextField unfocuses it', (tester) async {
+      // The palette lives in the Overlay, i.e. outside the field's TapRegion.
+      // On macOS/Windows/Linux the field's default onTapOutside unfocuses on
+      // pointer DOWN, which (via the focus-loss dismissal) tore the row out
+      // from under the click before it could fire.
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+
+      await tester.pumpWidget(
+        wrap(const Composer(onSend: _noop, commands: commands)),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '/fix');
+      await tester.pumpAndSettle();
+
+      // A real click has frames between pointer-down and pointer-up; `tap()`
+      // synthesises both without pumping, which is exactly what hid this bug.
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('/fix-tests')),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '/fix-tests ',
+      );
+      // And the caret stays in the field, ready for the command's arguments.
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
+        isTrue,
+      );
+      // Reset inside the body: the binding asserts no debug var is left set,
+      // and it checks that before addTearDown callbacks run.
+      debugDefaultTargetPlatformOverride = null;
     });
   });
 }
