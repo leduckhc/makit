@@ -137,8 +137,12 @@ FRAME_FILE="$REC_DIR/window-frame.json"
       WID="$("$CUA_BIN" list_windows '{}' 2>/dev/null \
         | PID="$PID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
             try{const j=JSON.parse(s);
-              const w=(j.windows??[]).find(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200);
-              process.stdout.write(String(w?.window_id??""));}catch{}
+              // Largest AREA, min 200x200: the app also owns a 1512x33 menu-bar
+              // window, which a width-only test matched — the run then filmed a
+              // 34px sliver of the top of the screen.
+              const ws=(j.windows??[]).filter(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200&&(w.bounds?.height??0)>200);
+              ws.sort((a,b)=>(b.bounds.width*b.bounds.height)-(a.bounds.width*a.bounds.height));
+              process.stdout.write(String(ws[0]?.window_id??""));}catch{}
           })' || true)"
       echo "$(date +%T) pid=$PID wid=${WID:-none}" >>"$REC_DIR/window-hunt.log"
       if [[ -n "$WID" ]]; then
@@ -154,8 +158,12 @@ FRAME_FILE="$REC_DIR/window-frame.json"
         "$CUA_BIN" list_windows '{}' 2>/dev/null \
           | PID="$PID" node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
               try{const j=JSON.parse(s);
-                const w=(j.windows??[]).find(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200);
-                if(w)process.stdout.write(JSON.stringify(w.bounds));}catch{}
+                // Largest AREA, min 200x200: the app also owns a 1512x33 menu-bar
+                // window, which a width-only test matched — the run then filmed a
+                // 34px sliver of the top of the screen.
+                const ws=(j.windows??[]).filter(w=>String(w.pid)===process.env.PID&&w.layer===0&&(w.bounds?.width??0)>200&&(w.bounds?.height??0)>200);
+                ws.sort((a,b)=>(b.bounds.width*b.bounds.height)-(a.bounds.width*a.bounds.height));
+                if(ws[0])process.stdout.write(JSON.stringify(ws[0].bounds));}catch{}
             })' >"$FRAME_FILE" || true
         break
       fi
@@ -165,6 +173,7 @@ FRAME_FILE="$REC_DIR/window-frame.json"
 ) &
 FOCUS_PID="$!"
 
+TOUR_LOG="$REC_DIR/tour.log"
 set +e
 (
   cd "$APP_DIR"
@@ -174,7 +183,8 @@ set +e
     --dart-define=MAKIT_TEST_PORT="$PORT" \
     --dart-define=MAKIT_TEST_BEARER="$BEARER" \
     --dart-define=MAKIT_TEST_FP="$FP" \
-    integration_test/tour/desktop_pending_queue_tour.dart
+    integration_test/tour/desktop_pending_queue_tour.dart 2>&1 | tee "$TOUR_LOG"
+  exit "${PIPESTATUS[0]}"
 )
 TOUR_STATUS=$?
 set -e
