@@ -29,6 +29,26 @@ if [[ -z "$FLUTTER_BIN" ]]; then
 fi
 SIM_NAME="${MAKIT_SIM_NAME:-iPhone 17}"
 
+# A stale recorder from an earlier (timed-out) run holds a cleanup trap that
+# pkills the stub server — including a NEW one. Refuse to start beside it rather
+# than have it shoot this run down mid-tour.
+if pgrep -f "record-queue-tour.sh" | grep -qv "^$$\$"; then
+  others="$(pgrep -f "record-queue-tour.sh" | grep -v "^$$\$" | tr '\n' ' ')"
+  if [[ -n "${others// /}" ]]; then
+    echo "another recorder is still running (pid(s): $others) — stop it first:" >&2
+    echo "  kill $others" >&2
+    exit 1
+  fi
+fi
+
+# `tsx` lives in server/node_modules, which is a pnpm store shared with every
+# other worktree on this Mac: an install there can prune it out from under this
+# run ("Command \"tsx\" not found"). Check before spending a build on it.
+if [[ ! -x "$SERVER_DIR/node_modules/.bin/tsx" ]]; then
+  echo "server/node_modules/.bin/tsx is missing — run: (cd server && pnpm install)" >&2
+  exit 1
+fi
+
 DEVICE_ID="$(xcrun simctl list devices booted -j \
   | python3 -c 'import json,sys
 d=json.load(sys.stdin)["devices"]
@@ -110,6 +130,7 @@ set +e
     --dart-define=MAKIT_TEST_PORT="$PORT" \
     --dart-define=MAKIT_TEST_BEARER="$BEARER" \
     --dart-define=MAKIT_TEST_FP="$FP" \
+    --dart-define=MAKIT_TOUR_BEAT_MS="${MAKIT_TOUR_BEAT_MS:-1600}" \
     integration_test/tour/pending_queue_tour.dart
 )
 TOUR_STATUS=$?

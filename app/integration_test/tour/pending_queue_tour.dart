@@ -30,7 +30,15 @@ import 'package:makit/ui/composer/pending_queue_tray.dart';
 import '../e2e_helpers.dart';
 
 /// How long each step lingers so the camera catches it.
-const _beat = Duration(milliseconds: 1600);
+///
+/// Overridable because `simctl io recordVideo` samples the screen at whatever
+/// rate the machine allows: with other worktrees running test suites on the same
+/// CPU, a 1.6s beat came out as a couple of frames and the whole tour compressed
+/// into ~2 seconds of footage. `MAKIT_TOUR_BEAT_MS=3500` buys the recorder time
+/// without changing what the tour does.
+const _beat = Duration(
+  milliseconds: int.fromEnvironment('MAKIT_TOUR_BEAT_MS', defaultValue: 1600),
+);
 
 /// Real (wall-clock) settle: `pumpAndSettle` fast-forwards time in a way that
 /// makes the recording jump, so the tour pumps frames for a real duration.
