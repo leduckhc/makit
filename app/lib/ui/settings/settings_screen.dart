@@ -171,6 +171,11 @@ class SettingsScreen extends ConsumerWidget {
                 ? const Text('To drop just one, use Server above')
                 : null,
             onTap: () async {
+              // Confirm first: this destroys strictly more credentials than the
+              // per-server Forget (which already asks), and re-pairing needs
+              // physical access to each Mac's QR code. Demo mode has nothing to
+              // lose, so it still exits on one tap.
+              if (!conn.useFake && !await _confirmUnpair(context, conn)) return;
               await ref.read(connectionControllerProvider.notifier).unpair();
               if (context.mounted) context.go('/pair');
             },
@@ -225,4 +230,42 @@ class _SectionHeader extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Confirm dropping every paired server, naming the scope so this cannot be
+/// mistaken for the single-server Forget in the server list.
+Future<bool> _confirmUnpair(BuildContext context, MakitConnState conn) async {
+  final many = conn.servers.length > 1;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(
+        many
+            ? 'Unpair from all ${conn.servers.length} servers?'
+            : 'Unpair this device?',
+      ),
+      content: Text(
+        many
+            ? 'All ${conn.servers.length} paired servers will be forgotten. '
+                  'This phone will need to scan each one\'s QR code again to '
+                  'reconnect. Sessions on the servers are not affected.'
+            : 'This phone will need to scan the QR code again to reconnect. '
+                  'Sessions on the server are not affected.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(ctx).colorScheme.error,
+          ),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Unpair'),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
 }

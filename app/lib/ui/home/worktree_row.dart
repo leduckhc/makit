@@ -99,12 +99,11 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
               // line only — the meta line below is not a target.
               constraints: const BoxConstraints(minHeight: kTouchRow),
               child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  kSpace10,
-                  kSpace8,
-                  kSpace4,
-                  hasMeta ? 0 : kSpace8,
-                ),
+                // No vertical padding: the line's floor is kTouchRow and its
+                // tallest children (the caret and `+`, both kTouchRow ink
+                // boxes) fill it exactly. Padding on top of that would stack,
+                // fattening every row by its own height.
+                padding: const EdgeInsets.fromLTRB(kSpace10, 0, kSpace4, 0),
                 child: Row(
                   children: [
                     Icon(
@@ -228,9 +227,10 @@ class _Caret extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 26,
-      height: 26,
+    return ConstrainedBox(
+      // Thumb-sized hit box around a content-sized glyph, as PrPill does: the
+      // row's own minHeight cannot enlarge a control that bounds its own ink.
+      constraints: const BoxConstraints(minWidth: 26, minHeight: kTouchRow),
       child: InkWell(
         borderRadius: BorderRadius.circular(kRadius6),
         onTap: onPressed,
@@ -267,9 +267,11 @@ class _NewSessionButton extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(kRadius8),
         onTap: onPressed,
-        child: SizedBox(
-          width: 30,
-          height: 30,
+        child: ConstrainedBox(
+          // Same as PrPill / _Caret: the tap box fills the row height while the
+          // painted glyph stays small, so the control is reachable by thumb
+          // without fattening the list.
+          constraints: const BoxConstraints(minWidth: 30, minHeight: kTouchRow),
           child: Center(
             child: Icon(PhosphorIconsLight.plus, size: 16, color: cs.outline),
           ),

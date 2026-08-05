@@ -99,4 +99,50 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('a long default-branch name does not overflow the header', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320 * 3, 568 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    // The header packs caret + folder + repo name + default-branch meta + PR
+    // pill + menu onto one line. Only the repo name flexes, so a long default
+    // branch is the case that can still push it over.
+    const repo = RepoInfo(
+      id: 'p1',
+      name: 'a-repo-with-a-long-name',
+      path: '/tmp/demo',
+      pinned: true,
+      lastActivityAt: 0,
+      isGitRepo: true,
+      defaultBranch: 'release/2026-q3-hotfix-candidate-rc4',
+      currentBranch: 'release/2026-q3-hotfix-candidate-rc4',
+      worktrees: [
+        Worktree(
+          id: '/tmp/demo',
+          path: '/tmp/demo',
+          branch: 'release/2026-q3-hotfix-candidate-rc4',
+          isPrimary: true,
+          insertions: 0,
+          deletions: 0,
+          filesChanged: 0,
+          sessionIds: [],
+          pr: PullRequest(
+            number: 9876,
+            url: 'https://example.com/pr/9876',
+            state: 'OPEN',
+            title: 'Big',
+            isDraft: false,
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(_host([repo], const []));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
 }

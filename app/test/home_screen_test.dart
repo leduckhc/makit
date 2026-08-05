@@ -373,7 +373,7 @@ void main() {
 
     expect(find.text('Resume session'), findsNothing);
 
-    await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThree));
+    await tester.tap(find.byTooltip('Repo actions'));
     await tester.pumpAndSettle();
 
     expect(find.text('New session'), findsWidgets);

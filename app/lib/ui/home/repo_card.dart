@@ -149,7 +149,10 @@ class _RepoCardState extends ConsumerState<RepoCard> {
               const SizedBox(width: kSpace6),
               Icon(PhosphorIconsLight.folder, size: 17, color: cs.outline),
               const SizedBox(width: kSpace8),
-              Flexible(
+              // Expanded, not Flexible+Spacer: the name absorbs the slack and
+              // pushes the meta right, and both shrink instead of overflowing
+              // when the repo name and default branch are long together.
+              Expanded(
                 child: Text(
                   repo.name,
                   // Bold carries the hierarchy, as in the sidebar — a repo is a
@@ -159,16 +162,20 @@ class _RepoCardState extends ConsumerState<RepoCard> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: kSpace8),
               // The header carries only what the rows can't: the repo's default
               // branch and its open-PR count. Per-worktree state lives on the
               // rows, so the old stat strip's "N active" was restating the bars
               // right below it.
               if (repo.defaultBranch != null) ...[
-                _metaText(
-                  context,
-                  PhosphorIconsLight.flag,
-                  repo.defaultBranch!,
+                // Bounded so a long default branch (release/…-rc4) ellipsizes
+                // rather than overflowing the header on a narrow phone.
+                Flexible(
+                  child: _metaText(
+                    context,
+                    PhosphorIconsLight.flag,
+                    repo.defaultBranch!,
+                  ),
                 ),
                 const SizedBox(width: kSpace8),
               ],
@@ -296,6 +303,7 @@ class _RepoCardState extends ConsumerState<RepoCard> {
         border: Border(top: BorderSide(color: cs.outlineVariant)),
       ),
       child: InkWell(
+        key: const Key('newWorktreeFooter'),
         onTap: () => _newWorktree(context, ref),
         child: Padding(
           padding: const EdgeInsets.symmetric(

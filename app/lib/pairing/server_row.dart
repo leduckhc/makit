@@ -175,34 +175,60 @@ Future<void> renameServerDialog(
   ConnectionController controller,
   PairedServer server,
 ) async {
-  final ctrl = TextEditingController(text: server.label);
-  try {
-    final label = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Rename server'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'e.g. work mac'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
+  final label = await showDialog<String>(
+    context: context,
+    builder: (_) => _RenameDialog(initial: server.label),
+  );
+  if (label == null || label.isEmpty) return;
+  await controller.renameServer(server.id, label);
+}
+
+/// Stateful so the [TextEditingController] lives and dies with the dialog route.
+///
+/// Disposing it in a `finally` right after `showDialog` returns is too early:
+/// the route is still animating out and rebuilds the [TextField], which then
+/// throws "A TextEditingController was used after being disposed".
+class _RenameDialog extends StatefulWidget {
+  const _RenameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RenameDialog> createState() => _RenameDialogState();
+}
+
+class _RenameDialogState extends State<_RenameDialog> {
+  late final TextEditingController _ctrl = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename server'),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'e.g. work mac'),
+        onSubmitted: (v) => Navigator.pop(context, v.trim()),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
     );
-    if (label == null || label.isEmpty) return;
-    await controller.renameServer(server.id, label);
-  } finally {
-    ctrl.dispose();
   }
 }
 

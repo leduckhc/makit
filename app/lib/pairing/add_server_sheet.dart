@@ -33,7 +33,7 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
   /// Browsed once when the sheet opens. Discovery lives here rather than on the
   /// connect screen because a hit can't pair on its own — the advertisement
   /// carries no token — so it is only ever a shortcut into adding.
-  Future<List<DiscoveredServer>>? _browse;
+  late Future<List<DiscoveredServer>> _browse;
 
   @override
   void initState() {
@@ -114,7 +114,7 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: kSpace16),
               child: DiscoveredServersList(
-                browse: _browse ?? Future.value(const []),
+                browse: _browse,
                 // Found, but still no token — so this is a shortcut to the
                 // scanner with the host already known to be reachable.
                 onTap: (_) => _scanQr(),
@@ -139,28 +139,9 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
 
   Future<void> _pasteUrl() async {
     final navigator = Navigator.of(context);
-    final ctrl = TextEditingController();
     final url = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Paste pairing URL'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'makit://pair?host=…'),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('Pair'),
-          ),
-        ],
-      ),
+      builder: (_) => const _PasteUrlDialog(),
     );
     if (url == null || url.isEmpty || !mounted) return;
     final info = PairInfo.tryParse(url);
@@ -172,6 +153,49 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
     }
     navigator.pop();
     await pairAndReport(context, ref, info);
+  }
+}
+
+/// Stateful so the [TextEditingController] lives and dies with the dialog route
+/// — see [_RenameDialog] in `server_row.dart` for why disposing right after
+/// `showDialog` returns is too early.
+class _PasteUrlDialog extends StatefulWidget {
+  const _PasteUrlDialog();
+
+  @override
+  State<_PasteUrlDialog> createState() => _PasteUrlDialogState();
+}
+
+class _PasteUrlDialogState extends State<_PasteUrlDialog> {
+  final _ctrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Paste pairing URL'),
+      content: TextField(
+        controller: _ctrl,
+        autofocus: true,
+        decoration: const InputDecoration(hintText: 'makit://pair?host=…'),
+        maxLines: 3,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _ctrl.text.trim()),
+          child: const Text('Pair'),
+        ),
+      ],
+    );
   }
 }
 

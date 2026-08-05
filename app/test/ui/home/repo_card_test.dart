@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -167,7 +166,7 @@ Future<_FakeStore> _pump(
 /// repo header's overflow menu. The card footer is "New worktree" — every
 /// worktree row has its own `+` for starting a session on a known branch.
 Future<void> _openNewSessionSheet(WidgetTester tester) async {
-  await tester.tap(find.byIcon(PhosphorIconsRegular.dotsThree));
+  await tester.tap(find.byTooltip('Repo actions'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('New session').last);
   await tester.pumpAndSettle();

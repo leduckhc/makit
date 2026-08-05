@@ -313,6 +313,24 @@ void main() {
     });
   });
 
+  group('corrupt storage', () {
+    test(
+      'a corrupt server record is dropped and the app boots unpaired',
+      () async {
+        final storage = FakeSecureStorage({_kServersKey: 'not json at all'});
+        final controller = _controller(storage);
+        await Future<void>.delayed(Duration.zero);
+
+        // A record we cannot parse must not wedge boot; it is discarded so the
+        // user lands on the connect screen and can re-pair.
+        expect(controller.state.servers, isEmpty);
+        expect(controller.state.paired, isFalse);
+        expect(storage.data.containsKey(_kServersKey), isFalse);
+        controller.dispose();
+      },
+    );
+  });
+
   group('unpair', () {
     test('clears every server, not just the active one', () async {
       final storage = _twoServers();
@@ -324,6 +342,54 @@ void main() {
       expect(controller.state.servers, isEmpty);
       expect(controller.state.paired, isFalse);
       expect(storage.data.containsKey(_kServersKey), isFalse);
+      controller.dispose();
+    });
+  });
+
+  group('rediscovery races a server switch', () {
+    // Rediscovery runs unawaited: it sleeps for the stall window, then browses
+    // mDNS for up to 4s. A `switchTo` inside that window must not be undone by
+    // the in-flight task re-attaching to the server it started from.
+    test('a switch during the stall window wins', () async {
+      final transports = <FakeTransport>[];
+      final storage = _twoServers();
+      final controller = ConnectionController(
+        storage,
+        // Never connects, so rediscovery always proceeds past its stall check.
+        transportFactory: () {
+          final t = FakeTransport(emitConnected: false);
+          transports.add(t);
+          return t;
+        },
+        // A's fingerprint is found at a NEW address, which is exactly what
+        // would tempt the stale task to re-attach to A.
+        browseLan: ({Duration timeout = const Duration(seconds: 3)}) async => [
+          DiscoveredServer(
+            name: 'makit._tcp.local',
+            host: '10.9.9.9',
+            port: 9999,
+            fingerprint: _fpA,
+          ),
+        ],
+        rediscoverStall: const Duration(milliseconds: 20),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      // Switch to B while A's rediscovery is still sleeping.
+      await controller.switchTo(_fpB);
+      expect(controller.state.activeServer?.fingerprint, _fpB);
+
+      // Let A's rediscovery finish its stall + browse.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+
+      // B is still active and the last socket opened is B's — not A's new
+      // address.
+      expect(controller.state.activeServer?.fingerprint, _fpB);
+      expect(
+        transports.last.connectedUrls.last,
+        'wss://10.0.0.2:8443',
+        reason: 'a stale rediscovery must not re-point the live socket at A',
+      );
       controller.dispose();
     });
   });

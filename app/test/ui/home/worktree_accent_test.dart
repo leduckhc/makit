@@ -77,4 +77,16 @@ void main() {
       WorktreeAccent.none,
     );
   });
+
+  test('a draft is skipped, not short-circuited, next to a live session', () {
+    // Guards the `continue`: an early `return` on the pending session would
+    // still pass the lone-draft case above, but would hide the live sibling.
+    expect(
+      worktreeAccent([
+        _s(SessionStatus.running, pending: true),
+        _s(SessionStatus.running),
+      ]),
+      WorktreeAccent.working,
+    );
+  });
 }

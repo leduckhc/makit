@@ -115,11 +115,30 @@ void main() {
     await _pump(tester);
     // Direction C renders a session as an inset block, not a ListTile; the
     // contract is unchanged — whatever wraps it must still clear the floor.
-    final tile = find.ancestor(
-      of: find.text('work on the login screen'),
-      matching: find.byType(InkWell),
+    expect(
+      _rowHeight(tester, 'work on the login screen'),
+      greaterThanOrEqualTo(_kMinTouch),
     );
-    expect(tester.getSize(tile.last).height, greaterThanOrEqualTo(_kMinTouch));
+  });
+
+  // The row wrapper clearing 44pt says nothing about the small controls at its
+  // trailing edge: they bound their own ink box, so `minHeight` on the row does
+  // not enlarge them. `PrPill` already sets the pattern — a kTouchRow ink box
+  // around a content-sized glyph.
+  testWidgets('the trailing worktree controls are touch-sized', (tester) async {
+    await _pump(tester);
+
+    for (final entry in {
+      'new-session +': find.byKey(const Key('newSessionInWorktree-/tmp/demo')),
+      'disclosure caret': find.byKey(const Key('worktreeCaret-/tmp/demo')),
+    }.entries) {
+      expect(entry.value, findsOneWidget, reason: 'no ${entry.key} control');
+      expect(
+        tester.getSize(entry.value).height,
+        greaterThanOrEqualTo(_kMinTouch),
+        reason: '${entry.key} must be a thumb-sized target',
+      );
+    }
   });
 
   testWidgets(

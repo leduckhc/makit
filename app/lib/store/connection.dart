@@ -405,7 +405,6 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   Future<void> _maybeRediscover(PairedServer server) async {
     if (_rediscovering) return;
     _rediscovering = true;
-    final targetId = server.id; // Capture the target upfront.
     try {
       // Give the first attempt a brief window to succeed.
       await Future<void>.delayed(_rediscoverStall);
@@ -414,8 +413,6 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       // alone is not enough — a switch that is still `connecting` would let
       // this task carry on with a now-stale server.
       if (state.activeServer?.id != server.id) return;
-      // If activeId changed during the stall, another switchTo() won; stop.
-      if (state.activeId != targetId) return;
 
       appLog.info(
         'conn',

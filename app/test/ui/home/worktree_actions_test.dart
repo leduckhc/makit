@@ -281,7 +281,7 @@ void main() {
 
       // The footer, not the overflow menu: every worktree row has its own `+`
       // for sessions, so the card-level action is adding a worktree.
-      expect(find.widgetWithText(InkWell, 'New worktree'), findsWidgets);
+      expect(find.byKey(const Key('newWorktreeFooter')), findsOneWidget);
       await tester.tap(find.byTooltip('Repo actions'));
       await tester.pumpAndSettle();
       expect(
@@ -300,7 +300,7 @@ void main() {
         RepoCard(repo: repo, sessions: const []),
       );
 
-      await tester.tap(find.widgetWithText(InkWell, 'New worktree').last);
+      await tester.tap(find.byKey(const Key('newWorktreeFooter')));
       await tester.pumpAndSettle();
 
       // The sheet lists the repo's branches as fork points.
