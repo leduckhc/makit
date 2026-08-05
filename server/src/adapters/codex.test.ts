@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { CodexAppServerAdapter, defaultConnect, probeCodexConfigOptions, projectCodexModelList, buildCodexConfigOptions, projectCodexThreadList, type CodexTransport } from "./codex.js";
@@ -782,5 +782,47 @@ test("a timed-out request cleans up its pending entry (and a normal one its time
     adapter as unknown as { request: (m: string, p: unknown, t?: number) => Promise<unknown> }
   ).request("thread/start", {}, 5_000);
   assert.equal(pending.size, before, "a resolved request clears its entry (and its timer)");
+  await adapter.kill();
+});
+
+test("steer(): a TIMED-OUT steer still echoes, so the message is not lost silently", async () => {
+  // The timeout is ambiguous — codex may have folded the message into the turn or
+  // dropped it — and `steer` returns true either way so the session does not
+  // re-queue and duplicate it. Without an echo, that ambiguity cost the user their
+  // message with no trace at all.
+  //
+  // Mocked timers, because the adapter's own timeout is 15s: `steer` is scripted
+  // to never answer, then the clock is driven past the deadline.
+  // An empty scripted reply: the fake writes `{ id }` with neither `result` nor
+  // `error`, which `handleLine` ignores — so the request never settles and the
+  // adapter's own timeout is the only way out.
+  const fake = fakeAppServer({ steer: () => ({}) });
+  const adapter = new CodexAppServerAdapter({ connect: () => fake.transport });
+  const events: AdapterEvent[] = [];
+  adapter.on("event", (e) => events.push(e));
+  await adapter.start({ cwd: process.cwd(), sessionId: "m-timeout" });
+  await adapter.send({ text: "long task" });
+  fake.feed({ method: "turn/started", params: { turn: { id: "t1" } } });
+  await waitFor(() => fake.sent.some((m) => m.method === "turn/start"));
+  const before = events.filter((e) => e.kind === "user.message").length;
+
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const steered = (adapter as unknown as { steer: (i: { text: string }) => Promise<boolean> }).steer({
+      text: "do X instead",
+    });
+    mock.timers.tick(15_001);
+    assert.equal(await steered, true, "a timed-out steer must not be re-queued");
+  } finally {
+    mock.timers.reset();
+  }
+
+  const echoes = events.filter((e) => e.kind === "user.message");
+  assert.equal(
+    echoes.length,
+    before + 1,
+    "the message must be visible even when the steer's fate is unknown",
+  );
+  assert.equal((echoes.at(-1)!.payload as { steered?: boolean }).steered, true);
   await adapter.kill();
 });

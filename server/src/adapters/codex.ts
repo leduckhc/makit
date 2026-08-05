@@ -303,6 +303,17 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       // message); log the ambiguity but don't error or re-queue.
       if (err instanceof RequestTimeoutError) {
         log.warn(`turn/steer timed out; treating as potentially delivered (not re-queued): ${(err as Error).message}`);
+        // Echo it anyway. Returning `true` without an echo made the message
+        // vanish from the user's side in BOTH readings of the timeout: if codex
+        // did fold it into the turn, the agent answers text that is nowhere in
+        // the transcript; if it dropped it, the message is gone with no error and
+        // no pending bubble. An echo is right in the first case and, in the
+        // second, at least leaves the user something to see and retype.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "user.message",
+          payload: { ...turn.echo, steered: true },
+        });
         return true;
       }
       // Protocol rejection (precondition mismatch, no active turn, etc.) — the

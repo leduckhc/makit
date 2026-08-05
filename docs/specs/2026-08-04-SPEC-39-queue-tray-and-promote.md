@@ -10,8 +10,9 @@
 
 **Scope:** `server/src/session.ts`, `server/src/ws/commands/session.ts`,
 `server/src/protocol.ts`; app: new `app/lib/ui/composer/pending_queue_tray.dart`,
-`pending_queue.dart` (one enum value + a mount-point extension),
-`pending_queue_slot.dart`, `store.dart`, one settings row.
+`store/models.dart` (the `PendingQueuePlacement` values), `pending_queue.dart`
+(hollow bubbles, one control group), `pending_queue_slot.dart` (one mount point,
+no `slot` argument), `store.dart`, one settings row.
 
 ---
 
@@ -84,9 +85,14 @@ acks, so nobody noticed the ack came back labelled with a queued message instead
 of the request. All queue commands now use `queuedId`, and a store test asserts
 the request id survives `toJson()`.
 
-The general hazard — a body key shadowing an envelope key, silently — is still
-there for every other command. Left alone deliberately; it wants a guard in
-`Envelope`, not a rename per call site.
+**The general hazard is still live, and is NOT forbidden anywhere.** `toJson()`
+writes `v`, `t` and `id` before spreading the body, so any command whose body
+carries one of those three keys still shadows the envelope's — silently. Only the
+`queue.*` commands were renamed here (they were the ones actually doing it). No
+lint, assertion or type stops the next one. The fix belongs in `Envelope` — spread
+the body first so frame fields win, or assert in debug that the body carries none
+of the three — and is deliberately not in this spec's scope, because it touches
+every command path in the app.
 
 ## What is NOT here
 

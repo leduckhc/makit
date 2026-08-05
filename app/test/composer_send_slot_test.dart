@@ -15,9 +15,8 @@ import 'package:makit/ui/composer/composer.dart';
 /// controller without ever rendering the frame that retires the outgoing child,
 /// which is what hid this bug from the existing suite.
 Future<void> frames(WidgetTester tester, Duration d) async {
-  final deadline = DateTime.now().add(const Duration(seconds: 5));
   var elapsed = Duration.zero;
-  while (elapsed < d && DateTime.now().isBefore(deadline)) {
+  while (elapsed < d) {
     await tester.pump(const Duration(milliseconds: 16));
     elapsed += const Duration(milliseconds: 16);
   }
