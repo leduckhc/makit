@@ -5,6 +5,7 @@ import 'dart:io' as io;
 import 'package:makit/store/secure_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/pairing/mdns_browser.dart';
+import 'package:makit/pairing/pair_info.dart';
 import 'package:makit/notifications/push_registration.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/transport/protocol.dart';
@@ -260,7 +261,7 @@ void main() {
           transports.add(t);
           return t;
         },
-        browseLan: _fixedBrowse(const []),
+        browseLan: _fixedBrowse(const <DiscoveredServer>[]),
         rediscoverStall: Duration.zero,
       );
 
@@ -512,5 +513,48 @@ void main() {
 
       controller.dispose();
     });
+
+    test(
+      'pairing handshake sends the desktop pid in hello body (SPEC-37)',
+      () async {
+        // Deliberately EMPTY storage, not a seeded one: with a stored server
+        // `_boot()` opens its own transport first, so the pairing handshake's
+        // socket would be the second and `transports.single` would throw.
+        final storage = FakeSecureStorage();
+        final transports = <FakeTransport>[];
+        final controller = ConnectionController(
+          storage,
+          transportFactory: () {
+            final t = FakeTransport();
+            transports.add(t);
+            return t;
+          },
+        );
+        const info = PairInfo(
+          host: 'example.com',
+          port: 443,
+          fingerprint: 'sha256/abc',
+          token: 'pair-token-123',
+        );
+
+        unawaited(
+          controller
+              .pairWith(info, label: 'test-device')
+              .then((_) {})
+              .catchError((_) {}),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        expect(transports, hasLength(1));
+
+        final sent = transports.single.helloBodies.single;
+        expect(sent['pair'], 'pair-token-123');
+        expect(sent['label'], 'test-device');
+        // The key assertion: pid must be present so the server can measure the app surface.
+        expect(sent['pid'], isNotNull);
+        expect(sent['pid'], io.pid);
+
+        controller.dispose();
+      },
+    );
   });
 }
