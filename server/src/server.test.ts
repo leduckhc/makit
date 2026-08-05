@@ -16,9 +16,13 @@ import { EventEmitter } from "node:events";
 import type { AgentAdapter } from "./adapters/adapter.js";
 
 /** Minimal in-process adapter whose events can be driven from the test. */
-function fakeAdapter(): AgentAdapter {
+function fakeAdapter(pid?: number): AgentAdapter {
   const e = new EventEmitter() as unknown as AgentAdapter;
   (e as unknown as { agent: string }).agent = "stub";
+  // SPEC-37: acp/codex expose `agentPid` structurally (it is deliberately not on
+  // the AgentAdapter contract). A double without it makes every metrics agent-row
+  // test vacuous, so opt in explicitly where a test needs a pid.
+  if (pid !== undefined) (e as unknown as { agentPid: number }).agentPid = pid;
   (e as unknown as { start: () => Promise<void> }).start = async () => {};
   (e as unknown as { send: () => Promise<void> }).send = async () => {};
   (e as unknown as { cancel: () => Promise<void> }).cancel = async () => {};
@@ -305,4 +309,309 @@ test("github.pause {paused:true} flips the level to paused (SPEC-32)", async () 
     );
     assert.ok(paused, "pausing flips the budget level to paused");
   });
+});
+
+// ── SPEC-37 T6: metrics.sample wire event + metrics.watch command ─────────────
+
+/** A canned `ps` table whose only row is this process (so `app` can resolve). */
+function fakeMetricsExec(): (
+  cmd: string,
+  args: string[],
+  cwd?: string,
+  timeoutMs?: number,
+) => Promise<{ code: number; stdout: string; stderr: string }> {
+  return async () => ({
+    code: 0,
+    stdout: `${process.pid} 1 50000 0:01.00 node`,
+    stderr: "",
+  });
+}
+
+/**
+ * Boot a server with the metrics collector's timer + exec seams injected, so a
+ * sample can be driven deterministically. `driveTick()` fires the collector's
+ * captured timer callback once; `lastIntervalMs()` reveals the armed cadence.
+ */
+async function withMetricsServer(
+  run: (ctx: {
+    server: ReturnType<typeof startWsServer>;
+    manager: SessionManager;
+    port: number;
+    connect: () => Promise<MetricsConn>;
+    driveTick: () => Promise<void>;
+    lastIntervalMs: () => number | null;
+  }) => Promise<void>,
+  opts: { background?: boolean } = {},
+): Promise<void> {
+  const home = mkdtempSync(join(tmpdir(), "makit-home-"));
+  const project = mkdtempSync(join(tmpdir(), "makit-srv-proj-"));
+  const prevHome = process.env.MAKIT_HOME;
+  process.env.MAKIT_HOME = home;
+  const cert = await loadOrCreateCert();
+  const registry = new DeviceRegistry();
+  // Use this process's own pid: it genuinely exists in the `ps` table, so agent rows
+  // are actually populated and assertions about them are not vacuous.
+  const manager = new SessionManager({
+    projects: [project],
+    adapterFactory: () => fakeAdapter(process.pid),
+  });
+
+  let tickFn: (() => void | Promise<void>) | null = null;
+  let armedMs: number | null = null;
+  const server = startWsServer({
+    host: "127.0.0.1",
+    port: 0,
+    manager,
+    cert,
+    registry,
+    trustLocalhost: true,
+    metrics: {
+      exec: fakeMetricsExec(),
+      now: () => Date.now(),
+      setTimer: (fn, ms) => {
+        tickFn = fn;
+        armedMs = ms;
+        return 1;
+      },
+      clearTimer: () => {},
+      enabled: opts.background ?? true,
+    },
+  });
+  await new Promise<void>((r) => server.https.on("listening", () => r()));
+  const port = (server.https.address() as AddressInfo).port;
+
+  const conns: MetricsConn[] = [];
+  const connect = async (): Promise<MetricsConn> => {
+    const c = await openMetricsConn(port);
+    conns.push(c);
+    return c;
+  };
+  const driveTick = async (): Promise<void> => {
+    assert.ok(tickFn, "the collector armed a timer");
+    await tickFn!();
+  };
+
+  try {
+    await run({ server, manager, port, connect, driveTick, lastIntervalMs: () => armedMs });
+  } finally {
+    for (const c of conns) c.ws.close();
+    await new Promise<void>((r) => server.wss.close(() => r()));
+    await new Promise<void>((r) => server.https.close(() => r()));
+    if (prevHome === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+}
+
+interface MetricsConn {
+  ws: WebSocket;
+  send: (frame: Record<string, unknown>) => void;
+  nextEvent: (pred: (env: Envelope) => boolean) => Promise<Envelope>;
+  metricsFrames: Envelope[];
+  /** Every frame received, for assertions about what must NOT be sent. */
+  allFrames: Envelope[];
+  ping: () => Promise<void>;
+}
+
+async function openMetricsConn(port: number): Promise<MetricsConn> {
+  const ws = new WebSocket(`wss://127.0.0.1:${port}`, { rejectUnauthorized: false });
+  const pending: Array<{ pred: (e: Envelope) => boolean; resolve: (e: Envelope) => void }> = [];
+  const buffered: Envelope[] = [];
+  const metricsFrames: Envelope[] = [];
+  const allFrames: Envelope[] = [];
+  const pongs = new Set<string>();
+  ws.on("message", (raw) => {
+    const env = JSON.parse(raw.toString()) as Envelope;
+    allFrames.push(env);
+    if (env.t === "event" && env.kind === "metrics.sample") metricsFrames.push(env);
+    if (env.t === "pong") pongs.add(env.id);
+    const i = pending.findIndex((p) => p.pred(env));
+    if (i >= 0) pending.splice(i, 1)[0].resolve(env);
+    else buffered.push(env);
+  });
+  const nextEvent = (pred: (env: Envelope) => boolean): Promise<Envelope> => {
+    const hit = buffered.findIndex(pred);
+    if (hit >= 0) return Promise.resolve(buffered.splice(hit, 1)[0]);
+    return new Promise<Envelope>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("timed out waiting for event")), 5000);
+      pending.push({ pred, resolve: (e) => (clearTimeout(t), resolve(e)) });
+    });
+  };
+  const send = (frame: Record<string, unknown>) =>
+    ws.send(JSON.stringify({ v: PROTOCOL_VERSION, ...frame }));
+  let pingSeq = 0;
+  const ping = async (): Promise<void> => {
+    const id = `ping-${pingSeq++}`;
+    send({ t: "ping", id, ts: Date.now() });
+    await nextEvent((e) => e.t === "pong" && e.id === id);
+  };
+  await new Promise<void>((resolve, reject) => {
+    ws.on("open", () => resolve());
+    ws.on("error", reject);
+  });
+  return { ws, send, nextEvent, metricsFrames, allFrames, ping };
+}
+
+test("metrics.watch {on:true} acks then a sample WITH history arrives; the next has none (SPEC-37)", async () => {
+  await withMetricsServer(async ({ connect, driveTick }) => {
+    const c = await connect();
+    // Prime the ring so the first watched frame carries history.
+    await driveTick();
+    await c.nextEvent((e) => e.kind === "metrics.sample"); // the coarse frame
+    c.metricsFrames.length = 0;
+
+    c.send({ t: "cmd", id: "w1", kind: "metrics.watch", on: true });
+    await c.nextEvent((e) => e.t === "ack" && e.id === "w1");
+
+    const first = await c.nextEvent(
+      (e) => e.kind === "metrics.sample" && Array.isArray((e as { history?: unknown }).history),
+    );
+    assert.ok((first as { history?: unknown[] }).history!.length >= 1, "first watched frame carries history");
+    assert.ok((first as { sample?: unknown }).sample, "and a sample");
+
+    c.metricsFrames.length = 0;
+    await driveTick();
+    const second = await c.nextEvent((e) => e.kind === "metrics.sample");
+    assert.equal((second as { history?: unknown }).history, undefined, "subsequent samples carry no history");
+  });
+});
+
+test("a non-watching authed client receives coarse samples but not watched ones (SPEC-37)", async () => {
+  await withMetricsServer(async ({ connect, driveTick }) => {
+    const watcher = await connect();
+    const idle = await connect();
+
+    // No watchers yet → coarse cadence → both clients get the frame.
+    await driveTick();
+    await watcher.nextEvent((e) => e.kind === "metrics.sample");
+    await idle.nextEvent((e) => e.kind === "metrics.sample");
+
+    // One client starts watching → cadence goes fine (1 Hz).
+    watcher.send({ t: "cmd", id: "w1", kind: "metrics.watch", on: true });
+    await watcher.nextEvent((e) => e.t === "ack" && e.id === "w1");
+    // Drain the priming history frame the watcher just received.
+    await watcher.nextEvent((e) => e.kind === "metrics.sample");
+
+    watcher.metricsFrames.length = 0;
+    idle.metricsFrames.length = 0;
+    await driveTick();
+    await watcher.nextEvent((e) => e.kind === "metrics.sample");
+    // A round-trip proves the idle client has processed everything up to now.
+    await idle.ping();
+    assert.equal(idle.metricsFrames.length, 0, "the idle client got no watched (fine) sample");
+    assert.equal(watcher.metricsFrames.length, 1, "the watcher got exactly the fine sample");
+  });
+});
+
+test("socket close clears the watcher and the cadence returns to idle (SPEC-37 leak guard)", async () => {
+  await withMetricsServer(async ({ connect, driveTick, lastIntervalMs }) => {
+    const c = await connect();
+    await driveTick();
+    c.send({ t: "cmd", id: "w1", kind: "metrics.watch", on: true });
+    await c.nextEvent((e) => e.t === "ack" && e.id === "w1");
+    assert.equal(lastIntervalMs(), 1000, "watching arms the 1 Hz cadence");
+
+    c.ws.close();
+    // Wait for the server to observe the close and re-arm.
+    await new Promise<void>((r) => c.ws.on("close", () => r()));
+    for (let i = 0; i < 50 && lastIntervalMs() !== 5000; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.equal(lastIntervalMs(), 5000, "a closed panel drops the cadence back to 5 s idle");
+  });
+});
+
+test("hello {pid} over loopback is accepted and colours the app row (SPEC-37 decision 6)", async () => {
+  await withMetricsServer(async ({ connect, driveTick }) => {
+    const c = await connect();
+    c.send({ t: "hello", id: "h1", pid: process.pid });
+    await c.nextEvent((e) => e.t === "hello.ack" && e.id === "h1");
+    await driveTick();
+    const frame = await c.nextEvent((e) => e.kind === "metrics.sample");
+    const sample = (frame as unknown as { sample: { app: { pid: number } | null } }).sample;
+    assert.ok(sample.app, "a loopback-reported pid produces an app row");
+    assert.equal(sample.app!.pid, process.pid);
+  });
+});
+
+test("REGRESSION: driving samples never grows any session's event log (SPEC-37 decision 5)", async () => {
+  await withMetricsServer(async ({ connect, driveTick, manager }) => {
+    const projectId = manager.listProjects()[0].id;
+    const session = await manager.spawnPiSession(projectId);
+    const baseline = session.events.length;
+
+    const c = await connect();
+    c.send({ t: "cmd", id: "w1", kind: "metrics.watch", on: true });
+    await c.nextEvent((e) => e.t === "ack" && e.id === "w1");
+    for (let i = 0; i < 5; i++) await driveTick();
+
+    assert.equal(session.events.length, baseline, "no metrics sample entered the append-only session log");
+    for (const s of manager.allSessions()) {
+      assert.ok(
+        !s.events.some((ev) => ev.kind.startsWith("metrics.")),
+        "no session event carries a metrics.* kind",
+      );
+    }
+    // The above two assertions only inspect the log. A future edit that routed
+    // samples through SubscriptionHub.fanout would keep the log clean and still be
+    // wrong — fanout wraps events as `session.event` frames, which the app replays
+    // as transcript content. Assert on what actually went over the wire instead of
+    // trusting the log alone (review finding: the log-only guard was half-theatre).
+    const sessionEventFrames = c.allFrames.filter(
+      (f) => f.t === "event" && f.kind === "session.event",
+    );
+    for (const f of sessionEventFrames) {
+      const ev = (f as { event?: { kind?: string } }).event;
+      assert.ok(
+        !(ev?.kind ?? "").startsWith("metrics."),
+        "a metrics sample must never be delivered as a session.event",
+      );
+    }
+  });
+});
+
+test("an exited session contributes no pid — a reused pid must not be attributed to it (SPEC-37)", async () => {
+  await withMetricsServer(async ({ connect, driveTick, manager }) => {
+    const projectId = manager.listProjects()[0].id;
+    const session = await manager.spawnPiSession(projectId);
+    const c = await connect();
+    c.send({ t: "cmd", id: "w1", kind: "metrics.watch", on: true });
+    await c.nextEvent((e) => e.t === "ack" && e.id === "w1");
+
+    // Mark the session exited. Its old child pid is still on the adapter, and the
+    // OS recycles pids — sampling it would attribute a stranger's process tree to
+    // a dead agent.
+    session.backfill([{ ts: Date.now(), kind: "session.status", payload: { status: "exited" } }]);
+    assert.equal(session.status, "exited", "precondition: the session really is exited");
+    c.metricsFrames.length = 0;
+    await driveTick();
+    await c.nextEvent((e) => e.kind === "metrics.sample");
+
+    const sample = c.metricsFrames.at(-1)?.sample as { agents: Array<{ sessionId: string }> };
+    assert.ok(
+      !sample.agents.some((a) => a.sessionId === session.id),
+      "an exited session must not appear as a live agent row",
+    );
+  });
+});
+
+test("a non-integer pid over loopback is rejected (SPEC-37 decision 6)", async () => {
+  // 0, negatives, fractions, NaN and Infinity are all `typeof "number"`. Without a
+  // safe-integer check each became `appPid` and the collector rendered a plausible
+  // app row for a process that cannot exist.
+  for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await withMetricsServer(async ({ connect, driveTick }) => {
+      const c = await connect();
+      c.send({ t: "hello", id: "h1", pid: bad });
+      await c.nextEvent((e) => e.t === "hello.ack" && e.id === "h1");
+      c.send({ t: "cmd", id: "w", kind: "metrics.watch", on: true });
+      await c.nextEvent((e) => e.t === "ack" && e.id === "w");
+      c.metricsFrames.length = 0;
+      await driveTick();
+      await c.nextEvent((e) => e.kind === "metrics.sample");
+      const sample = c.metricsFrames.at(-1)?.sample as { app: unknown };
+      assert.equal(sample.app, null, `pid ${String(bad)} must not produce an app row`);
+    });
+  }
 });

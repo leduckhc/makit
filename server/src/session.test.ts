@@ -460,9 +460,9 @@ test("SPEC-38: reorderQueue treats a stale id list as a hint, never an error", a
   assert.equal(session.reorderQueue([]), false, "nothing named = nothing to do");
 });
 
-// ---- SPEC-37: promote (the queue tray's ⤒) --------------------------------
+// ---- SPEC-39: promote (the queue tray's ⤒) --------------------------------
 
-test("SPEC-37: promoteQueued interrupts the turn and sends THAT message next", async () => {
+test("SPEC-39: promoteQueued interrupts the turn and sends THAT message next", async () => {
   const f = turnAdapter();
   const cancels: number[] = [];
   (f.adapter as any).cancel = async () => {
@@ -489,7 +489,7 @@ test("SPEC-37: promoteQueued interrupts the turn and sends THAT message next", a
   );
 });
 
-test("SPEC-37: promoting the head is still an interrupt, not a no-op", async () => {
+test("SPEC-39: promoting the head is still an interrupt, not a no-op", async () => {
   const f = turnAdapter();
   (f.adapter as any).cancel = async () => f.adapter.emit("status", "idle");
   const session = new Session({ projectId: "p", agent: "pi", adapter: f.adapter });
@@ -504,7 +504,7 @@ test("SPEC-37: promoting the head is still an interrupt, not a no-op", async () 
   assert.equal(session.queuedMessages.length, 0);
 });
 
-test("SPEC-37: promoting an id the queue no longer holds is a no-op, not an interrupt", async () => {
+test("SPEC-39: promoting an id the queue no longer holds is a no-op, not an interrupt", async () => {
   const f = turnAdapter();
   let cancels = 0;
   (f.adapter as any).cancel = async () => {
@@ -578,4 +578,16 @@ test("SPEC-35: the queue is capped, and the refusal names the message", async ()
     errors.some((m) => m.includes("already waiting") && m.includes("queued 50")),
     `the refused message must be named: ${errors.slice(0, 2).join(" | ")}`,
   );
+});
+
+test("agentPid is undefined for an adapter with no child process (stub/fake)", () => {
+  const session = new Session({ projectId: "p", agent: "pi", adapter: fakeAdapter() });
+  assert.equal(session.agentPid, undefined);
+});
+
+test("agentPid returns the adapter's pid when the adapter exposes one", () => {
+  const adapter = fakeAdapter();
+  (adapter as any).agentPid = 4242;
+  const session = new Session({ projectId: "p", agent: "pi", adapter });
+  assert.equal(session.agentPid, 4242);
 });

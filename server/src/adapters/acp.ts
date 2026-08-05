@@ -63,6 +63,12 @@ export interface AcpTransport {
   stream: Stream;
   onExit: (cb: (code: number | null) => void) => void;
   dispose: () => void;
+  /**
+   * The OS pid of the agent subprocess, or `undefined` when the spawn faulted
+   * or the transport is an in-memory test double. Surfaced for SPEC-37
+   * process-tree attribution.
+   */
+  pid?: number;
 }
 
 export interface AcpAdapterOpts {
@@ -137,6 +143,17 @@ export class AcpAdapter extends SubprocessAdapter {
           new LocalMediaResolver({ store: media, roots: this.mediaRoots() }).resolve(ref),
         ),
     });
+  }
+
+  /**
+   * Root pid of the agent's process tree, or `undefined` before `start()` and
+   * for a faulted spawn (SPEC-37). A per-adapter getter is intentional: only
+   * the subprocess-backed adapters (acp, codex) have a pid, so widening the
+   * shared `AgentAdapter` contract would force every test double and the
+   * in-process `StubAdapter` to grow a member they cannot answer (YAGNI).
+   */
+  get agentPid(): number | undefined {
+    return this.transport?.pid;
   }
 
   private mediaRoots(): string[] {
@@ -692,6 +709,7 @@ export function defaultConnect(spec: AcpSpawnSpec) {
       stream: lineTransportToStream(proc),
       onExit: (cb) => proc.onExit((code) => cb(code)),
       dispose: () => proc.dispose(),
+      pid: proc.pid,
     };
   };
 }

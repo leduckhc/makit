@@ -16,6 +16,7 @@ function fakeAppServer(opts: { steer?: () => { result?: unknown; error?: unknown
   let turnSeq = 0;
 
   const transport: CodexTransport = {
+    pid: undefined, // in-memory fake: no child process
     send: (line) => {
       const msg = JSON.parse(line);
       sent.push(msg);

@@ -154,6 +154,17 @@ const PreferenceEntry<bool> budgetHistoryExpandedPreference = PreferenceEntry(
   internal: true,
 );
 
+/// Whether the metrics popover's "History" detail is expanded. Same role as
+/// [budgetHistoryExpandedPreference] for the sibling footer popover (SPEC-37
+/// Tier 1): a remembered UI state, not a user-facing setting.
+const PreferenceEntry<bool> metricsHistoryExpandedPreference = PreferenceEntry(
+  id: 'chat.metricsHistoryExpanded',
+  defaultValue: false,
+  encode: _encodeBool,
+  decode: _decodeBool,
+  internal: true,
+);
+
 /// How many agents a group opens side by side before it starts placing new ones
 /// as tabs (SPEC-30 decision 9). A **placement policy**, not a rendering mode:
 /// changing it never re-arranges a group the user already arranged — it only
@@ -234,6 +245,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   prPushPromptPreference,
   prPullPromptPreference,
   budgetHistoryExpandedPreference,
+  metricsHistoryExpandedPreference,
   messageNavigatorStylePreference,
   pendingQueuePlacementPreference,
   railTickSpacingPreference,

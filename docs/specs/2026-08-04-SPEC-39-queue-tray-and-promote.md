@@ -1,4 +1,8 @@
-# SPEC-37 — Queue tray: a second presentation, and promote
+# SPEC-39 — Queue tray: a second presentation, and promote
+
+> **Renumbered from SPEC-37.** `main` landed its own SPEC-37 (the performance
+> metrics dashboard) while this branch was open — the second such collision on
+> this branch, after the pending queue moved 36 → 38.
 
 **Status:** Implemented · **Priority:** P2 · **Branch:** `feat/steering-vs-queuing`
 **Depends on:** SPEC-35 (the queue), SPEC-38 (edit / reorder / placements)

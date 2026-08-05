@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -186,7 +187,9 @@ class ConnectionController extends StateNotifier<MakitConnState> {
 
   Future<void> _boot() async {
     if (_wsUrl.isNotEmpty) {
-      // Dev override: connect directly, no pairing.
+      // Dev override: connect directly, no pairing. No bearer (the server's
+      // --no-auth pre-authenticates loopback clients); the pid comes from
+      // [_attachReal] like every other path.
       await _attachReal(
         _wsUrl,
         fingerprint: _wsFp.isEmpty ? null : _wsFp,
@@ -228,11 +231,35 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   /// LAN IP changed via DHCP), browse mDNS for a server with the **same
   /// fingerprint** — that's the only safe identity check — update the
   /// stored host:port, and reconnect there.
+  /// Authenticated `hello` body. Credentials only — [_attachReal] adds the pid.
+  Map<String, dynamic> _authHelloBody(String bearer) => {'bearer': bearer};
+
+  /// Our OS `pid`, so the server can measure the app surface (SPEC-37 decision
+  /// 6: the app has no self-CPU API, so the server samples the pid we report and
+  /// trusts it only on a loopback socket).
+  ///
+  /// Empty off desktop — web has no `dart:io` process, and on iOS/Android the
+  /// socket is not loopback so the server ignores the value anyway.
+  ///
+  /// Added centrally in [_attachReal] rather than per call site: this was
+  /// originally sent from only two of the four hello paths, so the dashboard's
+  /// "App (Flutter)" row read "—" for the entire documented dev loop and for the
+  /// first session after pairing.
+  Map<String, dynamic> _pidHelloBody() {
+    if (kIsWeb) return const {};
+    if (!(io.Platform.isMacOS ||
+        io.Platform.isWindows ||
+        io.Platform.isLinux)) {
+      return const {};
+    }
+    return {'pid': io.pid};
+  }
+
   Future<void> _connectPaired(PairedServer server) async {
     await _attachReal(
       server.wssUrl,
       fingerprint: server.fingerprint,
-      helloBody: {'bearer': server.bearer},
+      helloBody: _authHelloBody(server.bearer),
     );
     unawaited(_maybeRediscover(server));
   }
@@ -285,7 +312,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       await _attachReal(
         updated.wssUrl,
         fingerprint: updated.fingerprint,
-        helloBody: {'bearer': updated.bearer},
+        helloBody: _authHelloBody(updated.bearer),
       );
     } finally {
       _rediscovering = false;
@@ -337,7 +364,13 @@ class ConnectionController extends StateNotifier<MakitConnState> {
       wsState: WsState.connecting,
       clearError: true,
     );
-    await ws.connect(url, helloBody: helloBody, pinnedFingerprint: fingerprint);
+    await ws.connect(
+      // The pid is merged here, not by the callers, so no future attach path can
+      // omit it. A caller may still override it explicitly.
+      url,
+      helloBody: {..._pidHelloBody(), ...helloBody},
+      pinnedFingerprint: fingerprint,
+    );
   }
 
   /// Run the full QR pair handshake: connect, present pair token, receive
@@ -381,10 +414,12 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     // Open the connection but DON'T let WsClient send its own auto-hello —
     // it would carry no pair token. Instead we call _open directly via
     // `connect` and rely on it sending hello with the body we configure.
+    // Still send the desktop pid so the server can measure the app surface (SPEC-37).
+    final body = {'pair': info.token, 'label': label, ..._pidHelloBody()};
     await ws.connect(
       info.wssUrl,
       pinnedFingerprint: info.fingerprint,
-      helloBody: {'pair': info.token, 'label': label},
+      helloBody: body,
     );
 
     // Race with a 15s timeout.
@@ -410,7 +445,7 @@ class ConnectionController extends StateNotifier<MakitConnState> {
     await _attachReal(
       result.wssUrl,
       fingerprint: result.fingerprint,
-      helloBody: {'bearer': result.bearer},
+      helloBody: _authHelloBody(result.bearer),
     );
     return result;
   }

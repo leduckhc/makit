@@ -65,6 +65,7 @@ function replayTransport(frames: Frame[]): { transport: CodexTransport; sent: an
   const feed = (obj: unknown) => queueMicrotask(() => lineCb(JSON.stringify(obj)));
 
   const transport: CodexTransport = {
+    pid: undefined, // in-memory fake: no child process
     send: (line) => {
       const msg = JSON.parse(line);
       sent.push(msg);

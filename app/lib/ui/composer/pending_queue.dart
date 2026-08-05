@@ -48,7 +48,7 @@ class PendingQueue extends StatelessWidget {
   /// Drop one message.
   final ValueChanged<String> onCancel;
 
-  /// Interrupt the running turn so one message is delivered next (SPEC-37).
+  /// Interrupt the running turn so one message is delivered next (SPEC-39).
   final ValueChanged<String> onPromote;
 
   @override
@@ -152,7 +152,7 @@ class PendingBubble extends StatefulWidget {
   /// Drop this message.
   final VoidCallback onCancel;
 
-  /// Send this one now: the server interrupts the running turn (SPEC-37).
+  /// Send this one now: the server interrupts the running turn (SPEC-39).
   final VoidCallback onPromote;
 
   /// Move by `-1` (sooner) or `+1` (later).

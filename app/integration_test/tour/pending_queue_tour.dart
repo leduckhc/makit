@@ -16,7 +16,7 @@
 //   6. switch the presentation to "Compact tray" — mockup variant C
 //   7. queue another message and reorder inside the tray
 //   8. ⤒ promote: interrupt the running turn so THAT message is sent next, and
-//      watch the rest of the queue survive behind it (SPEC-37)
+//      watch the rest of the queue survive behind it (SPEC-39)
 //
 // Each step holds still for a beat so the recording is watchable, and asserts
 // just enough that a broken step fails the run instead of filming a blank

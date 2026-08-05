@@ -1,6 +1,6 @@
-/// The one place that decides HOW the pending queue renders (SPEC-37/38).
+/// The one place that decides HOW the pending queue renders (SPEC-39/38).
 ///
-/// There is exactly ONE mount point — above the composer — since SPEC-37 removed
+/// There is exactly ONE mount point — above the composer — since SPEC-39 removed
 /// the in-transcript placement. So this widget takes no slot argument: it reads
 /// the preference and builds the presentation it names, and the two surfaces
 /// (mobile session screen, desktop chat pane) mount it once each.

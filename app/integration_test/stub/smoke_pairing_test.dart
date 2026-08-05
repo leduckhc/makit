@@ -13,8 +13,10 @@ void main() {
   ) async {
     await launchMakit(tester);
 
-    // AppBar title.
-    expect(find.text('makit'), findsWidgets);
+    // Home header title. Capitalised 'Makit' since the branding pass in #130 —
+    // this assertion still said 'makit' and had been failing the E2E suite since
+    // that landed.
+    expect(find.text('Makit'), findsWidgets);
     // Session from the stub adapter — proves the WS snapshot hydrated.
     expect(find.text('new session'), findsOneWidget);
 

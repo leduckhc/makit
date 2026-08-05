@@ -173,7 +173,7 @@ void main() {
     await waitFor(tester, find.text('draft release notes'));
     await hold(tester, const Duration(seconds: 2));
     await tapAndHold(tester, find.byIcon(PhosphorIconsLight.arrowLeft));
-    await waitFor(tester, find.text('makit'));
+    await waitFor(tester, find.text('Makit'));
 
     // ---- 6. PR chip on the session screen, and the PR sheet ------------
     await tapAndHold(tester, find.text('wire up pairing screen'));
@@ -192,7 +192,7 @@ void main() {
     );
     await hold(tester);
     await tapAndHold(tester, find.byIcon(PhosphorIconsLight.arrowLeft));
-    await waitFor(tester, find.text('makit'));
+    await waitFor(tester, find.text('Makit'));
     await hold(tester);
     await tapAndHold(tester, find.text('wire up pairing screen'));
     await waitFor(tester, find.text('half-typed message that must survive'));

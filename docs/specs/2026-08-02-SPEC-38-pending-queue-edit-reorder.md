@@ -1,6 +1,6 @@
 # SPEC-38 — Pending queue: editable, reorderable, two placements
 
-> **Superseded in part by SPEC-37.** The `inline` placement described below — the
+> **Superseded in part by SPEC-39.** The `inline` placement described below — the
 > queue rendered inside the transcript's trailer row — was **removed**: it was the
 > only placement that had to touch SPEC-21's anchoring and SPEC-34's index map,
 > and a queue that scrolls out of view is a queue you forget you armed. The

@@ -329,6 +329,18 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Root pid of the agent's process tree, or `undefined` when the adapter has
+   * no child process (the in-process `StubAdapter`) or the spawn faulted.
+   * Delegates to the subprocess-backed adapters' `agentPid` getter; read
+   * structurally because pid is NOT part of the shared `AgentAdapter` contract
+   * (only acp/codex spawn a child). The metrics collector omits sessions with
+   * no pid rather than reporting a misleading 0 (SPEC-37 decision 11).
+   */
+  get agentPid(): number | undefined {
+    return (this.adapter as { readonly agentPid?: number }).agentPid;
+  }
+
+  /**
    * Adopt the live adapter's native session/thread id (ACP `sessionId`, codex
    * `threadId`) as this session's durable resume handle (SPEC-29), persisting
    * it so the session can be resumed after a server restart. Called by the
@@ -618,7 +630,7 @@ export class Session extends EventEmitter {
 
   /**
    * Send one pending message NOW: interrupt the running turn, then let the
-   * normal flush deliver that message first (SPEC-37 — the tray's ⤒).
+   * normal flush deliver that message first (SPEC-39 — the tray's ⤒).
    *
    * Deliberately *not* built on `cancel`'s path: the `cancel` command clears the
    * whole queue ("stop means stop"), which is the opposite of what promote

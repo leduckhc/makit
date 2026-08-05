@@ -166,7 +166,7 @@ test("queue.reorder needs an array of ids", async () => {
   assert.ok(h.sent.some((f) => f.t === "err"));
 });
 
-// ---- SPEC-37: queue.promote (the tray's ⤒) --------------------------------
+// ---- SPEC-39: queue.promote (the tray's ⤒) --------------------------------
 
 test("queue.promote interrupts the turn and leaves the rest of the queue", async () => {
   const h = harness();

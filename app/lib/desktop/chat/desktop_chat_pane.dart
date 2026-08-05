@@ -55,6 +55,7 @@ class DesktopChatPane extends ConsumerStatefulWidget {
     this.worktree,
     this.showHeader = true,
     this.composerFocusId,
+    this.composerExpanded = true,
   });
 
   /// The session this pane hosts, or null to start one in [worktree].
@@ -75,6 +76,14 @@ class DesktopChatPane extends ConsumerStatefulWidget {
   /// distinct node (and the "focus composer" shortcut can target the active
   /// leaf). Null (standalone use) lets the [Composer] own its own node.
   final String? composerFocusId;
+
+  /// Whether this pane's composer stays in its full (multiline + footer) form.
+  /// The split tree passes false for the panes that are not the active split,
+  /// so their composers shrink to a single line — a stronger "this one is not
+  /// where you're typing" signal than the pane's background step alone, and the
+  /// same collapse mobile does when the field loses focus. Clicking into such a
+  /// composer activates the split and focuses the field, which expands it.
+  final bool composerExpanded;
 
   @override
   ConsumerState<DesktopChatPane> createState() => _DesktopChatPaneState();
@@ -364,7 +373,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     Composer(
                       key: ValueKey('answer-${pendingAsk.requestId}'),
                       controller: _answerController,
-                      alwaysExpanded: true,
+                      alwaysExpanded: widget.composerExpanded,
                       onSend: (text) =>
                           _handleSend(sessionId, text, pendingAsk),
                     )
@@ -386,7 +395,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                           _handleSend(sessionId, text, pendingAsk),
                       onCancel: () => _cancelTurn(sessionId),
                       running: running,
-                      alwaysExpanded: true,
+                      alwaysExpanded: widget.composerExpanded,
                       // Persist the draft per session so it survives worktree
                       // switches and pane splits (the composer is recreated on both).
                       initialText: ref.read(composerDraftsProvider)[sessionId],

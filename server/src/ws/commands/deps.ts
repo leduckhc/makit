@@ -31,6 +31,14 @@ export interface CommandDeps {
   broadcastReposSnapshot(): Promise<void>;
   /** Broadcast the current GitHub budget to every authed client (SPEC-32). */
   broadcastBudget(): void;
+  /**
+   * SPEC-37: recompute the collector's watcher count from the current set of
+   * `watchingMetrics` clients and re-arm the cadence. Called after a
+   * `metrics.watch` toggles a client's flag.
+   */
+  onMetricsWatchersChanged(): void;
+  /** SPEC-37: send this client the metrics ring history as one `metrics.sample`. */
+  sendMetricsHistory(client: WsClient): void;
   /** Reverse-RPC: present a request on the device and resolve with its reply. */
   askDevice(
     body: Record<string, unknown>,

@@ -239,7 +239,7 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
   });
 
   /**
-   * Send ONE pending message now (SPEC-37 — the tray's ⤒): interrupt the running
+   * Send ONE pending message now (SPEC-39 — the tray's ⤒): interrupt the running
    * turn so the promoted message is delivered next, keeping the rest queued.
    *
    * This is `cancel`'s per-message opposite, so it must not borrow its

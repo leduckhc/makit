@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { renderEvent, type RenderState } from "./render.js";
-import type { SessionEvent, EventKind } from "../protocol.js";
+import type { SessionEvent, SessionEventKind } from "../protocol.js";
 
-function ev(kind: EventKind, payload: Record<string, unknown>): SessionEvent {
+function ev(kind: SessionEventKind, payload: Record<string, unknown>): SessionEvent {
   return { seq: 1, sessionId: "s", ts: 0, kind, payload };
 }
 

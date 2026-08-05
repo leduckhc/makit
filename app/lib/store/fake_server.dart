@@ -20,6 +20,8 @@ class FakeServer {
   final Map<String, _FakeSession> _sessions = {};
   final Map<String, String> _addedProjects = {};
   Timer? _seedTimer;
+  Timer? _metricsTimer;
+  int _metricsTick = 0;
 
   void start() {
     _seed();
@@ -29,6 +31,7 @@ class FakeServer {
 
   void stop() {
     _seedTimer?.cancel();
+    _metricsTimer?.cancel();
     _outCtrl.close();
   }
 
@@ -415,6 +418,87 @@ class FakeServer {
     );
   }
 
+  /// Start emitting a plausible `metrics.sample` about once a second so widget
+  /// tests and the keyless stub loop render real charts (SPEC-37). The first
+  /// frame carries a short `history` backfill, matching the real server.
+  void _startMetrics() {
+    _metricsTimer?.cancel();
+    _metricsTick = 0;
+    final history = [for (var i = 30; i > 0; i--) _metricsSample(ago: i)];
+    _emitMetrics(history: history);
+    _metricsTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _emitMetrics(),
+    );
+  }
+
+  void _stopMetrics() {
+    _metricsTimer?.cancel();
+    _metricsTimer = null;
+  }
+
+  void _emitMetrics({List<Map<String, dynamic>>? history}) {
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {
+          'kind': 'metrics.sample',
+          'sample': _metricsSample(),
+          'history': ?history,
+        },
+      ),
+    );
+  }
+
+  /// One plausible sample. [ago] shifts the timestamp back N seconds for the
+  /// history backfill; CPU wobbles a little so charts are not flat lines.
+  Map<String, dynamic> _metricsSample({int ago = 0}) {
+    final tick = _metricsTick++;
+    final now = DateTime.now().millisecondsSinceEpoch - ago * 1000;
+    double wobble(double base, double amp) =>
+        base + amp * ((tick % 7) / 7.0 - 0.5);
+    return {
+      'ts': now,
+      'app': {
+        'pid': 4242,
+        'rssBytes': 180 * 1024 * 1024,
+        'cpuPercent': wobble(2.1, 1.4),
+        'cpuSeconds': 12.4 + tick * 0.02,
+      },
+      'server': {
+        'pid': 4201,
+        'rssBytes': 96 * 1024 * 1024,
+        'cpuPercent': wobble(0.8, 0.6),
+        'cpuSeconds': 5.1 + tick * 0.01,
+        'eventLoop': {'p50': wobble(1.2, 0.4), 'p99': wobble(3.4, 1.1)},
+      },
+      'agents': [
+        {
+          'pid': 5001,
+          'rssBytes': 220 * 1024 * 1024,
+          'cpuPercent': wobble(6.5, 5.0),
+          'cpuSeconds': 44.2 + tick * 0.08,
+          'sessionId': 's-codex-1',
+          'label': 'codex · wire up pairing screen',
+          'inTurn': tick.isEven,
+          'procs': 3,
+          'uptimeMs': 60000 + tick * 1000,
+        },
+      ],
+      'wire': {
+        'inBytesPerSec': wobble(1400, 900),
+        'outBytesPerSec': wobble(3200, 1800),
+        'framesPerSec': wobble(2.0, 1.5),
+      },
+      // Only every 6th tick refreshes storage; null otherwise.
+      'storage': tick % 6 == 0 ? {'eventLogBytes': 2 * 1024 * 1024} : null,
+      'sampler': {'cpuPercent': wobble(0.3, 0.2), 'rssBytes': 4 * 1024 * 1024},
+      'turnActive': tick.isEven,
+      'procTableOk': true,
+    };
+  }
+
   void _replaySession(String sessionId) {
     final s = _sessions[sessionId];
     if (s == null) return;
@@ -446,6 +530,14 @@ class FakeServer {
       case 'repo.refresh':
         _emit(Envelope(t: MsgType.ack, id: env.id));
         _pushRepos();
+        return;
+      case 'metrics.watch':
+        _emit(Envelope(t: MsgType.ack, id: env.id));
+        if (env.body['on'] == true) {
+          _startMetrics();
+        } else {
+          _stopMetrics();
+        }
         return;
       case 'session.listArchived':
         _emit(
