@@ -405,16 +405,26 @@ class ConnectionController extends StateNotifier<MakitConnState> {
   Future<void> _maybeRediscover(PairedServer server) async {
     if (_rediscovering) return;
     _rediscovering = true;
+    final targetId = server.id; // Capture the target upfront.
     try {
       // Give the first attempt a brief window to succeed.
       await Future<void>.delayed(_rediscoverStall);
       if (state.wsState == WsState.connected) return;
+      // The user may have switched servers while we slept. Checking `wsState`
+      // alone is not enough — a switch that is still `connecting` would let
+      // this task carry on with a now-stale server.
+      if (state.activeServer?.id != server.id) return;
+      // If activeId changed during the stall, another switchTo() won; stop.
+      if (state.activeId != targetId) return;
 
       appLog.info(
         'conn',
         'connect stalled; browsing mDNS for fp ${server.fingerprint.substring(0, 12)}…',
       );
       final found = await _browseLan(timeout: const Duration(seconds: 4));
+      // Browsing takes seconds, so re-check: by now the live socket may belong
+      // to another server, and re-attaching would drag it back to this one.
+      if (state.activeServer?.id != server.id) return;
       final matches = found
           .where((d) => d.fingerprint == server.fingerprint)
           .toList();

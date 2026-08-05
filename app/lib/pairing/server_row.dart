@@ -176,30 +176,34 @@ Future<void> renameServerDialog(
   PairedServer server,
 ) async {
   final ctrl = TextEditingController(text: server.label);
-  final label = await showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Rename server'),
-      content: TextField(
-        controller: ctrl,
-        autofocus: true,
-        decoration: const InputDecoration(hintText: 'e.g. work mac'),
-        onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+  try {
+    final label = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename server'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: 'e.g. work mac'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-  if (label == null || label.isEmpty) return;
-  await controller.renameServer(server.id, label);
+    );
+    if (label == null || label.isEmpty) return;
+    await controller.renameServer(server.id, label);
+  } finally {
+    ctrl.dispose();
+  }
 }
 
 /// Confirm before dropping a server's stored credentials — re-pairing needs

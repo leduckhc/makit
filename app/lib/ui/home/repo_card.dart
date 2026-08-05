@@ -332,9 +332,13 @@ class _RepoCardState extends ConsumerState<RepoCard> {
       children: [
         Icon(icon, size: 14, color: c),
         const SizedBox(width: kSpace4),
-        Text(
-          text,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: c),
+          ),
         ),
       ],
     );
