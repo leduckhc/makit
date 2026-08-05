@@ -756,3 +756,50 @@ test("two same-length images that diverge late are both announced", () => {
   assert.deepEqual(puts.map((p) => p.data), [a, b], "both payloads must reach the store");
   assert.equal(events.filter((e) => e.kind === "agent.media").length, 2);
 });
+
+// ---- SPEC-37: context usage -------------------------------------------------
+
+// NOTE: pi-acp does not emit `usage_update` (verified against its shipped
+// dist/index.js), so this path is exercised only by other ACP agents today. It
+// is still mapped because it is the spec-correct behaviour for ACP v1.
+const usage = (u: Record<string, unknown>): SessionUpdate =>
+  ({ sessionUpdate: "usage_update", ...u }) as unknown as SessionUpdate;
+
+test("maps ACP usage_update to session.usage with used/size/cost", () => {
+  const { events, mapper } = collect();
+  mapper.handle(usage({ used: 19508, size: 258400, cost: { amount: 0.42, currency: "USD" } }));
+
+  const found = events.filter((e) => e.kind === "session.usage");
+  assert.equal(found.length, 1);
+  const p = found[0].payload as any;
+  assert.equal(p.contextTokens, 19508);
+  assert.equal(p.contextWindow, 258400);
+  assert.deepEqual(p.cost, { amount: 0.42, currency: "USD" });
+  assert.equal(typeof p.measuredAt, "number");
+});
+
+test("omits cost when the ACP agent does not price its calls", () => {
+  const { events, mapper } = collect();
+  mapper.handle(usage({ used: 100, size: 1000 }));
+
+  const p = events.find((e) => e.kind === "session.usage")!.payload as any;
+  assert.ok(!("cost" in p), "absent, not a zeroed cost");
+});
+
+test("flushes buffered text before a usage snapshot so ordering is honest", () => {
+  const { events, mapper } = collect();
+  mapper.handle(text("hi"));
+  mapper.handle(usage({ used: 5, size: 10 }));
+
+  const kinds = events.map((e) => e.kind);
+  assert.ok(
+    kinds.indexOf("agent.message") < kinds.indexOf("session.usage"),
+    "the message that consumed the tokens must land first",
+  );
+});
+
+test("ignores a usage_update with no numbers", () => {
+  const { events, mapper } = collect();
+  mapper.handle(usage({}));
+  assert.equal(events.filter((e) => e.kind === "session.usage").length, 0);
+});

@@ -41,6 +41,8 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** Session cwd — attachments are materialised here, as on a real adapter. */
   private workspaceRoot = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
+  /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
+  private turnCount = 0;
 
   constructor(options: StubAdapterOptions = {}) {
     super();
@@ -80,6 +82,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     );
     if (!turn) return;
     this.emitEvent({ ts: Date.now(), kind: "user.message", payload: turn.echo });
+    // SPEC-37: usage must ramp on the SAME path the real adapters take, or the
+    // keyless e2e loop would render an indicator that no code ever fed. Shaped
+    // like codex's report: context tracks the latest request, totals accumulate.
+    this.emitUsage();
     // Replies are scripted off the user's own text; the file references are for
     // the (imaginary) agent, so keep the trigger words unaffected by them.
     const prompt = turn.promptText;
@@ -161,6 +167,38 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
 
   async cancel(): Promise<void> {
     this.emit("status", "idle");
+  }
+
+  /**
+   * Deterministic `session.usage` ramp (SPEC-37): a fixed per-turn context cost
+   * on top of a fixed baseline (the real baseline being system prompt + tool
+   * definitions), against a plausible window. Totals and cost accumulate.
+   */
+  private emitUsage(): void {
+    this.turnCount += 1;
+    const baseline = 19_000;
+    const perTurn = 1_200;
+    const contextTokens = baseline + perTurn * this.turnCount;
+    const input = contextTokens * this.turnCount;
+    const output = 5 * this.turnCount;
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "session.usage",
+      payload: {
+        contextTokens,
+        contextWindow: 258_400,
+        totals: {
+          total: input + output,
+          input,
+          cachedInput: this.turnCount > 1 ? baseline : 0,
+          cacheWrite: 0,
+          output,
+          reasoning: 0,
+        },
+        cost: { amount: Number((0.021 * this.turnCount).toFixed(3)), currency: "USD" },
+        measuredAt: Date.now(),
+      },
+    });
   }
 
   /** SPEC-26: a tiny deterministic config catalog so keyless e2e runs can

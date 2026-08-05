@@ -61,6 +61,7 @@ test("events.json covers every EventKind exactly once", () => {
       "session.error",
       "session.meta",
       "session.status",
+      "session.usage",
       "tool.call.delta",
       "tool.call.end",
       "tool.call.start",

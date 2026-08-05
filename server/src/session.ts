@@ -13,19 +13,23 @@ import type {
   SessionDTO,
   SessionEvent,
   SessionStatus,
+  SessionUsageDTO,
 } from "./protocol.js";
 import { DEFAULT_SESSION_TITLE } from "./protocol.js";
 import type { EventStore, NewEvent, SessionMeta } from "./storage/event_store.js";
 import type { MediaAttachment } from "./media/store.js";
 
 /**
- * Event kinds that are per-token streaming deltas. They advance lastActivityAt
- * but must never fan out the sessions snapshot (SPEC-17 P2 hot path).
+ * Event kinds that advance lastActivityAt but must never fan out the sessions
+ * snapshot (SPEC-17 P2 hot path): per-token streaming deltas, plus `session.usage`
+ * (SPEC-37), which arrives once per turn and changes no field of the session
+ * list DTO — the turn's own events already trigger that broadcast.
  */
-const STREAMING_DELTA_KINDS: ReadonlySet<string> = new Set([
+const NO_FANOUT_KINDS: ReadonlySet<string> = new Set([
   "agent.message.delta",
   "agent.thinking.delta",
   "tool.call.delta",
+  "session.usage",
 ]);
 
 /**
@@ -221,11 +225,10 @@ export class Session extends EventEmitter {
     const prevPreview = this.lastPreview;
     const prevActivity = this.lastActivityAt;
 
-    // Per-token streaming deltas are high-frequency and must NOT fan out the
-    // sessions snapshot (SPEC-17 P2: no O(clients × sessions) per-token cost).
-    // They still advance lastActivityAt; the change is broadcast lazily on the
-    // next non-streaming event.
-    const isStreamingDelta = STREAMING_DELTA_KINDS.has(event.kind);
+    // Some kinds must NOT fan out the sessions snapshot (SPEC-17 P2: no
+    // O(clients × sessions) per-token cost). They still advance lastActivityAt;
+    // the change is broadcast lazily on the next fan-out-eligible event.
+    const isNoFanout = NO_FANOUT_KINDS.has(event.kind);
 
     this.lastActivityAt = event.ts;
     if (event.kind === "user.message" || event.kind === "agent.message") {
@@ -245,7 +248,7 @@ export class Session extends EventEmitter {
       this.status !== prevStatus ||
       this.lastPreview !== prevPreview ||
       this.lastActivityAt !== prevActivity;
-    if (!isStreamingDelta && changed) this.emit("metaChanged");
+    if (!isNoFanout && changed) this.emit("metaChanged");
     return event;
   }
 
@@ -332,6 +335,19 @@ export class Session extends EventEmitter {
    */
   recordError(message: string): void {
     this.emit("event", this.record({ ts: Date.now(), kind: "session.error", payload: { message } }));
+  }
+
+  /**
+   * Record and emit a `session.usage` snapshot (SPEC-37). Used by the loopback
+   * bridge's `POST /usage` for pi, which reports no usage over ACP; the codex and
+   * ACP paths arrive as ordinary adapter events instead. Latest-wins in the app,
+   * and in `NO_FANOUT_KINDS` so it never re-broadcasts the sessions snapshot.
+   */
+  recordUsage(usage: SessionUsageDTO): void {
+    this.emit(
+      "event",
+      this.record({ ts: Date.now(), kind: "session.usage", payload: { ...usage } }),
+    );
   }
 
   /**
