@@ -439,7 +439,11 @@ class ConnectionController extends StateNotifier<MakitConnState> {
         'conn',
         'mDNS rediscovered: ${server.host}:${server.port} → ${match.host}:${match.port}',
       );
-      final updated = server.copyWith(host: match.host, port: match.port);
+      // Base the update on the current entry (not the captured `server`) so a
+      // concurrent rename during the browse window isn't overwritten.
+      final current =
+          state.servers.where((s) => s.id == server.id).firstOrNull ?? server;
+      final updated = current.copyWith(host: match.host, port: match.port);
       // Rewrite just this entry; the other servers' records are untouched.
       final servers = [
         for (final s in state.servers)

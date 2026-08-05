@@ -346,6 +346,58 @@ void main() {
     });
   });
 
+  group('rediscovery races a rename', () {
+    // A rename keeps the same fingerprint, so the activeId guard cannot catch it:
+    // rediscovery captures `server` at entry and, seconds later, splices
+    // `copyWith(host, port)` back into the list. Built from the captured copy,
+    // that silently reverts a label the user changed while the browse ran.
+    test('a rename during the browse survives the host rewrite', () async {
+      final browseGate = Completer<List<DiscoveredServer>>();
+      final browseCalled = Completer<void>();
+      final storage = _twoServers();
+
+      final controller = ConnectionController(
+        storage,
+        transportFactory: () => FakeTransport(emitConnected: false),
+        browseLan: ({Duration timeout = const Duration(seconds: 3)}) {
+          if (!browseCalled.isCompleted) browseCalled.complete();
+          return browseGate.future;
+        },
+        rediscoverStall: Duration.zero,
+      );
+      await Future<void>.delayed(Duration.zero);
+      await browseCalled.future;
+
+      // Rename the *same* server rediscovery is working on, mid-browse.
+      await controller.renameServer(_fpA, 'renamed mid-browse');
+
+      // Release the browse at a new address for that same fingerprint.
+      browseGate.complete([
+        DiscoveredServer(
+          name: 'makit._tcp.local',
+          host: '10.7.7.7',
+          port: 7777,
+          fingerprint: _fpA,
+        ),
+      ]);
+      await pumpEventQueue();
+
+      final entry = controller.state.servers.firstWhere(
+        (s) => s.fingerprint == _fpA,
+      );
+      // The address moved, and the rename was NOT clobbered.
+      expect(entry.host, '10.7.7.7');
+      expect(entry.label, 'renamed mid-browse');
+      expect(
+        _storedServers(
+          storage,
+        ).firstWhere((e) => e['fingerprint'] == _fpA)['label'],
+        'renamed mid-browse',
+      );
+      controller.dispose();
+    });
+  });
+
   group('rediscovery races a server switch', () {
     // Rediscovery runs unawaited: it sleeps for the stall window, then browses
     // mDNS for up to 4s. A `switchTo` inside that window must not be undone by

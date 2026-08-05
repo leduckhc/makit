@@ -47,6 +47,31 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final worktree = widget.worktree;
+    final accent = worktreeAccent(widget.sessions);
+    final hasMeta =
+        worktree.branch == widget.repo.defaultBranch ||
+        worktree.hasChanges ||
+        worktree.pr != null ||
+        branchAgeLabel(worktree.committedAt).isNotEmpty;
+
+    return Semantics(
+      // The accent bar is a colour. A screen reader cannot see it, so the state
+      // it encodes is published as text too (also WCAG 1.4.1: never colour
+      // alone). Null for a quiet branch — silence is the honest label there.
+      label: accentSemanticLabel(accent),
+      container: accent != WorktreeAccent.none,
+      child: _row(context, theme, cs, accent, hasMeta),
+    );
+  }
+
+  Widget _row(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme cs,
+    WorktreeAccent accent,
+    bool hasMeta,
+  ) {
     final repo = widget.repo;
     final worktree = widget.worktree;
     final sessions = widget.sessions;
@@ -59,12 +84,6 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
     // in which case the line is dropped rather than reserved — vertical space is
     // scarcer on a phone than in the sidebar, which keeps it for alignment.
     final age = branchAgeLabel(worktree.committedAt);
-    final accent = worktreeAccent(sessions);
-    final hasMeta =
-        isDefault ||
-        worktree.hasChanges ||
-        worktree.pr != null ||
-        age.isNotEmpty;
 
     return Container(
       // The accent is a left border rather than a stretched child: it needs no
@@ -207,6 +226,15 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
     );
   }
 }
+
+/// What the accent bar means, in words, for assistive tech. Kept beside
+/// [accentColor] so the visual and spoken forms cannot drift apart.
+String? accentSemanticLabel(WorktreeAccent accent) => switch (accent) {
+  WorktreeAccent.wantsYou => 'waiting for you',
+  WorktreeAccent.failed => 'a session failed',
+  WorktreeAccent.working => 'an agent is working',
+  WorktreeAccent.none => null,
+};
 
 /// The accent bar's colour. `none` is transparent rather than a grey line, so a
 /// quiet branch adds no visual weight and the coloured ones stand out.

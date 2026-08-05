@@ -168,7 +168,7 @@ class SettingsScreen extends ConsumerWidget {
                 : conn.servers.length > 1
                 // Forgetting one server lives in the manager; this is the
                 // start-over button, so it must not look like the same thing.
-                ? const Text('To drop just one, use Server above')
+                ? const Text('To drop just one server, open the Server list')
                 : null,
             onTap: () async {
               // Confirm first: this destroys strictly more credentials than the
@@ -260,6 +260,7 @@ Future<bool> _confirmUnpair(BuildContext context, MakitConnState conn) async {
         FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: Theme.of(ctx).colorScheme.error,
+            foregroundColor: Theme.of(ctx).colorScheme.onError,
           ),
           onPressed: () => Navigator.pop(ctx, true),
           child: const Text('Unpair'),

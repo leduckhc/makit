@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/home_screen.dart';
@@ -20,6 +21,7 @@ Widget _host({
     overrides: [
       reposProvider.overrideWithValue(ReposState(repos)),
       sessionsProvider.overrideWithValue(SessionsState(sessions)),
+      connectionProvider.overrideWithValue(MakitConnState()),
     ],
     child: const MaterialApp(home: HomeScreen()),
   );

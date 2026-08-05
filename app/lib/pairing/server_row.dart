@@ -34,7 +34,7 @@ class ServerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final (statusLabel, statusColor) = _status(cs);
+    final status = _status(cs);
 
     return Card(
       elevation: 0,
@@ -91,7 +91,7 @@ class ServerRow extends StatelessWidget {
                         context,
                       ).textTheme.bodySmall?.copyWith(color: cs.outline),
                     ),
-                    if (statusLabel != null) ...[
+                    if (status != null) ...[
                       const SizedBox(height: kSpace4),
                       Row(
                         mainAxisSize: MainAxisSize.min,
@@ -100,16 +100,16 @@ class ServerRow extends StatelessWidget {
                             width: 7,
                             height: 7,
                             decoration: BoxDecoration(
-                              color: statusColor,
+                              color: status.$2,
                               shape: BoxShape.circle,
                             ),
                           ),
                           const SizedBox(width: kSpace6),
                           Text(
-                            statusLabel,
+                            status.$1,
                             style: Theme.of(context).textTheme.labelSmall
                                 ?.copyWith(
-                                  color: statusColor,
+                                  color: status.$3,
                                   fontWeight: FontWeight.w600,
                                 ),
                           ),
@@ -157,13 +157,22 @@ class ServerRow extends StatelessWidget {
 
   /// Live status, shown only on the active row — an inactive server has no
   /// socket, so any claim about its reachability would be a guess.
-  (String?, Color) _status(ColorScheme cs) {
-    if (!isActive) return (null, cs.outline);
+  ///
+  /// The dot and the label take separate colours. `kStatusWarning` is correct
+  /// for a dot but only ~2:1 as small text on the light surface, so the label
+  /// uses the AA-safe variant while the dot keeps the vivid amber — the split
+  /// DESIGN.md → Colors prescribes.
+  (String, Color, Color)? _status(ColorScheme cs) {
+    if (!isActive) return null;
     return switch (wsState) {
-      WsState.connected => ('Connected', cs.primary),
-      WsState.connecting => ('Connecting…', cs.primary),
-      WsState.reconnecting => ('Reconnecting…', kStatusWarning),
-      WsState.closed || WsState.idle => ('Offline', cs.error),
+      WsState.connected => ('Connected', cs.primary, cs.primary),
+      WsState.connecting => ('Connecting…', cs.primary, cs.primary),
+      WsState.reconnecting => (
+        'Reconnecting…',
+        kStatusWarning,
+        cs.statusWarningText,
+      ),
+      WsState.closed || WsState.idle => ('Offline', cs.error, cs.error),
     };
   }
 }
@@ -255,6 +264,9 @@ Future<void> forgetServerDialog(
         FilledButton(
           style: FilledButton.styleFrom(
             backgroundColor: Theme.of(ctx).colorScheme.error,
+            // Pair the fill with its own on-colour: overriding only the
+            // background leaves the label on the theme's primary foreground.
+            foregroundColor: Theme.of(ctx).colorScheme.onError,
           ),
           onPressed: () => Navigator.pop(ctx, true),
           child: const Text('Forget'),

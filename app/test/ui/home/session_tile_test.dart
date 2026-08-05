@@ -33,12 +33,17 @@ class _KillConnection extends ConnectionController {
 
   final bool killFails;
 
+  /// How many archives were requested — the only thing a non-swipe quit can be
+  /// held to, since removing the row is `Dismissible`'s job, not the archive's.
+  int archiveCalls = 0;
+
   @override
   Future<Map<String, dynamic>> request(
     MsgType type,
     Map<String, dynamic> body,
   ) async {
     if (body['kind'] == 'session.archive') {
+      archiveCalls++;
       if (killFails) throw StateError('kill refused');
       return const {};
     }
@@ -57,20 +62,21 @@ Session _session() => Session(
   lastActivityAt: 0,
 );
 
-Future<void> _pumpTile(WidgetTester tester, {required bool killFails}) async {
+Future<_KillConnection> _pumpTile(
+  WidgetTester tester, {
+  required bool killFails,
+}) async {
+  final conn = _KillConnection(killFails: killFails);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        connectionControllerProvider.overrideWith(
-          (ref) => _KillConnection(killFails: killFails),
-        ),
-      ],
+      overrides: [connectionControllerProvider.overrideWith((ref) => conn)],
       child: MaterialApp(
         home: Scaffold(body: SessionTile(session: _session())),
       ),
     ),
   );
   await tester.pump();
+  return conn;
 }
 
 Future<void> _swipeAndConfirm(WidgetTester tester) async {
@@ -110,7 +116,7 @@ void main() {
   // Swipe is invisible to assistive tech and awkward one-handed, so quit must
   // also be reachable without it.
   testWidgets('long-press reaches the same quit confirmation', (tester) async {
-    await _pumpTile(tester, killFails: false);
+    final conn = await _pumpTile(tester, killFails: false);
 
     await tester.longPress(find.text('Wire up pairing'));
     await tester.pumpAndSettle();
@@ -118,6 +124,12 @@ void main() {
     expect(find.text('Quit session?'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Quit'));
     await tester.pumpAndSettle();
+
+    // Confirming actually archives. The row is NOT asserted gone: the swipe
+    // tests' removal comes from `Dismissible`, and a long-press has no dismiss
+    // gesture to trigger it — in the app the row leaves when sessionsProvider
+    // drops the session, which this standalone tile is not driven by.
+    expect(conn.archiveCalls, 1);
   });
 
   testWidgets('quit is published as a semantics action for screen readers', (

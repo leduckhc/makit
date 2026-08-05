@@ -19,11 +19,16 @@ Future<void> showAddServerSheet(BuildContext context) => showModalBottomSheet(
   context: context,
   showDragHandle: true,
   isScrollControlled: true,
-  builder: (_) => const AddServerSheet(),
+  builder: (_) => AddServerSheet(parentContext: context),
 );
 
 class AddServerSheet extends ConsumerStatefulWidget {
-  const AddServerSheet({super.key});
+  const AddServerSheet({super.key, required this.parentContext});
+
+  /// The screen's context, not the sheet's own context. Used by [pairAndReport]
+  /// and error handling to access the screen's navigator/messenger, so they
+  /// survive the sheet's dismissal.
+  final BuildContext parentContext;
 
   @override
   ConsumerState<AddServerSheet> createState() => _AddServerSheetState();
@@ -133,8 +138,10 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
       MaterialPageRoute(builder: (_) => const QrScannerScreen()),
     );
     if (info == null || !mounted) return;
+    final parent = widget.parentContext;
+    if (!parent.mounted) return;
     navigator.pop(); // dismiss the sheet before pairing feedback
-    await pairAndReport(context, ref, info);
+    await pairAndReport(parent, ref, info);
   }
 
   Future<void> _pasteUrl() async {
@@ -143,16 +150,20 @@ class _AddServerSheetState extends ConsumerState<AddServerSheet> {
       context: context,
       builder: (_) => const _PasteUrlDialog(),
     );
+    // Both the sheet and the screen it was opened from must still be there:
+    // the sheet owns `navigator`, the screen owns the messenger that outlives it.
     if (url == null || url.isEmpty || !mounted) return;
+    final parent = widget.parentContext;
+    if (!parent.mounted) return;
     final info = PairInfo.tryParse(url);
     if (info == null) {
       ScaffoldMessenger.of(
-        context,
+        parent,
       ).showSnackBar(const SnackBar(content: Text('Not a makit pairing URL.')));
       return;
     }
     navigator.pop();
-    await pairAndReport(context, ref, info);
+    await pairAndReport(parent, ref, info);
   }
 }
 
@@ -221,12 +232,20 @@ Future<bool> pairAndReport(
     await ref
         .read(connectionControllerProvider.notifier)
         .pairWith(info, label: label);
-    navigator.pop(); // close spinner
-    messenger.showSnackBar(const SnackBar(content: Text('Paired!')));
+    if (navigator.mounted) {
+      navigator.pop(); // close spinner
+    }
+    if (context.mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('Paired!')));
+    }
     return true;
   } catch (e) {
-    navigator.pop();
-    messenger.showSnackBar(SnackBar(content: Text('Pair failed: $e')));
+    if (navigator.mounted) {
+      navigator.pop();
+    }
+    if (context.mounted) {
+      messenger.showSnackBar(SnackBar(content: Text('Pair failed: $e')));
+    }
     return false;
   }
 }

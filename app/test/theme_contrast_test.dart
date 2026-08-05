@@ -83,4 +83,37 @@ void main() {
       reason: 'documents why light mode may not use the brand green directly',
     );
   });
+
+  // Chips tint their own background with the very colour they print on it, which
+  // pulls the background toward the text and lowers real contrast below what a
+  // check against the bare surface suggests. Light lands at ~4.8:1 — passing, but
+  // with little room, so it is pinned rather than assumed.
+  test('a primary-tinted chip still clears AA for its own label', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      // Matches PrPill / the repo card's open-PR pill: primary @14% over the card.
+      final chipBg = Color.alphaBlend(
+        cs.primary.withValues(alpha: 0.14),
+        cs.surfaceContainerLow,
+      );
+      expect(
+        _contrast(cs.primary, chipBg),
+        greaterThanOrEqualTo(4.5),
+        reason:
+            'the ${theme.brightness.name} PR pill label sits on its own tint',
+      );
+    }
+  });
+
+  // `kStatusWarning` is a dot/wash token: ~2:1 as small text on the light
+  // surface. Anything printing it as a label must use the AA-safe variant, which
+  // is why ServerRow colours its dot and its label separately.
+  test('the vivid warning token is not AA-safe as text, its variant is', () {
+    final cs = makitLightTheme.colorScheme;
+    expect(_contrast(kStatusWarning, cs.surface), lessThan(4.5));
+    expect(
+      _contrast(cs.statusWarningText, cs.surface),
+      greaterThanOrEqualTo(4.5),
+    );
+  });
 }
