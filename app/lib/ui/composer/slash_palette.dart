@@ -103,11 +103,13 @@ class _SlashPaletteState extends State<SlashPalette> {
     if (old.selectedIndex != widget.selectedIndex) _revealSelected();
   }
 
-  /// Scrolls the highlighted row just into view, by the minimum amount.
+  /// Scrolls the highlighted row just into view, by the minimum amount. The
+  /// list's leading padding is part of its scroll extent, so row `i` starts at
+  /// `kSpace8 + i * kSlashRowHeight` — omitting it leaves the row a hair clipped.
   void _revealSelected() {
     if (!_scroll.hasClients) return;
     final pos = _scroll.position;
-    final top = widget.selectedIndex * kSlashRowHeight;
+    final top = kSpace8 + widget.selectedIndex * kSlashRowHeight;
     final bottom = top + kSlashRowHeight;
     final double target;
     if (top < pos.pixels) {

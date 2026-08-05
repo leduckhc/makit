@@ -414,11 +414,13 @@ class _ComposerState extends State<Composer> {
   /// otherwise cover on a short (landscape) viewport.
   Widget _buildPalette(BuildContext ctx, double width) {
     final box = _boxKey.currentContext?.findRenderObject() as RenderBox?;
+    // No measurement, no popover: a guessed height is how the old code pushed
+    // rows off-screen. Unreachable in practice — the palette only opens into an
+    // already-laid-out composer — so there is nothing to fall back for.
+    if (box == null || !box.hasSize) return const SizedBox.shrink();
     final media = MediaQuery.of(ctx);
     final ceiling = media.padding.top + kToolbarHeight + kSpace8;
-    final free = box != null && box.hasSize
-        ? box.localToGlobal(Offset.zero).dy - ceiling
-        : media.size.height * 0.4;
+    final free = box.localToGlobal(Offset.zero).dy - ceiling;
     return Align(
       // The overlay lays its children out tightly to the whole screen; aligning
       // loosens that so the popover below can size to its own content and

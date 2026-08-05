@@ -147,6 +147,28 @@ void main() {
       expect(find.byType(SlashPalette), findsNothing);
     });
 
+    testWidgets('arrowing past the visible window fully reveals the row', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        wrap(const Composer(onSend: _noop, commands: commands)),
+      );
+      await openPalette(tester);
+
+      // Walk past the five visible rows, so the list has to scroll.
+      for (var i = 0; i < 6; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pumpAndSettle();
+      }
+
+      final row = tester.getRect(find.byKey(kSlashSelectedRowKey));
+      final list = tester.getRect(find.byType(ListView));
+      // Fully revealed — not clipped by a hair at either edge (the list's own
+      // vertical padding is part of its scroll extent).
+      expect(row.top, greaterThanOrEqualTo(list.top));
+      expect(row.bottom, lessThanOrEqualTo(list.bottom));
+    });
+
     testWidgets('escape dismisses the palette, leaving the text alone', (
       tester,
     ) async {
