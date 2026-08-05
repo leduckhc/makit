@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/metrics/frame_timings.dart';
 import 'package:makit/desktop/metrics/metrics_button.dart';
-import 'package:makit/desktop/metrics/metrics_dashboard_open.dart';
+import 'package:makit/desktop/window_overlays.dart';
 import 'package:makit/desktop/metrics/metrics_icon_state.dart';
 import 'package:makit/store/metrics.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';

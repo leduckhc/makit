@@ -113,3 +113,229 @@ class MetricSparklinePainter extends CustomPainter {
   bool shouldRepaint(MetricSparklinePainter old) =>
       old.points != points || old.color != color || old.minPeak != minPeak;
 }
+
+/// One named series for a stacked or multi-line chart.
+typedef MetricSeries = ({String label, Color color, List<MetricPoint> points});
+
+/// Stacked bands, one per series, sharing a time axis (Tier 2 CPU + memory
+/// cells).
+///
+/// Bands are summed **at matching timestamps**, not by index: the series come
+/// from the same ring so their `ts` values line up, and pairing by index would
+/// silently shift a band by one sample whenever a series had a gap.
+class StackedAreaPainter extends CustomPainter {
+  /// Creates the painter.
+  const StackedAreaPainter({
+    required this.series,
+    required this.maxY,
+    this.gridColor,
+    this.gridAtY,
+  });
+
+  /// Bottom-to-top band order.
+  final List<MetricSeries> series;
+
+  /// Axis ceiling. When null the painter scales to the stacked peak.
+  final double? maxY;
+
+  /// Optional reference line (e.g. 100% = one full core).
+  final Color? gridColor;
+
+  /// Value at which to draw [gridColor].
+  final double? gridAtY;
+
+  /// Every timestamp present in any series, ascending — the shared x-axis.
+  List<int> get _timeline {
+    final all = <int>{};
+    for (final s in series) {
+      for (final p in s.points) {
+        all.add(p.ts);
+      }
+    }
+    return all.toList()..sort();
+  }
+
+  /// Stack ceiling across the whole window, or null when nothing is plottable.
+  double? stackedPeak() {
+    double? peak;
+    for (final ts in _timeline) {
+      var sum = 0.0;
+      var any = false;
+      for (final s in series) {
+        final v = _valueAt(s.points, ts);
+        if (v == null) continue;
+        sum += v;
+        any = true;
+      }
+      if (!any) continue;
+      if (peak == null || sum > peak) peak = sum;
+    }
+    return peak;
+  }
+
+  static double? _valueAt(List<MetricPoint> points, int ts) {
+    for (final p in points) {
+      if (p.ts == ts) return p.value;
+    }
+    return null;
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final timeline = _timeline;
+    if (timeline.isEmpty) return;
+    final peak = maxY ?? stackedPeak();
+    if (peak == null || peak <= 0) return;
+    final t0 = timeline.first;
+    final t1 = timeline.last;
+
+    // Running baseline per timestamp, so each band starts where the last ended.
+    final baseline = <int, double>{for (final ts in timeline) ts: 0};
+
+    for (final s in series) {
+      final path = Path();
+      final top = <Offset>[];
+      final bottom = <Offset>[];
+      for (final ts in timeline) {
+        final v = _valueAt(s.points, ts);
+        if (v == null) continue;
+        final base = baseline[ts]!;
+        final x = metricX(ts, t0, t1, size.width);
+        bottom.add(Offset(x, _y(base, peak, size.height)));
+        top.add(Offset(x, _y(base + v, peak, size.height)));
+        baseline[ts] = base + v;
+      }
+      if (top.isEmpty) continue;
+      path.moveTo(bottom.first.dx, bottom.first.dy);
+      for (final o in top) {
+        path.lineTo(o.dx, o.dy);
+      }
+      for (final o in bottom.reversed) {
+        path.lineTo(o.dx, o.dy);
+      }
+      path.close();
+      canvas.drawPath(path, Paint()..color = s.color.withValues(alpha: 0.75));
+    }
+
+    final grid = gridColor;
+    final at = gridAtY;
+    if (grid != null && at != null && at <= peak) {
+      final y = _y(at, peak, size.height);
+      canvas.drawLine(
+        Offset(0, y),
+        Offset(size.width, y),
+        Paint()
+          ..color = grid
+          ..strokeWidth = 1,
+      );
+    }
+  }
+
+  static double _y(double v, double peak, double height) =>
+      height - (v / peak).clamp(0.0, 1.0) * height;
+
+  @override
+  bool shouldRepaint(StackedAreaPainter old) =>
+      old.series != series ||
+      old.maxY != maxY ||
+      old.gridColor != gridColor ||
+      old.gridAtY != gridAtY;
+}
+
+/// Independent lines on one time axis (server responsiveness cell). Each series
+/// is scaled to the shared peak so the lines stay comparable.
+class MultiLinePainter extends CustomPainter {
+  /// Creates the painter.
+  const MultiLinePainter({required this.series, this.minPeak = 1.0});
+
+  /// The lines to draw.
+  final List<MetricSeries> series;
+
+  /// Axis floor, so an all-zero chart draws along the bottom.
+  final double minPeak;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    double? peak;
+    for (final s in series) {
+      final p = metricPeak(s.points);
+      if (p == null) continue;
+      if (peak == null || p > peak) peak = p;
+    }
+    if (peak == null) return;
+    final scale = peak < minPeak ? minPeak : peak;
+    for (final s in series) {
+      canvas.drawPath(
+        buildMetricPath(s.points, size, scale),
+        Paint()
+          ..color = s.color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..strokeJoin = StrokeJoin.round,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(MultiLinePainter old) =>
+      old.series != series || old.minPeak != minPeak;
+}
+
+/// Frame-time distribution with a budget marker (Tier 2 frame-time cell).
+///
+/// Bars are counts per bucket, so this painter takes buckets rather than
+/// [MetricPoint]s — a histogram has no time axis, which is exactly why it is the
+/// honest way to show frame times: "how often was it slow", not "when".
+class HistogramPainter extends CustomPainter {
+  /// Creates the painter.
+  const HistogramPainter({
+    required this.buckets,
+    required this.color,
+    required this.overBudgetColor,
+    required this.budgetBucket,
+  });
+
+  /// Counts per bucket, left to right.
+  final List<int> buckets;
+
+  /// Bar colour under budget.
+  final Color color;
+
+  /// Bar colour at or past [budgetBucket].
+  final Color overBudgetColor;
+
+  /// Index at which bars start counting as over the frame budget.
+  final int budgetBucket;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (buckets.isEmpty) return;
+    var peak = 0;
+    for (final c in buckets) {
+      if (c > peak) peak = c;
+    }
+    if (peak <= 0) return;
+    final slot = size.width / buckets.length;
+    const gap = 1.0;
+    for (var i = 0; i < buckets.length; i++) {
+      final h = (buckets[i] / peak) * size.height;
+      if (h <= 0) continue;
+      canvas.drawRect(
+        Rect.fromLTWH(
+          i * slot,
+          size.height - h,
+          (slot - gap).clamp(1, slot),
+          h,
+        ),
+        Paint()..color = i >= budgetBucket ? overBudgetColor : color,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(HistogramPainter old) =>
+      old.buckets != buckets ||
+      old.color != color ||
+      old.overBudgetColor != overBudgetColor ||
+      old.budgetBucket != budgetBucket;
+}

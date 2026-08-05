@@ -26,12 +26,17 @@ class FrameStats {
     required this.p95Ms,
     required this.dropped,
     required this.sampleCount,
+    this.samplesMs = const [],
   });
 
   final double p50Ms;
   final double p95Ms;
   final int dropped;
   final int sampleCount;
+
+  /// The raw frame durations behind the percentiles, ascending. The Tier 2
+  /// histogram needs the distribution, which percentiles cannot reconstruct.
+  final List<double> samplesMs;
 
   static const empty = FrameStats(
     p50Ms: 0,
@@ -110,6 +115,7 @@ class FrameTimingsCollector {
       p95Ms: _percentile(sorted, 0.95),
       dropped: dropped,
       sampleCount: sorted.length,
+      samplesMs: sorted,
     );
   }
 

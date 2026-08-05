@@ -30,7 +30,7 @@ import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
 import 'charts.dart';
 import 'frame_timings.dart';
-import 'metrics_dashboard_open.dart';
+import '../window_overlays.dart';
 import 'metrics_icon_state.dart';
 
 /// Test hooks: stable keys so widget tests assert structure, not copy.

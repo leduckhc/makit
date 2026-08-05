@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_riverpod/legacy.dart';
 
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
+import '../metrics/metrics_dashboard.dart';
+import '../window_overlays.dart';
+
+// The overlay flags live in one place so their mutual exclusion cannot be
+// forgotten by a call site; re-exported so existing importers of
+// `settingsOpenProvider` are unaffected.
+export '../window_overlays.dart' show settingsOpenProvider;
 import 'registry/settings_registry.dart';
 import 'settings_detail_pane.dart';
 import 'settings_item_anchor.dart';
@@ -14,7 +20,6 @@ import 'settings_nav_pane.dart';
 /// Settings button; consumed by [DesktopWindowBody]. Kept as a provider (not a
 /// route) so opening is instant and preserves the underlying chat state
 /// (SPEC-13 requirement #5).
-final settingsOpenProvider = StateProvider<bool>((_) => false);
 
 /// Stacks the desktop [child] (the chat shell) with the [SettingsWindow] as an
 /// in-window overlay when [settingsOpenProvider] is set — no page transition,
@@ -28,7 +33,19 @@ class DesktopWindowBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Single-overlay invariant (SPEC-37 decision 9): Settings and the metrics
+    // dashboard share this z-space, so opening either closes the other. Enforced
+    // here, in the one widget that hosts both, instead of at every call site that
+    // opens one of them. Each listener reacts only to a transition *to* true, so
+    // the pair cannot recurse.
+    ref.listen<bool>(settingsOpenProvider, (_, next) {
+      if (next) ref.read(metricsDashboardOpenProvider.notifier).state = false;
+    });
+    ref.listen<bool>(metricsDashboardOpenProvider, (_, next) {
+      if (next) ref.read(settingsOpenProvider.notifier).state = false;
+    });
     final open = ref.watch(settingsOpenProvider);
+    final dashboardOpen = ref.watch(metricsDashboardOpenProvider);
     return Stack(
       children: [
         // While Settings is open the chat underneath is excluded from focus
@@ -43,6 +60,17 @@ class DesktopWindowBody extends ConsumerWidget {
             child: SettingsWindow(
               onClose: () =>
                   ref.read(settingsOpenProvider.notifier).state = false,
+            ),
+          ),
+        // SPEC-37 Tier 2. Deliberately NOT wrapped in ExcludeFocus/
+        // ExcludeSemantics like Settings above: the whole point of the dashboard
+        // is watching cost *while* you drive a session, so the chat underneath
+        // must stay interactive and reachable by assistive tech.
+        if (dashboardOpen)
+          Positioned.fill(
+            child: MetricsDashboard(
+              onClose: () =>
+                  ref.read(metricsDashboardOpenProvider.notifier).state = false,
             ),
           ),
       ],
