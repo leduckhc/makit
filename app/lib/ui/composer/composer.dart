@@ -86,7 +86,6 @@ class Composer extends StatefulWidget {
     this.enabled = true,
     this.disabledHint,
     this.attachments,
-    this.pendingQueue,
   });
   final void Function(String text) onSend;
 
@@ -98,12 +97,6 @@ class Composer extends StatefulWidget {
   /// never has to re-derive "am I attachment-capable" from several nullables
   /// that could disagree, and so the two surfaces cannot wire it up differently.
   final ComposerAttachmentsApi? attachments;
-
-  /// The pending-message queue, when the user's placement preference puts it
-  /// here (SPEC-38). A widget rather than data + callbacks so the composer stays
-  /// unaware of the queue's commands — and so the identical widget can be
-  /// mounted in the transcript instead.
-  final Widget? pendingQueue;
 
   /// When false, the composer is inert: the field + send are replaced by a
   /// muted [disabledHint] bar. Used while a session is awaiting an inline
@@ -308,11 +301,6 @@ class _ComposerState extends State<Composer> {
               onRemove: widget.attachments!.remove,
               onRetry: widget.attachments!.retry,
             ),
-          // Same reasoning as the attachment strip: pending messages must stay
-          // visible (and cancellable) even while an inline ask has the composer
-          // disabled — otherwise one would fire once the ask is answered with no
-          // way to have stopped it (SPEC-35/36).
-          if (widget.pendingQueue != null) widget.pendingQueue!,
           Container(
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
             decoration: widget.glass ? null : BoxDecoration(color: cs.surface),

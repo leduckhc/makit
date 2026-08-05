@@ -350,6 +350,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),
+                  // ABOVE the composer, not inside it: as a Composer child every
+                  // queued message inflated the composer's own box and ate the
+                  // room the field and transcript need. As a sibling it also stays
+                  // visible while an inline ask disables the composer, which is
+                  // why it lived inside in the first place (SPEC-35/38).
+                  PendingQueueSlot(sessionId: sessionId),
                   if (pendingAsk != null && pendingAsk.freeText)
                     // Free-text answer mode: a dedicated empty answer controller
                     // (keyed by requestId) so the per-session normal draft can
@@ -358,7 +364,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     Composer(
                       key: ValueKey('answer-${pendingAsk.requestId}'),
                       controller: _answerController,
-                      pendingQueue: PendingQueueSlot(sessionId: sessionId),
                       alwaysExpanded: true,
                       onSend: (text) =>
                           _handleSend(sessionId, text, pendingAsk),
@@ -375,9 +380,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       // left to the field's text handling.
                       attachments: composerAttachments(context, ref, sessionId),
                       enabled: pendingAsk == null,
-                      // SPEC-38: pending messages, when the placement
-                      // preference is `pinned`.
-                      pendingQueue: PendingQueueSlot(sessionId: sessionId),
                       controller: _composerControllerFor(sessionId),
                       commands: ref.watch(commandsProvider(sessionId)),
                       onSend: (text) =>

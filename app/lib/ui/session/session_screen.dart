@@ -365,6 +365,13 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                   children: [
                     JumpToNewestButton(scroll: _scroll),
                     const SizedBox(height: kSpace8),
+                    // ABOVE the composer, not inside it: mounted as a Composer
+                    // child, every queued message inflated the composer's own
+                    // glass box and ate the room the field and transcript need.
+                    // As a sibling it also stays visible while an inline ask
+                    // disables the composer, which is why it was put inside in
+                    // the first place (SPEC-35/38).
+                    PendingQueueSlot(sessionId: widget.sessionId),
                     GlassSurface(
                       borderRadius: 28,
                       // Unified design-system glass (see DESIGN.md) — same recipe
@@ -379,9 +386,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               key: ValueKey('answer-${pendingAsk.requestId}'),
                               glass: true,
                               controller: _answerController,
-                              pendingQueue: PendingQueueSlot(
-                                sessionId: widget.sessionId,
-                              ),
                               onSend: (text) => _handleSend(text, pendingAsk),
                             )
                           : Composer(
@@ -400,9 +404,6 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                               controller: _composerController,
                               // SPEC-38: pending messages, when the user's
                               // placement preference is `pinned`.
-                              pendingQueue: PendingQueueSlot(
-                                sessionId: widget.sessionId,
-                              ),
                               enabled: pendingAsk == null,
                               commands: ref.watch(
                                 commandsProvider(widget.sessionId),
