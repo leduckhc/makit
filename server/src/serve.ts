@@ -209,6 +209,10 @@ export async function runServe(opts: ServeArgs) {
       const { sessionId, ...rest } = body;
       return askDeviceValidated(rest as Record<string, unknown>, sessionId);
     },
+    // SPEC-37: pi reports no usage over ACP, so `.pi/extensions/pi-usage` posts
+    // it here. An unknown sessionId is dropped silently: the bridge is loopback
+    // and a stale extension outliving its session is expected, not an error.
+    onUsage: (sessionId, usage) => manager.getSession(sessionId)?.recordUsage(usage),
   });
 
   // Auto-discover every `.ts` connector in `server/connectors/`. Each one
