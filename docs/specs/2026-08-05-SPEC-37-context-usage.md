@@ -1,6 +1,9 @@
 # SPEC-37 — Context usage: tokens vs limit, per session
 
-**Status:** Implemented · **Priority:** P3 · **Branch:** `feat-context-usage`
+**Status:** Implemented · **Amended 2026-08-06** (see below) · **Priority:** P3
+**Branch:** `feat-context-usage`, amended on `fix/token-usage`
+**Plan:** [`2026-08-05-SPEC-37-context-usage-PLAN.md`](./2026-08-05-SPEC-37-context-usage-PLAN.md)
+**Mockup:** [`mockups/context-usage.html`](../../mockups/context-usage.html)
 **Depends on:** SPEC-26 (composer footer selectors), SPEC-32 (budget-panel precedent), SPEC-36 (pi-extension + bridge precedent)
 
 **Scope:**
@@ -16,6 +19,33 @@ package; see "Installing the extension" below.
 `app/lib/store/store.dart`, `app/lib/store/chat_items.dart` (exhaustive switch),
 `app/lib/ui/composer/context_usage.dart` (new — ring + details panel), mounted in
 `app/lib/ui/session/session_screen.dart` and `app/lib/desktop/chat/desktop_chat_pane.dart`.
+
+---
+
+## Amendment — 2026-08-06
+
+The first long pi session showed `$0.20` in the panel while pi's own `/sessions` showed
+`$22.16` for the same session, and no token breakdown at all. Root cause: the extension
+treated **per-message** readings as if they were **session totals**. `SessionUsageDTO.cost`
+is documented as cumulative, but it was forwarding `event.message.usage.cost.total` — one
+assistant message — and sending no `totals`, so pi sessions fell through to the "no token
+breakdown" footnote while the panel's breakdown rows sat unused.
+
+What changed, all of it inside the extension — no protocol, server or app change was needed,
+because the app already rendered `totals` for codex:
+
+1. **Cumulative, and a real breakdown.** `totals` + `cost` now cover the whole session.
+2. **Derived, not accumulated.** They are summed from `ctx.sessionManager.getEntries()` every
+   turn, reproducing `AgentSession.getSessionStats()`. An in-process counter cannot see a
+   **resumed** session's earlier turns and never sees a compaction's own tokens. See
+   "Billing totals are derived, not accumulated" below.
+3. **`turn_end`, not `message_end`** — at `message_end` the entry is not persisted yet.
+4. **Its own repo.** The extension is now `makit-pi-usage`, installed as a pi package; the
+   symlink this spec used to document had dangled silently. See "Installing the extension".
+
+The `contextTokens` half of the feature was correct throughout and is unchanged. The two
+halves stayed in separate fields exactly as designed, which is why the fix touched only one
+of them: on the session above, `288k` is in context while `33.7M` had been billed.
 
 ---
 
