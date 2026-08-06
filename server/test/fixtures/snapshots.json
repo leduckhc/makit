@@ -1,4 +1,5 @@
 [
   { "v": 1, "t": "event", "id": "snap1", "kind": "projects.snapshot", "projects": [ { "id": "p1", "name": "makit", "path": "/repo/makit", "pinned": true, "lastActivityAt": 1000 } ] },
-  { "v": 1, "t": "event", "id": "snap2", "kind": "sessions.snapshot", "sessions": [ { "id": "s1", "projectId": "p1", "agent": "pi", "title": "work", "status": "running", "policy": "ask-on-risky", "lastActivityAt": 2000, "lastPreview": "hi" } ] }
+  { "v": 1, "t": "event", "id": "snap2", "kind": "sessions.snapshot", "sessions": [ { "id": "s1", "projectId": "p1", "agent": "pi", "title": "work", "status": "running", "policy": "ask-on-risky", "lastActivityAt": 2000, "lastPreview": "hi" } ] },
+  { "v": 1, "t": "event", "id": "snap3", "kind": "ports.snapshot", "snapshot": { "ports": [ { "key": "48211:127.0.0.1:5173", "port": 5173, "address": "127.0.0.1", "reach": "loopback", "pid": 48211, "command": "node vite --port 5173", "startedAt": 1000, "worktreePath": "/repo/makit-wt", "sessionId": "s1", "health": { "kind": "ok", "status": 200, "probedAt": 2000 }, "openUrl": "http://127.0.0.1:5173" } ], "scannedAt": 3000, "scanOk": true } }
 ]

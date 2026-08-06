@@ -65,6 +65,28 @@ function parseArgs(argv: string[]): E2EArgs {
   return args;
 }
 
+/**
+ * A scripted `Exec` for the ports scanner: `lsof` (listeners), `ps` (process
+ * table) and `lsof -d cwd` (the working dir), all fixed. The single listener
+ * runs in `projectPath`, so attribution maps it to that project's primary
+ * worktree and the app paints a glyph on the seeded row.
+ */
+function makeDeterministicPortsExec(projectPath: string) {
+  const PID = 424242;
+  return async (cmd: string, cmdArgs: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
+    if (cmd === "lsof" && cmdArgs.includes("-iTCP")) {
+      return { code: 0, stdout: [`p${PID}`, "u501", "f10", "PTCP", "n127.0.0.1:5173"].join("\n"), stderr: "" };
+    }
+    if (cmd === "ps") {
+      return { code: 0, stdout: `  ${PID} 1 01:23:45 node vite --host 127.0.0.1 --port 5173`, stderr: "" };
+    }
+    if (cmd === "lsof") {
+      return { code: 0, stdout: [`p${PID}`, "fcwd", `n${projectPath}`].join("\n"), stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  };
+}
+
 function seedDeviceRegistry(home: string, bearer: string): void {
   mkdirSync(home, { recursive: true });
   const device: PairedDevice = {
@@ -118,6 +140,11 @@ async function main(): Promise<void> {
     manager,
     cert,
     registry,
+    // SPEC-41: a deterministic port scan so the e2e loop exercises the real
+    // ports.snapshot frame path (attribute + broadcast) rather than an
+    // indicator nothing feeds. One listener whose cwd IS the project, so it is
+    // attributed to that project's primary worktree.
+    ports: { exec: makeDeterministicPortsExec(args.project) },
   });
 
   // Wire the loopback bridge so agent connectors can do reverse-RPC

@@ -5,8 +5,10 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
+import '../../store/ports.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
+import '../../ui/ports/ports_popover.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
@@ -479,6 +481,30 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
   // otherwise unmount `_WorktreeMenuButton` — and its dialog-owning context —
   // before `onSelected` runs.
   bool _menuOpen = false;
+  // OR-ed into the line-1 swap condition below for the SAME reason as
+  // `_menuOpen`: opening the ports popover drops a modal-ish barrier / moves the
+  // pointer off the row, flipping `_hovering` off — which would snap the `…`
+  // menu back to a diff pill under the cursor while the popover is open. The
+  // popover reports its open-state through `onOpenChanged` (SPEC-41 §5 trap).
+  bool _portsOpen = false;
+
+  // Hold the ref-counted ports watch while any worktree group is mounted in the
+  // sidebar, so the server polls `lsof` only while the sidebar is up (SPEC-41
+  // §Delivery); the ref-count collapses every mounted group to one
+  // `ports.watch {on:true}`.
+  late final PortsWatch _portsWatch = ref.read(portsWatchProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    _portsWatch.watch();
+  }
+
+  @override
+  void dispose() {
+    _portsWatch.release();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -580,7 +606,10 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                             // by the worktree overflow menu (rename / delete), so
                             // the actions are reachable without a pointer. Otherwise
                             // it shows the diff stats (when the tree has changes).
-                            if (_hovering || _focused || _menuOpen)
+                            if (_hovering ||
+                                _focused ||
+                                _menuOpen ||
+                                _portsOpen)
                               _WorktreeMenuButton(
                                 worktree: worktree,
                                 onMenuOpened: () =>
@@ -610,38 +639,60 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                         padding: const EdgeInsets.fromLTRB(46, 0, 8, 4),
                         child: SizedBox(
                           height: 16,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (worktree.pr != null) ...[
-                                  Text(
-                                    'PR #${worktree.pr!.number}',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.outline,
-                                      fontWeight: FontWeight.w300,
-                                    ),
-                                  ),
-                                  const SizedBox(width: kSpace4),
-                                  Text(
-                                    '•',
-                                    style: theme.textTheme.labelSmall?.copyWith(
-                                      color: theme.colorScheme.outline,
-                                      fontWeight: FontWeight.w300,
-                                    ),
-                                  ),
-                                  const SizedBox(width: kSpace4),
-                                ],
-                                Text(
-                                  branchAgeLabel(worktree.committedAt),
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    color: theme.colorScheme.outline,
-                                    fontWeight: FontWeight.w300,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (worktree.pr != null) ...[
+                                        Text(
+                                          'PR #${worktree.pr!.number}',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                                color:
+                                                    theme.colorScheme.outline,
+                                                fontWeight: FontWeight.w300,
+                                              ),
+                                        ),
+                                        const SizedBox(width: kSpace4),
+                                        Text(
+                                          '•',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                                color:
+                                                    theme.colorScheme.outline,
+                                                fontWeight: FontWeight.w300,
+                                              ),
+                                        ),
+                                        const SizedBox(width: kSpace4),
+                                      ],
+                                      Text(
+                                        branchAgeLabel(worktree.committedAt),
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                              color: theme.colorScheme.outline,
+                                              fontWeight: FontWeight.w300,
+                                            ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              ],
-                            ),
+                              ),
+                              // Ports glyph, right-aligned on the same 8 pt edge
+                              // as line 1's swap (SPEC-41 §5). 14 pt glyph in a
+                              // 22 × 16 target: wider than tall, so the fixed
+                              // 16 pt sub-row does NOT grow. Renders nothing when
+                              // the branch is serving nothing.
+                              _SubRowPortsGlyph(
+                                worktreePath: worktree.path,
+                                branch: branch,
+                                onOpenChanged: (open) =>
+                                    setState(() => _portsOpen = open),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -801,6 +852,45 @@ class _WorktreeMenuButton extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The worktree sub-row's ports glyph (SPEC-41 §5), desktop form. A 14 pt glyph
+/// in a fixed 22 × 16 hit target — wider, not taller — so the sub-row keeps its
+/// reserved 16 pt height. Hit testing is bounded by this box (Flutter clips to
+/// the parent), so the target is honestly 22 × 16, not 22 × 22. Renders nothing
+/// when the branch is serving nothing.
+class _SubRowPortsGlyph extends ConsumerWidget {
+  const _SubRowPortsGlyph({
+    required this.worktreePath,
+    required this.branch,
+    required this.onOpenChanged,
+  });
+
+  final String worktreePath;
+  final String branch;
+  final ValueChanged<bool> onOpenChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(portsGlyphStateProvider(worktreePath));
+    if (state == PortsGlyphState.none) return const SizedBox.shrink();
+    final ports = ref.watch(portsForWorktreeProvider(worktreePath));
+    return SizedBox(
+      key: ValueKey('portsSubRowTarget-$worktreePath'),
+      width: 22,
+      height: 16,
+      child: Center(
+        child: PortsPopover(
+          state: state,
+          count: ports.length,
+          branch: branch,
+          ports: ports,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+          onOpenChanged: onOpenChanged,
+        ),
+      ),
     );
   }
 }

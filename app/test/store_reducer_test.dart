@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/ports.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/transport/codec.dart';
 import 'package:makit/transport/protocol.dart';
@@ -294,6 +295,77 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(watchCmds(transport), isEmpty);
+    });
+  });
+
+  group('StoreController — ports.watch survives a reconnect', () {
+    ProviderContainer containerFor(_SnapshotTransport transport) {
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    List<Envelope> portsCmds(_SnapshotTransport t) => t.sent
+        .where((e) => e.t == MsgType.cmd && e.body['kind'] == 'ports.watch')
+        .toList();
+
+    test('a held ports watch re-arms when the socket comes back', () async {
+      // A reconnect builds a fresh server-side client whose `watchingPorts`
+      // defaults to false, while the app's ref-count is still > 0 (rows never
+      // unmounted). Without a replay the glyphs freeze — no watcher, no scan.
+      final transport = _SnapshotTransport();
+      final container = containerFor(transport);
+      container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      // Hold the watch (0→1), exactly as a mounted row does.
+      container.read(portsWatchProvider).watch();
+      await Future<void>.delayed(Duration.zero);
+      transport.sent.clear();
+
+      transport.pushState(WsState.reconnecting);
+      transport.pushState(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(portsCmds(transport), hasLength(1));
+      expect(portsCmds(transport).single.body['on'], true);
+    });
+
+    test('a released ports watch does not re-arm on reconnect', () async {
+      final transport = _SnapshotTransport();
+      final container = containerFor(transport);
+      container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+      final watch = container.read(portsWatchProvider)..watch();
+      watch.release();
+      await Future<void>.delayed(Duration.zero);
+      transport.sent.clear();
+
+      transport.pushState(WsState.reconnecting);
+      transport.pushState(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(portsCmds(transport), isEmpty);
     });
   });
 

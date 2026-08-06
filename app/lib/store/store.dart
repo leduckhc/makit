@@ -10,6 +10,7 @@ import '../transport/ws_client.dart';
 import 'connection.dart';
 import 'metrics.dart';
 import 'models.dart';
+import 'ports.dart';
 
 class ProjectsState {
   ProjectsState(this.projects);
@@ -89,6 +90,7 @@ class StoreState {
     required this.usage,
     this.githubBudget,
     this.metrics = const [],
+    this.ports,
     this.sessionsLoaded = false,
   });
 
@@ -134,6 +136,11 @@ class StoreState {
   /// [_metricsCap]; empty until the first `metrics.sample` frame.
   final List<MetricsSample> metrics;
 
+  /// Latest host-wide ports snapshot (SPEC-41), or null before the first
+  /// `ports.snapshot` frame. Latest-wins: a snapshot replaces the last one
+  /// wholesale (it is the complete picture, not a delta).
+  final PortsSnapshot? ports;
+
   /// Whether a `sessions.snapshot` has been received. Distinguishes "the server
   /// has no sessions" from "we haven't heard from the server yet", which an
   /// empty [sessions] list alone cannot.
@@ -151,6 +158,7 @@ class StoreState {
     Map<String, SessionUsage>? usage,
     GithubBudget? githubBudget,
     List<MetricsSample>? metrics,
+    PortsSnapshot? ports,
     bool? sessionsLoaded,
   }) => StoreState(
     projects: projects ?? this.projects,
@@ -164,6 +172,7 @@ class StoreState {
     usage: usage ?? this.usage,
     githubBudget: githubBudget ?? this.githubBudget,
     metrics: metrics ?? this.metrics,
+    ports: ports ?? this.ports,
     sessionsLoaded: sessionsLoaded ?? this.sessionsLoaded,
   );
 }
@@ -188,6 +197,9 @@ StoreState reduce(StoreState state, Decoded decoded) => switch (decoded) {
       history != null ? [...history, sample] : [...state.metrics, sample],
     ),
   ),
+  // Latest-wins: a ports snapshot is the whole picture, so it replaces the
+  // last one wholesale rather than merging (SPEC-41, like `metrics` history).
+  PortsSnapshotFrame(:final snapshot) => state.copyWith(ports: snapshot),
   SessionsSnapshot(:final sessions) => state.copyWith(
     sessions: sessions,
     sessionsLoaded: true,

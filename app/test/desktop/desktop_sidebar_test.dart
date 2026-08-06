@@ -17,7 +17,10 @@ import 'package:makit/transport/ws_client.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/store/ports.dart';
 import 'package:makit/ui/home/repo_chips.dart';
+import 'package:makit/ui/ports/ports_glyph.dart';
+import 'package:makit/ui/ports/ports_popover.dart';
 import 'package:makit/ui/widgets/pr_state_style.dart';
 
 import '../support/svg_asset_finder.dart';
@@ -1459,5 +1462,301 @@ void main() {
         reason: 'expanding a row is not a navigation',
       );
     });
+  });
+
+  group('SPEC-41 — ports glyph on the sub-row', () {
+    PortsSnapshot snap(String worktreePath, {PortHealth? health}) =>
+        PortsSnapshot(
+          ports: [
+            PortInfo(
+              key: '100:127.0.0.1:5173',
+              port: 5173,
+              address: '127.0.0.1',
+              reach: PortReach.loopback,
+              pid: 100,
+              command: 'node vite --port 5173',
+              startedAt: 0,
+              worktreePath: worktreePath,
+              health:
+                  health ??
+                  const PortHealth(
+                    kind: PortHealthKind.ok,
+                    status: 200,
+                    probedAt: 0,
+                  ),
+              openUrl: 'http://127.0.0.1:5173',
+            ),
+          ],
+          scannedAt: 0,
+          scanOk: true,
+        );
+
+    Future<void> pumpWithPorts(
+      WidgetTester tester, {
+      required List<RepoInfo> repos,
+      required PortsSnapshot ports,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWithValue(ReposState(repos)),
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          portsProvider.overrideWithValue(ports),
+          // Reading `portsWatchProvider` builds the real `StoreController`,
+          // which needs a `ConnectionController`; use the fake so these tests
+          // stay I/O-isolated (as `_pumpWithStore` does).
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(const _EmptyStorage()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('mounts at 22 × 16 and leaves the sub-row height at 16', (
+      tester,
+    ) async {
+      final wt = _worktree('w1', branch: 'feat');
+      await pumpWithPorts(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'proj',
+            worktrees: [_worktree('main', isPrimary: true), wt],
+          ),
+        ],
+        ports: snap(wt.path),
+      );
+      await tester.pump();
+
+      final target = find.byKey(ValueKey('portsSubRowTarget-${wt.path}'));
+      expect(target, findsOneWidget);
+      // The hit target is 22 wide × 16 tall — wider, not taller — so the fixed
+      // sub-row does not grow (Flutter clips hit-testing to this box, so the
+      // target is honestly 22 × 16, never 22 × 22).
+      expect(tester.getSize(target), const Size(22, 16));
+      // The painted glyph fits inside the 16 pt line.
+      final glyph = find.descendant(
+        of: target,
+        matching: find.byType(PortsGlyph),
+      );
+      expect(glyph, findsOneWidget);
+      expect(tester.getSize(glyph).height, lessThanOrEqualTo(16));
+    });
+
+    testWidgets('a click at the 22 × 16 target pins the popover', (
+      tester,
+    ) async {
+      final wt = _worktree('w1', branch: 'feat');
+      await pumpWithPorts(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'proj',
+            worktrees: [_worktree('main', isPrimary: true), wt],
+          ),
+        ],
+        ports: snap(wt.path),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(ValueKey('portsSubRowTarget-${wt.path}')));
+      await tester.pump();
+      expect(find.byKey(kPortsPopover), findsOneWidget);
+    });
+
+    testWidgets(
+      'a hover-opened popover, pinned by a click, still dismisses on an '
+      'outside tap',
+      (tester) async {
+        // Comment 7 / finding 3: the existing pin test clicks while the popover
+        // is CLOSED, so `_show()` runs and builds the barrier. The documented
+        // path is hover-open THEN click-to-pin — there `_show()` early-returns
+        // (already open) and, without a rebuild, the `if (_pinned)` outside-tap
+        // barrier is never installed, so only Esc / a second click closes it.
+        //
+        // Mutation that proves it bites: revert `_onTap` to `_pinned = true;`
+        // (no setState) — overlayChildBuilder does not re-run, the barrier stays
+        // absent, the outside tap is swallowed, and the final expect (popover
+        // gone) fails with the popover still present.
+        final wt = _worktree('w1', branch: 'feat');
+        await pumpWithPorts(
+          tester,
+          repos: [
+            _repo(
+              'p1',
+              'proj',
+              worktrees: [_worktree('main', isPrimary: true), wt],
+            ),
+          ],
+          ports: snap(wt.path),
+        );
+        await tester.pump();
+
+        final target = find.byKey(ValueKey('portsSubRowTarget-${wt.path}'));
+        // Hover to open (the 350 ms dwell must elapse).
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
+        expect(find.byType(PortsPopover), findsOneWidget);
+        // Enter the row first: that flips `_hovering`, which swaps line 1 to the
+        // actions menu. Pump that rebuild, then re-aim at the glyph's settled
+        // position before the 350 ms dwell so a layout shift can't drop the
+        // pointer off the target mid-dwell.
+        await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+
+        // Click to pin the already-open popover (hover-then-click).
+        await tester.tap(target);
+        await tester.pump();
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+
+        // The pin must have installed the outside-tap barrier. Asserting the
+        // barrier DIRECTLY (not just the dismissal side-effect) is what makes
+        // this bite: without the rebuild, dismissal can still happen for
+        // unrelated reasons while the barrier is absent.
+        expect(find.byKey(const Key('portsPopoverBarrier')), findsOneWidget);
+        // An outside tap must now dismiss it — the pin installed the barrier.
+        await tester.tapAt(const Offset(2, 2));
+        await tester.pump();
+        expect(find.byKey(kPortsPopover), findsNothing);
+      },
+    );
+
+    testWidgets('renders no glyph when the worktree serves nothing', (
+      tester,
+    ) async {
+      final wt = _worktree('w1', branch: 'feat');
+      await pumpWithPorts(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'proj',
+            worktrees: [_worktree('main', isPrimary: true), wt],
+          ),
+        ],
+        // A snapshot that owns a DIFFERENT worktree — this row is quiet.
+        ports: snap('/tmp/wt/other'),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(ValueKey('portsSubRowTarget-${wt.path}')),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      'pinning the ports popover keeps line 1 in its hovered presentation '
+      '(the _portsOpen latch)',
+      (tester) async {
+        // A branch with changes so line 1 shows its diff pill when idle; the
+        // pill must give way to the actions menu while the popover is pinned,
+        // exactly as hover does — otherwise the `…` snaps back to a diff pill
+        // under the user's cursor. This pins the SIDEBAR's end state, which the
+        // popover's own onOpenChanged test cannot: it would still pass if
+        // `_portsOpen` were never OR-ed into the line-1 condition.
+        //
+        // Mutation that proves it bites: drop `_portsOpen` from the
+        // `if (_hovering || _focused || _menuOpen || _portsOpen)` guard in
+        // desktop_sidebar.dart — after the click the row shows `+5`/`−2` and no
+        // 'Worktree actions' button, and this test fails.
+        final wt = _worktree('w1', branch: 'feat', insertions: 5, deletions: 2);
+        await pumpWithPorts(
+          tester,
+          repos: [
+            _repo(
+              'p1',
+              'proj',
+              worktrees: [_worktree('main', isPrimary: true), wt],
+            ),
+          ],
+          ports: snap(wt.path),
+        );
+        await tester.pump();
+
+        // Idle (no hover/focus/menu/popover): the diff pill shows, no menu.
+        expect(find.text('+5'), findsOneWidget);
+        expect(find.byTooltip('Worktree actions'), findsNothing);
+
+        // Click the glyph to pin the popover. `tester.tap` sends no hover
+        // enter, so `_hovering` stays false: only `_portsOpen` can hold the
+        // row in its hovered presentation.
+        await tester.tap(find.byKey(ValueKey('portsSubRowTarget-${wt.path}')));
+        await tester.pump();
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+
+        // The latch stands: the actions menu replaces the diff pill.
+        expect(find.byTooltip('Worktree actions'), findsOneWidget);
+        expect(find.text('+5'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'N mounted worktree groups hold exactly one ports watch, released to 0 '
+      'on dispose',
+      (tester) async {
+        // Finding 4: the ref-counted watch must collapse every mounted group to
+        // one `{on:true}` and reach 0 (one `{on:false}`) when the tree is torn
+        // down — no churn, no leak, no double-release.
+        final calls = <bool>[];
+        final watch = PortsWatch(calls.add);
+        final container = ProviderContainer(
+          overrides: [
+            reposProvider.overrideWithValue(
+              ReposState([
+                _repo(
+                  'p1',
+                  'alpha',
+                  worktrees: [
+                    _worktree('a', branch: 'a'),
+                    _worktree('b', branch: 'b'),
+                    _worktree('c', branch: 'c'),
+                  ],
+                ),
+              ]),
+            ),
+            sessionsProvider.overrideWithValue(SessionsState(const [])),
+            portsWatchProvider.overrideWithValue(watch),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(
+              home: Scaffold(
+                body: SizedBox(width: 320, child: DesktopSidebar()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Three groups mounted, one `{on:true}` sent, count == 3.
+        expect(calls, [true]);
+        expect(watch.watcherCount, 3);
+
+        // Tear the whole tree down: every group disposes exactly once.
+        await tester.pumpWidget(const SizedBox());
+        expect(watch.watcherCount, 0);
+        expect(calls, [true, false]);
+      },
+    );
   });
 }

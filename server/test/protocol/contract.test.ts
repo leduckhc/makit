@@ -116,3 +116,23 @@ test("WireErrorCode exposes canonical codes", () => {
   assert.equal(WireErrorCode.NoSuchSession, "no_such_session");
   assert.equal(WireErrorCode.BadRequest, "bad_request");
 });
+
+// ── SPEC-41 ────────────────────────────────────────────────────────────────
+// `ports.snapshot` is a HOST-WIDE broadcast, so it lives in snapshots.json (the
+// frame fixtures) and must be rejected by `decodeSessionEvent`.
+//
+// `ports.snapshot` is now a member of `EVENT_KINDS` (this PR added it), so
+// `decodeFrame` accepts it as a valid event kind. The rejection below therefore
+// genuinely depends on the runtime `HOST_ONLY_KINDS` entry — the type-level
+// `SessionEventKind` exclusion cannot enforce it at runtime — without which a
+// machine-wide broadcast could be persisted into a session's append-only log.
+test("ports.snapshot decodes as a frame but never as a session event", () => {
+  const frame = snapshots.find((f) => f.kind === "ports.snapshot");
+  assert.ok(frame, "snapshots.json is missing a ports.snapshot envelope");
+  assert.notEqual(decodeFrame(JSON.stringify(frame)), null);
+  assert.equal(
+    decodeSessionEvent({ seq: 1, sessionId: "s1", ts: 1, kind: "ports.snapshot", payload: {} }),
+    null,
+    "ports.snapshot must be in HOST_ONLY_KINDS — a host broadcast may not enter a session log",
+  );
+});

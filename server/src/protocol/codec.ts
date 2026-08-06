@@ -60,6 +60,7 @@ const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "session.usage",
   "github.budget",
   "metrics.sample",
+  "ports.snapshot",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,8 +79,18 @@ function isEventKind(value: unknown): value is EventKind {
  * Host-wide broadcast kinds that must never be decoded as a session event
  * (SPEC-37 decision 5 / SPEC-32): the session log is append-only and replayed in
  * full on resume. This is the runtime half of the {@link SessionEventKind} type.
+ *
+ * Derived from an exhaustive `Record<Exclude<EventKind, SessionEventKind>, true>`
+ * so the compiler forces this list to agree with the type-level exclusion: a
+ * typo is an unknown key (rejected) and a missing kind is a missing required key
+ * (rejected). The two lists cannot silently drift (finding 26).
  */
-const HOST_ONLY_KINDS = new Set<string>(["github.budget", "metrics.sample"]);
+const HOST_ONLY_KIND_FLAGS: Record<Exclude<EventKind, SessionEventKind>, true> = {
+  "github.budget": true,
+  "metrics.sample": true,
+  "ports.snapshot": true,
+};
+const HOST_ONLY_KINDS: ReadonlySet<string> = new Set(Object.keys(HOST_ONLY_KIND_FLAGS));
 
 function isSessionEventKind(value: unknown): value is SessionEventKind {
   return isEventKind(value) && !HOST_ONLY_KINDS.has(value);

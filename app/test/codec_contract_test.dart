@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/models.dart';
+import 'package:makit/store/ports.dart';
 import 'package:makit/transport/codec.dart';
 import 'package:makit/transport/protocol.dart';
 
@@ -53,6 +54,34 @@ void main() {
       expect(sessions.single.id, 's1');
       expect(sessions.single.status, SessionStatus.running);
       expect(sessions.single.policy, ApprovalPolicy.askOnRisky);
+    });
+
+    test('ports.snapshot decodes to a typed PortsSnapshotFrame', () {
+      final snapshots = _fixture('snapshots.json');
+      final env = _envFromFixture(
+        Map<String, dynamic>.from(snapshots[2] as Map),
+      );
+      final decoded = WireCodec.decode(env);
+      expect(decoded, isA<PortsSnapshotFrame>());
+      final snap = (decoded as PortsSnapshotFrame).snapshot;
+      expect(snap.scanOk, true);
+      expect(snap.scannedAt, 3000);
+      expect(snap.ports.length, 1);
+      final p = snap.ports.single;
+      expect(p.key, '48211:127.0.0.1:5173');
+      expect(p.port, 5173);
+      expect(p.address, '127.0.0.1');
+      expect(p.reach, PortReach.loopback);
+      expect(p.pid, 48211);
+      expect(p.command, 'node vite --port 5173');
+      expect(p.startedAt, 1000);
+      expect(p.worktreePath, '/repo/makit-wt');
+      expect(p.sessionId, 's1');
+      expect(p.openUrl, 'http://127.0.0.1:5173');
+      expect(p.health, isNotNull);
+      expect(p.health!.kind, PortHealthKind.ok);
+      expect(p.health!.status, 200);
+      expect(p.health!.probedAt, 2000);
     });
 
     test('every event fixture decodes to a typed SessionEvent', () {

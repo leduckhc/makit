@@ -26,6 +26,7 @@ function fakeClient(): FakeClient {
     authed: true,
     subscribed: new Set<string>(),
     watchingMetrics: false,
+    watchingPorts: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -58,6 +59,8 @@ function routerWith(manager: Partial<CommandDeps["manager"]>): { router: Command
     broadcastBudget: () => {},
       onMetricsWatchersChanged: () => {},
       sendMetricsHistory: () => {},
+      onPortsWatchersChanged: () => {},
+      sendPortsSnapshot: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);

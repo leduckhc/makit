@@ -90,7 +90,16 @@ export type EventKind =
    * there would bloat every session's transcript and slow every resume forever,
    * for data that is inherently ephemeral. Do not "tidy" it into `SessionEvent`.
    */
-  | "metrics.sample";
+  | "metrics.sample"
+  /**
+   * Every listening TCP port on the host, attributed to the worktree that owns
+   * it (SPEC-41). Like {@link github.budget} and {@link metrics.sample} this is a
+   * top-level broadcast, NOT a session event: ports describe the machine, not one
+   * session, and a 4-second snapshot must never enter the append-only session log.
+   * Watch-gated — nothing is scanned or sent unless a client asked via
+   * `ports.watch`. See {@link PortsSnapshotDTO}.
+   */
+  | "ports.snapshot";
 
 /**
  * Normalized context/cost usage for one session (SPEC-37), unified across three
@@ -239,16 +248,101 @@ export interface MetricsSampleDTO {
   procTableOk: boolean;
 }
 
+// SPEC-41 ports DTOs — the wire contract for the `ports.snapshot` event.
+//
+// Every optional field means "not known", never "zero": a port whose `health` is
+// absent was not probed, and a port with no `worktreePath` is genuinely unowned.
+// The app renders absence as absence (the rule `BudgetBucket` and
+// `SessionUsageDTO` already follow).
+
+/** Where a listening socket can be reached from (spec D2). Derived, not reported. */
+export type PortReach =
+  /** 127.0.0.0/8 or ::1 — this machine only. */
+  | "loopback"
+  /** Bound to EXACTLY the host's discovered tailnet address. */
+  | "tailnet"
+  /**
+   * Any other address, including a wildcard bind. A `0.0.0.0` listener is
+   * reachable from every interface, so it is never reported as `tailnet` —
+   * that would be the reassuring reading of an alarming fact.
+   */
+  | "exposed";
+
+/** Verdict from one HTTP probe. No health at all means "not probed" (spec D3). */
+export type PortHealthKind = "ok" | "http-error" | "refused" | "timeout";
+
+export interface PortHealthDTO {
+  kind: PortHealthKind;
+  /** HTTP status when one was parsed (200, 404, 500); absent otherwise. */
+  status?: number;
+  /** Epoch ms of the probe that produced this verdict — drives "probed Ns ago". */
+  probedAt: number;
+}
+
+/** One listening TCP socket, with whatever makit could truthfully learn about it. */
+export interface PortDTO {
+  /**
+   * Snapshot key, NOT a durable identity (spec D6): `<pid>:<address>:<port>`.
+   * PIDs are reused and a restart changes the PID for the same endpoint, so this
+   * must never be persisted — the app re-selects by `(address, port)`.
+   */
+  key: string;
+  port: number;
+  /** Bind address as reported: `127.0.0.1`, `0.0.0.0`, `*`, `::1`, `::`. */
+  address: string;
+  reach: PortReach;
+  pid: number;
+  /** Full argv, trimmed. */
+  command: string;
+  /** Epoch ms the process started; absent when the elapsed time was unparsable. */
+  startedAt?: number;
+  /** Absolute worktree path that owns this port; absent when unowned. */
+  worktreePath?: string;
+  /** Session whose process tree contains {@link pid}, when there is one. */
+  sessionId?: string;
+  /** Absent until probed, and absent forever for ports makit does not probe. */
+  health?: PortHealthDTO;
+  /**
+   * Canonical URL to open, present only when something actually answered HTTP.
+   * Built server-side so the two clients cannot disagree, and absent rather than
+   * guessed — a wildcard bind has no usable host and IPv6 needs brackets:
+   *   loopback / wildcard IPv4 -> `http://127.0.0.1:<port>`
+   *   `::1` / `::`             -> `http://[::1]:<port>`
+   *   a concrete address       -> `http://<address>:<port>`
+   * Absent means the UI hides Open/Copy rather than offering a broken link.
+   */
+  openUrl?: string;
+}
+
+/** One host-wide scan, carried on the `ports.snapshot` event as `snapshot`. */
+export interface PortsSnapshotDTO {
+  /** Listening TCP ports, ascending by port then pid. */
+  ports: PortDTO[];
+  /** Epoch ms this scan completed. */
+  scannedAt: number;
+  /**
+   * True when the scanner's commands ran (spec D7). It does NOT claim the whole
+   * machine was visible: `lsof` exits 0 while omitting processes owned by other
+   * users or shielded by OS privacy policy, so attribution is best-effort.
+   */
+  scanOk: boolean;
+  /** One-line reason when `scanOk` is false — rendered in the glyph's tooltip. */
+  scanError?: string;
+}
+
 /**
  * The kinds that may appear **inside a session's event log**.
  *
- * `github.budget` and `metrics.sample` are host-wide broadcasts, not session
- * events: the log is append-only and replayed in full on every resume, so a
- * per-second metrics row would grow it without bound and slow every resume.
+ * `github.budget`, `metrics.sample` and `ports.snapshot` are host-wide broadcasts,
+ * not session events: the log is append-only and replayed in full on every resume,
+ * so a per-second metrics row would grow it without bound and slow every resume.
  * Excluding them here makes that a **compile-time** boundary instead of a comment
  * a future contributor can miss (review finding).
  */
-export type SessionEventKind = Exclude<EventKind, "github.budget" | "metrics.sample">;
+export type SessionEventKind = Exclude<
+  EventKind,
+  "github.budget" | "metrics.sample" | "ports.snapshot"
+>;
 
 export interface SessionEvent {
   seq: number;
@@ -530,6 +624,11 @@ export type CmdKind =
   // misc
   | "agents.list"
   | "agents.refresh"
+  /**
+   * SPEC-41: hold/release the host-wide port scan. `{kind:'ports.watch', on}` —
+   * nothing is scanned while no client is watching.
+   */
+  | "ports.watch"
   | "push.register"
   | "client.log"
   // dev-only probes
