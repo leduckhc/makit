@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/ui/ports/port_detail_sheet.dart';
+import 'package:makit/ui/ports/port_token_pill.dart';
 import 'package:makit/ui/ports/ports_vocabulary.dart';
 import 'package:makit/ui/ports/worktree_ports_sheet.dart';
 
@@ -250,5 +251,36 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(find.text(reachSentence), findsOneWidget);
     });
+  });
+
+  // Review round 2 claimed the `Tooltip`'s own semantics node duplicates the
+  // explicit `Semantics(label: sentence)`, making a screen reader read the whole
+  // sentence twice. Measured: it does NOT on this Flutter version — the nodes
+  // merge to a single utterance — so no `excludeFromSemantics` was added. This
+  // test stays as the guard that keeps it that way, because the failure mode is
+  // invisible without a screen reader and a future Tooltip change could bring
+  // it back. One token = one utterance.
+  testWidgets('a token speaks its sentence exactly once, not twice', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    const sentence = 'Bound to 127.0.0.1 — reachable only from this Mac';
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: PortTokenPill(label: 'loopback', sentence: sentence),
+        ),
+      ),
+    );
+
+    // Counting widgets cannot see this: the nodes merge, so a duplicate would
+    // read "<sentence>\n<sentence>" in ONE node. Count occurrences instead.
+    final label = tester.getSemantics(find.byType(PortTokenPill)).label;
+    expect(
+      RegExp(RegExp.escape(sentence)).allMatches(label).length,
+      1,
+      reason: 'the sentence is spoken twice: $label',
+    );
+    handle.dispose();
   });
 }

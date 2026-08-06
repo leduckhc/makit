@@ -76,6 +76,9 @@ class WorktreePortsSheetBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // One reference time for the whole build: read per row, two ports could
+    // land on different seconds and print inconsistent probe ages.
+    final referenceNowMs = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -86,7 +89,7 @@ class WorktreePortsSheetBody extends StatelessWidget {
             _PortListRow(
               key: ValueKey('ports-list-row-${port.port}'),
               port: port,
-              nowMs: nowMs ?? DateTime.now().millisecondsSinceEpoch,
+              nowMs: referenceNowMs,
               onTap: () => onOpenPort(port),
             ),
           const SizedBox(height: kSpace8),

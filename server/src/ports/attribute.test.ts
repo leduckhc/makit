@@ -236,6 +236,19 @@ test("tailnetAddressFromBindHost: a 100.x bind host IS the discovered tailnet ad
   assert.equal(tailnetAddressFromBindHost("100.119.58.97"), "100.119.58.97");
 });
 
+test("tailnetAddressFromBindHost: a 100.x address OUTSIDE 100.64.0.0/10 is not a tailnet address", () => {
+  // Tailscale's CGNAT range is 100.64.0.0/10 — second octet 64..127 only. A bare
+  // `/^100\./` also matches public space (100.0.0.0/10 and 100.128.0.0/9 are NOT
+  // CGNAT), which would label a real internet-routable bind as `tailnet` — the
+  // reassuring reading of the more alarming fact (spec D2).
+  assert.equal(tailnetAddressFromBindHost("100.200.1.1"), null);
+  assert.equal(tailnetAddressFromBindHost("100.63.255.255"), null);
+  assert.equal(tailnetAddressFromBindHost("100.128.0.1"), null);
+  // Both edges of the range are in.
+  assert.equal(tailnetAddressFromBindHost("100.64.0.1"), "100.64.0.1");
+  assert.equal(tailnetAddressFromBindHost("100.127.255.254"), "100.127.255.254");
+});
+
 test("tailnetAddressFromBindHost: loopback / LAN / wildcard binds discover NO tailnet address", () => {
   assert.equal(tailnetAddressFromBindHost("127.0.0.1"), null);
   assert.equal(tailnetAddressFromBindHost("0.0.0.0"), null);

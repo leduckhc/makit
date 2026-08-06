@@ -136,7 +136,7 @@ export async function readProcs(
 /** Parse `lsof -Fpn` cwd output: `p<pid>` then `fcwd` then `n<path>`, pure.
  *
  * The `fcwd` marker is load-bearing: `lsof -d cwd` requests only cwd file
- * descriptors, but some versions emit ANNOTATION `n` lines (e.g.
+ * descriptors, but some versions emit annotation `n` lines (e.g.
  * `n(readlink: Permission denied)`) that are not a path. We store an `n` only
  * when the immediately preceding `f` record for this pid was `cwd`, so an
  * annotation line cannot be mistaken for a process's working directory.

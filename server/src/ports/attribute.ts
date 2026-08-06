@@ -44,10 +44,15 @@ function segments(path: string): string[] {
 }
 
 /**
- * Tailscale hands every node a `100.x` (CGNAT, 100.64.0.0/10) address; the
- * discovery in `tailscaleIP()` filters on exactly this prefix.
+ * Tailscale hands every node an address in **100.64.0.0/10** (the CGNAT range),
+ * i.e. `100.<64..127>.*`. Matching a bare `100.` would also claim 100.0.0.0/10
+ * and 100.128.0.0/9, which are ordinary internet-routable space — labelling such
+ * a bind `tailnet` would be the reassuring reading of the more alarming fact,
+ * which spec D2 exists to prevent.
  */
-const TAILNET_ADDRESS_PREFIX = /^100\./;
+const TAILNET_ADDRESS = /^100\.(\d{1,3})\./;
+const TAILNET_MIN_SECOND_OCTET = 64;
+const TAILNET_MAX_SECOND_OCTET = 127;
 
 /**
  * The tailnet address the server ALREADY discovered at bind time (spec D2), from
@@ -60,7 +65,12 @@ const TAILNET_ADDRESS_PREFIX = /^100\./;
  * the event loop mid-scan).
  */
 export function tailnetAddressFromBindHost(host: string): string | null {
-  return TAILNET_ADDRESS_PREFIX.test(host) ? host : null;
+  const match = TAILNET_ADDRESS.exec(host);
+  if (match === null) return null;
+  const secondOctet = Number(match[1]);
+  const inCgnat =
+    secondOctet >= TAILNET_MIN_SECOND_OCTET && secondOctet <= TAILNET_MAX_SECOND_OCTET;
+  return inCgnat ? host : null;
 }
 
 /** True when `prefix` is a whole-segment prefix of `path` (so /a/b ⊄ /a/b-2). */
