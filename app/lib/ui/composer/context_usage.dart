@@ -164,8 +164,17 @@ class _RingPainter extends CustomPainter {
 
 // ─── the button ──────────────────────────────────────────────────────────────
 
-/// Width of the desktop details popover.
+/// Width of the desktop details popover, when the window has room for it.
 const double kUsagePanelWidth = 300;
+
+/// Margin kept between the popover and the window edges, matching
+/// `kBudgetPopoverMargin`'s role in the sidebar-footer popover.
+const double _kUsagePanelMargin = 8;
+
+/// Floor for the popover's height cap, so a very short window still shows a
+/// usable (scrollable) panel rather than a sliver. Mirrors the budget popover's
+/// `_kMinPopoverHeight`.
+const double _kUsagePanelMinHeight = 140;
 
 /// Tap-target size for the ring, matching the composer's send button (36px) so
 /// the footer's two bare icon controls agree.
@@ -181,7 +190,7 @@ const double kUsageTargetSize = 36;
 ///
 /// Renders nothing until something has actually been measured: no agent reports
 /// usage before its first turn, pi reports none at all unless
-/// `.pi/extensions/pi-usage` is installed, and pi's reading is null right after a
+/// the `makit-pi-usage` extension is installed, and pi's reading is null right after a
 /// compaction.
 ///
 /// [desktop] selects the presentation, mirroring `ComposerConfigOptions`: an
@@ -217,7 +226,16 @@ class ContextUsageButton extends ConsumerWidget {
         onTap: () => showModalBottomSheet<void>(
           context: context,
           showDragHandle: true,
-          builder: (_) => SafeArea(child: ContextUsageDetails(usage: usage)),
+          // Scrollable, because the sheet's height is capped by the window while
+          // the panel's height depends on how much the agent reported AND on how
+          // much the rows wrap: at 320pt with a long session (33.7M billed) the
+          // content ran 57px past the sheet and threw. Clipping there would have
+          // hidden the cost line, which is the row people open this for.
+          builder: (_) => SafeArea(
+            child: SingleChildScrollView(
+              child: ContextUsageDetails(usage: usage),
+            ),
+          ),
         ),
       );
     }
@@ -236,9 +254,37 @@ class ContextUsageButton extends ConsumerWidget {
         ),
       ),
       menuChildren: [
-        SizedBox(
-          width: kUsagePanelWidth,
-          child: ContextUsageDetails(usage: usage),
+        // Sized to the WINDOW, not to a constant: `MenuAnchor` clamps a menu's
+        // position but never its size, so a fixed 300pt panel opened from a
+        // control at the right edge of a 280pt pane hung 36px off-screen — and a
+        // 360pt-tall window put 75px of it below the bottom. Both are reachable
+        // in a narrow split pane, which is where this control lives.
+        Builder(
+          builder: (context) {
+            final window = MediaQuery.sizeOf(context);
+            return ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: math.max(
+                  _kUsagePanelMinHeight,
+                  window.height - 2 * _kUsagePanelMargin,
+                ),
+              ),
+              child: SizedBox(
+                width: math.min(
+                  kUsagePanelWidth,
+                  window.width - 2 * _kUsagePanelMargin,
+                ),
+                // Scrolls inside the height cap rather than clipping the cost
+                // line off the bottom. `primary: false` because `MenuAnchor`
+                // already wraps its children in a scrollable that claims the
+                // PrimaryScrollController; two claims on it is an error.
+                child: SingleChildScrollView(
+                  primary: false,
+                  child: ContextUsageDetails(usage: usage),
+                ),
+              ),
+            );
+          },
         ),
       ],
       builder: (context, controller, _) => _target(

@@ -54,6 +54,31 @@ String configValueName(SessionConfigOption option, String value) {
   return value.isEmpty ? option.name : value;
 }
 
+/// The model name with its provider prefix dropped, for the composer pill only
+/// (SPEC-40).
+///
+/// `pi-acp` builds its model option names as `` `${provider}/${name}` ``, so the
+/// pill's most valuable label spent its first two thirds on a provider nobody
+/// checks mid-conversation: at 375pt `anthropic/Claude Opus 4.6` rendered as
+/// `anthropic/Cl…`.
+///
+/// A display **heuristic**, not a guarantee: ACP passes agent-supplied option
+/// names through unchanged, so an agent could send a name whose first segment
+/// matters. Being wrong costs a little context in one label, and the full name
+/// stays reachable in the pill's tooltip and in the picker sheet. Only the first
+/// segment is dropped, because a model id may contain slashes of its own
+/// (`openrouter/meta-llama/Llama-3`).
+///
+/// Never returns something blank — a blank pill reads as "no model" rather than
+/// as a shortened one — so an input whose tail is empty or whitespace (`'x/'`,
+/// `'x/   '`) is returned as-is.
+String shortModelLabel(String name) {
+  final slash = name.indexOf('/');
+  if (slash < 0) return name;
+  final tail = name.substring(slash + 1);
+  return tail.trim().isEmpty ? name : tail;
+}
+
 /// Splits an ordered [SessionConfigOption] list into the single `model` option
 /// (or null when the session advertises none), the model-scoped options folded
 /// into the picker's flyout ([kModelScopedCategories], in agent order), and the
@@ -770,6 +795,10 @@ class ModelConfigFooter extends StatelessWidget {
   }
 }
 
+/// A read-only chip plus the width it wants, so the pill can decide whether the
+/// whole set fits beside the model name (SPEC-40).
+typedef _Chip = ({Widget widget, double width});
+
 /// SPEC-31 — the composer-footer model pill: the agent avatar, the active
 /// model's name, and faint **read-only** chips summarising the model-scoped
 /// options ([kModelScopedCategories]). Reasoning (`thought_level`) renders as
@@ -802,8 +831,13 @@ class ModelConfigPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    final full = configValueName(model, _modelValue);
+    final label = shortModelLabel(full);
     return Tooltip(
-      message: 'Model',
+      // The full `provider/name`, not the literal 'Model' it used to show: the
+      // label drops the provider prefix (SPEC-40), so this is where it stays
+      // reachable on desktop. Mobile recovers it from the picker sheet.
+      message: full,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
@@ -812,59 +846,138 @@ class ModelConfigPill extends StatelessWidget {
             horizontal: kSpace8,
             vertical: kSpace4,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AgentAvatar(agent: agent, size: 16),
-              const SizedBox(width: kSpace6),
-              Flexible(
-                child: Text(
-                  configValueName(model, _modelValue),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: cs.onSurfaceVariant,
+          // The chips yield to the model name when both will not fit (SPEC-40
+          // ladder step 2). Read-only decoration must not cost the one label
+          // that answers "what am I talking to?": with both chips shown, codex
+          // rendered `gpt-5.6…` at 375pt, roughly half its name.
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final chips = _chipsThatFit(context, label, constraints.maxWidth);
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AgentAvatar(agent: agent, size: 16),
+                  const SizedBox(width: kSpace6),
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              for (final chip in _chips(context)) ...[
-                const SizedBox(width: kSpace6),
-                chip,
-              ],
-            ],
+                  for (final chip in chips) ...[
+                    const SizedBox(width: kSpace6),
+                    chip.widget,
+                  ],
+                ],
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  /// One read-only chip per model-scoped option, in agent order. Booleans that
-  /// are off contribute nothing. Text chips are wrapped in [Flexible] so they
-  /// shrink (ellipsis) instead of overflowing a narrow pane; the fixed-width
-  /// [ThinkingSignal] glyph stays intrinsic (it is already sized to the avatar).
-  List<Widget> _chips(BuildContext context) {
-    final chips = <Widget>[];
+  /// The chips to render given [available] width: all of them when the model
+  /// [label] also fits whole, none otherwise.
+  ///
+  /// All-or-nothing on purpose. Dropping chips one at a time would make the
+  /// summary read as though an option were unset rather than merely hidden, and
+  /// the sheet shows every value anyway. An unbounded [available] (a shrink-wrap
+  /// measuring pass) keeps them: there is no width to fit into yet.
+  List<_Chip> _chipsThatFit(
+    BuildContext context,
+    String label,
+    double available,
+  ) {
+    final chips = _chips(context);
+    if (chips.isEmpty || !available.isFinite) return chips;
+    // Avatar + its gap, then each chip's own leading gap.
+    final chrome = 16 + kSpace6 + chips.length * kSpace6;
+    final chipsWidth = chips.fold<double>(0, (sum, c) => sum + c.width);
+    final wanted = _textWidth(context, label) + chrome + chipsWidth;
+    return wanted <= available ? chips : const [];
+  }
+
+  /// Natural width of [text] in the pill's label style.
+  ///
+  /// Measured through the same [TextScaler] the rendered [Text] will use, or the
+  /// gate silently mis-decides for anyone with accessibility text scaling on:
+  /// the label would be wider than measured and would clip while the chips it
+  /// was supposed to displace stayed put.
+  double _textWidth(BuildContext context, String text) =>
+      _measure(context, text, Theme.of(context).textTheme.labelMedium);
+
+  double _measure(BuildContext context, String text, TextStyle? style) {
+    // Built to match what `Text` will actually render, not just its style: Text
+    // merges the ambient [DefaultTextStyle], honours the accessibility
+    // bold-text setting, and resolves fonts through the ambient locale. Measure
+    // any of those differently and the gate keeps chips that no longer fit —
+    // for precisely the users who can least afford a clipped label. The scaler
+    // is covered by a widget test; the bold-text path is not, because the test
+    // font's metrics do not change with weight (see composer_footer_space_test).
+    final effective = DefaultTextStyle.of(context).style.merge(style);
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: MediaQuery.boldTextOf(context)
+            ? effective.merge(const TextStyle(fontWeight: FontWeight.bold))
+            : effective,
+      ),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.maybeLocaleOf(context),
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return width;
+  }
+
+  /// One read-only chip per model-scoped option, in agent order, each with the
+  /// width it wants so [_chipsThatFit] can decide whether they all fit. Booleans
+  /// that are off contribute nothing.
+  List<_Chip> _chips(BuildContext context) {
+    final chips = <_Chip>[];
     for (final option in modelScoped) {
       final value = values[option.id] ?? option.currentValue;
       if (option.type == ConfigOptionType.boolean) {
         if (value == true) {
-          chips.add(Flexible(child: _textChip(context, option.name, on: true)));
+          chips.add(_textChipSpec(context, option.name, on: true));
         }
       } else if (option.category == 'thought_level') {
-        chips.add(ThinkingSignal(level: value is String ? value : ''));
+        chips.add((
+          widget: ThinkingSignal(level: value is String ? value : ''),
+          // Sized to the avatar by construction (see [ThinkingSignal]).
+          width: 16.0,
+        ));
       } else {
         chips.add(
-          Flexible(
-            child: _textChip(
-              context,
-              configValueName(option, value is String ? value : ''),
-            ),
+          _textChipSpec(
+            context,
+            configValueName(option, value is String ? value : ''),
           ),
         );
       }
     }
     return chips;
   }
+
+  /// A text chip plus the width it wants: its own text, and 5pt of padding on
+  /// each side (see [_textChip]).
+  _Chip _textChipSpec(BuildContext context, String text, {bool on = false}) => (
+    widget: _textChip(context, text, on: on),
+    width: _chipTextWidth(context, text, on: on) + 10,
+  );
+
+  double _chipTextWidth(
+    BuildContext context,
+    String text, {
+    required bool on,
+  }) => _measure(context, text, Theme.of(context).textTheme.labelSmall);
 
   Widget _textChip(BuildContext context, String text, {bool on = false}) {
     final theme = Theme.of(context);

@@ -1,6 +1,9 @@
 # SPEC-37 — Context usage: tokens vs limit, per session
 
-**Status:** Implemented · **Priority:** P3 · **Branch:** `feat-context-usage`
+**Status:** Implemented · **Amended 2026-08-06** (see below) · **Priority:** P3
+**Branch:** `feat-context-usage`, amended on `fix/token-usage`
+**Plan:** [`2026-08-05-SPEC-37-context-usage-PLAN.md`](./2026-08-05-SPEC-37-context-usage-PLAN.md)
+**Mockup:** [`mockups/context-usage.html`](../../mockups/context-usage.html)
 **Depends on:** SPEC-26 (composer footer selectors), SPEC-32 (budget-panel precedent), SPEC-36 (pi-extension + bridge precedent)
 
 **Scope:**
@@ -9,11 +12,40 @@
 *server:* `server/src/adapters/codex-map.ts`, `server/src/adapters/acp-map.ts`,
 `server/src/session.ts` (no-fanout kind), `server/src/bridge.ts` (new `POST /usage`),
 `server/src/manager.ts` (bridge → session event).
-*pi:* `.pi/extensions/pi-usage/` (new, self-contained, mirrors `pi-computer-use/`).
+*pi:* the `makit-pi-usage` extension — originally `.pi/extensions/pi-usage/`, since
+extracted to its own repo (github.com/leduckhc/makit-pi-usage) and consumed as a pi
+package; see "Installing the extension" below.
 *app:* `app/lib/transport/protocol.dart`, `app/lib/store/models.dart`,
 `app/lib/store/store.dart`, `app/lib/store/chat_items.dart` (exhaustive switch),
 `app/lib/ui/composer/context_usage.dart` (new — ring + details panel), mounted in
 `app/lib/ui/session/session_screen.dart` and `app/lib/desktop/chat/desktop_chat_pane.dart`.
+
+---
+
+## Amendment — 2026-08-06
+
+The first long pi session showed `$0.20` in the panel while pi's own `/sessions` showed
+`$22.16` for the same session, and no token breakdown at all. Root cause: the extension
+treated **per-message** readings as if they were **session totals**. `SessionUsageDTO.cost`
+is documented as cumulative, but it was forwarding `event.message.usage.cost.total` — one
+assistant message — and sending no `totals`, so pi sessions fell through to the "no token
+breakdown" footnote while the panel's breakdown rows sat unused.
+
+What changed, all of it inside the extension — no protocol, server or app change was needed,
+because the app already rendered `totals` for codex:
+
+1. **Cumulative, and a real breakdown.** `totals` + `cost` now cover the whole session.
+2. **Derived, not accumulated.** They are summed from `ctx.sessionManager.getEntries()` every
+   turn, reproducing `AgentSession.getSessionStats()`. An in-process counter cannot see a
+   **resumed** session's earlier turns and never sees a compaction's own tokens. See
+   "Billing totals are derived, not accumulated" below.
+3. **`turn_end`, not `message_end`** — at `message_end` the entry is not persisted yet.
+4. **Its own repo.** The extension is now `makit-pi-usage`, installed as a pi package; the
+   symlink this spec used to document had dangled silently. See "Installing the extension".
+
+The `contextTokens` half of the feature was correct throughout and is unchanged. The two
+halves stayed in separate fields exactly as designed, which is why the fix touched only one
+of them: on the session above, `288k` is in context while `33.7M` had been billed.
 
 ---
 
@@ -32,7 +64,7 @@ This is the whole design constraint, so it is recorded here as ground truth. Ver
 | --- | --- | --- | --- |
 | **codex app-server** | `thread/tokenUsage/updated` | `{threadId, turnId, tokenUsage: {total: Breakdown, last: Breakdown, modelContextWindow}}` where `Breakdown = {totalTokens, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens, reasoningOutputTokens}` | no |
 | **ACP v1** | `session/update` → `usage_update` | `{used, size, cost?: {amount, currency}}` | yes |
-| **pi** (via extension) | n/a — `ctx.getContextUsage()` | `{tokens, contextWindow, percent}` + `message_end`'s `event.message.usage.cost` | yes |
+| **pi** (via extension) | n/a — `ctx.getContextUsage()` + `ctx.sessionManager.getEntries()` | `{tokens, contextWindow, percent}` for context; per-entry `usage` (`input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`/`cost`) for billing | yes |
 
 Codex types are generated ground truth: `codex app-server generate-ts --out DIR`.
 ACP's shape is `$defs.UsageUpdate` in `acp-docs/schema/v1/schema.json`.
@@ -107,8 +139,8 @@ Mapping:
 | --- | --- | --- | --- |
 | `contextTokens` | `last.totalTokens` | `used` | `getContextUsage().tokens` |
 | `contextWindow` | `modelContextWindow` | `size` | `getContextUsage().contextWindow` |
-| `totals` | `total` | — | session totals |
-| `cost` | — | `cost` | `message_end` usage cost |
+| `totals` | `total` | — | session entries summed (`input` = pi's `input + cacheRead + cacheWrite`, since makit nests cached input inside input) |
+| `cost` | — | `cost` | session entries' `usage.cost.total` summed |
 
 **Unmeasured is not zero.** A missing field renders as absent, never as `0` — the same rule
 `BudgetBucket` already enforces for GitHub buckets (`models.dart`), for the same reason: a
@@ -125,19 +157,60 @@ The pi extension posts to a new `POST /usage` route on the existing loopback bri
 (`bridge.ts`, today `/uicall`-only), authenticated with the same bearer token and
 addressed by `sessionId`; the manager turns it into the same `session.usage` event.
 
-### The extension needs a manual install
+### Billing totals are derived, not accumulated
+
+The extension sums `ctx.sessionManager.getEntries()` on every turn, reproducing
+`AgentSession.getSessionStats()` exactly: every assistant message, every billed
+tool result, and every compaction/branch summary — including history since
+compacted away, because it was still billed. An in-process accumulator was tried
+first and is wrong in two ways a long-lived session hits immediately: a **resumed**
+session's earlier turns belong to a process this one never saw (a $22 session
+reported as new), and a compaction's own tokens never arrive as an assistant
+message at all.
+
+It hooks **`turn_end`, not `message_end`**. At `message_end` the message is not in
+the session yet — handlers are allowed to rewrite it first — so the derived totals
+lag a turn: verified against real pi, the first turn posted no totals at all and a
+resumed process reported turn 1 while omitting turn 2. `turn_end` fires after the
+entries land, and once per turn rather than per message.
+
+pi's `input` **excludes** cache reads/writes, while makit (following codex) treats
+cached input as a subset of input — the panel's cache bar is `cachedInput / input`.
+So the extension reports `input + cacheRead + cacheWrite` as `input`; passing pi's
+figure through drew a 33M cache row nested under a 360-token parent. `total` is
+`input + output + cacheRead + cacheWrite`, the same arithmetic `/sessions` prints,
+so the two agree to the token.
+
+### Installing the extension
 
 makit cannot inject it. `SpawnOpts.extensions` is never forwarded by `AcpAdapter`,
 because `pi-acp` spawns `pi --mode rpc` itself and gives makit no `-e` channel —
 the same constraint SPEC-36 hit. Environment variables *do* propagate
-(`spec.env` → pi-acp → pi), which is why the bridge coordinates arrive. So, once:
+(`spec.env` → pi-acp → pi), which is why the bridge coordinates arrive.
 
-```sh
-ln -s "$PWD/.pi/extensions/pi-usage" ~/.pi/agent/extensions/pi-usage
+So the extension has to be installed into pi, and it now lives in **its own repo**
+(github.com/leduckhc/makit-pi-usage) rather than in `.pi/extensions/`. makit declares
+it in `.pi/settings.json`:
+
+```json
+{ "packages": ["git:github.com/leduckhc/makit-pi-usage@v0.1.0"] }
 ```
 
-Until that link exists, pi sessions show no usage. The extension is inert outside
-makit (no `MAKIT_BRIDGE_*` → it registers nothing), so the link is safe to leave.
+pi installs project packages automatically once the project is trusted, so a
+contributor needs no manual step at all. Standalone installs are
+`pi install git:github.com/leduckhc/makit-pi-usage@v0.1.0`, kept current with
+`pi update --extensions`.
+
+This replaces the `ln -s "$PWD/.pi/extensions/pi-usage" ~/.pi/agent/extensions/…`
+that earlier revisions of this spec documented. **That approach was actively
+harmful:** the link pointed into a git worktree, and when that worktree was pruned
+after merging, the link dangled and pi silently loaded nothing — pi sessions showed
+no usage at all, with no error anywhere, until someone noticed the missing ring.
+A pi package cannot fail that way.
+
+Until it is installed, pi sessions show no usage. The extension is inert outside
+makit (no `MAKIT_BRIDGE_*` → it registers nothing), so installing it globally is
+safe.
 
 ## App surface
 
@@ -162,6 +235,20 @@ the least of any in-row control, and moves the numbers somewhere they have room.
 The pill row's overflow is **pre-existing and untouched** — no in-row control fits a 3-pill
 session, including none at all. Flagged, not fixed.
 
+> **Amended by [SPEC-40](./2026-08-06-SPEC-40-composer-footer-space.md) (2026-08-06).** The
+> crowding diagnosis above is wrong, though the symptom was real. No shipping adapter emits a
+> 3-pill session: pi advertises `model` + `thought_level` and codex adds an optional
+> `model_config`, all of which *fold into* the single model pill, and a modes-only ACP agent gets
+> one synthesised pill. The footer has **one** pill, and it was starved rather than crowded — this
+> spec's own ring was the cause. Passing it as a `footerActions` entry gave it an equal-share
+> `Flexible`, so a 36 pt control reserved half the row and `FlexFit.loose` did not redistribute the
+> rest: pi's model label got 65.5 pt of the 187.5 pt it wanted (`anthropic/Cl…`) and codex's 29.8 pt.
+> SPEC-40 gives the ring its own intrinsic `footerTrailing` slot. The **ring decision itself
+> stands** — a 36 pt control is still the cheapest thing in the row; only the reason the row was
+> tight was misdiagnosed.
+>
+> Note also that this section says 32 pt where the code says 36 (`kUsageTargetSize`).
+
 ### The panel
 
 Context reading (big ring + percentage + used-of-window + headroom) → cumulative session
@@ -174,10 +261,21 @@ Ring semantics: arc from twelve o'clock, neutral ink → `kStatusWarning` at ≥
 `colorScheme.error` at ≥90% (the sanctioned status hues — **not** `colorScheme.tertiary`,
 which DESIGN.md §Colors forbids).
 
+**Panel sizing is clamped to the window, not fixed (added 2026-08-06).** `kUsagePanelWidth` is a
+*preference*: `MenuAnchor` clamps a menu's position but never its size, so the 300 pt popover opened
+from a ring at the right edge of a 280 pt pane hung 36 px off-screen (76 px at 240 pt), and a 360 pt
+tall window put 75 px of it below the bottom. The panel now takes
+`min(kUsagePanelWidth, window − 2×8)` and caps its height at the window (floor 140 pt, mirroring the
+budget popover's `_kMinPopoverHeight`), scrolling inside the cap. The mobile sheet is scrollable for
+the same reason: its height is capped by the window while the panel's height depends on how much the
+agent reported *and* how much the rows wrap — at 320 pt with a long session (33.7M billed) the
+content ran 57 px past the sheet and threw. Clipping there would have hidden the cost row, which is
+what people open the panel for.
+
 **There is no unmeasured rendering.** A ring means "this share of a whole", so without a
 known window there is no whole and the control is absent entirely — `ContextUsageRing.fraction`
 is non-nullable to make that unrepresentable. This covers more states than it first appears:
-before the first turn, any pi session without the `pi-usage` extension, an ACP agent reporting
+before the first turn, any pi session without the `makit-pi-usage` extension, an ACP agent reporting
 `used` with no `size`, and pi immediately after a compaction (it keeps reporting the window but
 nulls the count until the next reply, where a 0% ring would misread as "context emptied").
 An earlier draft drew a dotted track for these; the goldens showed it was not reliably
@@ -195,7 +293,7 @@ panel answers "by how much?".
 | `acp-map.test.ts` | `usage_update` → `session.usage` with `used`/`size`/`cost`; absent `cost` omits the field |
 | `contract.test.ts` + `codec_contract_test.dart` | a `session.usage` entry in the byte-identical `events.json` golden fixture round-trips in **both** languages |
 | `bridge.test.ts` | `POST /usage` requires the bearer; a body with no readings is a 400; non-numeric fields are dropped, not coerced |
-| `.pi/extensions/pi-usage/usage.test.ts` | env gate needs all three vars; null readings omit rather than zero; a real `0.00` cost is kept; unchanged repeats are suppressed |
+| `makit-pi-usage`'s `usage.test.ts` (own repo, own CI) | env gate needs all three vars; null readings omit rather than zero; a real `0.00` cost is kept; unchanged repeats are suppressed; `sumUsage` counts exactly the entries `/sessions` counts (assistant, billed tool results, compaction/branch summaries) and drops non-numeric junk; a **resumed** session's inherited spend is in its first report; cached input never exceeds input |
 | `session_usage_test.dart` | `fromJson` omits missing fields rather than zeroing them; `fraction` is null on an unmeasured half and clamps past 1.0; reducer is latest-wins and per-session |
 | `context_usage_test.dart` | `percentLabel`/`headroomLabel`/`cacheShare` return null rather than inventing a denominator; no ring until measured; the numbers are absent from the footer and present after a tap; the panel separates session total from context, and omits cost when unpriced |
 | `context_usage_golden_test.dart` | the ring ladder at the real 18 px (what a 3% arc actually looks like) plus the three panel shapes |
@@ -215,6 +313,7 @@ separately:
 | real `codex app-server` → `CodexAppServerAdapter` | one `session.usage`: `19440` of `258400`, totals + cache present, no cost |
 | `StubAdapter` → session → **WSS client** | `20200` of `258400`, cost `$0.021`, arriving as `session.event`/`session.usage` |
 | real `pi` (via `pi-acp`) → `pi-usage` → `POST /usage` → session → **WSS client** | `29408` of `1000000`, cost `$0.1838725` |
+| real `pi` → `pi-usage` (`-e`, bridge env, HTTP sink), **two separate processes on one session file** | turn 1 posts `total` `18377` / `$0.0093`; the RESUMED process posts `total` `36766` / `$0.018597` / `cachedInput` `36754` inside `input` `36758` — byte-identical to summing the session JSONL the way `/sessions` does |
 
 **Not verified:** the iOS simulator loop (`tool/e2e.sh --mode=stub`). It fails on
 this branch *before* any of this code runs — `launchMakit` times out waiting for a

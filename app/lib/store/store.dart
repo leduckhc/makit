@@ -140,7 +140,7 @@ class StoreState {
 
   /// Per-session context-window + cost snapshot from `session.usage` (SPEC-37).
   /// Absent until the agent reports its first reading; pi only reports at all
-  /// when `.pi/extensions/pi-usage` is installed.
+  /// when the `makit-pi-usage` extension is installed.
   final Map<String, SessionUsage> usage;
 
   /// Latest GitHub API budget snapshot (SPEC-32), or null until the first
