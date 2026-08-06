@@ -60,6 +60,7 @@ const EVENT_KINDS: ReadonlySet<EventKind> = new Set<EventKind>([
   "session.usage",
   "github.budget",
   "metrics.sample",
+  "ports.snapshot",
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,7 +80,11 @@ function isEventKind(value: unknown): value is EventKind {
  * (SPEC-37 decision 5 / SPEC-32): the session log is append-only and replayed in
  * full on resume. This is the runtime half of the {@link SessionEventKind} type.
  */
-const HOST_ONLY_KINDS = new Set<string>(["github.budget", "metrics.sample"]);
+const HOST_ONLY_KINDS = new Set<string>([
+  "github.budget",
+  "metrics.sample",
+  "ports.snapshot",
+]);
 
 function isSessionEventKind(value: unknown): value is SessionEventKind {
   return isEventKind(value) && !HOST_ONLY_KINDS.has(value);
