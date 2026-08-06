@@ -273,6 +273,15 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
    * flight when that happened describes the *pre*-mutation state, so it must not
    * be written to the cache on arrival — otherwise the invalidation is undone and
    * the UI keeps reporting the state the mutation just changed (SPEC-38 §7).
+   *
+   * Deliberately **not** pruned, and deliberately not TTL'd like {@link cache}.
+   * An entry is one `string`/`number` pair per branch the user has actually
+   * mutated, plus one per repo for `openPrs` — so the bound is "branches you
+   * pressed a button on", which is small and grows only on user action. Pruning
+   * would mean deciding when a generation is safe to forget, and the honest answer
+   * ("once nothing is in flight for it") needs a refcount, because the `openPrs`
+   * key is shared by every `limit`. That is more machinery, and more ways to be
+   * wrong, than the kilobytes it would reclaim from a long-lived process.
    */
   const generation = new Map<string, number>();
   const generationOf = (key: string) => generation.get(key) ?? 0;

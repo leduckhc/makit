@@ -43,6 +43,7 @@ import {
   worktreeBaseDir,
   run,
   type OpenPr,
+  type WorktreeEntry,
 } from "./git.js";
 import type { PrMutation } from "./github/queries.js";
 import type { EventStore } from "./storage/event_store.js";
@@ -634,6 +635,27 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Resolve a project's repo path and the worktree entry at [worktreePath], or
+   * `undefined` when that path is not one of the project's worktrees.
+   *
+   * Deliberately does **not** decide what a missing entry means: the two callers
+   * disagree. A PR mutation refuses outright, while the removal path treats it as
+   * "no branch to delete" and lets {@link removeWorktree} produce the error — so
+   * returning the entry and letting each caller rule on it keeps both readable.
+   */
+  private async _locateWorktree(
+    projectId: string,
+    worktreePath: string,
+  ): Promise<{ repoPath: string; wt: WorktreeEntry | undefined }> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    const target = resolve(worktreePath);
+    const trees = await listWorktrees(repoPath);
+    return { repoPath, wt: trees.find((t) => resolve(t.path) === target) };
+  }
+
+  /**
    * The half {@link wrapUpWorktree} and {@link discardWorktree} share: read the
    * branch (only possible while the worktree still exists), remove the worktree,
    * then delete the branch.
@@ -655,12 +677,8 @@ export class SessionManager extends EventEmitter {
     worktreePath: string,
     expectBranch?: string,
   ): Promise<{ repoPath: string; branchDeleted?: string; branchReason?: string }> {
-    const project = this.projects.get(projectId);
-    if (!project) throw new Error(`unknown project: ${projectId}`);
-    const repoPath = project.dto.path;
-    const target = resolve(worktreePath);
-    const trees = await listWorktrees(repoPath);
-    const branch = trees.find((t) => resolve(t.path) === target)?.branch ?? null;
+    const { repoPath, wt } = await this._locateWorktree(projectId, worktreePath);
+    const branch = wt?.branch ?? null;
     if (expectBranch !== undefined && branch !== expectBranch) {
       throw new Error(
         `worktree is on ${branch ?? "a detached HEAD"}, not ${expectBranch} — ` +
@@ -729,12 +747,7 @@ export class SessionManager extends EventEmitter {
     worktreePath: string,
     verb: PrMutation,
   ): Promise<void> {
-    const project = this.projects.get(projectId);
-    if (!project) throw new Error(`unknown project: ${projectId}`);
-    const repoPath = project.dto.path;
-    const target = resolve(worktreePath);
-    const trees = await listWorktrees(repoPath);
-    const wt = trees.find((t) => resolve(t.path) === target);
+    const { repoPath, wt } = await this._locateWorktree(projectId, worktreePath);
     if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
     const branch = wt.branch;
     if (!branch) throw new Error(`worktree has no branch: ${worktreePath}`);
@@ -796,9 +809,14 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Remove a worktree. Validates the path belongs to the project and is not the
-   * primary checkout *before* touching anything, then kills any sessions bound
-   * to it and runs `git worktree remove --force` (so a dirty tree still
-   * deletes). Throws if validation or the git removal fails.
+   * primary checkout *before* touching anything, then runs
+   * `git worktree remove --force` (so a dirty tree still deletes) and only then
+   * reconciles the sessions bound to it. Throws if validation or the git removal
+   * fails.
+   *
+   * That order matters and the inline comment below explains why; this sentence
+   * used to state the reverse, which SPEC-38's confirm dialog then had to be
+   * checked against by hand.
    */
   async removeWorktree(projectId: string, worktreePath: string): Promise<void> {
     const project = this.projects.get(projectId);

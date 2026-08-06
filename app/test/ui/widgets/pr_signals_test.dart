@@ -520,6 +520,35 @@ void main() {
       expect(needsConfirm(PrDirectOp.markReady), isFalse);
       expect(needsConfirm(PrDirectOp.updateBranch), isFalse);
     });
+
+    // The two tests above name each op individually, which is what makes them
+    // readable — and what lets a *new* op slip past both. Both classifiers are
+    // exhaustive switches, so a new op cannot go unclassified; it will simply
+    // inherit whichever arm the author extended, silently.
+    //
+    // The length assertion is the tripwire. It is the only thing here that fails
+    // when an op is added, and it fails until someone comes to this group and
+    // states, for both classifiers, which side the new op belongs on.
+    test('adding an op forces a decision here', () {
+      expect(
+        PrDirectOp.values,
+        hasLength(5),
+        reason:
+            'a new PrDirectOp needs a needsConfirm and a deletesBranch verdict '
+            'below, then this count updated',
+      );
+      expect(PrDirectOp.values.where(needsConfirm).toSet(), {
+        PrDirectOp.wrapUp,
+        PrDirectOp.discardWorktree,
+        PrDirectOp.squashMerge,
+      });
+      // `runPrRemedy` refuses these two when it cannot name the branch, so a new
+      // branch-deleting op missing here would dispatch unguarded.
+      expect(PrDirectOp.values.where(deletesBranch).toSet(), {
+        PrDirectOp.wrapUp,
+        PrDirectOp.discardWorktree,
+      });
+    });
   });
 
   group('the primary checkout', () {

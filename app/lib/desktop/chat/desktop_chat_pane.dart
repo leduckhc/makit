@@ -21,6 +21,7 @@ import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/navigator/message_navigator_overlay.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import '../../ui/session/transcript_list.dart';
+import '../../ui/widgets/pr_signals.dart';
 import 'composer_focus.dart';
 import 'new_worktree_dialog.dart';
 import 'panes/pane_header.dart';
@@ -30,7 +31,6 @@ import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'selected_session.dart';
 import 'worktree_starter.dart';
-import '../../ui/widgets/pr_signals.dart';
 
 // Re-export the pane-header + harness widgets so existing importers of
 // `desktop_chat_pane.dart` (e.g. pane_tree_view, widget tests) keep resolving
@@ -219,6 +219,8 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     });
 
     final items = ref.watch(chatItemsProvider(sessionId));
+    // The worktree behind the next-step bar, from the poller-refreshed snapshot.
+    final at = ref.watch(reposProvider).locateWorktree(session.worktreePath);
 
     // Keep the transcript pinned to the newest message as items stream in,
     // but only when the user is already near the bottom so scrolling up to read
@@ -343,22 +345,19 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                   // the one action that moves it forward (direction B1). Reads
                   // the worktree out of the poller-refreshed repos snapshot, so
                   // it updates in place as CI/state changes.
-                  Builder(
-                    builder: (context) {
-                      final at = ref
-                          .watch(reposProvider)
-                          .locateWorktree(session.worktreePath);
-                      return PrComposerBar(
-                        status: prStatusFor(at, fallbackBranch: session.branch),
-                        pr: at?.worktree.pr,
-                        projectId: at?.repo.id,
-                        worktreePath: session.worktreePath,
-                        branch: at?.worktree.branch ?? session.branch,
-                        uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
-                        onInsertPrompt: (prompt) =>
-                            _insertPrompt(sessionId, prompt),
-                      );
-                    },
+                  //
+                  // No `Builder` around this: `ref.watch` registers against the
+                  // enclosing ConsumerState wherever it is called, so one bought
+                  // no rebuild isolation — only a local name, which `at` now is.
+                  PrComposerBar(
+                    status: prStatusFor(at, fallbackBranch: session.branch),
+                    pr: at?.worktree.pr,
+                    projectId: at?.repo.id,
+                    worktreePath: session.worktreePath,
+                    branch: at?.worktree.branch ?? session.branch,
+                    uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
+                    onInsertPrompt: (prompt) =>
+                        _insertPrompt(sessionId, prompt),
                   ),
                   // ABOVE the composer, not inside it: as a Composer child every
                   // queued message inflated the composer's own box and ate the

@@ -49,6 +49,7 @@ Widget _host(
   int uncommittedFiles = 0,
   int commitsAhead = 0,
   int commitsBehind = 0,
+  bool isPrimary = false,
   String? projectId = 'p1',
   String? worktreePath = '/wt/feat-x',
   required void Function(String) onInsert,
@@ -75,6 +76,7 @@ Widget _host(
           uncommittedFiles: uncommittedFiles,
           commitsAhead: commitsAhead,
           commitsBehind: commitsBehind,
+          isPrimary: isPrimary,
         ),
         pr: pr,
         projectId: projectId,
@@ -292,6 +294,87 @@ void main() {
         ),
       );
       expect(button.onPressed, isNull, reason: 'listed but not runnable');
+    });
+
+    testWidgets('the primary checkout gets its own reason, not the branch one', (
+      tester,
+    ) async {
+      // `canCreatePr` is false for two different reasons, and D3 says the menu
+      // must explain the block. "No commits to open a PR with" is false here:
+      // no commit would ever make `main` a PR branch.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          branch: 'main',
+          isPrimary: true,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'the primary checkout is not a branch you open a pull '
+          'request from',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('no commits to open a PR with'), findsNothing);
+    });
+
+    testWidgets('a PR-less branch says so, rather than reporting a green build', (
+      tester,
+    ) async {
+      // "the build is not failing" is true of a branch with no PR, and useless:
+      // there is no build. The reason has to name the thing that is missing.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          branch: 'feat/x',
+          uncommittedFiles: 3,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('there is no pull request yet'), findsWidgets);
+      expect(find.textContaining('the build is not failing'), findsNothing);
+    });
+
+    testWidgets('with a PR it reports the build instead', (tester) async {
+      // The control: the PR-less wording must not leak onto a real PR.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('the build is not failing'), findsOneWidget);
+      expect(find.textContaining('no pull request yet'), findsNothing);
+    });
+
+    testWidgets('a secondary branch keeps the commits reason', (tester) async {
+      // The control: without it the test above would also pass on a menu that
+      // gave the primary reason to every branch. Uncommitted work so the CTA is
+      // "Commit & push" and Create PR is listed *disabled* — the only state in
+      // which a reason is rendered at all.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          branch: 'feat/x',
+          uncommittedFiles: 3,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('no commits to open a PR with'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('drops "Create PR" once a PR exists', (tester) async {

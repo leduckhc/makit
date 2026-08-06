@@ -423,6 +423,11 @@ class _GroupLabel extends StatelessWidget {
 /// keeps the ones that do not currently apply **visible but disabled with the
 /// reason**, following the same "explain the block, don't hide it" convention
 /// `worktree_actions.dart` already uses for a disabled Rename.
+///
+/// One exception, and it is not a block: "Create PR" is *removed* once a PR
+/// exists. The convention covers actions that could apply later — listing one
+/// that is permanently meaningless would explain nothing and invite the reader to
+/// wonder what would re-enable it.
 List<Widget> buildPrActionMenu(
   BuildContext context,
   WidgetRef ref, {
@@ -501,8 +506,16 @@ String _whyNot(PrPromptAction action, PrStatus status, {required bool ended}) {
       status.isPrimary
           ? 'the primary checkout is not a branch you open a pull request from'
           : 'this branch has no commits to open a PR with',
-    PrPromptAction.fixPr => 'the build is not failing',
-    PrPromptAction.resolveComments => 'there are no unresolved threads',
+    // On a PR-less branch these are all true but beside the point: there is no
+    // build and no thread because there is no pull request. Say that instead.
+    PrPromptAction.fixPr =>
+      status.hasPr
+          ? 'the build is not failing'
+          : 'there is no pull request yet',
+    PrPromptAction.resolveComments =>
+      status.hasPr
+          ? 'there are no unresolved threads'
+          : 'there is no pull request yet',
     PrPromptAction.commitAndPush => 'there is nothing uncommitted',
     PrPromptAction.push => 'there is nothing to push',
     PrPromptAction.pull => 'the branch is up to date with the remote',

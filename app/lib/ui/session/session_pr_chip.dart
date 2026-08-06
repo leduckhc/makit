@@ -8,6 +8,11 @@ import '../widgets/pr_signals.dart';
 import '../widgets/pr_tone.dart';
 import '../widgets/wrap_up.dart';
 
+/// Widest the chip's label may get before it elides. Roomier than the home row's
+/// because the session subtitle owns its whole line — there is no age column to
+/// push off the end.
+const double _kChipLabelMaxWidth = 220;
+
 /// The session screen's PR indicator (mobile): a tone dot plus the loudest fact
 /// on the subtitle line under the session title — `#42 · 2 checks failing` —
 /// opening the shared detail sheet.
@@ -102,7 +107,9 @@ class SessionPrChip extends ConsumerWidget {
                 ),
                 const SizedBox(width: kSpace6),
                 ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 220),
+                  constraints: const BoxConstraints(
+                    maxWidth: _kChipLabelMaxWidth,
+                  ),
                   child: Text(
                     status.hasPr
                         ? '${status.identity} · ${status.loud.label}'
