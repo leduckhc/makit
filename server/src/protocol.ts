@@ -41,6 +41,12 @@ export type EventKind =
    * than the inbound {@link WireAttachment}, which carries only an id + name. As with
    * `agent.media`, only the descriptor is carried — the app fetches bytes from
    * `GET /media/<mediaId>` — because the event log is replayed in full on resume.
+   *
+   * `payload.steered === true` (SPEC-35) marks a message that was injected into
+   * the turn that was ALREADY running instead of starting a new one. Present only
+   * on the transports that can do it (codex `turn/steer`); the app captions the
+   * bubble with it, which is the only way the user learns the difference between
+   * steering and queueing from their own transcript.
    */
   | "user.message"
   | "agent.message"
@@ -306,6 +312,19 @@ export type SessionStatus =
 
 export type ApprovalPolicy = "yolo" | "ask-on-risky" | "ask-always";
 
+/**
+ * One message waiting to be delivered when the agent next goes idle (SPEC-35).
+ * Attachments are reported as a count, not as descriptors: the chip only needs
+ * to say "and an image", and the bytes are already safe in the media store.
+ */
+export interface QueuedMessageDTO {
+  /** Stable for the lifetime of the queue entry; the handle `queue.cancel` takes. */
+  id: string;
+  text: string;
+  queuedAt: number;
+  attachmentCount?: number;
+}
+
 export interface ProjectDTO {
   id: string;
   name: string;
@@ -414,6 +433,15 @@ export interface SessionDTO {
   lastActivityAt: number;
   lastPreview: string;
   /**
+   * Messages the user submitted while the agent was busy that this back end
+   * could not steer into the running turn (SPEC-35), oldest first. They are
+   * delivered one per idle transition and are NOT in the event log until then,
+   * so a cancelled one leaves no transcript trace. Carried on the DTO rather
+   * than as an event kind precisely because it is live state: it must not
+   * survive a restart as a ghost queue in a replayed log.
+   */
+  queued: QueuedMessageDTO[];
+  /**
    * Draft state: a spawned session whose worktree + agent are deferred until
    * the first substantive user message (which names the branch/worktree).
    */
@@ -476,6 +504,14 @@ export type CmdKind =
   | "session.unarchive"
   | "session.listArchived"
   | "session.setAgent"
+  /** Drop ONE pending mid-turn message by `queuedId` (SPEC-35). */
+  | "queue.cancel"
+  /** Edit a pending mid-turn message; empty text cancels it (SPEC-38). */
+  | "queue.update"
+  /** Reorder the pending messages; `ids` is a hint, not an assertion (SPEC-38). */
+  | "queue.reorder"
+  /** Interrupt the turn so ONE pending message is delivered next (SPEC-39). */
+  | "queue.promote"
   // repos / projects / worktrees
   | "worktree.create"
   | "worktree.createFromPr"

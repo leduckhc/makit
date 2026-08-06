@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentAdapter, AdapterEvent } from "./adapters/adapter.js";
 import type {
   ApprovalPolicy,
+  QueuedMessageDTO,
   SessionDTO,
   SessionEvent,
   SessionStatus,
@@ -30,6 +31,30 @@ const NO_FANOUT_KINDS: ReadonlySet<string> = new Set([
   "agent.thinking.delta",
   "tool.call.delta",
   "session.usage",
+]);
+
+/**
+ * A message the user submitted while the agent was busy, held until the agent
+ * goes idle (SPEC-35). Kept in memory only: unsent intent must not go stale in
+ * a file across a restart.
+ */
+interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments?: MediaAttachment[];
+  queuedAt: number;
+}
+
+/**
+ * Statuses in which the agent is working (or blocked on the user) and therefore
+ * cannot take a fresh turn (SPEC-35). `error`/`exited` are deliberately absent:
+ * a dead session must not silently swallow messages into a queue that will
+ * never flush.
+ */
+const BUSY_STATUSES: ReadonlySet<SessionStatus> = new Set<SessionStatus>([
+  "running",
+  "awaiting-input",
+  "awaiting-approval",
 ]);
 
 /**
@@ -100,6 +125,21 @@ export interface SessionInit {
   hydrateFrom?: () => SessionEvent[];
 }
 
+/**
+ * Hard ceiling on pending mid-turn messages per session (SPEC-35).
+ *
+ * The queue is in-memory and appendable by any authenticated client for as long
+ * as it can keep the agent busy, so it needs a bound. High enough that no real
+ * user meets it.
+ */
+const MAX_QUEUED_MESSAGES = 50;
+
+/** First 80 chars of a queued message, for an error the user can act on. */
+function preview(text: string): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  return one.length > 80 ? `${one.slice(0, 79)}…` : one;
+}
+
 export class Session extends EventEmitter {
   readonly id: string;
   readonly projectId: string;
@@ -141,6 +181,14 @@ export class Session extends EventEmitter {
   private _lifecycle: SessionLifecycle = { phase: "started" };
 
   private readonly _events: SessionEvent[] = [];
+  /** Mid-turn messages awaiting delivery (SPEC-35), oldest first. */
+  private readonly queued: QueuedMessage[] = [];
+  /**
+   * True while a queued message is being handed to the adapter. The tracker
+   * settles to `idle` on more than one path, so without this a duplicate `idle`
+   * would fire two turns at once.
+   */
+  private flushing = false;
   adapter: AgentAdapter;
   private readonly store?: EventStore;
 
@@ -382,7 +430,14 @@ export class Session extends EventEmitter {
       // Don't pre-assign this.status here — record() owns the mutation + the
       // before/after comparison that decides whether to fan out metaChanged.
       this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
+      // The agent is ready for a new turn: hand it the next queued message
+      // (SPEC-35). One per transition — the next flush waits for the next idle.
+      if (status === "idle" && this.queued.length > 0) void this.flushNext();
     });
+
+    // A dead agent will never flush the queue; drop it rather than leave chips
+    // pinned in the composer forever (SPEC-35).
+    adapter.on("exit", () => this.clearQueue());
 
     adapter.on("title", (title) => this.setTitle(title));
   }
@@ -474,13 +529,194 @@ export class Session extends EventEmitter {
       // live agent after a server restart (the app auto-attaches cold ones).
       resumable: this.agentSessionId != null,
       archived: this.archived,
+      queued: this.queued.map(
+        (q): QueuedMessageDTO => ({
+          id: q.id,
+          text: q.text,
+          queuedAt: q.queuedAt,
+          ...(q.attachments?.length ? { attachmentCount: q.attachments.length } : {}),
+        }),
+      ),
     };
   }
 
   async sendUserMessage(text: string, attachments?: MediaAttachment[]) {
-    await this.adapter.send({ text, ...(attachments?.length ? { attachments } : {}) });
+    const input = { text, ...(attachments?.length ? { attachments } : {}) };
+
+    // SPEC-35. Three cases, in this order:
+    //  1. a queue already exists OR flushing is active -> append (never overtake
+    //     an earlier message, including in the window between `idle` and the
+    //     flush's next turn starting)
+    //  2. the agent is busy       -> try to steer into the running turn
+    //  3. otherwise               -> a normal fresh turn
+    if (this.queued.length > 0 || this.flushing) {
+      this.enqueue(input);
+      return;
+    }
+    if (BUSY_STATUSES.has(this.status)) {
+      const steered = await this.adapter.steer(input);
+      if (steered) return;
+      // Steer failed: re-check the queue state before deciding. If another
+      // message arrived during the async steer and started flushing, enqueue
+      // this one behind it; otherwise enqueue as the first queued message.
+      if (this.queued.length > 0 || this.flushing || BUSY_STATUSES.has(this.status)) {
+        this.enqueue(input);
+        return;
+      }
+      // The turn ended between the busy check and now; deliver immediately.
+      await this.adapter.send(input);
+      return;
+    }
+    await this.adapter.send(input);
     // Adapter is responsible for echoing user.message into its event stream
     // so that turn boundaries are unambiguous.
+  }
+
+  /** Pending mid-turn messages, oldest first (SPEC-35). */
+  get queuedMessages(): readonly QueuedMessage[] {
+    return this.queued;
+  }
+
+  private enqueue(input: { text: string; attachments?: MediaAttachment[] }): void {
+    // Bounded: the queue is in-memory and a client can append to it for as long
+    // as it can keep a session busy. Refusing the newest message (rather than
+    // dropping the oldest) keeps the promise the queue makes about the messages
+    // it already accepted, and tells the user which one did not make it.
+    if (this.queued.length >= MAX_QUEUED_MESSAGES) {
+      this.recordError(
+        `not queued — ${MAX_QUEUED_MESSAGES} messages are already waiting: ${preview(input.text)}`,
+      );
+      return;
+    }
+    this.queued.push({ id: randomUUID(), queuedAt: Date.now(), ...input });
+    // Queue state rides the sessions snapshot (see SessionDTO.queued).
+    this.emit("metaChanged");
+  }
+
+  /** Drop one pending message by id. Returns whether it was there. */
+  cancelQueued(id: string): boolean {
+    const i = this.queued.findIndex((q) => q.id === id);
+    if (i < 0) return false;
+    this.queued.splice(i, 1);
+    this.emit("metaChanged");
+    return true;
+  }
+
+  /**
+   * Replace a pending message's text (SPEC-38). Empty/whitespace text is a
+   * cancel — the user cleared the field, and a blank pending message is not a
+   * thing. Returns false for an id the queue no longer holds (it was delivered
+   * between the tap and this call), which callers treat as a no-op, not an error.
+   */
+  updateQueued(id: string, text: string): boolean {
+    const entry = this.queued.find((q) => q.id === id);
+    if (!entry) return false;
+    if (!text.trim()) return this.cancelQueued(id);
+    entry.text = text;
+    this.emit("metaChanged");
+    return true;
+  }
+
+  /**
+   * Reorder the queue (SPEC-38). `ids` is a **hint**, not an assertion: the
+   * queue can flush between the user's tap and this call, so named ids take the
+   * given order first, entries the client did not mention keep their relative
+   * order after them, and unknown ids are ignored. A reorder can therefore never
+   * error or lose a message. Returns false when nothing known was named.
+   */
+  reorderQueue(ids: string[]): boolean {
+    // Deduplicate the incoming ids array, keeping only the first occurrence of
+    // each ID to prevent duplicate QueuedMessage entries.
+    const seen = new Set<string>();
+    const uniqueIds = ids.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+    const named = uniqueIds
+      .map((id) => this.queued.find((q) => q.id === id))
+      .filter((q): q is QueuedMessage => q !== undefined);
+    if (named.length === 0) return false;
+    const rest = this.queued.filter((q) => !named.includes(q));
+    this.queued.length = 0;
+    this.queued.push(...named, ...rest);
+    this.emit("metaChanged");
+    return true;
+  }
+
+  /**
+   * Send one pending message NOW: interrupt the running turn, then let the
+   * normal flush deliver that message first (SPEC-39 — the tray's ⤒).
+   *
+   * Deliberately *not* built on `cancel`'s path: the `cancel` command clears the
+   * whole queue ("stop means stop"), which is the opposite of what promote
+   * means. Promote reuses the two primitives that already exist — move to the
+   * head, then abort — so the message still goes out through `flushNext` on the
+   * adapter's own `idle`, and the rest of the queue survives behind it.
+   *
+   * Returns false, WITHOUT interrupting, when the id is not queued: that is the
+   * race where the message flushed between the tap and this frame, and aborting
+   * the user's turn on the strength of a stale tap would destroy work they never
+   * asked to lose.
+   */
+  async promoteQueued(id: string): Promise<boolean> {
+    if (!this.queued.some((q) => q.id === id)) return false;
+    this.reorderQueue([id]);
+    await this.adapter.cancel();
+    return true;
+  }
+
+  /**
+   * Drop every pending message. Used by `cancel` (stop means stop — follow-ups
+   * must not fire into an aborted context) and on adapter exit. Returns whether
+   * anything was dropped.
+   */
+  clearQueue(): boolean {
+    if (this.queued.length === 0) return false;
+    this.queued.length = 0;
+    this.emit("metaChanged");
+    return true;
+  }
+
+  /**
+   * Deliver the oldest pending message as a fresh turn. Called on every `idle`
+   * transition, so exactly one message goes out per turn and the flush can
+   * never outrun the agent.
+   */
+  private async flushNext(): Promise<void> {
+    if (this.flushing) return;
+    const next = this.queued.shift();
+    if (!next) return;
+    this.flushing = true;
+    this.emit("metaChanged");
+    try {
+      await this.adapter.send({
+        text: next.text,
+        ...(next.attachments?.length ? { attachments: next.attachments } : {}),
+      });
+    } catch (err) {
+      // Terminal failure policy: clear the entire queue on an adapter.send
+      // rejection. A rejection means the adapter cannot accept messages (broken
+      // connection, process crash, etc.), so continuing to flush would fail
+      // repeatedly. The user is notified of both the immediate failure and the
+      // queue clearing.
+      // The message is already off the queue (shifted above) and the rest are
+      // about to be dropped, so the error text is the ONLY record the user has
+      // of what they typed — name them.
+      this.recordError(
+        `queued message could not be sent: ${(err as Error)?.message ?? String(err)} — ${preview(next.text)}`,
+      );
+      if (this.queued.length > 0) {
+        const dropped = this.queued.map((q) => preview(q.text)).join(" · ");
+        this.recordError(
+          `dropped ${this.queued.length} queued message(s) after the send failure: ${dropped}`,
+        );
+        // `clearQueue()` rather than a second copy of its body.
+        this.clearQueue();
+      }
+    } finally {
+      this.flushing = false;
+    }
   }
 
   /**

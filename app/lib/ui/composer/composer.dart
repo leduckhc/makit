@@ -185,6 +185,16 @@ class _ComposerState extends State<Composer> {
   /// Highlighted row in the palette, driven by ↑/↓ and picked by Tab.
   int _slashIndex = 0;
   bool _hasText = false;
+
+  /// Which send-slot child is current, and how many times it has changed.
+  ///
+  /// The switcher below keys its child on the *serial*, not on the state, so a
+  /// state the user returns to (send → cancel → send while a turn starts and
+  /// ends under their typing) never collides with its own outgoing copy — which
+  /// handed the switcher's Stack two children with one key and tripped
+  /// Flutter's `Duplicate keys found` assertion.
+  String? _sendSlotId;
+  int _sendSlotSerial = 0;
   bool _isFocused = false;
 
   @override
@@ -624,7 +634,9 @@ class _ComposerState extends State<Composer> {
       padding: EdgeInsets.zero,
     );
     final Widget child;
+    final String slotId;
     if (_canSend) {
+      slotId = 'send';
       child = IconButton.filled(
         key: const ValueKey('send'),
         icon: const Icon(PhosphorIconsLight.arrowUp),
@@ -634,6 +646,7 @@ class _ComposerState extends State<Composer> {
         onPressed: _send,
       );
     } else if (widget.running && widget.onCancel != null) {
+      slotId = 'cancel';
       child = IconButton.filled(
         key: const ValueKey('cancel'),
         icon: const Icon(PhosphorIconsLight.stop),
@@ -649,6 +662,7 @@ class _ComposerState extends State<Composer> {
     } else {
       // Empty input, not running: show a disabled (grayish) send button so the
       // affordance stays visible. onPressed: null gives the disabled styling.
+      slotId = 'send-disabled';
       child = IconButton.filled(
         key: const ValueKey('send-disabled'),
         icon: const Icon(PhosphorIconsLight.arrowUp),
@@ -658,11 +672,25 @@ class _ComposerState extends State<Composer> {
         onPressed: null,
       );
     }
+    // Bumped here rather than in a setState path because the slot is derived
+    // from three independent inputs (text, `running`, attachments); the guard
+    // keeps it idempotent, so a rebuild that changes nothing changes no key and
+    // starts no crossfade.
+    if (slotId != _sendSlotId) {
+      _sendSlotId = slotId;
+      _sendSlotSerial += 1;
+    }
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 180),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
-      child: child,
+      // The child's own key stays `send` / `cancel` / `send-disabled` so callers
+      // and tests can still find the button by key; only the switcher's own
+      // child identity carries the serial.
+      child: KeyedSubtree(
+        key: ValueKey('send-slot-$_sendSlotSerial'),
+        child: child,
+      ),
     );
   }
 

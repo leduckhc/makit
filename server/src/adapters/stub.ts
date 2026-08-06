@@ -41,6 +41,9 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   /** Session cwd — attachments are materialised here, as on a real adapter. */
   private workspaceRoot = "";
   private askUser?: (body: Record<string, unknown>) => Promise<UIResponse>;
+  /** Timeout handle for SLOW turns, cleared by cancel/kill to prevent late events. */
+  private slowTimeout?: ReturnType<typeof setTimeout>;
+
   /** Turns taken so far — drives the deterministic usage ramp (SPEC-37). */
   private turnCount = 0;
 
@@ -109,6 +112,26 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
       return;
     }
 
+    // "SLOW [ms]" → a turn that OUTLIVES a keystroke: running now, reply after
+    // `ms` (default 12s), then idle. The queue (SPEC-35/36) only exists while the
+    // agent is busy, so without this the keyless loop — and the demo — has no
+    // window in which a message can be queued, edited or reordered at all.
+    if (prompt.includes("SLOW")) {
+      const ms = Number(/SLOW\s+(\d+)/.exec(prompt)?.[1] ?? 12_000);
+      this.emit("status", "running");
+      const handle = setTimeout(() => {
+        this.slowTimeout = undefined;
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "agent.message",
+          payload: { text: `done after ${ms}ms: ${prompt}` },
+        });
+        this.emit("status", "idle");
+      }, ms);
+      this.slowTimeout = handle;
+      return;
+    }
+
     // "STREAM" → emit running status, a few agent.message.delta tokens, then
     // the final authoritative agent.message, then idle. Exercises live token
     // streaming + the working indicator end-to-end.
@@ -156,16 +179,31 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
     }
 
 
+    // A turn, not just a reply: running → echo → idle, like every real adapter.
+    // Without the idle the SESSION never gets the transition that flushes the
+    // next queued message, so a queue of two stalled after the first — visible
+    // only in the live loop (the unit tests drive `idle` by hand).
+    this.emit("status", "running");
     setTimeout(() => {
       this.emitEvent({
         ts: Date.now(),
         kind: "agent.message",
         payload: { text: `echo: ${prompt}` },
       });
+      this.emit("status", "idle");
     }, echoDelayMs);
   }
 
+  /** No mid-turn injection (SPEC-35): the session layer queues instead. */
+  async steer(_input: UserInput): Promise<boolean> {
+    return false;
+  }
+
   async cancel(): Promise<void> {
+    if (this.slowTimeout !== undefined) {
+      clearTimeout(this.slowTimeout);
+      this.slowTimeout = undefined;
+    }
     this.emit("status", "idle");
   }
 
@@ -275,6 +313,10 @@ export class StubAdapter extends EventEmitter implements AgentAdapter {
   }
 
   async kill(): Promise<void> {
+    if (this.slowTimeout !== undefined) {
+      clearTimeout(this.slowTimeout);
+      this.slowTimeout = undefined;
+    }
     this.emit("exit", null);
   }
 

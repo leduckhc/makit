@@ -14,6 +14,7 @@ import '../../ui/composer/composer.dart';
 import '../../ui/composer/composer_draft.dart';
 import '../../ui/composer/composer_selectors.dart';
 import '../../ui/composer/context_usage.dart';
+import '../../ui/composer/pending_queue_slot.dart';
 import '../../ui/session/ask_card.dart';
 import '../../ui/session/chat_metrics.dart';
 import '../../ui/session/chat_transcript.dart';
@@ -359,6 +360,12 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       );
                     },
                   ),
+                  // ABOVE the composer, not inside it: as a Composer child every
+                  // queued message inflated the composer's own box and ate the
+                  // room the field and transcript need. As a sibling it also stays
+                  // visible while an inline ask disables the composer, which is
+                  // why it lived inside in the first place (SPEC-35/38).
+                  PendingQueueSlot(sessionId: sessionId),
                   if (pendingAsk != null && pendingAsk.freeText)
                     // Free-text answer mode: a dedicated empty answer controller
                     // (keyed by requestId) so the per-session normal draft can

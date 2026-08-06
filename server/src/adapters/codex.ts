@@ -23,7 +23,7 @@ import { spawnLineProcess, type ChildLineTransport } from "./child_transport.js"
 import { confirmViaUser, mapElicitation, type ElicitationParams } from "./interaction.js";
 import { isRecord, parseJsonLine } from "./wire.js";
 import { sharedMediaStore, type MediaStore } from "../media/store.js";
-import { prepareTurnOrFail } from "../media/attach.js";
+import { prepareTurn, prepareTurnOrFail, type PreparedTurn } from "../media/attach.js";
 import type { AskUser } from "../uicall.js";
 import type { SessionConfigOption, ConfigOptionValue } from "../protocol.js";
 import { log } from "../log.js";
@@ -39,12 +39,20 @@ export type CodexTransport = ChildLineTransport;
  */
 const CODEX_HANDSHAKE_TIMEOUT = 15_000;
 
+/** Thrown when a JSON-RPC request times out waiting for a response. */
+class RequestTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RequestTimeoutError";
+  }
+}
+
 /** Rejects with a labelled error when [p] doesn't settle within [ms]. */
 function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const deadline = new Promise<T>((_, reject) => {
     timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      () => reject(new RequestTimeoutError(`${label} timed out after ${ms}ms`)),
       ms,
     );
   });
@@ -228,15 +236,17 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
     this.emit("status", "running");
 
     try {
-      const res = (await this.request("turn/start", {
+      // The turn id in this reply is deliberately ignored: codex folds a
+      // `turn/start` sent mid-turn into the active turn and returns a fresh id
+      // that is never announced or completed, which would pin the tracker to
+      // `running` forever. `turn/started` is the only source of truth.
+      await this.request("turn/start", {
         threadId: this.threadId,
         input: [{ type: "text", text: turn.promptText, text_elements: [] }],
         ...(this.activeModel ? { model: this.activeModel } : {}),
         ...(this.activeEffort ? { effort: this.activeEffort } : {}),
         ...(this.activeFast ? { serviceTier: FAST_SERVICE_TIER } : {}),
-      })) as { turn?: { id?: string } };
-      const turnId = res?.turn?.id;
-      if (turnId) this.turns.enterTurn(turnId);
+      });
     } catch (err) {
       this.emitEvent({
         ts: Date.now(),
@@ -245,6 +255,80 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
       });
       this.turns.settleIdle();
     }
+  }
+
+  /**
+   * Steer the running turn (SPEC-35): codex's `turn/steer` folds the message
+   * into the turn identified by `expectedTurnId`, so the user gets one turn in
+   * the transcript instead of an overlapping second one.
+   *
+   * Every failure resolves `false` so the session layer can queue the message
+   * instead — including the races (`no active turn to steer`, a precondition
+   * mismatch) and the turn kinds codex refuses to steer (`activeTurnNotSteerable`
+   * for review/compact). A failure is deliberately NOT a `session.error`: the
+   * message is not lost, it is merely delivered later.
+   *
+   * Note on attachments: the prompt text has to be built (and files
+   * materialised) before the request, so a rejected steer may leave an
+   * attachment already in the worktree. That is harmless — materialisation is
+   * content-addressed and idempotent, so the later flush writes the same file.
+   */
+  async steer(input: UserInput): Promise<boolean> {
+    const turnId = this.turns.activeTurnIds[0];
+    if (!this.threadId || !turnId) return false;
+
+    let turn: PreparedTurn;
+    try {
+      turn = prepareTurn(this.media, input, this.workspaceRoot);
+    } catch (err) {
+      // Same call as `send()`: a prompt naming a file the agent cannot open is
+      // worse than an error. Reported here, and NOT re-queued.
+      this.emitEvent({
+        ts: Date.now(),
+        kind: "session.error",
+        payload: { message: `attachment delivery failed: ${(err as Error).message}` },
+      });
+      return true;
+    }
+
+    try {
+      await this.request("turn/steer", {
+        threadId: this.threadId,
+        input: [{ type: "text", text: turn.promptText, text_elements: [] }],
+        expectedTurnId: turnId,
+      });
+    } catch (err) {
+      // A timeout means the message may have been delivered but the response was
+      // delayed. Avoid returning false (which would re-queue and duplicate the
+      // message); log the ambiguity but don't error or re-queue.
+      if (err instanceof RequestTimeoutError) {
+        log.warn(`turn/steer timed out; treating as potentially delivered (not re-queued): ${(err as Error).message}`);
+        // Echo it anyway. Returning `true` without an echo made the message
+        // vanish from the user's side in BOTH readings of the timeout: if codex
+        // did fold it into the turn, the agent answers text that is nowhere in
+        // the transcript; if it dropped it, the message is gone with no error and
+        // no pending bubble. An echo is right in the first case and, in the
+        // second, at least leaves the user something to see and retype.
+        this.emitEvent({
+          ts: Date.now(),
+          kind: "user.message",
+          payload: { ...turn.echo, steered: true },
+        });
+        return true;
+      }
+      // Protocol rejection (precondition mismatch, no active turn, etc.) — the
+      // steer was definitely not accepted, so return false to queue the message.
+      return false;
+    }
+    // Accepted: echo only now, so a rejected steer leaves no transcript trace.
+    // `steered` marks the bubble in the app — the one place the user can learn
+    // that this message went into the RUNNING turn rather than starting one.
+    this.emitEvent({
+      ts: Date.now(),
+      kind: "user.message",
+      payload: { ...turn.echo, steered: true },
+    });
+    return true;
   }
 
   async cancel(): Promise<void> {
@@ -366,12 +450,27 @@ export class CodexAppServerAdapter extends SubprocessAdapter {
   private request(method: string, params: unknown, timeoutMs = 15_000): Promise<unknown> {
     const id = this.nextId++;
     this.write({ method, id, params });
-    return Promise.race([
-      new Promise((resolve, reject) => this.pending.set(id, { resolve, reject })),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`codex.${method} timeout after ${timeoutMs}ms`)), timeoutMs),
-      ),
-    ]);
+    // NOT `Promise.race` over a bare setTimeout: the loser of that race was never
+    // cleaned up, so a timed-out request left its `pending` entry behind forever
+    // (unbounded growth for a client that can make requests time out — every
+    // `turn/steer` goes through here), and a request that answered normally left
+    // a live 15s timer. One promise, both sides tidy up.
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new RequestTimeoutError(`codex.${method} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      });
+    });
   }
 
   private notify(method: string, params: unknown): void {

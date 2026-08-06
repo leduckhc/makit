@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/material.dart' show ThemeMode;
 
+import '../models.dart' show PendingQueuePlacement;
 import '../../../ui/session/navigator/navigator_style.dart';
 import 'preference.dart';
 
@@ -196,6 +197,20 @@ const PreferenceEntry<MessageNavigatorStyle> messageNavigatorStylePreference =
       decode: _decodeNavigatorStyle,
     );
 
+/// Where a session's pending mid-turn messages render (SPEC-38). Read by BOTH
+/// surfaces, unlike the navigator style: a phone is exactly where a queue
+/// matters, so this is not a desktop-only preference.
+///
+/// Default [PendingQueuePlacement.pinned] — the floor that keeps a pending
+/// message visible however far the transcript is scrolled.
+const PreferenceEntry<PendingQueuePlacement> pendingQueuePlacementPreference =
+    PreferenceEntry(
+      id: 'chat.queue.placement',
+      defaultValue: PendingQueuePlacement.pinned,
+      encode: _encodeQueuePlacement,
+      decode: _decodeQueuePlacement,
+    );
+
 /// Gap between the rail's ticks, in logical pixels: 6 (cosy) / 10 / 14 (roomy).
 /// A plain `int` rather than an enum so a future value needs no migration.
 const PreferenceEntry<int> railTickSpacingPreference = PreferenceEntry(
@@ -243,10 +258,24 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   budgetHistoryExpandedPreference,
   metricsHistoryExpandedPreference,
   messageNavigatorStylePreference,
+  pendingQueuePlacementPreference,
   railTickSpacingPreference,
   railRipplePreference,
   railEncodeLengthPreference,
 ];
+
+Object? _encodeQueuePlacement(PendingQueuePlacement value) => value.name;
+
+/// Returns `null` for an unknown or wrong-typed name so the controller falls
+/// back to the default — a downgrade can never leave a pending message with
+/// nowhere to render.
+PendingQueuePlacement? _decodeQueuePlacement(Object? json) {
+  if (json is! String) return null;
+  for (final placement in PendingQueuePlacement.values) {
+    if (placement.name == json) return placement;
+  }
+  return null;
+}
 
 Object? _encodeNavigatorStyle(MessageNavigatorStyle value) => value.name;
 

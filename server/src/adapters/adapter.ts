@@ -131,6 +131,16 @@ export interface AgentAdapter extends EventEmitter {
   start(opts: SpawnOpts): Promise<void>;
   send(input: UserInput): Promise<void>;
   /**
+   * Inject `input` into the turn that is ALREADY running — "steering"
+   * (SPEC-35). Resolves `true` when the agent accepted it (and echoed the
+   * `user.message` itself, as `send` does), `false` when this back end cannot
+   * steer right now, in which case the caller queues the message until idle.
+   *
+   * Only codex has a real primitive for this (`turn/steer`); ACP has none in v1
+   * or the v2 draft, so its adapter reports `false`. Never called while idle.
+   */
+  steer(input: UserInput): Promise<boolean>;
+  /**
    * Optional: run a built-in control action (e.g. `compact`, `thinking`) that
    * is NOT a user turn and never reaches the LLM as a prompt. Adapters that
    * can't map actions omit this.

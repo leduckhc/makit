@@ -1123,6 +1123,7 @@ class Session {
     this.resumable = false,
     this.archived = false,
     this.orphaned = false,
+    this.queued = const [],
   });
 
   final String id;
@@ -1163,6 +1164,11 @@ class Session {
   /// repo root (no recreate-worktree path).
   final bool orphaned;
 
+  /// Messages submitted while the agent was busy that could not be steered into
+  /// the running turn (SPEC-35), oldest first. They are delivered one per idle
+  /// transition and can be cancelled until then.
+  final List<QueuedMessage> queued;
+
   Session copyWith({
     SessionStatus? status,
     ApprovalPolicy? policy,
@@ -1178,6 +1184,7 @@ class Session {
     bool? resumable,
     bool? archived,
     bool? orphaned,
+    List<QueuedMessage>? queued,
   }) => Session(
     id: id,
     projectId: projectId,
@@ -1195,6 +1202,7 @@ class Session {
     resumable: resumable ?? this.resumable,
     archived: archived ?? this.archived,
     orphaned: orphaned ?? this.orphaned,
+    queued: queued ?? this.queued,
   );
 }
 
@@ -1270,5 +1278,49 @@ class WrapUpReport {
   String? get detail {
     final reasons = [?branchReason, ?baseReason];
     return reasons.isEmpty ? null : reasons.join('\n');
+  }
+}
+
+/// One message waiting for the agent to go idle (SPEC-35). [attachmentCount] is
+/// a count, not descriptors: the chip only needs to say "and an image", and the
+/// bytes are already safe in the server's media store.
+/// Where (and how) a pending mid-turn message is shown (SPEC-38).
+///
+/// Originally three; `inline` (in the transcript trailer) was removed because
+/// it required touching SPEC-21's anchoring and added no value over pinned.
+enum PendingQueuePlacement {
+  /// Hollow ghost bubbles directly above the composer — always visible.
+  pinned,
+
+  /// A compact work list above the composer (mockup variant C): tighter than
+  /// the bubbles, same actions.
+  tray,
+}
+
+class QueuedMessage {
+  const QueuedMessage({
+    required this.id,
+    required this.text,
+    required this.queuedAt,
+    this.attachmentCount,
+  });
+
+  /// Server-assigned; the handle `queue.cancel` takes.
+  final String id;
+  final String text;
+  final int queuedAt;
+  final int? attachmentCount;
+
+  static QueuedMessage? fromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    if (id is! String || id.isEmpty) return null;
+    return QueuedMessage(
+      id: id,
+      text: j['text'] is String ? j['text'] as String : '',
+      queuedAt: j['queuedAt'] is num ? (j['queuedAt'] as num).toInt() : 0,
+      attachmentCount: j['attachmentCount'] is num
+          ? (j['attachmentCount'] as num).toInt()
+          : null,
+    );
   }
 }

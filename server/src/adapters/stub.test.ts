@@ -71,3 +71,51 @@ test("unknown option id or non-configOption action is ignored", async () => {
   await stub.sendAction("compact");
   assert.equal(metas.length, 1, "no re-emit for unknown id / other actions");
 });
+
+test("an adapter with no steering primitive reports it (SPEC-35 T1)", async () => {
+  const stub = new StubAdapter();
+  const events: AdapterEvent[] = [];
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+  const before = events.length;
+
+  assert.equal(await stub.steer({ text: "mid-turn" }), false);
+  assert.equal(events.length, before, "steer() must not echo or emit anything");
+});
+
+test("SLOW keeps the stub busy so the pending queue is demoable (SPEC-38)", async () => {
+  const stub = new StubAdapter();
+  const statuses: string[] = [];
+  const events: AdapterEvent[] = [];
+  stub.on("status", (s) => statuses.push(s));
+  stub.on("event", (e) => events.push(e));
+  await stub.start({ sessionId: "s1", cwd: "/tmp" });
+
+  await stub.send({ text: "SLOW 120" });
+
+  // Running immediately, and STILL running a moment later: without a turn that
+  // outlives a keystroke there is no way to demo (or e2e) a queued message.
+  assert.equal(statuses.at(-1), "running");
+  await new Promise((r) => setTimeout(r, 40));
+  assert.equal(statuses.at(-1), "running");
+
+  await new Promise((r) => setTimeout(r, 160));
+  assert.equal(statuses.at(-1), "idle");
+  assert.ok(
+    events.some((e) => e.kind === "agent.message"),
+    "the turn still produces a reply",
+  );
+});
+
+test("a plain echo is a whole turn (running → idle), so a queue keeps draining", async () => {
+  const a = new StubAdapter();
+  const statuses: string[] = [];
+  a.on("status", (s: string) => statuses.push(s));
+  await a.start({ cwd: process.cwd(), sessionId: "s-turn" });
+  statuses.length = 0;
+
+  await a.send({ text: "hello" });
+  await new Promise((r) => setTimeout(r, 120));
+
+  assert.deepEqual(statuses, ["running", "idle"]);
+});

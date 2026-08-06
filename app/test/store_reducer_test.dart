@@ -612,6 +612,218 @@ void main() {
         expect(items.map((item) => item.text), ['first task']);
       },
     );
+
+    test(
+      'a mid-turn message gets no optimistic bubble, so no server event is swallowed (SPEC-35)',
+      () async {
+        // While the agent is running, the next seq belongs to the agent's own
+        // stream, not to our echo: the message will be steered or queued and
+        // echoed later (or never, if cancelled). An optimistic bubble at
+        // cursor+1 would therefore advance the cursor past a REAL event and the
+        // reducer would drop it.
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        transport.pushSessions([
+          {
+            'id': _sid,
+            'projectId': 'p1',
+            'agent': 'codex',
+            'status': 'running',
+          },
+        ]);
+        store.subscribeSession(_sid);
+        transport.pushAck(id: 's-$_sid');
+        transport.pushEvent(
+          seq: 1,
+          sessionId: _sid,
+          kind: 'user.message',
+          text: 'long task',
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        store.appendOptimisticMessage(_sid, 'mid-turn');
+        store.sendMessage(_sid, 'mid-turn');
+
+        // The agent keeps streaming: seq 2 is ITS event, not our echo.
+        transport.pushEvent(seq: 2, sessionId: _sid, text: 'still working');
+        await Future<void>.delayed(Duration.zero);
+
+        final state = container.read(storeControllerProvider);
+        final items = foldEvents(state.events[_sid]!);
+        expect(
+          items.whereType<AgentMessageItem>().map((i) => i.text),
+          ['still working'],
+          reason: 'the agent event must not be swallowed by a guessed seq',
+        );
+        expect(
+          items.whereType<UserMessageItem>().map((i) => i.text),
+          ['long task'],
+          reason: 'the mid-turn message shows as a queue chip until delivered',
+        );
+      },
+    );
+  });
+
+  group('StoreController — optimistic bubbles vs the queue', () {
+    test('an IDLE session with a queue gets no optimistic bubble', () async {
+      // The server enqueues whenever a queue exists or a flush is in flight,
+      // whatever the status — so a bubble here would claim the message was sent
+      // AND eat the seq the next real event needs.
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      transport.pushSessions([
+        {
+          'id': _sid,
+          'projectId': 'p1',
+          'agent': 'pi',
+          // Idle, but with one message still waiting to be delivered.
+          'status': 'idle',
+          'queued': [
+            {'id': 'q1', 'text': 'waiting', 'queuedAt': 1},
+          ],
+        },
+      ]);
+      store.subscribeSession(_sid);
+      transport.pushAck(id: 's-$_sid');
+      await Future<void>.delayed(Duration.zero);
+
+      store.appendOptimisticMessage(_sid, 'and another');
+      await Future<void>.delayed(Duration.zero);
+
+      final events = container.read(storeControllerProvider).events[_sid];
+      expect(
+        events?.where((e) => e.kind == EventKind.userMessage) ?? const [],
+        isEmpty,
+        reason: 'the queue is the feedback here, not a chat bubble',
+      );
+    });
+  });
+
+  group('StoreController — queue commands (SPEC-35/36/37)', () {
+    /// Every queue command carries the MESSAGE id as `queuedId`.
+    ///
+    /// Regression: [Envelope.toJson] spreads the command body over the frame, so
+    /// a body field named `id` silently replaced the request id — the ack came
+    /// back labelled with the queued message and could never be matched to the
+    /// command that caused it.
+    test(
+      'carry the message id as queuedId, leaving the request id intact',
+      () async {
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        store.cancelQueuedMessage(_sid, 'q1');
+        store.updateQueuedMessage(_sid, 'q2', 'edited');
+        store.promoteQueuedMessage(_sid, 'q3');
+        store.reorderQueuedMessages(_sid, ['q3', 'q2']);
+        await Future<void>.delayed(Duration.zero);
+
+        final cmds = transport.sent
+            .where((e) => e.t == MsgType.cmd)
+            .where((e) => (e.body['kind'] as String).startsWith('queue.'))
+            .toList();
+        expect(cmds.map((e) => e.body['kind']), [
+          'queue.cancel',
+          'queue.update',
+          'queue.promote',
+          'queue.reorder',
+        ]);
+
+        for (final cmd in cmds) {
+          // What actually goes on the wire — `toJson`, not `body`, is where the
+          // shadowing happened.
+          final wire = cmd.toJson();
+          expect(
+            wire['id'],
+            cmd.id,
+            reason: '${cmd.body['kind']} must not overwrite the request id',
+          );
+          expect(wire['id'], isNot(anyOf('q1', 'q2', 'q3')));
+        }
+        expect(cmds[0].toJson()['queuedId'], 'q1');
+        expect(cmds[1].toJson()['queuedId'], 'q2');
+        expect(cmds[1].toJson()['text'], 'edited');
+        expect(cmds[2].toJson()['queuedId'], 'q3');
+        expect(cmds[3].toJson()['ids'], ['q3', 'q2']);
+      },
+    );
   });
 
   group('StoreController — repo refresh after project add', () {

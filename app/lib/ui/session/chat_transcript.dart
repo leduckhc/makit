@@ -116,8 +116,8 @@ Widget chatItemWidget(
       text: item.text,
       ts: item.ts,
       attachments: item.attachments,
-      // SPEC-33: only decides whether the sent-as-a-file note shows; it
-      // does not change what was sent.
+      // SPEC-35: captions a message that went into the running turn.
+      steered: item.steered,
     ),
   ),
   AgentMessageItem() => AgentMessage(text: item.text, ts: item.ts),
@@ -199,6 +199,15 @@ TranscriptTrailer trailerFor({required bool running, required bool awaiting}) =>
     awaiting
     ? TranscriptTrailer.ask
     : (running ? TranscriptTrailer.working : TranscriptTrailer.none);
+
+/// The trailing row's content, shared by both surfaces (SPEC-38).
+///
+/// Beyond the ask card / working indicator it also hosts the **inline** pending
+/// queue, which is why the queue needs no synthetic entries in [foldEvents]: the
+/// trailer is already a non-event row that SPEC-21's anchoring and SPEC-34's
+/// key→index map both account for.
+///
+/// Order is deliberate — pending messages sit ABOVE the ask/working row, so the
 
 /// Reasoning/thinking trace. Folded to a single greyed one-liner with an
 /// ellipsis; a tap toggles between the full (selectable) text and the
