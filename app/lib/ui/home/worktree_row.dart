@@ -4,6 +4,9 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
+import '../../store/ports.dart';
+import '../ports/ports_glyph.dart';
+import '../ports/worktree_ports_sheet.dart';
 import 'repo_chips.dart';
 import 'session_tile.dart';
 import 'start_session.dart';
@@ -47,6 +50,23 @@ class WorktreeRow extends ConsumerStatefulWidget {
 
 class _WorktreeRowState extends ConsumerState<WorktreeRow> {
   bool _expanded = true;
+
+  // Hold the ref-counted ports watch while any worktree row is mounted, so the
+  // server scans `lsof` only while the home screen is up (SPEC-41 §Delivery).
+  // The ref-count collapses N rows to a single `ports.watch {on:true}`.
+  late final PortsWatch _portsWatch = ref.read(portsWatchProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    _portsWatch.watch();
+  }
+
+  @override
+  void dispose() {
+    _portsWatch.release();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +188,11 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
                         expanded: _expanded,
                         onPressed: () => setState(() => _expanded = !_expanded),
                       ),
+                    // Ports signal, inserted BETWEEN the caret and `+` so the
+                    // order is `branch · fold · ports · +` (SPEC-41 §1). `+`
+                    // stays the last child so its column stays aligned down the
+                    // card; the glyph renders nothing when no ports listen.
+                    _WorktreePortsGlyph(worktree: worktree),
                     // Start a session on *this* branch. Without it the only way
                     // in was the card-level "New session", which reopens the
                     // worktree picker — asking again for the branch the user is
@@ -288,6 +313,43 @@ class _Caret extends StatelessWidget {
               color: Theme.of(context).colorScheme.outline,
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The worktree row's ports glyph (SPEC-41 §1), phone form. Sits in the
+/// trailing control column of the branch line and opens the ports list sheet on
+/// tap. Renders nothing when the worktree is serving nothing, so a quiet branch
+/// adds no weight and `+` stays flush right regardless.
+class _WorktreePortsGlyph extends ConsumerWidget {
+  const _WorktreePortsGlyph({required this.worktree});
+
+  final Worktree worktree;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(portsGlyphStateProvider(worktree.path));
+    if (state == PortsGlyphState.none) return const SizedBox.shrink();
+    final count = ref.watch(portsForWorktreeProvider(worktree.path)).length;
+    return InkWell(
+      borderRadius: BorderRadius.circular(kRadius8),
+      // Tap opens the list sheet; it does NOT fold the row (the meta line is
+      // not a target — the branch line's control column is).
+      onTap: () => showWorktreePortsSheet(
+        context,
+        ref,
+        worktreePath: worktree.path,
+        branch: worktree.branch ?? 'detached',
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: kTrailingControl,
+          minHeight: kTouchRow,
+        ),
+        child: Center(
+          child: PortsGlyph(state: state, count: count),
         ),
       ),
     );

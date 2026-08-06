@@ -32,6 +32,13 @@ export interface WsClient {
    */
   watchingMetrics: boolean;
   /**
+   * True while this client is watching ports (`ports.watch {on:true}`, SPEC-41).
+   * Optional (unlike {@link watchingMetrics}) so the many existing `WsClient`
+   * test fakes need no churn; `server.ts` always initialises it to `false`.
+   * Cleared on socket close so a killed window cannot pin the `lsof` scanner.
+   */
+  watchingPorts?: boolean;
+  /**
    * True when the socket's remote address is loopback. Gates acceptance of the
    * app's reported pid in `hello` (SPEC-37 decision 6) — a non-loopback client
    * must connect normally but may not ask us to sample an arbitrary pid.

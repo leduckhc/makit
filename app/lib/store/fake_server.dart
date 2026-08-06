@@ -499,6 +499,66 @@ class FakeServer {
     };
   }
 
+  /// Emit one plausible `ports.snapshot` (SPEC-41): a healthy dev server owned
+  /// by the first feature-branch worktree (so a glyph lights on that row), a
+  /// wildcard-bound `exposed` port with no probe, and a `refused` zombie so the
+  /// attention state is exercised on the fake path.
+  void _pushPorts() {
+    final feature = _sessions.values.firstWhere(
+      (s) => s.branch != null,
+      orElse: () => _sessions.values.first,
+    );
+    final wtPath = feature.branch == null
+        ? feature.projectPath
+        : '${feature.projectPath}/.wt/${feature.branch}';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _emit(
+      Envelope(
+        t: MsgType.event,
+        id: Ulid().toString(),
+        body: {
+          'kind': 'ports.snapshot',
+          'snapshot': {
+            'ports': [
+              {
+                'key': '48211:127.0.0.1:5173',
+                'port': 5173,
+                'address': '127.0.0.1',
+                'reach': 'loopback',
+                'pid': 48211,
+                'command': 'node vite --port 5173',
+                'startedAt': now - 41 * 60 * 1000,
+                'worktreePath': wtPath,
+                'sessionId': feature.id,
+                'health': {'kind': 'ok', 'status': 200, 'probedAt': now - 4000},
+                'openUrl': 'http://127.0.0.1:5173',
+              },
+              {
+                'key': '47120:0.0.0.0:9787',
+                'port': 9787,
+                'address': '0.0.0.0',
+                'reach': 'exposed',
+                'pid': 47120,
+                'command': 'node dist/serve.js',
+                'startedAt': now - 2 * 60 * 60 * 1000,
+                'worktreePath': wtPath,
+                'sessionId': feature.id,
+                'health': {
+                  'kind': 'http-error',
+                  'status': 404,
+                  'probedAt': now - 9000,
+                },
+                'openUrl': 'http://127.0.0.1:9787',
+              },
+            ],
+            'scannedAt': now,
+            'scanOk': true,
+          },
+        },
+      ),
+    );
+  }
+
   void _replaySession(String sessionId) {
     final s = _sessions[sessionId];
     if (s == null) return;
@@ -538,6 +598,12 @@ class FakeServer {
         } else {
           _stopMetrics();
         }
+        return;
+      case 'ports.watch':
+        _emit(Envelope(t: MsgType.ack, id: env.id));
+        // Mirror the real server: on watch-on, paint from a plausible snapshot
+        // immediately (SPEC-41). A no-op on watch-off — no ambient polling.
+        if (env.body['on'] == true) _pushPorts();
         return;
       case 'session.listArchived':
         _emit(

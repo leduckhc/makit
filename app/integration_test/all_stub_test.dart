@@ -18,6 +18,7 @@ import 'stub/ask_wizard_e2e_test.dart' as ask_wizard;
 import 'stub/attachment_paste_test.dart' as attachment_paste;
 import 'stub/context_usage_test.dart' as context_usage;
 import 'stub/markdown_render_test.dart' as markdown_render;
+import 'stub/ports_test.dart' as ports;
 import 'stub/smoke_ask_question_test.dart' as smoke_ask_question;
 import 'stub/smoke_pairing_test.dart' as smoke_pairing;
 import 'stub/smoke_send_message_test.dart' as smoke_send_message;
@@ -28,6 +29,7 @@ void main() {
   attachment_paste.main();
   context_usage.main();
   markdown_render.main();
+  ports.main();
   smoke_ask_question.main();
   smoke_pairing.main();
   smoke_send_message.main();

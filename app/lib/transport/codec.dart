@@ -10,6 +10,7 @@ library;
 import '../diagnostics/app_log.dart';
 import '../store/metrics.dart';
 import '../store/models.dart';
+import '../store/ports.dart';
 import 'protocol.dart';
 
 /// A decoded, typed view of an incoming `event` frame. The store's pure
@@ -49,6 +50,13 @@ class MetricsSampleFrame extends Decoded {
   const MetricsSampleFrame(this.sample, this.history);
   final MetricsSample sample;
   final List<MetricsSample>? history;
+}
+
+/// A decoded `ports.snapshot` frame (SPEC-41). A host-wide broadcast, like
+/// `metrics.sample` — never a session event.
+class PortsSnapshotFrame extends Decoded {
+  const PortsSnapshotFrame(this.snapshot);
+  final PortsSnapshot snapshot;
 }
 
 /// Stateless decoder. All methods return `null` on malformed input.
@@ -138,6 +146,23 @@ class WireCodec {
                   .toList()
             : null;
         return MetricsSampleFrame(sample, history);
+      case 'ports.snapshot':
+        // Tolerant like `metrics.sample`: a malformed payload `_warn`s + drops
+        // rather than throwing into the socket. Bad port entries inside a good
+        // snapshot are dropped by `PortsSnapshot.fromJson`, not fatal here.
+        final rawSnapshot = env.body['snapshot'];
+        if (rawSnapshot is! Map) {
+          _warn('ports.snapshot');
+          return null;
+        }
+        final snapshot = PortsSnapshot.fromJson(
+          Map<String, dynamic>.from(rawSnapshot),
+        );
+        if (snapshot == null) {
+          _warn('ports.snapshot');
+          return null;
+        }
+        return PortsSnapshotFrame(snapshot);
       default:
         return null;
     }

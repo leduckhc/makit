@@ -17,7 +17,10 @@ import 'package:makit/transport/ws_client.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/store/ports.dart';
 import 'package:makit/ui/home/repo_chips.dart';
+import 'package:makit/ui/ports/ports_glyph.dart';
+import 'package:makit/ui/ports/ports_popover.dart';
 import 'package:makit/ui/widgets/pr_state_style.dart';
 
 import '../support/svg_asset_finder.dart';
@@ -1457,6 +1460,134 @@ void main() {
         container.read(groupsControllerProvider).active.id,
         before,
         reason: 'expanding a row is not a navigation',
+      );
+    });
+  });
+
+  group('SPEC-41 — ports glyph on the sub-row', () {
+    PortsSnapshot snap(String worktreePath, {PortHealth? health}) =>
+        PortsSnapshot(
+          ports: [
+            PortInfo(
+              key: '100:127.0.0.1:5173',
+              port: 5173,
+              address: '127.0.0.1',
+              reach: PortReach.loopback,
+              pid: 100,
+              command: 'node vite --port 5173',
+              startedAt: 0,
+              worktreePath: worktreePath,
+              health:
+                  health ??
+                  const PortHealth(
+                    kind: PortHealthKind.ok,
+                    status: 200,
+                    probedAt: 0,
+                  ),
+              openUrl: 'http://127.0.0.1:5173',
+            ),
+          ],
+          scannedAt: 0,
+          scanOk: true,
+        );
+
+    Future<void> pumpWithPorts(
+      WidgetTester tester, {
+      required List<RepoInfo> repos,
+      required PortsSnapshot ports,
+    }) async {
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWithValue(ReposState(repos)),
+          sessionsProvider.overrideWithValue(SessionsState(const [])),
+          portsProvider.overrideWithValue(ports),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 320, child: DesktopSidebar())),
+          ),
+        ),
+      );
+    }
+
+    testWidgets('mounts at 22 × 16 and leaves the sub-row height at 16', (
+      tester,
+    ) async {
+      final wt = _worktree('w1', branch: 'feat');
+      await pumpWithPorts(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'proj',
+            worktrees: [_worktree('main', isPrimary: true), wt],
+          ),
+        ],
+        ports: snap(wt.path),
+      );
+      await tester.pump();
+
+      final target = find.byKey(ValueKey('portsSubRowTarget-${wt.path}'));
+      expect(target, findsOneWidget);
+      // The hit target is 22 wide × 16 tall — wider, not taller — so the fixed
+      // sub-row does not grow (Flutter clips hit-testing to this box, so the
+      // target is honestly 22 × 16, never 22 × 22).
+      expect(tester.getSize(target), const Size(22, 16));
+      // The painted glyph fits inside the 16 pt line.
+      final glyph = find.descendant(
+        of: target,
+        matching: find.byType(PortsGlyph),
+      );
+      expect(glyph, findsOneWidget);
+      expect(tester.getSize(glyph).height, lessThanOrEqualTo(16));
+    });
+
+    testWidgets('a click at the 22 × 16 target pins the popover', (
+      tester,
+    ) async {
+      final wt = _worktree('w1', branch: 'feat');
+      await pumpWithPorts(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'proj',
+            worktrees: [_worktree('main', isPrimary: true), wt],
+          ),
+        ],
+        ports: snap(wt.path),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byKey(ValueKey('portsSubRowTarget-${wt.path}')));
+      await tester.pump();
+      expect(find.byKey(kPortsPopover), findsOneWidget);
+    });
+
+    testWidgets('renders no glyph when the worktree serves nothing', (
+      tester,
+    ) async {
+      final wt = _worktree('w1', branch: 'feat');
+      await pumpWithPorts(
+        tester,
+        repos: [
+          _repo(
+            'p1',
+            'proj',
+            worktrees: [_worktree('main', isPrimary: true), wt],
+          ),
+        ],
+        // A snapshot that owns a DIFFERENT worktree — this row is quiet.
+        ports: snap('/tmp/wt/other'),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(ValueKey('portsSubRowTarget-${wt.path}')),
+        findsNothing,
       );
     });
   });

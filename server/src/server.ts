@@ -76,6 +76,10 @@ import type { Exec } from "./metrics/proc_table.js";
 import { createSelfProbe } from "./metrics/self.js";
 import { WireMeter } from "./metrics/wire_meter.js";
 import { CpuLedger } from "./metrics/ledger.js";
+import { register as registerPortsCommands } from "./ws/commands/ports.js";
+import { PortsService } from "./ports/service.js";
+import { PortHealthProbe, createNetConnector } from "./ports/health.js";
+import { tailscaleIP } from "./pairing/cert.js";
 import { run as execRun } from "./git.js";
 import { stat as fsStat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -120,6 +124,14 @@ export interface ServerOpts {
     cpuUsage?: () => CpuUsageSnapshot;
     /** Overrides `MAKIT_METRICS_BACKGROUND`; default reads the env var. */
     enabled?: boolean;
+  };
+  /**
+   * SPEC-41 port-scanner seam, injected only by the e2e harness so it can
+   * publish a deterministic worktree-owned snapshot without a real `lsof`/`ps`.
+   * Production leaves this undefined and scans the live machine.
+   */
+  ports?: {
+    exec?: Exec;
   };
 }
 
@@ -441,6 +453,74 @@ export function startWsServer(opts: ServerOpts) {
   if (metricsBackgroundOn) metricsCollector.start();
   https.on("close", () => metricsCollector.stop());
 
+  // -------- SPEC-41 ports scanner -----------------------------------------
+  // A watch-gated `lsof`/`ps` scan (nothing runs while no client watches). Like
+  // the metrics collector it takes closures for its data sources so `ports/`
+  // imports neither the manager nor the session type. The tailnet address is
+  // discovered ONCE (a wildcard bind is never `tailnet`; only an exact match is).
+  const portsExec: Exec = opts.ports?.exec ?? ((cmd, args, cwd, timeoutMs) => execRun(cmd, args, cwd, timeoutMs));
+  const portsProbe = new PortHealthProbe({
+    connect: createNetConnector(),
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setTimeout(fn, ms),
+    clearTimer: (h) => clearTimeout(h as NodeJS.Timeout),
+  });
+  // Worktree paths come from the CACHED repos snapshot — never a git shell-out
+  // per scan (the repos snapshot is recomputed on connect/spawn/worktree change).
+  const listWorktreePaths = (): string[] => {
+    const paths: string[] = [];
+    for (const repo of lastEnrichedRepos ?? []) for (const wt of repo.worktrees) paths.push(wt.path);
+    return paths;
+  };
+  // Session id → agent root pid. An exited session keeps its old child pid and
+  // the OS reuses pids, so omit it — the same guard the metrics `liveAgents` uses.
+  const listSessionRoots = (): Map<string, number> => {
+    const roots = new Map<string, number>();
+    for (const s of manager.allSessions()) {
+      if (s.status !== "exited" && s.agentPid !== undefined) roots.set(s.id, s.agentPid);
+    }
+    return roots;
+  };
+  const emitPortsSnapshot = (snapshot: unknown): OutgoingFrame => ({
+    t: "event",
+    id: newId("ports"),
+    kind: "ports.snapshot",
+    snapshot,
+  });
+  const portsService = new PortsService({
+    exec: portsExec,
+    probe: portsProbe,
+    listWorktreePaths,
+    listSessionRoots,
+    // Resolved lazily on the first scan (never at construction — no `tailscale`
+    // subprocess in unit tests). A wildcard bind is never `tailnet` (spec D2).
+    tailnetAddress: () => tailscaleIP(),
+    onSnapshot: (snapshot) => {
+      const frame = emitPortsSnapshot(snapshot);
+      for (const c of clients.values()) if (c.authed && c.watchingPorts) c.send(frame);
+    },
+    now: () => Date.now(),
+    setTimer: (fn, ms) => setInterval(fn, ms),
+    clearTimer: (h) => clearInterval(h as NodeJS.Timeout),
+  });
+  https.on("close", () => portsService.stop());
+
+  const countPortsWatchers = (): number => {
+    let n = 0;
+    for (const c of clients.values()) if (c.authed && c.watchingPorts) n++;
+    return n;
+  };
+  // Recompute the scanner's watcher count after a `ports.watch` toggle or a
+  // socket close. The 0→1 edge arms the timer + runs one immediate scan; the
+  // 1→0 edge disarms it (handled inside PortsService.setWatchers).
+  const recomputePortsWatchers = (): void => portsService.setWatchers(countPortsWatchers());
+  // Hand a freshly-arrived watcher the cached snapshot so its list paints from
+  // cache immediately, refreshing within one scan (the metrics-history trick).
+  const sendPortsSnapshot = (client: WsClient): void => {
+    const cached = portsService.cachedSnapshot();
+    if (cached !== undefined) client.send(emitPortsSnapshot(cached));
+  };
+
   // -------- collaborators -------------------------------------------------
 
   const hub = new SubscriptionHub({ manager });
@@ -506,6 +586,10 @@ export function startWsServer(opts: ServerOpts) {
       // makit is cheap (spec decision 7).
       state.watchingMetrics = false;
       recomputeMetricsWatchers();
+      // SPEC-41: same leak guard for the port scanner — a window killed with the
+      // ports popover open never sends `ports.watch {on:false}`.
+      state.watchingPorts = false;
+      recomputePortsWatchers();
       broadcastSnapshots();
     });
 
@@ -579,6 +663,8 @@ export function startWsServer(opts: ServerOpts) {
       askDevice,
       onMetricsWatchersChanged: recomputeMetricsWatchers,
       sendMetricsHistory,
+      onPortsWatchersChanged: recomputePortsWatchers,
+      sendPortsSnapshot,
     };
 
     registerSessionCommands(r, deps);
@@ -587,6 +673,7 @@ export function startWsServer(opts: ServerOpts) {
     registerRepoCommands(r, deps);
     registerGithubCommands(r, deps);
     registerMetricsCommands(r, deps);
+    registerPortsCommands(r, deps);
 
     // In-app logging: ingest client diagnostics into the server log. Always on
     // (not dev-gated) — field crash reports from iOS are a production need.
@@ -724,6 +811,7 @@ export function startWsServer(opts: ServerOpts) {
       authed,
       isLocal,
       watchingMetrics: false,
+      watchingPorts: false,
       subscribed: new Set<string>(),
       send(frame: OutgoingFrame) {
         if (ws.readyState !== ws.OPEN) return;
