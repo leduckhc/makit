@@ -1,22 +1,24 @@
-// Mobile PR surface (SPEC-23): the session subtitle chip and the shared PR
-// bottom sheet it opens.
+// Mobile PR surface: the session subtitle chip and the shared detail sheet it
+// opens (direction B1).
+//
+// The *rules* (which fact is loudest, which remedy clears it) live in
+// pr_signals_test.dart. These cover the mobile rendering: what the chip says,
+// how the sheet is ordered, and that a picked prompt reaches the composer unsent.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:makit/ui/home/repo_chips.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
-import 'package:makit/store/prefs/preference_entries.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/session/session_pr_chip.dart';
 import 'package:makit/ui/session/session_screen.dart';
 import 'package:makit/ui/widgets/pr_actions.dart';
-import 'package:makit/ui/widgets/pr_sheet.dart';
-import 'package:makit/ui/widgets/pr_state_style.dart';
+import 'package:makit/ui/widgets/pr_detail.dart';
+import 'package:makit/ui/widgets/pr_signals.dart';
 
 class _EmptyStorage implements SecureStore {
   const _EmptyStorage();
@@ -44,6 +46,8 @@ PullRequest _pr({
   int unresolved = 0,
   bool unresolvedUnknown = false,
   String? url,
+  String? baseRefName,
+  String? mergeStateStatus,
 }) => PullRequest(
   number: number,
   url: url ?? 'https://github.com/o/r/pull/$number',
@@ -51,19 +55,24 @@ PullRequest _pr({
   title: 'Add the login screen',
   isDraft: isDraft,
   mergeable: mergeable,
+  mergeStateStatus: mergeStateStatus,
   checks: checks,
   checkRollup: rollup,
   unresolvedComments: unresolved,
   unresolvedUnknown: unresolvedUnknown,
+  baseRefName: baseRefName,
 );
 
-/// Pumps the sheet's body directly — the modal route itself is exercised by the
-/// chip test below.
+/// Pump the sheet's body directly — the modal route is exercised via the screen
+/// test below. `showCta: true` mirrors what `showPrDetail(sheet: true)` passes.
 Future<void> _pumpSheet(
-  WidgetTester tester,
-  PullRequest pr, {
-  void Function(String prompt)? onInsertPrompt,
+  WidgetTester tester, {
+  PullRequest? pr,
+  int uncommitted = 0,
+  int ahead = 0,
+  void Function(PrRemedy remedy)? onRun,
   Map<String, Object?> overrides = const {},
+  bool canInsertPrompt = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -74,7 +83,18 @@ Future<void> _pumpSheet(
       ],
       child: MaterialApp(
         home: Scaffold(
-          body: PrSheetBody(pr: pr, onInsertPrompt: onInsertPrompt),
+          body: PrDetailBody(
+            status: prStatus(
+              pr: pr,
+              branch: 'feat',
+              uncommittedFiles: uncommitted,
+              commitsAhead: ahead,
+            ),
+            pr: pr,
+            showCta: true,
+            canInsertPrompt: canInsertPrompt,
+            onRun: onRun ?? (_) {},
+          ),
         ),
       ),
     ),
@@ -83,18 +103,35 @@ Future<void> _pumpSheet(
 }
 
 void main() {
-  group('PR sheet', () {
+  group('the detail sheet', () {
     testWidgets('names the PR and its title', (tester) async {
-      await _pumpSheet(tester, _pr());
-
-      expect(find.text('PR #42'), findsOneWidget);
+      await _pumpSheet(tester, pr: _pr());
+      expect(find.text('#42'), findsOneWidget);
       expect(find.text('Add the login screen'), findsOneWidget);
+    });
+
+    testWidgets('opens on the decision: headline, then action, then detail', (
+      tester,
+    ) async {
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'fail', unresolved: 3, checks: [_check('a', 'fail')]),
+        ahead: 1,
+      );
+      // The loud fact is the headline. Three problems here, so the button offers
+      // to take them all on at once; the individual ones are listed below it.
+      expect(find.text('1 commit unpushed'), findsOneWidget);
+      final headlineY = tester.getTopLeft(find.text('1 commit unpushed')).dy;
+      final ctaY = tester.getTopLeft(find.text('Fix')).dy;
+      final detailY = tester.getTopLeft(find.text('3 threads open')).dy;
+      expect(headlineY, lessThan(ctaY));
+      expect(ctaY, lessThan(detailY), reason: 'decision above detail');
     });
 
     testWidgets('lists each check with its human status word', (tester) async {
       await _pumpSheet(
         tester,
-        _pr(
+        pr: _pr(
           rollup: 'fail',
           checks: [
             _check('analyze', 'pass'),
@@ -103,7 +140,6 @@ void main() {
           ],
         ),
       );
-
       expect(find.text('CI / test'), findsOneWidget);
       expect(find.text('failed'), findsOneWidget);
       expect(find.text('analyze'), findsOneWidget);
@@ -114,206 +150,206 @@ void main() {
     testWidgets('floats failing checks above passing ones', (tester) async {
       await _pumpSheet(
         tester,
-        _pr(
+        pr: _pr(
           rollup: 'fail',
           checks: [_check('a-passes', 'pass'), _check('z-fails', 'fail')],
         ),
       );
-
       final failY = tester.getTopLeft(find.text('z-fails')).dy;
       final passY = tester.getTopLeft(find.text('a-passes')).dy;
       expect(failY, lessThan(passY));
     });
 
-    testWidgets('reports a conflicting merge state', (tester) async {
-      await _pumpSheet(tester, _pr(mergeable: 'CONFLICTING'));
-
-      expect(find.textContaining('Conflicts'), findsOneWidget);
-    });
-
-    testWidgets('shows unresolved review comments when measured', (
+    testWidgets('reports a conflicting merge state as an actionable fact', (
       tester,
     ) async {
-      await _pumpSheet(tester, _pr(unresolved: 3));
-      expect(find.textContaining('3 unresolved'), findsOneWidget);
+      await _pumpSheet(tester, pr: _pr(mergeable: 'CONFLICTING'));
+      // It is the loudest thing here, so it is the headline...
+      expect(find.text('conflicts with the base'), findsOneWidget);
+      // ...and the pinned action is what clears it.
+      expect(find.text('Pull'), findsOneWidget);
     });
 
-    testWidgets('hides the comment count when it is unknown', (tester) async {
-      // Non-zero on purpose: with a zero count the sheet would hide the line
-      // because it is zero, and the test would pass even if unresolvedUnknown
-      // were ignored entirely.
-      await _pumpSheet(tester, _pr(unresolved: 3, unresolvedUnknown: true));
-      expect(find.textContaining('unresolved'), findsNothing);
-    });
-
-    testWidgets('reports a PR url it cannot open instead of throwing', (
+    testWidgets('gives every other actionable fact its own remedy button', (
       tester,
     ) async {
-      // `Uri.tryParse` rejects this outright; a real device can also refuse a
-      // perfectly good URL with no handler. Either way the tap must not escape
-      // as an unhandled framework error.
-      await _pumpSheet(tester, _pr(url: 'http://['));
-
-      await tester.tap(find.text('Open on GitHub'));
-      await tester.pumpAndSettle();
-
-      expect(tester.takeException(), isNull);
-      expect(find.text('Could not open the PR'), findsOneWidget);
-    });
-
-    testWidgets('marks a draft PR', (tester) async {
-      await _pumpSheet(tester, _pr(isDraft: true));
-      expect(find.text('draft'), findsOneWidget);
-    });
-  });
-
-  group('PR actions in the sheet', () {
-    testWidgets('offers them only when a composer can receive the prompt', (
-      tester,
-    ) async {
-      await _pumpSheet(tester, _pr());
-      expect(find.text('Fix PR'), findsNothing);
-
-      await _pumpSheet(tester, _pr(), onInsertPrompt: (_) {});
-      expect(find.text('Fix PR'), findsOneWidget);
-      expect(find.text('Push'), findsOneWidget);
-      // The sheet only opens for an existing PR, so creating one is not on offer
-      // here — desktop drops it from the menu for the same reason.
-      expect(find.text('Create PR'), findsNothing);
-    });
-
-    testWidgets('hands the built-in prompt to the composer', (tester) async {
-      final inserted = <String>[];
-      await _pumpSheet(tester, _pr(), onInsertPrompt: inserted.add);
-
-      await tester.tap(find.text('Fix PR'));
-      await tester.pumpAndSettle();
-
-      expect(inserted, [PrPromptAction.fixPr.defaultPrompt]);
-    });
-
-    testWidgets('prefers a prompt override from settings', (tester) async {
-      final inserted = <String>[];
+      // This is the trade B1 makes: the row is quiet, so the sheet is where the
+      // secondary facts become actionable.
+      PrRemedy? ran;
       await _pumpSheet(
         tester,
-        _pr(),
-        onInsertPrompt: inserted.add,
-        overrides: {prFixPromptPreference.id: 'my own fix prompt'},
+        pr: _pr(rollup: 'fail', unresolved: 2, checks: [_check('a', 'fail')]),
+        ahead: 1,
+        onRun: (r) => ran = r,
       );
+      expect(find.text('1 commit unpushed'), findsOneWidget, reason: 'headline');
+      expect(find.text('1 check failing'), findsOneWidget);
+      expect(find.text('2 threads open'), findsOneWidget);
+      expect(find.text('ALSO NEEDS YOU'), findsOneWidget);
 
-      await tester.tap(find.text('Fix PR'));
+      await tester.tap(find.text('Resolve threads'));
       await tester.pumpAndSettle();
-
-      expect(inserted, ['my own fix prompt']);
-    });
-  });
-
-  group('session PR chip', () {
-    Future<void> pumpChip(WidgetTester tester, PullRequest pr) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(body: SessionPrChip(pr: pr)),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-    }
-
-    testWidgets('summarises the PR number and CI verdict', (tester) async {
-      await pumpChip(tester, _pr(rollup: 'fail'));
-
-      expect(find.text('#42'), findsOneWidget);
-      expect(find.text('failed'), findsOneWidget);
+      expect((ran as PromptRemedy).action, PrPromptAction.resolveComments);
     });
 
-    testWidgets('omits the verdict when there are no checks', (tester) async {
-      await pumpChip(tester, _pr(rollup: 'none'));
-
-      expect(find.text('#42'), findsOneWidget);
-      expect(find.text('none'), findsNothing);
-    });
-
-    testWidgets('is a touch-sized target', (tester) async {
-      await pumpChip(tester, _pr());
-
-      // The chip is the only route into the PR sheet from a session, so it has
-      // to be hittable: it used to be 19px tall against the app's 44pt floor.
-      final ink = find.descendant(
-        of: find.byType(SessionPrChip),
-        matching: find.byType(InkWell),
-      );
-      expect(tester.getSize(ink.first).height, greaterThanOrEqualTo(44));
-    });
-
-    testWidgets('opens the PR sheet when tapped', (tester) async {
-      await pumpChip(tester, _pr(checks: [_check('test', 'pass')]));
-
-      await tester.tap(find.text('#42'));
-      await tester.pumpAndSettle();
-
-      // The sheet carries the PR title, which the chip itself never shows.
-      expect(find.text('Add the login screen'), findsOneWidget);
-    });
-  });
-
-  group('home worktree PR pill', () {
-    testWidgets('an open failing PR is verdict-tinted, like the session chip', (
+    testWidgets('separates facts that need you from facts that are just true', (
       tester,
     ) async {
-      // Regression: this pill tinted open PRs by *state*, so an open failing PR
-      // read red in a session and brand-blue on the home list. One rule now
-      // (`prPillColors`) for all three pills.
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: Center(
-                child: PrPill(pr: _pr(rollup: 'fail')),
-              ),
-            ),
-          ),
+      await _pumpSheet(
+        tester,
+        pr: _pr(
+          rollup: 'fail',
+          unresolved: 1,
+          checks: [_check('a', 'fail'), _check('b', 'pending')],
         ),
       );
-
-      final cs = Theme.of(tester.element(find.byType(PrPill))).colorScheme;
-      final icon = tester.widget<Icon>(
-        find.descendant(of: find.byType(PrPill), matching: find.byType(Icon)),
-      );
-      expect(icon.color, prRollupColor(cs, 'fail'));
-      expect(
-        icon.color,
-        isNot(cs.primary),
-        reason: 'cs.primary is the open-state hue it used to paint',
-      );
+      expect(find.text('ALSO NEEDS YOU'), findsOneWidget);
+      // A fact you cannot act on is still listed, just outside that group.
+      expect(find.text('1 of 2 checks still running'), findsOneWidget);
     });
 
-    testWidgets('opens the same PR sheet when tapped', (tester) async {
-      await tester.pumpWidget(
-        ProviderScope(
-          child: MaterialApp(
-            home: Scaffold(
-              body: Center(child: PrPill(pr: _pr())),
-            ),
-          ),
-        ),
+    testWidgets('pins one call to action, and says it will not send', (
+      tester,
+    ) async {
+      await _pumpSheet(tester, uncommitted: 3);
+      // Exactly one: the pinned button. The fact is the headline, so it does not
+      // also appear as a list row with a duplicate button.
+      expect(find.text('Commit & push'), findsOneWidget);
+      expect(find.textContaining('never sends for you'), findsOneWidget);
+    });
+
+    testWidgets('a merged PR pins Wrap up and warns it runs server-side', (
+      tester,
+    ) async {
+      PrRemedy? ran;
+      await _pumpSheet(
+        tester,
+        pr: _pr(state: 'MERGED', baseRefName: 'main'),
+        onRun: (r) => ran = r,
       );
-
-      await tester.tap(find.text('PR #42'));
+      expect(find.text('Wrap up'), findsOneWidget);
+      expect(find.textContaining('Asks first'), findsOneWidget);
+      await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
+      expect((ran as DirectRemedy).op, PrDirectOp.wrapUp);
+    });
 
-      expect(find.byType(PrSheetBody), findsOneWidget);
-      expect(find.text('Add the login screen'), findsOneWidget);
+    testWidgets('a draft pins Mark ready and says it runs server-side', (
+      tester,
+    ) async {
+      PrRemedy? ran;
+      await _pumpSheet(
+        tester,
+        pr: _pr(isDraft: true, rollup: 'pass'),
+        onRun: (r) => ran = r,
+      );
+      expect(find.text('still a draft'), findsOneWidget, reason: 'headline');
+      expect(find.text('Mark ready'), findsOneWidget);
+      expect(find.textContaining('Runs on the server'), findsOneWidget);
+      await tester.tap(find.text('Mark ready'));
+      await tester.pumpAndSettle();
+      expect((ran as DirectRemedy).op, PrDirectOp.markReady);
+    });
+
+    testWidgets('a moved base pins Update branch', (tester) async {
+      PrRemedy? ran;
+      await _pumpSheet(
+        tester,
+        pr: _pr(mergeStateStatus: 'BEHIND'),
+        onRun: (r) => ran = r,
+      );
+      expect(find.text('the base branch moved on'), findsOneWidget);
+      await tester.tap(find.text('Update branch'));
+      await tester.pumpAndSettle();
+      expect((ran as DirectRemedy).op, PrDirectOp.updateBranch);
+    });
+
+    testWidgets('a ready PR pins Squash & merge', (tester) async {
+      PrRemedy? ran;
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+        onRun: (r) => ran = r,
+      );
+      expect(find.text('ready to merge'), findsOneWidget);
+      await tester.tap(find.text('Squash & merge'));
+      await tester.pumpAndSettle();
+      expect((ran as DirectRemedy).op, PrDirectOp.squashMerge);
+    });
+
+    testWidgets('several problems pin one Fix that takes them all on', (
+      tester,
+    ) async {
+      PrRemedy? ran;
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'fail', unresolved: 2, checks: [_check('a', 'fail')]),
+        ahead: 1,
+        onRun: (r) => ran = r,
+      );
+      expect(find.text('Fix'), findsOneWidget);
+      // The specific remedies are still there, one row each.
+      expect(find.text('Resolve threads'), findsOneWidget);
+      await tester.tap(find.text('Fix'));
+      await tester.pumpAndSettle();
+      expect(ran, isA<MagicRemedy>());
+    });
+
+    testWidgets('a surface with no composer offers no prompt remedies', (
+      tester,
+    ) async {
+      // The home list has nowhere to put a prompt. Rendering "Fix CI" there meant
+      // the tap saved a preference, composed the text, closed the sheet and
+      // dropped it — a dead button with no feedback.
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'fail', unresolved: 2, checks: [_check('a', 'fail')]),
+        ahead: 1,
+        canInsertPrompt: false,
+      );
+      expect(find.text('Fix CI'), findsNothing);
+      expect(find.text('Resolve threads'), findsNothing);
+      expect(find.text('Push'), findsNothing);
+      // The facts themselves are still reported — only the dead buttons go.
+      expect(find.text('2 threads open'), findsOneWidget);
+    });
+
+    testWidgets('a surface with no composer still offers the direct ops', (
+      tester,
+    ) async {
+      // Tidying up needs no composer, so a merged PR is fully actionable there.
+      PrRemedy? ran;
+      await _pumpSheet(
+        tester,
+        pr: _pr(state: 'MERGED'),
+        canInsertPrompt: false,
+        onRun: (r) => ran = r,
+      );
+      expect(find.text('Wrap up'), findsOneWidget);
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect((ran as DirectRemedy).op, PrDirectOp.wrapUp);
+    });
+
+    testWidgets('pins nothing when there is nothing pressing', (tester) async {
+      // An idle full-width button would be the loudest thing on a screen with
+      // nothing to do.
+      // `mergeable` is unreported here, so there is no merge to offer either.
+      await _pumpSheet(tester, pr: _pr(rollup: 'pass'));
+      expect(find.byType(FilledButton), findsNothing);
     });
   });
 
-  group('session screen PR indicator', () {
+  group('the session subtitle chip', () {
     const sessionId = 's1';
 
     Future<void> pumpScreen(
       WidgetTester tester, {
       required String? worktreePath,
       PullRequest? pr,
+      int uncommitted = 0,
+      bool primary = false,
+      String branch = 'feat',
     }) async {
       final session = Session(
         id: sessionId,
@@ -337,11 +373,12 @@ void main() {
           Worktree(
             id: 'w1',
             path: '/repo/wt',
-            branch: 'feat',
-            isPrimary: false,
+            branch: branch,
+            isPrimary: primary,
             insertions: 0,
             deletions: 0,
             filesChanged: 0,
+            uncommittedFiles: uncommitted,
             sessionIds: const [sessionId],
             pr: pr,
           ),
@@ -367,45 +404,62 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('shows the chip for the session worktree PR', (tester) async {
-      await pumpScreen(tester, worktreePath: '/repo/wt', pr: _pr());
-
+    testWidgets('says the PR number and what it needs', (tester) async {
+      await pumpScreen(
+        tester,
+        worktreePath: '/repo/wt',
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+      );
       expect(find.byType(SessionPrChip), findsOneWidget);
-      expect(find.text('#42'), findsOneWidget);
+      // The old chip showed "#42 failed" — a verdict, with no next step.
+      expect(find.text('#42 · 1 check failing'), findsOneWidget);
     });
 
-    testWidgets('shows no chip when the worktree has no PR', (tester) async {
-      await pumpScreen(tester, worktreePath: '/repo/wt');
+    testWidgets('reports local work even with no PR at all', (tester) async {
+      // The old chip only existed when a PR did, so a branch with three
+      // uncommitted files said nothing on this screen.
+      await pumpScreen(tester, worktreePath: '/repo/wt', uncommitted: 3);
+      expect(find.text('3 files uncommitted'), findsOneWidget);
+    });
 
+    testWidgets('stays silent for a clean primary checkout', (tester) async {
+      await pumpScreen(
+        tester,
+        worktreePath: '/repo/wt',
+        primary: true,
+        branch: 'main',
+      );
       expect(find.byType(SessionPrChip), findsNothing);
     });
 
-    testWidgets('shows no chip before the session has a worktree', (
+    testWidgets('shows nothing before the session has a worktree', (
       tester,
     ) async {
       await pumpScreen(tester, worktreePath: null, pr: _pr());
-
       expect(find.byType(SessionPrChip), findsNothing);
     });
 
-    testWidgets('a PR action lands in the composer without sending', (
+    testWidgets('a picked prompt lands in the composer without sending', (
       tester,
     ) async {
-      await pumpScreen(tester, worktreePath: '/repo/wt', pr: _pr());
-
-      await tester.tap(find.text('#42'));
+      await pumpScreen(
+        tester,
+        worktreePath: '/repo/wt',
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+      );
+      await tester.tap(find.text('#42 · 1 check failing'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Fix PR'));
+      await tester.tap(find.text('Fix CI').last);
       await tester.pumpAndSettle();
 
-      // The prompt is in the field, for the user to review and send. Matching on
-      // a distinctive fragment: the composer soft-wraps the full prompt.
+      // The prompt is in the field for the user to review and send. Matching a
+      // distinctive fragment: the composer soft-wraps the full prompt.
       expect(
         find.textContaining('CI checks on this pull request'),
         findsWidgets,
       );
       // The sheet is gone, so the composer is what the user is looking at.
-      expect(find.byType(PrSheetBody), findsNothing);
+      expect(find.byType(PrDetailBody), findsNothing);
     });
   });
 }

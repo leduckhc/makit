@@ -90,4 +90,80 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       ctx.err(WireErrorCode.BadRequest, (e as Error).message);
     }
   });
+
+  // The ending a merged/closed PR never had: remove the worktree, delete its
+  // branch, and fast-forward the branch the PR landed on. `baseBranch` is the
+  // PR's own baseRefName when the app has it; the manager falls back to the
+  // repo's default branch when it does not.
+  //
+  // The ack carries what actually happened (which branch went, whether the base
+  // moved and why not) because the base-branch leg is best-effort — the client
+  // has to be able to tell "tidied and caught up" from "tidied, base untouched".
+  // A closed PR's worktree *and* its branch. Distinct from `worktree.remove`,
+  // which keeps the branch (the sidebar and the mobile long-press use that one).
+  r.register("worktree.discard", async (ctx) => {
+    const projectId = String(ctx.env.projectId ?? "");
+    const worktreePath = String(ctx.env.worktreePath ?? "");
+    if (!projectId || !worktreePath) {
+      ctx.err(WireErrorCode.BadRequest, "worktree.discard requires projectId and worktreePath");
+      return;
+    }
+    try {
+      const result = await manager.discardWorktree(projectId, worktreePath);
+      void broadcastReposSnapshot();
+      ctx.ack({ projectId, worktreePath, ...result });
+    } catch (e) {
+      ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+    }
+  });
+
+  // The ending a merged PR never had: remove the worktree, delete its branch, and
+  // fast-forward the branch the PR landed on. `baseBranch` is the PR's own
+  // baseRefName when the app has it; the manager falls back to the repo default.
+  //
+  // The ack carries what actually happened (which branch went, whether the base
+  // moved and why not) because both the branch and base legs are best-effort — the
+  // client has to be able to tell "tidied and caught up" from "tidied, base
+  // untouched".
+  r.register("worktree.wrapUp", async (ctx) => {
+    const projectId = String(ctx.env.projectId ?? "");
+    const worktreePath = String(ctx.env.worktreePath ?? "");
+    const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+    if (!projectId || !worktreePath) {
+      ctx.err(WireErrorCode.BadRequest, "worktree.wrapUp requires projectId and worktreePath");
+      return;
+    }
+    try {
+      const result = await manager.wrapUpWorktree(projectId, worktreePath, baseBranch);
+      void broadcastReposSnapshot();
+      ctx.ack({ projectId, worktreePath, ...result });
+    } catch (e) {
+      ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+    }
+  });
+
+  // The PR mutations that act on GitHub rather than on disk. All rebroadcast the
+  // repos snapshot: the gateway drops its cached lookup for the branch, so the
+  // next poll reports the new draft/mergeStateStatus/state.
+  for (const [kind, run] of [
+    ["pr.markReady", (p: string, w: string) => manager.markPrReady(p, w)],
+    ["pr.updateBranch", (p: string, w: string) => manager.updatePrBranch(p, w)],
+    ["pr.squashMerge", (p: string, w: string) => manager.squashMergePr(p, w)],
+  ] as const) {
+    r.register(kind, async (ctx) => {
+      const projectId = String(ctx.env.projectId ?? "");
+      const worktreePath = String(ctx.env.worktreePath ?? "");
+      if (!projectId || !worktreePath) {
+        ctx.err(WireErrorCode.BadRequest, `${kind} requires projectId and worktreePath`);
+        return;
+      }
+      try {
+        await run(projectId, worktreePath);
+        void broadcastReposSnapshot();
+        ctx.ack({ projectId, worktreePath });
+      } catch (e) {
+        ctx.err(WireErrorCode.BadRequest, (e as Error).message);
+      }
+    });
+  }
 }

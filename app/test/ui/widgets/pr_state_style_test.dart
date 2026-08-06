@@ -10,21 +10,15 @@ import 'package:makit/store/models.dart';
 import 'package:makit/ui/widgets/icon_glyph.dart';
 import 'package:makit/ui/widgets/pr_state_style.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:makit/ui/widgets/pr_signals.dart';
+import 'package:makit/ui/widgets/pr_tone.dart';
 
 PullRequest _pr(String state) =>
     PullRequest(number: 1, url: '', state: state, title: 't', isDraft: false);
 
-PullRequest _openPr({bool isDraft = false, String rollup = 'none'}) =>
-    PullRequest(
-      number: 1,
-      url: '',
-      state: 'OPEN',
-      title: 't',
-      isDraft: isDraft,
-      checkRollup: rollup,
-    );
 
 void main() {
+  _toneHuesTests();
   final cs = ColorScheme.fromSeed(seedColor: kMakitAccent);
 
   test('no PR → plain branch icon, muted', () {
@@ -91,69 +85,35 @@ void main() {
     expect(style.glyph, const IconGlyph.font(PhosphorIconsLight.gitBranch));
     expect(style.color, cs.outline);
   });
+}
 
-  // prPillColors — the decision the three PR pills (desktop composer, mobile
-  // session chip, home worktree row) each used to make for themselves. One of
-  // them made it differently, so an open failing PR read red on two surfaces and
-  // brand-blue on the third.
-  group('prPillColors', () {
-    test('an open PR is tinted by its CI verdict, not its state', () {
-      expect(prPillColors(cs, _openPr(rollup: 'fail')).icon, isNot(cs.primary));
+// The next-step bar tints its facts by [PrTone]; the sheet tints each CI check by
+// its bucket. Those are different vocabularies for the same underlying states, so
+// they read from one set of hues — this pins that, because two files each holding
+// `0xFFF85149` is precisely how the old pills drifted apart.
+void _toneHuesTests() {
+  const cs = ColorScheme.dark();
+
+  group('tone hues are the check hues', () {
+    test('blocking is the failing-check red', () {
+      expect(prToneColor(cs, PrTone.blocking), prCheckBucketColor(cs, 'fail'));
+    });
+
+    test('attention is the pending-check amber', () {
       expect(
-        prPillColors(cs, _openPr(rollup: 'fail')).icon,
-        prRollupColor(cs, 'fail'),
-      );
-      expect(
-        prPillColors(cs, _openPr(rollup: 'pass')).icon,
-        prRollupColor(cs, 'pass'),
-      );
-      expect(
-        prPillColors(cs, _openPr(rollup: 'pending')).icon,
-        prRollupColor(cs, 'pending'),
+        prToneColor(cs, PrTone.attention),
+        prCheckBucketColor(cs, 'pending'),
       );
     });
 
-    test('an open PR with no checks falls back to the muted outline', () {
-      // `prRollupColor` maps an unknown/absent rollup to cs.outline; the pill
-      // must not paint a verdict it does not have.
-      expect(prPillColors(cs, _openPr()).icon, cs.outline);
+    test('landed is the AA-safe merged purple, not the vivid icon hue', () {
+      // The tone tints text as well as the dot, so it must clear AA (4.5:1).
+      expect(prToneColor(cs, PrTone.landed), cs.prMergedText);
+      expect(prToneColor(cs, PrTone.landed), isNot(kPrMerged));
     });
 
-    test('a draft is grey whatever CI says — it is not up for review yet', () {
-      final colors = prPillColors(cs, _openPr(isDraft: true, rollup: 'fail'));
-      expect(colors.icon, cs.outline);
-      expect(colors.label, cs.outline);
-    });
-
-    test('a merged PR reads by state, so stale checks cannot look live', () {
-      final colors = prPillColors(cs, _pr('MERGED'));
-      expect(colors.icon, kPrMerged);
-      // Labels need AA (4.5:1), which the vivid hue misses as small text.
-      expect(colors.label, cs.prMergedText);
-    });
-
-    test('a closed PR reads by state', () {
-      expect(prPillColors(cs, _pr('CLOSED')).icon, cs.error);
-    });
-
-    test('state beats draft once the PR is no longer open', () {
-      // The draft-grey rule is an *open*-PR rule: a closed draft is closed, and
-      // reads like it. Worth pinning because the home row used to test `isDraft`
-      // first and so painted a closed draft grey, unlike the other two pills.
-      const closedDraft = PullRequest(
-        number: 1,
-        url: '',
-        state: 'CLOSED',
-        title: 't',
-        isDraft: true,
-      );
-      expect(prPillColors(cs, closedDraft).icon, cs.error);
-      expect(prPillColors(cs, closedDraft).icon, isNot(cs.outline));
-    });
-
-    test('an open PR uses one colour for glyph and label', () {
-      final colors = prPillColors(cs, _openPr(rollup: 'fail'));
-      expect(colors.label, colors.icon);
+    test('quiet recedes to the muted outline', () {
+      expect(prToneColor(cs, PrTone.quiet), cs.outline);
     });
   });
 }

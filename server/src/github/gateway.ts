@@ -36,6 +36,8 @@ import {
   checkRunsRestArgv,
   combinedStatusRestArgv,
   openPrsArgv,
+  prMutationArgv,
+  type PrMutation,
   openPrsRestArgv,
   originRemoteArgv,
   parsePrUrl,
@@ -96,6 +98,21 @@ export interface GithubGateway {
    * (spec §6.3).
    */
   openPrs(repoPath: string, limit: number, opts?: { interactive?: boolean }): Promise<OpenPr[]>;
+  /**
+   * Run a state-changing `gh pr` verb on the user's behalf (`ready` to take a PR
+   * out of draft, `update-branch` to merge the base into it).
+   *
+   * Always interactive — it is a button press, never a poller — so it spends from
+   * the reserve rather than being shed. Invalidates the cached lookup for
+   * [branch] on success, otherwise the UI would keep reporting the state the
+   * mutation just changed until the TTL expired.
+   */
+  mutatePr(
+    repoPath: string,
+    branch: string,
+    number: number,
+    verb: PrMutation,
+  ): Promise<{ ok: boolean; error?: string }>;
   budget(): BudgetSnapshot;
   /** 60-slot per-minute `{mine, others}` ring for the sparkline (spec §6.6). */
   history(): Array<{ mine: number; others: number }>;
@@ -248,6 +265,19 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
 
   function cacheSet(key: string, value: unknown, ttlMs: number): void {
     cache.set(key, { value, expiresAt: now() + ttlMs });
+  }
+
+  /**
+   * Bumped whenever a mutation invalidates a key. A lookup that was already in
+   * flight when that happened describes the *pre*-mutation state, so it must not
+   * be written to the cache on arrival — otherwise the invalidation is undone and
+   * the UI keeps reporting the state the mutation just changed (SPEC-38 §7).
+   */
+  const generation = new Map<string, number>();
+  const generationOf = (key: string) => generation.get(key) ?? 0;
+  function invalidate(key: string): void {
+    cache.delete(key);
+    generation.set(key, generationOf(key) + 1);
   }
 
   /** One in-flight promise per key; cleared in `finally` so dedupe is per-burst. */
@@ -529,6 +559,10 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       isDraft: row.draft === true,
       mergeable,
       mergeStateStatus,
+      baseRefName:
+        typeof (row as { base?: { ref?: unknown } }).base?.ref === "string"
+          ? ((row as { base: { ref: string } }).base.ref)
+          : null,
       checks,
       checkRollup: rollupChecks(checks),
       // REST cannot supply this (no `resolved` field): report 0 but flag it as
@@ -607,6 +641,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       isDraft: p.isDraft === true,
       mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
       mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
+      baseRefName: typeof p.baseRefName === "string" ? p.baseRefName : null,
       checks,
       checkRollup: rollupChecks(checks),
       unresolvedComments,
@@ -665,11 +700,42 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // that promise would inherit the shed answer instead of drawing on the
       // reserve — silently undoing §6.3's guarantee.
       return dedupe(`${key}:${interactive}`, async () => {
+        const started = generationOf(key);
         const result = await doPrForBranch(repoPath, branch, interactive);
-        // Only cache definite answers; a throttled/errored lookup must retry.
-        if (result.kind === "pr" || result.kind === "none") cacheSet(key, result, TTL_PR_MS);
+        // Only cache definite answers; a throttled/errored lookup must retry. And
+        // only if no mutation invalidated this key while we were in flight — see
+        // `generation`.
+        if (
+          (result.kind === "pr" || result.kind === "none") &&
+          generationOf(key) === started
+        ) {
+          cacheSet(key, result, TTL_PR_MS);
+        }
         return result;
       });
+    },
+
+    async mutatePr(repoPath, branch, number, verb) {
+      // Costed on `core`: both verbs are REST mutations under the hood. Spend is
+      // recorded even on failure (costedExec records before the exec), which is
+      // the honest accounting — GitHub charged us either way.
+      const r = await costedExec(
+        "core",
+        1,
+        prMutationArgv(verb, number),
+        repoPath,
+        PR_TIMEOUT_MS,
+      );
+      if (r.code !== 0) {
+        const kind = classifyFailure(r.stderr);
+        if (kind !== "error") await handleFailure(kind);
+        return { ok: false, error: r.stderr.trim() || `gh pr ${verb} failed` };
+      }
+      // The PR's state just changed, so the cached lookup is a lie. Drop it and
+      // bump its generation, so a lookup already in flight cannot re-seed the
+      // pre-mutation answer when it lands.
+      invalidate(`pr:${repoPath}:${branch}`);
+      return { ok: true };
     },
 
     async openPrs(repoPath, limit, opts) {

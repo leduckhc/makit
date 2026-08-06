@@ -245,6 +245,12 @@ export interface PullRequestInfo {
   isDraft: boolean;
   mergeable: string | null;
   mergeStateStatus: string | null;
+  /**
+   * The branch the PR merges into (`main`, a release branch, …). Drives the
+   * fast-forward leg of "wrap up". Optional: null when the lookup did not
+   * report it, absent on a fixture that predates the field.
+   */
+  baseRefName?: string | null;
   checks: PrCheckDTO[];
   checkRollup: PrCheckRollup;
   /** Count of unresolved review threads on the PR (via GraphQL). */
@@ -597,5 +603,98 @@ export async function removeWorktree(repoPath: string, worktreePath: string, for
     const detail = r.stderr.trim() || `exit ${r.code}`;
     log.warn(`[makit] git worktree remove ${worktreePath} failed: ${detail}`);
     throw new Error(`git worktree remove ${worktreePath} failed: ${detail}`);
+  }
+}
+
+/** Outcome of a {@link syncBaseBranch} attempt. */
+export interface BaseSyncResult {
+  /** True when the local base branch actually moved. */
+  updated: boolean;
+  /**
+   * Why it did not move, when that is worth telling the user. Absent for the
+   * benign "already up to date" case — that is a success, not a problem.
+   */
+  reason?: string;
+}
+
+/**
+ * Bring the local base branch (usually `main`) up to date after a PR landed on
+ * it — the second half of "wrap up" (SPEC: PR actions).
+ *
+ * **Fast-forward only, always.** A divergent local base means there are commits
+ * on it that were never pushed, and silently discarding those while tidying up a
+ * merged PR would be indefensible. So a non-fast-forward is reported, not forced.
+ *
+ * Two paths, because git treats a checked-out branch differently:
+ *  - checked out somewhere (normally the primary checkout) → `merge --ff-only`
+ *    inside that worktree, so the working tree follows the ref,
+ *  - only a ref → `fetch origin <branch>:<branch>`, which refuses a
+ *    non-fast-forward by itself and needs no checkout.
+ *
+ * Best-effort by contract: every failure (no remote, no such branch, offline)
+ * comes back as `updated: false` with a reason. The caller has already removed
+ * the worktree by this point, so throwing here would report a half-done job as
+ * a total failure.
+ */
+export async function syncBaseBranch(repoPath: string, branch: string): Promise<BaseSyncResult> {
+  const fetched = await git(["fetch", "origin", branch], repoPath);
+  if (fetched.code !== 0) {
+    return { updated: false, reason: `could not fetch origin/${branch}` };
+  }
+  // Nothing to do is the common case (the watcher may already have fetched).
+  const ahead = await git(["rev-list", "--count", `${branch}..origin/${branch}`], repoPath);
+  if (ahead.code === 0 && ahead.stdout.trim() === "0") return { updated: false };
+
+  const trees = await listWorktrees(repoPath);
+  // Normally 0 or 1. `git worktree add --ignore-other-worktrees` permits the same
+  // branch in several, and updating the shared ref through one of them would
+  // leave the others' index and working tree on the old commit — spuriously
+  // dirty, and confusing to debug. Refuse rather than pick one arbitrarily.
+  const hosts = trees.filter((t) => t.branch === branch);
+  if (hosts.length > 1) {
+    return {
+      updated: false,
+      reason: `${branch} is checked out in more than one worktree`,
+    };
+  }
+  const host = hosts[0];
+  if (host) {
+    const merged = await git(["merge", "--ff-only", `origin/${branch}`], host.path);
+    if (merged.code !== 0) {
+      return {
+        updated: false,
+        reason: `${branch} has local commits that are not on origin/${branch}`,
+      };
+    }
+    return { updated: true };
+  }
+  // Not a force: no `+` on the refspec, so git itself rejects a non-fast-forward.
+  const refUpdate = await git(["fetch", "origin", `${branch}:${branch}`], repoPath);
+  if (refUpdate.code !== 0) {
+    return {
+      updated: false,
+      reason: `${branch} has local commits that are not on origin/${branch}`,
+    };
+  }
+  return { updated: true };
+}
+
+/**
+ * Delete the local branch `<branch>`, if it is still there.
+ *
+ * Uses `-D`, not `-d`: a PR that GitHub squashed or rebased on merge leaves a
+ * local branch whose commits git cannot find on the base, so `-d` would refuse
+ * to delete a branch that has demonstrably landed. The caller only reaches here
+ * having read `state: MERGED` (or `CLOSED`) from GitHub, which is the better
+ * authority on whether the work survived.
+ *
+ * Silent when the branch is already gone — wrap up is meant to be re-runnable.
+ */
+export async function deleteBranch(repoPath: string, branch: string): Promise<void> {
+  if (!(await branchExists(repoPath, branch))) return;
+  const r = await git(["branch", "-D", branch], repoPath);
+  if (r.code !== 0) {
+    const detail = r.stderr.trim() || `exit ${r.code}`;
+    throw new Error(`git branch -D ${branch} failed: ${detail}`);
   }
 }

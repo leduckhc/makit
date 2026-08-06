@@ -1,0 +1,988 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — direction B "One next step", in depth (vs A)</title>
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/light/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<style>
+/* ── real makit tokens (dark, as shipped — from app/lib/app/theme.dart) ── */
+:root{
+  --surface:#171717; --lowest:#121212; --low:#1E1E1E;
+  --container:#242424; --high:#2E2E2E; --highest:#383838;
+  --on-surface:#F5F5F5; --outline:#9E9E9E; --outline-variant:#333333;
+  --primary:#4ADE80; --on-primary:#06210F;
+  --error:#FFB4AB; --merged:#A371F7;
+  --pass:#3FB950; --fail:#F85149; --pending:#D29922;
+  --caution:#E07B39;
+  --s2:2px;--s4:4px;--s6:6px;--s8:8px;--s10:10px;--s12:12px;--s16:16px;
+  --r6:6px;--r8:8px;--r10:10px;--r12:12px;--r16:16px;
+  --h:28px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0e0e0e;color:var(--on-surface);
+  font:400 14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+  padding:32px 24px 90px;-webkit-font-smoothing:antialiased}
+h1{font:600 22px/1.3 inherit;margin-bottom:6px}
+h2{font:600 17px/1.3 inherit;margin:0 0 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h3{font:600 13.5px/1.3 inherit;margin:0}
+.lede{color:var(--outline);font-size:13px;max-width:980px;margin-bottom:8px}
+code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace}
+section{margin:40px 0 0;padding-top:24px;border-top:1px solid var(--outline-variant)}
+section:first-of-type{border-top:0;margin-top:26px}
+.tag{font:700 9.5px/1 inherit;text-transform:uppercase;letter-spacing:.07em;
+  padding:3px 6px;border-radius:var(--r6);background:var(--highest);color:var(--outline)}
+.tag.now{background:#3a2a18;color:#E0A72E}
+.tag.new{background:#17512b;color:#b4f1be}
+.tag.a{background:#1d2f45;color:#a8cdf1}
+.tag.b{background:#17512b;color:#b4f1be}
+
+.cols{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start;margin-top:18px}
+.col{width:520px;border:1px solid var(--outline-variant);border-radius:var(--r12);
+  background:#141414;overflow:hidden}
+.col.pick{border-color:var(--primary)}
+.col.wide{width:100%;max-width:1080px}
+.col > header{padding:12px 16px;border-bottom:1px solid var(--outline-variant)}
+.col > header .t{display:flex;align-items:center;gap:8px}
+.col > header .d{color:var(--outline);font-size:11.5px;margin-top:5px}
+.col .body{padding:14px 16px 16px}
+.verdict{font-size:11.5px;padding:10px 16px 14px;border-top:1px solid var(--outline-variant);color:var(--outline)}
+.verdict p{margin:3px 0}
+.verdict .good::before{content:"＋ ";color:var(--pass)}
+.verdict .bad::before{content:"－ ";color:var(--fail)}
+.verdict b{color:var(--on-surface);font-weight:600}
+
+.pane{background:var(--surface);border-radius:var(--r10);padding:8px 6px 6px;margin-bottom:4px}
+.caption{font-size:11px;color:var(--outline);margin:14px 0 5px}
+.caption:first-child{margin-top:0}
+.caption b{color:var(--on-surface);font-weight:600}
+.composer{background:var(--high);border-radius:var(--r16);padding:7px 10px;color:var(--outline);
+  font-size:12.5px;display:flex;align-items:center;gap:8px}
+.send{width:24px;height:24px;border-radius:50%;background:var(--primary);color:var(--on-primary);
+  display:grid;place-items:center;font-size:13px;margin-left:auto;flex:none}
+.callout{font-size:12.5px;color:var(--outline);max-width:1080px;margin:14px 0 0;
+  padding:12px 16px;border:1px dashed var(--outline-variant);border-radius:var(--r10)}
+.callout b{color:var(--on-surface)}
+
+/* ══ B — the next-step bar ══════════════════════════════════════════ */
+.nbar{display:flex;align-items:center;gap:var(--s10);padding:0 6px 6px;min-height:var(--h)}
+/* The reason: one sentence, clickable, opening the detail popover. Truncates with
+   an ellipsis rather than growing the row — that graceful shrink is the whole
+   point of B, so it has to be a real block with text-overflow, not a flex row. */
+.reason{display:block;min-width:40px;flex:0 1 auto;font-size:12.5px;line-height:22px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  cursor:pointer;border-radius:var(--r6);padding:0 5px;margin-left:-5px}
+.reason:hover{background:rgba(255,255,255,.05)}
+.reason .num{color:var(--on-surface);font-weight:600;font-variant-numeric:tabular-nums}
+.reason .sep{color:#5f5f5f;padding:0 4px}
+.reason .lead{font-weight:500}            /* the loud fact, in its tone */
+.reason .rest{color:var(--outline)}       /* the quiet remainder */
+.reason .rest b{font-weight:500;color:#b9b9b9}
+.reason .stale{color:var(--outline);font-size:11px}
+
+/* B's only graphic, so it carries two things: verdict by hue, check progress by
+   arc. Inline-block so it can sit inside the truncating sentence. */
+.dot{width:9px;height:9px;border-radius:50%;flex:none;position:relative;
+  display:inline-block;vertical-align:-1px;margin-right:5px}
+.dot.hollow{background:transparent;box-shadow:inset 0 0 0 1.5px var(--outline)}
+.dot.ring{width:11px;height:11px;vertical-align:-2px}
+.dot.ring::after{content:"";position:absolute;inset:2.5px;border-radius:50%;background:var(--surface)}
+
+.nbar .grow{flex:1}
+/* the disclosure, for variant B1 */
+.more{font-size:11px;color:var(--outline);text-decoration:underline dotted;
+  text-underline-offset:3px;cursor:pointer;white-space:nowrap;flex:none}
+
+/* the CTA. B gives it all the weight, so it is the only filled thing in the row. */
+.cta{display:inline-flex;align-items:stretch;height:var(--h);border-radius:var(--r8);
+  overflow:hidden;flex:none;border:0;cursor:pointer}
+.cta .a{display:inline-flex;align-items:center;gap:6px;padding:0 var(--s12);
+  font:700 11px/1 inherit;white-space:nowrap}
+.cta .a i{font-size:13px}
+.cta .c{width:26px;display:grid;place-items:center;font-size:11px}
+.cta.idle{background:transparent;box-shadow:inset 0 0 0 1px var(--outline-variant);color:var(--outline)}
+.cta.idle .c{border-left:1px solid var(--outline-variant)}
+.cta.tonal .c{border-left:1px solid rgba(255,255,255,.16)}
+.cta.solid .c{border-left:1px solid rgba(0,0,0,.22)}
+
+/* ══ A's landing strip, for the head-to-head ═══════════════════════ */
+.strip{display:flex;align-items:center;gap:var(--s8);padding:0 4px 6px}
+.cap{display:flex;align-items:stretch;height:var(--h);border-radius:var(--r8);
+  overflow-x:auto;overflow-y:hidden;position:relative;min-width:0;flex:0 1 auto;scrollbar-width:none}
+.cap::-webkit-scrollbar{display:none}
+.cap.ovf{mask-image:linear-gradient(to right,#000 calc(100% - 18px),transparent)}
+.cap .seg{display:inline-flex;align-items:center;gap:5px;padding:0 var(--s8);white-space:nowrap;
+  border:0;background:none;color:inherit;font:inherit;cursor:default}
+.cap .seg i{font-size:11px}
+.cap .seg span{font:600 10px/1 inherit}
+.cap .seg.id span{font-weight:700}
+.cap .seg.act{cursor:pointer}
+.cap .seg .go{font-size:9px;opacity:.65}
+.cap .sep{width:1px;align-self:stretch}
+.cap .health{position:absolute;left:0;right:0;bottom:0;height:2px;display:flex}
+.cap .health .on{flex:2}.cap .health .off{flex:3;opacity:.18}
+
+/* ══ detail popover — what the pills became ════════════════════════ */
+.pop{width:330px;background:var(--high);border-radius:var(--r10);padding:9px 0 7px;font-size:12.5px;
+  box-shadow:0 8px 28px rgba(0,0,0,.55),inset 0 0 0 1px var(--outline-variant)}
+.pop .ph{font:700 9px/1 inherit;text-transform:uppercase;letter-spacing:.09em;color:var(--outline);
+  padding:0 12px 7px;display:flex;align-items:center;gap:6px}
+.pop .fact{display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer}
+.pop .fact:hover{background:rgba(255,255,255,.05)}
+.pop .fact i.g{font-size:14px;width:14px;text-align:center;flex:none}
+.pop .fact .l{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pop .fact .r{font:600 10.5px/1 inherit;flex:none}
+.pop .fact .fix{font:600 10px/1 inherit;padding:4px 7px;border-radius:var(--r6);flex:none}
+.pop .rule{height:1px;background:var(--outline-variant);margin:6px 0}
+.pop .foot{padding:5px 12px 0;font-size:11px;color:var(--outline);display:flex;align-items:center;gap:6px;cursor:pointer}
+
+/* ══ menu ══ */
+.menu{width:300px;background:var(--high);border-radius:var(--r10);padding:5px 0;font-size:12.5px;
+  box-shadow:0 8px 28px rgba(0,0,0,.55),inset 0 0 0 1px var(--outline-variant)}
+.menu .grp{font:700 9px/1 inherit;text-transform:uppercase;letter-spacing:.09em;color:var(--outline);
+  padding:9px 12px 5px;display:flex;align-items:center;gap:6px}
+.menu .it{display:flex;align-items:center;gap:9px;padding:7px 12px;cursor:pointer}
+.menu .it:hover{background:rgba(255,255,255,.06)}
+.menu .it i.g{font-size:15px;color:var(--outline);width:15px;text-align:center}
+.menu .it .lb{flex:1}
+.menu .it .kb{font:400 10px/1 ui-monospace,Menlo,monospace;color:var(--outline)}
+.menu .it.on i.g,.menu .it.on .lb{color:var(--primary)}
+.menu .it.off{opacity:.42;cursor:not-allowed}
+.menu .it.destr i.g,.menu .it.destr .lb{color:var(--error)}
+.menu .sep{height:1px;background:var(--outline-variant);margin:5px 0}
+.menu .it .sub{display:block;font-size:10.5px;color:var(--outline);margin-top:2px}
+
+/* ══ confirm dialogs ══ */
+.dlg{width:400px;background:var(--container);border-radius:var(--r16);padding:20px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6),inset 0 0 0 1px var(--outline-variant)}
+.dlg h4{font:600 16px/1.3 inherit;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.dlg p{font-size:12.5px;color:var(--outline)}
+.dlg .steps{margin:12px 0 4px;padding:0;list-style:none;font-size:12.5px;color:var(--outline)}
+.dlg .steps li{display:flex;gap:8px;padding:5px 0;align-items:flex-start}
+.dlg .steps li i{font-size:14px;margin-top:1px}
+.dlg .steps li b{color:var(--on-surface);font-weight:600}
+.dlg .acts2{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.btn{padding:8px 16px;border-radius:var(--r8);font:600 12.5px/1 inherit;border:0;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--outline)}
+
+/* ══ §9 action reference ══ */
+.acts{display:flex;flex-direction:column;gap:14px;max-width:1080px;margin-top:16px}
+/* `actref`, not `act`: direction A's tappable capsule segments already use
+   `.seg.act`, and a bare `.act` rule leaked a border-radius into them. */
+.actref{border:1px solid var(--outline-variant);border-radius:var(--r10);background:#141414;overflow:hidden}
+.actref.direct{border-left:3px solid var(--merged)}
+.actref.agent{border-left:3px solid var(--primary)}
+.actref > header{display:flex;align-items:center;gap:9px;padding:10px 14px;flex-wrap:wrap;
+  border-bottom:1px solid var(--outline-variant)}
+.actref > header i{font-size:16px}
+.actref > header .nm{font:700 13px/1 inherit}
+.actref > header .kind{font:700 9px/1 inherit;text-transform:uppercase;letter-spacing:.08em;
+  padding:3px 6px;border-radius:var(--r6)}
+.actref > header .kind.d{background:#2b1f3d;color:#cbb0ff}
+.actref > header .kind.a{background:#17512b;color:#b4f1be}
+.actref > header .cf{font:700 9px/1 inherit;text-transform:uppercase;letter-spacing:.08em;
+  padding:3px 6px;border-radius:var(--r6);background:#3a2a18;color:#E0A72E}
+.actref .when{margin-left:auto;font-size:11.5px;color:var(--outline);text-align:right}
+.actref .body{padding:12px 14px}
+.actref .lbl{font:700 9px/1 inherit;text-transform:uppercase;letter-spacing:.09em;color:var(--outline);
+  margin-bottom:6px}
+.actref pre{background:#0a0a0a;border:1px solid #222;border-radius:var(--r8);padding:10px 12px;
+  font:400 12px/1.65 ui-monospace,"SF Mono",Menlo,monospace;white-space:pre-wrap;
+  color:#d8d8d8;overflow-x:auto}
+.actref pre .c{color:#6f6f6f}
+.actref pre b{color:#9fe6b8;font-weight:400}
+.actref .note{font-size:11.5px;color:var(--outline);margin-top:8px}
+.actref .note b{color:var(--on-surface);font-weight:600}
+.gap.fixed{border-color:var(--pass);background:rgba(63,185,80,.06);color:#b4f1be}
+.gap.fixed b{color:#d6ffe0}
+.gap{border:1px solid var(--fail);border-radius:var(--r10);padding:12px 16px;margin-top:18px;
+  max-width:1080px;font-size:12.5px;color:#f9a19b;background:rgba(248,81,73,.06)}
+.gap b{color:#ffd5d2}
+.gap ol{margin:8px 0 0 18px}
+.gap li{margin:5px 0}
+
+/* ══ tables (§8) ══ */
+.rules{max-width:1080px;font-size:13px;color:var(--outline)}
+.rules table{border-collapse:collapse;width:100%;margin-top:12px;font-size:12.5px}
+.rules th,.rules td{text-align:left;padding:8px 12px;
+  border-bottom:1px solid var(--outline-variant);vertical-align:top}
+.rules th{font:700 10px/1 inherit;text-transform:uppercase;letter-spacing:.07em;color:var(--outline)}
+.rules td b{color:var(--on-surface);font-weight:600}
+
+/* ══ head-to-head ══ */
+.h2h{width:100%;max-width:1080px;border-collapse:collapse;margin-top:16px}
+.h2h th{text-align:left;padding:8px 12px;font:700 10px/1 inherit;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--outline);border-bottom:1px solid var(--outline-variant)}
+.h2h td{padding:10px 12px;border-bottom:1px solid var(--outline-variant);vertical-align:middle}
+.h2h td.st{font-size:11.5px;color:var(--outline);width:170px}
+.h2h td.st b{display:block;color:var(--on-surface);font-weight:600;font-size:12px;margin-bottom:2px}
+.h2h .cellpane{background:var(--surface);border-radius:var(--r8);padding:5px 2px 2px}
+.h2h td.w{width:calc((100% - 170px)/2)}
+
+/* ══ phone ══ */
+.phone{width:390px;background:var(--surface);border-radius:26px;overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.55),inset 0 0 0 1px #2a2a2a}
+.pscreen{padding:8px 0 14px}
+.wtrow{display:flex;align-items:center;padding:0 12px;min-height:44px;gap:9px}
+.wtrow .accent{width:3px;align-self:stretch;border-radius:2px;flex:none}
+.wtrow .bn{font:500 13px/1.3 inherit;flex:none}
+.wtrow .say{font-size:11.5px;color:var(--outline);flex:1;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
+.wtrow .say .lead{font-weight:500}
+.wtrow .go{font-size:13px;color:var(--outline);flex:none}
+.sheet{background:var(--low);border-radius:20px 20px 0 0;padding:8px 0 14px}
+.sheet .hdl{width:32px;height:4px;border-radius:2px;background:var(--outline-variant);margin:0 auto 12px}
+.sheet .hero{padding:0 18px 4px}
+.sheet .hero .st{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--outline)}
+.sheet .hero .say{font:600 19px/1.28 inherit;margin:8px 0 6px}
+.sheet .hero .ttl{font-size:12.5px;color:var(--outline)}
+.sheet .big{width:calc(100% - 36px);margin:14px 18px 0;height:46px;border-radius:var(--r12);border:0;
+  font:700 13.5px/1 inherit;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+.sheet .foot{font-size:11px;color:var(--outline);text-align:center;padding:8px 24px 0}
+.sheet .disc{margin:14px 0 0;border-top:1px solid var(--outline-variant)}
+.sheet .disc .dh{display:flex;align-items:center;gap:8px;padding:11px 18px;font-size:12.5px;color:var(--outline)}
+.sheet .disc .dh .n{margin-left:auto;font:600 11px/1 inherit}
+.mfact{display:flex;align-items:center;gap:10px;padding:8px 18px}
+.mfact i.g{font-size:16px;width:17px;text-align:center;flex:none}
+.mfact .l{flex:1;font-size:12.5px;min-width:0}
+.mfact .fix{font:600 11px/1 inherit;padding:6px 10px;border-radius:var(--r8);flex:none}
+</style>
+</head>
+<body>
+
+<h1>Direction B — “One next step” <span class="tag new">as built</span></h1>
+<p class="lede">
+You picked B, flavour <b>B1</b>. This page has been updated to match <b>what actually shipped</b>:
+the strings are the ones <code>prStatus()</code> emits, the actions are the ones wired, and
+§8 lists where the original mock turned out to be wrong. Same real tokens as
+<code>mockups/pr-actions.html</code> (the A/B/C survey).
+</p>
+<div class="callout"><b>Where it landed.</b> B1 keeps the <code>+n&nbsp;more</code> disclosure, and the
+objection to it (“that hides facts”) is answered by what the disclosure <em>opens</em>: the full fact
+list, each row with its own remedy button. The bar stays quiet; nothing becomes unreachable. The
+secondary facts cost one extra tap — that is B1's honest price, and it is written into the scorecard
+in §7.</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>1 · Pick the flavour of B</h2>
+<p class="lede">Three readings of “the bar whispers”, at the busiest state (red CI + 3 threads +
+1 unpushed commit) and at the calm one.</p>
+<div class="cols" id="flavours"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>2 · The dot does the work <span class="tag new">B's one graphic</span></h2>
+<p class="lede">B strips the chrome, so the single remaining graphic has to earn its place. Hue
+carries the verdict; an <b>arc</b> carries check progress — you get a sense of “how far” without
+C's gauge and without A's segments.</p>
+<div class="cols" id="dots"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>3 · Full state ladder <span class="tag b">B2</span></h2>
+<p class="lede">Every state, as a sentence. Read the left column top to bottom — it should sound like
+a person telling you where the branch stands.</p>
+<div class="cols"><div class="col wide"><div class="body" id="ladder"></div></div></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>4 · The detail layer — where the pills went</h2>
+<p class="lede">In A, the pills became tappable segments in the bar. In B1 they move <b>one click
+down</b>: the sentence (or <code>+n&nbsp;more</code>) opens the full fact list, each row with its own
+remedy, then the raw CI checks. <b>As built</b> this is one widget — <code>PrDetailBody</code> —
+shown as a dialog on desktop and a bottom sheet on mobile, which is also what let the old
+<code>pr_sheet.dart</code> be deleted rather than kept in parallel.</p>
+<div class="cols" id="detail"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>5 · Placement</h2>
+<p class="lede">B is quiet enough to live <em>inside</em> the composer without crowding it — which is
+the placement A wanted too, and B has a better claim to it.</p>
+<div class="cols" id="place"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>6 · Mobile</h2>
+<p class="lede">The sentence shrinks to the worktree row; the sheet becomes a single-focus screen —
+state, one action, detail behind a disclosure.</p>
+<div class="cols" id="mobile"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>7 · Head to head <span class="tag a">A</span><span class="tag b">B</span></h2>
+<p class="lede">Same data, same width, same five states.</p>
+<table class="h2h" id="h2h"></table>
+<div class="cols" id="scorecard"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>8 · Where this mock was wrong <span class="tag new">as built</span></h2>
+<p class="lede">Six things only showed up once it was running. Recorded here because the next person
+reading this page will otherwise trust the picture over the code.</p>
+<div class="rules"><table id="wrong"></table></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>9 · The two confirms</h2>
+<p class="lede">Only the irreversible actions ask, and each states what it will actually do rather
+than “are you sure?”. The merge dialog spends a line on what it will <em>not</em> do, because that is
+the assumption most likely to be wrong.</p>
+<div class="cols" id="confirms"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<section>
+<h2>10 · Every action, exactly what it runs <span class="tag new">as built</span></h2>
+<p class="lede">The full behavioural picture. <b class="k-direct">Do now</b> actions run a command on
+the server, in the repo directory; <b class="k-agent">Ask the agent</b> actions insert the prompt
+below into the composer and stop — nothing is ever sent for you. <code>&lt;n&gt;</code> is the PR
+number, <code>&lt;base&gt;</code> is the PR's own <code>baseRefName</code>.</p>
+<div class="acts" id="acts"></div>
+<div class="gap" id="gaps"></div>
+</section>
+
+<script>
+const TONE={blocking:'var(--fail)',attention:'var(--pending)',quiet:'var(--outline)',landed:'var(--merged)'};
+const ic=(n,w='light')=>`<i class="ph-${w} ph-${n}"></i>`;
+const el=id=>document.getElementById(id);
+const wash=(t,a)=>`color-mix(in srgb, ${TONE[t]} ${a}%, var(--high))`;
+const PR='git-pull-request';
+
+/* ═══ the model ════════════════════════════════════════════════════
+   `lead` is the loud fact (in `tone`); `rest` are the quiet ones that
+   continue the sentence; `detail` is what the popover would list.      */
+const st={
+  /* Strings below are the ones `prStatus()` actually emits — see
+     app/lib/ui/widgets/pr_signals.dart. Kept verbatim so this page stays a
+     usable reference rather than an idealised sketch. */
+  clean:{cap:'primary checkout, clean — NO chip is rendered at all',
+    num:'main',tone:'quiet',dot:{cls:'hollow'},quiet:true,
+    lead:'clean',rest:[],
+    cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
+  noPrClean:{cap:'a branch with no PR and nothing outstanding — also no chip',
+    num:'feat/pr-actions',tone:'quiet',dot:{cls:'hollow'},quiet:true,
+    lead:'ready for a PR',rest:[],
+    cta:{label:'Create PR',icon:PR,tone:'attention'}},
+  dirty:{cap:'no PR yet · uncommitted work',
+    num:'feat/pr-actions',tone:'attention',dot:{},
+    lead:'3 files uncommitted',rest:[],
+    cta:{label:'Commit & push',icon:'arrow-up',tone:'attention'}},
+  green:{cap:'open · green, nothing pressing',
+    num:'#142',tone:'quiet',dot:{c:'var(--pass)'},
+    lead:'12 checks passed',rest:[],leadTone:'quiet',
+    cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
+  hot:{cap:'open · CI red + 3 threads + 1 unpushed — three problems, one button',
+    num:'#142',tone:'blocking',dot:{},
+    lead:'2 checks failing',rest:['3 threads open','1 commit unpushed'],
+    cta:{label:'Fix',icon:'magic-wand',tone:'blocking'}},
+  oneProblem:{cap:'open · exactly one problem — keeps its own specific verb',
+    num:'#142',tone:'attention',dot:{c:'var(--pass)'},
+    lead:'1 commit unpushed',rest:[],
+    cta:{label:'Push',icon:'arrow-up',tone:'attention'}},
+  ready:{cap:'open · green, synced, mergeable — GitHub would take it',
+    num:'#142',tone:'quiet',dot:{c:'var(--pass)'},leadTone:'quiet',
+    lead:'ready to merge',rest:[],
+    cta:{label:'Squash & merge',icon:'git-merge',tone:'landed',direct:true}},
+  blocked:{cap:'open · mergeable but BLOCKED (a required review is missing)',
+    num:'#142',tone:'quiet',dot:{c:'var(--pass)'},leadTone:'quiet',
+    lead:'12 checks passed',rest:[],
+    cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
+  running:{cap:'open · checks in flight',
+    num:'#142',tone:'quiet',dot:{ring:8/12},leadTone:'quiet',
+    lead:'4 of 12 checks still running',rest:[],
+    cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
+  ciUnknown:{cap:'open · rollup says fail but the checks were shed (quota)',
+    num:'#142',tone:'blocking',dot:{},
+    lead:'CI failing',rest:[],
+    cta:{label:'Fix CI',icon:'wrench',tone:'blocking'}},
+  draft:{cap:'open · draft — ranked LAST, so it leads only when all else is clear',
+    num:'#142',tone:'quiet',dot:{c:'var(--outline)'},leadTone:'quiet',
+    lead:'still a draft',rest:[],
+    cta:{label:'Mark ready',icon:'check-circle',tone:'attention',direct:true}},
+  conflict:{cap:'open · conflicts with the base',
+    num:'#142',tone:'blocking',dot:{},
+    lead:'conflicts with the base',rest:[],
+    cta:{label:'Pull',icon:'arrow-down',tone:'blocking'}},
+  behind:{cap:'open · mergeStateStatus BEHIND',
+    num:'#142',tone:'attention',dot:{},
+    lead:'the base branch moved on',rest:[],
+    cta:{label:'Update branch',icon:'arrows-merge',tone:'attention',direct:true}},
+  behindLocal:{cap:'open · behind the remote',
+    num:'#142',tone:'attention',dot:{},
+    lead:'2 commits behind',rest:[],
+    cta:{label:'Pull',icon:'arrow-down',tone:'attention'}},
+  threads:{cap:'open · unresolved review threads',
+    num:'#142',tone:'attention',dot:{},
+    lead:'3 threads open',rest:[],
+    cta:{label:'Resolve threads',icon:'chat-circle',tone:'attention'}},
+  merged:{cap:'MERGED — the ending that did not exist before',
+    num:'#142',tone:'landed',dot:{},
+    lead:'merged',rest:['worktree still here'],
+    cta:{label:'Wrap up',icon:'broom',tone:'landed',direct:true}},
+  closed:{cap:'closed without merging',
+    num:'#142',tone:'blocking',dot:{c:'var(--outline)'},
+    lead:'closed without merging',rest:['worktree still here'],leadTone:'quiet',
+    cta:{label:'Discard worktree',icon:'trash',tone:'blocking',direct:true,destr:true}},
+  stale:{cap:'open · stale (GitHub quota) — number crisp, the rest dimmed',
+    num:'#142',tone:'blocking',dot:{},stale:true,
+    lead:'2 checks failing',rest:[],
+    cta:{label:'Fix CI',icon:'wrench',tone:'blocking'}},
+};
+
+
+/* ═══ shared CTA ═══════════════════════════════════════════════════ */
+function ctaHTML(c){
+  if(c.idle) return `<button class="cta idle"><span class="a">${ic(c.icon)}${c.label}</span>
+    <span class="c">${ic('caret-down')}</span></button>`;
+  const t=TONE[c.tone];
+  if(c.direct){
+    const fg=c.destr?'#3a0f0c':(c.tone==='landed'?'#150a26':'#0e0e0e');
+    return `<button class="cta solid" style="background:${c.destr?'var(--error)':t};color:${fg}">
+      <span class="a">${ic(c.icon)}${c.label}</span><span class="c">${ic('caret-down')}</span></button>`;
+  }
+  return `<button class="cta tonal" style="background:${wash(c.tone,18)};color:${t}">
+    <span class="a">${ic(c.icon)}${c.label}</span><span class="c">${ic('caret-down')}</span></button>`;
+}
+
+/* ═══ the dot ══════════════════════════════════════════════════════ */
+function dotHTML(m){
+  const d=m.dot||{}, c=d.c||TONE[m.tone];
+  if(d.cls==='hollow') return `<span class="dot hollow"></span>`;
+  if(d.ring!==undefined){
+    const deg=Math.round(d.ring*360);
+    return `<span class="dot ring" style="background:conic-gradient(${TONE.pending||'var(--pending)'} 0 ${deg}deg, var(--outline-variant) ${deg}deg 360deg)"></span>`;
+  }
+  return `<span class="dot" style="background:${c}"></span>`;
+}
+
+/* ═══ B — three flavours ═══════════════════════════════════════════ */
+/* B1: loud fact + "+n more" disclosure (the survey's version)
+   B2: loud fact + the rest, dimmed, continuing the sentence  ← recommended
+   B3: no number in the bar at all — just the sentence         */
+function bHTML(m,flavour='B2'){
+  const t=TONE[m.leadTone||m.tone];
+  const num = flavour==='B3' ? '' : `<span class="num">${m.num}</span><span class="sep">·</span>`;
+  let rest='';
+  if(flavour==='B2'&&m.rest.length)
+    rest = m.rest.map(r=>`<span class="sep">·</span><span class="rest"><b>${r}</b></span>`).join('');
+  if(flavour==='B3'&&m.rest.length)
+    rest = m.rest.map(r=>`<span class="sep">·</span><span class="rest"><b>${r}</b></span>`).join('');
+  const more = (flavour==='B1'&&m.rest.length)
+    ? `<span class="more">+${m.rest.length} more</span>` : '';
+  const stale = m.stale
+    ? `<span class="sep">·</span><span class="stale">${ic('arrow-clockwise')}last known</span>` : '';
+  return `<div class="nbar">
+    <span class="reason" style="color:${t}" title="Open the detail">
+      ${dotHTML(m)}${num}<span class="lead">${m.lead}</span>${rest}${stale}
+    </span>
+    ${more}<span class="grow"></span>${ctaHTML(m.cta)}</div>`;
+}
+
+/* ═══ A — landing strip, for the head-to-head ══════════════════════ */
+const A={
+  dirty:{id:['git-branch','feat/pr-actions','quiet'],
+    sig:[['pencil-simple','3 uncommitted','attention',1]],cta:st.dirty.cta},
+  hot:{id:[PR,'#142','quiet'],rollup:'fail',
+    sig:[['x-circle','2 failing','blocking',1],['chat-circle','3 unresolved','attention',1],
+         ['arrow-up','1 ahead','attention',1]],cta:st.hot.cta},
+  green:{id:[PR,'#142','quiet'],rollup:'pass',
+    sig:[['check-circle','12 checks passed','quiet',0]],cta:st.green.cta},
+  running:{id:[PR,'#142','quiet'],rollup:'pending',
+    sig:[['clock','4 running','quiet',0]],cta:st.running.cta},
+  merged:{id:['git-merge','#142 merged','landed'],
+    sig:[['clock','2h ago','landed',0]],cta:st.merged.cta},
+};
+function aHTML(m){
+  const t=TONE[m.id[2]];
+  let s=`<button class="seg id" style="color:${t}">${ic(m.id[0])}<span>${m.id[1]}</span></button>`;
+  for(const [g,l,tone,act] of m.sig)
+    s+=`<span class="sep" style="background:${t};opacity:.20"></span>
+      <button class="seg ${act?'act':''}" style="color:${TONE[tone]}">${ic(g)}<span>${l}</span>
+      ${act?ic('arrow-right')+'':''}</button>`;
+  const hl=m.rollup?`<span class="health">${m.rollup==='pending'
+    ?`<span class="on" style="background:var(--pending)"></span><span class="off" style="background:var(--pending)"></span>`
+    :`<span class="on" style="flex:1;background:var(--${m.rollup})"></span>`}</span>`:'';
+  return `<div class="strip"><span class="cap" style="background:${wash(m.id[2],10)}">${s}${hl}</span>
+    ${ctaHTML(m.cta)}</div>`;
+}
+
+/* ═══ 1 · flavours ═════════════════════════════════════════════════ */
+const FL=[
+  {k:'B1',name:'Disclosure',tag:'new',
+   d:'One fact, the rest counted behind <b>+n more</b> — which opens the full list, each fact with its own remedy. <b>This is what shipped.</b> The disclosure is not a dead count: it is the only place secondary facts become actionable, which is the trade B1 makes for a quiet bar.'},
+  {k:'B2',name:'One sentence',tag:'',
+   d:'The loud fact coloured, the rest continuing the sentence dimmed. Reads well, but at composer width the sentence truncated on a busy PR — and the dimmed tail was not tappable, so it informed without helping. Not built.'},
+  {k:'B3',name:'Verb only',tag:'',
+   d:'Drop the number from the bar too — it lives in the popover and the title strip already. Absolute minimum, but you lose the at-a-glance “which PR is this”.'},
+];
+el('flavours').innerHTML=FL.map(f=>`
+  <div class="col ${f.k==='B1'?'pick':''}" style="width:500px">
+    <header><div class="t"><h3>${f.k} — ${f.name}</h3>${f.tag?`<span class="tag new">as built</span>`:''}</div>
+      <div class="d" style="min-height:76px">${f.d}</div></header>
+    <div class="body">
+      <div class="caption"><b>busiest</b></div>
+      <div class="pane">${bHTML(st.hot,f.k)}
+        <div class="composer"><span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div></div>
+      <div class="caption"><b>calm</b></div>
+      <div class="pane">${bHTML(st.green,f.k)}</div>
+      <div class="caption"><b>merged</b></div>
+      <div class="pane">${bHTML(st.merged,f.k)}</div>
+    </div></div>`).join('');
+
+/* ═══ 2 · dots ═════════════════════════════════════════════════════ */
+const DOTS=[
+  ['no PR yet','hollow ring — nothing to report',{cls:'hollow'},'quiet'],
+  ['checks green','solid pass',{c:'var(--pass)'},'quiet'],
+  ['checks red','solid fail',{},'blocking'],
+  ['4 of 12 running','arc = checks reported so far',{ring:8/12},'attention'],
+  ['merged','the only purple in the pane',{},'landed'],
+  ['draft','muted — not up for review',{c:'var(--outline)'},'quiet'],
+];
+el('dots').innerHTML=`<div class="col" style="width:520px"><div class="body">
+  ${DOTS.map(([l,d,dot,tone])=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:7px 0">
+      <span style="width:22px;display:grid;place-items:center">${dotHTML({dot,tone})}</span>
+      <span style="font-size:12.5px;width:130px">${l}</span>
+      <span style="font-size:11.5px;color:var(--outline)">${d}</span>
+    </div>`).join('')}
+  <div style="font-size:11.5px;color:var(--outline);margin-top:10px;padding-top:10px;
+    border-top:1px solid var(--outline-variant)">
+    The arc replaces today's pulsing/indeterminate treatment: a check rollup is a
+    <em>count</em>, not an unknown duration, so a determinate arc is honest where a spinner is not.</div>
+</div></div>`;
+
+/* ═══ 3 · ladder ═══════════════════════════════════════════════════ */
+el('ladder').innerHTML=Object.values(st).map(m=>
+  `<div class="caption"><b>${m.cap}</b></div><div class="pane">${
+    m.quiet
+      // isQuiet: no PR to reach and nothing outstanding. The row renders no chip
+      // at all — putting "ready for a PR" on every clean branch added a meta line
+      // to rows with nothing to report and made repo cards tall enough to push
+      // their own "Show less" control off screen.
+      ? `<div style="padding:6px 8px;font-size:11.5px;color:var(--outline)">
+           <i class="ph-light ph-minus-circle"></i> nothing rendered \u2014 <code>PrStatus.isQuiet</code></div>`
+      : bHTML(m,'B1')}</div>`).join('');
+
+/* ═══ 4 · detail popover + menu ════════════════════════════════════ */
+const fact=(g,l,{r,rt,fix,ft}={})=>`<div class="fact">
+  <i class="ph-light ph-${g} g" style="color:${ft||rt||'var(--outline)'}"></i>
+  <span class="l">${l}</span>
+  ${r?`<span class="r" style="color:${rt}">${r}</span>`:''}
+  ${fix?`<span class="fix" style="background:${fix[1]};color:${fix[2]}">${fix[0]}</span>`:''}</div>`;
+el('detail').innerHTML=`
+<div class="col" style="width:380px"><header><div class="t"><h3>Detail — open PR, CI red</h3></div>
+  <div class="d">Opened by the sentence or <code>+n more</code>. On mobile the loud fact is the
+  headline and the pinned button, so the list below carries only what they elided — stating it in all
+  three places said the same thing three times.</div></header>
+  <div class="body"><div class="pop">
+    <div class="ph">${ic('warning')} needs you</div>
+    ${fact('x-circle','2 checks failing',{rt:'var(--fail)',fix:['Fix CI',wash('blocking',20),TONE.blocking]})}
+    ${fact('chat-circle','3 threads open',{rt:'var(--pending)',fix:['Resolve',wash('attention',20),TONE.attention]})}
+    ${fact('arrow-up','1 commit unpushed',{rt:'var(--pending)',fix:['Push',wash('attention',20),TONE.attention]})}
+    <div class="rule"></div>
+    <div class="ph">${ic('check-circle')} 12 checks</div>
+    ${fact('x-circle','analyze',{r:'failed',rt:'var(--fail)'})}
+    ${fact('x-circle','flutter test',{r:'failed',rt:'var(--fail)'})}
+    ${fact('check-circle','server / typecheck',{r:'passed',rt:'var(--pass)'})}
+    ${fact('check-circle','server / test',{r:'passed',rt:'var(--pass)'})}
+    ${fact('minus-circle','ios build',{r:'skipped',rt:'var(--outline)'})}
+    <div class="foot">${ic('arrow-square-out')} Open #142 on GitHub</div>
+  </div></div></div>
+
+<div class="col" style="width:380px"><header><div class="t"><h3>Popover — merged</h3><span class="tag new">new</span></div>
+  <div class="d">The detail becomes a wrap-up brief: what landed, and what is still lying around
+  because of it.</div></header>
+  <div class="body"><div class="pop">
+    <div class="ph">${ic('git-merge')} landed</div>
+    ${fact('git-merge','Merged into main · 2h ago',{ft:'var(--merged)'})}
+    ${fact('check-circle','12 checks passed',{ft:'var(--pass)'})}
+    <div class="rule"></div>
+    <div class="ph">${ic('broom')} left behind</div>
+    ${fact('folder','Worktree still on disk',{r:'2 dirty',rt:'var(--pending)'})}
+    ${fact('play-circle','1 session still running',{rt:'var(--pending)'})}
+    ${fact('arrow-down','main is 6 commits behind',{rt:'var(--pending)'})}
+    <div class="foot">${ic('arrow-square-out')} Open #142 on GitHub</div>
+  </div></div></div>
+
+<div class="col" style="width:340px"><header><div class="t"><h3>CTA menu — merged</h3></div>
+  <div class="d">Same two-register rule as A: <b>do now</b> runs a server command, <b>ask the agent</b>
+  inserts a prompt. Irrelevant items stay visible with their reason.</div></header>
+  <div class="body"><div class="menu">
+    <div class="grp">${ic('lightning')} Do now</div>
+    <div class="it on"><i class="ph-light ph-broom g"></i><span class="lb">Wrap up</span><span class="kb">⏎</span></div>
+    <div class="sep"></div>
+    <div class="grp">${ic('clock-counter-clockwise')} History</div>
+    <div class="it off"><i class="ph-light ph-wrench g"></i><span class="lb">Fix PR<span class="sub">the pull request has already ended</span></span></div>
+    <div class="it off"><i class="ph-light ph-chat-circle g"></i><span class="lb">Resolve comments<span class="sub">the pull request has already ended</span></span></div>
+    <div class="it off"><i class="ph-light ph-arrow-up g"></i><span class="lb">Push<span class="sub">the pull request has already ended</span></span></div>
+  </div></div></div>
+
+<div class="col" style="width:380px"><header><div class="t"><h3>CTA menu — draft with a red build</h3><span class="tag new">as built</span></div>
+  <div class="d">The menu lists <b>every</b> direct op the state allows, not just the one the button
+  happens to show. Without that, a draft with a failing build said “Fix CI” and <em>lost</em> Mark
+  ready entirely.</div></header>
+  <div class="body"><div class="menu">
+    <div class="grp">${ic('lightning')} Do now</div>
+    <div class="it"><i class="ph-light ph-check-circle g"></i><span class="lb">Mark ready</span></div>
+    <div class="sep"></div>
+    <div class="grp">${ic('sparkle')} Ask the agent</div>
+    <div class="it on"><i class="ph-light ph-wrench g"></i><span class="lb">Fix PR</span><span class="kb">⏎</span></div>
+    <div class="it off"><i class="ph-light ph-chat-circle g"></i><span class="lb">Resolve comments<span class="sub">there are no unresolved threads</span></span></div>
+    <div class="it off"><i class="ph-light ph-arrow-down g"></i><span class="lb">Pull<span class="sub">the branch is up to date with the remote</span></span></div>
+    <div class="it off"><i class="ph-light ph-pencil-simple g"></i><span class="lb">Commit and push<span class="sub">there is nothing uncommitted</span></span></div>
+  </div></div></div>`;
+
+/* ═══ 5 · placement ════════════════════════════════════════════════ */
+el('place').innerHTML=`
+<div class="col" style="width:520px"><header><div class="t"><h3>Floating <span class="tag now">today's slot</span></h3></div>
+  <div class="d">Its own row above the composer, as today. B is quiet enough that this no longer reads
+  as a third competing element.</div></header>
+  <div class="body"><div class="pane">${bHTML(st.hot,'B1')}
+    <div class="composer"><span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div></div></div></div>
+
+<div class="col" style="width:520px"><header><div class="t"><h3>Inside the composer <span class="tag new">suggested</span></h3></div>
+  <div class="d">One sentence on the composer's top edge, above a hairline. At this weight it reads as
+  a caption on the box you're typing into — which is what it is, since most of its actions put text
+  there.</div></header>
+  <div class="body"><div class="pane">
+    <div style="background:var(--high);border-radius:var(--r16);padding:5px 8px 7px">
+      ${bHTML(st.hot,'B1').replace('class="nbar"','class="nbar" style="padding:0 2px 3px;min-height:22px"')}
+      <div style="height:1px;background:rgba(255,255,255,.07);margin:2px 2px 5px"></div>
+      <div style="display:flex;align-items:center;padding:3px 3px;color:var(--outline);font-size:12.5px">
+        <span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div>
+    </div></div></div></div>`;
+
+/* ═══ 6 · mobile ═══════════════════════════════════════════════════ */
+const mrow=(branch,m,accent)=>`<div class="wtrow">
+  <span class="accent" style="background:${accent}"></span>
+  <span class="bn">${branch}</span>
+  <span class="say">${dotHTML(m)} <span class="lead" style="color:${TONE[m.leadTone||m.tone]}">${m.lead}</span>${
+    m.rest.length?` · ${m.rest[0]}`:''}</span>
+  <span class="go">${ic('caret-right')}</span></div>`;
+el('mobile').innerHTML=`
+<div class="col" style="width:430px"><header><div class="t"><h3>Home rows — the sentence, shrunk</h3></div>
+  <div class="d">Today each row carries a <code>PR #142</code> pill whose colour is the only signal.
+  In B the row <em>says</em> what's up. A merged row says it has a worktree lying around.</div></header>
+  <div class="body"><div class="phone"><div class="pscreen">
+    ${mrow('feat/pr-actions',st.hot,'var(--fail)')}
+    ${mrow('fix/composer',st.merged,'transparent')}
+    ${mrow('spike/gauge',st.running,'var(--primary)')}
+    ${mrow('main',st.noPrClean,'transparent')}
+  </div></div></div></div>
+
+<div class="col" style="width:430px"><header><div class="t"><h3>Sheet — single focus</h3><span class="tag new">new</span></div>
+  <div class="d">The sentence becomes the headline. One action. Detail behind a disclosure, so the
+  sheet opens on the decision rather than on a list.</div></header>
+  <div class="body"><div class="phone"><div class="pscreen" style="padding:0">
+    <div class="sheet"><div class="hdl"></div>
+      <div class="hero">
+        <div class="st">${dotHTML(st.hot)} <span>#142</span><span class="sep">·</span><span>open</span></div>
+        <div class="say">2 checks failing<span style="color:var(--outline);font-weight:400">, 3 threads
+          open and 1 commit unpushed.</span></div>
+        <div class="ttl">Landing strip: composer bar &amp; pills, unified</div>
+      </div>
+      <button class="big" style="background:${wash('blocking',20)};color:${TONE.blocking}">
+        ${ic('wrench')} Fix CI</button>
+      <div class="foot">Puts the prompt in the composer — it never sends for you.</div>
+      <div class="disc">
+        <div class="dh">${ic('list-dashes')} <span>Detail</span><span class="n" style="color:var(--fail)">12 checks</span>${ic('caret-down')}</div>
+        ${['x-circle|analyze|Fix|blocking','chat-circle|3 threads open|Resolve|attention','arrow-up|1 commit unpushed|Push|attention']
+          .map(r=>{const [g,l,f,t]=r.split('|');return `<div class="mfact">
+            <i class="ph-light ph-${g} g" style="color:${TONE[t]}"></i><span class="l">${l}</span>
+            <span class="fix" style="background:${wash(t,18)};color:${TONE[t]}">${f}</span></div>`}).join('')}
+      </div>
+    </div></div></div></div>
+
+<div class="col" style="width:430px"><header><div class="t"><h3>Sheet — merged</h3><span class="tag new">new</span></div>
+  <div class="d">Same shape, one purple action. The headline states the fact and the leftover in one
+  breath.</div></header>
+  <div class="body"><div class="phone"><div class="pscreen" style="padding:0">
+    <div class="sheet"><div class="hdl"></div>
+      <div class="hero">
+        <div class="st">${dotHTML(st.merged)} <span>#142</span><span class="sep">·</span><span>merged</span></div>
+        <div class="say">Merged 2h ago.<span style="color:var(--outline);font-weight:400"> The worktree
+          is still on disk and main is 6 commits behind.</span></div>
+        <div class="ttl">Landing strip: composer bar &amp; pills, unified</div>
+      </div>
+      <button class="big" style="background:var(--merged);color:#150a26">${ic('broom')} Wrap up</button>
+      <div class="foot">Removes the worktree and fast-forwards main. Asks first.</div>
+      <div class="disc">
+        <div class="dh">${ic('list-dashes')} <span>What wrap up will do</span>${ic('caret-down')}</div>
+        ${[['stop-circle','Stop 1 running session'],['folder-minus','Remove the worktree'],
+           ['git-branch','Delete branch fix/composer'],['arrow-down','Fast-forward main']]
+          .map(([g,l])=>`<div class="mfact"><i class="ph-light ph-${g} g" style="color:var(--merged)"></i>
+            <span class="l">${l}</span></div>`).join('')}
+      </div>
+    </div></div></div></div>`;
+
+/* ═══ 7 · head to head ═════════════════════════════════════════════ */
+const H2H=[['dirty','no PR · 3 uncommitted files'],['hot','open · red CI + threads + unpushed'],
+  ['running','open · checks in flight'],['green','open · green, nothing pressing'],
+  ['merged','MERGED · the new ending']];
+el('h2h').innerHTML=`<tr><th>state</th><th>A — landing strip</th><th>B — one next step</th></tr>`+
+  H2H.map(([k,label])=>`<tr>
+    <td class="st"><b>${label.split(' · ')[0]}</b>${label.split(' · ')[1]||''}</td>
+    <td class="w"><div class="cellpane">${aHTML(A[k])}</div></td>
+    <td class="w"><div class="cellpane">${bHTML(st[k],'B1')}</div></td></tr>`).join('');
+
+el('scorecard').innerHTML=`
+<div class="col" style="width:520px"><header><div class="t"><h3>Where B wins</h3><span class="tag b">B</span></div></header>
+  <div class="verdict" style="border-top:0">
+    <p class="good"><b>It reads.</b> “#142 · 2 checks failing” is a clause you skim; A's
+      <code>2 failing · 3 unresolved · 1 ahead</code> is telegraphese you decode.</p>
+    <p class="good"><b>Fixed cost.</b> A busy PR in A grows until it scrolls; B's sentence truncates
+      gracefully with an ellipsis and never reflows the composer.</p>
+    <p class="good"><b>The action is unmistakable.</b> One filled control in a quiet row. In A the
+      capsule and the CTA compete for the same attention.</p>
+    <p class="good"><b>Less to build and less to break.</b> Borne out: no per-segment hit targets, no
+      horizontal scroller, no overflow mask, no segment↔CTA hover pairing. The bar is a
+      <code>Text.rich</code> with one ellipsis and a split button.</p>
+    <p class="good"><b>Honest about pending.</b> The arc dot is a determinate count; A's animated
+      hairline sweep implies an unknown duration.</p>
+  </div></div>
+<div class="col" style="width:520px"><header><div class="t"><h3>Where B loses</h3><span class="tag a">A</span></div></header>
+  <div class="verdict" style="border-top:0">
+    <p class="bad"><b>Secondary facts cost an extra tap.</b> In A you click “3 unresolved” and it
+      acts. In B1 you open the detail, then the row. This is the real, permanent price of the quiet
+      bar — it did not go away in implementation, it just got a good home.</p>
+    <p class="bad"><b>No colour per fact.</b> The row has one tone, so “3 threads open” can't be amber
+      while “2 checks failing” is red — you lose the severity contrast A gets for free.</p>
+    <p class="bad"><b>Prose has to be written.</b> Fifteen hand-tuned labels with plurals, versus A's
+      <code>N failing</code> template — and one of them lies if you are careless: a <code>fail</code>
+      rollup with a shed check list would have said “0 checks failing”, so it falls back to
+      <code>CI failing</code>.</p>
+    <p class="bad"><b>Weaker at a glance from across the desk.</b> A's coloured segment blocks are
+      readable as shapes; B's 12.5px sentence has to be read.</p>
+    <p class="bad"><b>The dot carries a lot.</b> 9px of hue is the only ambient signal, and it is the
+      one thing a colour-blind user can least rely on — the sentence has to carry the meaning, which
+      is fine, but it means no glanceable state at all for them.</p>
+  </div></div>
+<div class="col wide"><header><div class="t"><h3>The hybrid, if you want both</h3><span class="tag a">A</span><span class="tag b">B</span></div>
+  <div class="d">B's sentence for the primary fact, A's tappable pills for the secondary ones — prose
+  where prose reads better, targets where you want to act. It is wider than B and narrower than A.</div></header>
+  <div class="body" id="hybrid"></div></div>`;
+
+/* the hybrid, mocked */
+el('hybrid').innerHTML=`
+  <div class="caption"><b>open · red CI + 3 threads + 1 unpushed</b></div>
+  <div class="pane"><div class="nbar">
+    <span class="reason" style="color:${TONE.blocking}">
+      ${dotHTML(st.hot)}<span class="num">#142</span><span class="sep">·</span>
+      <span class="lead">2 checks failing</span></span>
+    <button class="seg act" style="color:${TONE.attention};background:${wash('attention',14)};
+      border-radius:var(--r6);height:20px">${ic('chat-circle')}<span>3 threads</span></button>
+    <button class="seg act" style="color:${TONE.attention};background:${wash('attention',14)};
+      border-radius:var(--r6);height:20px">${ic('arrow-up')}<span>1 ahead</span></button>
+    <span class="grow"></span>${ctaHTML(st.hot.cta)}</div>
+    <div class="composer"><span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div></div>
+  <div class="caption"><b>MERGED</b></div>
+  <div class="pane"><div class="nbar">
+    <span class="reason" style="color:${TONE.landed}">
+      ${dotHTML(st.merged)}<span class="num">#142</span><span class="sep">·</span>
+      <span class="lead">merged 2h ago</span><span class="sep">·</span>
+      <span class="rest"><b>worktree still on disk</b></span></span>
+    <span class="grow"></span>${ctaHTML(st.merged.cta)}</div></div>`;
+
+
+
+/* ═══ 9 · the two confirms ══════════════════════════════════════════ */
+const step=(g,t,col)=>`<li><i class="ph-light ph-${g}" style="color:${col||'var(--primary)'}"></i><span>${t}</span></li>`;
+el('confirms').innerHTML=`
+<div class="col" style="width:440px"><header><div class="t"><h3>Squash &amp; merge</h3><span class="tag new">new</span></div>
+  <div class="d">Names the base branch it will land on, and says the worktree survives — GitHub’s own
+  button offers to delete the branch there and then, so the difference is worth stating.</div></header>
+  <div class="body"><div class="dlg">
+    <h4>${ic('git-merge')}<span style="color:var(--merged)">Squash &amp; merge</span></h4>
+    <p>Land <b style="color:var(--on-surface)">#142</b> on <b style="color:var(--on-surface)">main</b>, GitHub-side:</p>
+    <ul class="steps">
+      ${step('git-merge','Squash every commit on this branch into one on <b>main</b>','var(--merged)')}
+      ${step('git-pull-request','Close the pull request','var(--merged)')}
+      ${step('folder','Leave this worktree and its sessions alone — tidy up separately afterwards','var(--outline)')}
+    </ul>
+    <div class="acts2"><button class="btn ghost">Cancel</button>
+      <button class="btn" style="background:var(--merged);color:#150a26">Squash &amp; merge</button></div>
+  </div></div></div>
+
+<div class="col" style="width:440px"><header><div class="t"><h3>Wrap up</h3></div>
+  <div class="d">Destructive and multi-step, so it lists every step and names the branch it will
+  fast-forward before it runs.</div></header>
+  <div class="body"><div class="dlg">
+    <h4>${ic('broom')}<span style="color:var(--merged)">Wrap up</span></h4>
+    <p>This pull request has merged. Tidy up after it:</p>
+    <ul class="steps" style="margin-top:8px">
+      ${step('warning','Its state could not be refreshed (GitHub quota), so this may already be out of date','var(--pending)')}
+    </ul>
+    <p style="font-size:11px;margin-top:-2px">\u2191 only when <code>pr.stale</code> \u2014 see SPEC-38 \u00a711a L1</p>
+    <ul class="steps">
+      ${step('folder-minus','Remove the worktree at <b>~/.worktrees/makit/feat-pr-actions</b>')}
+      ${step('archive','Archive the sessions running in it (drafts are discarded)')}
+      ${step('git-branch','Delete the local branch <b>feat/pr-actions</b>')}
+      ${step('arrow-down','Fast-forward <b>main</b> in the primary checkout')}
+      ${step('warning','<b>2 files</b> uncommitted here will be lost','var(--fail)')}
+    </ul>
+    <div class="acts2"><button class="btn ghost">Cancel</button>
+      <button class="btn" style="background:var(--merged);color:#150a26">Wrap up</button></div>
+  </div></div></div>`;
+
+/* ═══ 10 · action reference ══════════════════════════════════════════ */
+/* Commands are the argv actually built (server/src/git.ts,
+   server/src/github/queries.ts); prompts are the verbatim defaults from
+   app/lib/ui/widgets/pr_actions.dart. */
+const ACTS=[
+ {n:'Squash & merge',i:'git-merge',kind:'d',confirm:true,
+  when:'open \u00b7 <code>mergeable: MERGEABLE</code> \u00b7 not draft \u00b7 not <code>BLOCKED</code><br>and nothing else outstanding',
+  cmd:'gh pr merge <n> --squash',
+  note:'The strategy flag is not optional: <code>gh pr merge</code> with no strategy drops into an interactive prompt, which would hang the server forever. <b>No <code>--delete-branch</code></b> \u2014 merging and tidying are separate decisions, and deleting the branch here would pull the rug from under any session still running in the worktree. The PR then reports <code>MERGED</code> and the row offers Wrap up.'},
+
+ {n:'Mark ready',i:'check-circle',kind:'d',
+  when:'open \u00b7 <code>isDraft</code><br>and nothing else outstanding',
+  cmd:'gh pr ready <n>',
+  note:'Addressed by number, not by inference: <code>gh pr ready</code> with no argument resolves the PR from the <i>checked-out</i> branch, but the server runs in the repo directory, not the worktree \u2014 so it would pick the wrong PR. Reversible with <code>gh pr ready --undo</code>, which is why it does not ask first.'},
+
+ {n:'Update branch',i:'arrows-merge',kind:'d',
+  when:'open \u00b7 <code>mergeStateStatus: BEHIND</code>',
+  cmd:'gh pr update-branch <n>',
+  note:'The remote operation, deliberately \u2014 the same thing GitHub\u2019s own \u201cUpdate branch\u201d button does. A local rebase-and-push could conflict with uncommitted work in the worktree; this cannot touch it at all.'},
+
+ {n:'Wrap up',i:'broom',kind:'d',confirm:true,
+  when:'<code>state: MERGED</code> \u00b7 not the primary checkout',
+  cmd:'<span class="c"># 1. remove the worktree FIRST \u2014 reconciling sessions before git succeeded\n'+
+      '#    could orphan them, leaving the worktree on disk without its sessions</span>\n'+
+      'git worktree remove <path> --force\n'+
+      '<span class="c"># 2. THEN reconcile its sessions: live \u2192 archived (transcript + resume\n'+
+      '#    handle kept), drafts \u2192 killed. Not a shell step.</span>\n\n'+
+      '<span class="c"># 3. delete the branch it held (-D, not -d: a squash-merge leaves\n'+
+      '#    commits git cannot find on the base, so -d would refuse)</span>\n'+
+      'git branch -D <branch>\n\n'+
+      '<span class="c"># 4. catch the base branch up \u2014 fast-forward ONLY, never forced</span>\n'+
+      'git fetch origin <base>\n'+
+      'git rev-list --count <base>..origin/<base>   <span class="c"># 0 \u2192 stop, already current</span>\n'+
+      '<span class="c"># if <base> is checked out somewhere (normally the primary checkout):</span>\n'+
+      'git -C <hostWorktree> merge --ff-only origin/<base>\n'+
+      '<span class="c"># otherwise it is only a ref, so no checkout is needed:</span>\n'+
+      'git fetch origin <base>:<base>',
+  note:'Step 4 is <b>best-effort and reported, never fatal</b>: by then the worktree is gone, so throwing would call a mostly-done job a total failure. A divergent base (local commits never pushed) is <b>refused, not forced</b> \u2014 silently discarding unpushed work while \u201ctidying\u201d would be indefensible. The ack carries <code>branchDeleted</code>, <code>baseBranch</code>, <code>baseUpdated</code> and <code>baseReason</code>, which the snackbar turns into \u201cRemoved feat/x \u00b7 main updated\u201d or \u201c\u2026 \u00b7 main unchanged\u201d with a <b>Why?</b> action.'},
+
+ {n:'Discard worktree',i:'trash',kind:'d',confirm:true,
+  when:'<code>state: CLOSED</code> \u00b7 not the primary checkout',
+  cmd:'git worktree remove <path> --force\n'+
+      'git branch -D <branch>\n'+
+      '<span class="c"># sessions reconciled as in Wrap up. No base sync \u2014 nothing landed.</span>',
+  note:'Symmetric with Wrap up minus the base-branch leg. Deleting the branch is safe enough to be the default: a pull request cannot exist without a pushed head, so the commits remain on <code>origin/&lt;branch&gt;</code> and a local delete is recoverable by re-fetch. The confirm names the branch, so declining is available.'},
+
+ {n:'Fix',i:'magic-wand',kind:'a',magic:true,
+  when:'<b>two or more</b> facts with a prompt-shaped remedy',
+  cmd:null,
+  note:'The problems are <b>enumerated rather than left implicit</b>: the agent cannot see the bar, so \u201cfix the PR\u201d would make it rediscover the failing checks, the open threads and the unpushed commit for itself \u2014 and possibly miss one. Where we already know the detail (which checks failed) it is passed too. Only the preamble is overridable in Settings; the list is data. With <i>one</i> problem this is not offered \u2014 it would be that problem\u2019s own remedy under a vaguer label.'},
+
+ {n:'Fix PR',i:'wrench',kind:'a',when:'open \u00b7 <code>checkRollup: fail</code>',prompt:'fixPr'},
+ {n:'Resolve comments',i:'chat-circle',kind:'a',when:'open \u00b7 unresolved review threads',prompt:'resolveComments'},
+ {n:'Commit and push',i:'pencil-simple',kind:'a',when:'uncommitted files in the worktree',prompt:'commitAndPush'},
+ {n:'Push',i:'arrow-up',kind:'a',when:'commits ahead of the remote',prompt:'push'},
+ {n:'Pull',i:'arrow-down',kind:'a',when:'commits behind the remote, or <code>mergeable: CONFLICTING</code>',prompt:'pull'},
+ {n:'Create PR',i:'git-pull-request',kind:'a',when:'no PR, and not the primary checkout',prompt:'createPr'},
+];
+
+const PROMPTS={
+ createPr:'Create a GitHub pull request for the current branch. Push the branch first if it has no upstream, then run `gh pr create` with a clear title and a description that summarizes what changed, why, and how it was tested. Reply with the PR URL when done.',
+ fixPr:'The CI checks on this pull request are failing. Use `gh pr checks` and the failing run logs to find the root cause, fix it on this branch, and push. Repeat until every required check is green.',
+ resolveComments:'Fetch the open review comments on this pull request (e.g. `gh pr view --comments`). Address each one with a concrete code change, or reply briefly explaining why no change is needed, then push and resolve the threads.',
+ commitAndPush:'Commit the current uncommitted changes on this branch with a clear, conventional commit message summarizing what changed and why, then push to the remote (setting the upstream if the branch has none). Reply with the commit summary when done.',
+ push:'Push the current branch to its remote (use `git push -u` to set the upstream if it has none). Reply when the push succeeds.',
+ pull:'Integrate the latest changes from the remote into this branch (e.g. `git pull --rebase`), resolving any conflicts. Reply when the branch is up to date.',
+};
+
+const MAGIC='This branch has several outstanding problems. Work through all of them, in whatever order makes sense, and push when done. Do not stop after the first one. Reply with a short summary of what you changed.';
+
+const esc=(t)=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+el('acts').innerHTML=ACTS.map(a=>{
+  let bodyLabel, bodyContent;
+  if(a.magic){
+    bodyLabel='prompt inserted \u2014 preamble, then the actual problems';
+    bodyContent=esc(MAGIC)+'\n\n'+
+      '<b>- 2 checks failing (analyze \u00b7 flutter test)</b>\n'+
+      '<b>- 3 threads open</b>\n'+
+      '<b>- 1 commit unpushed</b>\n'+
+      '<span class="c">   \u2191 generated from the current signals, each with its detail when known</span>';
+  } else if(a.prompt){
+    bodyLabel='prompt inserted in the composer (never sent)';
+    bodyContent=esc(PROMPTS[a.prompt]);
+  } else {
+    bodyLabel='runs on the server, cwd = the repo';
+    bodyContent=a.cmd.replace(/<(n|path|branch|base|hostWorktree)>/g,'<b>&lt;$1&gt;</b>');
+  }
+  return `<div class="actref ${a.kind==='d'?'direct':'agent'}">
+    <header>
+      <i class="ph-light ph-${a.i}"></i>
+      <span class="nm">${a.n}</span>
+      <span class="kind ${a.kind}">${a.kind==='d'?'do now':'ask the agent'}</span>
+      ${a.confirm?'<span class="cf">asks first</span>':''}
+      <span class="when">${a.when}</span>
+    </header>
+    <div class="body">
+      <div class="lbl">${bodyLabel}</div>
+      <pre>${bodyContent}</pre>
+      ${a.note?`<div class="note">${a.note}</div>`:''}
+    </div></div>`;
+}).join('');
+
+el('gaps').className='fixed';
+el('gaps').innerHTML=`<b>Four gaps this write-up exposed \u2014 all since closed (SPEC-38 \u00a711, plan phase 7).</b>
+<ol>
+<li><b>The confirm never said it deletes the branch.</b> The step was guarded on
+<code>status.hasPr ? null : status.identity</code>, which is always the PR number here \u2014 dead code.
+The branch is now passed in explicitly, and both Wrap up and Discard name it.</li>
+<li><b>Discard left the branch behind</b> while Wrap up deleted it. Discard now deletes it too
+(<code>worktree.discard</code>); the asymmetry is gone.</li>
+<li><b>Dispatch was untestable.</b> <code>runPrRemedy</code> read the store provider directly, so no test
+could observe that a non-confirming op skips its dialog. The executor is injected now
+(<code>prOpRunnerProvider</code>) and three tests cover confirm / no-confirm / cancel.</li>
+<li><b>The data-loss warning was inferred from a display label</b>
+(<code>label.contains('uncommitted')</code>) \u2014 a reword would have silently deleted it. The count is
+passed structurally.</li>
+</ol>`;
+
+/* ═══ 8 · where the mock was wrong ════════════════════════════════ */
+const WRONG=[
+  ['“ready for a PR” on every clean branch',
+   'A chip on every PR-less branch. The mock only ever drew one row at a time, so the cost was invisible.',
+   'A CTA <i>offer</i> is not a fact worth a chip. <code>isQuiet</code> now suppresses it — it had added a meta line to every row and made repo cards tall enough to push their own “Show less” off screen. Caught by an existing collapse test, not by me.'],
+  ['the headline repeated the list',
+   'Hero sentence “2 checks failing, 3 threads open and 1 commit unpushed”, then the same three as rows.',
+   'The loud fact is the headline <b>and</b> the button, so the list now carries only what they elided — the same split the bar makes with <code>+n more</code>.'],
+  ['a confirm for every direct op',
+   'All four “do now” actions asked first.',
+   'Only the two that destroy a worktree ask. Confirming a reversible <code>gh pr ready</code> trains people to dismiss dialogs unread — which is what would make the wrap-up dialog useless.'],
+  ['“Mark ready” drawn amber',
+   'The mock coloured the button by hand.',
+   'Derived, the draft fact is <i>quiet</i>, so the solid fill came out grey and read as disabled. The CTA now promotes a quiet tone for its tint only; the fact stays quiet in the list.'],
+  ['the menu showed only the CTA\u2019s direct op',
+   'One “Do now” entry, mirroring the button.',
+   'A draft with a red build showed “Fix CI” and lost Mark ready. The menu now gathers direct ops from every signal.'],
+  ['“merged 2h ago” / “main moved on”',
+   'Friendlier phrasing invented for the mock.',
+   'Shipped as <code>merged</code> and <code>the base branch moved on</code>. Relative time is not in the PR DTO, and the base is not always <code>main</code> — <code>baseRefName</code> names it in the confirm instead.'],
+];
+el('wrong').innerHTML=`<tr><th style="width:23%">the mock said</th><th style="width:32%">what that looked like</th><th>what shipped, and why</th></tr>`+
+  WRONG.map(([a,b,c])=>`<tr><td><b>${a}</b></td><td>${b}</td><td>${c}</td></tr>`).join('');
+
+/* fade any capsule whose facts outrun its cell (A only) */
+function markOverflow(){for(const c of document.querySelectorAll('.cap'))
+  c.classList.toggle('ovf',c.scrollWidth-c.clientWidth>1);}
+addEventListener('resize',markOverflow); markOverflow();
+</script>
+</body>
+</html>

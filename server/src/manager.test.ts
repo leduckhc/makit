@@ -1609,3 +1609,345 @@ test('listArchivedSessions omits sessions whose project was removed (SPEC-29)', 
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+// ── wrap up (PR actions) ────────────────────────────────────────────────────
+// The ending a merged PR never had: remove the worktree, delete the landed
+// branch, and catch the base branch up. Composes three git primitives that are
+// covered in git.test.ts, so these cover the composition and the guards.
+
+test("wrapUpWorktree removes the worktree and deletes its branch", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId);
+    const branch = wt.branch as string;
+    assert.ok(existsSync(wt.path));
+    const repoPath = manager.listProjects()[0].path;
+
+    const result = await manager.wrapUpWorktree(projectId, wt.path, "main");
+
+    assert.equal(existsSync(wt.path), false, "the worktree is gone");
+    assert.equal(result.branchDeleted, branch);
+    const branches = execFileSync("git", ["branch", "--format=%(refname:short)"], { cwd: repoPath })
+      .toString()
+      .trim()
+      .split("\n");
+    assert.ok(!branches.includes(branch), `${branch} should be gone, got ${branches.join()}`);
+  });
+});
+
+test("wrapUpWorktree reports the base branch it could not catch up", async () => {
+  // The throwaway repo has no `origin`, so the sync leg cannot run. Wrap up must
+  // still complete its local work and say what it skipped, rather than failing.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId);
+    const result = await manager.wrapUpWorktree(projectId, wt.path, "main");
+    assert.equal(result.baseBranch, "main");
+    assert.equal(result.baseUpdated, false);
+    assert.ok(result.baseReason, "it must explain why the base was not updated");
+  });
+});
+
+test("wrapUpWorktree refuses the repo's primary worktree", async () => {
+  // Removing the primary checkout would take the repo with it.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const repoPath = manager.listProjects()[0].path;
+    await assert.rejects(
+      () => manager.wrapUpWorktree(projectId, realpathSync(repoPath), "main"),
+      /primary/i,
+    );
+  });
+});
+
+test("wrapUpWorktree refuses a path outside the project", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const stranger = mkdtempSync(join(tmpdir(), "makit-stranger-"));
+    try {
+      await assert.rejects(() => manager.wrapUpWorktree(projectId, stranger, "main"), /not part of/i);
+    } finally {
+      rmSync(stranger, { recursive: true, force: true });
+    }
+  });
+});
+
+test("wrapUpWorktree falls back to the repo's default branch", async () => {
+  // The PR's baseRefName is the authority, but an older server (or a shed
+  // lookup) may not have it. The repo's own default branch is the safe fallback.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId);
+    const result = await manager.wrapUpWorktree(projectId, wt.path);
+    assert.equal(result.baseBranch, "main");
+  });
+});
+
+test("wrapUpWorktree skips the branch deletion for a detached worktree", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId);
+    execFileSync("git", ["checkout", "-q", "--detach"], { cwd: wt.path });
+    const result = await manager.wrapUpWorktree(projectId, wt.path, "main");
+    assert.equal(result.branchDeleted, undefined);
+    assert.equal(existsSync(wt.path), false);
+  });
+});
+
+// ── PR mutations (mark ready / update branch) ────────────────────────────────
+// Both are `gh` calls routed through the gateway, so these assert the manager
+// resolves the right PR for the worktree and surfaces failures rather than
+// swallowing them.
+
+/** A gateway stub that records mutatePr calls and answers prForBranch. */
+function prGateway(pr: { number: number; branch: string } | null, ok = true) {
+  const calls: Array<{ branch: string; number: number; verb: string }> = [];
+  const gateway = {
+    async prForBranch(_repoPath: string, branch: string) {
+      return pr && pr.branch === branch
+        ? {
+            kind: "pr" as const,
+            pr: {
+              number: pr.number,
+              url: `https://github.com/o/r/pull/${pr.number}`,
+              state: "OPEN",
+              title: "t",
+              isDraft: true,
+              mergeable: "MERGEABLE",
+              mergeStateStatus: "BEHIND",
+              checks: [],
+              checkRollup: "none" as const,
+              unresolvedComments: 0,
+            },
+          }
+        : { kind: "none" as const };
+    },
+    async mutatePr(_repoPath: string, branch: string, number: number, verb: string) {
+      calls.push({ branch, number, verb });
+      return ok ? { ok: true } : { ok: false, error: "gh said no" };
+    },
+    async openPrs() {
+      return [];
+    },
+    budget: () => ({}) as never,
+    history: () => [],
+    refresh: async () => ({}) as never,
+    setPaused: () => {},
+    onBudgetChange: () => () => {},
+    close: () => {},
+    stats: () => ({ execs: 0, cacheHits: 0 }),
+  } as unknown as import("./github/gateway.js").GithubGateway;
+  return { gateway, calls };
+}
+
+test("markPrReady resolves the worktree's PR and takes it out of draft", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway, calls } = prGateway({ number: 42, branch: "feat/x" });
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/x");
+    await manager.markPrReady(projectId, wt.path);
+    assert.deepEqual(calls, [{ branch: "feat/x", number: 42, verb: "ready" }]);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("updatePrBranch merges the base into the PR head", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway, calls } = prGateway({ number: 7, branch: "feat/y" });
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/y");
+    await manager.updatePrBranch(projectId, wt.path);
+    assert.deepEqual(calls, [{ branch: "feat/y", number: 7, verb: "update-branch" }]);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("squashMergePr squash-merges the worktree's PR", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway, calls } = prGateway({ number: 99, branch: "feat/z" });
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/z");
+    await manager.squashMergePr(projectId, wt.path);
+    assert.deepEqual(calls, [{ branch: "feat/z", number: 99, verb: "merge-squash" }]);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("squashMergePr leaves the worktree alone — tidying is a separate decision", async () => {
+  // Merging and cleaning up are two choices. `gh pr merge --delete-branch` would
+  // fold them together and pull the rug from under any session running in the
+  // worktree; the merged state then advertises "Wrap up" instead.
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway } = prGateway({ number: 99, branch: "feat/z" });
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/z");
+    await manager.squashMergePr(projectId, wt.path);
+    assert.equal(existsSync(wt.path), true);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a PR mutation reports gh's own error rather than failing silently", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway } = prGateway({ number: 42, branch: "feat/x" }, false);
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/x");
+    await assert.rejects(() => manager.markPrReady(projectId, wt.path), /gh said no/);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a PR mutation on a worktree with no PR is refused", async () => {
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway } = prGateway(null);
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/x");
+    await assert.rejects(() => manager.markPrReady(projectId, wt.path), /no pull request/i);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// ── discard (SPEC-38 T7.2) ──────────────────────────────────────────────────
+// A closed PR's worktree AND its branch go. Symmetry with wrap up: a verb called
+// "discard" that leaves the branch behind is not discarding. The commits survive
+// on origin/<branch>, since a PR cannot exist without a pushed head.
+
+test("discardWorktree removes the worktree and deletes its branch", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "feat/closed");
+    const repoPath = manager.listProjects()[0].path;
+    assert.equal(existsSync(wt.path), true);
+
+    await manager.discardWorktree(projectId, wt.path);
+
+    assert.equal(existsSync(wt.path), false);
+    const branches = execFileSync("git", ["branch", "--format=%(refname:short)"], { cwd: repoPath })
+      .toString()
+      .trim()
+      .split("\n");
+    assert.ok(!branches.includes("feat/closed"), `got ${branches.join()}`);
+  });
+});
+
+test("discardWorktree leaves the base branch alone — nothing landed", async () => {
+  // Unlike wrap up there is no merge to catch up to, so it must not touch main.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const repoPath = manager.listProjects()[0].path;
+    const before = execFileSync("git", ["rev-parse", "main"], { cwd: repoPath }).toString().trim();
+    const wt = await manager.createWorktree(projectId, undefined, "feat/closed");
+    await manager.discardWorktree(projectId, wt.path);
+    const after = execFileSync("git", ["rev-parse", "main"], { cwd: repoPath }).toString().trim();
+    assert.equal(after, before);
+  });
+});
+
+test("discardWorktree refuses the repo's primary worktree", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const repoPath = manager.listProjects()[0].path;
+    await assert.rejects(
+      () => manager.discardWorktree(projectId, realpathSync(repoPath)),
+      /primary/i,
+    );
+  });
+});
+
+test("discardWorktree skips the branch deletion for a detached worktree", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "feat/closed");
+    execFileSync("git", ["checkout", "-q", "--detach"], { cwd: wt.path });
+    await manager.discardWorktree(projectId, wt.path);
+    assert.equal(existsSync(wt.path), false);
+  });
+});
+
+test("wrap up survives a failed branch deletion and reports it", async () => {
+  // The worktree is already gone by this point, so throwing would call a
+  // mostly-done job a total failure — and the client could not retry, because the
+  // path is no longer a registered worktree.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "feat/stuck");
+    const repoPath = manager.listProjects()[0].path;
+    // Wedge `git branch -D`: a ref lock the delete cannot take.
+    const lock = join(repoPath, ".git", "refs", "heads", "feat", "stuck.lock");
+    mkdirSync(join(repoPath, ".git", "refs", "heads", "feat"), { recursive: true });
+    writeFileSync(lock, "");
+
+    const result = await manager.wrapUpWorktree(projectId, wt.path, "main");
+
+    assert.equal(existsSync(wt.path), false, "the worktree still went");
+    assert.equal(result.branchDeleted, undefined);
+    assert.ok(result.branchReason, "it says why the branch survived");
+  });
+});

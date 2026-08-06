@@ -33,6 +33,8 @@ import {
   addWorktreeForPr,
   removeWorktree,
   renameBranch,
+  deleteBranch,
+  syncBaseBranch,
   listOpenPrs,
   findOpenPr,
   branchExists,
@@ -42,8 +44,30 @@ import {
   run,
   type OpenPr,
 } from "./git.js";
+import type { PrMutation } from "./github/queries.js";
 import type { EventStore } from "./storage/event_store.js";
 import { log } from "./log.js";
+
+/**
+ * What a {@link SessionManager.wrapUpWorktree} run actually did. The base-branch
+ * leg is advisory (see the method doc), so the caller reports it rather than
+ * treating a skip as an error.
+ */
+export interface WrapUpResult {
+  /** The local branch that was deleted, or undefined for a detached worktree. */
+  branchDeleted?: string;
+  /**
+   * Why the branch survived, when it should have gone. Like {@link baseReason},
+   * this is reported rather than thrown: the worktree is already removed by then,
+   * and the caller cannot retry because the path is no longer a worktree.
+   */
+  branchReason?: string;
+  /** The branch that was caught up, or undefined when none could be resolved. */
+  baseBranch?: string;
+  baseUpdated: boolean;
+  /** Why the base branch was not updated, when that is worth surfacing. */
+  baseReason?: string;
+}
 
 export interface AdapterFactoryContext {
   projectPath: string;
@@ -580,6 +604,168 @@ export class SessionManager extends EventEmitter {
       throw new Error(`cannot rename ${oldName}: it has an open pull request`);
     }
     await renameBranch(worktreePath, oldName, newName);
+  }
+
+  /**
+   * Discard a worktree whose pull request closed without merging (SPEC-38 §6.1):
+   * remove the worktree, then delete the branch it held.
+   *
+   * Symmetric with {@link wrapUpWorktree} minus the base-branch sync — nothing
+   * landed, so there is nothing for the base to catch up to. Deleting the branch
+   * is safe enough to be the default: a pull request cannot exist without a
+   * pushed head, so the commits remain on `origin/<branch>` and a local delete is
+   * recoverable by re-fetch. The app confirms first and names the branch.
+   *
+   * Distinct from {@link removeWorktree}, which the sidebar and the mobile
+   * long-press use and which deliberately keeps the branch — "remove this
+   * worktree" is a narrower request than "discard this dead line of work".
+   */
+  async discardWorktree(projectId: string, worktreePath: string): Promise<WrapUpResult> {
+    const { branchDeleted, branchReason } = await this._removeWorktreeAndBranch(
+      projectId,
+      worktreePath,
+    );
+    return { branchDeleted, branchReason, baseUpdated: false };
+  }
+
+  /**
+   * The half {@link wrapUpWorktree} and {@link discardWorktree} share: read the
+   * branch (only possible while the worktree still exists), remove the worktree,
+   * then delete the branch.
+   *
+   * The removal throws — if the worktree survives, nothing was tidied and the
+   * caller should say so. The branch deletion does **not**: by then the worktree
+   * is gone, the client cannot retry (the path is no longer a registered
+   * worktree), and reporting a partial success beats reporting a total failure.
+   */
+  private async _removeWorktreeAndBranch(
+    projectId: string,
+    worktreePath: string,
+  ): Promise<{ repoPath: string; branchDeleted?: string; branchReason?: string }> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    const target = resolve(worktreePath);
+    const trees = await listWorktrees(repoPath);
+    const branch = trees.find((t) => resolve(t.path) === target)?.branch ?? null;
+
+    await this.removeWorktree(projectId, worktreePath);
+    if (!branch) return { repoPath };
+    try {
+      await deleteBranch(repoPath, branch);
+      return { repoPath, branchDeleted: branch };
+    } catch (e) {
+      log.warn(`[makit] wrap up: could not delete ${branch}: ${(e as Error).message}`);
+      return { repoPath, branchReason: (e as Error).message };
+    }
+  }
+
+  /**
+   * Take the worktree's pull request out of draft (`gh pr ready`).
+   *
+   * Reviewers get notified, so this is a real state change on GitHub — but it is
+   * reversible (`gh pr ready --undo`) and destroys nothing, which is why the app
+   * runs it straight from the bar without a confirm, unlike wrap up.
+   */
+  async markPrReady(projectId: string, worktreePath: string): Promise<void> {
+    await this._mutatePr(projectId, worktreePath, "ready");
+  }
+
+  /**
+   * Merge the base branch into the PR's head on GitHub (`gh pr update-branch`) —
+   * the remedy for `mergeStateStatus: BEHIND`.
+   *
+   * Deliberately the *remote* operation rather than a local rebase-and-push: it
+   * is what GitHub's own "Update branch" button does, it cannot conflict with
+   * uncommitted work in the worktree, and it leaves the local checkout untouched
+   * (the next poll reports the new state).
+   */
+  async updatePrBranch(projectId: string, worktreePath: string): Promise<void> {
+    await this._mutatePr(projectId, worktreePath, "update-branch");
+  }
+
+  /**
+   * Squash-merge the worktree's pull request (`gh pr merge --squash`), the way
+   * GitHub's own button does.
+   *
+   * Deliberately does **not** pass `--delete-branch`: merging and tidying up are
+   * two decisions, and folding them together would remove the worktree out from
+   * under any session still running in it. Once merged, the PR reports `MERGED`
+   * and the app offers {@link wrapUpWorktree} — which stops those sessions first.
+   */
+  async squashMergePr(projectId: string, worktreePath: string): Promise<void> {
+    await this._mutatePr(projectId, worktreePath, "merge-squash");
+  }
+
+  /**
+   * Shared body for the PR mutations: resolve the worktree's branch, look up
+   * its PR, run the verb, and turn a `gh` failure into a thrown error carrying
+   * gh's own message — the app puts that in front of the user, so swallowing it
+   * would leave a button that silently does nothing.
+   */
+  private async _mutatePr(
+    projectId: string,
+    worktreePath: string,
+    verb: PrMutation,
+  ): Promise<void> {
+    const project = this.projects.get(projectId);
+    if (!project) throw new Error(`unknown project: ${projectId}`);
+    const repoPath = project.dto.path;
+    const target = resolve(worktreePath);
+    const trees = await listWorktrees(repoPath);
+    const wt = trees.find((t) => resolve(t.path) === target);
+    if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
+    const branch = wt.branch;
+    if (!branch) throw new Error(`worktree has no branch: ${worktreePath}`);
+    const pr = await findOpenPr(this._gateway, repoPath, branch);
+    if (!pr) throw new Error(`no pull request for ${branch}`);
+    const result = await this._gateway.mutatePr(repoPath, branch, pr.number, verb);
+    if (!result.ok) throw new Error(result.error ?? `gh pr ${verb} failed`);
+  }
+
+  /**
+   * Tidy up after a pull request ended (SPEC: PR actions, "wrap up").
+   *
+   * Three steps, in this order, because each one only makes sense if the
+   * previous succeeded:
+   *  1. remove the worktree — delegated to {@link removeWorktree}, so the
+   *     session reconciliation and the primary/ownership guards are shared,
+   *  2. delete the local branch it had checked out — the branch cannot be
+   *     deleted while a worktree holds it, so this must come second,
+   *  3. fast-forward the base branch the PR landed on.
+   *
+   * Step 3 is best-effort and reported, never fatal: by then the worktree is
+   * already gone, so throwing would describe a mostly-done job as a failure.
+   * Steps 1 and 2 do throw — if the worktree survives, nothing was tidied.
+   *
+   * [baseBranch] should be the PR's own `baseRefName`; it falls back to the
+   * repo's default branch for an older server or a shed PR lookup.
+   */
+  async wrapUpWorktree(
+    projectId: string,
+    worktreePath: string,
+    baseBranch?: string,
+  ): Promise<WrapUpResult> {
+    const { repoPath, branchDeleted, branchReason } =
+        await this._removeWorktreeAndBranch(projectId, worktreePath);
+
+    const base = baseBranch ?? (await detectDefaultBranch(repoPath));
+    if (!base) {
+      return {
+        branchDeleted,
+        branchReason,
+        baseUpdated: false,
+        baseReason: "the repo has no default branch to catch up",
+      };
+    }
+    const sync = await syncBaseBranch(repoPath, base);
+    return {
+      branchDeleted,
+      branchReason,
+      baseBranch: base,
+      baseUpdated: sync.updated,
+      baseReason: sync.reason,
+    };
   }
 
   /**

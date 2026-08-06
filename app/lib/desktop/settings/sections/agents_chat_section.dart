@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../../app/theme.dart';
 import '../../../store/prefs/preference.dart';
+import '../../../store/prefs/preference_entries.dart';
 import '../../../store/prefs/preferences_providers.dart';
+import '../../../ui/widgets/icon_glyph.dart';
 import '../../../ui/widgets/pr_actions.dart';
 import 'message_navigator_prefs.dart';
 import 'section_header.dart';
@@ -38,7 +41,21 @@ class AgentsChatSection extends StatelessWidget {
         SettingsGroup(
           children: [
             for (final action in PrPromptAction.values)
-              _PrPromptRow(action: action),
+              _PrPromptRow(
+                label: action.label,
+                icon: action.icon,
+                pref: action.promptPreference,
+                hint: action.defaultPrompt,
+              ),
+            // Not a [PrPromptAction]: the magic "Fix" prompt is composed at run
+            // time from whatever is currently wrong, so only its preamble is
+            // wording the user can own. The problem list is data, appended after.
+            const _PrPromptRow(
+              label: 'Fix (everything at once)',
+              icon: IconGlyph.font(PhosphorIconsLight.magicWand),
+              pref: prMagicFixPromptPreference,
+              hint: kMagicFixPreamble,
+            ),
           ],
         ),
       ],
@@ -50,9 +67,19 @@ class AgentsChatSection extends StatelessWidget {
 /// action's override [PreferenceEntry], with a per-row reset (↺) shown when the
 /// override differs from blank (i.e. the built-in default is overridden).
 class _PrPromptRow extends ConsumerStatefulWidget {
-  const _PrPromptRow({required this.action});
+  const _PrPromptRow({
+    required this.label,
+    required this.icon,
+    required this.pref,
+    required this.hint,
+  });
 
-  final PrPromptAction action;
+  final String label;
+  final IconGlyph icon;
+  final PreferenceEntry<String> pref;
+
+  /// Shown greyed in the empty field — the built-in this overrides.
+  final String hint;
 
   @override
   ConsumerState<_PrPromptRow> createState() => _PrPromptRowState();
@@ -60,7 +87,7 @@ class _PrPromptRow extends ConsumerStatefulWidget {
 
 class _PrPromptRowState extends ConsumerState<_PrPromptRow> {
   late final TextEditingController _ctrl;
-  PreferenceEntry<String> get _pref => widget.action.promptPreference;
+  PreferenceEntry<String> get _pref => widget.pref;
 
   @override
   void initState() {
@@ -97,10 +124,10 @@ class _PrPromptRowState extends ConsumerState<_PrPromptRow> {
         children: [
           Row(
             children: [
-              widget.action.icon.build(size: 16),
+              widget.icon.build(size: 16),
               const SizedBox(width: kSpace8),
               Text(
-                widget.action.label,
+                widget.label,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               const Spacer(),
@@ -118,7 +145,7 @@ class _PrPromptRowState extends ConsumerState<_PrPromptRow> {
             decoration: InputDecoration(
               isDense: true,
               border: const OutlineInputBorder(),
-              hintText: widget.action.defaultPrompt,
+              hintText: widget.hint,
             ),
             onChanged: (text) => controller.set(_pref, text),
           ),

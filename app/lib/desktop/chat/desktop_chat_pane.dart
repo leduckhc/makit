@@ -29,6 +29,7 @@ import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'selected_session.dart';
 import 'worktree_starter.dart';
+import '../../ui/widgets/pr_signals.dart';
 
 // Re-export the pane-header + harness widgets so existing importers of
 // `desktop_chat_pane.dart` (e.g. pane_tree_view, widget tests) keep resolving
@@ -337,26 +338,26 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Permanent PR bar (SPEC-23): status pill (opens the PR on
-                  // the web; hover shows CI checks) + a canned-prompt actions
-                  // split button. Reads the open PR for this session's
-                  // worktree from the (poller-refreshed) repos snapshot, so it
-                  // updates in place as CI/state changes.
-                  PrComposerBar(
-                    pr: ref
-                        .watch(reposProvider)
-                        .prForWorktreePath(session.worktreePath),
-                    uncommittedFiles: ref
-                        .watch(reposProvider)
-                        .uncommittedFilesForWorktreePath(session.worktreePath),
-                    commitsAhead: ref
-                        .watch(reposProvider)
-                        .aheadCountForWorktreePath(session.worktreePath),
-                    commitsBehind: ref
-                        .watch(reposProvider)
-                        .behindCountForWorktreePath(session.worktreePath),
-                    onInsertPrompt: (prompt) =>
-                        _insertPrompt(sessionId, prompt),
+                  // The next-step bar: one sentence about this worktree and
+                  // the one action that moves it forward (direction B1). Reads
+                  // the worktree out of the poller-refreshed repos snapshot, so
+                  // it updates in place as CI/state changes.
+                  Builder(
+                    builder: (context) {
+                      final at = ref
+                          .watch(reposProvider)
+                          .locateWorktree(session.worktreePath);
+                      return PrComposerBar(
+                        status: prStatusFor(at, fallbackBranch: session.branch),
+                        pr: at?.worktree.pr,
+                        projectId: at?.repo.id,
+                        worktreePath: session.worktreePath,
+                        branch: at?.worktree.branch ?? session.branch,
+                        uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
+                        onInsertPrompt: (prompt) =>
+                            _insertPrompt(sessionId, prompt),
+                      );
+                    },
                   ),
                   if (pendingAsk != null && pendingAsk.freeText)
                     // Free-text answer mode: a dedicated empty answer controller

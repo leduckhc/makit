@@ -8,11 +8,8 @@ import 'package:makit/app/theme.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/home_screen.dart';
-import 'package:makit/ui/home/repo_chips.dart';
 import 'package:makit/ui/widgets/glass.dart';
-import 'package:makit/ui/widgets/pr_state_style.dart';
 
-import 'support/svg_asset_finder.dart';
 
 Widget _host({required List<RepoInfo> repos, required List<Session> sessions}) {
   return ProviderScope(
@@ -171,7 +168,7 @@ void main() {
     expect(find.text('−7'), findsWidgets);
   });
 
-  testWidgets('an open PR renders a PR pill', (tester) async {
+  testWidgets('an open PR is named, with its state in words', (tester) async {
     final repo = _repo(
       worktrees: [
         const Worktree(
@@ -196,16 +193,12 @@ void main() {
     await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
     await tester.pump();
 
-    expect(find.text('PR #42'), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(PrPill),
-        matching: find.byIcon(PhosphorIconsLight.gitPullRequest),
-      ),
-      findsOneWidget,
-    );
+    // The row used to carry a bare `PR #42` pill whose colour was the only
+    // signal. It now says what the PR needs — here, nothing (checkRollup is
+    // 'none', so there is no verdict to report and no work outstanding).
+    expect(find.text('#42 · green and up to date'), findsOneWidget);
     // The repo card's header counts it as one *open* PR — a compact pill, since
-    // the per-worktree PrPill already spells the number out.
+    // the per-worktree chip already spells the number out.
     expect(
       find.descendant(
         of: find.byKey(const Key('openPrCount')),
@@ -215,7 +208,7 @@ void main() {
     );
   });
 
-  testWidgets('a merged PR pill reads as merged, not as a live PR', (
+  testWidgets('a merged PR advertises its own clean-up', (
     tester,
   ) async {
     final repo = _repo(
@@ -242,23 +235,22 @@ void main() {
     await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
     await tester.pump();
 
-    final icon = find.descendant(
-      of: find.byType(PrPill),
-      matching: find.byIcon(PhosphorIconsLight.gitMerge),
-    );
-    expect(icon, findsOneWidget);
-    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsNothing);
+    // The ending is now stated on the row, one tap from "Wrap up", instead of
+    // being a purple hue you had to learn and a long-press you had to discover.
+    expect(find.text('#42 · merged'), findsOneWidget);
     // A merged PR is not an open one: the repo card must not advertise it.
     expect(find.text('1 PR'), findsNothing);
-    expect(tester.widget<Icon>(icon).color, kPrMerged);
-    // The label takes the AA-safe purple, not the vivid icon hue.
+    // The label takes the AA-safe purple. The chip tints dot and text with one
+    // colour, so that variant is now the only merged hue on the row rather than
+    // a pairing (vivid icon + AA-safe label) that had to be kept in step.
+    final label = find.text('#42 · merged');
     expect(
-      tester.widget<Text>(find.text('PR #42')).style?.color,
-      Theme.of(tester.element(icon)).colorScheme.prMergedText,
+      tester.widget<Text>(label).style?.color,
+      Theme.of(tester.element(label)).colorScheme.prMergedText,
     );
   });
 
-  testWidgets('a closed PR pill reads as closed', (tester) async {
+  testWidgets('a closed PR reads as closed, in words', (tester) async {
     final repo = _repo(
       worktrees: [
         const Worktree(
@@ -283,13 +275,7 @@ void main() {
     await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
     await tester.pump();
 
-    expect(
-      find.descendant(
-        of: find.byType(PrPill),
-        matching: findSvgAsset(kClosedPrAsset),
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('#42 · closed without merging'), findsOneWidget);
     expect(find.text('1 PR'), findsNothing);
   });
 

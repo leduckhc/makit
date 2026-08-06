@@ -123,8 +123,8 @@ void main() {
 
   // The row wrapper clearing 44pt says nothing about the small controls at its
   // trailing edge: they bound their own ink box, so `minHeight` on the row does
-  // not enlarge them. `PrPill` already sets the pattern — a kTouchRow ink box
-  // around a content-sized glyph.
+  // not enlarge them. `PrStatusChip` sets the pattern — a kTouchRow ink box
+  // around a content-sized chip.
   testWidgets('the trailing worktree controls are touch-sized', (tester) async {
     await _pump(tester);
 
@@ -142,21 +142,21 @@ void main() {
   });
 
   testWidgets(
-    'the PR pill is a touch-sized target that does not fatten the row',
+    'the PR status chip is a touch-sized target that does not fatten the row',
     (tester) async {
       await _pumpWithPr(tester);
 
-      final pill = find.ancestor(
-        of: find.text('PR #42'),
+      final chip = find.ancestor(
+        of: find.text('#42 · green and up to date'),
         matching: find.byType(InkWell),
       );
-      expect(pill, findsWidgets);
-      final target = tester.getSize(pill.last);
+      expect(chip, findsWidgets);
+      final target = tester.getSize(chip.last);
       expect(
         target.height,
         greaterThanOrEqualTo(_kMinTouch),
         reason:
-            'the pill opens the PR sheet, so it is a control in its own right',
+            'the chip opens the PR sheet, so it is a control in its own right',
       );
 
       // …and the row it sits in must not balloon to accommodate it: a 44px tap
@@ -170,7 +170,7 @@ void main() {
   );
 }
 
-/// A repo whose feature worktree heads an open PR, for the pill above.
+/// A repo whose feature worktree heads an open PR, for the chip above.
 Future<void> _pumpWithPr(WidgetTester tester) async {
   const repo = RepoInfo(
     id: 'p1',

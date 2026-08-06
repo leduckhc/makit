@@ -16,6 +16,7 @@ import 'harness_picker.dart' show HarnessCard;
 import 'pr_bar.dart';
 import 'selected_worktree.dart';
 import 'start_session.dart';
+import '../../ui/widgets/pr_signals.dart';
 
 /// The in-pane start surface for a sessionless pane that already knows its
 /// [worktree] (a worktree row, a split tab, or ⌘T): pick the harness, adjust its
@@ -225,23 +226,25 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                   ],
                 ),
               const SizedBox(height: kSpace16),
-              // The same PR row a live session gets (SPEC-23): status pill and
-              // the "most actionable next step" split button, read from the
-              // repos snapshot by worktree path. A fresh worktree usually has
-              // *more* to say here than a running one (nothing pushed, no PR
-              // yet), so omitting it made the starter feel like a lesser pane.
-              PrComposerBar(
-                pr: ref.watch(reposProvider).prForWorktreePath(worktreePath),
-                uncommittedFiles: ref
-                    .watch(reposProvider)
-                    .uncommittedFilesForWorktreePath(worktreePath),
-                commitsAhead: ref
-                    .watch(reposProvider)
-                    .aheadCountForWorktreePath(worktreePath),
-                commitsBehind: ref
-                    .watch(reposProvider)
-                    .behindCountForWorktreePath(worktreePath),
-                onInsertPrompt: _insertPrompt,
+              // The same next-step bar a live session gets. A fresh worktree
+              // usually has *more* to say here than a running one (nothing
+              // pushed, no PR yet), so omitting it made the starter feel like a
+              // lesser pane.
+              Builder(
+                builder: (context) {
+                  final at = ref
+                      .watch(reposProvider)
+                      .locateWorktree(worktreePath);
+                  return PrComposerBar(
+                    status: prStatusFor(at),
+                    pr: at?.worktree.pr,
+                    projectId: at?.repo.id,
+                    worktreePath: worktreePath,
+                    branch: at?.worktree.branch,
+                    uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
+                    onInsertPrompt: _insertPrompt,
+                  );
+                },
               ),
               const SizedBox(height: kSpace8),
               Composer(

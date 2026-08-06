@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
-import '../widgets/pr_sheet.dart';
-import '../widgets/pr_state_style.dart';
+import '../widgets/pr_detail.dart';
+import '../widgets/pr_signals.dart';
+import '../widgets/pr_tone.dart';
+import '../widgets/wrap_up.dart';
 
 /// Branch name pill with a git branch glyph.
 class BranchChip extends StatelessWidget {
@@ -85,39 +88,77 @@ class DiffChip extends StatelessWidget {
   }
 }
 
-/// Worktree PR pill: `PR #42`, tinted by [prPillColors] — an open PR by its CI
-/// verdict, a merged/closed one by its state, a draft grey. Same rule as the
-/// session chip and the desktop composer pill, so a failing PR cannot read red
-/// in one place and brand-blue here. Tapping opens the shared PR sheet
-/// ([showPrSheet]) — the same detail the session screen's chip shows, so there is
-/// one PR surface with two entry points.
-class PrPill extends StatelessWidget {
-  const PrPill({super.key, required this.pr});
-  final PullRequest pr;
+/// The worktree's status, as a sentence fragment: a tone dot plus the loudest
+/// fact — `● 2 checks failing`. Tapping opens the shared detail sheet.
+///
+/// Replaces the old `PR #42` pill, whose colour was the only signal it carried:
+/// you could see that *something* was wrong but not what, and a merged PR looked
+/// identical to a live one apart from a hue. This says it, and a merged row
+/// advertises its own clean-up ("merged") so the ending is one tap away instead
+/// of hidden behind a long-press.
+///
+/// Reads the shared [PrStatus] derivation, so the home row, the session chip and
+/// the desktop bar cannot disagree about whether a PR is failing.
+class PrStatusChip extends ConsumerWidget {
+  const PrStatusChip({
+    super.key,
+    required this.status,
+    required this.repo,
+    required this.worktree,
+    this.onInsertPrompt,
+  });
+
+  /// The derived facts. Passed in rather than derived here so the caller can
+  /// decide whether the row is worth a chip at all ([PrStatus.isQuiet]).
+  final PrStatus status;
+
+  final RepoInfo repo;
+  final Worktree worktree;
+
+  /// Where a canned prompt goes when picked from the sheet. Null on a surface
+  /// with no composer (the home list), which hides the prompt remedies but keeps
+  /// the direct ones — wrapping up needs no composer.
+  final void Function(String prompt)? onInsertPrompt;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final style = prStateStyle(cs, pr);
-    final (icon: color, label: labelColor) = prPillColors(cs, pr);
-    // The tap target is the full row height (kTouchRow) while the *painted*
-    // pill stays content-sized: the pill opens the PR sheet, so it needs a
-    // thumb-sized target, but inflating the visible chip to 44px would make a
-    // blob of it and push the worktree row well past the density the list is
-    // tuned for. So the ink/hit box is tall and transparent, and the tint is
-    // drawn by the shrink-wrapped box inside it.
+    final tone = prToneColor(cs, status.tone);
+
+    // The tap target is the full row height (kTouchRow) while the painted chip
+    // stays content-sized: it opens a sheet, so it needs a thumb-sized target,
+    // but inflating the visible chip to 44px would make a blob of it and push
+    // the row past the density the list is tuned for.
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(kRadius8),
-        onTap: () => showPrSheet(context, pr),
+        onTap: () => showPrDetail(
+          context,
+          status: status,
+          pr: worktree.pr,
+          sheet: true,
+          canInsertPrompt: onInsertPrompt != null,
+          onRun: (remedy) => runPrRemedy(
+            context,
+            ref,
+            remedy: remedy,
+            status: status,
+            pr: worktree.pr,
+            projectId: repo.id,
+            worktreePath: worktree.path,
+            branch: worktree.branch,
+            uncommittedFiles: worktree.uncommittedFiles,
+            onInsertPrompt: onInsertPrompt ?? (_) {},
+          ),
+        ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: kTouchRow),
           child: Center(
             widthFactor: 1,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.14),
+                color: tone.withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(kRadius8),
               ),
               child: Padding(
@@ -128,13 +169,24 @@ class PrPill extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    style.glyph.build(size: kPillIconSize, color: color),
-                    const SizedBox(width: 3),
-                    Text(
-                      'PR #${pr.number}',
-                      style: Theme.of(context).textTheme.labelXs?.copyWith(
-                        color: labelColor,
-                        fontWeight: FontWeight.w600,
+                    PrToneDot(
+                      tone: status.tone,
+                      progress: status.checkProgress,
+                      hollow: worktree.pr == null,
+                    ),
+                    const SizedBox(width: kSpace6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 190),
+                      child: Text(
+                        status.identity.startsWith('#')
+                            ? '${status.identity} · ${status.loud.label}'
+                            : status.loud.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelXs?.copyWith(
+                          color: tone,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ],

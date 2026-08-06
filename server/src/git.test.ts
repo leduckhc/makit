@@ -21,6 +21,9 @@ import {
   uncommittedFileCount,
   commitsAhead,
   commitsBehind,
+  syncBaseBranch,
+  deleteBranch,
+  branchExists,
 } from "./git.js";
 
 /** Init a throwaway repo with one commit on `main`. Returns its path. */
@@ -340,5 +343,194 @@ test("uncommittedFileCount enumerates files inside nested untracked dirs", async
     assert.equal(await uncommittedFileCount(repo), 3);
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+// ── wrap up: delete the landed branch, catch the base branch up ─────────────
+// A merged PR leaves two things behind that the app never cleaned up: the local
+// branch, and a base branch that is now behind the remote. These cover the git
+// half of `worktree.wrapUp`.
+
+/** A bare repo to act as `origin`, plus a clone of it with one commit on main. */
+function makeRepoWithOrigin(): { repo: string; origin: string } {
+  const origin = mkdtempSync(join(tmpdir(), "makit-origin-"));
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main", origin]);
+  const repo = mkdtempSync(join(tmpdir(), "makit-clone-"));
+  execFileSync("git", ["clone", "-q", origin, repo]);
+  const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+  g("config", "user.email", "t@t.io");
+  g("config", "user.name", "Test");
+  writeFileSync(join(repo, "README.md"), "hello\n");
+  g("add", ".");
+  g("commit", "-q", "-m", "initial");
+  g("push", "-q", "-u", "origin", "main");
+  return { repo, origin };
+}
+
+/** Land a commit straight on `origin/main`, as a merged PR would. */
+function pushToOrigin(origin: string, message: string): void {
+  const scratch = mkdtempSync(join(tmpdir(), "makit-scratch-"));
+  const g = (...args: string[]) => execFileSync("git", args, { cwd: scratch });
+  execFileSync("git", ["clone", "-q", origin, scratch]);
+  g("config", "user.email", "t@t.io");
+  g("config", "user.name", "Test");
+  writeFileSync(join(scratch, `${message}.txt`), "x\n");
+  g("add", ".");
+  g("commit", "-q", "-m", message);
+  g("push", "-q", "origin", "main");
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+const headOf = (dir: string, ref: string) =>
+  execFileSync("git", ["rev-parse", ref], { cwd: dir }).toString().trim();
+
+test("syncBaseBranch fast-forwards the base branch that is checked out", async () => {
+  const { repo, origin } = makeRepoWithOrigin();
+  try {
+    pushToOrigin(origin, "landed");
+    const before = headOf(repo, "main");
+    const result = await syncBaseBranch(repo, "main");
+    assert.equal(result.updated, true);
+    assert.notEqual(headOf(repo, "main"), before);
+    // It landed on exactly what the remote has — no merge commit.
+    assert.equal(headOf(repo, "main"), headOf(repo, "origin/main"));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch reports no-op when the base is already current", async () => {
+  const { repo, origin } = makeRepoWithOrigin();
+  try {
+    const result = await syncBaseBranch(repo, "main");
+    assert.equal(result.updated, false);
+    assert.equal(result.reason, undefined, "up to date is not a failure");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch refuses to clobber divergent local commits", async () => {
+  const { repo, origin } = makeRepoWithOrigin();
+  try {
+    pushToOrigin(origin, "landed");
+    // A local-only commit on main makes the update a non-fast-forward. Wrap up
+    // must never discard it — losing unpushed work would be unforgivable.
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    writeFileSync(join(repo, "local.txt"), "mine\n");
+    g("add", ".");
+    g("commit", "-q", "-m", "local only");
+    const before = headOf(repo, "main");
+    const result = await syncBaseBranch(repo, "main");
+    assert.equal(result.updated, false);
+    assert.ok(result.reason, "it must say why it declined");
+    assert.equal(headOf(repo, "main"), before, "the local commit survives");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch updates a base branch that is not checked out anywhere", async () => {
+  const { repo, origin } = makeRepoWithOrigin();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    // Park the primary checkout on another branch, so `main` is only a ref.
+    execFileSync("git", ["checkout", "-q", "-b", "parked"], { cwd: repo });
+    pushToOrigin(origin, "landed");
+    const result = await syncBaseBranch(repo, "main");
+    assert.equal(result.updated, true);
+    assert.equal(headOf(repo, "main"), headOf(repo, "origin/main"));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch degrades quietly when there is no remote", async () => {
+  // A local-only repo is legitimate; wrap up should still remove the worktree
+  // and simply report that there was nothing to catch up to.
+  const repo = makeRepo();
+  try {
+    const result = await syncBaseBranch(repo, "main");
+    assert.equal(result.updated, false);
+    assert.ok(result.reason);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("deleteBranch removes a merged branch", async () => {
+  const repo = makeRepo();
+  try {
+    execFileSync("git", ["branch", "landed"], { cwd: repo });
+    await deleteBranch(repo, "landed");
+    assert.equal(await branchExists(repo, "landed"), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("deleteBranch force-deletes a branch git considers unmerged", async () => {
+  // The PR merged on GitHub (often squashed), so the local branch looks
+  // unmerged to git even though its content landed. `-d` would refuse.
+  const repo = makeRepo();
+  try {
+    const g = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+    g("checkout", "-q", "-b", "landed");
+    writeFileSync(join(repo, "f.txt"), "x\n");
+    g("add", ".");
+    g("commit", "-q", "-m", "work");
+    g("checkout", "-q", "main");
+    await deleteBranch(repo, "landed");
+    assert.equal(await branchExists(repo, "landed"), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("deleteBranch does not throw for a branch that is already gone", async () => {
+  const repo = makeRepo();
+  try {
+    await deleteBranch(repo, "never-existed");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("syncBaseBranch refuses when the branch is checked out in two worktrees", async () => {
+  // `git worktree add -f -f` allows it (older git spells this
+  // `--ignore-other-worktrees`). Fast-forwarding the shared ref through one
+  // checkout would leave the other one's index and working tree based on the old
+  // commit, so it would look spuriously dirty.
+  const { repo, origin } = makeRepoWithOrigin();
+  const base = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  try {
+    execFileSync("git", ["checkout", "-q", "-b", "parked"], { cwd: repo });
+    execFileSync(
+      "git",
+      ["worktree", "add", "-q", "-f", "-f", join(base, "a"), "main"],
+      { cwd: repo },
+    );
+    execFileSync(
+      "git",
+      ["worktree", "add", "-q", "-f", "-f", join(base, "b"), "main"],
+      { cwd: repo },
+    );
+    pushToOrigin(origin, "landed");
+    const before = headOf(repo, "main");
+
+    const result = await syncBaseBranch(repo, "main");
+
+    assert.equal(result.updated, false);
+    assert.match(String(result.reason), /more than one worktree|two worktrees/i);
+    assert.equal(headOf(repo, "main"), before, "the ref is left alone");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
   }
 });

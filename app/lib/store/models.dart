@@ -417,6 +417,7 @@ class PullRequest {
     required this.isDraft,
     this.mergeable,
     this.mergeStateStatus,
+    this.baseRefName,
     this.checks = const [],
     this.checkRollup = 'none',
     this.unresolvedComments = 0,
@@ -435,6 +436,11 @@ class PullRequest {
 
   /// CLEAN | BLOCKED | BEHIND | DIRTY | …, or null when unreported.
   final String? mergeStateStatus;
+
+  /// The branch this PR merges into. "Wrap up" fast-forwards this one after the
+  /// PR lands; null on a server that predates the field, and the server then
+  /// falls back to the repo's default branch.
+  final String? baseRefName;
 
   /// Per-check status for the hover popover. Empty when there are no checks.
   final List<PrCheck> checks;
@@ -467,6 +473,9 @@ class PullRequest {
       mergeable: j['mergeable'] is String ? j['mergeable'] as String : null,
       mergeStateStatus: j['mergeStateStatus'] is String
           ? j['mergeStateStatus'] as String
+          : null,
+      baseRefName: j['baseRefName'] is String
+          ? j['baseRefName'] as String
           : null,
       checks: ((j['checks'] as List?) ?? const [])
           .whereType<Map<dynamic, dynamic>>()
@@ -1187,4 +1196,56 @@ class Session {
     archived: archived ?? this.archived,
     orphaned: orphaned ?? this.orphaned,
   );
+}
+
+/// What the server's `worktree.wrapUp` actually did.
+///
+/// The base-branch leg is best-effort by design (the worktree is already gone by
+/// then, so a failed fast-forward is a partial success, not an error), which is
+/// why this reports rather than throws: the UI turns it into "worktree removed ·
+/// main up to date" or "worktree removed · main left alone (it has local
+/// commits)".
+class WrapUpReport {
+  const WrapUpReport({
+    this.branchDeleted,
+    this.baseBranch,
+    this.baseUpdated = false,
+    this.baseReason,
+  });
+
+  /// The local branch that was deleted, or null for a detached worktree.
+  final String? branchDeleted;
+
+  /// The branch that was caught up, or null when none could be resolved.
+  final String? baseBranch;
+
+  /// True when [baseBranch] actually moved.
+  final bool baseUpdated;
+
+  /// Why [baseBranch] was not updated, when that is worth telling the user.
+  /// Null for the benign "already up to date" case — that is not a problem.
+  final String? baseReason;
+
+  /// Tolerant decode: an empty/garbage ack degrades to "nothing reported"
+  /// rather than throwing, because by the time this arrives the worktree has
+  /// already been removed and the user needs to be told *something*.
+  static WrapUpReport fromJson(Map<String, dynamic> j) => WrapUpReport(
+    branchDeleted: j['branchDeleted'] is String
+        ? j['branchDeleted'] as String
+        : null,
+    baseBranch: j['baseBranch'] is String ? j['baseBranch'] as String : null,
+    baseUpdated: j['baseUpdated'] == true,
+    baseReason: j['baseReason'] is String ? j['baseReason'] as String : null,
+  );
+
+  /// One line for a snackbar, e.g.
+  /// `Removed feat/x · main up to date` / `Removed feat/x · main left alone`.
+  String get summary {
+    final parts = <String>[
+      if (branchDeleted != null) 'Removed $branchDeleted' else 'Worktree removed',
+      if (baseBranch != null)
+        baseUpdated ? '$baseBranch updated' : '$baseBranch unchanged',
+    ];
+    return parts.join(' · ');
+  }
 }

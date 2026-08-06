@@ -35,40 +35,22 @@ class ReposState {
     return null;
   }
 
-  /// Count of files with uncommitted changes in the worktree at [worktreePath],
-  /// or 0 when there is none. Backs the composer's "X uncommitted files" label.
-  int uncommittedFilesForWorktreePath(String? worktreePath) {
-    if (worktreePath == null) return 0;
+  /// The worktree at [worktreePath] together with the repo that owns it, or
+  /// null when no repo has it.
+  ///
+  /// One lookup instead of one per field: the composer's next-step bar needs the
+  /// PR, the three sync counts, the branch, the repo id *and* whether it is the
+  /// primary checkout. Walking the repo list once per field was both wasteful
+  /// and easy to get inconsistent — six independent scans can straddle a
+  /// snapshot swap and end up describing two different worktrees.
+  ({RepoInfo repo, Worktree worktree})? locateWorktree(String? worktreePath) {
+    if (worktreePath == null) return null;
     for (final repo in repos) {
       for (final w in repo.worktrees) {
-        if (w.path == worktreePath) return w.uncommittedFiles;
+        if (w.path == worktreePath) return (repo: repo, worktree: w);
       }
     }
-    return 0;
-  }
-
-  /// Commits not yet pushed for the worktree at [worktreePath], or 0 when there
-  /// is none. Backs the composer's "X commits ahead" hint.
-  int aheadCountForWorktreePath(String? worktreePath) {
-    if (worktreePath == null) return 0;
-    for (final repo in repos) {
-      for (final w in repo.worktrees) {
-        if (w.path == worktreePath) return w.aheadCount;
-      }
-    }
-    return 0;
-  }
-
-  /// Commits the worktree at [worktreePath] is behind its upstream, or 0 when
-  /// there is none. Backs the composer's "X commits behind" hint.
-  int behindCountForWorktreePath(String? worktreePath) {
-    if (worktreePath == null) return 0;
-    for (final repo in repos) {
-      for (final w in repo.worktrees) {
-        if (w.path == worktreePath) return w.behindCount;
-      }
-    }
-    return 0;
+    return null;
   }
 }
 
@@ -745,6 +727,76 @@ class StoreController extends StateNotifier<StoreState> {
         'worktreePath': worktreePath,
       },
     );
+  }
+
+  /// Discard the worktree of a pull request that closed without merging: remove
+  /// the worktree and delete the branch it held. No base branch to catch up,
+  /// because nothing landed.
+  ///
+  /// Distinct from [removeWorktree], which keeps the branch — the sidebar and the
+  /// mobile long-press use that one, and "remove this worktree" is a narrower
+  /// request than "discard this dead line of work".
+  Future<String> discardWorktree(String projectId, String worktreePath) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.discard',
+        'projectId': projectId,
+        'worktreePath': worktreePath,
+      },
+    );
+    final branch = ack['branchDeleted'];
+    return branch is String ? 'Discarded $branch' : 'Worktree discarded';
+  }
+
+  /// Tidy up after a pull request ended: remove the worktree, delete its
+  /// branch, and fast-forward the branch the PR merged into.
+  ///
+  /// [baseBranch] is the PR's own `baseRefName`; pass null and the server falls
+  /// back to the repo's default branch. Returns the server's report, because the
+  /// base-branch leg is best-effort — the caller has to be able to tell "tidied
+  /// and caught main up" from "tidied, main left alone because it had local
+  /// commits".
+  Future<WrapUpReport> wrapUpWorktree(
+    String projectId,
+    String worktreePath, {
+    String? baseBranch,
+  }) async {
+    final ack = await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {
+        'kind': 'worktree.wrapUp',
+        'projectId': projectId,
+        'worktreePath': worktreePath,
+        'baseBranch': ?baseBranch,
+      },
+    );
+    return WrapUpReport.fromJson(ack);
+  }
+
+  /// Take the worktree's PR out of draft (`gh pr ready`).
+  Future<void> markPrReady(String projectId, String worktreePath) =>
+      _prMutation('pr.markReady', projectId, worktreePath);
+
+  /// Merge the PR's base branch into its head on GitHub (`gh pr update-branch`).
+  Future<void> updatePrBranch(String projectId, String worktreePath) =>
+      _prMutation('pr.updateBranch', projectId, worktreePath);
+
+  /// Land the PR with GitHub's squash strategy (`gh pr merge --squash`). Leaves
+  /// the worktree in place — tidying up is [wrapUpWorktree]'s job.
+  Future<void> squashMergePr(String projectId, String worktreePath) =>
+      _prMutation('pr.squashMerge', projectId, worktreePath);
+
+  Future<void> _prMutation(
+    String kind,
+    String projectId,
+    String worktreePath,
+  ) async {
+    await _ref.read(connectionControllerProvider.notifier).request(MsgType.cmd, {
+      'kind': kind,
+      'projectId': projectId,
+      'worktreePath': worktreePath,
+    });
   }
 
   Future<List<PiSessionMeta>> listPiSessions(String projectId) async {

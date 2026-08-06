@@ -1,44 +1,20 @@
-import 'package:flutter/gestures.dart';
+// The composer's next-step bar (direction B1): one sentence about the worktree,
+// a `+n more` disclosure, and the one action that clears the loudest fact.
+//
+// The *rules* (which fact is loudest, which remedy clears it) are pinned in
+// pr_signals_test.dart. These cover what the widget does with them: what is on
+// screen, what tapping things runs, and the two endings a PR can have.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:makit/app/theme.dart';
-import 'package:makit/ui/widgets/pr_actions.dart';
 import 'package:makit/desktop/chat/pr_bar.dart';
+import 'package:makit/store/models.dart';
 import 'package:makit/store/prefs/preference_entries.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:makit/store/prefs/preferences_providers.dart';
-import 'package:makit/store/models.dart';
-import 'package:makit/ui/widgets/pr_state_style.dart';
-import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-
-import '../../support/svg_asset_finder.dart';
-
-Widget _host(
-  PreferencesController controller, {
-  PullRequest? pr,
-  int uncommittedFiles = 0,
-  int commitsAhead = 0,
-  int commitsBehind = 0,
-  required void Function(String) onInsert,
-}) {
-  return ProviderScope(
-    overrides: [
-      preferencesControllerProvider.overrideWith((ref) => controller),
-    ],
-    child: MaterialApp(
-      home: Scaffold(
-        body: PrComposerBar(
-          pr: pr,
-          uncommittedFiles: uncommittedFiles,
-          commitsAhead: commitsAhead,
-          commitsBehind: commitsBehind,
-          onInsertPrompt: onInsert,
-        ),
-      ),
-    ),
-  );
-}
+import 'package:makit/ui/widgets/pr_actions.dart';
+import 'package:makit/ui/widgets/pr_signals.dart';
+import 'package:makit/ui/widgets/wrap_up.dart';
 
 PullRequest _pr({
   String state = 'OPEN',
@@ -48,369 +24,656 @@ PullRequest _pr({
   int unresolvedComments = 0,
   bool stale = false,
   bool unresolvedUnknown = false,
+  String? baseRefName,
+  String? mergeStateStatus,
 }) => PullRequest(
   number: 42,
   url: 'https://github.com/o/r/pull/42',
   state: state,
-  title: 't',
+  title: 'A pull request title',
   isDraft: isDraft,
+  mergeStateStatus: mergeStateStatus,
   checkRollup: rollup,
   checks: checks,
   unresolvedComments: unresolvedComments,
   stale: stale,
   unresolvedUnknown: unresolvedUnknown,
+  baseRefName: baseRefName,
 );
 
-/// The opacity a stale pill is drawn at, so the two-way test can assert the
-/// dimmed value without duplicating the production constant.
-double? _pillOpacity(WidgetTester tester) {
-  final opacities = find.ancestor(
-    of: find.text('PR #42'),
-    matching: find.byType(Opacity),
+Widget _host(
+  PreferencesController controller, {
+  PullRequest? pr,
+  String? branch = 'feat/x',
+  int uncommittedFiles = 0,
+  int commitsAhead = 0,
+  int commitsBehind = 0,
+  String? projectId = 'p1',
+  String? worktreePath = '/wt/feat-x',
+  required void Function(String) onInsert,
+  List<PrDirectOp>? ran,
+}) => ProviderScope(
+  overrides: [
+    preferencesControllerProvider.overrideWith((ref) => controller),
+    // SPEC-38 T7.3: the executor is injected, so a test can watch a direct op
+    // run (and complete) without a live connection.
+    if (ran != null)
+      prOpRunnerProvider.overrideWithValue((op, _) async {
+        ran.add(op);
+        return const PrOpOutcome('done');
+      }),
+  ],
+  child: MaterialApp(
+    home: Scaffold(
+      body: PrComposerBar(
+        branch: branch,
+        uncommittedFiles: uncommittedFiles,
+        status: prStatus(
+          pr: pr,
+          branch: branch,
+          uncommittedFiles: uncommittedFiles,
+          commitsAhead: commitsAhead,
+          commitsBehind: commitsBehind,
+        ),
+        pr: pr,
+        projectId: projectId,
+        worktreePath: worktreePath,
+        onInsertPrompt: onInsert,
+      ),
+    ),
+  ),
+);
+
+/// The bar renders its sentence as one rich Text; assert on the flattened runs.
+String _sentence(WidgetTester tester) {
+  final text = tester.widget<Text>(
+    find
+        .descendant(of: find.byType(PrComposerBar), matching: find.byType(Text))
+        .first,
   );
-  if (opacities.evaluate().isEmpty) return null;
-  return tester.widget<Opacity>(opacities.first).opacity;
+  return text.textSpan!.toPlainText();
 }
 
 void main() {
-  testWidgets('actions button main segment inserts the default prompt', (
-    tester,
-  ) async {
-    String? inserted;
-    await tester.pumpWidget(
-      _host(PreferencesController.ephemeral(), onInsert: (p) => inserted = p),
-    );
-
-    // Default last-action is Create PR; tapping its label runs it.
-    await tester.tap(find.text('Create PR'));
-    await tester.pumpAndSettle();
-    expect(inserted, PrPromptAction.createPr.defaultPrompt);
-  });
-
-  testWidgets('a Settings override replaces the built-in prompt', (
-    tester,
-  ) async {
-    final controller = PreferencesController.ephemeral();
-    await controller.set(prCreatePromptPreference, 'MY custom create prompt');
-
-    String? inserted;
-    await tester.pumpWidget(_host(controller, onInsert: (p) => inserted = p));
-
-    await tester.tap(find.text('Create PR'));
-    await tester.pumpAndSettle();
-    expect(inserted, 'MY custom create prompt');
-  });
-
-  testWidgets('picking a menu action inserts it and becomes the new main', (
-    tester,
-  ) async {
-    final controller = PreferencesController.ephemeral();
-    String? inserted;
-    await tester.pumpWidget(_host(controller, onInsert: (p) => inserted = p));
-
-    // Open the menu via the caret and pick "Fix PR".
-    await tester.tap(find.byTooltip('PR actions'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Fix PR').last);
-    await tester.pumpAndSettle();
-
-    expect(inserted, PrPromptAction.fixPr.defaultPrompt);
-    expect(controller.get(lastPrActionPreference), 'fixPr');
-    // The main segment now repeats Fix PR.
-    expect(find.text('Fix PR'), findsOneWidget);
-  });
-
-  testWidgets('no PR → no pill, but the actions button still shows', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _host(PreferencesController.ephemeral(), pr: null, onInsert: (_) {}),
-    );
-    expect(find.textContaining('PR #'), findsNothing);
-    expect(find.text('Create PR'), findsOneWidget);
-  });
-
-  testWidgets('an existing PR hides "Create PR" from the menu', (tester) async {
-    await tester.pumpWidget(
-      _host(PreferencesController.ephemeral(), pr: _pr(), onInsert: (_) {}),
-    );
-    // Default main segment is the first non-create action (Fix PR).
-    expect(find.text('Create PR'), findsNothing);
-    await tester.tap(find.byTooltip('PR actions'));
-    await tester.pumpAndSettle();
-    expect(find.text('Create PR'), findsNothing);
-    expect(find.text('Fix PR'), findsWidgets);
-    expect(find.text('Resolve comments'), findsWidgets);
-    expect(find.text('Commit and push'), findsWidgets);
-  });
-
-  testWidgets('a single chip shows; uncommitted outranks unresolved', (
-    tester,
-  ) async {
-    String? inserted;
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(unresolvedComments: 3),
-        uncommittedFiles: 2,
-        onInsert: (p) => inserted = p,
-      ),
-    );
-    // Only the top-priority chip renders — not a wall of competing hints.
-    expect(find.text('2 uncommitted files'), findsOneWidget);
-    expect(find.text('3 unresolved comments'), findsNothing);
-    await tester.tap(find.text('Commit and push'));
-    await tester.pumpAndSettle();
-    expect(inserted, PrPromptAction.commitAndPush.defaultPrompt);
-  });
-
-  testWidgets('commits ahead (no uncommitted) → chip + default "Push"', (
-    tester,
-  ) async {
-    String? inserted;
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(unresolvedComments: 2),
-        commitsAhead: 3,
-        onInsert: (p) => inserted = p,
-      ),
-    );
-    // Unpushed commits outrank unresolved comments.
-    expect(find.text('3 commits ahead'), findsOneWidget);
-    expect(find.text('2 unresolved comments'), findsNothing);
-    await tester.tap(find.text('Push'));
-    await tester.pumpAndSettle();
-    expect(inserted, PrPromptAction.push.defaultPrompt);
-  });
-
-  testWidgets('failing CI (nothing local) → chip + default "Fix PR"', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(rollup: 'fail', unresolvedComments: 1),
-        onInsert: (_) {},
-      ),
-    );
-    // Failing CI outranks unresolved comments.
-    expect(find.text('CI failing'), findsOneWidget);
-    expect(find.text('1 unresolved comment'), findsNothing);
-    expect(find.text('Fix PR'), findsOneWidget);
-  });
-
-  testWidgets('unresolved comments (nothing else) → default "Resolve"', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(unresolvedComments: 1),
-        onInsert: (_) {},
-      ),
-    );
-    expect(find.text('1 unresolved comment'), findsOneWidget);
-    // Main segment repeats the suggested default.
-    expect(find.text('Resolve comments'), findsOneWidget);
-  });
-
-  testWidgets('with an open PR the pill renders its number', (tester) async {
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(
-          checks: const [
-            PrCheck(name: 'test', bucket: 'pass', workflowName: 'CI'),
-          ],
-        ),
-        onInsert: (_) {},
-      ),
-    );
-    expect(find.text('PR #42'), findsOneWidget);
-    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
-  });
-
-  testWidgets('a merged PR reads as merged, not as a live PR', (tester) async {
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(
-          state: 'MERGED',
-          checks: const [
-            PrCheck(name: 'test', bucket: 'pass', workflowName: 'CI'),
-          ],
-        ),
-        onInsert: (_) {},
-      ),
-    );
-    final icon = find.byIcon(PhosphorIconsLight.gitMerge);
-    expect(icon, findsOneWidget);
-    expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsNothing);
-    expect(tester.widget<Icon>(icon).color, kPrMerged);
-    // The label takes the AA-safe purple, not the vivid icon hue.
-    expect(
-      tester.widget<Text>(find.text('PR #42')).style?.color,
-      Theme.of(tester.element(icon)).colorScheme.prMergedText,
-    );
-    // CI is moot once merged: no rollup dot tinted by the state colour.
-    expect(find.byIcon(Icons.circle), findsNothing);
-  });
-
-  testWidgets('a closed PR reads as closed', (tester) async {
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(state: 'CLOSED', rollup: 'fail', unresolvedComments: 2),
-        onInsert: (_) {},
-      ),
-    );
-    final icon = findSvgAsset(kClosedPrAsset);
-    expect(icon, findsOneWidget);
-    // No PR-derived nudges once the PR is dead: CI and review threads are moot.
-    expect(find.text('CI failing'), findsNothing);
-    expect(find.text('2 unresolved comments'), findsNothing);
-  });
-
-  testWidgets('commits behind (no unpushed) → chip + default "Pull"', (
-    tester,
-  ) async {
-    String? inserted;
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(unresolvedComments: 1),
-        commitsBehind: 2,
-        onInsert: (p) => inserted = p,
-      ),
-    );
-    // Unfetched commits outrank unresolved comments.
-    expect(find.text('2 commits behind'), findsOneWidget);
-    expect(find.text('1 unresolved comment'), findsNothing);
-    await tester.tap(find.text('Pull'));
-    await tester.pumpAndSettle();
-    expect(inserted, PrPromptAction.pull.defaultPrompt);
-  });
-
-  testWidgets('hovering the pill lists checks failed → skipped → passed', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      _host(
-        PreferencesController.ephemeral(),
-        pr: _pr(
-          rollup: 'fail',
-          checks: const [
-            PrCheck(name: 'analyze', bucket: 'pass'),
-            PrCheck(name: 'lint', bucket: 'skipping'),
-            PrCheck(name: 'test', bucket: 'fail'),
-          ],
-        ),
-        onInsert: (_) {},
-      ),
-    );
-
-    // Hover the pill to reveal the popover.
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: Offset.zero);
-    addTearDown(gesture.removePointer);
-    await gesture.moveTo(tester.getCenter(find.text('PR #42')));
-    await tester.pumpAndSettle();
-
-    // Rows are ordered failures first, then skipped, then passing.
-    final failY = tester.getTopLeft(find.text('test')).dy;
-    final skipY = tester.getTopLeft(find.text('lint')).dy;
-    final passY = tester.getTopLeft(find.text('analyze')).dy;
-    expect(failY, lessThan(skipY));
-    expect(skipY, lessThan(passY));
-
-    // Third column shows the human status word for each bucket.
-    expect(find.text('failed'), findsOneWidget);
-    expect(find.text('skipped'), findsOneWidget);
-    expect(find.text('passed'), findsOneWidget);
-  });
-
-  for (final state in ['MERGED', 'CLOSED']) {
-    testWidgets('hovering a $state PR reveals no CI history', (tester) async {
+  group('the sentence', () {
+    testWidgets('names the PR and the loudest fact', (tester) async {
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
           pr: _pr(
-            state: state,
             rollup: 'fail',
             checks: const [
-              PrCheck(name: 'analyze', bucket: 'pass'),
+              PrCheck(name: 'analyze', bucket: 'fail'),
               PrCheck(name: 'test', bucket: 'fail'),
             ],
           ),
           onInsert: (_) {},
         ),
       );
+      expect(_sentence(tester), contains('#42'));
+      expect(_sentence(tester), contains('2 checks failing'));
+    });
 
-      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: Offset.zero);
-      addTearDown(gesture.removePointer);
-      await gesture.moveTo(tester.getCenter(find.text('PR #42')));
+    testWidgets('names the branch when there is no PR', (tester) async {
+      await tester.pumpWidget(
+        _host(PreferencesController.ephemeral(), onInsert: (_) {}),
+      );
+      expect(_sentence(tester), contains('feat/x'));
+    });
+
+    testWidgets('reports only the loudest fact, not all of them', (
+      tester,
+    ) async {
+      // This is the whole point of B1: the bar whispers. The other facts are a
+      // count, not a wall of chips.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'fail', unresolvedComments: 3),
+          uncommittedFiles: 2,
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      expect(_sentence(tester), contains('2 files uncommitted'));
+      expect(_sentence(tester), isNot(contains('threads')));
+      expect(_sentence(tester), isNot(contains('unpushed')));
+    });
+  });
+
+  group('the +n more disclosure', () {
+    testWidgets('counts the facts it is standing in for', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'fail', unresolvedComments: 3),
+          uncommittedFiles: 2,
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      // uncommitted (loud) + behind? no + ahead + CI + threads = 3 others.
+      expect(find.text('+3 more'), findsOneWidget);
+    });
+
+    testWidgets('is absent when there is nothing else to say', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(find.textContaining('more'), findsNothing);
+    });
+
+    testWidgets('opens the detail, which lists every fact with a remedy', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'fail', unresolvedComments: 3),
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('+2 more'));
       await tester.pumpAndSettle();
-
-      // The checks are history once the PR is merged/closed: no popover, so no
-      // check rows and no header claiming this is an open pull request.
-      expect(find.text('analyze'), findsNothing);
-      expect(find.text('test'), findsNothing);
-      expect(find.textContaining('CI checks'), findsNothing);
-      expect(find.textContaining('Open pull request'), findsNothing);
+      // Facts the bar elided are now visible *and* actionable — the trade B1
+      // makes for a quiet bar.
+      expect(find.text('3 threads open'), findsOneWidget);
+      expect(find.text('1 commit unpushed'), findsOneWidget);
+      expect(find.text('Resolve threads'), findsOneWidget);
     });
-  }
 
-  // ── SPEC-32 §7.5 · stale pills + unmeasured counts ──────────────────────
-  group('SPEC-32 stale pills', () {
-    testWidgets('a stale PR still renders, dimmed', (tester) async {
+    testWidgets('a remedy picked in the detail inserts its prompt', (
+      tester,
+    ) async {
+      String? inserted;
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
-          pr: _pr(stale: true),
-          onInsert: (_) {},
+          pr: _pr(rollup: 'fail', unresolvedComments: 3),
+          commitsAhead: 1,
+          onInsert: (p) => inserted = p,
         ),
       );
-      // The regression guard for the reported bug: a throttled lookup must NOT
-      // erase the pill — its number and state glyph stay in the tree.
-      expect(find.text('PR #42'), findsOneWidget);
-      expect(find.byIcon(PhosphorIconsLight.gitPullRequest), findsOneWidget);
-      // …and it is visibly de-emphasised (dimmed), not full strength.
-      final opacity = _pillOpacity(tester);
-      expect(opacity, isNotNull);
-      expect(opacity, lessThan(1.0));
+      await tester.tap(find.text('+2 more'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Resolve threads'));
+      await tester.pumpAndSettle();
+      expect(inserted, PrPromptAction.resolveComments.defaultPrompt);
     });
+  });
 
-    testWidgets('a fresh PR renders at full emphasis', (tester) async {
+  group('the call to action', () {
+    testWidgets('runs the loudest fact\'s remedy', (tester) async {
+      String? inserted;
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
-          pr: _pr(stale: false),
-          onInsert: (_) {},
+          uncommittedFiles: 3,
+          onInsert: (p) => inserted = p,
         ),
       );
-      // No dimming wrapper: the fresh pill is drawn at full strength, so the
-      // dimmed-vs-fresh distinction is real and the stale test can't pass
-      // vacuously.
-      expect(find.text('PR #42'), findsOneWidget);
-      expect(_pillOpacity(tester), isNull);
+      expect(find.text('Commit & push'), findsOneWidget);
+      await tester.tap(find.text('Commit & push'));
+      await tester.pumpAndSettle();
+      expect(inserted, PrPromptAction.commitAndPush.defaultPrompt);
     });
 
-    testWidgets('a stale pill names the reason in its tooltip', (tester) async {
+    testWidgets('a Settings override replaces the built-in prompt', (
+      tester,
+    ) async {
+      final controller = PreferencesController.ephemeral();
+      await controller.set(prCommitPushPromptPreference, 'MY commit prompt');
+      String? inserted;
+      await tester.pumpWidget(
+        _host(controller, uncommittedFiles: 1, onInsert: (p) => inserted = p),
+      );
+      await tester.tap(find.text('Commit & push'));
+      await tester.pumpAndSettle();
+      expect(inserted, 'MY commit prompt');
+    });
+
+    testWidgets('offers to create a PR when the branch has none', (
+      tester,
+    ) async {
+      String? inserted;
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
-          pr: _pr(stale: true),
+          onInsert: (p) => inserted = p,
+        ),
+      );
+      await tester.tap(find.text('Create PR'));
+      await tester.pumpAndSettle();
+      expect(inserted, PrPromptAction.createPr.defaultPrompt);
+    });
+
+    testWidgets('rests when nothing is pressing, and inserts nothing', (
+      tester,
+    ) async {
+      // The old bar fell back to "whatever you picked last" — offering Pull with
+      // nothing to pull. Resting is honest; the menu is still one tap away.
+      String? inserted;
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
+          onInsert: (p) => inserted = p,
+        ),
+      );
+      expect(find.text('Ask the agent'), findsOneWidget);
+      await tester.tap(find.text('Ask the agent'));
+      await tester.pumpAndSettle();
+      expect(inserted, isNull, reason: 'idle opens the menu, it does not act');
+      expect(find.text('ASK THE AGENT'), findsOneWidget);
+    });
+  });
+
+  group('the menu', () {
+    testWidgets('greys inapplicable prompts and says why', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
           onInsert: (_) {},
         ),
       );
-      final tip = find.byTooltip(kStalePrTooltip);
-      expect(tip, findsOneWidget);
-      // The copy explains the *why* (a refresh that couldn't complete), not
-      // just the label.
-      expect(kStalePrTooltip, contains('Last known state'));
-      expect(kStalePrTooltip.toLowerCase(), contains('quota'));
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      // Still listed — an absent action must never read as a missing feature.
+      expect(find.text('Fix PR'), findsOneWidget);
+      expect(find.text('the build is not failing'), findsOneWidget);
+      final button = tester.widget<MenuItemButton>(
+        find.ancestor(
+          of: find.text('Fix PR'),
+          matching: find.byType(MenuItemButton),
+        ),
+      );
+      expect(button.onPressed, isNull, reason: 'listed but not runnable');
+    });
+
+    testWidgets('drops "Create PR" once a PR exists', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Create PR'), findsNothing);
+    });
+  });
+
+  group('endings', () {
+    testWidgets('a merged PR offers to wrap up, not to fix its history', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED', rollup: 'fail'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(find.text('Wrap up'), findsOneWidget);
+      expect(find.text('Fix CI'), findsNothing);
+      expect(_sentence(tester), contains('merged'));
+    });
+
+    testWidgets('wrap up asks first, spelling out every step', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED', baseRefName: 'release/2.0'),
+          branch: 'feat/x',
+          uncommittedFiles: 2,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Remove the worktree at /wt/feat-x'), findsOneWidget);
+      // It names the branch it will move, rather than saying "the base branch".
+      expect(
+        find.textContaining('Fast-forward release/2.0'),
+        findsOneWidget,
+      );
+      // And it warns about the work it is about to destroy.
+      expect(find.textContaining('will be lost'), findsOneWidget);
+    });
+
+    testWidgets('cancelling the confirm does nothing', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Fast-forward'), findsNothing);
+    });
+
+    testWidgets('a closed PR offers to discard the worktree', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'CLOSED'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(find.text('Discard worktree'), findsOneWidget);
+      expect(_sentence(tester), contains('closed without merging'));
+    });
+  });
+
+  group('the non-destructive direct ops', () {
+    testWidgets('a draft offers Mark ready', (tester) async {
+      // That it runs *without* a confirm is `isDestructive`'s rule, pinned in
+      // pr_signals_test.dart — asserting it here would mean standing up a fake
+      // connection just to observe the absence of a dialog.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(isDraft: true, rollup: 'pass'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(_sentence(tester), contains('still a draft'));
+      expect(find.text('Mark ready'), findsOneWidget);
+    });
+
+    testWidgets('a moved base offers Update branch', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(mergeStateStatus: 'BEHIND'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(_sentence(tester), contains('the base branch moved on'));
+      expect(find.text('Update branch'), findsOneWidget);
+    });
+
+    testWidgets('the menu keeps a direct op the CTA is not showing', (
+      tester,
+    ) async {
+      // Draft + red build: the button says Fix CI, but marking it ready is still
+      // a legitimate thing to do, so the menu must not drop it.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(
+            isDraft: true,
+            rollup: 'fail',
+            checks: const [PrCheck(name: 'a', bucket: 'fail')],
+          ),
+          onInsert: (_) {},
+        ),
+      );
+      expect(find.text('Fix CI'), findsOneWidget, reason: 'the CTA');
+      await tester.tap(find.byTooltip('PR actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('DO NOW'), findsOneWidget);
+      expect(find.text('Mark ready'), findsOneWidget);
+    });
+  });
+
+  group('the confirms name what they actually do (SPEC-38 G1/G4)', () {
+    testWidgets('wrap up names the branch it will delete', (tester) async {
+      // wrapUpWorktree runs `git branch -D <branch>` (spec §6.1 step 3). The
+      // dialog never said so: the step was guarded on an identity that is always
+      // '#42' once a PR exists, so the line was dead code.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED', baseRefName: 'main'),
+          branch: 'feat/x',
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Delete the local branch feat/x'), findsOneWidget);
+    });
+
+    testWidgets('discard names the branch it will delete too', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'CLOSED'),
+          branch: 'feat/x',
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Discard worktree'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Delete the local branch feat/x'), findsOneWidget);
+    });
+
+    testWidgets('a detached worktree is not promised a branch deletion', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: null,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Delete the local branch'), findsNothing);
+    });
+
+    testWidgets('says sessions are archived, after the removal', (tester) async {
+      // The server removes the worktree first and *archives* live sessions
+      // (SPEC-29) rather than stopping them; the dialog claimed the reverse order
+      // and the wrong verb.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: 'feat/x',
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      final removeY = tester
+          .getTopLeft(find.textContaining('Remove the worktree'))
+          .dy;
+      final sessionsY = tester.getTopLeft(find.textContaining('Archive')).dy;
+      expect(removeY, lessThan(sessionsY));
+    });
+
+    testWidgets('the data-loss warning survives a label reword', (tester) async {
+      // It used to be inferred with `label.contains('uncommitted')`, so renaming
+      // the label would have silently deleted the warning.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: 'feat/x',
+          uncommittedFiles: 2,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 files'), findsWidgets);
+      expect(find.textContaining('will be lost'), findsOneWidget);
+    });
+  });
+
+  group('confirming on stale data (SPEC-38 L1)', () {
+    // The app decides which destructive button to show from the last snapshot,
+    // and the server does not re-check GitHub (L1). When that snapshot is
+    // explicitly last-known — SPEC-32 shed the refresh to save quota — the
+    // premise of the dialog ("this PR has merged") may simply be false, so the
+    // dialog says so rather than asserting it.
+    testWidgets('wrap up warns that the state could not be refreshed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED', stale: true),
+          branch: 'feat/x',
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be refreshed'), findsOneWidget);
+    });
+
+    testWidgets('discard warns too — it is the destructive one', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'CLOSED', stale: true),
+          branch: 'feat/x',
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Discard worktree'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be refreshed'), findsOneWidget);
+    });
+
+    testWidgets('fresh data gets no warning', (tester) async {
+      // It has to stay rare, or it becomes noise people click past.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: 'feat/x',
+          onInsert: (_) {},
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('could not be refreshed'), findsNothing);
+    });
+
+    testWidgets('the warning does not block the action', (tester) async {
+      // Refusing on stale data would reintroduce exactly the quota trap that L1's
+      // proposed fix was rejected for: tidying up must stay possible.
+      final ran = <PrDirectOp>[];
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED', stale: true),
+          branch: 'feat/x',
+          onInsert: (_) {},
+          ran: ran,
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Wrap up'));
+      await tester.pumpAndSettle();
+      expect(ran, [PrDirectOp.wrapUp]);
+    });
+  });
+
+  group('dispatch (SPEC-38 T7.3)', () {
+    testWidgets('a non-confirming op runs straight away, with no dialog', (
+      tester,
+    ) async {
+      final ran = <PrDirectOp>[];
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(isDraft: true, rollup: 'pass'),
+          onInsert: (_) {},
+          ran: ran,
+        ),
+      );
+      await tester.tap(find.text('Mark ready'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancel'), findsNothing, reason: 'no confirm');
+      expect(ran, [PrDirectOp.markReady]);
+    });
+
+    testWidgets('a confirming op runs only after the confirm is accepted', (
+      tester,
+    ) async {
+      final ran = <PrDirectOp>[];
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: 'feat/x',
+          onInsert: (_) {},
+          ran: ran,
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(ran, isEmpty, reason: 'not yet — the dialog is up');
+      await tester.tap(find.widgetWithText(FilledButton, 'Wrap up'));
+      await tester.pumpAndSettle();
+      expect(ran, [PrDirectOp.wrapUp]);
+    });
+
+    testWidgets('cancelling runs nothing', (tester) async {
+      final ran = <PrDirectOp>[];
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: 'feat/x',
+          onInsert: (_) {},
+          ran: ran,
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(ran, isEmpty);
+    });
+  });
+
+  group('stale (SPEC-32)', () {
+    testWidgets('keeps the number crisp and says the data is last-known', (
+      tester,
+    ) async {
+      // The old bar dimmed the whole pill, hiding the one fact that never goes
+      // stale: which PR this is.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'fail', stale: true),
+          onInsert: (_) {},
+        ),
+      );
+      expect(_sentence(tester), contains('#42'));
+      expect(_sentence(tester), contains('last known'));
+      expect(find.byTooltip(kStalePrTooltip), findsOneWidget);
+    });
+
+    testWidgets('a fresh PR says nothing about staleness', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'fail'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(_sentence(tester), isNot(contains('last known')));
     });
 
     testWidgets('unresolvedUnknown hides the count instead of showing 0', (
@@ -419,25 +682,48 @@ void main() {
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
-          // The 0 is a placeholder (the count was shed), not a fact — showing
-          // "0 unresolved comments" would be a confident lie.
-          pr: _pr(unresolvedComments: 0, unresolvedUnknown: true),
+          pr: _pr(unresolvedUnknown: true, rollup: 'pass'),
           onInsert: (_) {},
         ),
       );
-      expect(find.textContaining('unresolved comment'), findsNothing);
+      expect(_sentence(tester), isNot(contains('thread')));
     });
+  });
 
-    testWidgets('a measured count still renders its number', (tester) async {
+  group('the dot', () {
+    testWidgets('shows a determinate arc while checks are in flight', (
+      tester,
+    ) async {
+      // A rollup is a count, so the progress is known — an indeterminate
+      // spinner would overstate the uncertainty.
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
-          pr: _pr(unresolvedComments: 3, unresolvedUnknown: false),
+          pr: _pr(
+            rollup: 'pending',
+            checks: const [
+              PrCheck(name: 'a', bucket: 'pass'),
+              PrCheck(name: 'b', bucket: 'pending'),
+            ],
+          ),
           onInsert: (_) {},
         ),
       );
-      // Guards against hiding real data: a measured non-zero count is shown.
-      expect(find.text('3 unresolved comments'), findsOneWidget);
+      final ring = tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator),
+      );
+      expect(ring.value, closeTo(0.5, 0.001));
+    });
+
+    testWidgets('is a plain dot when nothing is running', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(rollup: 'pass'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     });
   });
 }

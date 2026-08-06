@@ -95,11 +95,36 @@ enum PrPromptAction {
 PrPromptAction prActionFromName(String name) => PrPromptAction.values
     .firstWhere((a) => a.name == name, orElse: () => PrPromptAction.createPr);
 
+/// Built-in preamble for the magic "Fix". Overridable via
+/// [prMagicFixPromptPreference]; the problem list is appended either way.
+const String kMagicFixPreamble =
+    'This branch has several outstanding problems. Work through all of them, in '
+    'whatever order makes sense, and push when done. Do not stop after the '
+    'first one. Reply with a short summary of what you changed.';
+
 /// The effective prompt for [action]: the user's Settings override when it is
 /// non-blank, else the built-in [PrPromptAction.defaultPrompt].
 extension PrPromptResolution on WidgetRef {
   String effectivePrPrompt(PrPromptAction action) {
     final override = preference(action.promptPreference).trim();
     return override.isEmpty ? action.defaultPrompt : override;
+  }
+
+  /// The magic "Fix" prompt: the preamble, then the problems themselves as a
+  /// checklist.
+  ///
+  /// The facts are enumerated rather than left implicit ("fix the PR") because
+  /// the agent cannot see the bar: without them it would have to rediscover the
+  /// failing checks, the open threads and the unpushed commit for itself, and
+  /// might well miss one. [details] carries what we already know (e.g. which
+  /// checks failed), so it does not have to look those up either.
+  String magicFixPrompt(Iterable<({String label, String? detail})> problems) {
+    final override = preference(prMagicFixPromptPreference).trim();
+    final preamble = override.isEmpty ? kMagicFixPreamble : override;
+    final lines = [
+      for (final p in problems)
+        p.detail == null ? '- ${p.label}' : '- ${p.label} (${p.detail})',
+    ];
+    return '$preamble\n\n${lines.join('\n')}';
   }
 }

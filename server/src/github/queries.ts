@@ -130,7 +130,7 @@ export function prForBranchArgv(branch: string): string[] {
     "--state",
     "all",
     "--json",
-    "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
+    "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup,baseRefName",
     "--limit",
     "1",
   ];
@@ -286,4 +286,22 @@ export function parsePrUrl(prUrl: string): { owner: string; repo: string; number
   const m = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(prUrl);
   if (!m) return null;
   return { owner: m[1], repo: m[2], number: m[3] };
+}
+
+/** A state-changing `gh pr` action the app can run on the user's behalf. */
+export type PrMutation = "ready" | "update-branch" | "merge-squash";
+
+/**
+ * argv for a PR mutation, addressed **by number**.
+ *
+ * `gh pr ready` and `gh pr update-branch` both infer the PR from the
+ * checked-out branch when given no argument — but these run with `cwd` set to
+ * the repo, not the worktree that owns the branch, so inference would resolve
+ * the repo's current branch instead. Passing the number removes the ambiguity.
+ */
+export function prMutationArgv(verb: PrMutation, number: number): string[] {
+  // `gh pr merge` with no strategy flag drops into an interactive prompt, which
+  // would hang a non-tty server process forever — so the strategy is explicit.
+  if (verb === "merge-squash") return ["pr", "merge", String(number), "--squash"];
+  return ["pr", verb, String(number)];
 }
