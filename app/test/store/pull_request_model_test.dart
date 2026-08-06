@@ -149,6 +149,32 @@ void _wrapUpAndBaseRefTests() {
       expect(r.summary, 'Worktree removed · main unchanged');
     });
 
+    test('reports a branch that survived, not just the base', () {
+      // Wrap up deletes the branch as step 2 and that leg is best-effort. If it
+      // failed, saying only "Removed feat/x" would claim the opposite of what
+      // happened — and the user cannot retry, the worktree is already gone.
+      final r = WrapUpReport.fromJson({
+        'baseBranch': 'main',
+        'baseUpdated': true,
+        'branchReason': 'git branch -D feat/x failed: cannot lock ref',
+      });
+      expect(r.branchDeleted, isNull);
+      expect(r.summary, isNot(contains('Removed')));
+      expect(r.summary, contains('branch kept'));
+      expect(r.detail, contains('cannot lock ref'));
+    });
+
+    test('combines both reasons when the base was skipped too', () {
+      final r = WrapUpReport.fromJson({
+        'baseBranch': 'main',
+        'baseUpdated': false,
+        'baseReason': 'main has local commits',
+        'branchReason': 'cannot lock ref',
+      });
+      expect(r.detail, contains('cannot lock ref'));
+      expect(r.detail, contains('local commits'));
+    });
+
     test('an empty ack degrades instead of throwing', () {
       // The worktree is already gone by the time this arrives, so the UI must
       // still be able to say something.

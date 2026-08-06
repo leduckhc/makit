@@ -39,6 +39,7 @@ class PrOpTarget {
     required this.projectId,
     required this.worktreePath,
     this.baseBranch,
+    this.expectBranch,
   });
 
   final String projectId;
@@ -46,6 +47,11 @@ class PrOpTarget {
 
   /// The PR's `baseRefName`, for wrap up's fast-forward leg.
   final String? baseBranch;
+
+  /// The branch the confirm dialog named. The server resolves the branch again
+  /// when it runs, so without this the user could confirm "delete feat/x" and
+  /// have a different branch deleted — one they checked out since the snapshot.
+  final String? expectBranch;
 }
 
 /// Runs a direct op against the server.
@@ -68,14 +74,16 @@ final prOpRunnerProvider = Provider<PrOpRunner>(
           target.projectId,
           target.worktreePath,
           baseBranch: target.baseBranch,
+          expectBranch: target.expectBranch,
         );
-        return PrOpOutcome(report.summary, detail: report.baseReason);
+        return PrOpOutcome(report.summary, detail: report.detail);
       case PrDirectOp.discardWorktree:
         final report = await store.discardWorktree(
           target.projectId,
           target.worktreePath,
+          expectBranch: target.expectBranch,
         );
-        return PrOpOutcome(report);
+        return PrOpOutcome(report.summary, detail: report.detail);
       case PrDirectOp.markReady:
         await store.markPrReady(target.projectId, target.worktreePath);
         return const PrOpOutcome('Marked ready for review');
@@ -111,6 +119,11 @@ Future<void> runPrRemedy(
   String? branch,
   int uncommittedFiles = 0,
 }) async {
+  // The sheet or dialog holding this callback can outlive the widget that opened
+  // it — a repos snapshot can drop the worktree row while its sheet is still up.
+  // Everything below touches `ref` and `context`, both of which throw on a
+  // defunct element, so bail before the first of them rather than after.
+  if (!context.mounted) return;
   switch (remedy) {
     case PromptRemedy(action: final action):
       // Remember the pick so the menu can mark it, matching the old bar.
@@ -164,8 +177,10 @@ Future<void> runPrRemedy(
             projectId: projectId,
             worktreePath: worktreePath,
             baseBranch: pr?.baseRefName,
+            expectBranch: branch,
           ),
         );
+        if (!messenger.mounted) return;
         messenger.showSnackBar(
           SnackBar(
             content: Text(outcome.message),
@@ -180,6 +195,7 @@ Future<void> runPrRemedy(
           ),
         );
       } catch (e) {
+        if (!messenger.mounted) return;
         messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
       }
   }

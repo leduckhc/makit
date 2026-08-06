@@ -1951,3 +1951,46 @@ test("wrap up survives a failed branch deletion and reports it", async () => {
     assert.ok(result.branchReason, "it says why the branch survived");
   });
 });
+
+test("wrap up refuses when the worktree moved to another branch", async () => {
+  // The app's confirm names a branch taken from its snapshot; the server resolves
+  // the branch again at execution time. If the user checked out something else in
+  // the meantime, deleting what is there now would destroy a branch the user was
+  // never warned about — and `-D` is unrecoverable for unpushed work.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "feat/landed");
+    execFileSync("git", ["checkout", "-q", "-b", "feat/something-else"], { cwd: wt.path });
+
+    await assert.rejects(
+      () => manager.wrapUpWorktree(projectId, wt.path, "main", "feat/landed"),
+      /feat\/something-else/,
+    );
+    assert.equal(existsSync(wt.path), true, "nothing was removed");
+  });
+});
+
+test("discard refuses on a branch mismatch too", async () => {
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const wt = await manager.createWorktree(projectId, undefined, "feat/closed");
+    execFileSync("git", ["checkout", "-q", "-b", "other"], { cwd: wt.path });
+    await assert.rejects(
+      () => manager.discardWorktree(projectId, wt.path, "feat/closed"),
+      /other/,
+    );
+    assert.equal(existsSync(wt.path), true);
+  });
+});
+
+test("a matching branch proceeds, and no expectation means no check", async () => {
+  // The guard must not become a wall: an older app sends no expectation, and the
+  // common case (nothing changed) has to work.
+  await withWorktreeEnv(async ({ manager, projectId }) => {
+    const a = await manager.createWorktree(projectId, undefined, "feat/a");
+    await manager.wrapUpWorktree(projectId, a.path, "main", "feat/a");
+    assert.equal(existsSync(a.path), false);
+
+    const b = await manager.createWorktree(projectId, undefined, "feat/b");
+    await manager.wrapUpWorktree(projectId, b.path, "main");
+    assert.equal(existsSync(b.path), false);
+  });
+});

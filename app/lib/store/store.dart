@@ -736,17 +736,23 @@ class StoreController extends StateNotifier<StoreState> {
   /// Distinct from [removeWorktree], which keeps the branch — the sidebar and the
   /// mobile long-press use that one, and "remove this worktree" is a narrower
   /// request than "discard this dead line of work".
-  Future<String> discardWorktree(String projectId, String worktreePath) async {
+  /// [expectBranch] is the branch the confirm dialog told the user would be
+  /// deleted; the server refuses if the worktree has moved to another one since.
+  Future<WrapUpReport> discardWorktree(
+    String projectId,
+    String worktreePath, {
+    String? expectBranch,
+  }) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
       {
         'kind': 'worktree.discard',
         'projectId': projectId,
         'worktreePath': worktreePath,
+        'expectBranch': ?expectBranch,
       },
     );
-    final branch = ack['branchDeleted'];
-    return branch is String ? 'Discarded $branch' : 'Worktree discarded';
+    return WrapUpReport.fromJson(ack);
   }
 
   /// Tidy up after a pull request ended: remove the worktree, delete its
@@ -761,6 +767,7 @@ class StoreController extends StateNotifier<StoreState> {
     String projectId,
     String worktreePath, {
     String? baseBranch,
+    String? expectBranch,
   }) async {
     final ack = await _ref.read(connectionControllerProvider.notifier).request(
       MsgType.cmd,
@@ -769,6 +776,7 @@ class StoreController extends StateNotifier<StoreState> {
         'projectId': projectId,
         'worktreePath': worktreePath,
         'baseBranch': ?baseBranch,
+        'expectBranch': ?expectBranch,
       },
     );
     return WrapUpReport.fromJson(ack);

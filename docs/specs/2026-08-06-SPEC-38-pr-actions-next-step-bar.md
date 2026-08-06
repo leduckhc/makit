@@ -30,7 +30,8 @@ reference, incl. §10 action catalogue)
 `server/src/manager.ts` (`wrapUpWorktree`, `squashMergePr`, `markPrReady`, `updatePrBranch`),
 `server/src/github/queries.ts` (`baseRefName`, `prMutationArgv`),
 `server/src/github/gateway.ts` (`mutatePr` + cache invalidation),
-`server/src/protocol.ts` (4 `CmdKind`s, `PullRequestDTO.baseRefName`),
+`server/src/protocol.ts` (5 `CmdKind`s — `worktree.wrapUp`, `worktree.discard`, `pr.markReady`,
+`pr.updateBranch`, `pr.squashMerge` — plus `PullRequestDTO.baseRefName`),
 `server/src/ws/commands/worktree.ts`.
 
 ---
@@ -210,7 +211,13 @@ Normative properties:
   action.
 - **`<base>` is the PR's own `baseRefName`**, newly fetched (§7), falling back to the repo's default
   branch. The base is not always `main`.
-- **Steps 1–3 throw; step 4 does not.** If the worktree survives, nothing was tidied.
+- **Only step 1 is fatal.** If the worktree survives, nothing was tidied and the caller says so. Steps
+  3 and 4 are best-effort and *reported* (`branchReason`, `baseReason`) for the same reason: by then the
+  worktree is gone and the client cannot retry, because the path is no longer a registered worktree.
+- **The confirmed branch is checked before anything is removed.** The dialog names a branch from the
+  app's snapshot, but the server resolves it again when it runs; a worktree that has since been switched
+  to another branch would otherwise have *that* branch deleted, unwarned. The command carries
+  `expectBranch` and refuses on mismatch.
 
 ### 6.2 Agent prompts
 
@@ -244,7 +251,8 @@ New `CmdKind`s, each acking and rebroadcasting the repos snapshot:
 
 | Kind | Params | Ack |
 | --- | --- | --- |
-| `worktree.wrapUp` | `projectId`, `worktreePath`, `baseBranch?` | `projectId`, `worktreePath`, `branchDeleted?`, `baseBranch?`, `baseUpdated`, `baseReason?` |
+| `worktree.wrapUp` | `projectId`, `worktreePath`, `baseBranch?`, `expectBranch?` | `projectId`, `worktreePath`, `branchDeleted?`, `branchReason?`, `baseBranch?`, `baseUpdated`, `baseReason?` |
+| `worktree.discard` | `projectId`, `worktreePath`, `expectBranch?` | as above, minus the base fields |
 | `pr.markReady` | `projectId`, `worktreePath` | `projectId`, `worktreePath` |
 | `pr.updateBranch` | ″ | ″ |
 | `pr.squashMerge` | ″ | ″ |
@@ -254,8 +262,14 @@ New `CmdKind`s, each acking and rebroadcasting the repos snapshot:
 talking to an older server still decodes and the server falls back to the repo default branch.
 
 `GithubGateway.mutatePr(repoPath, branch, number, verb)` runs the mutation costed on `core` and, on
-success, **invalidates the cached `pr:<repoPath>:<branch>` lookup**. Without that the UI would keep
-reporting the state the mutation just changed until the TTL expired.
+success, **invalidates every cached view of that PR** — the `pr:<repoPath>:<branch>` lookup *and* every
+`openPrs:<repoPath>:*` list, which backs the "New worktree from PR" picker (a squash-merged PR left in
+it leads to a checkout that fails). Without that the UI would keep reporting the state the mutation just
+changed until the TTL expired.
+
+Invalidation also **bumps a per-key generation counter**, and both cache writers compare the generation
+they started with before storing. A lookup already in flight when the mutation landed describes the
+*pre*-mutation state, and would otherwise re-seed exactly what was just invalidated.
 
 ## 8 · Visual language
 

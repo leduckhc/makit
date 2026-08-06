@@ -731,10 +731,18 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
         if (kind !== "error") await handleFailure(kind);
         return { ok: false, error: r.stderr.trim() || `gh pr ${verb} failed` };
       }
-      // The PR's state just changed, so the cached lookup is a lie. Drop it and
-      // bump its generation, so a lookup already in flight cannot re-seed the
-      // pre-mutation answer when it lands.
+      // The PR's state just changed, so every cached view of it is a lie. Drop
+      // them and bump their generations, so a lookup already in flight cannot
+      // re-seed the pre-mutation answer when it lands.
+      //
+      // `openPrs` matters as much as the single lookup: it backs the "New worktree
+      // from PR" picker, where a squash-merged PR that is still listed leads to a
+      // checkout that fails, and a marked-ready PR still reads as a draft. Its key
+      // carries a `limit`, so every limit for this repo goes.
       invalidate(`pr:${repoPath}:${branch}`);
+      for (const key of [...cache.keys(), ...generation.keys()]) {
+        if (key.startsWith(`openPrs:${repoPath}:`)) invalidate(key);
+      }
       return { ok: true };
     },
 
@@ -751,6 +759,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // Keyed by `interactive` for the same reason as prForBranch: the picker
       // must not inherit a background call's reserve-shed empty list.
       return dedupe(`${key}:${interactive}`, async () => {
+        const started = generationOf(key);
         const budget = tracker.snapshot();
         const policy = decide(budget, { paused });
         if (!allow(budget, policy, interactive)) return [];
@@ -786,7 +795,9 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
           const value = useRest
             ? parsed.map(restOpenPr).filter((p): p is OpenPr => p !== null)
             : (parsed as OpenPr[]);
-          cacheSet(key, value, TTL_OPEN_PRS_MS);
+          // Same generation guard as prForBranch: a list fetched before a mutation
+          // must not be written back after it.
+          if (generationOf(key) === started) cacheSet(key, value, TTL_OPEN_PRS_MS);
           return value;
         } catch {
           return [];

@@ -91,25 +91,23 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     }
   });
 
-  // The ending a merged/closed PR never had: remove the worktree, delete its
-  // branch, and fast-forward the branch the PR landed on. `baseBranch` is the
-  // PR's own baseRefName when the app has it; the manager falls back to the
-  // repo's default branch when it does not.
-  //
-  // The ack carries what actually happened (which branch went, whether the base
-  // moved and why not) because the base-branch leg is best-effort — the client
-  // has to be able to tell "tidied and caught up" from "tidied, base untouched".
   // A closed PR's worktree *and* its branch. Distinct from `worktree.remove`,
-  // which keeps the branch (the sidebar and the mobile long-press use that one).
+  // which keeps the branch (the sidebar and the mobile long-press use that one):
+  // "remove this worktree" is a narrower request than "discard this dead line of
+  // work". No base-branch leg — nothing landed, so there is nothing to catch up,
+  // and the ack's `baseUpdated` is always false.
   r.register("worktree.discard", async (ctx) => {
     const projectId = String(ctx.env.projectId ?? "");
     const worktreePath = String(ctx.env.worktreePath ?? "");
+    // What the client's confirm told the user would be deleted; refused on
+    // mismatch, so the dialog and the deletion cannot disagree.
+    const expectBranch = ctx.env.expectBranch ? String(ctx.env.expectBranch) : undefined;
     if (!projectId || !worktreePath) {
       ctx.err(WireErrorCode.BadRequest, "worktree.discard requires projectId and worktreePath");
       return;
     }
     try {
-      const result = await manager.discardWorktree(projectId, worktreePath);
+      const result = await manager.discardWorktree(projectId, worktreePath, expectBranch);
       void broadcastReposSnapshot();
       ctx.ack({ projectId, worktreePath, ...result });
     } catch (e) {
@@ -129,12 +127,18 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
     const projectId = String(ctx.env.projectId ?? "");
     const worktreePath = String(ctx.env.worktreePath ?? "");
     const baseBranch = ctx.env.baseBranch ? String(ctx.env.baseBranch) : undefined;
+    const expectBranch = ctx.env.expectBranch ? String(ctx.env.expectBranch) : undefined;
     if (!projectId || !worktreePath) {
       ctx.err(WireErrorCode.BadRequest, "worktree.wrapUp requires projectId and worktreePath");
       return;
     }
     try {
-      const result = await manager.wrapUpWorktree(projectId, worktreePath, baseBranch);
+      const result = await manager.wrapUpWorktree(
+        projectId,
+        worktreePath,
+        baseBranch,
+        expectBranch,
+      );
       void broadcastReposSnapshot();
       ctx.ack({ projectId, worktreePath, ...result });
     } catch (e) {

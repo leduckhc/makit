@@ -720,7 +720,7 @@ el('mobile').innerHTML=`
       <div class="foot">Removes the worktree and fast-forwards main. Asks first.</div>
       <div class="disc">
         <div class="dh">${ic('list-dashes')} <span>What wrap up will do</span>${ic('caret-down')}</div>
-        ${[['stop-circle','Stop 1 running session'],['folder-minus','Remove the worktree'],
+        ${[['folder-minus','Remove the worktree'],['archive','Archive 1 running session'],
            ['git-branch','Delete branch fix/composer'],['arrow-down','Fast-forward main']]
           .map(([g,l])=>`<div class="mfact"><i class="ph-light ph-${g} g" style="color:var(--merged)"></i>
             <span class="l">${l}</span></div>`).join('')}
@@ -883,9 +883,9 @@ const ACTS=[
   note:'Symmetric with Wrap up minus the base-branch leg. Deleting the branch is safe enough to be the default: a pull request cannot exist without a pushed head, so the commits remain on <code>origin/&lt;branch&gt;</code> and a local delete is recoverable by re-fetch. The confirm names the branch, so declining is available.'},
 
  {n:'Fix',i:'magic-wand',kind:'a',magic:true,
-  when:'<b>two or more</b> facts with a prompt-shaped remedy',
+  when:'<b>two or more</b> prompt-backed facts \u2014 <b>and no direct op outstanding</b>',
   cmd:null,
-  note:'The problems are <b>enumerated rather than left implicit</b>: the agent cannot see the bar, so \u201cfix the PR\u201d would make it rediscover the failing checks, the open threads and the unpushed commit for itself \u2014 and possibly miss one. Where we already know the detail (which checks failed) it is passed too. Only the preamble is overridable in Settings; the list is data. With <i>one</i> problem this is not offered \u2014 it would be that problem\u2019s own remedy under a vaguer label.'},
+  note:'Both clauses matter: the composed prompt carries prompt-backed facts only, so offering this while e.g. <code>the base branch moved on</code> is pending would promise to fix everything and silently skip it. The problems are <b>enumerated rather than left implicit</b>: the agent cannot see the bar, so \u201cfix the PR\u201d would make it rediscover the failing checks, the open threads and the unpushed commit for itself \u2014 and possibly miss one. Where we already know the detail (which checks failed) it is passed too. Only the preamble is overridable in Settings; the list is data. With <i>one</i> problem this is not offered \u2014 it would be that problem\u2019s own remedy under a vaguer label.'},
 
  {n:'Fix PR',i:'wrench',kind:'a',when:'open \u00b7 <code>checkRollup: fail</code>',prompt:'fixPr'},
  {n:'Resolve comments',i:'chat-circle',kind:'a',when:'open \u00b7 unresolved review threads',prompt:'resolveComments'},
@@ -964,8 +964,8 @@ const WRONG=[
    'Hero sentence “2 checks failing, 3 threads open and 1 commit unpushed”, then the same three as rows.',
    'The loud fact is the headline <b>and</b> the button, so the list now carries only what they elided — the same split the bar makes with <code>+n more</code>.'],
   ['a confirm for every direct op',
-   'All four “do now” actions asked first.',
-   'Only the two that destroy a worktree ask. Confirming a reversible <code>gh pr ready</code> trains people to dismiss dialogs unread — which is what would make the wrap-up dialog useless.'],
+   'All “do now” actions asked first.',
+   'Only the <b>irreversible</b> three ask — wrap up, discard and squash&nbsp;&amp;&nbsp;merge. The two reversible GitHub changes (<code>gh pr ready --undo</code>; update-branch only adds a commit) do not: confirming those trains people to dismiss dialogs unread, which is what would make the other three worthless.'],
   ['“Mark ready” drawn amber',
    'The mock coloured the button by hand.',
    'Derived, the draft fact is <i>quiet</i>, so the solid fill came out grey and read as disabled. The CTA now promotes a quiet tone for its tint only; the fact stays quiet in the list.'],

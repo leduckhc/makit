@@ -152,7 +152,8 @@ class PrStatus {
     required this.cta,
     this.checkProgress,
     this.stale = false,
-    this.endedState = false,
+    this.hasPr = false,
+    this.isEnded = false,
   });
 
   /// `#142` for a PR, else the branch name (or `detached`).
@@ -174,8 +175,16 @@ class PrStatus {
   /// Last-known data (a refresh could not complete against GitHub's quota).
   final bool stale;
 
-  /// Backing field for [isEnded]. Set by the derivation, never inferred from copy.
-  final bool endedState;
+  /// Whether a pull request exists. Set from `pr != null`, never inferred from
+  /// [identity]: `#42` is a legal branch name, and reading the display string
+  /// would classify such a branch as a PR and hide "Create PR" from it.
+  final bool hasPr;
+
+  /// True once the pull request has ended (merged or closed), so its build result
+  /// and review threads are history rather than next steps. Set by the derivation
+  /// — the menu used to detect this by comparing signal labels, which would have
+  /// broken silently the moment a label was reworded.
+  final bool isEnded;
 
   /// The one signal the bar shows in full.
   PrSignal get loud => signals.first;
@@ -183,16 +192,7 @@ class PrStatus {
   /// How many facts the `+n more` disclosure stands for.
   int get more => signals.length - 1;
 
-  /// True when the identity is a PR number rather than a branch name.
-  bool get hasPr => identity.startsWith('#');
 
-  /// True once the pull request has ended (merged or closed), so its build result
-  /// and review threads are history rather than next steps.
-  ///
-  /// A derived flag, not a string match: the menu used to detect this by comparing
-  /// signal labels, which would have broken silently the moment a label was
-  /// reworded.
-  bool get isEnded => endedState;
 
   /// Nothing worth a chip on a dense list: no pull request to reach, and nothing
   /// actually outstanding.
@@ -247,7 +247,8 @@ PrStatus prStatus({
     return PrStatus(
       identity: identity,
       tone: tone,
-      endedState: true,
+      hasPr: true,
+      isEnded: true,
       stale: pr!.stale,
       signals: [
         PrSignal(merged ? 'merged' : 'closed without merging', tone),
@@ -440,6 +441,7 @@ PrStatus prStatus({
   return PrStatus(
     identity: identity,
     tone: loud.tone,
+    hasPr: pr != null,
     stale: pr?.stale ?? false,
     signals: signals,
     checkProgress: pending > 0 && open!.checks.isNotEmpty

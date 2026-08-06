@@ -197,6 +197,8 @@ Future<void> openPrUrl(BuildContext context, String url) async {
     if (uri == null) throw const FormatException('bad PR url');
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   } catch (_) {
+    // The sheet that owned this messenger may be gone by now.
+    if (!messenger.mounted) return;
     messenger.showSnackBar(
       const SnackBar(content: Text('Could not open the PR')),
     );

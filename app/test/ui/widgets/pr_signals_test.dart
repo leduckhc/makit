@@ -73,6 +73,28 @@ void main() {
   // and therefore which remedy the bar names when there is only one problem. With
   // two or more, the button generalises to the magic Fix (see below) — so these
   // assert the loud fact's own remedy, which stays meaningful either way.
+  group('hasPr is data, not a parsed display string', () {
+    test('a branch literally named #42 is still a branch', () {
+      // `hasPr` used to be `identity.startsWith('#')`. `#42` is a legal git branch
+      // name, so such a branch was classified as a pull request — which hid
+      // "Create PR" from the one branch that most needed it.
+      final s = _status(pr: null, branch: '#42');
+      expect(s.hasPr, isFalse);
+      expect(_prompt(s.cta.remedy), PrPromptAction.createPr);
+    });
+
+    test('an open PR has one', () {
+      expect(_status(pr: _pr()).hasPr, isTrue);
+    });
+
+    test('isEnded follows the state, not the labels', () {
+      expect(_status(pr: _pr(state: 'MERGED')).isEnded, isTrue);
+      expect(_status(pr: _pr(state: 'CLOSED')).isEnded, isTrue);
+      expect(_status(pr: _pr()).isEnded, isFalse);
+      expect(_status(pr: null).isEnded, isFalse);
+    });
+  });
+
   group('precedence — which fact leads', () {
     // These five preserve the exact order the shipped `_situationFor` used, so
     // the rewrite cannot silently reshuffle what the button offers.

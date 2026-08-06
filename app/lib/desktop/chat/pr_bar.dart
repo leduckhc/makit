@@ -89,7 +89,6 @@ class PrComposerBar extends ConsumerWidget {
           const SizedBox(width: kSpace10),
           PrCtaButton(
             status: status,
-            onInsertPrompt: onInsertPrompt,
             onRun: (remedy) => _run(context, ref, remedy),
           ),
         ],
@@ -245,12 +244,13 @@ class PrCtaButton extends ConsumerWidget {
   const PrCtaButton({
     super.key,
     required this.status,
-    required this.onInsertPrompt,
     required this.onRun,
   });
 
   final PrStatus status;
-  final void Function(String prompt) onInsertPrompt;
+
+  /// Every action — prompt or direct — goes through here; [runPrRemedy] decides
+  /// what each one means. This widget deliberately knows nothing about composers.
   final void Function(PrRemedy remedy) onRun;
 
   @override

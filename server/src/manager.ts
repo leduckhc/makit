@@ -620,10 +620,15 @@ export class SessionManager extends EventEmitter {
    * long-press use and which deliberately keeps the branch — "remove this
    * worktree" is a narrower request than "discard this dead line of work".
    */
-  async discardWorktree(projectId: string, worktreePath: string): Promise<WrapUpResult> {
+  async discardWorktree(
+    projectId: string,
+    worktreePath: string,
+    expectBranch?: string,
+  ): Promise<WrapUpResult> {
     const { branchDeleted, branchReason } = await this._removeWorktreeAndBranch(
       projectId,
       worktreePath,
+      expectBranch,
     );
     return { branchDeleted, branchReason, baseUpdated: false };
   }
@@ -637,10 +642,18 @@ export class SessionManager extends EventEmitter {
    * caller should say so. The branch deletion does **not**: by then the worktree
    * is gone, the client cannot retry (the path is no longer a registered
    * worktree), and reporting a partial success beats reporting a total failure.
+   *
+   * [expectBranch] is what the client's confirm dialog told the user would be
+   * deleted. The branch is resolved again here, so without this check the user
+   * could confirm "delete feat/x" and have a *different* branch deleted — one
+   * they checked out after the snapshot, possibly with unpushed commits, and
+   * `-D` does not ask. A mismatch refuses before anything is touched. Omitted by
+   * an older app, which then gets the previous (unchecked) behaviour.
    */
   private async _removeWorktreeAndBranch(
     projectId: string,
     worktreePath: string,
+    expectBranch?: string,
   ): Promise<{ repoPath: string; branchDeleted?: string; branchReason?: string }> {
     const project = this.projects.get(projectId);
     if (!project) throw new Error(`unknown project: ${projectId}`);
@@ -648,6 +661,12 @@ export class SessionManager extends EventEmitter {
     const target = resolve(worktreePath);
     const trees = await listWorktrees(repoPath);
     const branch = trees.find((t) => resolve(t.path) === target)?.branch ?? null;
+    if (expectBranch !== undefined && branch !== expectBranch) {
+      throw new Error(
+        `worktree is on ${branch ?? "a detached HEAD"}, not ${expectBranch} — ` +
+          `refresh and try again`,
+      );
+    }
 
     await this.removeWorktree(projectId, worktreePath);
     if (!branch) return { repoPath };
@@ -734,9 +753,11 @@ export class SessionManager extends EventEmitter {
    *     deleted while a worktree holds it, so this must come second,
    *  3. fast-forward the base branch the PR landed on.
    *
-   * Step 3 is best-effort and reported, never fatal: by then the worktree is
-   * already gone, so throwing would describe a mostly-done job as a failure.
-   * Steps 1 and 2 do throw — if the worktree survives, nothing was tidied.
+   * **Only step 1 is fatal.** If the worktree survives, nothing was tidied and the
+   * caller must say so. Steps 2 and 3 are best-effort and *reported*
+   * (`branchReason`, `baseReason`): by then the worktree is gone and the client
+   * cannot retry — the path is no longer a registered worktree — so throwing
+   * would describe a mostly-done job as a total failure.
    *
    * [baseBranch] should be the PR's own `baseRefName`; it falls back to the
    * repo's default branch for an older server or a shed PR lookup.
@@ -745,9 +766,10 @@ export class SessionManager extends EventEmitter {
     projectId: string,
     worktreePath: string,
     baseBranch?: string,
+    expectBranch?: string,
   ): Promise<WrapUpResult> {
     const { repoPath, branchDeleted, branchReason } =
-        await this._removeWorktreeAndBranch(projectId, worktreePath);
+        await this._removeWorktreeAndBranch(projectId, worktreePath, expectBranch);
 
     const base = baseBranch ?? (await detectDefaultBranch(repoPath));
     if (!base) {

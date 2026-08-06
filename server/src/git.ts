@@ -637,7 +637,11 @@ export interface BaseSyncResult {
  * a total failure.
  */
 export async function syncBaseBranch(repoPath: string, branch: string): Promise<BaseSyncResult> {
-  const fetched = await git(["fetch", "origin", branch], repoPath);
+  // `run` without a cap, not `git`: this talks to the network inside a
+  // user-initiated action, and a large or slow repo can legitimately outlast the
+  // 15s read cap (see GIT_READ_TIMEOUT_MS — mutations are deliberately uncapped).
+  // Capping it would report "could not fetch" for a fetch that was merely slow.
+  const fetched = await run("git", ["fetch", "origin", branch], repoPath);
   if (fetched.code !== 0) {
     return { updated: false, reason: `could not fetch origin/${branch}` };
   }
@@ -659,7 +663,7 @@ export async function syncBaseBranch(repoPath: string, branch: string): Promise<
   }
   const host = hosts[0];
   if (host) {
-    const merged = await git(["merge", "--ff-only", `origin/${branch}`], host.path);
+    const merged = await run("git", ["merge", "--ff-only", `origin/${branch}`], host.path);
     if (merged.code !== 0) {
       return {
         updated: false,
@@ -669,7 +673,7 @@ export async function syncBaseBranch(repoPath: string, branch: string): Promise<
     return { updated: true };
   }
   // Not a force: no `+` on the refspec, so git itself rejects a non-fast-forward.
-  const refUpdate = await git(["fetch", "origin", `${branch}:${branch}`], repoPath);
+  const refUpdate = await run("git", ["fetch", "origin", `${branch}:${branch}`], repoPath);
   if (refUpdate.code !== 0) {
     return {
       updated: false,

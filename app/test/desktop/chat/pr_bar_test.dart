@@ -490,29 +490,76 @@ void main() {
       );
       await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
-      final removeY = tester
-          .getTopLeft(find.textContaining('Remove the worktree'))
-          .dy;
-      final sessionsY = tester.getTopLeft(find.textContaining('Archive')).dy;
-      expect(removeY, lessThan(sessionsY));
+      // All four, in the order the server runs them — a single pair would let any
+      // of the other three drift.
+      final ys = [
+        tester.getTopLeft(find.textContaining('Remove the worktree')).dy,
+        tester.getTopLeft(find.textContaining('Archive the sessions')).dy,
+        tester.getTopLeft(find.textContaining('Delete the local branch')).dy,
+        tester.getTopLeft(find.textContaining('Fast-forward')).dy,
+      ];
+      expect(
+        ys,
+        orderedEquals(<Matcher>[
+          lessThan(ys[1]),
+          lessThan(ys[2]),
+          lessThan(ys[3]),
+          anything,
+        ]),
+      );
     });
 
-    testWidgets('the data-loss warning survives a label reword', (tester) async {
-      // It used to be inferred with `label.contains('uncommitted')`, so renaming
-      // the label would have silently deleted the warning.
+    testWidgets('the data-loss warning does not depend on any label text', (
+      tester,
+    ) async {
+      // It used to be inferred with `label.contains('uncommitted')`. Proving the
+      // fix means driving the dialog from a status whose labels say nothing about
+      // uncommitted work, while the count is passed structurally — the old
+      // implementation could not have produced a warning here.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            preferencesControllerProvider.overrideWith(
+              (ref) => PreferencesController.ephemeral(),
+            ),
+          ],
+          child: MaterialApp(
+            home: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () => showPrDirectConfirm(
+                    context,
+                    op: PrDirectOp.wrapUp,
+                    pr: _pr(state: 'MERGED'),
+                    worktreePath: '/wt/feat-x',
+                    identity: '#42',
+                    branch: 'feat/x',
+                    uncommittedFiles: 2,
+                  ),
+                  child: const Text('go'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('go'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 files uncommitted here will be lost'), findsOneWidget);
+    });
+
+    testWidgets('and it is absent when there is nothing to lose', (tester) async {
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
           pr: _pr(state: 'MERGED'),
           branch: 'feat/x',
-          uncommittedFiles: 2,
           onInsert: (_) {},
         ),
       );
       await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('2 files'), findsWidgets);
-      expect(find.textContaining('will be lost'), findsOneWidget);
+      expect(find.textContaining('will be lost'), findsNothing);
     });
   });
 

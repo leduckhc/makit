@@ -1208,13 +1208,20 @@ class Session {
 class WrapUpReport {
   const WrapUpReport({
     this.branchDeleted,
+    this.branchReason,
     this.baseBranch,
     this.baseUpdated = false,
     this.baseReason,
   });
 
-  /// The local branch that was deleted, or null for a detached worktree.
+  /// The local branch that was deleted, or null for a detached worktree — or for
+  /// one whose deletion failed, in which case [branchReason] says why.
   final String? branchDeleted;
+
+  /// Why the branch survived when it should have gone. Like [baseReason] this is
+  /// reported rather than thrown: the worktree is already removed by then, so the
+  /// job partly succeeded and the client cannot retry it.
+  final String? branchReason;
 
   /// The branch that was caught up, or null when none could be resolved.
   final String? baseBranch;
@@ -1233,19 +1240,32 @@ class WrapUpReport {
     branchDeleted: j['branchDeleted'] is String
         ? j['branchDeleted'] as String
         : null,
+    branchReason: j['branchReason'] is String
+        ? j['branchReason'] as String
+        : null,
     baseBranch: j['baseBranch'] is String ? j['baseBranch'] as String : null,
     baseUpdated: j['baseUpdated'] == true,
     baseReason: j['baseReason'] is String ? j['baseReason'] as String : null,
   );
 
-  /// One line for a snackbar, e.g.
-  /// `Removed feat/x · main up to date` / `Removed feat/x · main left alone`.
+  /// One line for a snackbar, e.g. `Removed feat/x · main updated`, or
+  /// `Worktree removed · branch kept · main updated` when the branch survived.
   String get summary {
     final parts = <String>[
       if (branchDeleted != null) 'Removed $branchDeleted' else 'Worktree removed',
+      // Never silently imply the branch went when it did not.
+      if (branchDeleted == null && branchReason != null) 'branch kept',
       if (baseBranch != null)
         baseUpdated ? '$baseBranch updated' : '$baseBranch unchanged',
     ];
     return parts.join(' · ');
+  }
+
+  /// The full explanation behind [summary], for the snackbar's "Why?" action.
+  /// Null when everything went as advertised — both legs are best-effort, and
+  /// either can have something to say.
+  String? get detail {
+    final reasons = [?branchReason, ?baseReason];
+    return reasons.isEmpty ? null : reasons.join('\n');
   }
 }
