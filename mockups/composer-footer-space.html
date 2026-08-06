@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Composer footer: space by need (SPEC-40)</title>
+<style>
+  :root{
+    --bg:#171717;--container-low:#1E1E1E;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#333333;
+    --on-surface-variant:#C9C9C9;
+    --primary:#4ADE80;
+    --status-warning:#E0A72E;      /* sanctioned "tightening" hue */
+    --error:#FFB4AB;               /* M3 dark-scheme error */
+    --track:rgba(245,245,245,.16); /* onSurface @16% */
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 90px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px;max-width:960px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px}
+
+  .note{max-width:960px;margin:12px 0 28px;padding:12px 14px;border:1px solid #2a6b46;background:#102418;border-radius:10px;font-size:13px;color:#a8e8c4}
+  .note strong{color:#fff}
+  .note.warn{border-color:#6b5d2a;background:#241f10;color:#e8d9a8}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;margin-bottom:26px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:15px;margin:0;font-weight:600}
+  .card .tag{font-size:10px;border-radius:5px;padding:2px 6px;font-weight:700;letter-spacing:.03em;color:#0e0e0e;background:var(--primary)}
+  .card p.d{margin:0;color:var(--muted);font-size:12.5px;flex:1 1 320px}
+  .body{padding:18px 16px}
+  .why{margin:12px 0 0;font-size:12.5px;color:var(--muted)}
+  .why b{color:var(--text);font-weight:600}
+  .ok{color:var(--primary)}.bad{color:#e88}
+
+  .frames{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .frame{flex:0 0 auto}
+  .frame .cap{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
+  .phone{width:375px}
+  .pane{width:720px}
+
+  /* ── composer replica ──────────────────────────────────────────── */
+  .composer{background:var(--container-low);border:1px solid var(--hairline);border-radius:16px;padding:10px 12px 8px}
+  .field{color:var(--muted);font-size:14px;padding:2px 2px 8px;min-height:22px}
+  .field.typed{color:var(--text)}
+  .frow{display:flex;align-items:center;padding-top:4px}
+  .acts{flex:1 1 auto;display:flex;min-width:0}
+  .acts > *{margin-right:6px;min-width:0}
+  .plus,.send{flex:0 0 auto;display:grid;place-items:center;height:32px;color:var(--muted);font-size:17px}
+  .plus{width:34px}
+  .send{width:48px}
+  .send i{display:grid;place-items:center;width:30px;height:30px;border-radius:15px;background:var(--primary);color:#0e0e0e;font-style:normal;font-size:15px;font-weight:700}
+  .send.off i{background:var(--container-highest);color:var(--muted)}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:14px;background:var(--container-high);min-width:0;max-width:100%}
+  .pill .lbl{font-size:12px;color:var(--on-surface-variant);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .av{flex:0 0 auto;width:16px;height:16px;border-radius:8px;display:grid;place-items:center;font-size:9px;font-weight:700}
+  .av.pi{background:#2f4f3d;color:#9fe8bd}
+  .av.cx{background:#3a3a3a;color:#ddd}
+  .caret{flex:0 0 auto;color:var(--muted);font-size:9px}
+
+  /* ── the ring button (32pt tap target, 18px ring) ──────────────── */
+  .ringbtn{flex:0 0 auto;width:32px;height:32px;border-radius:16px;display:grid;place-items:center;cursor:pointer}
+  .ringbtn:hover{background:rgba(245,245,245,.07)}
+  .ringbtn.open{background:rgba(245,245,245,.11)}
+  svg.ring{display:block;transform:rotate(-90deg)}
+  svg.ring circle{fill:none;stroke-linecap:round}
+  svg.ring .trk{stroke:var(--track)}
+  svg.ring .arc{stroke:var(--text)}
+  svg.ring.warn .arc{stroke:var(--status-warning)}
+  svg.ring.crit .arc{stroke:var(--error)}
+
+  /* ── details panel ─────────────────────────────────────────────── */
+  .panel{width:300px;background:var(--bg);border:1px solid var(--hairline);border-radius:14px;overflow:hidden}
+  .panel > .ph{padding:12px 14px 0}
+  .panel .ttl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  .hero{display:flex;align-items:center;gap:13px;padding:11px 14px 13px}
+  .hero .big{flex:0 0 auto}
+  .hero .pc{font-size:23px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+  .hero .of{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .hero .hr{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .sec{border-top:1px solid var(--hairline);padding:11px 14px}
+  .kv{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:2.5px 0}
+  .kv .k{color:var(--muted)}
+  .kv .v{font-variant-numeric:tabular-nums}
+  .kv .v.big{font-weight:600}
+  .mini{height:4px;border-radius:2px;background:var(--track);overflow:hidden;margin-top:5px}
+  .mini > span{display:block;height:100%;border-radius:2px;background:var(--muted)}
+  .mini > span.cache{background:var(--primary)}
+  .foot{border-top:1px solid var(--hairline);padding:10px 14px;font-size:11.5px;color:#7a7a7a}
+  .foot b{color:var(--muted);font-weight:600}
+
+  /* mobile sheet */
+  .sheet{width:375px;background:var(--bg);border:1px solid var(--hairline);border-radius:18px 18px 0 0;overflow:hidden;padding-top:8px}
+  .grab{width:32px;height:4px;border-radius:2px;background:var(--container-highest);margin:0 auto 6px}
+
+  .states{display:flex;gap:12px;flex-wrap:wrap}
+  .state{border:1px solid var(--hairline);border-radius:10px;padding:12px;background:#111;flex:1 1 176px;min-width:176px}
+  .state .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px}
+  .state .m{font-size:11.5px;color:var(--muted);margin-top:9px}
+  .empty{font-size:12px;color:#5c5c5c;font-style:italic}
+  .ringrow{display:flex;align-items:center;gap:10px}
+  .ringrow .n{font-size:12.5px;color:var(--on-surface-variant);font-variant-numeric:tabular-nums}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #222;font-size:12.5px;vertical-align:top}
+  th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rej{color:var(--muted);font-size:12.5px;margin:0}
+  .rej li{margin-bottom:5px}
+</style>
+
+<style>
+  /* SPEC-40 additions */
+  .bar{height:10px;border-radius:5px;background:var(--container-high);position:relative;overflow:hidden}
+  .bar > span{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+  .bar .now{background:#e88}
+  .bar .then{background:var(--primary)}
+  .legend{display:flex;gap:16px;font-size:11.5px;color:var(--muted);margin-top:10px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:5px;font-style:normal}
+  .w320{width:320px}
+  .ghost{opacity:.45}
+  .ov{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:14px;background:var(--container-high);flex:0 0 auto}
+  .ov b{font-size:11px;font-weight:700;color:var(--on-surface-variant)}
+  .diagram{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);margin:10px 0 2px}
+  .box{border:1px dashed #555;border-radius:6px;padding:6px 8px;text-align:center}
+  .box.half{flex:1 1 0}
+  .box.fix{flex:0 0 auto}
+</style>
+
+</head>
+<body>
+
+<h1>Composer footer — give the controls the space they need <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-40</span></h1>
+<p class="sub">
+  Every number on this page was measured in a Flutter widget test at <b>375 pt</b> with the real
+  widgets and the real config-option shapes each adapter emits — not estimated, and not from the
+  earlier SPEC-37 sketch, which turned out to describe a session shape no adapter produces.
+</p>
+
+<div class="note warn">
+  <strong>⚠ What SPEC-37 got wrong.</strong> It flagged "a 3-config-pill pi session needs 279 pt of a
+  267 pt budget" and drew three pills (<code>Sonnet</code>, <code>Sandbox</code>, <code>Approval</code>).
+  No shipping adapter emits that: <b>pi</b> advertises <code>model</code> + <code>thought_level</code>,
+  <b>codex</b> adds an optional <code>model_config</code>, and all of those <em>fold into the single
+  model pill</em>; a modes-only ACP agent gets one synthesised <code>mode</code> pill. So the real
+  footer has <b>one</b> pill, and the sandbox/approval row was hypothetical. The problem is real, but
+  it is not crowding — it is that the one pill is starved.
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>The root cause</h2>
+    <p class="d">Every footer action gets an <b>equal-share</b> <code>Flexible</code>, so a 36 pt ring reserves half the row.</p>
+  </header>
+  <div class="body">
+    <div class="diagram">
+      <span style="width:78px">today</span>
+      <span class="box half">Flexible — config pills · 50%</span>
+      <span class="box half">Flexible — usage ring · 50% <b style="color:#e88">(uses 36 pt)</b></span>
+      <span class="box fix">[+]</span><span class="box fix">send</span>
+    </div>
+    <div class="diagram">
+      <span style="width:78px">needed</span>
+      <span class="box half">Expanded — config pills · all that is left</span>
+      <span class="box fix">ring 36 pt</span>
+      <span class="box fix">[+]</span><span class="box fix">send</span>
+    </div>
+    <p class="why" style="margin-top:14px">
+      <code>Flexible</code> defaults to <code>FlexFit.loose</code>: the ring is <em>allowed</em> half the
+      row, lays out at its natural 36 pt, and the remaining ~95 pt is <b>not redistributed</b>. The pill
+      is capped at half a row it is the only real occupant of.
+    </p>
+
+    <table style="margin-top:14px">
+      <tr><th>Session</th><th>Label width today</th><th>With need-based space</th><th></th></tr>
+      <tr>
+        <td>pi — <code>anthropic/Claude&nbsp;Opus&nbsp;4.6</code></td>
+        <td class="n bad">65.5 pt</td><td class="n ok">161.0 pt</td>
+        <td><div class="bar"><span class="then" style="width:100%"></span><span class="now" style="width:41%"></span></div></td>
+      </tr>
+      <tr>
+        <td>codex — <code>gpt-5.6-codex</code> + <code>256k</code> chip</td>
+        <td class="n bad">29.8 + 19.8 pt</td><td class="n ok">77.5 + 46.0 pt</td>
+        <td><div class="bar"><span class="then" style="width:100%"></span><span class="now" style="width:38%"></span></div></td>
+      </tr>
+      <tr>
+        <td>ACP modes-only — <code>architect</code></td>
+        <td class="n">81.5 pt</td><td class="n">81.5 pt</td>
+        <td style="color:var(--muted);font-size:11.5px">already fits — unchanged</td>
+      </tr>
+      <tr>
+        <td>hypothetical: model + thinking + 2 standalone</td>
+        <td class="n bad">RenderFlex <b>overflow</b> (18 px + 2.2 px), labels at 0 pt</td>
+        <td class="n ok">no overflow</td>
+        <td style="color:var(--muted);font-size:11.5px">legal, but 14–30 pt labels → needs the collapse below</td>
+      </tr>
+    </table>
+    <div class="legend">
+      <span><i class="now"></i>today</span><span><i class="then"></i>need-based</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>Before / after, at 375 pt</h2><span class="tag">chosen</span>
+    <p class="d">Same widgets, same width. Only the space distribution and the label text change.</p>
+  </header>
+  <div class="body">
+    <div class="frames">
+
+      <div class="frame phone">
+        <div class="cap">pi — today</div>
+        <div class="composer">
+          <div class="field">Message…</div>
+          <div class="frow">
+            <div class="acts">
+              <span class="pill"><span class="av pi">pi</span><span class="lbl">anthropic/Cl…</span><span class="caret">▾</span></span>
+            </div>
+            <span class="ringbtn"><span data-ring="29"></span></span>
+            <span class="plus">🖇</span><span class="send off"><i>↑</i></span>
+          </div>
+        </div>
+        <p class="why">Two thirds of the label is the provider prefix <code>pi-acp</code> prepends, and it is the part that survives.</p>
+      </div>
+
+      <div class="frame phone">
+        <div class="cap">pi — after</div>
+        <div class="composer">
+          <div class="field">Message…</div>
+          <div class="frow">
+            <div class="acts">
+              <span class="pill"><span class="av pi">pi</span><span class="lbl">Claude Opus 4.6</span><span class="thk" style="display:inline-flex;gap:1.5px;align-items:flex-end;height:12px"><i style="width:2px;height:5px;background:var(--on-surface-variant);display:block"></i><i style="width:2px;height:7px;background:var(--on-surface-variant);display:block"></i><i style="width:2px;height:9px;background:var(--on-surface-variant);display:block"></i><i style="width:2px;height:12px;background:var(--track);display:block"></i></span><span class="caret">▾</span></span>
+            </div>
+            <span class="ringbtn"><span data-ring="29"></span></span>
+            <span class="plus">🖇</span><span class="send off"><i>↑</i></span>
+          </div>
+        </div>
+        <p class="why">The model name reads in full <b>and</b> the thinking chip fits — the two things you check mid-conversation.</p>
+      </div>
+
+      <div class="frame w320">
+        <div class="cap">320 pt · four options · after <span class="tag" style="background:var(--status-warning)">deferred</span></div>
+        <div class="composer">
+          <div class="field">Message…</div>
+          <div class="frow">
+            <div class="acts">
+              <span class="pill"><span class="av pi">pi</span><span class="lbl">Claude Opus 4.6</span><span class="caret">▾</span></span>
+              <span class="ov"><b>⋯ 2</b></span>
+            </div>
+            <span class="ringbtn"><span data-ring="29"></span></span>
+            <span class="plus">🖇</span><span class="send off"><i>↑</i></span>
+          </div>
+        </div>
+        <p class="why">Chips drop first (they are read-only), then standalone pills collapse into one <code>⋯ N</code> that opens a sheet. The model name never yields, because it is the only label that answers "what am I talking to?".</p>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="card">
+  <header><h2>Degradation ladder</h2>
+    <p class="d">In order. Each step is only taken if the row still does not fit.</p>
+  </header>
+  <div class="body">
+    <table>
+      <tr><th>#</th><th>Step</th><th>Why this order</th></tr>
+      <tr><td class="n">0</td><td>Space by need: pills <code>Expanded</code>, ring/[+]/send intrinsic</td><td>Structural. Alone it ends the overflow and multiplies the label by ~2.5×.</td></tr>
+      <tr><td class="n">1</td><td>Model label drops the <code>provider/</code> prefix</td><td><code>pi-acp</code> sets <code>name = "provider/name"</code>. The provider is not what you check mid-turn, and the picker sheet still shows it in full.</td></tr>
+      <tr class="ghost"><td class="n">2</td><td>Read-only chips hide <b>— deferred</b></td><td>They are decoration; the sheet shows the same values as live controls. Not built: after step 0 the chip fits at 375 pt (46 pt measured) on every shape an adapter actually emits.</td></tr>
+      <tr class="ghost"><td class="n">3</td><td>Standalone pills collapse into <code>⋯ N</code> → sheet <b>— deferred</b></td><td>Same SPEC-31 pattern as the model pill. Not built: no shipping adapter emits a standalone option, and step 0 already makes that shape overflow-<em>proof</em> rather than merely narrow. Trigger to build it: an agent that ships ≥1 standalone option.</td></tr>
+      <tr><td class="n">—</td><td><b>Never:</b> ellipsize the model name to fewer than a readable stub, hide the ring, or scroll the row</td><td>Scrolling would push the ring off-screen, and the ring exists to be glanceable.</td></tr>
+    </table>
+  </div>
+</div>
+
+<div class="note">
+  <strong>✓ Why not a single all-in-one config pill.</strong> It was considered and rejected: it fits
+  trivially, but it hides <em>mode</em> — the one option that changes what the agent is allowed to do —
+  behind a tap on every width, including the desktop panes that have 700 pt to spare. The ladder above
+  degrades only when it must, so a wide pane keeps every control visible.
+  <br><br>
+  <b>Only steps 0 and 1 are being built.</b> Steps 2 and 3 address a session shape no adapter emits
+  today, and step 0 turns that shape from an <em>overflow</em> into merely a narrow row, which is a
+  legitimate state. Building them now would be speculative; the trigger for each is recorded above.
+</div>
+
+
+<script>
+for (const el of document.querySelectorAll('[data-ring]')) {
+  const pct = Number(el.dataset.ring), size = Number(el.dataset.size || 18);
+  const stroke = size > 30 ? 4.5 : 2.5, r = (size - stroke) / 2, c = 2 * Math.PI * r;
+  el.innerHTML =
+    `<svg class="ring" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+      `<circle class="trk" cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${stroke}"/>` +
+      `<circle class="arc" cx="${size/2}" cy="${size/2}" r="${r}" stroke-width="${stroke}"` +
+        ` stroke-dasharray="${(c*pct/100).toFixed(2)} ${c.toFixed(2)}"/>` +
+    `</svg>`;
+}
+</script>
+
+</body>
+</html>
