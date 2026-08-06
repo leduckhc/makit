@@ -81,7 +81,7 @@ Found only by driving real pi; every unit test passed either way.
 At `message_end` the message is **not yet in the session** — handlers are allowed to rewrite
 it, including its `usage` — so entry-derived totals lag a turn. Observed against real pi:
 
-```
+```text
 {"contextTokens":18377,...}                        ← turn 1: no totals at all
 {"totals":{"total":18377},"cost":0.11492875}       ← resumed process: missing its own turn
 ```

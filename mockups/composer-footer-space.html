@@ -63,7 +63,7 @@
   .caret{flex:0 0 auto;color:var(--muted);font-size:9px}
 
   /* ── the ring button (32pt tap target, 18px ring) ──────────────── */
-  .ringbtn{flex:0 0 auto;width:32px;height:32px;border-radius:16px;display:grid;place-items:center;cursor:pointer}
+  .ringbtn{flex:0 0 auto;width:36px;height:36px;border-radius:18px;display:grid;place-items:center;cursor:pointer}
   .ringbtn:hover{background:rgba(245,245,245,.07)}
   .ringbtn.open{background:rgba(245,245,245,.11)}
   svg.ring{display:block;transform:rotate(-90deg)}
@@ -196,7 +196,7 @@
         <td>hypothetical: model + thinking + 2 standalone</td>
         <td class="n bad">RenderFlex <b>overflow</b> (18 px + 2.2 px), labels at 0 pt</td>
         <td class="n ok">no overflow</td>
-        <td style="color:var(--muted);font-size:11.5px">legal, but 14–30 pt labels → needs the collapse below</td>
+        <td style="color:var(--muted);font-size:11.5px">legal at 375 pt+; the last 4.7 px at 320 pt was closed by step 2 (chips yield), so all four pills fit and no collapse is needed</td>
       </tr>
     </table>
     <div class="legend">

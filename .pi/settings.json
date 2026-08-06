@@ -1,4 +1,4 @@
 {
-  "//": "Project-scoped pi packages. pi installs these automatically once the project is trusted, so a contributor's pi picks up makit's own extensions with no manual step. Replaces the `ln -s` the SPEC-37 spec used to document, which dangled silently as soon as the worktree it pointed at was pruned.",
-  "packages": ["git:github.com/leduckhc/makit-pi-usage@v0.1.0"]
+  "//": "Project-scoped pi packages. pi installs these automatically once the project is trusted, so a contributor's pi picks up makit's own extensions with no manual step. Replaces the `ln -s` the SPEC-37 spec used to document, which dangled silently as soon as the worktree it pointed at was pruned. Pinned to the commit SHA rather than the `v0.1.0` tag it belongs to: a tag is mutable, and pi treats either as a pinned ref (`pi update --extensions` reconciles the clone to it without moving it). Bump with `pi install git:github.com/leduckhc/makit-pi-usage@<new-sha>`.",
+  "packages": ["git:github.com/leduckhc/makit-pi-usage@14def8c0940f1b5e5de517d27239213b61e2495c"]
 }

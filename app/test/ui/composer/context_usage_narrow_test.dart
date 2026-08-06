@@ -90,6 +90,27 @@ void main() {
         .first,
   );
 
+  /// Drags the panel to its end and returns whether the cost row — the last row,
+  /// and the reason people open this panel — ended up inside the viewport.
+  ///
+  /// `find.text` alone is not enough: a `SingleChildScrollView` lays out its
+  /// whole child, so a clipped row is still *found*. Reachability means its rect
+  /// lands inside the viewport after scrolling, which also fails if scrolling is
+  /// somehow disabled.
+  Future<bool> costRowReachable(WidgetTester tester) async {
+    final scroller = find
+        .descendant(
+          of: find.byType(SingleChildScrollView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.drag(scroller, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final view = viewport(tester);
+    final row = tester.getRect(find.text(r'$22.16'));
+    return row.top >= view.top - 0.5 && row.bottom <= view.bottom + 0.5;
+  }
+
   group('desktop popover in a narrow window', () {
     for (final width in [700.0, 360.0, 280.0, 240.0]) {
       testWidgets('${width.toInt()}pt keeps the whole panel on screen', (
@@ -112,20 +133,25 @@ void main() {
       });
     }
 
-    testWidgets('a short window keeps the panel on screen too', (tester) async {
-      // The popover opens downward from a footer control, so a short window is
-      // the vertical equivalent of the narrow case.
-      await openPanel(tester, width: 700, height: 360, desktop: true);
+    testWidgets('a short window caps the panel and scrolls inside it', (
+      tester,
+    ) async {
+      // 260pt, not 360: measured, the panel's content is 419pt tall, and at
+      // 360 the cost row lands inside the viewport anyway (it is the rows ABOVE
+      // that get cut), so a reachability check there would pass without any
+      // scrolling happening. At 260 the cost row starts 80pt below the fold, so
+      // the assertion has something to prove.
+      await openPanel(tester, width: 700, height: 260, desktop: true);
 
       expect(tester.takeException(), isNull);
       final panel = viewport(tester);
       expect(panel.top, greaterThanOrEqualTo(0));
-      expect(panel.bottom, lessThanOrEqualTo(360));
-      // And the content is reachable rather than clipped away: the panel scrolls.
+      expect(panel.bottom, lessThanOrEqualTo(260));
+      // And the bottom of the panel is REACHABLE, not merely present.
       expect(
-        tester.getRect(find.byType(ContextUsageDetails)).height,
-        greaterThan(panel.height),
-        reason: 'a short window should cap the panel and scroll inside it',
+        await costRowReachable(tester),
+        isTrue,
+        reason: 'the cost row must scroll into view in a short window',
       );
     });
   });
@@ -155,6 +181,12 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.byType(ContextUsageDetails), findsOneWidget);
+      // Same reachability check as the desktop short window.
+      expect(
+        await costRowReachable(tester),
+        isTrue,
+        reason: 'the cost row must scroll into view in a short sheet',
+      );
     });
   });
 }
