@@ -74,7 +74,9 @@ test("readCwds: builds one comma-separated -p and parses fcwd/n records", async 
     };
   };
   const result = await readCwds(exec, [742, 900]);
-  assert.deepEqual(seen, ["-a", "-d", "cwd", "-Fpn", "-p", "742,900"]);
+  // `f` is requested explicitly: macOS emits the `fcwd` marker regardless, Linux
+  // only emits the fields you ask for — CI on ubuntu caught the difference.
+  assert.deepEqual(seen, ["-a", "-d", "cwd", "-Fpfn", "-p", "742,900"]);
   assert.equal(result.ok, true);
   assert.equal(result.cwds.get(742), "/Users/le/work/repo/wt-a");
   assert.equal(result.cwds.get(900), "/Users/le/other");
@@ -151,4 +153,47 @@ test("realpath resolver: an unresolvable path falls back to the input (no throw)
   const missing = join(mkdtempSync(join(tmpdir(), "ports-")), "does-not-exist");
   const resolve = createRealpathResolver();
   assert.equal(resolve(missing), missing);
+});
+
+// ── Linux vs macOS `lsof -F` shape (found by CI on ubuntu) ────────────────────
+// The cwd read MUST work on both platforms. macOS emits the `f` record whether or
+// not it was requested; Linux emits ONLY the fields you ask for, so requiring an
+// `fcwd` marker while requesting `-Fpn` silently produced ZERO cwds on Linux —
+// attribution died there while every macOS test stayed green.
+test("parseLsofCwds: Linux shape — no `f` record when lsof was not asked for one", () => {
+  // Real `lsof -a -d cwd -Fpn -p 1` on Alpine 4.99.3.
+  const cwds = parseLsofCwds("p42\nn/home/runner/work/makit\n");
+  assert.equal(cwds.get(42), "/home/runner/work/makit");
+});
+
+test("parseLsofCwds: macOS shape — the `f` record is present and harmless", () => {
+  const cwds = parseLsofCwds("p42\nfcwd\nn/Users/le/repo\n");
+  assert.equal(cwds.get(42), "/Users/le/repo");
+});
+
+test("parseLsofCwds: a denied read is rejected, not stored as a path", () => {
+  // Linux appends the annotation TO the path rather than emitting a separate
+  // record: `n/proc/1/cwd (readlink: Permission denied)`. Storing that would
+  // attribute a port to a directory that does not exist.
+  const cwds = parseLsofCwds("p1\nn/proc/1/cwd (readlink: Permission denied)\n");
+  assert.equal(cwds.get(1), undefined);
+});
+
+test("parseLsofCwds: a relative or empty name is rejected", () => {
+  const cwds = parseLsofCwds("p7\nnnot-absolute\np8\nn\n");
+  assert.equal(cwds.get(7), undefined);
+  assert.equal(cwds.get(8), undefined);
+});
+
+test("readCwds: asks lsof for the `f` field explicitly (so the marker exists on Linux too)", async () => {
+  const calls: string[][] = [];
+  const exec: Exec = async (_cmd, args) => {
+    calls.push([...args]);
+    return { code: 0, stdout: "p9\nfcwd\nn/tmp/wt\n", stderr: "" };
+  };
+  await readCwds(exec, [9]);
+  assert.ok(
+    calls[0].some((a) => a.includes("f")),
+    `the -F spec must request f: ${JSON.stringify(calls[0])}`,
+  );
 });

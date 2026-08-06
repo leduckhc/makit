@@ -144,22 +144,40 @@ export async function readProcs(
 export function parseLsofCwds(stdout: string): Map<number, string> {
   const cwds = new Map<number, string>();
   let pid: number | undefined;
-  let atCwd = false; // true only between an `fcwd` record and its `n` path
+  // macOS emits `fcwd` whether or not `f` was requested; Linux emits ONLY the
+  // requested fields, so a pid can go straight from `p` to `n`. We therefore do
+  // not REQUIRE the marker (that produced zero cwds on Linux — CI caught it);
+  // we only use it to reject a non-cwd descriptor if one is ever reported.
+  let descriptor: string | undefined;
   for (const line of stdout.split("\n")) {
     if (line.length === 0) continue;
     const field = line[0];
     const value = line.slice(1);
     if (field === "p") {
       pid = /^\d+$/.test(value) ? Number(value) : undefined;
-      atCwd = false;
+      descriptor = undefined;
     } else if (field === "f") {
-      atCwd = value === "cwd";
-    } else if (field === "n" && pid !== undefined && atCwd) {
-      cwds.set(pid, value);
-      atCwd = false; // consume: a trailing annotation `n` is not a second cwd
+      descriptor = value;
+    } else if (field === "n" && pid !== undefined) {
+      if (descriptor === undefined || descriptor === "cwd") {
+        if (isUsableCwd(value)) cwds.set(pid, value);
+      }
+      // Consume either way: a trailing annotation `n` is not a second cwd.
+      descriptor = "consumed";
     }
   }
   return cwds;
+}
+
+/**
+ * A cwd we can match against a worktree path. Rejects the two shapes lsof
+ * reports when it could not read the link, both seen on Linux:
+ *   `n/proc/1/cwd (readlink: Permission denied)`  — annotation appended to the path
+ *   `n` / a relative name                          — nothing usable at all
+ * Storing either would attribute a port to a directory that does not exist.
+ */
+function isUsableCwd(value: string): boolean {
+  return value.startsWith("/") && !value.includes(" (");
 }
 
 /**
@@ -192,7 +210,7 @@ export async function readCwds(
   try {
     const { code, stdout, stderr } = await exec(
       "lsof",
-      ["-a", "-d", "cwd", "-Fpn", "-p", pids.join(",")],
+      ["-a", "-d", "cwd", "-Fpfn", "-p", pids.join(",")],
       undefined,
       timeoutMs,
     );
