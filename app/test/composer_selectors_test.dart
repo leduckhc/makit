@@ -216,8 +216,10 @@ void main() {
 
     test('drops only the FIRST segment', () {
       // A model id may legitimately contain a slash of its own.
-      expect(shortModelLabel('openrouter/meta-llama/Llama-3'),
-          'meta-llama/Llama-3');
+      expect(
+        shortModelLabel('openrouter/meta-llama/Llama-3'),
+        'meta-llama/Llama-3',
+      );
     });
 
     test('never turns a visible name into a blank pill', () {

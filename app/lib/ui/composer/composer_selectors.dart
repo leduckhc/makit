@@ -945,7 +945,9 @@ class ModelConfigPill extends StatelessWidget {
     for (final option in modelScoped) {
       final value = values[option.id] ?? option.currentValue;
       if (option.type == ConfigOptionType.boolean) {
-        if (value == true) chips.add(_textChipSpec(context, option.name, on: true));
+        if (value == true) {
+          chips.add(_textChipSpec(context, option.name, on: true));
+        }
       } else if (option.category == 'thought_level') {
         chips.add((
           widget: ThinkingSignal(level: value is String ? value : ''),

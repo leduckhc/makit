@@ -82,10 +82,12 @@ void main() {
   /// legitimately extends past the viewport when it is taller than the cap. An
   /// earlier draft of this test measured it and "failed" on a correct layout.
   Rect viewport(WidgetTester tester) => tester.getRect(
-    find.ancestor(
-      of: find.byType(ContextUsageDetails),
-      matching: find.byType(SingleChildScrollView),
-    ).first,
+    find
+        .ancestor(
+          of: find.byType(ContextUsageDetails),
+          matching: find.byType(SingleChildScrollView),
+        )
+        .first,
   );
 
   group('desktop popover in a narrow window', () {
@@ -93,12 +95,7 @@ void main() {
       testWidgets('${width.toInt()}pt keeps the whole panel on screen', (
         tester,
       ) async {
-        await openPanel(
-          tester,
-          width: width,
-          height: 700,
-          desktop: true,
-        );
+        await openPanel(tester, width: width, height: 700, desktop: true);
 
         expect(tester.takeException(), isNull);
         final panel = viewport(tester);

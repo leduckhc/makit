@@ -329,10 +329,7 @@ void main() {
     /// A stand-in for the usage ring at its real size, taken from the constant
     /// rather than copied: if the ring's footprint changes, this test's
     /// arithmetic must move with it instead of failing cryptically.
-    const ring = SizedBox(
-      width: kUsageTargetSize,
-      height: kUsageTargetSize,
-    );
+    const ring = SizedBox(width: kUsageTargetSize, height: kUsageTargetSize);
 
     /// The gap `Composer` puts after each footer action
     /// (`EdgeInsets.only(right: 6)` in `_buildExpanded`).
@@ -442,9 +439,7 @@ void main() {
 
       final action = tester.getTopLeft(find.byKey(const Key('action')));
       final trailing = tester.getTopLeft(find.byKey(const Key('trailing')));
-      final plus = tester.getTopLeft(
-        find.byIcon(PhosphorIconsLight.paperclip),
-      );
+      final plus = tester.getTopLeft(find.byIcon(PhosphorIconsLight.paperclip));
       expect(action.dx, lessThan(trailing.dx));
       expect(trailing.dx, lessThan(plus.dx));
       // Natural width, not a flex share.

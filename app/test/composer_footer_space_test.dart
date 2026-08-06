@@ -36,9 +36,7 @@ SessionConfigOption _select(
   category: category,
   type: ConfigOptionType.select,
   currentValue: current,
-  options: [
-    for (final v in values) ConfigOptionValue(value: v, name: v),
-  ],
+  options: [for (final v in values) ConfigOptionValue(value: v, name: v)],
 );
 
 /// The name `pi-acp` produces: `${provider}/${name}` (`getModelState`).
@@ -127,10 +125,8 @@ Future<double> _naturalWidth(WidgetTester tester, String text) async {
         body: Align(
           alignment: Alignment.topLeft,
           child: Builder(
-            builder: (context) => Text(
-              text,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
+            builder: (context) =>
+                Text(text, style: Theme.of(context).textTheme.labelMedium),
           ),
         ),
       ),
@@ -161,9 +157,7 @@ void main() {
                 child: const Composer(
                   onSend: _noop,
                   alwaysExpanded: true,
-                  footerActions: [
-                    ComposerConfigOptions(sessionId: 's1'),
-                  ],
+                  footerActions: [ComposerConfigOptions(sessionId: 's1')],
                   footerTrailing: ContextUsageButton(sessionId: 's1'),
                 ),
               ),
@@ -346,11 +340,12 @@ void main() {
   group('SPEC-40 — a wide pane leaves every pill at its natural width', () {
     // Criterion 5, table-driven: at 700pt nothing is constrained, so every
     // shape's label must occupy exactly the width it wants.
-    for (final (name, shape, label) in <(String, List<SessionConfigOption>, String)>[
-      ('pi', _piShape, 'Claude Opus 4.6'),
-      ('codex', _codexShape, _codexModel),
-      ('modes-only', _modesShape, 'architect'),
-    ]) {
+    for (final (name, shape, label)
+        in <(String, List<SessionConfigOption>, String)>[
+          ('pi', _piShape, 'Claude Opus 4.6'),
+          ('codex', _codexShape, _codexModel),
+          ('modes-only', _modesShape, 'architect'),
+        ]) {
       testWidgets('700pt · $name', (tester) async {
         tester.view.physicalSize = const Size(700, 812);
         tester.view.devicePixelRatio = 1.0;
@@ -463,9 +458,7 @@ void main() {
           container: c,
           child: const MaterialApp(
             home: MediaQuery(
-              data: MediaQueryData(
-                textScaler: TextScaler.linear(2.4),
-              ),
+              data: MediaQueryData(textScaler: TextScaler.linear(2.4)),
               child: Scaffold(
                 body: Align(
                   alignment: Alignment.topLeft,

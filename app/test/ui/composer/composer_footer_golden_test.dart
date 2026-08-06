@@ -74,37 +74,38 @@ void main() {
   // than the Linux CI runner), same convention as the SPEC-37 goldens.
   final skipOffMac = !Platform.isMacOS;
 
-  for (final (name, width, options) in <(String, double, List<SessionConfigOption>)>[
-    // 393pt is the iPhone 15/16/17 width; the label fits whole there.
-    (
-      'pi_393',
-      393,
-      [
-        _select('model', 'model', _model, [_model]),
-        _select('thought_level', 'thought_level', 'high', ['off', 'high']),
-      ],
-    ),
-    // 375pt (SE/mini) is the tightest supported phone: the chips yield and the
-    // name clips by a single character.
-    (
-      'pi_375',
-      375,
-      [
-        _select('model', 'model', _model, [_model]),
-        _select('thought_level', 'thought_level', 'high', ['off', 'high']),
-      ],
-    ),
-    // A wide pane keeps every chip — nothing is hidden for free.
-    (
-      'codex_700',
-      700,
-      [
-        _select('model', 'model', 'gpt-5.6-codex', ['gpt-5.6-codex']),
-        _select('thought_level', 'thought_level', 'high', ['off', 'high']),
-        _select('context', 'model_config', '256k', ['128k', '256k']),
-      ],
-    ),
-  ]) {
+  for (final (name, width, options)
+      in <(String, double, List<SessionConfigOption>)>[
+        // 393pt is the iPhone 15/16/17 width; the label fits whole there.
+        (
+          'pi_393',
+          393,
+          [
+            _select('model', 'model', _model, [_model]),
+            _select('thought_level', 'thought_level', 'high', ['off', 'high']),
+          ],
+        ),
+        // 375pt (SE/mini) is the tightest supported phone: the chips yield and the
+        // name clips by a single character.
+        (
+          'pi_375',
+          375,
+          [
+            _select('model', 'model', _model, [_model]),
+            _select('thought_level', 'thought_level', 'high', ['off', 'high']),
+          ],
+        ),
+        // A wide pane keeps every chip — nothing is hidden for free.
+        (
+          'codex_700',
+          700,
+          [
+            _select('model', 'model', 'gpt-5.6-codex', ['gpt-5.6-codex']),
+            _select('thought_level', 'thought_level', 'high', ['off', 'high']),
+            _select('context', 'model_config', '256k', ['128k', '256k']),
+          ],
+        ),
+      ]) {
     testWidgets('footer — $name', (tester) async {
       // physicalSize is in PHYSICAL pixels, so it must be scaled by the DPR.
       tester.view.physicalSize = Size(width * 3, 200 * 3);
@@ -130,12 +131,8 @@ void main() {
                     child: const Composer(
                       onSend: _noop,
                       alwaysExpanded: true,
-                      footerActions: [
-                        ComposerConfigOptions(sessionId: 's1'),
-                      ],
-                      footerTrailing: ContextUsageButton(
-                        sessionId: 's1',
-                      ),
+                      footerActions: [ComposerConfigOptions(sessionId: 's1')],
+                      footerTrailing: ContextUsageButton(sessionId: 's1'),
                     ),
                   ),
                 ),
