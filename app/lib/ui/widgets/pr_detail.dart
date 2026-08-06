@@ -260,6 +260,12 @@ class _PinnedCta extends StatelessWidget {
     }
     final tone = prToneTextColor(cs, status.cta.tone);
     final direct = remedy is DirectRemedy;
+    // One value for the label *and* the icon. Computing the foreground twice is
+    // how they came apart: the label moved to `onPrToneFill` while the icon kept
+    // `cs.surface`, so on the amber fill — where `onPrToneFill` picks the dark
+    // ink — the label went dark and the icon stayed near-white and vanished.
+    final fill = prToneColor(cs, status.cta.tone);
+    final fg = direct ? onPrToneFill(cs, status.cta.tone) : tone;
     return Padding(
       padding: const EdgeInsets.only(top: kSpace12),
       child: Column(
@@ -273,18 +279,14 @@ class _PinnedCta extends StatelessWidget {
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(46),
               backgroundColor: direct
-                  ? prToneColor(cs, status.cta.tone)
+                  ? fill
                   : Color.alphaBlend(
-                      prToneColor(cs, status.cta.tone).withValues(alpha: 0.20),
+                      fill.withValues(alpha: 0.20),
                       cs.surfaceContainerHigh,
                     ),
-              foregroundColor: direct
-                  ? onPrToneFill(cs, status.cta.tone)
-                  : tone,
+              foregroundColor: fg,
             ),
-            icon: prRemedyIcon(
-              remedy,
-            ).build(size: 16, color: direct ? cs.surface : tone),
+            icon: prRemedyIcon(remedy).build(size: 16, color: fg),
             label: Text(status.cta.label),
           ),
           const SizedBox(height: kSpace6),

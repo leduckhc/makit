@@ -5,10 +5,10 @@
 // pr_signals_test.dart. These cover the mobile rendering: what the chip says,
 // how the sheet is ordered, and that a picked prompt reaches the composer unsent.
 import 'package:flutter/material.dart';
-import 'package:url_launcher_platform_interface/link.dart';
-import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:url_launcher_platform_interface/link.dart';
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -149,6 +149,29 @@ void main() {
       await _pumpSheet(tester, pr: _pr());
       expect(find.text('#42'), findsOneWidget);
       expect(find.text('Add the login screen'), findsOneWidget);
+    });
+
+    testWidgets('the pinned CTA paints its icon and label the same colour', (
+      tester,
+    ) async {
+      // These were computed separately, and drifted: the label moved to
+      // `onPrToneFill` while the icon kept `cs.surface`, so on the amber fill —
+      // where `onPrToneFill` picks the dark ink — the icon went near-white on
+      // amber and effectively disappeared.
+      //
+      // A draft: its CTA is the direct `Mark ready`, which is the filled register
+      // and the amber tone.
+      await _pumpSheet(tester, pr: _pr(isDraft: true));
+      final button = tester.widget<FilledButton>(find.byType(FilledButton));
+      final fg = button.style?.foregroundColor?.resolve(<WidgetState>{});
+      final icon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byType(FilledButton),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(fg, isNotNull);
+      expect(icon.color, fg, reason: 'the icon must match the label');
     });
 
     testWidgets('reports a PR url the platform declines to open', (

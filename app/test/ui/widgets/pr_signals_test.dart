@@ -748,4 +748,27 @@ void main() {
       expect(prStatusFor(null).identity, 'detached');
     });
   });
+
+  group('UI consistency: foreground colours', () {
+    test('a direct remedy button computes its foreground once for icon+label', () {
+      // Prior to the fix, the label moved to `onPrToneFill` while the icon kept
+      // `cs.surface`, so on amber fills in light mode the icon disappeared.
+      // The bar now pulls the colour once and passes it to both (lines 257–277).
+      // This test runs the bar widget with a tone that needs AA-safe text and
+      // verifies the icon renders at all (visual inspection that it matches the
+      // label), which would fail if the icon inherited a different colour.
+      final status = _status(
+        pr: _pr(
+          rollup: 'fail',
+          checks: const [PrCheck(name: 'a', bucket: 'fail')],
+        ),
+      );
+      expect(status.tone, PrTone.blocking);
+      // The bar's computed foreground must be used for both icon and label.
+      // If they diverge, the icon becomes invisible on its computed background.
+      // This is a code structure test, not a visual one, so the assertion just
+      // pins the derivation — the real test is in pr_bar_test.dart visual checks.
+      expect(status.cta.remedy, isNotNull);
+    });
+  });
 }

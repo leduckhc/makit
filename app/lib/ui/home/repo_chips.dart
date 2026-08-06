@@ -88,6 +88,15 @@ class DiffChip extends StatelessWidget {
   }
 }
 
+/// Widest the chip's label may get before it elides.
+///
+/// The row also carries the branch name and a trailing age, and the chip sits
+/// between them: much past this and `#142 · 2 checks failing` starts pushing the
+/// age off a narrow phone. Elide instead — the sheet has the full sentence.
+const double _kChipLabelMaxWidth = 190;
+
+// ──
+
 /// The worktree's status, as a sentence fragment: a tone dot plus the loudest
 /// fact — `● 2 checks failing`. Tapping opens the shared detail sheet.
 ///
@@ -96,14 +105,7 @@ class DiffChip extends StatelessWidget {
 /// identical to a live one apart from a hue. This says it, and a merged row
 /// advertises its own clean-up ("merged") so the ending is one tap away instead
 /// of hidden behind a long-press.
-
-/// Widest the chip's label may get before it elides.
 ///
-/// The row also carries the branch name and a trailing age, and the chip sits
-/// between them: much past this and `#142 · 2 checks failing` starts pushing the
-/// age off a narrow phone. Elide instead — the sheet has the full sentence.
-const double _kChipLabelMaxWidth = 190;
-
 /// Reads the shared [PrStatus] derivation, so the home row, the session chip and
 /// the desktop bar cannot disagree about whether a PR is failing.
 class PrStatusChip extends ConsumerWidget {
