@@ -9,6 +9,7 @@ import {
   type GithubGateway,
 } from "./gateway.js";
 import type { BudgetSnapshot } from "./budget.js";
+import { PR_TIMEOUT_MS } from "./queries.js";
 
 /** A `gh pr list --head` result with one open PR. */
 const PR_JSON = JSON.stringify([
@@ -741,4 +742,169 @@ test("the exempt rate_limit read is counted separately from quota spend", async 
   // The local `git remote` read is a subprocess but costs no GitHub quota, so it
   // must not inflate either counter.
   assert.equal(execs.filter((e) => e.cmd === "git").length, 1, "git was consulted");
+});
+
+// ── SPEC-38: a mutation must not be undone by a lookup already in flight ─────
+
+test("mutatePr invalidates the branch's cached lookup", async () => {
+  const { gateway, calls } = makeGateway((args) =>
+    kindOf(args) === "pr" ? ok(PR_JSON) : ok("{}"),
+  );
+  const prCalls = () => calls.filter((a) => kindOf(a) === "pr").length;
+
+  await gateway.prForBranch("/repo", "feat/x");
+  await gateway.prForBranch("/repo", "feat/x");
+  assert.equal(prCalls(), 1, "second call served from cache");
+
+  await gateway.mutatePr("/repo", "feat/x", 7, "ready");
+  await gateway.prForBranch("/repo", "feat/x");
+  assert.equal(prCalls(), 2, "the mutation dropped the cached answer");
+});
+
+test("a lookup in flight during a mutation does not re-seed the stale answer", async () => {
+  // The mutation changed the PR's state, so an answer fetched *before* it is a
+  // lie. Without the generation guard that answer lands after the invalidation
+  // and silently restores exactly what the mutation just changed.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstPr = true;
+  const { gateway, calls } = makeGateway(async (args) => {
+    if (kindOf(args) === "pr" && firstPr) {
+      firstPr = false;
+      await gate; // hold the first lookup open across the mutation
+    }
+    return kindOf(args) === "pr" ? ok(PR_JSON) : ok("{}");
+  });
+  const prCalls = () => calls.filter((a) => kindOf(a) === "pr").length;
+
+  const inFlight = gateway.prForBranch("/repo", "feat/x");
+  await gateway.mutatePr("/repo", "feat/x", 7, "ready");
+  release!();
+  await inFlight;
+  assert.equal(prCalls(), 1);
+
+  // The next read must go to the network, not to a cache the in-flight lookup
+  // repopulated behind the mutation's back.
+  await gateway.prForBranch("/repo", "feat/x");
+  assert.equal(prCalls(), 2, "the pre-mutation answer must not have been cached");
+});
+
+test("a failed mutation leaves the cache alone", async () => {
+  // Nothing changed on GitHub, so throwing the cache away would just cost quota.
+  const { gateway, calls } = makeGateway((args) => {
+    if (args[0] === "pr" && args[1] === "ready") return fail("gh: no such PR");
+    return kindOf(args) === "pr" ? ok(PR_JSON) : ok("{}");
+  });
+  const prCalls = () => calls.filter((a) => kindOf(a) === "pr").length;
+
+  await gateway.prForBranch("/repo", "feat/x");
+  const result = await gateway.mutatePr("/repo", "feat/x", 7, "ready");
+  assert.equal(result.ok, false);
+  await gateway.prForBranch("/repo", "feat/x");
+  assert.equal(prCalls(), 1, "still cached");
+});
+
+test("a cold open-PR list in flight during a mutation is not cached either", async () => {
+  // The guard cannot key off the keys it happens to find in the cache: the very
+  // first `openPrs` call for a repo is in neither the cache nor the generation
+  // map while it runs, so a mutation had nothing to bump — and the pre-mutation
+  // list then seeded a cache the mutation was supposed to have emptied.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstList = true;
+  const { gateway, calls } = makeGateway(async (args) => {
+    if (args[0] === "pr" && args[1] === "list" && args.includes("--state") && firstList) {
+      firstList = false;
+      await gate;
+    }
+    return kindOf(args) === "pr" ? ok("[]") : ok("{}");
+  });
+  const listCalls = () =>
+    calls.filter((a) => a[0] === "pr" && a[1] === "list" && a.includes("--state")).length;
+
+  const inFlight = gateway.openPrs("/repo", 50);
+  await gateway.mutatePr("/repo", "feat/x", 7, "merge-squash");
+  release!();
+  await inFlight;
+  const before = listCalls();
+
+  await gateway.openPrs("/repo", 50);
+  assert.ok(listCalls() > before, "the pre-mutation list must not have been cached");
+});
+
+test("a caller arriving after a mutation is not handed the in-flight pre-mutation answer", async () => {
+  // Not caching the stale answer is only half the guard: a caller that joins the
+  // promise still *receives* it. The repos broadcast the mutation triggers is
+  // exactly such a caller, so the pill would report the state the mutation just
+  // changed until the next poll.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstPr = true;
+  const { gateway, calls } = makeGateway(async (args) => {
+    if (kindOf(args) === "pr" && firstPr) {
+      firstPr = false;
+      await gate;
+    }
+    return kindOf(args) === "pr" ? ok(PR_JSON) : ok("{}");
+  });
+  const prCalls = () => calls.filter((a) => kindOf(a) === "pr").length;
+
+  const inFlight = gateway.prForBranch("/repo", "feat/x");
+  await gateway.mutatePr("/repo", "feat/x", 7, "ready");
+  const after = gateway.prForBranch("/repo", "feat/x");
+  release!();
+  await Promise.all([inFlight, after]);
+  assert.equal(prCalls(), 2, "the post-mutation caller must start its own lookup");
+});
+
+test("a mutation also drops the repo's open-PR list", async () => {
+  // The "New worktree from PR" picker reads `openPrs`. After a squash-merge the
+  // merged PR must not still be offered there (checkout would then fail), and
+  // after mark-ready it must not still read as a draft.
+  const { gateway, calls } = makeGateway((args) =>
+    kindOf(args) === "pr" ? ok(PR_JSON) : ok("[]"),
+  );
+  const listCalls = () =>
+    calls.filter((a) => a[0] === "pr" && a[1] === "list" && a.includes("--state")).length;
+
+  await gateway.openPrs("/repo", 50);
+  await gateway.openPrs("/repo", 50);
+  const cached = listCalls();
+  // Pin the premise: without this the closing assertion would also hold if the
+  // list were never cached at all, and `listCalls()` simply grew every call.
+  assert.equal(cached, 1, "the second list was served from cache");
+
+  await gateway.mutatePr("/repo", "feat/x", 7, "merge-squash");
+  await gateway.openPrs("/repo", 50);
+  assert.ok(listCalls() > cached, "the picker must refetch after a merge");
+});
+
+test("a PR mutation is not held to the read timeout", async () => {
+  // `PR_TIMEOUT_MS` bounds *reads* — a stale pill is cheap, so a slow lookup is
+  // better abandoned. A mutation is the opposite: `gh pr merge --squash` is a
+  // write that routinely takes longer, and abandoning it reports a failure while
+  // GitHub goes on to apply it — skipping the invalidation below, so the UI then
+  // insists on the pre-mutation state for a full TTL. Precisely the race the
+  // generation guards exist to stop, reintroduced by a timeout.
+  const timeouts: Array<number | undefined> = [];
+  const calls: string[][] = [];
+  const exec: Exec = async (_cmd, args, _cwd, timeoutMs) => {
+    calls.push(args);
+    if (args[0] === "pr" && (args[1] === "merge" || args[1] === "ready")) {
+      timeouts.push(timeoutMs);
+    }
+    return ok("{}");
+  };
+  const gateway = createGithubGateway({
+    exec,
+    now: () => 0,
+    setTimer: () => ({ unref() {} }),
+    clearTimer: () => {},
+  });
+  await gateway.mutatePr("/repo", "feat/x", 7, "merge-squash");
+  assert.equal(timeouts.length, 1, "the merge ran");
+  assert.ok(
+    timeouts[0] === undefined || timeouts[0] > PR_TIMEOUT_MS,
+    `a mutation must not inherit the ${PR_TIMEOUT_MS}ms read cap, got ${timeouts[0]}`,
+  );
 });

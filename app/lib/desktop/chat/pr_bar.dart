@@ -1,416 +1,229 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
 import '../../store/models.dart';
-import '../../ui/widgets/codicons.dart';
 import '../../ui/widgets/icon_glyph.dart';
-import '../../ui/widgets/pr_sheet.dart';
-import '../../ui/widgets/pr_state_style.dart';
-import '../../store/prefs/preference_entries.dart';
-import '../../store/prefs/preferences_providers.dart';
-import '../../ui/widgets/pr_actions.dart';
+import '../../ui/widgets/pr_detail.dart';
+import '../../ui/widgets/pr_signals.dart';
+import '../../ui/widgets/pr_tone.dart';
+import '../../ui/widgets/wrap_up.dart';
 
-/// Tooltip on a stale pill (SPEC-32 §7.5). Names *why* the data is dimmed — a
-/// refresh that could not complete against GitHub's quota — so the user can tell
-/// last-known data from current data instead of guessing at the dimming.
+/// Tooltip on a stale bar. Names *why* the data is dimmed — a refresh that could
+/// not complete against GitHub's quota — so the user can tell last-known data
+/// from current data instead of guessing at the dimming.
 const kStalePrTooltip =
     'Last known state — could not refresh (GitHub quota). '
     'Retrying automatically.';
 
-/// Opacity a stale pill is drawn at. Follows the app's existing de-emphasis
-/// convention for "recede as muted context" (inactive split-view tabs, see
-/// `split_view.dart`) so a stale pill reads the same as other muted UI.
-const double _kStalePillOpacity = 0.55;
-
-/// The row that sits directly above the docked composer (SPEC-23, desktop):
-/// a permanent PR **status pill** (opens the PR on the web; hover shows the CI
-/// check list) on the left, and a **PR actions** split button (canned prompts)
-/// on the right. The pill renders only when [pr] is non-null; the actions
-/// button always shows (its "Create PR" action is the path to *getting* a PR).
-class PrComposerBar extends StatelessWidget {
+/// The row directly above the docked composer: **one sentence about the
+/// worktree, and the one action that moves it forward.**
+///
+/// `<dot> #142 · 2 checks failing   +2 more            [ Fix CI ▾ ]`
+///
+/// Replaces the old two-zone bar (a `PR #42` pill plus a general-purpose
+/// six-prompt split button), whose two halves secretly depended on each other:
+/// the pill's neighbouring chip is what set the button's default action, and
+/// nothing on screen said so. Here the sentence *is* the reason for the button,
+/// read left to right.
+///
+/// What it shows comes entirely from [PrStatus] — the shared derivation the
+/// mobile row and sheet also read, so the three surfaces cannot disagree about
+/// whether a PR is failing. This widget only decides how much of it fits: the
+/// loud fact in full, the rest as a `+n more` disclosure onto [showPrDetail].
+class PrComposerBar extends ConsumerWidget {
   const PrComposerBar({
     super.key,
-    required this.pr,
+    required this.status,
     required this.onInsertPrompt,
+    this.pr,
+    this.projectId,
+    this.worktreePath,
+    this.branch,
     this.uncommittedFiles = 0,
-    this.commitsAhead = 0,
-    this.commitsBehind = 0,
   });
 
-  /// The open PR for the pane's worktree, or null when there is none.
+  /// The derived facts + the call to action. See [prStatusFor].
+  final PrStatus status;
+
+  /// The PR itself, for the detail sheet's check list and its web link. Null
+  /// when the worktree has none.
   final PullRequest? pr;
 
-  /// Files with uncommitted changes in the pane's worktree (0 when none).
+  /// Identity for the direct operations (wrap up / discard). When either is
+  /// null those actions are unavailable — there is nothing safe to act on.
+  final String? projectId;
+  final String? worktreePath;
+
+  /// The worktree's branch, for the confirm dialog's "delete the local branch"
+  /// step. Not derivable from [status] — its identity is the PR number by then.
+  final String? branch;
+
+  /// Files with uncommitted changes, for the confirm's data-loss warning. Passed
+  /// rather than parsed back out of a signal label.
   final int uncommittedFiles;
-
-  /// Local commits not yet pushed (0 when none / up to date).
-  final int commitsAhead;
-
-  /// Remote commits not yet pulled (0 when none / up to date).
-  final int commitsBehind;
 
   /// Insert a resolved canned prompt into the composer (does not send).
   final void Function(String prompt) onInsertPrompt;
 
   @override
-  Widget build(BuildContext context) {
-    // At most one situational chip: the single most-actionable next step (see
-    // [_situationFor]). It also drives the split button's default action.
-    final situation = _situationFor(
-      pr: pr,
-      uncommittedFiles: uncommittedFiles,
-      commitsAhead: commitsAhead,
-      commitsBehind: commitsBehind,
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
       child: Row(
         children: [
-          Expanded(
-            child: Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (pr != null) PrStatusPill(pr: pr!),
-                if (situation != null)
-                  _CountLabel(
-                    icon: situation.icon,
-                    text: situation.label,
-                    color: situation.color,
-                  ),
-              ],
+          Flexible(
+            child: _Reason(
+              status: status,
+              onOpen: () => _openDetail(context, ref),
             ),
           ),
-          const SizedBox(width: kSpace8),
-          PrActionsSplitButton(
-            onInsertPrompt: onInsertPrompt,
-            hasPr: pr != null,
-            suggestedAction: situation?.action,
+          if (status.more > 0) ...[
+            const SizedBox(width: kSpace8),
+            _MoreLink(
+              count: status.more,
+              onTap: () => _openDetail(context, ref),
+            ),
+          ],
+          const SizedBox(width: kSpace10),
+          PrCtaButton(
+            status: status,
+            onRun: (remedy) => _run(context, ref, remedy),
           ),
         ],
       ),
     );
   }
+
+  void _openDetail(BuildContext context, WidgetRef ref) => showPrDetail(
+    context,
+    status: status,
+    pr: pr,
+    onRun: (remedy) => _run(context, ref, remedy),
+  );
+
+  Future<void> _run(BuildContext context, WidgetRef ref, PrRemedy remedy) =>
+      runPrRemedy(
+        context,
+        ref,
+        remedy: remedy,
+        status: status,
+        pr: pr,
+        projectId: projectId,
+        worktreePath: worktreePath,
+        branch: branch,
+        uncommittedFiles: uncommittedFiles,
+        onInsertPrompt: onInsertPrompt,
+      );
 }
 
-/// The single most-actionable next step for the pane's worktree, or null when
-/// there's nothing pressing. Drives *both* the lone status chip and the split
-/// button's default action, ordered by urgency so the composer never shows a
-/// wall of competing hints:
-///   1. uncommitted work → Commit and push,
-///   2. behind the remote → Pull (a push would be rejected while behind),
-///   3. unpushed commits → Push,
-///   4. failing CI → Fix PR,
-///   5. unresolved review threads → Resolve comments.
-_Situation? _situationFor({
-  required PullRequest? pr,
-  required int uncommittedFiles,
-  required int commitsAhead,
-  required int commitsBehind,
-}) {
-  const amber = Color(0xFFD29922);
-  const red = Color(0xFFF85149);
-  if (uncommittedFiles > 0) {
-    return _Situation(
-      icon: const IconGlyph.font(PhosphorIconsLight.pencilSimple),
-      label: _plural(uncommittedFiles, 'uncommitted file'),
-      color: amber,
-      action: PrPromptAction.commitAndPush,
-    );
-  }
-  if (commitsBehind > 0) {
-    return _Situation(
-      icon: PrPromptAction.pull.icon,
-      label: '$commitsBehind commit${commitsBehind == 1 ? '' : 's'} behind',
-      color: amber,
-      action: PrPromptAction.pull,
-    );
-  }
-  if (commitsAhead > 0) {
-    return _Situation(
-      icon: PrPromptAction.push.icon,
-      label: '$commitsAhead commit${commitsAhead == 1 ? '' : 's'} ahead',
-      color: amber,
-      action: PrPromptAction.push,
-    );
-  }
-  // Everything below is derived from the PR itself, so it only applies while the
-  // PR is open: a merged/closed PR's failing checks and review threads are
-  // history, not a next step.
-  final openPr = pr != null && pr.state.toUpperCase() == 'OPEN' ? pr : null;
-  if (openPr != null && openPr.checkRollup == 'fail') {
-    return const _Situation(
-      icon: IconGlyph.font(PhosphorIconsLight.xCircle),
-      label: 'CI failing',
-      color: red,
-      action: PrPromptAction.fixPr,
-    );
-  }
-  if (openPr != null &&
-      !openPr.unresolvedUnknown &&
-      openPr.unresolvedComments > 0) {
-    return _Situation(
-      icon: const IconGlyph.font(Codicons.commentDiscussion),
-      label: _plural(openPr.unresolvedComments, 'unresolved comment'),
-      color: amber,
-      action: PrPromptAction.resolveComments,
-    );
-  }
-  return null;
-}
+/// The sentence: a status dot, the PR number (or branch), and the loud fact.
+/// Truncates with an ellipsis rather than growing the row — the composer's width
+/// is not negotiable, and a bar that reflows as CI churns is worse than one that
+/// elides.
+class _Reason extends StatelessWidget {
+  const _Reason({required this.status, required this.onOpen});
 
-/// A resolved composer situation: the chip to show plus the action it suggests.
-class _Situation {
-  const _Situation({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.action,
-  });
-
-  final IconGlyph icon;
-  final String label;
-  final Color color;
-  final PrPromptAction action;
-}
-
-/// `N thing` / `N things` — tiny English pluralizer for the count labels.
-String _plural(int n, String singular) => '$n $singular${n == 1 ? '' : 's'}';
-
-/// A compact tinted chip — icon + text — used for the composer's lone
-/// situational hint (e.g. "3 uncommitted files") beside the PR pill.
-class _CountLabel extends StatelessWidget {
-  const _CountLabel({
-    required this.icon,
-    required this.text,
-    required this.color,
-  });
-
-  final IconGlyph icon;
-  final String text;
-  final Color color;
+  final PrStatus status;
+  final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final fill = Color.alphaBlend(color.withValues(alpha: 0.12), cs.surface);
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: kSpace8,
-        vertical: kSpace4,
-      ),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(kRadius8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    // The label, not the dot: `kCheckFail`/`kCheckPending` are dot tokens that
+    // print at 3.2:1 and 2.4:1 on the light theme's surface.
+    final tone = prToneTextColor(cs, status.tone);
+    final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
+    // Only the *derived* half dims when stale. The PR number never goes stale,
+    // so dimming it too (as the old pill did, wholesale) hid the one fact that
+    // was still reliable.
+    final dim = status.stale ? 0.55 : 1.0;
+    final sentence = Text.rich(
+      TextSpan(
         children: [
-          icon.build(size: kPillIconSize, color: color),
-          const SizedBox(width: 5),
-          Text(
-            text,
-            style: Theme.of(context).textTheme.labelXs?.copyWith(
-              color: color,
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.only(right: kSpace6),
+              child: PrToneDot(
+                tone: status.tone,
+                progress: status.checkProgress,
+                hollow: !status.hasPr,
+              ),
+            ),
+          ),
+          TextSpan(
+            text: status.identity,
+            style: base.copyWith(
+              color: cs.onSurface,
               fontWeight: FontWeight.w600,
             ),
           ),
+          TextSpan(
+            text: '  ·  ',
+            style: base.copyWith(color: cs.outlineVariant),
+          ),
+          TextSpan(
+            text: status.loud.label,
+            style: base.copyWith(color: tone.withValues(alpha: dim)),
+          ),
+          if (status.stale)
+            TextSpan(
+              text: '  ·  last known',
+              style: base.copyWith(color: cs.outline, fontSize: 11),
+            ),
         ],
       ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      softWrap: false,
     );
-  }
-}
 
-/// Colour for a CI rollup verdict.
-
-/// The permanent PR pill: `PR #42` with a CI-verdict dot. Tapping opens the PR
-/// on the web; hovering reveals the per-check status list ([_ChecksPopover]).
-/// Tinted grey for a draft PR, else by its CI [PullRequest.checkRollup].
-class PrStatusPill extends StatefulWidget {
-  const PrStatusPill({super.key, required this.pr});
-
-  final PullRequest pr;
-
-  @override
-  State<PrStatusPill> createState() => _PrStatusPillState();
-}
-
-class _PrStatusPillState extends State<PrStatusPill> {
-  final _pillKey = GlobalKey();
-  final _popover = OverlayPortalController();
-
-  Future<void> _open() async {
-    final url = widget.pr.url;
-    if (url.isEmpty) return;
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pr = widget.pr;
-    final cs = Theme.of(context).colorScheme;
-    // Glyph from the state (shared with the sidebar row and the title strip);
-    // tints from the pill rule shared with the session chip and the home row.
-    final style = prStateStyle(cs, pr);
-    final isOpen = pr.state.toUpperCase() == 'OPEN';
-    final (icon: color, label: labelColor) = prPillColors(cs, pr);
-    // Opaque tint: composite the verdict tint over the surface so the pill is
-    // solid (not see-through over content behind it) while keeping the light
-    // tinted look and legible same-colour foreground.
-    final fill = Color.alphaBlend(color.withValues(alpha: 0.14), cs.surface);
-    final pill = Material(
-      color: fill,
-      borderRadius: BorderRadius.circular(kRadius8),
+    return Tooltip(
+      message: status.stale ? kStalePrTooltip : 'Show detail',
       child: InkWell(
-        borderRadius: BorderRadius.circular(kRadius8),
-        onTap: _open,
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(kRadius6),
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: kSpace8,
-            vertical: kSpace4,
+            horizontal: kSpace4,
+            vertical: kSpace2,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              style.glyph.build(size: kPillIconSize, color: color),
-              const SizedBox(width: 5),
-              Text(
-                'PR #${pr.number}',
-                style: Theme.of(context).textTheme.labelXs?.copyWith(
-                  color: labelColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (isOpen && pr.checks.isNotEmpty) ...[
-                const SizedBox(width: kSpace6),
-                Icon(Icons.circle, size: 8, color: color),
-              ],
-              // Draft is an open-PR state, so it follows `isOpen` like the
-              // rollup dot rather than lingering on a merged/closed PR.
-              if (isOpen && pr.isDraft) ...[
-                const SizedBox(width: kSpace6),
-                Text(
-                  'draft',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelXs?.copyWith(color: labelColor),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-
-    // A stale pill (SPEC-32 §7.5) is dimmed and tooltip-labelled but otherwise
-    // identical — same number, state and layout — so a throttled lookup degrades
-    // visibly instead of erasing the pill. Applied to whichever widget we
-    // return below so both the open (hoverable) and merged/closed pills dim.
-    Widget dim(Widget w) => pr.stale
-        ? Tooltip(
-            message: kStalePrTooltip,
-            child: Opacity(opacity: _kStalePillOpacity, child: w),
-          )
-        : w;
-
-    // Hover popover: the per-check status list (SPEC-23 bullet 3), rendered as a
-    // light design-system surface anchored just above the pill. Display-only,
-    // so it ignores pointer events and never blocks the pill's tap/hover.
-    //
-    // Open PRs only: a merged/closed PR's checks are history, and the popover's
-    // empty-state header calls the PR open outright. The pill stays hoverable
-    // and clickable, it just has nothing to reveal.
-    if (!isOpen) return dim(pill);
-
-    // OverlayPortal hands its overlay child *tight* (full-screen) constraints,
-    // so we anchor with an explicit `Positioned` (left + bottom) computed from
-    // the pill's render box: that both places the card above the pill and lets
-    // it shrink-wrap to its content instead of filling the window.
-    return dim(
-      MouseRegion(
-        onEnter: (_) => _popover.show(),
-        onExit: (_) => _popover.hide(),
-        child: OverlayPortal(
-          controller: _popover,
-          overlayChildBuilder: (context) {
-            final pillBox = _pillKey.currentContext?.findRenderObject();
-            final overlayBox = Overlay.of(context).context.findRenderObject();
-            if (pillBox is! RenderBox ||
-                overlayBox is! RenderBox ||
-                !pillBox.hasSize) {
-              return const SizedBox.shrink();
-            }
-            final topLeft = pillBox.localToGlobal(
-              Offset.zero,
-              ancestor: overlayBox,
-            );
-            return Positioned(
-              left: topLeft.dx,
-              bottom: overlayBox.size.height - topLeft.dy + 6,
-              child: IgnorePointer(child: _ChecksPopover(pr: pr)),
-            );
-          },
-          child: KeyedSubtree(key: _pillKey, child: pill),
+          child: sentence,
         ),
       ),
     );
   }
 }
 
-/// The hover popover for [PrStatusPill]: a light, design-system surface listing
-/// each CI check as three columns — `[status glyph] [name] [status]` — ordered
-/// by bucket rank (see [sortPrChecks]) so failures sit at the top.
-class _ChecksPopover extends StatelessWidget {
-  const _ChecksPopover({required this.pr});
+/// `+2 more` — the disclosure onto the full fact list.
+class _MoreLink extends StatelessWidget {
+  const _MoreLink({required this.count, required this.onTap});
 
-  final PullRequest pr;
+  final int count;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
-    final checks = sortPrChecks(pr.checks);
-    final header = checks.isEmpty
-        ? (pr.url.isEmpty
-              ? 'Open pull request'
-              : 'No CI checks · click to open')
-        : (pr.url.isEmpty ? 'CI checks' : 'CI checks · click to open');
-    return Material(
-      color: cs.surfaceContainerHigh,
-      elevation: 3,
-      shadowColor: Colors.black.withValues(alpha: 0.2),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(kRadius10),
-        side: BorderSide(color: cs.outlineVariant),
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
+    return Tooltip(
+      message: 'Show the other $count',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(kRadius6),
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: kSpace10,
-            vertical: kSpace8,
+            horizontal: kSpace4,
+            vertical: kSpace2,
           ),
-          child: IntrinsicWidth(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  header,
-                  style: base.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (checks.isNotEmpty) ...[
-                  const SizedBox(height: kSpace4),
-                  for (final c in checks) PrCheckRow(check: c, dense: true),
-                ],
-              ],
+          child: Text(
+            '+$count more',
+            style: Theme.of(context).textTheme.labelXs?.copyWith(
+              color: cs.outline,
+              decoration: TextDecoration.underline,
+              decorationStyle: TextDecorationStyle.dotted,
+              decorationColor: cs.outlineVariant,
             ),
           ),
         ),
@@ -419,75 +232,73 @@ class _ChecksPopover extends StatelessWidget {
   }
 }
 
-/// The composer's "PR actions" split button (SPEC-23 bullet 4). The main
-/// segment repeats the last-picked action; the caret opens a menu of all
-/// actions. Selecting one inserts its (possibly overridden) prompt into the
-/// composer via [onInsertPrompt] — it never auto-sends. Mirrors the M3
-/// split-button idiom from `open_in_ide.dart`.
-class PrActionsSplitButton extends ConsumerWidget {
-  const PrActionsSplitButton({
-    super.key,
-    required this.onInsertPrompt,
-    this.hasPr = false,
-    this.suggestedAction,
-  });
+/// The call to action: the remedy for the loud fact, plus a caret onto the full
+/// menu ([showPrActionMenu]).
+///
+/// Three visual registers, so "ask the agent to try" and "delete this worktree
+/// now" can never be confused for each other:
+///  * **idle** — nothing pressing: a quiet outline, and the main segment opens
+///    the menu rather than pretending one of six prompts is the obvious step,
+///  * **agent prompt** — tonal fill in the fact's tone; inserts text,
+///  * **direct op** — solid fill; runs now (behind a confirm when destructive).
+class PrCtaButton extends ConsumerWidget {
+  const PrCtaButton({super.key, required this.status, required this.onRun});
 
-  final void Function(String prompt) onInsertPrompt;
+  final PrStatus status;
 
-  /// Whether the worktree already heads an open PR. When true, "Create PR" is
-  /// dropped from the menu — there's nothing to create.
-  final bool hasPr;
-
-  /// The situational default action (from [_situationFor]), or null when there
-  /// is nothing pressing — then the user's last pick is used.
-  final PrPromptAction? suggestedAction;
-
-  /// The actions offered in the menu, minus "Create PR" once a PR exists.
-  List<PrPromptAction> get _actions => [
-    for (final a in PrPromptAction.values)
-      if (!(hasPr && a == PrPromptAction.createPr)) a,
-  ];
-
-  /// The main-segment (default) action: the suggested situational action when
-  /// present, else the user's last pick (never a filtered-out action).
-  PrPromptAction _defaultAction(WidgetRef ref) {
-    final suggested = suggestedAction;
-    if (suggested != null && _actions.contains(suggested)) return suggested;
-    final last = prActionFromName(ref.preference(lastPrActionPreference));
-    return _actions.contains(last) ? last : _actions.first;
-  }
-
-  void _run(WidgetRef ref, PrPromptAction action) {
-    ref
-        .read(preferencesControllerProvider.notifier)
-        .set(lastPrActionPreference, action.name);
-    onInsertPrompt(ref.effectivePrPrompt(action));
-  }
+  /// Every action — prompt or direct — goes through here; [runPrRemedy] decides
+  /// what each one means. This widget deliberately knows nothing about composers.
+  final void Function(PrRemedy remedy) onRun;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final last = _defaultAction(ref);
+    final cs = Theme.of(context).colorScheme;
+    final cta = status.cta;
+    final tone = prToneTextColor(cs, cta.tone);
+    final remedy = cta.remedy;
+    final direct = remedy is DirectRemedy;
+
+    final (Color bg, Color fg, Color? border) = switch (cta) {
+      PrCta(remedy: null) => (
+        Colors.transparent,
+        cs.onSurfaceVariant,
+        cs.outlineVariant,
+      ),
+      _ when direct => (
+        prToneColor(cs, cta.tone),
+        onPrToneFill(cs, cta.tone),
+        null,
+      ),
+      _ => (
+        Color.alphaBlend(
+          prToneColor(cs, cta.tone).withValues(alpha: 0.18),
+          cs.surfaceContainerHigh,
+        ),
+        tone,
+        null,
+      ),
+    };
+
     return MenuAnchor(
       alignmentOffset: const Offset(0, 4),
-      menuChildren: [
-        for (final action in _actions)
-          MenuItemButton(
-            leadingIcon: action.icon.build(size: 16),
-            trailingIcon: action == last
-                ? const Icon(PhosphorIconsLight.check, size: 16)
-                : null,
-            onPressed: () => _run(ref, action),
-            child: Text(
-              action.label,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ),
-      ],
+      menuChildren: buildPrActionMenu(
+        context,
+        ref,
+        status: status,
+        onRun: onRun,
+      ),
       builder: (context, controller, _) => _SplitButton(
-        label: last.label,
-        icon: last.icon,
+        label: cta.label,
+        icon: prRemedyIcon(remedy),
+        background: bg,
+        foreground: fg,
+        border: border,
         menuOpen: controller.isOpen,
-        onAction: () => _run(ref, last),
+        // Idle has no verb to run, so its main segment opens the menu too —
+        // otherwise it would be a button that does nothing.
+        onAction: remedy == null
+            ? () => controller.isOpen ? controller.close() : controller.open()
+            : () => onRun(remedy),
         onToggleMenu: () =>
             controller.isOpen ? controller.close() : controller.open(),
       ),
@@ -495,15 +306,16 @@ class PrActionsSplitButton extends ConsumerWidget {
   }
 }
 
-/// A compact labelled split button styled to match [PrStatusPill]: a single
-/// tonal `secondaryContainer` surface with the pill's gentle radius (8), a
-/// leading action segment (icon + label) and a trailing caret segment (toggles
-/// the menu) separated by a thin divider — no gap. The caret segment tints on
-/// open; the caret rotates while the menu is open.
+/// A compact labelled split button: a leading action segment (icon + label) and
+/// a trailing caret segment that toggles the menu, separated by a hairline.
+/// Mirrors the M3 split-button idiom already used by `open_in_ide.dart`.
 class _SplitButton extends StatelessWidget {
   const _SplitButton({
     required this.label,
     required this.icon,
+    required this.background,
+    required this.foreground,
+    required this.border,
     required this.menuOpen,
     required this.onAction,
     required this.onToggleMenu,
@@ -511,29 +323,29 @@ class _SplitButton extends StatelessWidget {
 
   final String label;
   final IconGlyph icon;
+  final Color background;
+  final Color foreground;
+  final Color? border;
   final bool menuOpen;
   final VoidCallback onAction;
   final VoidCallback onToggleMenu;
 
   static const double _height = 28;
-  static const Radius _radius = Radius.circular(kRadius8);
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final caretColor = menuOpen ? cs.secondary : cs.secondaryContainer;
-    final caretFg = menuOpen ? cs.onSecondary : cs.onSecondaryContainer;
-
     return Material(
-      color: cs.secondaryContainer,
-      borderRadius: const BorderRadius.all(_radius),
+      color: background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(kRadius8),
+        side: border == null ? BorderSide.none : BorderSide(color: border!),
+      ),
       clipBehavior: Clip.antiAlias,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Action segment: icon + label runs the last-picked action.
           Tooltip(
-            message: 'Insert "$label" prompt',
+            message: label,
             child: InkWell(
               onTap: onAction,
               child: SizedBox(
@@ -543,13 +355,13 @@ class _SplitButton extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      icon.build(size: 13, color: cs.onSecondaryContainer),
+                      icon.build(size: 13, color: foreground),
                       const SizedBox(width: kSpace6),
                       Text(
                         label,
                         style: Theme.of(context).textTheme.labelXs?.copyWith(
-                          color: cs.onSecondaryContainer,
-                          fontWeight: FontWeight.w600,
+                          color: foreground,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
@@ -558,32 +370,27 @@ class _SplitButton extends StatelessWidget {
               ),
             ),
           ),
-          // Thin divider between the main button and the caret gutter. A
-          // plain 1px box (not a VerticalDivider) keeps the button out of
+          // A plain 1px box, not a VerticalDivider: that keeps the button out of
           // VerticalDivider type-finders used elsewhere (e.g. pane dividers).
           Container(
             width: 1,
             height: _height,
-            color: cs.onSecondaryContainer.withValues(alpha: 0.18),
+            color: foreground.withValues(alpha: 0.20),
           ),
-          // Caret segment: toggles the action menu.
           Tooltip(
             message: 'PR actions',
-            child: Material(
-              color: caretColor,
-              child: InkWell(
-                onTap: onToggleMenu,
-                child: SizedBox(
-                  height: _height,
-                  width: _height,
-                  child: AnimatedRotation(
-                    turns: menuOpen ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 150),
-                    child: Icon(
-                      PhosphorIconsLight.caretDown,
-                      size: 12,
-                      color: caretFg,
-                    ),
+            child: InkWell(
+              onTap: onToggleMenu,
+              child: SizedBox(
+                height: _height,
+                width: _height,
+                child: AnimatedRotation(
+                  turns: menuOpen ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Icon(
+                    PhosphorIconsLight.caretDown,
+                    size: 12,
+                    color: foreground,
                   ),
                 ),
               ),

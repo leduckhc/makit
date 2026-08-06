@@ -135,6 +135,16 @@ const PreferenceEntry<String> prPushPromptPreference = PreferenceEntry(
   decode: _decodeString,
 );
 
+/// User override for the magic "Fix" preamble (empty = built-in). The list of
+/// outstanding problems is appended to it at run time and is not overridable —
+/// it is data, not wording.
+const PreferenceEntry<String> prMagicFixPromptPreference = PreferenceEntry(
+  id: 'chat.prPrompt.magicFix',
+  defaultValue: '',
+  encode: _encodeString,
+  decode: _decodeString,
+);
+
 const PreferenceEntry<String> prPullPromptPreference = PreferenceEntry(
   id: 'chat.prPrompt.pull',
   defaultValue: '',
@@ -243,6 +253,7 @@ const List<PreferenceEntry<Object?>> kPreferenceEntries = [
   prResolveCommentsPromptPreference,
   prCommitPushPromptPreference,
   prPushPromptPreference,
+  prMagicFixPromptPreference,
   prPullPromptPreference,
   budgetHistoryExpandedPreference,
   metricsHistoryExpandedPreference,

@@ -21,6 +21,7 @@ import '../../ui/session/chat_transcript.dart';
 import '../../ui/session/navigator/message_navigator_overlay.dart';
 import '../../ui/session/tool_renderers.dart' show kReadableContentMaxWidth;
 import '../../ui/session/transcript_list.dart';
+import '../../ui/widgets/pr_signals.dart';
 import 'composer_focus.dart';
 import 'new_worktree_dialog.dart';
 import 'panes/pane_header.dart';
@@ -218,6 +219,8 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     });
 
     final items = ref.watch(chatItemsProvider(sessionId));
+    // The worktree behind the next-step bar, from the poller-refreshed snapshot.
+    final at = ref.watch(reposProvider).locateWorktree(session.worktreePath);
 
     // Keep the transcript pinned to the newest message as items stream in,
     // but only when the user is already near the bottom so scrolling up to read
@@ -338,24 +341,21 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Permanent PR bar (SPEC-23): status pill (opens the PR on
-                  // the web; hover shows CI checks) + a canned-prompt actions
-                  // split button. Reads the open PR for this session's
-                  // worktree from the (poller-refreshed) repos snapshot, so it
-                  // updates in place as CI/state changes.
+                  // The next-step bar: one sentence about this worktree and
+                  // the one action that moves it forward (direction B1). Reads
+                  // the worktree out of the poller-refreshed repos snapshot, so
+                  // it updates in place as CI/state changes.
+                  //
+                  // No `Builder` around this: `ref.watch` registers against the
+                  // enclosing ConsumerState wherever it is called, so one bought
+                  // no rebuild isolation — only a local name, which `at` now is.
                   PrComposerBar(
-                    pr: ref
-                        .watch(reposProvider)
-                        .prForWorktreePath(session.worktreePath),
-                    uncommittedFiles: ref
-                        .watch(reposProvider)
-                        .uncommittedFilesForWorktreePath(session.worktreePath),
-                    commitsAhead: ref
-                        .watch(reposProvider)
-                        .aheadCountForWorktreePath(session.worktreePath),
-                    commitsBehind: ref
-                        .watch(reposProvider)
-                        .behindCountForWorktreePath(session.worktreePath),
+                    status: prStatusFor(at, fallbackBranch: session.branch),
+                    pr: at?.worktree.pr,
+                    projectId: at?.repo.id,
+                    worktreePath: session.worktreePath,
+                    branch: at?.worktree.branch ?? session.branch,
+                    uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
                     onInsertPrompt: (prompt) =>
                         _insertPrompt(sessionId, prompt),
                   ),

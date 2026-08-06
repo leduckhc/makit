@@ -363,6 +363,12 @@ export interface PullRequestDTO {
   mergeable: string | null;
   /** CLEAN | BLOCKED | BEHIND | DIRTY | …, or null when unreported. */
   mergeStateStatus: string | null;
+  /**
+   * Branch the PR merges into. The app's "wrap up" fast-forwards this one after
+   * the PR lands. Optional so an app talking to an older server still decodes;
+   * when it is missing the server falls back to the repo's default branch.
+   */
+  baseRefName?: string | null;
   /** Per-check status for the hover popover. Empty when there are no checks. */
   checks: PrCheckDTO[];
   /** Aggregate CI verdict computed from {@link checks}. */
@@ -510,6 +516,11 @@ export type CmdKind =
   | "worktree.create"
   | "worktree.createFromPr"
   | "worktree.remove"
+  | "worktree.wrapUp"
+  | "worktree.discard"
+  | "pr.markReady"
+  | "pr.updateBranch"
+  | "pr.squashMerge"
   | "branch.rename"
   | "pr.list"
   | "repo.refresh"

@@ -27,6 +27,7 @@ import 'navigator/transcript_jumper.dart';
 import 'session_pr_chip.dart';
 import 'transcript_list.dart';
 import '../../app/routes.dart';
+import '../widgets/pr_signals.dart';
 
 class SessionScreen extends ConsumerStatefulWidget {
   const SessionScreen({super.key, required this.sessionId});
@@ -143,11 +144,14 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
     final label = sessionName.isNotEmpty
         ? sessionName
         : (project?.name ?? widget.sessionId);
-    // The PR heading this session's worktree, if any (SPEC-23). Same resolver
-    // the desktop composer bar uses, so both surfaces read one source.
-    final pr = ref
-        .watch(reposProvider)
-        .prForWorktreePath(session?.worktreePath);
+    // This session's worktree, if the repos snapshot knows it. Same lookup the
+    // desktop composer bar uses, so both surfaces read one source — and the same
+    // derivation, so they cannot disagree about what the PR needs.
+    final at = ref.watch(reposProvider).locateWorktree(session?.worktreePath);
+    final pr = at?.worktree.pr;
+    final prStatus = at == null
+        ? null
+        : prStatusFor(at, fallbackBranch: session?.branch);
     return Scaffold(
       // Edge-to-edge so the transcript scrolls *behind* the glass bars.
       extendBodyBehindAppBar: true,
@@ -331,11 +335,21 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                         ),
                                   ),
                                 ),
-                              if (session?.pane != null && pr != null)
+                              if (session?.pane != null &&
+                                  prStatus != null &&
+                                  !prStatus.isQuiet)
                                 const SizedBox(width: kSpace6),
-                              if (pr != null)
+                              // A clean primary checkout has nothing to report,
+                              // so it gets no chip.
+                              if (prStatus != null && !prStatus.isQuiet)
                                 SessionPrChip(
+                                  status: prStatus,
                                   pr: pr,
+                                  projectId: at?.repo.id,
+                                  worktreePath: session?.worktreePath,
+                                  branch: at?.worktree.branch,
+                                  uncommittedFiles:
+                                      at?.worktree.uncommittedFiles ?? 0,
                                   onInsertPrompt: _insertPrompt,
                                 ),
                             ],

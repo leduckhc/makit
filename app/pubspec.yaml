@@ -74,6 +74,9 @@ dependencies:
   super_clipboard: 0.9.1             # publisher: nativeshell.dev — pasteboard image reads
 
 dev_dependencies:
+  # Fakes UrlLauncherPlatform in tests: a launcher that *declines* returns false
+  # rather than throwing, and that path is unreachable with no plugin registered.
+  url_launcher_platform_interface: 2.3.2
   flutter_test:
     sdk: flutter
   integration_test:

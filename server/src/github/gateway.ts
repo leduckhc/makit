@@ -29,6 +29,7 @@ import {
   OPEN_PRS_PLAN,
   OPEN_PRS_TIMEOUT_MS,
   PR_FOR_BRANCH_PLAN,
+  PR_MUTATION_TIMEOUT_MS,
   PR_TIMEOUT_MS,
   RATE_LIMIT_TIMEOUT_MS,
   REVIEW_THREADS_MAX_PAGES,
@@ -36,6 +37,8 @@ import {
   checkRunsRestArgv,
   combinedStatusRestArgv,
   openPrsArgv,
+  prMutationArgv,
+  type PrMutation,
   openPrsRestArgv,
   originRemoteArgv,
   parsePrUrl,
@@ -96,6 +99,21 @@ export interface GithubGateway {
    * (spec §6.3).
    */
   openPrs(repoPath: string, limit: number, opts?: { interactive?: boolean }): Promise<OpenPr[]>;
+  /**
+   * Run a state-changing `gh pr` verb on the user's behalf (`ready` to take a PR
+   * out of draft, `update-branch` to merge the base into it).
+   *
+   * Always interactive — it is a button press, never a poller — so it spends from
+   * the reserve rather than being shed. Invalidates the cached lookup for
+   * [branch] on success, otherwise the UI would keep reporting the state the
+   * mutation just changed until the TTL expired.
+   */
+  mutatePr(
+    repoPath: string,
+    branch: string,
+    number: number,
+    verb: PrMutation,
+  ): Promise<{ ok: boolean; error?: string }>;
   budget(): BudgetSnapshot;
   /** 60-slot per-minute `{mine, others}` ring for the sparkline (spec §6.6). */
   history(): Array<{ mine: number; others: number }>;
@@ -250,11 +268,56 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     cache.set(key, { value, expiresAt: now() + ttlMs });
   }
 
+  /**
+   * Bumped whenever a mutation invalidates a key. A lookup that was already in
+   * flight when that happened describes the *pre*-mutation state, so it must not
+   * be written to the cache on arrival — otherwise the invalidation is undone and
+   * the UI keeps reporting the state the mutation just changed (SPEC-38 §7).
+   *
+   * Deliberately **not** pruned, and deliberately not TTL'd like {@link cache}.
+   * An entry is one `string`/`number` pair per branch the user has actually
+   * mutated, plus one per repo for `openPrs` — so the bound is "branches you
+   * pressed a button on", which is small and grows only on user action. Pruning
+   * would mean deciding when a generation is safe to forget, and the honest answer
+   * ("once nothing is in flight for it") needs a refcount, because the `openPrs`
+   * key is shared by every `limit`. That is more machinery, and more ways to be
+   * wrong, than the kilobytes it would reclaim from a long-lived process.
+   */
+  const generation = new Map<string, number>();
+  const generationOf = (key: string) => generation.get(key) ?? 0;
+  function invalidate(key: string): void {
+    cache.delete(key);
+    generation.set(key, generationOf(key) + 1);
+    // Not caching the stale answer is only half of it: a caller arriving after
+    // the mutation would still *join* the in-flight promise and be handed it.
+    // The repos broadcast a mutation triggers is exactly such a caller, so the
+    // pill would keep reporting the state the mutation just changed. Dropping
+    // the registration makes the next caller start its own lookup; whoever
+    // already joined still gets the old promise's answer, which is all that is
+    // left to give them.
+    for (const k of inflight.keys()) {
+      if (k === key || k.startsWith(`${key}:`)) inflight.delete(k);
+    }
+  }
+
+  /**
+   * The generation key guarding every `openPrs` list for a repo. Deliberately
+   * per-*repo*, not per cache key: the cache key carries a `limit`, and a mutation
+   * can only bump generations for keys it can name. The first list for a repo is
+   * in neither map while it is in flight, so a per-key generation left that one
+   * call unguarded — and it then seeded a cache the mutation had just emptied.
+   */
+  const openPrsGeneration = (repoPath: string) => `openPrs:${repoPath}`;
+
   /** One in-flight promise per key; cleared in `finally` so dedupe is per-burst. */
   function dedupe<T>(key: string, run: () => Promise<T>): Promise<T> {
     const existing = inflight.get(key);
     if (existing) return existing as Promise<T>;
-    const promise = run().finally(() => inflight.delete(key));
+    // Identity-checked: `invalidate` can drop this registration mid-flight and a
+    // fresh call take its place, which a blind `delete` would then evict.
+    const promise: Promise<T> = run().finally(() => {
+      if (inflight.get(key) === promise) inflight.delete(key);
+    });
     inflight.set(key, promise);
     return promise;
   }
@@ -529,6 +592,10 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       isDraft: row.draft === true,
       mergeable,
       mergeStateStatus,
+      baseRefName:
+        typeof (row as { base?: { ref?: unknown } }).base?.ref === "string"
+          ? ((row as { base: { ref: string } }).base.ref)
+          : null,
       checks,
       checkRollup: rollupChecks(checks),
       // REST cannot supply this (no `resolved` field): report 0 but flag it as
@@ -607,6 +674,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       isDraft: p.isDraft === true,
       mergeable: typeof p.mergeable === "string" ? p.mergeable : null,
       mergeStateStatus: typeof p.mergeStateStatus === "string" ? p.mergeStateStatus : null,
+      baseRefName: typeof p.baseRefName === "string" ? p.baseRefName : null,
       checks,
       checkRollup: rollupChecks(checks),
       unresolvedComments,
@@ -665,11 +733,55 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // that promise would inherit the shed answer instead of drawing on the
       // reserve — silently undoing §6.3's guarantee.
       return dedupe(`${key}:${interactive}`, async () => {
+        const started = generationOf(key);
         const result = await doPrForBranch(repoPath, branch, interactive);
-        // Only cache definite answers; a throttled/errored lookup must retry.
-        if (result.kind === "pr" || result.kind === "none") cacheSet(key, result, TTL_PR_MS);
+        // Only cache definite answers; a throttled/errored lookup must retry. And
+        // only if no mutation invalidated this key while we were in flight — see
+        // `generation`.
+        if (
+          (result.kind === "pr" || result.kind === "none") &&
+          generationOf(key) === started
+        ) {
+          cacheSet(key, result, TTL_PR_MS);
+        }
         return result;
       });
+    },
+
+    async mutatePr(repoPath, branch, number, verb) {
+      // Costed on `core`: all three verbs are REST mutations under the hood. Spend is
+      // recorded even on failure (costedExec records before the exec), which is
+      // the honest accounting — GitHub charged us either way.
+      const r = await costedExec(
+        "core",
+        1,
+        prMutationArgv(verb, number),
+        repoPath,
+        // A write, not a read: see PR_MUTATION_TIMEOUT_MS. Reporting a slow merge
+        // as failed would also skip the invalidation below, while GitHub applies
+        // it anyway.
+        PR_MUTATION_TIMEOUT_MS,
+      );
+      if (r.code !== 0) {
+        const kind = classifyFailure(r.stderr);
+        if (kind !== "error") await handleFailure(kind);
+        return { ok: false, error: r.stderr.trim() || `gh pr ${verb} failed` };
+      }
+      // The PR's state just changed, so every cached view of it is a lie. Drop
+      // them and bump their generations, so a lookup already in flight cannot
+      // re-seed the pre-mutation answer when it lands.
+      //
+      // `openPrs` matters as much as the single lookup: it backs the "New worktree
+      // from PR" picker, where a squash-merged PR that is still listed leads to a
+      // checkout that fails, and a marked-ready PR still reads as a draft. Its key
+      // carries a `limit`, so every limit for this repo goes — and its generation is
+      // repo-wide, so a first-ever list still in flight is covered too.
+      invalidate(`pr:${repoPath}:${branch}`);
+      for (const key of cache.keys()) {
+        if (key.startsWith(`openPrs:${repoPath}:`)) cache.delete(key);
+      }
+      invalidate(openPrsGeneration(repoPath));
+      return { ok: true };
     },
 
     async openPrs(repoPath, limit, opts) {
@@ -685,6 +797,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // Keyed by `interactive` for the same reason as prForBranch: the picker
       // must not inherit a background call's reserve-shed empty list.
       return dedupe(`${key}:${interactive}`, async () => {
+        const started = generationOf(openPrsGeneration(repoPath));
         const budget = tracker.snapshot();
         const policy = decide(budget, { paused });
         if (!allow(budget, policy, interactive)) return [];
@@ -720,7 +833,11 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
           const value = useRest
             ? parsed.map(restOpenPr).filter((p): p is OpenPr => p !== null)
             : (parsed as OpenPr[]);
-          cacheSet(key, value, TTL_OPEN_PRS_MS);
+          // Same generation guard as prForBranch: a list fetched before a mutation
+          // must not be written back after it.
+          if (generationOf(openPrsGeneration(repoPath)) === started) {
+            cacheSet(key, value, TTL_OPEN_PRS_MS);
+          }
           return value;
         } catch {
           return [];

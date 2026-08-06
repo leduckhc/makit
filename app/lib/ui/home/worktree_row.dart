@@ -8,6 +8,7 @@ import 'repo_chips.dart';
 import 'session_tile.dart';
 import 'start_session.dart';
 import 'worktree_actions.dart';
+import '../widgets/pr_signals.dart';
 
 /// Width of the trailing control column (the `+` here, the repo menu in the
 /// card header). Shared so the two glyphs sit on the same vertical line.
@@ -53,10 +54,13 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
     final cs = theme.colorScheme;
     final worktree = widget.worktree;
     final accent = worktreeAccent(widget.sessions);
+    final status = prStatusFor((repo: widget.repo, worktree: worktree));
     final hasMeta =
         worktree.branch == widget.repo.defaultBranch ||
         worktree.hasChanges ||
-        worktree.pr != null ||
+        // The status chip now covers more than "has a PR" (uncommitted work on a
+        // PR-less branch earns one too), so the meta line follows the chip.
+        !status.isQuiet ||
         branchAgeLabel(worktree.committedAt).isNotEmpty;
 
     return Semantics(
@@ -65,7 +69,7 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
       // alone). Null for a quiet branch — silence is the honest label there.
       label: accentSemanticLabel(accent),
       container: accent != WorktreeAccent.none,
-      child: _row(context, theme, cs, accent, hasMeta),
+      child: _row(context, theme, cs, accent, hasMeta, status),
     );
   }
 
@@ -75,6 +79,7 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
     ColorScheme cs,
     WorktreeAccent accent,
     bool hasMeta,
+    PrStatus status,
   ) {
     final repo = widget.repo;
     final worktree = widget.worktree;
@@ -201,7 +206,14 @@ class _WorktreeRowState extends ConsumerState<WorktreeRow> {
                       insertions: worktree.insertions,
                       deletions: worktree.deletions,
                     ),
-                  if (worktree.pr != null) PrPill(pr: worktree.pr!),
+                  // A clean primary checkout has nothing to report and gets no
+                  // chip, so the list keeps its density.
+                  if (!status.isQuiet)
+                    PrStatusChip(
+                      status: status,
+                      repo: widget.repo,
+                      worktree: worktree,
+                    ),
                   if (age.isNotEmpty)
                     Text(
                       age,

@@ -16,6 +16,7 @@ import {
   restOpenPr,
   rateLimitArgv,
   parsePrUrl,
+  prMutationArgv,
   parseRemoteSlug,
   restMergeable,
   restChecksToRollup,
@@ -88,7 +89,10 @@ test("prForBranchArgv preserves the git.ts json field set and --head/--limit", (
     "--state",
     "all",
     "--json",
-    "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup",
+    // `baseRefName` is here for "wrap up": after a PR merges, the app
+    // fast-forwards the branch it landed on, and only the PR knows which that
+    // was (the repo default is a fallback, not the truth).
+    "number,url,state,title,isDraft,mergeable,mergeStateStatus,statusCheckRollup,baseRefName",
     "--limit",
     "1",
   ]);
@@ -207,4 +211,25 @@ test("the other REST builders encode their ref and slug segments", () => {
   assert.match(combinedStatusRestArgv("o", "r", "a+b")[1], /a%2Bb/);
   assert.match(prDetailRestArgv("o/x", "r", 7)[1], /o%2Fx/);
   assert.match(openPrsRestArgv("o", "r+s", 50)[1], /r%2Bs/);
+});
+
+// ── PR mutations (mark ready / update branch) ───────────────────────────────
+
+test("prMutationArgv squash-merges by number, with the squash strategy explicit", () => {
+  // `gh pr merge` with no strategy flag prompts interactively, which would hang a
+  // non-tty server process forever. The strategy is always passed.
+  assert.deepEqual(prMutationArgv("merge-squash", 42), [
+    "pr",
+    "merge",
+    "42",
+    "--squash",
+  ]);
+});
+
+test("prMutationArgv targets the PR by number, not by the current branch", () => {
+  // `gh pr ready` with no argument infers the PR from the checked-out branch —
+  // but the server runs in the *repo* directory, not the worktree, so inference
+  // would resolve the wrong PR (or none). The number is passed explicitly.
+  assert.deepEqual(prMutationArgv("ready", 42), ["pr", "ready", "42"]);
+  assert.deepEqual(prMutationArgv("update-branch", 7), ["pr", "update-branch", "7"]);
 });
