@@ -261,6 +261,17 @@ Ring semantics: arc from twelve o'clock, neutral ink → `kStatusWarning` at ≥
 `colorScheme.error` at ≥90% (the sanctioned status hues — **not** `colorScheme.tertiary`,
 which DESIGN.md §Colors forbids).
 
+**Panel sizing is clamped to the window, not fixed (added 2026-08-06).** `kUsagePanelWidth` is a
+*preference*: `MenuAnchor` clamps a menu's position but never its size, so the 300 pt popover opened
+from a ring at the right edge of a 280 pt pane hung 36 px off-screen (76 px at 240 pt), and a 360 pt
+tall window put 75 px of it below the bottom. The panel now takes
+`min(kUsagePanelWidth, window − 2×8)` and caps its height at the window (floor 140 pt, mirroring the
+budget popover's `_kMinPopoverHeight`), scrolling inside the cap. The mobile sheet is scrollable for
+the same reason: its height is capped by the window while the panel's height depends on how much the
+agent reported *and* how much the rows wrap — at 320 pt with a long session (33.7M billed) the
+content ran 57 px past the sheet and threw. Clipping there would have hidden the cost row, which is
+what people open the panel for.
+
 **There is no unmeasured rendering.** A ring means "this share of a whole", so without a
 known window there is no whole and the control is absent entirely — `ContextUsageRing.fraction`
 is non-nullable to make that unrepresentable. This covers more states than it first appears:
