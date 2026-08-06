@@ -1,6 +1,6 @@
 # SPEC-40 — Composer footer: space by need
 
-**Status:** Draft (revised after review) · **Priority:** P2 · **Branch:** `fix/token-usage` (continues)
+**Status:** Implemented · **Priority:** P2 · **Branch:** `fix/token-usage` (continues)
 **Plan:** [`2026-08-06-SPEC-40-PLAN.md`](./2026-08-06-SPEC-40-PLAN.md)
 **Mockup:** [`mockups/composer-footer-space.html`](../../mockups/composer-footer-space.html)
 **Depends on:** SPEC-26 (unified config options), SPEC-31 (model pill + picker), SPEC-37 *(context usage — the ring that shares this row)*
@@ -10,10 +10,14 @@
 `app/lib/ui/composer/composer_selectors.dart` (`shortModelLabel`, `ModelConfigPill` label +
 tooltip), call sites `app/lib/ui/session/session_screen.dart` and
 `app/lib/desktop/chat/desktop_chat_pane.dart`.
-*app tests:* `app/test/composer_test.dart` (extended),
-`app/test/composer_footer_space_test.dart` (new),
-`app/test/composer_selectors_test.dart` (extended),
-`app/test/session_screen_test.dart` (extended), plus one desktop-pane test and one footer golden.
+*app tests:* `app/test/composer_test.dart` (extended, the granted-constraint probe),
+`app/test/composer_footer_space_test.dart` (new, 24 cases),
+`app/test/composer_selectors_test.dart` (extended, `shortModelLabel`),
+`app/test/session_screen_test.dart` and `app/test/desktop/desktop_chat_pane_test.dart` (extended —
+the two call sites), and `app/test/ui/composer/composer_footer_golden_test.dart` with **three**
+goldens rather than one: 393 pt (the label whole), 375 pt (the chips yielded and one character
+clipped) and codex at 700 pt (the chips kept). Each is a distinct state of the same decision, and
+one image cannot show three of them.
 *docs:* this spec + plan, the SPEC-37 crowding correction
 (`2026-08-05-SPEC-37-context-usage.md`), `docs/specs/README.md`.
 
@@ -53,11 +57,12 @@ rather than being declared unnecessary.
 
 ## Evidence
 
-Measured, not estimated. The numbers below were taken with a **throwaway probe** widget test
-(`app/test/_probe4_test.dart`, deleted after measuring) on Flutter 3.44.4 (revision `ad70ec4617`),
-pumping the real widgets at fixed `tester.view.physicalSize` widths. They are **not yet
-reproducible from the repo** — making them so is the first job of the plan (T3 lands the same
-measurements as a permanent test and records its RED output). Definitions used throughout:
+Measured, not estimated. The numbers below were first taken with a throwaway probe widget test on
+Flutter 3.44.4 (revision `ad70ec4617`), pumping the real widgets at fixed
+`tester.view.physicalSize` widths. They are now reproducible from the repo:
+`app/test/composer_footer_space_test.dart` pumps the same four shapes at the same three widths, and
+the pre-fix figures in the table can be reproduced from it by moving the ring back into
+`footerActions` in its `pumpFooter` helper. Definitions used throughout:
 
 - **label width** — the rendered size of the pill's `Text` widget box (`tester.getSize`), i.e.
   what the user can actually read, after ellipsis.
@@ -152,22 +157,42 @@ the pill area `Expanded`, and every label inside is already `Flexible` + `TextOv
 so a narrow row degrades to short labels rather than an exception. This is **not** an
 "any width" guarantee — `[+]`, the send slot, the gaps and the trailing control have a nonzero
 combined minimum, so a sufficiently narrow parent must still overflow. The guarantee is: **no
-overflow at ≥ 320 pt for the four shapes in the evidence table**, which is what the tests assert.
+overflow at ≥ 320 pt for the three shapes our adapters emit**, which is what the tests assert.
+
+**Found while implementing:** D1 alone left the hypothetical four-option shape overflowing by
+**4.7 px at 320 pt** — four pills plus their chips exceed the row whatever the division, because
+each pill has an unshrinkable minimum. D5 (below) closed it: with the chips yielding, all four
+shapes are clean at 320, 375 and 700 pt. The intermediate state was committed as a failing
+expectation first, so the guarantee is the test's, not the prose's.
 There is no width constant, no `MediaQuery` check and no breakpoint — the composer lives inside
 desktop split panes, where screen width lies about the space available.
+
+**D5 — read-only chips yield to the model name, all or nothing.** Built, not deferred: with both
+chips shown, codex rendered `gpt-5.6…` at 375 pt — roughly half its own model name — and the
+four-option shape still overflowed at 320 pt. The chips summarise model-scoped options (SPEC-31)
+and are pure decoration: every value they show is a live control in the picker sheet. So
+`ModelConfigPill` measures what the label wants (`TextPainter` on its own style) plus each chip's
+own width, and drops **all** chips when that exceeds the width it was granted.
+
+All-or-nothing because dropping chips one at a time reads as though an option were *unset* rather
+than hidden. An unbounded constraint (a shrink-wrap measuring pass) keeps them — there is no width
+to fit into yet. A wide pane therefore keeps every chip: nothing is hidden for free.
+
+This is the mockup's ladder step 2, and it moved out of the non-goals during implementation because
+the trigger the spec had already written down — *"an agent that ships a session shape which
+overflows or ellipsizes a required label"* — turned out to be met by **codex**, measured at 49 %.
 
 **D4 — the row is never scrolled and the ring is never hidden.** Scrolling would push the ring
 off-screen; the ring's whole purpose is being glanceable without a tap (SPEC-37 §Why a ring).
 
 ## Non-goals
 
-- **Collapsing standalone pills into a `⋯ N` overflow pill, and hiding read-only chips.** Both
-  are designed in the mockup (ladder steps 2–3) and deliberately **not built**. The reason is a
-  measurement, not an absence: the one shipping shape with a standalone pill (ACP modes-only)
-  measures 81.5 pt and fits, D1 turns the four-option shape from an overflow into a merely narrow
-  row, and codex's chip measures 46 pt at 375 pt after D1. **Trigger to build:** any shipping
-  session shape that, at 320 or 375 pt, either overflows or ellipsizes a pill label that the
-  acceptance criteria require to be whole.
+- **Collapsing standalone pills into a `⋯ N` overflow pill** (the mockup's ladder step 3).
+  Deliberately not built: with D1 and D5 in place every shape we ship — and the hypothetical
+  four-option one — fits at 320 pt with a readable model name, so there is nothing left for a
+  collapse to earn. **Trigger to build:** a session shape that still overflows, or that ellipsizes
+  the model label below 95 % at 375 pt, once the chips have already yielded.
+  (Ladder step 2, hiding the chips, *was* built — see D5. Its trigger fired during implementation.)
 - Redesigning the picker sheets or `ModelPickerMenu` (SPEC-31 owns those).
 - The legacy `ComposerModelSelector`/`ThinkingSelector`/`ModeSelector` trio. It is unreachable
   with today's adapters (all populate `configOptions`), so folding it into a single pill would be
@@ -187,6 +212,9 @@ Nothing new renders. The same widgets receive different constraints, and one lab
   entry, so no key or hook is added to production code for testability.
 - `shortModelLabel(String)` — new pure helper in `composer_selectors.dart`, used by
   `ModelConfigPill` for its label only.
+- `ModelConfigPill` gains a `LayoutBuilder` and measures its own text, so it can drop the chips
+  when the label would not fit (D5). Its `_chips` now return `(widget, width)` records rather than
+  bare widgets, which is what makes the decision possible in a single layout pass.
 - `session_screen.dart` and `desktop_chat_pane.dart` move `ContextUsageButton` from
   `footerActions` to `footerTrailing`.
 
@@ -194,8 +222,9 @@ Nothing new renders. The same widgets receive different constraints, and one lab
 
 At 320, 375 and 700 pt, for all four session shapes in the evidence table:
 
-1. **No `RenderFlex` overflow** — `tester.takeException()` is null, including the four-option
-   shape at 320 pt.
+1. **No `RenderFlex` overflow** at 320, 375 and 700 pt for all four shapes, including the
+   hypothetical four-option one — `tester.takeException()` is null. D1 got three shapes there; the
+   fourth needed D5.
 2. **A trailing control does not reserve flex.** Measured by a **test-owned probe** passed as the
    single `footerActions` entry — a `LayoutBuilder` that records the `maxWidth` it is granted.
    With the ring as a second `footerActions` entry it receives ~50% of the row; with the ring in
@@ -206,34 +235,53 @@ At 320, 375 and 700 pt, for all four session shapes in the evidence table:
    Note what must **not** be measured: the collective `Expanded` actions region. That region is
    full-width in both layouts and in fact gets *narrower* (by 42 pt) when the ring moves out, so
    asserting on it would fail while the fix is correct.
-3. **pi's and codex's model labels are not ellipsized at 375 pt**, once D2 has shortened them:
-   `RenderParagraph.didExceedMaxLines` is false and the rendered text reads `Claude Opus 4.6` /
-   `gpt-5.6-codex`. Asserted as "no ellipsis", *not* as a pt floor: the pill is
-   `mainAxisSize.min`, so after D2 the label correctly occupies its natural width (~110 pt), and
-   a floor of 140 pt would be unsatisfiable by design.
+3. **The model label reads as a model, not a provider.** Measured, and narrower than the first
+   draft claimed:
+   - at **393 pt** (iPhone 15/16/17) pi's `Claude Opus 4.6` renders **whole** —
+     `didExceedMaxLines` false, width equal to its natural width;
+   - at **375 pt** (SE/mini) it clips a single character: a 15-character name wants 187.5 pt and
+     the row can grant 183 pt even with the chips hidden. The remaining 4.5 pt would have to come
+     from the avatar, `[+]`, send or the ring — none of which this spec may shrink. So the
+     criterion there is **≥ 95 % of the label visible**, i.e. `Claude Opus 4…`, where it used to
+     read `anthropic/Cl…` at 18 %;
+   - codex's `gpt-5.6-codex` renders **whole at 375 pt**, which needed D5: with both its chips
+     shown it got 49 % of its own name;
+   - on the real `SessionScreen` (a 377 pt composer inside a 393 pt window) the label gets **99 %**
+     of what it wants, against **47 %** before the fix. That ratio is the call-site regression
+     guard, and it is the one number that proves the wiring, not just the widget.
 
-   This criterion belongs to D2 and can only be checked once the shortening exists. **Owner: T4**,
-   which adds footer-level assertions at 375 pt for both the pi and the codex shape (not just unit
-   tests of the helper). The layout work (D1) is proven separately by criteria 1, 2 and 5 with the
-   **long** label still in place — otherwise a shorter string could make a starved layout look
-   fixed.
+   Asserted as shares and as "no ellipsis", never as a pt floor: the pill is `mainAxisSize.min`, so
+   the label correctly occupies its natural width, and a floor would fail on any font change.
+   **Owner: T4/T5.** The layout work (D1) is proven separately by criteria 1, 2 and 5 with the
+   **long** label in place — otherwise a shorter string could make a starved layout look fixed.
 4. The ring is present and 36 pt in every case — never squeezed, never hidden. Every fixture must
    therefore seed a non-null `sessionUsageProvider` with both halves of the ratio:
    `ContextUsageButton` returns `SizedBox.shrink()` until usage *and* `fraction` are known
    (`context_usage.dart:204-208`), so an unseeded test would measure a 0 pt ring and pass
    vacuously. On mobile the fixture must also focus the composer, because the footer only renders
    when `alwaysExpanded || _isFocused` (`composer.dart:355`).
-5. At 700 pt every pill renders at its natural width: each label's width equals the same label's
-   width when pumped in an unconstrained parent (±1 pt).
+5. At 700 pt every pill of a **shipping** shape renders at its natural width: each label's width
+   equals the same label's width when pumped in an unconstrained parent (±1 pt). The hypothetical
+   four-option shape is excluded because its pills' natural widths together exceed even a 700 pt
+   row, so they share it — D3's intended degradation. What is asserted for that shape is that the
+   row stays legal and **every control is still rendered**; whether a given label happens to clip at
+   exactly 700 pt is font-dependent and deliberately not asserted.
 6. `ModelConfigPill`'s tooltip is the full `provider/name`, while its label is the short form.
+7. The chip gate measures what will actually be rendered: the ambient `TextScaler`, the merged
+   `DefaultTextStyle`, the accessibility bold-text setting and the ambient locale. Accessibility
+   scaling therefore makes the chips yield **sooner**, not later — measuring at 1.0 while the label
+   renders at 2.4× would keep the chips and clip the name for exactly the users least able to absorb
+   it. The scaler is asserted by a widget test; the bold-text path is implemented but **not**
+   asserted, because the test font's metrics do not vary with weight, and a test that cannot fail is
+   worse than an honest gap.
 
 ## Tests
 
 | Layer | Test |
 | --- | --- |
 | `composer_test.dart` | `footerTrailing` lays out after `footerActions`, at natural width, and does **not** reserve flex: a test-owned `LayoutBuilder` probe passed as the single action is granted ~50% of the row when the ring is a second action, and `total − 36 − 6` when the ring is trailing (criterion 2). The collective `Expanded` region is deliberately **not** asserted on — it is full-width in both layouts and gets 42 pt narrower when the ring moves out |
-| `composer_footer_space_test.dart` (new) | the evidence table, table-driven: four shapes × three widths → no exception (criterion 1), ring at 36 pt (4), natural widths at 700 pt (5). Written **after** the layout fix as characterisation/regression coverage, because its fixture uses `footerTrailing`; the RED that drives the fix is `composer_test.dart`'s probe. Extended by T4 with the no-ellipsis assertions for pi and codex (criterion 3) |
+| `composer_footer_space_test.dart` (new, 24 cases) | the evidence table, table-driven: four shapes × three widths → no exception (criterion 1), every control still rendered, ring at 36 pt (4), natural widths at 700 pt for the shipping shapes (5), plus the chip-gate cases (7: unbounded constraints keep the chips, text scaling makes them yield). Written **after** the layout fix as characterisation/regression coverage, because its fixtures use `footerTrailing`; the RED that drives the fix is `composer_test.dart`'s probe. Extended by T4 with criterion 3 |
 | `session_screen_test.dart` / a desktop-pane test | the **call sites** are wired: the real screen's footer puts the ring in the trailing slot, so a regression that fixes `Composer` but forgets a call site fails (this is what makes T5 necessary rather than optional) |
 | `composer_selectors_test.dart` | `shortModelLabel` — strips the first segment, leaves a slash-free name alone, pins the degenerate cases, never returns empty; and the pill renders short label + full tooltip |
 | `context_usage_test.dart` | unchanged — the ring's own behaviour is untouched |
-| goldens | the 375 pt pi footer **after** the change (a golden stores one image; the before/after comparison lives in the PR diff) |
+| goldens | three states **after** the change — 393 pt (label whole), 375 pt (chips yielded, one character clipped), codex at 700 pt (chips kept). A golden stores one image each, so three states need three; the before/after comparison lives in the PR diff |

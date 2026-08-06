@@ -444,11 +444,17 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
                                     sessionId: widget.sessionId,
                                   ),
                                 ],
-                                // SPEC-37: shown for every agent — it reads
-                                // usage, not config — so it sits outside the
-                                // configOptions branch.
-                                ContextUsageButton(sessionId: widget.sessionId),
                               ],
+                              // SPEC-37: shown for every agent — it reads
+                              // usage, not config — so it sits outside the
+                              // configOptions branch.
+                              //
+                              // SPEC-40: trailing, not an action. As an action
+                              // its equal-share `Flexible` reserved half the
+                              // row for a 36pt control and starved the pill.
+                              footerTrailing: ContextUsageButton(
+                                sessionId: widget.sessionId,
+                              ),
                             ),
                     ),
                   ],

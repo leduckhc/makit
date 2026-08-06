@@ -235,6 +235,20 @@ the least of any in-row control, and moves the numbers somewhere they have room.
 The pill row's overflow is **pre-existing and untouched** — no in-row control fits a 3-pill
 session, including none at all. Flagged, not fixed.
 
+> **Amended by [SPEC-40](./2026-08-06-SPEC-40-composer-footer-space.md) (2026-08-06).** The
+> crowding diagnosis above is wrong, though the symptom was real. No shipping adapter emits a
+> 3-pill session: pi advertises `model` + `thought_level` and codex adds an optional
+> `model_config`, all of which *fold into* the single model pill, and a modes-only ACP agent gets
+> one synthesised pill. The footer has **one** pill, and it was starved rather than crowded — this
+> spec's own ring was the cause. Passing it as a `footerActions` entry gave it an equal-share
+> `Flexible`, so a 36 pt control reserved half the row and `FlexFit.loose` did not redistribute the
+> rest: pi's model label got 65.5 pt of the 187.5 pt it wanted (`anthropic/Cl…`) and codex's 29.8 pt.
+> SPEC-40 gives the ring its own intrinsic `footerTrailing` slot. The **ring decision itself
+> stands** — a 36 pt control is still the cheapest thing in the row; only the reason the row was
+> tight was misdiagnosed.
+>
+> Note also that this section says 32 pt where the code says 36 (`kUsageTargetSize`).
+
 ### The panel
 
 Context reading (big ring + percentage + used-of-window + headroom) → cumulative session

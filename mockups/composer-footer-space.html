@@ -244,19 +244,20 @@
       </div>
 
       <div class="frame w320">
-        <div class="cap">320 pt · four options · after <span class="tag" style="background:var(--status-warning)">deferred</span></div>
+        <div class="cap">320 pt · four options · after</div>
         <div class="composer">
           <div class="field">Message…</div>
           <div class="frow">
             <div class="acts">
-              <span class="pill"><span class="av pi">pi</span><span class="lbl">Claude Opus 4.6</span><span class="caret">▾</span></span>
-              <span class="ov"><b>⋯ 2</b></span>
+              <span class="pill"><span class="av pi">pi</span><span class="lbl">Claude…</span><span class="caret">▾</span></span>
+              <span class="pill"><span class="lbl">work…</span><span class="caret">▾</span></span>
+              <span class="pill"><span class="lbl">on-r…</span><span class="caret">▾</span></span>
             </div>
             <span class="ringbtn"><span data-ring="29"></span></span>
             <span class="plus">🖇</span><span class="send off"><i>↑</i></span>
           </div>
         </div>
-        <p class="why">Chips drop first (they are read-only), then standalone pills collapse into one <code>⋯ N</code> that opens a sheet. The model name never yields, because it is the only label that answers "what am I talking to?".</p>
+        <p class="why">Chips have dropped (they are read-only), which is what buys the last 4.7 px: four pills now fit with no overflow, each ellipsized but legible. The <code>⋯ N</code> collapse stays on the shelf — nothing left for it to fix.</p>
       </div>
 
     </div>
@@ -273,8 +274,8 @@
       <tr><th>#</th><th>Step</th><th>Why this order</th></tr>
       <tr><td class="n">0</td><td>Space by need: pills <code>Expanded</code>, ring/[+]/send intrinsic</td><td>Structural. Alone it ends the overflow and multiplies the label by ~2.5×.</td></tr>
       <tr><td class="n">1</td><td>Model label drops the <code>provider/</code> prefix</td><td><code>pi-acp</code> sets <code>name = "provider/name"</code>. The provider is not what you check mid-turn, and the picker sheet still shows it in full.</td></tr>
-      <tr class="ghost"><td class="n">2</td><td>Read-only chips hide <b>— deferred</b></td><td>They are decoration; the sheet shows the same values as live controls. Not built: after step 0 the chip fits at 375 pt (46 pt measured) on every shape an adapter actually emits.</td></tr>
-      <tr class="ghost"><td class="n">3</td><td>Standalone pills collapse into <code>⋯ N</code> → sheet <b>— deferred</b></td><td>Same SPEC-31 pattern as the model pill. Not built: no shipping adapter emits a standalone option, and step 0 already makes that shape overflow-<em>proof</em> rather than merely narrow. Trigger to build it: an agent that ships ≥1 standalone option.</td></tr>
+      <tr><td class="n">2</td><td>Read-only chips hide <b>— built</b></td><td>They are decoration; the sheet shows the same values as live controls. <b>The deferral was wrong:</b> with both chips shown, codex rendered <code>gpt-5.6…</code> at 375 pt — 49% of its own model name — and the four-option shape still overflowed by 4.7 px at 320 pt. All-or-nothing, because dropping one chip reads as "unset" rather than "hidden".</td></tr>
+      <tr class="ghost"><td class="n">3</td><td>Standalone pills collapse into <code>⋯ N</code> → sheet <b>— still deferred</b></td><td>Same SPEC-31 pattern as the model pill. Not built: with steps 0–2 in place every shape — including the four-option one — fits at 320 pt with a readable model name, so a collapse has nothing left to earn. Trigger: a shape that still overflows, or drops the model label below 95% at 375 pt, <em>after</em> the chips have yielded.</td></tr>
       <tr><td class="n">—</td><td><b>Never:</b> ellipsize the model name to fewer than a readable stub, hide the ring, or scroll the row</td><td>Scrolling would push the ring off-screen, and the ring exists to be glanceable.</td></tr>
     </table>
   </div>
@@ -286,9 +287,10 @@
   behind a tap on every width, including the desktop panes that have 700 pt to spare. The ladder above
   degrades only when it must, so a wide pane keeps every control visible.
   <br><br>
-  <b>Only steps 0 and 1 are being built.</b> Steps 2 and 3 address a session shape no adapter emits
-  today, and step 0 turns that shape from an <em>overflow</em> into merely a narrow row, which is a
-  legitimate state. Building them now would be speculative; the trigger for each is recorded above.
+  <b>Steps 0–2 are built; step 3 is not.</b> Step 2 was deferred on this page until the tests
+  disproved the deferral: codex's own model name was down to 49% at 375 pt with its chips shown, so
+  the trigger written into the spec had already fired. Step 3's trigger has not, and its own frame
+  above shows why — four pills fit once the chips yield.
 </div>
 
 
