@@ -7,8 +7,9 @@
  * one** (verified by enumerating every `sessionUpdate` literal in its shipped
  * `dist/index.js`). So there is nothing for the server's ACP mapper to receive,
  * and a pi session would show no usage at all. pi does expose the numbers
- * in-process via `ctx.getContextUsage()`, which is what this file forwards over
- * the loopback bridge makit already injects for `ctx.ui.*`.
+ * in-process — `ctx.getContextUsage()` for context occupancy,
+ * `ctx.sessionManager.getEntries()` for what has been billed — which is what this
+ * file forwards over the loopback bridge makit already injects for `ctx.ui.*`.
  *
  * codex needs none of this: its app-server sends `thread/tokenUsage/updated`
  * natively (see `server/src/adapters/codex-map.ts`).
@@ -24,9 +25,10 @@
 import {
   resolveBridge,
   buildUsage,
+  sumUsage,
   isWorthSending,
   type PiContextUsage,
-  type PiCost,
+  type PiSessionEntry,
   type UsagePayload,
 } from "./usage.js";
 
@@ -37,10 +39,13 @@ import {
  */
 interface PiHost {
   on(
-    event: "message_end",
+    event: "turn_end",
     handler: (
-      event: { message?: { role?: string; usage?: { cost?: PiCost } } },
-      ctx: { getContextUsage?: () => PiContextUsage | undefined | null },
+      event: unknown,
+      ctx: {
+        getContextUsage?: () => PiContextUsage | undefined | null;
+        sessionManager?: { getEntries?: () => PiSessionEntry[] };
+      },
     ) => void,
   ): void;
   log?(msg: string): void;
@@ -53,9 +58,17 @@ export default async function activate(pi: PiHost): Promise<void> {
   /** The last payload the bridge ACCEPTED — never merely one we attempted. */
   let lastAccepted: UsagePayload | undefined;
 
-  pi.on("message_end", (event, ctx) => {
-    if (event?.message?.role !== "assistant") return;
-    const payload = buildUsage(ctx.getContextUsage?.(), event.message.usage?.cost);
+  pi.on("turn_end", (_event, ctx) => {
+    // Totals are RE-DERIVED from the session entries every turn rather than
+    // accumulated here: pi's per-message usage covers only this process, and a
+    // resumed session's earlier turns belong to a process this one never saw.
+    // Reading the same entries `/sessions` reads is what makes the two agree.
+    //
+    // On `turn_end` rather than `message_end` because at `message_end` the
+    // message is not in the session yet — handlers may still rewrite it — so the
+    // entries lag a turn behind, which showed up as a first turn reporting no
+    // totals at all and every later reading missing the turn that triggered it.
+    const payload = buildUsage(ctx.getContextUsage?.(), sumUsage(ctx.sessionManager?.getEntries?.()));
     if (!payload || !isWorthSending(lastAccepted, payload)) return;
 
     // Fire-and-forget. A usage snapshot is strictly cosmetic, so a bridge that
@@ -68,10 +81,10 @@ export default async function activate(pi: PiHost): Promise<void> {
     // stranding the session with no usage until the numbers happened to change.
     // `fetch` does not throw on 4xx/5xx, so the status must be checked explicitly.
     //
-    // No in-flight guard on purpose: `message_end` fires once per assistant
-    // message and this POST is loopback, so overlap is vanishingly unlikely — and
-    // dropping a NEWER reading to protect against it would strand a stale number,
-    // which is worse than the duplicate post it avoids (the server is latest-wins).
+    // No in-flight guard on purpose: `turn_end` fires once per turn and this POST
+    // is loopback, so overlap is vanishingly unlikely — and dropping a NEWER
+    // reading to protect against it would strand a stale number, which is worse
+    // than the duplicate post it avoids (the server is latest-wins).
     void fetch(`${bridge.url}/usage`, {
       method: "POST",
       headers: {

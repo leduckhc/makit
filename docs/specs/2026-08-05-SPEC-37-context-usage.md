@@ -32,7 +32,7 @@ This is the whole design constraint, so it is recorded here as ground truth. Ver
 | --- | --- | --- | --- |
 | **codex app-server** | `thread/tokenUsage/updated` | `{threadId, turnId, tokenUsage: {total: Breakdown, last: Breakdown, modelContextWindow}}` where `Breakdown = {totalTokens, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens, reasoningOutputTokens}` | no |
 | **ACP v1** | `session/update` → `usage_update` | `{used, size, cost?: {amount, currency}}` | yes |
-| **pi** (via extension) | n/a — `ctx.getContextUsage()` | `{tokens, contextWindow, percent}` + `message_end`'s `event.message.usage.cost` | yes |
+| **pi** (via extension) | n/a — `ctx.getContextUsage()` + `ctx.sessionManager.getEntries()` | `{tokens, contextWindow, percent}` for context; per-entry `usage` (`input`/`output`/`cacheRead`/`cacheWrite`/`reasoning`/`cost`) for billing | yes |
 
 Codex types are generated ground truth: `codex app-server generate-ts --out DIR`.
 ACP's shape is `$defs.UsageUpdate` in `acp-docs/schema/v1/schema.json`.
@@ -107,8 +107,8 @@ Mapping:
 | --- | --- | --- | --- |
 | `contextTokens` | `last.totalTokens` | `used` | `getContextUsage().tokens` |
 | `contextWindow` | `modelContextWindow` | `size` | `getContextUsage().contextWindow` |
-| `totals` | `total` | — | session totals |
-| `cost` | — | `cost` | `message_end` usage cost |
+| `totals` | `total` | — | session entries summed (`input` = pi's `input + cacheRead + cacheWrite`, since makit nests cached input inside input) |
+| `cost` | — | `cost` | session entries' `usage.cost.total` summed |
 
 **Unmeasured is not zero.** A missing field renders as absent, never as `0` — the same rule
 `BudgetBucket` already enforces for GitHub buckets (`models.dart`), for the same reason: a
@@ -124,6 +124,30 @@ session list DTO.
 The pi extension posts to a new `POST /usage` route on the existing loopback bridge
 (`bridge.ts`, today `/uicall`-only), authenticated with the same bearer token and
 addressed by `sessionId`; the manager turns it into the same `session.usage` event.
+
+### Billing totals are derived, not accumulated
+
+The extension sums `ctx.sessionManager.getEntries()` on every turn, reproducing
+`AgentSession.getSessionStats()` exactly: every assistant message, every billed
+tool result, and every compaction/branch summary — including history since
+compacted away, because it was still billed. An in-process accumulator was tried
+first and is wrong in two ways a long-lived session hits immediately: a **resumed**
+session's earlier turns belong to a process this one never saw (a $22 session
+reported as new), and a compaction's own tokens never arrive as an assistant
+message at all.
+
+It hooks **`turn_end`, not `message_end`**. At `message_end` the message is not in
+the session yet — handlers are allowed to rewrite it first — so the derived totals
+lag a turn: verified against real pi, the first turn posted no totals at all and a
+resumed process reported turn 1 while omitting turn 2. `turn_end` fires after the
+entries land, and once per turn rather than per message.
+
+pi's `input` **excludes** cache reads/writes, while makit (following codex) treats
+cached input as a subset of input — the panel's cache bar is `cachedInput / input`.
+So the extension reports `input + cacheRead + cacheWrite` as `input`; passing pi's
+figure through drew a 33M cache row nested under a 360-token parent. `total` is
+`input + output + cacheRead + cacheWrite`, the same arithmetic `/sessions` prints,
+so the two agree to the token.
 
 ### The extension needs a manual install
 
@@ -195,7 +219,7 @@ panel answers "by how much?".
 | `acp-map.test.ts` | `usage_update` → `session.usage` with `used`/`size`/`cost`; absent `cost` omits the field |
 | `contract.test.ts` + `codec_contract_test.dart` | a `session.usage` entry in the byte-identical `events.json` golden fixture round-trips in **both** languages |
 | `bridge.test.ts` | `POST /usage` requires the bearer; a body with no readings is a 400; non-numeric fields are dropped, not coerced |
-| `.pi/extensions/pi-usage/usage.test.ts` | env gate needs all three vars; null readings omit rather than zero; a real `0.00` cost is kept; unchanged repeats are suppressed |
+| `.pi/extensions/pi-usage/usage.test.ts` | env gate needs all three vars; null readings omit rather than zero; a real `0.00` cost is kept; unchanged repeats are suppressed; `sumUsage` counts exactly the entries `/sessions` counts (assistant, billed tool results, compaction/branch summaries) and drops non-numeric junk; a **resumed** session's inherited spend is in its first report; cached input never exceeds input |
 | `session_usage_test.dart` | `fromJson` omits missing fields rather than zeroing them; `fraction` is null on an unmeasured half and clamps past 1.0; reducer is latest-wins and per-session |
 | `context_usage_test.dart` | `percentLabel`/`headroomLabel`/`cacheShare` return null rather than inventing a denominator; no ring until measured; the numbers are absent from the footer and present after a tap; the panel separates session total from context, and omits cost when unpriced |
 | `context_usage_golden_test.dart` | the ring ladder at the real 18 px (what a 3% arc actually looks like) plus the three panel shapes |
@@ -215,6 +239,7 @@ separately:
 | real `codex app-server` → `CodexAppServerAdapter` | one `session.usage`: `19440` of `258400`, totals + cache present, no cost |
 | `StubAdapter` → session → **WSS client** | `20200` of `258400`, cost `$0.021`, arriving as `session.event`/`session.usage` |
 | real `pi` (via `pi-acp`) → `pi-usage` → `POST /usage` → session → **WSS client** | `29408` of `1000000`, cost `$0.1838725` |
+| real `pi` → `pi-usage` (`-e`, bridge env, HTTP sink), **two separate processes on one session file** | turn 1 posts `total` `18377` / `$0.0093`; the RESUMED process posts `total` `36766` / `$0.018597` / `cachedInput` `36754` inside `input` `36758` — byte-identical to summing the session JSONL the way `/sessions` does |
 
 **Not verified:** the iOS simulator loop (`tool/e2e.sh --mode=stub`). It fails on
 this branch *before* any of this code runs — `launchMakit` times out waiting for a
