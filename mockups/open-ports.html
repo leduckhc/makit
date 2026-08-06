@@ -1,0 +1,1232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>makit — Ports: what's listening, and whose branch owns it (SPEC-41 draft)</title>
+<style>
+  :root{
+    /* App M3 neutral palette (dark) — matches lib/app/theme.dart */
+    --bg:#171717;--container-low:#1E1E1E;--container:#242424;--container-high:#2E2E2E;--container-highest:#383838;
+    --text:#F5F5F5;--muted:#9E9E9E;--hairline:#333333;
+    --on-surface-variant:#C9C9C9;
+    --primary:#7EE8A6;--accent:#4ADE80;
+    --orange:#E8A33D;--red:#E5544B;
+    --add:#3FB950;--del:#F85149;
+    --track:rgba(245,245,245,.16);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0e0e0e;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,sans-serif;
+    font-size:14px;line-height:1.5;padding:32px 24px 100px}
+  h1{font-size:22px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 20px;max-width:980px}
+  code{background:#000;padding:1px 5px;border-radius:4px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+  .note{max-width:980px;margin:12px 0 28px;padding:12px 14px;border:1px solid #2a6b46;background:#102418;border-radius:10px;font-size:13px;color:#a8e8c4}
+  .note strong{color:#fff}
+  .note.warn{border-color:#6b5d2a;background:#241f10;color:#e8d9a8}
+  .note.bad{border-color:#6b3230;background:#241211;color:#f0bdb8}
+
+  .card{border:1px solid var(--hairline);border-radius:14px;background:#141414;margin-bottom:26px;overflow:hidden}
+  .card > header{padding:12px 16px;border-bottom:1px solid var(--hairline);display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:15px;margin:0;font-weight:600}
+  .card .tag{font-size:10px;border-radius:5px;padding:2px 6px;font-weight:700;letter-spacing:.03em;color:#0e0e0e;background:var(--accent)}
+  .card .tag.alt{background:var(--container-highest);color:var(--muted)}
+  .card .tag.no{background:#c98b8b}
+  .card p.d{margin:0;color:var(--muted);font-size:12.5px;flex:1 1 320px}
+  .body{padding:18px 16px}
+  .why{margin:14px 0 0;font-size:12.5px;color:var(--muted);max-width:900px}
+  .why b{color:var(--text);font-weight:600}
+
+  .frames{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  .frame{flex:0 0 auto;max-width:460px}
+  .frame .why{max-width:100%}
+  .frame .cap{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
+  .phone{width:375px}
+
+  /* ── generic surfaces ─────────────────────────────────────────── */
+  .screen{background:var(--bg);border:1px solid #000;border-radius:14px;overflow:hidden}
+  .sb{width:280px;background:var(--container);padding:8px 0;flex:0 0 auto}
+  .canvas{display:flex;width:430px;background:var(--bg);border:1px solid #000;border-radius:10px;overflow:hidden}
+  .chatpane{flex:1;min-width:0;min-height:180px}
+
+  .icon{flex:0 0 auto;color:var(--muted);display:inline-flex;align-items:center}
+  .icon svg{stroke:currentColor;fill:none;stroke-width:1.5}
+  .icon.p{color:var(--primary)}.icon.o{color:var(--orange)}.icon.r{color:var(--red)}
+
+  /* ── repo card (mobile home) ──────────────────────────────────── */
+  .repocard{background:var(--container-low);border:1px solid var(--hairline);border-radius:14px;overflow:hidden}
+  .rc-head{display:flex;align-items:center;gap:8px;padding:9px 10px}
+  .rc-head .nm{flex:1;font-size:11px;letter-spacing:.11em;text-transform:uppercase;font-weight:700;color:var(--muted)}
+  .wtrow{border-top:1px solid var(--hairline);border-left:3px solid transparent;padding:0 4px 6px 0}
+  .wtrow.act-run{border-left-color:var(--primary)}
+  .wtrow.act-wait{border-left-color:var(--orange)}
+  .wtrow.act-err{border-left-color:var(--red)}
+  .wtline{display:flex;align-items:center;gap:6px;padding:0 4px 0 10px;min-height:38px}
+  .wtline .br{flex:1;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wtline .ctl{width:30px;height:38px;display:grid;place-items:center;color:var(--muted)}
+  .meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-left:21px}
+  .diff{font-size:11px}
+  .diff .a{color:var(--add)}.diff .d{color:var(--del)}
+  .dim{color:var(--muted);font-size:11px}
+
+  /* chips */
+  .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;letter-spacing:.01em}
+  .chip .n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;font-weight:600}
+  .chip.branch{background:rgba(126,232,166,.12);color:var(--primary)}
+  .chip.pr{background:rgba(126,232,166,.12);color:var(--primary)}
+  .chip.ports{background:rgba(126,232,166,.12);color:var(--primary)}
+  .chip.ports.warn{background:rgba(232,163,61,.14);color:var(--orange)}
+  .chip.ports.err{background:rgba(229,84,75,.14);color:var(--red)}
+  .chip.ports.off{background:var(--container-high);color:var(--muted)}
+  .chip svg{stroke-width:1.6}
+
+  /* session tile */
+  .sess{display:flex;align-items:center;gap:8px;font-size:13px;padding:5px 6px 5px 21px}
+  .sess .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .dot.run{background:var(--primary)}.dot.wait{background:var(--orange)}.dot.err{background:var(--red)}
+  .pulse{animation:p 1.3s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ── bottom sheet / panel ─────────────────────────────────────── */
+  .sheet{width:375px;background:var(--bg);border:1px solid var(--hairline);border-radius:18px 18px 0 0;overflow:hidden;padding-top:8px}
+  .grab{width:32px;height:4px;border-radius:2px;background:var(--container-highest);margin:0 auto 8px}
+  .sh-head{padding:0 16px 10px;display:flex;align-items:center;gap:8px}
+  .sh-head .ttl{flex:1;font-size:15px;font-weight:600}
+  .sh-head .cnt{font-size:11.5px;color:var(--muted)}
+  .panel{width:330px;background:var(--bg);border:1px solid var(--hairline);border-radius:14px;overflow:hidden}
+
+  /* ── the port row (shared by sheet, screen, sidebar) ──────────── */
+  .port{display:flex;gap:10px;padding:11px 14px;border-top:1px solid var(--hairline)}
+  .port .lead{flex:0 0 auto;width:34px;display:flex;flex-direction:column;align-items:center;gap:3px;padding-top:1px}
+  .port .num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;font-size:14px;font-weight:600;letter-spacing:-.02em}
+  .port .body2{flex:1;min-width:0}
+  .port .l1{display:flex;align-items:center;gap:7px}
+  .port .kind{font-size:13px;font-weight:600}
+  .port .l2,.port .l3{font-size:11.5px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .port .l3{font-family:inherit}
+  .health{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:7px}
+  .health.ok{background:rgba(63,185,80,.14);color:var(--add)}
+  .health.warn{background:rgba(232,163,61,.14);color:var(--orange)}
+  .health.err{background:rgba(229,84,75,.14);color:var(--red)}
+  .health.idle{background:var(--container-high);color:var(--muted)}
+  .reach{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:6px;background:var(--container-high);color:var(--muted)}
+  .reach.tailnet{background:rgba(126,232,166,.13);color:var(--primary)}
+  .reach.lan{background:rgba(232,163,61,.15);color:var(--orange)}
+  .acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .btn{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:8px;background:var(--container-high);color:var(--on-surface-variant);display:inline-flex;align-items:center;gap:5px}
+  .btn.pri{background:var(--primary);color:#0e0e0e}
+  .btn.danger{background:rgba(229,84,75,.15);color:var(--red)}
+  .btn.ghost{background:transparent;border:1px solid var(--hairline);color:var(--muted)}
+  .owner{font-size:11px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+
+  /* ── global screen chrome ─────────────────────────────────────── */
+  .appbar{display:flex;align-items:center;gap:8px;padding:12px 14px 10px}
+  .appbar .h{flex:1}
+  .appbar .t1{font-size:17px;font-weight:600}
+  .appbar .t2{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .filters{display:flex;gap:6px;padding:2px 14px 10px;overflow:hidden}
+  .f{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:14px;background:var(--container-high);color:var(--muted);white-space:nowrap}
+  .f.on{background:var(--primary);color:#0e0e0e}
+  .f .b{display:inline-block;margin-left:5px;padding:0 5px;border-radius:7px;background:rgba(0,0,0,.28);font-size:10.5px}
+  .f.warnb{background:rgba(229,84,75,.15);color:var(--red)}
+  .grouphdr{display:flex;align-items:center;gap:7px;padding:9px 14px 6px;background:var(--container-low);border-top:1px solid var(--hairline)}
+  .grouphdr .g1{flex:1;font-size:11px;letter-spacing:.11em;text-transform:uppercase;font-weight:700;color:var(--muted)}
+  .grouphdr .g2{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .wtsub{display:flex;align-items:center;gap:6px;padding:7px 14px 3px;border-top:1px solid var(--hairline);border-left:3px solid transparent}
+  .wtsub.act-run{border-left-color:var(--primary)}
+  .wtsub.act-err{border-left-color:var(--red)}
+  .wtsub .b{flex:1;font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .compact{display:flex;align-items:center;gap:8px;padding:6px 14px 6px 24px;flex-wrap:wrap}
+  .cport{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:9px;background:var(--container-high);font-size:12px}
+  .cport .n{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;font-weight:600}
+  .cport .k{color:var(--muted);font-size:11px}
+  .cport .st{width:7px;height:7px;border-radius:50%;background:var(--add)}
+  .cport .st.warn{background:var(--orange)}.cport .st.err{background:var(--red)}
+  .cport.collide{background:rgba(229,84,75,.14);color:#f0bdb8}
+  .banner{margin:10px 14px;padding:9px 11px;border-radius:10px;font-size:11.5px;display:flex;gap:8px;align-items:flex-start}
+  .banner.warn{background:#241f10;border:1px solid #6b5d2a;color:#e8d9a8}
+  .banner.bad{background:#241211;border:1px solid #6b3230;color:#f0bdb8}
+  .banner .x{margin-left:auto;color:var(--muted)}
+
+  /* ── menubar ──────────────────────────────────────────────────── */
+  .macbar{width:420px;background:#0b0b0b;border-radius:8px 8px 0 0;padding:5px 10px;display:flex;justify-content:flex-end;gap:14px;color:var(--muted);font-size:12px;align-items:center}
+  .macbar .live{color:var(--primary);font-weight:700;font-family:ui-monospace,Menlo,monospace}
+  .menu{width:330px;background:rgba(32,32,32,.98);border:1px solid #000;border-radius:10px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.6)}
+  .mi{display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12.5px}
+  .mi.hd{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700;padding-top:9px}
+  .mi .n{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;width:42px;color:var(--text)}
+  .mi .w{flex:1;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mi.hot{background:rgba(255,255,255,.08)}
+  .msep{height:1px;background:var(--hairline);margin:5px 0}
+
+  /* ── dialog ───────────────────────────────────────────────────── */
+  .dlg{width:320px;background:var(--container);border:1px solid var(--hairline);border-radius:16px;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.6)}
+  .dlg h3{margin:0 0 8px;font-size:15px}
+  .dlg p{margin:0 0 12px;font-size:12.5px;color:var(--on-surface-variant)}
+  .dlg .row{display:flex;justify-content:flex-end;gap:8px}
+
+  /* ── the ports glyph (worktree row) ───────────────────────────── */
+  .pplug{position:relative;width:30px;height:38px;display:grid;place-items:center;color:var(--primary);flex:0 0 auto}
+  .pplug.sm{width:20px;height:20px}
+  .pplug.inline{width:30px;height:26px;justify-items:start}
+  .pplug.warn{color:var(--orange)}
+  .pplug.err{color:var(--red)}
+  .pplug.off{color:var(--muted)}
+  .pplug.hot{background:rgba(255,255,255,.10);border-radius:8px}
+  .pplug .badge{position:absolute;top:6px;right:2px;width:7px;height:7px;border-radius:4px;background:var(--red);border:1.5px solid var(--container-low)}
+  .pplug.sm .badge{top:-2px;right:-3px}
+  .pplug.inline .badge{top:1px;left:14px;right:auto;border-color:#111}
+  .pplug .badge.warn{background:var(--orange)}
+  .pplug .qm{position:absolute;top:4px;right:0;font-size:10px;font-weight:700;color:var(--muted)}
+  .pplug svg,.chip svg,.arow svg{stroke:currentColor;fill:none;stroke-width:1.6}
+  /* Phosphor assets are filled paths, not strokes — opt them out of the stroke rules above. */
+  svg.ph{fill:currentColor;stroke:none}
+  .icon svg.ph,.pplug svg.ph,.chip svg.ph,.arow svg.ph{fill:currentColor;stroke:none}
+  .hoverfill{background:rgba(255,255,255,.06)}
+  .focusring{box-shadow:0 0 0 2px rgba(126,232,166,.5)}
+
+  /* ── hover-mechanics steps ────────────────────────────────────── */
+  .step{display:flex;gap:10px;padding:8px 14px;font-size:12px;color:var(--on-surface-variant);border-top:1px solid var(--hairline)}
+  .step:first-child{border-top:0}
+  .step b{color:var(--text)}
+  .step .s-n{flex:0 0 auto;width:18px;height:18px;border-radius:9px;background:var(--container-high);color:var(--muted);display:grid;place-items:center;font-size:10.5px;font-weight:700;margin-top:1px}
+
+  /* ── mobile: tappable list row + detail sheet ─────────────────── */
+  .port.tappable{align-items:center;min-height:56px;cursor:pointer}
+  .port.tappable .chev{margin-left:auto;align-self:center}
+  .kvs{padding:8px 16px 12px;border-bottom:1px solid var(--hairline)}
+  .kv{display:flex;justify-content:space-between;gap:14px;font-size:12.5px;padding:3px 0}
+  .kv .k{color:var(--muted);flex:0 0 auto}
+  .kv .v{text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kv .v.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .arow{display:flex;align-items:center;gap:11px;min-height:50px;padding:0 16px;border-bottom:1px solid var(--hairline);font-size:14px;color:var(--text)}
+  .arow .t{flex:1}
+  .arow.pri{color:var(--primary)}
+  .arow.pri svg,.arow.pri .icon{color:var(--primary)}
+  .arow.danger{color:var(--red);border-bottom:0}
+  .arow.danger svg{stroke:var(--red)}
+  .sw-off{width:34px;height:20px;border-radius:10px;background:var(--container-highest);position:relative}
+  .sw-off::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:8px;background:var(--muted)}
+  .dangerzone{margin-top:16px;border-top:1px solid var(--hairline);background:rgba(229,84,75,.045)}
+  .dz-lbl{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--red);font-weight:700;padding:9px 16px 2px;opacity:.8}
+
+  /* ── tooltip specimens ──────────────────────────────────────── */
+  .tips{display:flex;flex-direction:column;gap:7px;max-width:940px}
+  .tiprow{display:flex;align-items:center;gap:12px}
+  .tiprow .tok{flex:0 0 auto;width:132px;display:flex;justify-content:flex-end;align-items:center}
+  .tip{flex:1 1 auto;position:relative;background:#0a0a0a;border:1px solid var(--hairline);border-radius:8px;padding:7px 11px;font-size:12px;color:var(--on-surface-variant)}
+  .tip::before{content:"";position:absolute;left:-5px;top:50%;margin-top:-4px;width:8px;height:8px;background:#0a0a0a;border-left:1px solid var(--hairline);border-bottom:1px solid var(--hairline);transform:rotate(45deg)}
+  .tip b{color:var(--text)}
+  .floattip{position:absolute;left:150px;top:96px;z-index:5;max-width:250px;background:#0a0a0a;border:1px solid #444;border-radius:8px;padding:7px 10px;font-size:11.5px;color:var(--on-surface-variant);box-shadow:0 10px 26px rgba(0,0,0,.65)}
+  .floattip b{color:var(--text)}
+
+  /* ── hit-target map ─────────────────────────────────────────── */
+  .hitrow{display:flex;align-items:stretch;gap:4px;margin:0 8px;padding:5px 6px;border-radius:10px}
+  .hitzone{position:relative;display:flex;align-items:center;gap:6px;border:1px dashed rgba(126,232,166,.45);border-radius:8px;padding:8px 8px 20px;background:rgba(126,232,166,.05)}
+  .hitzone.big{flex:1;min-width:0}
+  .hitzone.small{width:34px;justify-content:center;background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.28)}
+  .hitzone.small.hot{background:rgba(255,255,255,.14);border-color:rgba(126,232,166,.7)}
+  .hitzone i{position:absolute;left:0;right:0;bottom:3px;text-align:center;font-style:normal;font-size:9px;letter-spacing:.03em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hitlegend{display:flex;flex-direction:column;gap:4px;margin:14px 14px 0;font-size:11px;color:var(--muted)}
+  .dimc{color:var(--muted)}
+
+  /* ── sidebar row replica (§5) ─────────────────────────────────── */
+  .srow{display:flex;align-items:center;margin:0 8px;padding:6px 8px 2px 6px;border-radius:10px}
+  .srow .cslot{width:20px;height:20px;display:grid;place-items:center;flex:0 0 auto;color:var(--muted)}
+  .srow .sname{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:6px}
+  .srow .sslot{flex:0 0 auto;margin-left:8px;display:flex;align-items:center;justify-content:flex-end;min-width:20px}
+  .srow .icon.hot-c{background:rgba(255,255,255,.10);border-radius:6px}
+  .ssub{padding:0 8px 4px 60px;height:16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .subplug{display:inline-flex;align-items:center;gap:3px;color:var(--primary);font-variant-numeric:tabular-nums}
+  .subplug.err{color:var(--red)}
+  .subplug svg{width:12px;height:12px}
+
+  .ssub .sspacer{flex:1}
+  .pplug.xs{width:22px;height:16px;place-items:center}
+  .pplug.xs svg{width:14px;height:14px}
+  .pplug.xs .badge{top:-3px;right:1px}
+  .pplug.xs.hot{background:rgba(255,255,255,.10);border-radius:9px}
+  .pplug.xs.ring{outline:1px dashed rgba(126,232,166,.7);outline-offset:3px;border-radius:9px}
+  .redge{position:absolute;top:0;bottom:0;right:16px;width:1px;background:rgba(126,232,166,.5);z-index:2}
+  .sloplegend{margin:16px 16px 0;font-size:10.5px;color:var(--muted)}
+
+  .phase{font-size:9.5px;font-weight:800;letter-spacing:.06em;border-radius:4px;padding:2px 5px;margin-left:8px;vertical-align:middle;text-transform:uppercase}
+  .phase.ph1{background:var(--accent);color:#0e0e0e}
+  .phase.phlater{background:var(--container-highest);color:var(--muted)}
+  .phase.phref{background:transparent;border:1px solid var(--hairline);color:var(--muted)}
+
+  /* ── states grid ────────────────────────────────────────────── */
+  .states{display:flex;gap:12px;flex-wrap:wrap}
+  .state{border:1px solid var(--hairline);border-radius:10px;padding:12px;background:#111;flex:1 1 232px;min-width:232px}
+  .state .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:10px}
+  .state .m{font-size:11.5px;color:var(--muted);margin-top:10px}
+  .empty{font-size:12px;color:#5c5c5c;font-style:italic;padding:18px 6px;text-align:center}
+  .skel{height:11px;border-radius:5px;background:linear-gradient(90deg,#1c1c1c,#262626,#1c1c1c);background-size:200% 100%;animation:sk 1.4s linear infinite;margin:7px 0}
+  @keyframes sk{0%{background-position:120% 0}100%{background-position:-20% 0}}
+
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid #222;font-size:12.5px;vertical-align:top}
+  th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700}
+  td.n{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:middle;margin-right:6px}
+  ul.rej{color:var(--muted);font-size:12.5px;margin:0;padding-left:20px}
+  ul.rej li{margin-bottom:7px}
+  ul.rej b{color:var(--text)}
+</style>
+</head>
+<body>
+
+<h1>Ports — what's listening, and whose branch owns it <span style="font-size:13px;color:var(--muted);font-weight:400">— SPEC-41 draft</span></h1>
+<p class="sub">
+  A listening TCP port is treated as an attribute of a <strong>worktree</strong>, like its diff stat or its PR.
+  Ownership comes from the process <code>cwd</code> plus a <code>ppid</code> ancestry walk, so <code>:5173</code> reads as
+  <em>“the Vite server <code>feat/open-ports</code> is running”</em> — not “some node process”. The row itself stays
+  quiet: <strong>one glyph</strong> says something is listening, and the numbers, health and actions live in a popover
+  (desktop) or a two-step sheet (mobile). Plus a global Ports screen and the menubar. Palette is the app's
+  real M3 dark scheme (<code>lib/app/theme.dart</code>).
+</p>
+
+<div class="note" style="border-color:#2a6b46">
+  <strong>Build phasing (SPEC-41).</strong>
+  <span class="phase ph1">P1</span> ships now — scan + attribution + health, the row glyph, the desktop popover,
+  the two mobile sheets, tooltips. Read-only: <b>Open</b> and <b>Copy URL</b> are the only actions, so nothing in
+  P1 signals a process. <span class="phase phlater">P2</span> global Ports screen, orphans/collisions, docker,
+  menubar. <span class="phase phlater">P3</span> kill + suggested port. <span class="phase phlater">P4</span>
+  forward-to-phone + watched ports. Frames below are tagged; a <span class="phase phlater">P2</span>/<span class="phase phlater">P4</span>
+  frame exists so the P1 shapes don't have to be redesigned to admit it.
+  Spec: <code>docs/specs/2026-08-06-SPEC-41-open-ports.md</code>.
+</div>
+
+<div class="note warn">
+  <strong>⚠ Rev 2 — what two code reviews changed.</strong>
+  <b>No <code>wss</code>/protocol label</b> (a plain <code>GET /</code> cannot produce a valid HTTP 101, so the pill
+  now shows whatever status makit's own port really answers). <b>No <code>kind</code> guessing and no cpu/memory</b> —
+  rows show the real command. <b>Probing is narrowed</b> to ports owned by one of your worktrees, minus databases:
+  pointing <code>GET /</code> at every listener on the machine would poke X11, VNC and SMTP and would render a healthy
+  HTTPS server as broken. <b><code>lan</code>/<code>tailnet</code> became <code>exposed</code></b> for wildcard binds,
+  because <code>0.0.0.0</code> is reachable from <em>every</em> interface — <code>tailnet</code> now means an exact
+  address match. Docker rows are tagged <span class="phase phlater">P2</span>. The desktop hit target is
+  <b>22 × 16 pt</b>, not 22 × 22: Flutter clips hit-testing to the parent's box, so the earlier "overflow into
+  neighbouring padding" claim was not implementable.
+</div>
+
+<div class="note">
+  <strong>✓ Nothing here is new chrome.</strong> The glyph is a trailing-column icon button like the row's existing
+  <code>+</code> — nested inside the row's own InkWell, exactly as <code>…</code> and <code>+</code> already are
+  (see §4). The desktop popover is the <code>GithubBudgetButton</code> / repo-hover pattern; the sheets are the
+  <code>pr_sheet.dart</code> pattern. The global screen is the
+  <code>archived_screen.dart</code> pattern (app bar + filter row + grouped list). The menubar entry already exists.
+  Every frame below is an instance of an existing makit convention.
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 1 -->
+<div class="card">
+  <header>
+    <h2>1 · The signal in the worktree row — <em>one glyph, no numbers</em></h2><span class="phase ph1">P1</span><span class="tag">passive surface</span>
+    <p class="d">The row says only “this branch is serving something”. Port numbers, health and actions all live one interaction away. Quiet branches render nothing.</p>
+  </header>
+  <div class="body">
+    <div class="frames">
+
+      <div class="frame phone">
+        <div class="cap">iPhone · 375pt · home repo card</div>
+        <div class="repocard">
+          <div class="rc-head">__FOLDER__<span class="nm">makit</span><span class="icon">__DOTS__</span><span class="icon">__PLUS__</span></div>
+
+          <div class="wtrow act-run">
+            <div class="wtline">__BRANCH_P__<span class="br">feat/open-ports</span><span class="ctl">__CARETDOWN__</span><span class="pplug">__PLUG_L__</span><span class="ctl">__PLUS__</span></div>
+            <div class="meta">
+              <span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span>
+              <span class="dim">3 files</span>
+              <span class="chip pr">__PR__ #138</span>
+            </div>
+            <div class="sess"><span class="dot run pulse"></span><span class="t">pi · wire the ports snapshot</span><span class="pplug" style="height:24px">__PLUG__</span></div>
+          </div>
+
+          <div class="wtrow">
+            <div class="wtline">__BRANCH__<span class="br">main</span><span class="ctl"></span><span class="pplug">__PLUG_L__</span><span class="ctl">__PLUS__</span></div>
+            <div class="meta"><span class="dim">default · 2h ago</span></div>
+          </div>
+
+          <div class="wtrow act-err">
+            <div class="wtline">__BRANCH_P__<span class="br">fix/scroll-anchor</span><span class="ctl"></span><span class="pplug err">__PLUG_L__<span class="badge"></span></span><span class="ctl">__PLUS__</span></div>
+            <div class="meta"><span class="diff mono"><span class="a">+22</span></span><span class="dim">6h ago</span></div>
+          </div>
+
+          <div class="wtrow">
+            <div class="wtline">__BRANCH_P__<span class="br">chore/deps</span><span class="ctl"></span><span class="ctl"></span><span class="ctl">__PLUS__</span></div>
+            <div class="meta"><span class="dim">4d ago</span></div>
+          </div>
+        </div>
+        <div class="why"><b>Three branches are serving something; one of them needs you</b> (the dot badge). No numbers compete with the diff and PR chips, and the meta line is back to being pure git. Order is <code>branch · fold · ports · +</code>: the caret hugs the row it discloses, <b><code>+</code> stays last</b> so its column stays aligned down the card, and ports takes the variable slot between them. <code>chore/deps</code> reserves both middle slots but draws nothing, so every <code>+</code> still lines up.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">macOS sidebar · 280pt · row 2 hovered (diff → <code>…</code>)</div>
+        <div class="canvas">
+          <div class="sb">
+            <div class="rc-head" style="padding-left:16px"><span class="nm">makit</span><span class="icon">__CARETDOWN__</span></div>
+            <div class="srow"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span></span></div>
+            <div class="ssub"><span>PR #138 · 3d</span><span class="sspacer"></span><span class="pplug xs">__PLUG__</span></div>
+            <div class="sess" style="padding-left:54px"><span class="t">wire the ports snapshot</span><span class="dot run pulse"></span></div>
+            <div class="srow hoverfill"><span class="cslot"></span>__BRANCH__<span class="sname" style="color:var(--muted)">main</span><span class="sslot"><span class="icon hot-c">__DOTS__</span></span></div>
+            <div class="ssub"><span>default · 2h</span><span class="sspacer"></span><span class="pplug xs hot">__PLUG__</span></div>
+            <div class="srow"><span class="cslot"></span>__BRANCH_P__<span class="sname">fix/scroll-anchor</span><span class="sslot"><span class="diff mono"><span class="a">+22</span></span></span></div>
+            <div class="ssub"><span>6h</span><span class="sspacer"></span><span class="pplug xs err">__PLUG__<span class="badge"></span></span></div>
+            <div class="msep" style="margin:10px 8px"></div>
+            <div class="rc-head" style="padding-left:16px"><span class="nm">ports · host</span><span class="g2 mono" style="font-size:11px;color:var(--muted)">11</span><span class="icon">__CARETDOWN__</span></div>
+            <div class="compact" style="padding-left:32px">
+              <span class="cport"><span class="st"></span><span class="n">5173</span><span class="k">vite</span></span>
+              <span class="cport"><span class="st"></span><span class="n">9787</span><span class="k">makit</span></span>
+              <span class="cport"><span class="st err"></span><span class="n">5175</span><span class="k">zombie</span></span>
+              <span class="cport" style="color:var(--muted)">+8</span>
+            </div>
+          </div>
+          <div class="chatpane"></div>
+        </div>
+        <div class="why"><b>Same glyph, one line down and right-aligned</b> — the sidebar's line-1 right edge already flips between the diff pill and the <code>…</code> menu on hover (row 2 here), so the plug lives on the sub-row instead, on the same 8 pt right edge; see §5. Numbers only appear where they are the subject: the collapsible host-wide <code>ports</code> section at the bottom of the sidebar (and the global screen on phone). A worktree row's job is to say <em>whether</em>, not <em>which</em>.</div>
+      </div>
+    </div>
+
+    <div style="height:22px"></div>
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">Glyph states — colour is never the only signal</div>
+    <div class="note" style="margin:0 0 14px">
+      <strong>✓ The glyph is Phosphor <code>Plug</code></strong> — <code>PhosphorIconsLight.plug</code>, the same weight
+      the rest of the app uses (<code>gitBranch</code>, <code>gitCommit</code>, <code>folder</code>). A plug says
+      <em>“something is plugged in here”</em>, which is exactly the claim; a bolt said “fast” or “power” and was
+      borrowed, not meant. <code>PlugsConnected</code> is reserved for one state only — an <b>active forward</b> to the
+      phone (§8) — where two plugs joined is literally what's happening.
+    </div>
+    <div class="states">
+      <div class="state"><div class="h">serving · all fine</div><span class="pplug inline">__PLUG_L__</span><div class="m">Primary tint. Semantics label: “3 ports listening”.</div></div>
+      <div class="state"><div class="h">needs you</div><span class="pplug inline err">__PLUG_L__<span class="badge"></span></span><div class="m">Dot badge = a zombie, orphan or unexpected exposure in this worktree. Label names it.</div></div>
+      <div class="state"><div class="h">exposed only</div><span class="pplug inline warn">__PLUG_L__<span class="badge warn"></span></span><div class="m">Amber glyph + amber badge; “1 port reachable off this machine”.</div></div>
+      <div class="state"><div class="h">nothing listening</div><span class="empty" style="padding:6px 0;text-align:left">— glyph omitted, space reserved —</span><div class="m">The common case. Draws nothing, shifts nothing.</div></div>
+      <div class="state"><div class="h">scanning (cold open)</div><span class="pplug inline off">__PLUG_L__</span><div class="m">Muted, non-interactive for the one scan (~200 ms), then resolves.</div></div>
+      <div class="state"><div class="h">scan unavailable</div><span class="pplug inline off">__PLUG_L__<span class="qm">?</span></span><div class="m"><code>lsof</code> denied → honest unknown, tap explains. Never a fake zero.</div></div>
+    </div>
+
+    <div class="note warn" style="margin-top:20px">
+      <strong>⚠ Placement is a tap-target decision, not a layout one.</strong> The glyph sits in the
+      <b>trailing control column</b> (<code>kTrailingControl</code> = 30 pt) on the branch line, <b>after the fold
+      caret and before <code>+</code></b> — which is literally a one-child insert, since <code>worktree_row.dart</code>
+      builds <code>branch → star → caret (if canFold) → _NewSessionButton</code> and <code>+</code> must stay last to
+      keep its column. It deliberately does
+      <em>not</em> go on the meta line: <code>worktree_row.dart</code> states outright that the meta line
+      “is not a target”, and chips there are unreachable by design. Putting a tappable thing among them would
+      break that rule.
+    </div>
+    <div class="why" style="margin-top:12px"><b>What the row gives up, and why that's fine:</b> you can no longer read <code>:5173</code> without an interaction. That number is only actionable in a browser or a terminal — both of which are already one action away — whereas <em>“is something running on this branch at all”</em> is the question you scan a list of eight worktrees for.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 2 -->
+<div class="card">
+  <header>
+    <h2>2 · Opening it — <em>hover previews, click pins</em> (desktop) · <em>tap, then tap</em> (mobile)</h2><span class="phase ph1">P1</span><span class="tag">chosen</span>
+    <p class="d">One popover on desktop with every action visible, because a trackpad can hit a 24 pt button in a list. Two sheets on mobile, because a thumb cannot — and because the destructive one must be far from the scroll.</p>
+  </header>
+  <div class="body">
+
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">2a · macOS — actions inline, all four visible per row</div>
+    <div class="note warn" style="margin:0 0 16px"><strong>⚠ P1 ships two of these buttons.</strong>
+      <code>Open</code> and <code>Copy URL</code> only — and both are hidden when the port never answered HTTP, because
+      there is no honest URL to open. <code>Logs</code> and <code>Kill</code> are drawn here to fix their position for
+      <span class="phase phlater">P3</span>; they are not built in P1, which sends no signal to any process.</div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">Hover preview (350 ms dwell) · 360pt</div>
+        <div class="panel" style="width:360px">
+          <div class="sh-head" style="padding:12px 14px 10px">__PLUG_P__<div class="ttl" style="font-size:13.5px">feat/open-ports</div><span class="cnt">3 listening</span></div>
+
+          <div class="port" style="padding:10px 14px">
+            <div class="lead"><span class="num">5173</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">vite</span><span class="health ok">__PULSE__ 200</span><span class="reach">loopback</span></div>
+              <div class="l2">pid 48211 · up 41m · node vite --port 5173</div>
+              <div class="acts"><span class="btn pri">__EYE__ Open</span><span class="btn">__COPY__ Copy</span><span class="btn">__LOGS__ Logs</span><span class="btn danger">__STOP__ Kill</span></div>
+            </div>
+          </div>
+
+          <div class="port hoverfill" style="padding:10px 14px">
+            <div class="lead"><span class="num">9787</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">serve.js</span><span class="health warn">__PULSE__ 404</span><span class="reach lan">exposed</span></div>
+              <div class="l2">pid 47120 · up 2h · node dist/serve.js</div>
+              <div class="acts"><span class="btn pri">__EYE__ Open</span><span class="btn">__COPY__ Copy</span><span class="btn">__LOGS__ Logs</span><span class="btn danger">__STOP__ Kill</span></div>
+            </div>
+          </div>
+
+          <div class="port" style="padding:10px 14px">
+            <div class="lead"><span class="num">5432</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">postgres</span> <span class="phase phlater">P2</span><span class="health idle">not probed</span><span class="reach">docker</span></div>
+              <div class="l2">makit-db · up 3d · compose: server/compose.yml</div>
+              <div class="acts"><span class="btn">__COPY__ Copy DSN</span><span class="btn">__LOGS__ Logs</span><span class="btn danger">__STOP__ Stop container</span></div>
+            </div>
+          </div>
+
+          <div class="banner warn" style="margin:10px 12px">__WARN__<div><b>5173 also wanted by</b> <code>chat-ui/access_control</code> · free here: <b class="mono">5183</b> <span class="btn ghost" style="margin-left:6px">Copy <code>PORT=5183</code></span></div></div>
+          <div class="mi" style="border-top:1px solid var(--hairline);padding:8px 14px;color:var(--muted);font-size:11.5px">Click to pin · <span class="mono">⇥</span> to reach buttons · <span class="mono">esc</span> closes</div>
+        </div>
+        <div class="why"><b>Every action is one click from the glance</b> — no drill-down, no second window. Rows are 3 lines / ~72 pt, buttons 24 pt tall with 6 pt gaps: comfortably above the 20 pt pointer-target floor, and the destructive one sits last, after a gap, with its own red-wash treatment.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">The hover mechanics (the part that usually breaks)</div>
+        <div class="panel" style="width:360px;padding:4px 0">
+          <div class="step"><span class="s-n">1</span><div><b>Pointer enters the glyph</b> → 350 ms dwell before anything opens. Sliding the mouse across a list of 8 worktrees fires nothing.</div></div>
+          <div class="step"><span class="s-n">2</span><div><b>Popover opens</b> anchored to the glyph, 6 pt gap, aligned to the row. Ports sorted ascending.</div></div>
+          <div class="step"><span class="s-n">3</span><div><b>Pointer bridge:</b> the gap between glyph and popover is part of the hover region, so travelling into the buttons never dismisses it.</div></div>
+          <div class="step"><span class="s-n">4</span><div><b>Leaving</b> the glyph <em>and</em> the popover starts a 150 ms grace timer — a diagonal overshoot doesn't punish you.</div></div>
+          <div class="step"><span class="s-n">5</span><div><b>Click the glyph = pinned.</b> Popover stays until <code>esc</code>, an outside click, or a second click. Focus moves in; <code>⇥</code> walks the buttons.</div></div>
+          <div class="step"><span class="s-n">6</span><div><b>Kill still confirms</b> — the pin does not make destruction one click, it makes it reachable.</div></div>
+        </div>
+        <div style="height:14px"></div>
+        <div class="panel" style="width:360px">
+          <div class="sh-head" style="padding:11px 14px 9px">__PLUG_P__<div class="ttl" style="font-size:13.5px">main</div><span class="cnt">pinned</span><span class="btn ghost">esc</span></div>
+          <div class="port" style="padding:10px 14px">
+            <div class="lead"><span class="num">5174</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">vite</span><span class="health ok">200</span><span class="reach">loopback</span></div>
+              <div class="l2">pid 49004 · up 12m</div>
+              <div class="acts"><span class="btn pri focusring">__EYE__ Open</span><span class="btn">__COPY__ Copy</span><span class="btn">__LOGS__ Logs</span><span class="btn danger">__STOP__ Kill</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="why"><b>Why not click-only?</b> The glance (“what's on this branch?”) is the frequent case and hover costs nothing. <b>Why not hover-only?</b> A hover popover holding buttons is unusable by keyboard and fragile under a trackpad; the pin fixes both without adding a second surface.</div>
+      </div>
+    </div>
+
+    <div style="height:30px"></div>
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">2b · Mobile — list first, actions in a second sheet, destructive last</div>
+    <div class="frames">
+
+      <div class="frame">
+        <div class="cap">Sheet 1 · tap the glyph → the list (no buttons)</div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="sh-head">__PLUG_P__<div class="ttl">Ports · feat/open-ports</div><span class="cnt">3</span></div>
+
+          <div class="port tappable">
+            <div class="lead"><span class="num">5173</span>__VITE__</div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">vite</span><span class="health ok">__PULSE__ 200</span><span class="reach">loopback</span></div>
+              <div class="l2">up 41m · this session</div>
+            </div>
+            <span class="icon chev">__CARETRIGHT__</span>
+          </div>
+
+          <div class="port tappable">
+            <div class="lead"><span class="num">9787</span>__SERVER__</div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">serve.js</span><span class="health warn">__PULSE__ 404</span><span class="reach lan">exposed</span></div>
+              <div class="l2">up 2h · pinned</div>
+            </div>
+            <span class="icon chev">__CARETRIGHT__</span>
+          </div>
+
+          <div class="port tappable">
+            <div class="lead"><span class="num">5432</span>__DB__</div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">postgres</span> <span class="phase phlater">P2</span><span class="health idle">not probed</span><span class="reach">docker</span></div>
+              <div class="l2">makit-db · up 3d</div>
+            </div>
+            <span class="icon chev">__CARETRIGHT__</span>
+          </div>
+
+          <div class="banner warn">__WARN__<div><b>5173 is also wanted by</b> <code>chat-ui/access_control</code>. Free here: <b class="mono">5183</b></div></div>
+          <div style="padding:2px 14px 14px"><span class="btn ghost" style="width:100%;justify-content:center;padding:9px">Open the Ports screen</span></div>
+        </div>
+        <div class="why"><b>Nothing destructive is reachable from a scroll.</b> Rows are 56 pt tap targets whose only gesture is “open”; there is no button here to fat-finger while flicking the list.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">Sheet 2 · tap a port → facts, then actions</div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div class="sh-head"><span class="icon">__BACK__</span><div class="ttl"><span class="mono">:5173</span> vite dev</div></div>
+          <div style="padding:0 16px 6px"><span class="health ok">__PULSE__ 200 · Vite</span> <span class="reach">loopback</span></div>
+
+          <div class="kvs">
+            <div class="kv"><span class="k">worktree</span><span class="v">feat/open-ports</span></div>
+            <div class="kv"><span class="k">session</span><span class="v">wire the ports snapshot</span></div>
+            <div class="kv"><span class="k">command</span><span class="v mono">node vite --port 5173</span></div>
+            <div class="kv"><span class="k">pid · uptime</span><span class="v mono">48211 · 41m</span></div>
+                        <div class="kv"><span class="k">bound</span><span class="v mono">127.0.0.1:5173</span></div>
+          </div>
+
+          <div class="arow pri">__EYE__<span class="t">Forward &amp; open on this phone</span>__CARETRIGHT__</div>
+          <div class="arow">__COPY__<span class="t">Copy URL</span></div>
+          <div class="arow">__LOGS__<span class="t">Show logs</span>__CARETRIGHT__</div>
+          <div class="arow">__PULSE_I__<span class="t">Watch this port</span><span class="sw-off"></span></div>
+
+          <div class="dangerzone">
+            <div class="dz-lbl">danger</div>
+            <div class="arow danger">__STOP__<span class="t">Kill this process…</span></div>
+          </div>
+          <div style="height:14px"></div>
+        </div>
+        <div class="why"><b>Kill is ~420 pt below the first tap and behind a confirm.</b> It lives past a labelled divider, in its own zone, as the last row of the sheet — the standard iOS destructive placement. Reaching it takes intent: tap glyph → tap port → scroll → tap → confirm.</div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:22px">
+      <strong>✓ Both platforms, one data shape.</strong> The desktop popover and mobile sheet 1 render the same
+      <code>PortDTO</code> list; sheet 2 is that same DTO with nothing hidden. The only platform difference is
+      <em>where the buttons live</em> — inline on a pointer surface, deferred on a touch surface — which is a
+      layout choice in the widget, not a second model or a second command set.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 3 -->
+<div class="card">
+  <header>
+    <h2>3 · Tooltips — <em>every terse token owns a sentence</em></h2><span class="phase ph1">P1</span><span class="tag">rule</span>
+    <p class="d">A pill short enough to fit (<code>200</code>, <code>refused</code>, <code>exposed</code>) is a label, not an explanation. One string per token, used by the desktop tooltip, the mobile long-press bubble <em>and</em> the screen-reader label — never three drifting copies.</p>
+  </header>
+  <div class="body">
+
+    <div class="note">
+      <strong>✓ The tooltip is where freshness lives.</strong> A pill can say <code>200</code> but not
+      <em>when</em> it was true. Every health tooltip ends with <code>· probed Ns ago</code>, which is also the
+      honest answer to “is this cached?” — it is, by design (stale-while-revalidate), and the tooltip admits it.
+    </div>
+
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:4px 0 10px">Health &amp; probe</div>
+    <div class="tips">
+      <div class="tiprow"><span class="tok"><span class="health ok">__PULSE__ 200</span></span><span class="tip">HTTP <code>GET /</code> → <b>200 OK</b> · “Vite + React” · probed 4 s ago</span></div>
+      <div class="tiprow"><span class="tok"><span class="health ok">__PULSE__ 201</span></span><span class="tip">HTTP <code>GET /</code> → <b>201 Created</b> · answered, unusual verb for a root — probed 6 s ago</span></div>
+      <div class="tiprow"><span class="tok"><span class="health warn">404</span></span><span class="tip">HTTP <code>GET /</code> → <b>404 Not Found</b> · it's alive, but nothing is mounted at the root · probed 9 s ago</span></div>
+      <div class="tiprow"><span class="tok"><span class="health warn">__PULSE__ 404</span></span><span class="tip">WebSocket upgrade accepted (<b>HTTP 101</b>) · socket server, no page to fetch · probed 6 s ago</span></div>
+      <div class="tiprow"><span class="tok"><span class="health idle">not probed</span></span><span class="tip">Docker healthcheck reports <b>healthy</b> · no HTTP endpoint was probed</span></div>
+      <div class="tiprow"><span class="tok"><span class="health err">refused</span></span><span class="tip">TCP connect <b>refused</b> — the port is bound but nothing is accepting. Usually a crashed dev server holding its socket · probed 3 s ago</span></div>
+      <div class="tiprow"><span class="tok"><span class="health err">timeout</span></span><span class="tip">Connected, but no response in 800 ms — probably wedged, not dead · probed 3 s ago</span></div>
+      <div class="tiprow"><span class="tok"><span class="health idle">not probed</span></span><span class="tip">First tick after the list opened — the socket facts are instant, the probe lands on the next pass</span></div>
+    </div>
+
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:22px 0 10px">Reach — the security vocabulary</div>
+    <div class="tips">
+      <div class="tiprow"><span class="tok"><span class="reach">loopback</span></span><span class="tip">Bound to <code>127.0.0.1</code> — reachable only from this Mac. Your phone can't see it without forwarding.</span></div>
+      <div class="tiprow"><span class="tok"><span class="reach lan">exposed</span></span><span class="tip">Bound to <code>0.0.0.0</code> — reachable at <code>mac-mini.tail1234.ts.net:9787</code> by any device on your tailnet</span></div>
+      <div class="tiprow"><span class="tok"><span class="reach lan">exposed</span></span><span class="tip">Bound to <code>0.0.0.0</code> — also reachable by anything on the Wi-Fi you're on right now (<code>192.168.1.0/24</code>)</span></div>
+      <div class="tiprow"><span class="tok"><span class="reach">docker</span> <span class="phase phlater">P2</span></span><span class="tip">Published by a container — docker attribution lands in P2; in P1 such a port shows as unowned</span></div>
+    </div>
+
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:22px 0 10px">Ownership, process, flags</div>
+    <div class="tips">
+      <div class="tiprow"><span class="tok"><span class="pplug inline">__PLUG_L__</span></span><span class="tip"><b>3 ports listening</b> on <code>feat/open-ports</code> — 5173, 9787, 5432. Click to pin this list.</span></div>
+      <div class="tiprow"><span class="tok"><span class="pplug inline err">__PLUG_L__<span class="badge"></span></span></span><span class="tip"><b>1 port needs attention:</b> 5175 bound but not answering, up 6 h. Click to pin.</span></div>
+      <div class="tiprow"><span class="tok"><span class="mono dim">up 41m</span></span><span class="tip">Process started <b>14:02</b>, 41 minutes ago — before your last commit on this branch</span></div>
+      <div class="tiprow"><span class="tok"><span class="mono dim">pid 48211</span></span><span class="tip"><code>node vite --port 5173</code> · user <b>le</b> · parent <code>pnpm dev</code> (pid 48190) · cwd <code>~/.worktrees/makit/feat-open-ports</code></span></div>
+            <div class="tiprow"><span class="tok"><span class="dim">this session</span></span><span class="tip">Started by the agent in session <b>“wire the ports snapshot”</b> — a descendant of that session's process</span></div>
+      <div class="tiprow"><span class="tok"><span class="cport collide" style="padding:1px 7px"><span class="n">5173</span> clash</span></span><span class="tip"><code>makit/feat-open-ports</code> already holds 5173 — a dev server started here would fail to bind. Free on this branch: <b>5183</b>.</span></div>
+      <div class="tiprow"><span class="tok"><span class="health err">orphan</span></span><span class="tip">Listening from <code>~/.worktrees/makit/feat-desktop-tabs</code>, which stopped being a worktree <b>2 days ago</b>. Nothing will ever reclaim it but you.</span></div>
+      <div class="tiprow"><span class="tok"><span class="cport" style="color:var(--muted)">+8</span></span><span class="tip">8 more ports on this host, in other repos and system processes — opens the Ports screen</span></div>
+      <div class="tiprow"><span class="tok"><span class="pplug inline off">__PLUG_L__<span class="qm">?</span></span></span><span class="tip">makit couldn't read this machine's sockets (<code>lsof</code> returned EPERM), so this list may be incomplete</span></div>
+    </div>
+
+    <div style="height:26px"></div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">In situ · desktop, 500 ms after resting on <code>200</code></div>
+        <div class="panel" style="width:360px;position:relative">
+          <div class="sh-head" style="padding:12px 14px 10px">__PLUG_P__<div class="ttl" style="font-size:13.5px">feat/open-ports</div><span class="cnt">3 listening</span></div>
+          <div class="port" style="padding:10px 14px">
+            <div class="lead"><span class="num">5173</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">vite</span><span class="health ok focusring">__PULSE__ 200</span><span class="reach">loopback</span></div>
+              <div class="l2">pid 48211 · up 41m · node vite --port 5173</div>
+              <div class="acts"><span class="btn pri">__EYE__ Open</span><span class="btn">__COPY__ Copy</span><span class="btn">__LOGS__ Logs</span><span class="btn danger">__STOP__ Kill</span></div>
+            </div>
+          </div>
+          <div class="floattip" style="left:126px;top:134px">HTTP <code>GET /</code> → <b>200 OK</b> · “Vite + React” · probed 4 s ago</div>
+          <div class="port" style="padding:10px 14px;opacity:.5">
+            <div class="lead"><span class="num">9787</span></div>
+            <div class="body2"><div class="l1"><span class="kind mono">serve.js</span><span class="health warn">404</span><span class="reach lan">exposed</span></div><div class="l2">pid 47120 · up 2h</div></div>
+          </div>
+        </div>
+        <div class="why"><b>Tooltip inside a popover is legal here</b> because the popover is already committed (hovered or pinned) — but only one may be open at a time, and the tooltip never covers the row it explains: it lays out below, shifted to the token's left edge.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">Mobile · long-press a token (no hover to borrow)</div>
+        <div class="sheet" style="position:relative">
+          <div class="grab"></div>
+          <div class="sh-head">__PLUG_P__<div class="ttl">Ports · feat/open-ports</div><span class="cnt">3</span></div>
+          <div class="port tappable">
+            <div class="lead"><span class="num">5173</span>__VITE__</div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">vite</span><span class="health ok focusring">__PULSE__ 200</span><span class="reach">loopback</span></div>
+              <div class="l2">up 41m · this session</div>
+            </div>
+            <span class="icon chev">__CARETRIGHT__</span>
+          </div>
+          <div class="floattip" style="left:96px;top:150px">HTTP <code>GET /</code> → <b>200 OK</b><br>probed 4 s ago</div>
+          <div class="port tappable" style="opacity:.5">
+            <div class="lead"><span class="num">9787</span>__SERVER__</div>
+            <div class="body2"><div class="l1"><span class="kind mono">serve.js</span><span class="health warn">404</span><span class="reach lan">exposed</span></div><div class="l2">up 2h · pinned</div></div>
+            <span class="icon chev">__CARETRIGHT__</span>
+          </div>
+          <div style="height:16px"></div>
+        </div>
+        <div class="why"><b>Long-press on a token shows the bubble; the row's own long-press still belongs to the row.</b> Touch also gets a second, better escape hatch: sheet 2 spells every token out as a labelled row, so a phone user never <em>needs</em> the bubble to understand a port.</div>
+      </div>
+    </div>
+
+    <div class="note warn" style="margin-top:20px">
+      <strong>⚠ Rules that keep tooltips from becoming noise.</strong>
+      500 ms dwell (a tooltip must never race the popover's 350 ms); one visible at a time;
+      dismissed by any pointer move outside the token, <code>esc</code>, or scroll;
+      <b>never on a control that already says what it does</b> (<code>Copy</code>, <code>Logs</code>, <code>Kill</code> get none —
+      their label <em>is</em> the tooltip); and every string is the same one <code>Semantics.label</code> publishes, so
+      VoiceOver and the tooltip cannot disagree.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 4 -->
+<div class="card">
+  <header>
+    <h2>4 · Who owns the click? — <em>the row already has a handler</em></h2><span class="phase ph1">P1</span><span class="tag">conflict, resolved</span>
+    <p class="d">On macOS the worktree row is selectable, and on iOS its tap folds the sessions. The glyph must take its click without stealing the row's — the same problem the repo header already solved.</p>
+  </header>
+  <div class="body">
+
+    <div class="note">
+      <strong>✓ Precedent, not invention.</strong> <code>mockups/repo-hover.html</code> (AFTER) puts <code>…</code> and
+      <code>+</code> <em>inside</em> the repo header's single full-row InkWell: the row hover paints beneath them, each
+      nested button gets its own small hover circle, and clicking one does not trigger the row. The ports glyph is a
+      third instance of exactly that arrangement — it sits in the same trailing column as the row's existing
+      <code>+</code>, which already swallows clicks today.
+    </div>
+
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">Hit-target map · macOS sidebar row (hovered)</div>
+        <div class="canvas" style="width:440px">
+          <div class="sb" style="width:440px;padding:18px 0">
+            <div class="hitrow hoverfill">
+              <span class="hitzone big">__BRANCH_P__<span style="font-size:13px">feat/open-ports</span><i>select / open worktree — existing handler</i></span>
+              <span class="hitzone small">__CARETDOWN__<i>fold</i></span>
+              <span class="hitzone small hot">__PLUG__<i>ports</i></span>
+              <span class="hitzone small">__PLUS__<i>new</i></span>
+            </div>
+            <div class="hitlegend">
+              <span><span class="sw" style="background:rgba(255,255,255,.06)"></span>row InkWell — the whole strip, paints under everything</span>
+              <span><span class="sw" style="background:rgba(255,255,255,.14)"></span>nested buttons — 24 pt boxes, 4 pt apart, each swallows its own click</span>
+              <span><span class="sw" style="background:rgba(126,232,166,.5)"></span>order <code>branch · fold · ports · +</code> — <code>+</code> last, so its column stays aligned</span>
+            </div>
+          </div>
+        </div>
+        <div class="why"><b>The only thing that makes “button in a button” safe is hit-slop.</b> 24 pt boxes, 4 pt gutters on desktop / 8 pt on phone, never flush against their neighbours — so an aimed click at the glyph can't land on the fold to its left or <code>+</code> to its right, and a click anywhere in the ~200 pt of branch name still selects the worktree.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">Gesture table — nothing existing changes meaning</div>
+        <div class="panel" style="width:440px">
+          <table style="font-size:12px">
+            <tr><th>Gesture</th><th>Target</th><th>Result</th></tr>
+            <tr><td class="n">hover</td><td>glyph</td><td>popover preview (350 ms dwell)</td></tr>
+            <tr><td class="n">hover</td><td>row</td><td class="dimc">row hover fill — unchanged</td></tr>
+            <tr><td class="n">click</td><td>glyph</td><td>pin the popover · <b>does not select the row</b></td></tr>
+            <tr><td class="n">click</td><td>row, anywhere else</td><td class="dimc">select / open the worktree — unchanged</td></tr>
+            <tr><td class="n">click</td><td>caret / <code>+</code></td><td class="dimc">fold · new session — unchanged</td></tr>
+            <tr><td class="n">right-click</td><td>glyph</td><td>context menu: Open · Copy · Logs · Kill</td></tr>
+            <tr><td class="n">right-click</td><td>row</td><td class="dimc">worktree actions — unchanged</td></tr>
+            <tr><td class="n">⇥ / ↵</td><td>glyph</td><td>focus ring, then pin — the keyboard path</td></tr>
+            <tr><td class="n" style="border-top:2px solid var(--hairline)">tap</td><td style="border-top:2px solid var(--hairline)">glyph <span class="dimc">(iOS)</span></td><td style="border-top:2px solid var(--hairline)">open sheet 1 · <b>does not fold</b></td></tr>
+            <tr><td class="n">tap</td><td>row <span class="dimc">(iOS)</span></td><td class="dimc">fold / unfold sessions — unchanged</td></tr>
+            <tr><td class="n">long-press</td><td>row <span class="dimc">(iOS)</span></td><td class="dimc">worktree actions (rename / delete) — unchanged</td></tr>
+            <tr><td class="n">long-press</td><td>glyph <span class="dimc">(iOS)</span></td><td>nothing — falls through to the row's actions</td></tr>
+          </table>
+        </div>
+        <div class="why"><b>Every “unchanged” row is the point.</b> The feature adds two gestures (glyph click/tap, glyph right-click) and re-uses one (hover). If any existing row behaviour had to move, the glyph would be in the wrong place.</div>
+      </div>
+    </div>
+
+    <div class="note warn" style="margin-top:20px">
+      <strong>⚠ The cost of this order, stated plainly.</strong> Ports now sits <em>between</em> two other targets,
+      so on iOS a thumb aimed at the gap can fold or start a session instead. That is the price of keeping
+      <code>+</code> on a fixed right edge, and it's the right trade: <code>+</code> exists on <b>every</b> row, ports
+      and the caret do not, so the stable anchor should be the one that's always there. Mitigations, in order:
+      (1) 8 pt gutters on phone instead of 4 — the column has room because most rows draw at most two of the three;
+      (2) both neighbours are <b>non-destructive</b>, so a mis-tap costs one tap to undo (fold back, or dismiss the
+      new-session sheet); (3) most rows have <b>no caret at all</b> (it only exists when the worktree has sessions),
+      which leaves ports with a blank slot on its left. Worth measuring on device before shipping.
+    </div>
+
+    <div class="why" style="margin-top:14px"><b>Rejected here:</b> making the glyph <em>hover-only</em> on desktop (no keyboard path, and a hover-only surface that holds a <code>Kill</code> button is indefensible); putting the glyph <em>outside</em> the row to dodge the conflict (breaks the alignment grid, and the association with its branch); putting it <em>last</em>, outboard of <code>+</code> (isolates the glyph nicely, but moves the one control every row has — a worse trade); and <code>⌥click</code>-to-open (undiscoverable for the primary action of the feature).</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 5 -->
+<div class="card">
+  <header>
+    <h2>5 · The sidebar row — plug on the sub-row, <em>far right</em></h2><span class="phase ph1">P1</span><span class="tag">chosen</span>
+    <p class="d">Line 1's right edge is already a swapping slot (<code>DiffChip</code> ⟷ <code>dotsThree</code>), so the plug drops one line and right-aligns. Same 8 pt right padding on both lines means it forms a column under the swap instead of leaving it.</p>
+  </header>
+  <div class="body">
+
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">The constraint · one slot, two occupants</div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">today, idle</div>
+        <div class="canvas" style="width:300px"><div class="sb" style="width:300px;padding:10px 0">
+          <div class="srow"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span></span></div>
+          <div class="ssub"><span>PR #138 · 3d</span></div>
+        </div><div class="chatpane" style="min-height:0"></div></div>
+      </div>
+      <div class="frame">
+        <div class="cap">today, hovered — the diff is <em>replaced</em></div>
+        <div class="canvas" style="width:300px"><div class="sb" style="width:300px;padding:10px 0">
+          <div class="srow hoverfill"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="icon hot-c">__DOTS__</span></span></div>
+          <div class="ssub"><span>PR #138 · 3d</span></div>
+        </div><div class="chatpane" style="min-height:0"></div></div>
+        <div class="why"><b>Why it swaps:</b> the diff is information, the menu is an action, and after the caret slot and branch glyph the row has only ~200 pt. The existing code buys the menu's space by spending the diff's. A port signal can't join that trade — it has to be true in both states.</div>
+      </div>
+    </div>
+
+    <div style="height:26px"></div>
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">Chosen · sub-row, right-aligned — a column under the swap</div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">idle · branch name pays nothing</div>
+        <div class="canvas" style="width:300px;position:relative">
+          <span class="redge"></span>
+          <div class="sb" style="width:300px;padding:10px 0">
+            <div class="srow"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span></span></div>
+            <div class="ssub"><span>PR #138 · 3d</span><span class="sspacer"></span><span class="pplug xs">__PLUG__</span></div>
+            <div class="sess" style="padding-left:54px"><span class="t">wire the ports snapshot</span><span class="dot run pulse"></span></div>
+            <div class="srow"><span class="cslot"></span>__BRANCH__<span class="sname" style="color:var(--muted)">main</span><span class="sslot"></span></div>
+            <div class="ssub"><span>default · 2h</span><span class="sspacer"></span><span class="pplug xs">__PLUG__</span></div>
+            <div class="srow"><span class="cslot"></span>__BRANCH_P__<span class="sname">fix/scroll-anchor</span><span class="sslot"><span class="diff mono"><span class="a">+22</span></span></span></div>
+            <div class="ssub"><span>6h</span><span class="sspacer"></span><span class="pplug xs err">__PLUG__<span class="badge"></span></span></div>
+            <div class="srow"><span class="cslot"></span>__BRANCH_P__<span class="sname">chore/deps</span><span class="sslot"></span></div>
+            <div class="ssub"><span>4d</span></div>
+          </div>
+        </div>
+        <div class="why"><span class="sw" style="background:rgba(126,232,166,.5)"></span><b>The green guide is the shared right edge.</b> Both lines pad to 8 pt, so <code>+412 −58</code> / <code>…</code> and the plug stack in one column — the glyph reads as part of the row's control edge, one line down. <code>chore/deps</code> has no listener and draws nothing; its sub-row was already 16 pt tall and reserved.</div>
+      </div>
+      <div class="frame">
+        <div class="cap">hovered · the swap happens above, the plug is untouched</div>
+        <div class="canvas" style="width:300px;position:relative">
+          <span class="redge"></span>
+          <div class="sb" style="width:300px;padding:10px 0">
+            <div class="srow hoverfill"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="icon hot-c">__DOTS__</span></span></div>
+            <div class="ssub"><span>PR #138 · 3d</span><span class="sspacer"></span><span class="pplug xs hot">__PLUG__</span></div>
+            <div class="srow"><span class="cslot"></span>__BRANCH__<span class="sname" style="color:var(--muted)">main</span><span class="sslot"></span></div>
+            <div class="ssub"><span>default · 2h</span><span class="sspacer"></span><span class="pplug xs">__PLUG__</span></div>
+          </div>
+        </div>
+        <div class="why"><b>Two independent hit targets, two lines, no negotiation.</b> Hovering the row swaps line 1 and lights the plug's own small circle on line 2. Nothing about the existing swap has to change — which is what makes this a ~10-line addition instead of a layout rework.</div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:20px">
+      <strong>✓ What this placement buys.</strong>
+      <b>(1)</b> Zero cost to the branch name — line 1 is untouched at every sidebar width (250–450, user-resizable).
+      <b>(2)</b> No interaction with the diff/menu swap, so no new state to reason about there.
+      <b>(3)</b> The sub-row's 16 pt is <em>already reserved on every row</em> (“Fixed height so the row always
+      reserves its place”), so no row grows and a 20-worktree sidebar doesn't get taller.
+      <b>(4)</b> Right alignment keeps it in the control column instead of burying it in metadata text.
+    </div>
+
+    <div style="height:24px"></div>
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">The one real problem: a 16 pt line is below the pointer target floor</div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">Hit-slop into padding that already exists</div>
+        <div class="canvas" style="width:340px"><div class="sb" style="width:340px;padding:16px 0">
+          <div class="srow"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span></span></div>
+          <div class="ssub"><span>PR #138 · 3d</span><span class="sspacer"></span><span class="pplug xs ring">__PLUG__</span></div>
+          <div class="sloplegend"><span class="sw" style="background:rgba(126,232,166,.2);border:1px dashed rgba(126,232,166,.75)"></span>dashed = the transparent 22 pt hit box, spilling into padding that already exists</div>
+        </div><div class="chatpane" style="min-height:0"></div></div>
+        <div class="why"><b>Glyph 14 pt, painted inside the 16 pt line; hit area 22 pt, spilling into the 2 pt bottom padding of line 1 and the 4 pt bottom padding of the sub-row.</b> Nothing moves, nothing grows, and the target clears the floor. This is the same fight <code>_CompactMenuButton</code> already documents (“PopupMenuButton wraps the icon in a default 48 px IconButton”) — solved the same way, with <code>VisualDensity.compact</code> and an explicit box.</div>
+      </div>
+      <div class="frame">
+        <div class="cap">Rules for the sub-row glyph</div>
+        <div class="panel" style="width:400px">
+          <table style="font-size:12px">
+            <tr><th>Property</th><th>Value</th><th>Why</th></tr>
+            <tr><td>glyph size</td><td class="n">14 pt</td><td class="dimc">fits the 16 pt line; matches the sub-row's 11 pt text weight</td></tr>
+            <tr><td>hit box</td><td class="n">22 × 22 pt</td><td class="dimc">overflows into existing padding, row height unchanged</td></tr>
+            <tr><td>right edge</td><td class="n">8 pt</td><td class="dimc">identical to line 1 → the column reads as one</td></tr>
+            <tr><td>hover circle</td><td class="n">18 pt</td><td class="dimc">small enough not to touch the age text or the row edge</td></tr>
+            <tr><td>badge dot</td><td class="n">6 pt, top-right</td><td class="dimc">rides up into line 1's padding, clear of the glyph's prongs</td></tr>
+            <tr><td>empty state</td><td class="n">nothing drawn</td><td class="dimc">slot is not reserved here — the sub-row is already reserved wholesale</td></tr>
+          </table>
+        </div>
+        <div class="why"><b>Deliberate divergence from the phone,</b> where the plug sits in the branch line's trailing column. It has to: <code>worktree_row.dart</code> says the phone's meta line “is not a target”, so a tappable glyph can't go there. Desktop's sub-row is inside the same hover group on a pointer surface, so it can. Written down here so nobody later “fixes” the inconsistency by breaking one of the two.</div>
+      </div>
+    </div>
+
+    <div style="height:24px"></div>
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">Alternative, now rejected · own slot on line 1</div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">plug left of the swapping slot</div>
+        <div class="canvas" style="width:300px"><div class="sb" style="width:300px;padding:10px 0">
+          <div class="srow"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-po…</span><span class="pplug sm">__PLUG__</span><span class="sslot"><span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span></span></div>
+          <div class="ssub"><span>PR #138 · 3d</span></div>
+        </div><div class="chatpane" style="min-height:0"></div></div>
+      </div>
+      <div class="frame">
+        <div class="cap">what it costs the branch name</div>
+        <div class="panel" style="width:420px">
+          <table style="font-size:12px">
+            <tr><th>Sidebar width</th><th>Name today</th><th>With plug on line 1</th><th>Cost</th></tr>
+            <tr><td class="n">250 pt (min)</td><td class="n">~130 pt · 16 ch</td><td class="n">~104 pt · 13 ch</td><td class="n">3 ch</td></tr>
+            <tr><td class="n">280 pt (default)</td><td class="n">~160 pt · 20 ch</td><td class="n">~134 pt · 17 ch</td><td class="n">3 ch</td></tr>
+            <tr><td class="n">340 pt</td><td class="n">~220 pt · 27 ch</td><td class="n">~194 pt · 24 ch</td><td class="n">3 ch</td></tr>
+          </table>
+        </div>
+        <div class="why"><b>Rejected because the tax is permanent and the benefit was only a bigger target.</b> Branch names are how you identify a row; <code>feat/open-po…</code> at the minimum width is a real regression for every user, in exchange for 22 pt instead of 16 pt of glyph — and hit-slop gets that back for free on the sub-row.</div>
+      </div>
+    </div>
+
+    <div style="height:20px"></div>
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">Either way: the <code>…</code> menu gains an item</div>
+        <div class="panel" style="width:250px">
+          <div class="mi hd">worktree actions</div>
+          <div class="mi hot"><span class="w" style="color:var(--text)">Ports (3)…</span><span class="mono" style="color:var(--muted)">⌘⇧P</span></div>
+          <div class="msep"></div>
+          <div class="mi"><span class="w" style="color:var(--text)">Rename branch…</span></div>
+          <div class="mi"><span class="w" style="color:var(--text)">Delete worktree…</span></div>
+        </div>
+        <div class="why"><b>Costs nothing, and it's the keyboard path</b> — plus a discoverable name for anyone who never notices a 14 pt glyph.</div>
+      </div>
+      <div class="frame">
+        <div class="cap">What lands where, on the sidebar row</div>
+        <div class="panel" style="width:420px">
+          <table style="font-size:12px">
+            <tr><th>Line</th><th>Left → right</th></tr>
+            <tr><td class="n">1</td><td>caret slot · PR/branch glyph · <b>branch name</b> · star · <span class="dimc">[ diff ⟷ … ]</span></td></tr>
+            <tr><td class="n">2</td><td>PR #n · age <span class="dimc">…gap…</span> · <b>plug</b> (+ badge)</td></tr>
+            <tr><td class="n">3+</td><td class="dimc">session tiles (unchanged)</td></tr>
+          </table>
+        </div>
+        <div class="why"><b>Reads as a diagonal:</b> identity and change on line 1, context and “what it's serving” on line 2, both ending on the same right edge.</div>
+      </div>
+    </div>
+
+    <div class="note warn" style="margin-top:22px">
+      <strong>⚠ Implementation trap, already documented in the file.</strong>
+      <code>_WorktreeGroupState</code> keeps <code>_hovering</code>, <code>_focused</code> <em>and</em>
+      <code>_menuOpen</code>, with a comment warning that an open popup's barrier steals mouse-hover and would flip
+      <code>_hovering</code> off. The ports popover has the same shape, so it needs the same latch — a
+      <code>_portsOpen</code> flag OR-ed into that condition. Without it, opening the popover un-hovers the row and
+      the <code>…</code> snaps back to a diff pill under your cursor while you're using the thing you just opened.
+    </div>
+
+    <div class="why" style="margin-top:14px"><b>Also rejected:</b> <em>ports only inside the <code>…</code> menu</em> (zero layout cost, but §1's whole point is a signal you can <b>see</b> without hovering); <em>plug joins the swap</em> (a hovered row would show ports and a resting row changes — neither state tells you both); <em>move the diff to the sub-row to free line 1's slot</em> (rearranges existing UI for every user to make room for a new feature); <em>plug inline right after the age text</em> (jumps left/right depending on whether the row has a PR, so the eye can't learn where to look); and <em>show it only on hover</em> (same failure as the menu).</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 6 -->
+<div class="card">
+  <header>
+    <h2>6 · Global Ports screen — “everything, all repos”</h2><span class="phase phlater">P2</span><span class="tag">the other half of the ask</span>
+    <p class="d">New destination beside Home / Archived. Grouped repo → worktree → port, with the filter row doing the “per branch vs everything” switch.</p>
+  </header>
+  <div class="body">
+    <div class="frames">
+
+      <div class="frame phone">
+        <div class="cap">iPhone · Ports · filter “All”</div>
+        <div class="screen">
+          <div class="appbar">__PLUG_P__<div class="h"><div class="t1">Ports</div><div class="t2">11 listening · mac-mini · 2s ago</div></div><span class="icon">__REFRESH__</span><span class="icon">__DOTS__</span></div>
+          <div class="filters">
+            <span class="f on">All</span><span class="f">This repo</span><span class="f">Mine</span><span class="f">Exposed<span class="b">2</span></span><span class="f warnb">Orphans<span class="b">2</span></span>
+          </div>
+
+          <div class="grouphdr">__FOLDER__<span class="g1">makit</span><span class="g2">5</span>__CARETDOWN__</div>
+          <div class="wtsub act-run">__BRANCH_P__<span class="b">feat/open-ports</span><span class="dim">2</span></div>
+          <div class="compact">
+            <span class="cport"><span class="st"></span><span class="n">5173</span><span class="k">vite</span></span>
+            <span class="cport"><span class="st"></span><span class="n">9787</span><span class="k">makit · exposed</span></span>
+          </div>
+          <div class="wtsub">__BRANCH__<span class="b">main</span><span class="dim">1</span></div>
+          <div class="compact"><span class="cport"><span class="st"></span><span class="n">5174</span><span class="k">vite</span></span></div>
+          <div class="wtsub act-err">__BRANCH_P__<span class="b">fix/scroll-anchor</span><span class="dim">1</span></div>
+          <div class="compact">
+            <span class="cport"><span class="st err"></span><span class="n">5175</span><span class="k">vite · refused, up 6h</span></span>
+          </div>
+          <div class="wtsub">__BRANCH__<span class="b">chore/deps</span><span class="dim">1</span></div>
+          <div class="compact"><span class="cport"><span class="st"></span><span class="n">5432</span><span class="k">postgres · docker</span></span></div>
+
+          <div class="grouphdr">__FOLDER__<span class="g1">chat-ui</span><span class="g2">3</span>__CARETDOWN__</div>
+          <div class="wtsub">__BRANCH_P__<span class="b">access_control_refactor</span><span class="dim">2</span></div>
+          <div class="compact">
+            <span class="cport collide"><span class="st err"></span><span class="n">5173</span><span class="k">clash · makit/feat-open-ports</span></span>
+            <span class="cport"><span class="st"></span><span class="n">4173</span><span class="k">preview</span></span>
+          </div>
+          <div class="wtsub">__BRANCH__<span class="b">main</span><span class="dim">1</span></div>
+          <div class="compact"><span class="cport"><span class="st warn"></span><span class="n">5432</span><span class="k">postgres · lan</span></span></div>
+
+          <div class="grouphdr" style="color:var(--red)">__WARN__<span class="g1" style="color:var(--red)">orphans — worktree gone</span><span class="g2">2</span>__CARETDOWN__</div>
+          <div class="compact" style="padding-left:14px">
+            <span class="cport"><span class="st"></span><span class="n">5180</span><span class="k">vite · was makit/feat-desktop-tabs, removed 2d ago</span></span>
+          </div>
+          <div class="compact" style="padding-left:14px">
+            <span class="cport"><span class="st"></span><span class="n">6006</span><span class="k">storybook · cwd /tmp/scratch</span></span>
+          </div>
+          <div style="padding:2px 14px 12px"><span class="btn danger">__STOP__ Kill all orphans (2)</span></div>
+
+          <div class="grouphdr"><span class="g1">other / system</span><span class="g2">1</span>__CARETRIGHT__</div>
+          <div style="height:10px"></div>
+        </div>
+        <div class="why"><b>Orphans is the section that earns the feature.</b> Removing a worktree never kills its dev server, so 5180/5181/5182 pile up for days. One button reclaims them.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">Filter “Exposed” · the security read</div>
+        <div class="screen" style="width:375px">
+          <div class="appbar">__PLUG_P__<div class="h"><div class="t1">Ports</div><div class="t2">2 of 11 reachable off this machine</div></div><span class="icon">__REFRESH__</span></div>
+          <div class="filters"><span class="f">All</span><span class="f">This repo</span><span class="f">Mine</span><span class="f on">Exposed</span><span class="f warnb">Orphans<span class="b">2</span></span></div>
+          <div class="banner warn">__WARN__<div><b>Bound past loopback.</b> makit itself is tailnet-only by design; anything on <code>0.0.0.0</code> is also reachable from whatever Wi‑Fi you're on.</div></div>
+          <div class="port">
+            <div class="lead"><span class="num">9787</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">serve.js</span><span class="reach lan">exposed</span></div>
+              <div class="l2">0.0.0.0:9787 · cert-pinned wss · intentional</div>
+              <div class="owner">__BRANCH_P__ makit / feat-open-ports</div>
+            </div>
+          </div>
+          <div class="port">
+            <div class="lead"><span class="num">5432</span></div>
+            <div class="body2">
+              <div class="l1"><span class="kind mono">postgres</span> <span class="phase phlater">P2</span><span class="reach lan">exposed</span><span class="health warn">no auth</span></div>
+              <div class="l2">0.0.0.0:5432 · published by compose · trust auth</div>
+              <div class="owner">__BRANCH__ chat-ui / main</div>
+              <div class="acts"><span class="btn">__COPY__ Copy fix</span><span class="btn ghost">Bind 127.0.0.1 in compose.yml</span></div>
+            </div>
+          </div>
+          <div style="height:10px"></div>
+        </div>
+        <div class="why"><b>This filter is the proof of makit's own claim.</b> The README promises “no ports exposed to café networks” — this is the screen that lets you verify it, and it's honest enough to flag makit's own listener.</div>
+      </div>
+    </div>
+
+    <div style="height:24px"></div>
+    <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">Empty / degraded states</div>
+    <div class="states">
+      <div class="state"><div class="h">nothing listening</div><div class="empty">No dev servers running.<br>Start one and it shows up here.</div></div>
+      <div class="state"><div class="h">first scan</div><div class="skel" style="width:70%"></div><div class="skel" style="width:52%"></div><div class="skel" style="width:61%"></div><div class="m">One <code>lsof</code> pass, ~200 ms. Cached after.</div></div>
+      <div class="state"><div class="h">scan denied</div><div class="banner bad" style="margin:0">__WARN__<div><b>Can't read the host's sockets.</b> <code>lsof</code> returned EPERM. Ports shown may be incomplete.<span class="btn ghost" style="margin-left:6px">How to fix</span></div></div></div>
+      <div class="state"><div class="h">unowned only</div><div class="compact" style="padding:0"><span class="cport"><span class="st"></span><span class="n">22</span><span class="k">sshd · root</span></span><span class="cport"><span class="st"></span><span class="n">5000</span><span class="k">ControlCenter</span></span></div><div class="m">System listeners are collapsed by default — they're noise, not work.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 7 -->
+<div class="card">
+  <header>
+    <h2>7 · Menubar — the ambient version</h2><span class="phase phlater">P2</span><span class="tag alt">desktop only</span>
+    <p class="d">Count in the tray; the badge counts only things that <em>need</em> you (zombies + orphans + unexpected exposure).</p>
+  </header>
+  <div class="body">
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">macOS menubar</div>
+        <div class="macbar"><span>▲ makit</span><span class="live">__PLUG__ 11</span><span style="color:var(--red);font-weight:700">3</span><span>100%</span><span>14:22</span></div>
+        <div class="menu">
+          <div class="mi hd">needs attention · 3</div>
+          <div class="mi hot"><span class="n">5175</span><span class="w">vite · refused, up 6h — fix/scroll-anchor</span><span class="btn danger">Kill</span></div>
+          <div class="mi"><span class="n">5180</span><span class="w">orphan · worktree removed 2d ago</span><span class="btn danger">Kill</span></div>
+          <div class="mi"><span class="n">5432</span><span class="w">postgres on 0.0.0.0 · lan</span>__WARN__</div>
+          <div class="msep"></div>
+          <div class="mi hd">makit</div>
+          <div class="mi"><span class="n">5173</span><span class="w">vite · feat/open-ports</span><span class="icon">__EXT__</span></div>
+          <div class="mi"><span class="n">9787</span><span class="w">makit server · tailnet</span><span class="icon">__EXT__</span></div>
+          <div class="mi"><span class="n">5174</span><span class="w">vite · main</span><span class="icon">__EXT__</span></div>
+          <div class="msep"></div>
+          <div class="mi"><span class="w" style="color:var(--text)">Open Ports…</span><span style="color:var(--muted)">⌘⇧P</span></div>
+          <div class="mi"><span class="w" style="color:var(--text)">Kill all orphans (2)</span></div>
+        </div>
+        <div class="why"><b>Attention-first ordering.</b> A healthy port is a fact you look up; a zombie is a thing you act on. The menu puts the actionable three above the fold and everything else below.</div>
+      </div>
+
+      <div class="frame">
+        <div class="cap">Notification (reuses SPEC-07/08 actionable plumbing)</div>
+        <div class="panel" style="width:340px;padding:0">
+          <div style="padding:13px 14px">
+            <div style="font-size:12.5px;font-weight:700;margin-bottom:3px">makit</div>
+            <div style="font-size:13px"><span class="mono">:5173</span> stopped listening</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:3px">vite dev · feat/open-ports · was up 41m</div>
+            <div class="acts"><span class="btn">Restart</span><span class="btn ghost">Ignore this port</span></div>
+          </div>
+        </div>
+        <div class="why"><b>Opt-in per port only</b> (“Watch this port” in the sheet). Unsolicited port notifications would be a firehose — a build restarts its dev server ten times an hour.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 8 -->
+<div class="card">
+  <header>
+    <h2>8 · The one thing only makit can do: <em>Forward &amp; open</em></h2><span class="phase phlater">P4</span><span class="tag">phone-side payoff</span>
+    <p class="d">A loopback-only dev server is invisible from your phone. makit already holds a cert-pinned WSS tunnel to that machine — so proxy the port through it.</p>
+  </header>
+  <div class="body">
+    <div class="frames">
+      <div class="frame">
+        <div class="cap">Tap “Forward &amp; open” on a loopback port</div>
+        <div class="sheet" style="border-radius:18px">
+          <div class="grab"></div>
+          <div class="sh-head">__EYE__<div class="ttl" style="font-size:14px">Forward :5173 to this phone?</div></div>
+          <div style="padding:0 16px 14px;font-size:12.5px;color:var(--on-surface-variant)">
+            <code>127.0.0.1:5173</code> can't be reached from here. makit can tunnel it over the existing
+            encrypted session for as long as this sheet stays open.
+            <div class="acts" style="margin-top:12px"><span class="btn pri">__EYE__ Forward for 30 min</span><span class="btn ghost">Cancel</span></div>
+            <div style="margin-top:12px;font-size:11.5px;color:var(--muted)">Tunnel is per-device, expires automatically, and never opens a host port.</div>
+          </div>
+        </div>
+      </div>
+      <div class="frame">
+        <div class="cap">Then: in-app webview, with the port strip</div>
+        <div class="screen" style="width:290px">
+          <div class="appbar" style="padding:9px 12px"><span class="icon">__BACK__</span><div class="h"><div class="t1" style="font-size:13.5px">makit · localhost:5173</div><div class="t2">forwarded · 29:41 left</div></div><span class="icon p">__PLUGS__</span><span class="icon">__REFRESH__</span></div>
+          <div style="height:230px;background:#0b0b0b;display:grid;place-items:center;color:#3a3a3a;font-size:12px;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline)">your dev server, on your phone</div>
+          <div class="compact" style="padding:8px 12px">
+            <span class="cport"><span class="st"></span><span class="n">5173</span><span class="k">vite</span></span>
+            <span class="cport" style="color:var(--muted)"><span class="n">9787</span></span>
+            <span class="btn ghost" style="margin-left:auto">Stop</span>
+          </div>        </div>
+        <div class="why"><b>This is the feature people will actually talk about:</b> review the UI your agent just built, from the couch, without exposing anything. Every other port tool can only tell you the number.</div>
+      </div>
+    </div>
+    <div class="note warn" style="margin-top:20px">
+      <strong>⚠ Scope flag.</strong> Forwarding is a real new transport path (multiplexed HTTP over the WSS session,
+      per-device authz, TTL, no host port). It is the most valuable frame on this page and the most expensive —
+      it should be a <b>phase 2</b>, after read-only scan + attribution ship.
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 9 -->
+<div class="card">
+  <header>
+    <h2>9 · Semantics &amp; data legend</h2><span class="phase phref">ref</span><span class="tag alt">reference</span>
+    <p class="d">What each colour, badge and derived field means — the contract the DTO has to support.</p>
+  </header>
+  <div class="body">
+    <table>
+      <tr><th>Signal</th><th>Rendering</th><th>Derived from</th></tr>
+      <tr><td><span class="sw" style="background:var(--add)"></span>healthy</td><td><span class="health ok">200</span> / <span class="health warn">404</span> / <span class="health idle">not probed</span> — tooltip carries the probe + its age (§3)</td><td class="n">cheap probe, stale-while-revalidate</td></tr>
+      <tr><td><span class="sw" style="background:var(--orange)"></span>exposed</td><td><span class="reach lan">exposed</span> <span class="reach lan">exposed</span> <span class="reach">loopback</span></td><td class="n">bindAddr × tailnet IP of host</td></tr>
+      <tr><td><span class="sw" style="background:var(--red)"></span>zombie</td><td><span class="health err">refused</span> + uptime</td><td class="n">listening ∧ probe fails</td></tr>
+      <tr><td><span class="sw" style="background:var(--red)"></span>orphan</td><td>own group + “was &lt;branch&gt;, removed Nd ago”</td><td class="n">cwd ∉ active worktrees ∧ port history</td></tr>
+      <tr><td><span class="sw" style="background:var(--red)"></span>collision</td><td><span class="cport collide" style="padding:1px 6px"><span class="n">5173</span> clash</span></td><td class="n">two worktrees, same port, history</td></tr>
+      <tr><td>owner: worktree</td><td>grouping + <code>__BRANCH__ branch</code> line</td><td class="n">process cwd → longest-prefix worktree path</td></tr>
+      <tr><td>owner: session</td><td>chip inside the session tile</td><td class="n">ppid ancestry hits a makit-spawned agent</td></tr>
+      <tr><td>kind</td><td>icon + label (<code>vite</code>, <code>next</code>, <code>flutter-dds</code>, <code>postgres</code>, <code>docker</code>…)</td><td class="n">argv pattern match</td></tr>
+      <tr><td>uptime / cpu / rss</td><td>third line of the row</td><td class="n">ps on the resolved pid</td></tr>
+      <tr><td>suggested port</td><td><code>PORT=5183</code> copy button</td><td class="n">base + hash(branch), skipping taken</td></tr>
+    </table>
+    <div class="why"><b>Accessibility:</b> no state is colour-only — every tint ships with a word (<code>refused</code>, <code>exposed</code>, <code>clash</code>, <code>orphan</code>), same rule as <code>worktree_row.dart</code>'s accent semantics label. And every one of those words ships with the §3 tooltip string, which is literally the same string the <code>Semantics.label</code> publishes.</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ 10 -->
+<div class="card">
+  <header>
+    <h2>10 · Considered and rejected</h2><span class="phase phref">ref</span><span class="tag no">not building</span>
+    <p class="d">Recorded so the choices above read as decisions rather than defaults.</p>
+  </header>
+  <div class="body">
+    <ul class="rej">
+      <li><b>Port numbers on the worktree row.</b> Tried as a fourth <code>repo_chips.dart</code> pill
+      (<code>🔌 5173 9787</code>). It competes with the diff and PR chips for the one line that matters, and it
+      answers a question you don't have while scanning eight worktrees: at row level you want <em>whether</em>,
+      not <em>which</em>. Replaced by the single glyph in §1.</li>
+      <li><b>Buttons inline in the mobile list.</b> A <code>Kill</code> next to a port in a scrollable list is a
+      fat-finger trap during a flick. Actions moved into the second sheet, destructive one last, past a labelled
+      divider.</li>
+      <li><b>A hover-only desktop popover holding buttons.</b> Unreachable by keyboard and fragile under a trackpad
+      — leave the glyph and your click target evaporates. Hover kept for the glance, click-to-pin added for the
+      actions: one surface, two levels of commitment.</li>
+      <li><b>Ports as a column in the repo card header.</b> The header already carries name + actions; a port count there answers a question nobody asks at repo level (“my repo has 5 ports” is meaningless — a <em>branch</em> having them isn't).</li>
+      <li><b>A dedicated tab per repo.</b> Doubles navigation depth for the rare case. The single global screen with a <code>This repo</code> filter covers it in one tap.</li>
+      <li><b>Always-on port notifications.</b> Dev servers restart constantly; this would be an unusable firehose. Watching is per-port opt-in.</li>
+      <li><b>Continuous background polling.</b> <code>lsof</code> is not free (hundreds of ms, worse with network mounts). Poll only while a client is subscribed to the ports view — same discipline as <code>repo_service.ts</code>'s “occasional, not per-event”.</li>
+      <li><b>Showing every socket (established connections, UDP).</b> Listeners are the thing you own; the rest is traffic. A full netstat view would bury the four ports you care about.</li>
+      <li><b>Auto-killing idle servers.</b> Too clever, too destructive. Offered as a reviewable “Kill all orphans” list instead, never automatic.</li>
+      <li><b>Reusing the diff/PR chip shape verbatim with no glyph.</b> Bare numbers on the meta line read as diff counts — one of the reasons the numbers left the row entirely.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="note">
+  <strong>Suggested phasing.</strong>
+  <b>P1</b> scan + attribution + <code>PortDTO</code> on the wire + the row glyph, the desktop popover and the two
+  mobile sheets (read-only: Open / Copy / Logs, no kill).
+  <b>P2</b> global Ports screen with filters, orphan/collision detection, port history table.
+  <b>P3</b> actions: kill (confirm-gated), kill-all-orphans, suggested port.
+  <b>P4</b> forward &amp; open, watched ports + notifications.
+  Each phase is independently shippable and useful on its own.
+</div>
+
+<script>
+const SVG={
+ FOLDER:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M3 6h6l2 2h10v10H3z"/></svg>',
+ CARETDOWN:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M6 9l6 6 6-6"/></svg>',
+ CARETRIGHT:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M9 6l6 6-6 6"/></svg>',
+ DOTS:'<svg viewBox="0 0 24 24" width="15" height="15"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>',
+ PLUS:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M12 5v14M5 12h14"/></svg>',
+ BRANCH:'<svg viewBox="0 0 24 24" width="15" height="15"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M6 8.2v3q0 4.8 9.8 6.6M18 8.2v7.6"/></svg>',
+ PLUG:'<svg class="ph" viewBox="0 0 256 256" width="13" height="13"><path d="M236.24,67.76a6,6,0,0,0-8.48,0L192,103.51,152.49,64l35.75-35.76a6,6,0,0,0-8.48-8.48L144,55.51,116.24,27.76a6,6,0,1,0-8.48,8.48L115.51,44,61.13,98.38a38,38,0,0,0,0,53.75l17.13,17.12-50.5,50.51a6,6,0,1,0,8.48,8.48l50.51-50.5,17.13,17.13a38,38,0,0,0,53.74,0L212,140.49l7.76,7.75a6,6,0,0,0,8.48-8.48L200.49,112l35.75-35.76A6,6,0,0,0,236.24,67.76ZM149.13,186.38a26,26,0,0,1-36.77,0L69.62,143.64a26,26,0,0,1,0-36.77L124,52.49,203.51,132Z"/></svg>',
+ PLUG_L:'<svg class="ph" viewBox="0 0 256 256" width="17" height="17"><path d="M236.24,67.76a6,6,0,0,0-8.48,0L192,103.51,152.49,64l35.75-35.76a6,6,0,0,0-8.48-8.48L144,55.51,116.24,27.76a6,6,0,1,0-8.48,8.48L115.51,44,61.13,98.38a38,38,0,0,0,0,53.75l17.13,17.12-50.5,50.51a6,6,0,1,0,8.48,8.48l50.51-50.5,17.13,17.13a38,38,0,0,0,53.74,0L212,140.49l7.76,7.75a6,6,0,0,0,8.48-8.48L200.49,112l35.75-35.76A6,6,0,0,0,236.24,67.76ZM149.13,186.38a26,26,0,0,1-36.77,0L69.62,143.64a26,26,0,0,1,0-36.77L124,52.49,203.51,132Z"/></svg>',
+ PLUGS:'<svg class="ph" viewBox="0 0 256 256" width="15" height="15"><path d="M236.24,19.76a6,6,0,0,0-8.48,0L173.94,73.57l-6.79-6.78a30,30,0,0,0-42.42,0L100,91.51l-7.76-7.75a6,6,0,0,0-8.48,8.48L91.51,100,66.79,124.73a30,30,0,0,0,0,42.42l6.78,6.79L19.76,227.76a6,6,0,1,0,8.48,8.48l53.82-53.81,6.79,6.78a30,30,0,0,0,42.42,0L156,164.49l7.76,7.75a6,6,0,0,0,8.48-8.48L164.49,156l24.72-24.73a30,30,0,0,0,0-42.42l-6.78-6.79,53.81-53.82A6,6,0,0,0,236.24,19.76Zm-113.45,161a18,18,0,0,1-25.46,0L75.27,158.67a18,18,0,0,1,0-25.46L100,108.49,147.51,156Zm57.94-57.94L156,147.51,108.49,100l24.72-24.73a18,18,0,0,1,25.46,0l22.06,22.06a18,18,0,0,1,0,25.46ZM90.43,34.23a6,6,0,0,1,11.14-4.46l8,20a6,6,0,1,1-11.14,4.46Zm-64,59.54a6,6,0,0,1,7.8-3.34l20,8a6,6,0,1,1-4.46,11.14l-20-8A6,6,0,0,1,26.43,93.77Zm203.14,68.46a6,6,0,0,1-7.8,3.34l-20-8a6,6,0,0,1,4.46-11.14l20,8A6,6,0,0,1,229.57,162.23Zm-64,59.54a6,6,0,1,1-11.14,4.46l-8-20a6,6,0,0,1,11.14-4.46Z"/></svg>',
+ PR:'<svg viewBox="0 0 24 24" width="11" height="11"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v8M18 16V9a3 3 0 00-3-3h-3l2-2m-2 2l2 2"/></svg>',
+ VITE:'<svg viewBox="0 0 24 24" width="12" height="12"><path d="M12 3l8 3-8 15L4 6z"/></svg>',
+ SERVER:'<svg viewBox="0 0 24 24" width="12" height="12"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>',
+ DB:'<svg viewBox="0 0 24 24" width="12" height="12"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg>',
+ PULSE_I:'<svg viewBox="0 0 24 24" width="17" height="17"><path d="M3 12h4l2-5 3 10 2-5h7"/></svg>',
+ PULSE:'<svg viewBox="0 0 24 24" width="10" height="10"><path d="M3 12h4l2-5 3 10 2-5h7"/></svg>',
+ COPY:'<svg viewBox="0 0 24 24" width="12" height="12"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H6a2 2 0 00-2 2v9"/></svg>',
+ LOGS:'<svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 6h14M5 11h14M5 16h9"/></svg>',
+ STOP:'<svg viewBox="0 0 24 24" width="14" height="14"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+ EYE:'<svg viewBox="0 0 24 24" width="16" height="16"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>',
+ WARN:'<svg viewBox="0 0 24 24" width="13" height="13"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01" stroke-linecap="round"/></svg>',
+ REFRESH:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M20 12a8 8 0 10-3 6.2M20 7v5h-5" stroke-linecap="round"/></svg>',
+ EXT:'<svg viewBox="0 0 24 24" width="12" height="12"><path d="M14 5h5v5M19 5l-8 8M17 14v4a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h4"/></svg>',
+ BACK:'<svg viewBox="0 0 24 24" width="15" height="15"><path d="M15 6l-6 6 6 6"/></svg>',
+};
+document.body.innerHTML=document.body.innerHTML
+ .replace(/__FOLDER__/g,'<span class="icon">'+SVG.FOLDER+'</span>')
+ .replace(/__CARETDOWN__/g,'<span class="icon">'+SVG.CARETDOWN+'</span>')
+ .replace(/__CARETRIGHT__/g,'<span class="icon">'+SVG.CARETRIGHT+'</span>')
+ .replace(/__DOTS__/g,'<span class="icon">'+SVG.DOTS+'</span>')
+ .replace(/__PLUS__/g,'<span class="icon">'+SVG.PLUS+'</span>')
+ .replace(/__BRANCH_P__/g,'<span class="icon p">'+SVG.BRANCH+'</span>')
+ .replace(/__BRANCH__/g,'<span class="icon">'+SVG.BRANCH+'</span>')
+ .replace(/__PLUG_P__/g,'<span class="icon p">'+SVG.PLUG_L+'</span>')
+ .replace(/__PLUG_L__/g,SVG.PLUG_L)
+ .replace(/__PLUGS__/g,SVG.PLUGS)
+ .replace(/__PLUG__/g,SVG.PLUG)
+ .replace(/__PR__/g,SVG.PR)
+ .replace(/__VITE__/g,'<span class="icon">'+SVG.VITE+'</span>')
+ .replace(/__SERVER__/g,'<span class="icon">'+SVG.SERVER+'</span>')
+ .replace(/__DB__/g,'<span class="icon">'+SVG.DB+'</span>')
+ .replace(/__PULSE_I__/g,'<span class="icon">'+SVG.PULSE_I+'</span>')
+ .replace(/__PULSE__/g,SVG.PULSE)
+ .replace(/__COPY__/g,SVG.COPY)
+ .replace(/__LOGS__/g,SVG.LOGS)
+ .replace(/__STOP__/g,SVG.STOP)
+ .replace(/__EYE__/g,SVG.EYE)
+ .replace(/__WARN__/g,'<span class="icon o">'+SVG.WARN+'</span>')
+ .replace(/__REFRESH__/g,'<span class="icon">'+SVG.REFRESH+'</span>')
+ .replace(/__EXT__/g,SVG.EXT)
+ .replace(/__BACK__/g,'<span class="icon">'+SVG.BACK+'</span>');
+</script>
+</body>
+</html>
