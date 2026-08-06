@@ -41,12 +41,13 @@ export interface CommandDeps {
   sendMetricsHistory(client: WsClient): void;
   /**
    * SPEC-41: recompute the port scanner's watcher count from the current set of
-   * `watchingPorts` clients and re-arm the cadence. Optional so the existing
-   * `CommandDeps` test fakes need no churn; `server.ts` always supplies it.
+   * `watchingPorts` clients and re-arm the cadence. Required (like
+   * {@link onMetricsWatchersChanged}): a router built without it would ACK a
+   * `ports.watch`, set the flag, and then scan nothing forever.
    */
-  onPortsWatchersChanged?(): void;
+  onPortsWatchersChanged(): void;
   /** SPEC-41: send this client the cached port snapshot, if one exists yet. */
-  sendPortsSnapshot?(client: WsClient): void;
+  sendPortsSnapshot(client: WsClient): void;
   /** Reverse-RPC: present a request on the device and resolve with its reply. */
   askDevice(
     body: Record<string, unknown>,

@@ -74,8 +74,20 @@ test('a malformed payload (on:"yes") is a no-op, not a crash', async () => {
   const rec = setup();
   const c = fakeClient();
   await dispatch(rec.router, c, { on: "yes" });
-  assert.equal(c.watchingPorts, false, "a non-true `on` reads as false");
+  assert.equal(c.watchingPorts, false, "a non-boolean `on` leaves the flag untouched");
   assert.equal((c as ReturnType<typeof fakeClient>).sent.filter((f) => f.t === "err").length, 0);
   assert.equal((c as ReturnType<typeof fakeClient>).sent.filter((f) => f.t === "ack").length, 1);
   assert.equal(rec.snapshotSends.length, 0);
+});
+
+test('a malformed payload does NOT disarm a client that is ALREADY watching (T8 no-op)', async () => {
+  const rec = setup();
+  const c = fakeClient({ watchingPorts: true });
+  await dispatch(rec.router, c, { on: "yes" });
+  // The flag and the watcher recount must be untouched: a malformed payload must
+  // never turn a watching client OFF (which would silently disarm the scanner).
+  assert.equal(c.watchingPorts, true, "still watching");
+  assert.equal(rec.recounts, 0, "no recompute of the watcher count");
+  assert.equal(rec.snapshotSends.length, 0);
+  assert.equal((c as ReturnType<typeof fakeClient>).sent.filter((f) => f.t === "ack").length, 1);
 });

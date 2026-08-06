@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { attribute, MAX_COMMAND_CHARS, type AttributeInput } from "./attribute.js";
+import { attribute, MAX_COMMAND_CHARS, tailnetAddressFromBindHost, type AttributeInput } from "./attribute.js";
 import type { ProcInfo } from "./proc.js";
 import type { Listener } from "./scan.js";
 import type { PortHealthDTO } from "../protocol.js";
@@ -127,13 +127,35 @@ test("reach: loopback addresses are 'loopback'", () => {
 
 const okHealth: PortHealthDTO = { kind: "ok", status: 200, probedAt: 123 };
 
+/**
+ * cwds + worktreePaths that make the default (pid 200) listener worktree-owned,
+ * so its health is read (D3: health is attached ONLY for worktree-owned ports).
+ */
+const ownedByWt = { cwds: new Map([[200, "/wt"]]), worktreePaths: ["/wt"] };
+
+test("D3: a port that BECOMES unowned drops BOTH its health and its openUrl (warm cache)", () => {
+  const health = () => okHealth; // warm cache: a verdict exists for this endpoint
+  const listeners = [listener({ pid: 200, address: "127.0.0.1", port: 5173 })];
+  const procs = new Map([[200, proc(200, 1)]]);
+  // First call: pid 200's cwd is under the worktree → owned → probed → openUrl.
+  const owned = run({ listeners, procs, cwds: new Map([[200, "/wt"]]), worktreePaths: ["/wt"], health });
+  assert.equal(owned[0]!.worktreePath, "/wt");
+  assert.ok(owned[0]!.health, "an owned port carries the cached verdict");
+  assert.equal(owned[0]!.openUrl, "http://127.0.0.1:5173");
+  // Second call: SAME endpoint, cache still warm, but now UNOWNED.
+  const unowned = run({ listeners, procs, cwds: new Map([[200, "/elsewhere"]]), worktreePaths: ["/wt"], health });
+  assert.equal(unowned[0]!.worktreePath, undefined);
+  assert.equal(unowned[0]!.health, undefined, "an unowned port must not attach a stale verdict");
+  assert.equal(unowned[0]!.openUrl, undefined, "and therefore no openUrl");
+});
+
 test("openUrl: 127.0.0.1 with an HTTP verdict → http://127.0.0.1:<port>", () => {
-  const ports = run({ listeners: [listener({ address: "127.0.0.1", port: 5173 })], health: () => okHealth });
+  const ports = run({ listeners: [listener({ address: "127.0.0.1", port: 5173 })], health: () => okHealth, ...ownedByWt });
   assert.equal(ports[0]!.openUrl, "http://127.0.0.1:5173");
 });
 
 test("openUrl: a wildcard IPv4 bind resolves to 127.0.0.1", () => {
-  const ports = run({ listeners: [listener({ address: "*", port: 5173 })], health: () => okHealth });
+  const ports = run({ listeners: [listener({ address: "*", port: 5173 })], health: () => okHealth, ...ownedByWt });
   assert.equal(ports[0]!.openUrl, "http://127.0.0.1:5173");
 });
 
@@ -141,6 +163,7 @@ test("openUrl: ::1 / :: are bracketed", () => {
   const [a, b] = run({
     listeners: [listener({ address: "::1", port: 9787 }), listener({ address: "::", port: 9788 })],
     health: () => okHealth,
+    ...ownedByWt,
   });
   assert.equal(a!.openUrl, "http://[::1]:9787");
   assert.equal(b!.openUrl, "http://[::1]:9788");
@@ -151,6 +174,7 @@ test("openUrl: a concrete address is used verbatim", () => {
     listeners: [listener({ address: "100.119.58.97", port: 7808 })],
     tailnetAddress: "100.119.58.97",
     health: () => okHealth,
+    ...ownedByWt,
   });
   assert.equal(ports[0]!.openUrl, "http://100.119.58.97:7808");
 });
@@ -160,6 +184,7 @@ test("openUrl: ABSENT when there is no HTTP verdict (unprobed or refused/timeout
   const [a, b] = run({
     listeners: [listener({ port: 1 }), listener({ port: 2 })],
     health: (_addr, port) => (port === 2 ? refused : undefined),
+    ...ownedByWt,
   });
   assert.equal(a!.openUrl, undefined, "unprobed → no openUrl");
   assert.equal(b!.openUrl, undefined, "refused is not an HTTP verdict → no openUrl");
@@ -167,7 +192,7 @@ test("openUrl: ABSENT when there is no HTTP verdict (unprobed or refused/timeout
 
 test("http-error still yields an openUrl (something answered)", () => {
   const err: PortHealthDTO = { kind: "http-error", status: 404, probedAt: 1 };
-  const ports = run({ listeners: [listener()], health: () => err });
+  const ports = run({ listeners: [listener()], health: () => err, ...ownedByWt });
   assert.equal(ports[0]!.openUrl, "http://127.0.0.1:5173");
 });
 
@@ -205,4 +230,16 @@ test("ports are sorted by port then pid", () => {
     ports.map((p) => [p.port, p.pid]),
     [[3000, 2], [3000, 9], [8080, 5]],
   );
+});
+
+test("tailnetAddressFromBindHost: a 100.x bind host IS the discovered tailnet address (no subprocess)", () => {
+  assert.equal(tailnetAddressFromBindHost("100.119.58.97"), "100.119.58.97");
+});
+
+test("tailnetAddressFromBindHost: loopback / LAN / wildcard binds discover NO tailnet address", () => {
+  assert.equal(tailnetAddressFromBindHost("127.0.0.1"), null);
+  assert.equal(tailnetAddressFromBindHost("0.0.0.0"), null);
+  assert.equal(tailnetAddressFromBindHost("192.168.1.5"), null);
+  assert.equal(tailnetAddressFromBindHost("::1"), null);
+  assert.equal(tailnetAddressFromBindHost("localhost"), null);
 });

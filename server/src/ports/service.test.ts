@@ -12,7 +12,10 @@ const CWD_OUT = ["p200", "fcwd", "n/repo/wt-a", "p100", "fcwd", "n/repo/wt-a"].j
 interface Harness {
   service: PortsService;
   snapshots: PortsSnapshotDTO[];
+  /** Number of listener scans STARTED (lsof -iTCP invocations), not published. */
   scanCount: () => number;
+  /** Total execs of ANY kind (lsof + ps + cwd lsof). */
+  execCount: () => number;
   refreshCount: () => number;
   tick: () => void;
   cleared: () => number;
@@ -29,14 +32,13 @@ function makeService(overrides: {
   now?: () => number;
 } = {}) {
   const snapshots: PortsSnapshotDTO[] = [];
-  let scans = 0;
+  const execLog: { cmd: string; args: string[] }[] = [];
   let refreshes = 0;
   const timers: { fn: () => void; cancelled: boolean }[] = [];
   let clears = 0;
 
   const defaultExec: Exec = async (cmd, args) => {
     if (cmd === "lsof" && args.includes("-iTCP")) {
-      scans++;
       return { code: 0, stdout: LISTENER_OUT, stderr: "" };
     }
     if (cmd === "ps") return { code: 0, stdout: PS_OUT, stderr: "" };
@@ -45,9 +47,14 @@ function makeService(overrides: {
   };
 
   let exec = overrides.exec ?? defaultExec;
+  const isListenerScan = (e: { cmd: string; args: string[] }) =>
+    e.cmd === "lsof" && e.args.includes("-iTCP");
 
   const service = new PortsService({
-    exec: (cmd, args, cwd, timeoutMs) => exec(cmd, args, cwd, timeoutMs),
+    exec: (cmd, args, cwd, timeoutMs) => {
+      execLog.push({ cmd, args });
+      return exec(cmd, args, cwd, timeoutMs);
+    },
     probe: {
       refresh: async () => {
         refreshes++;
@@ -74,7 +81,8 @@ function makeService(overrides: {
   return {
     service,
     snapshots,
-    scanCount: () => scans,
+    scanCount: () => execLog.filter(isListenerScan).length,
+    execCount: () => execLog.length,
     refreshCount: () => refreshes,
     tick: () => {
       for (const t of timers) if (!t.cancelled) t.fn();
@@ -88,12 +96,12 @@ function makeService(overrides: {
 
 const flush = () => new Promise((r) => setImmediate(r));
 
-test("zero watchers → ZERO execs (nothing is scanned until someone watches)", async () => {
+test("zero watchers → ZERO execs of ANY kind (nothing is scanned until someone watches)", async () => {
   const h = harness();
   await flush();
   h.service.setWatchers(0);
   await flush();
-  assert.equal(h.scanCount(), 0);
+  assert.equal(h.execCount(), 0, "not even a stray ps or cwd lsof");
 });
 
 test("0→1 runs exactly one immediate scan and publishes it", async () => {
@@ -135,19 +143,66 @@ test("a tick that fires during an in-flight scan is SKIPPED (no overlap, no queu
   h.tick(); // would-be scan 2, must be skipped while scan 1 is in flight
   h.tick();
   await flush();
+  // Exactly one listener scan was STARTED, despite two extra ticks — asserting
+  // the scan count, not the publish count: a second overlapping scan that merely
+  // suppressed its own publish would slip past a publications-only assertion.
+  assert.equal(h.scanCount(), 1, "only one listener scan started");
   release();
   await flush();
-  // Exactly one listener scan started, despite two ticks.
   assert.equal(h.snapshots.length, 1);
 });
 
-test("1→0 disarms the timer", async () => {
+test("1→0 disarms the timer AND a later tick performs no execs", async () => {
   const h = harness();
   h.service.setWatchers(1);
   await flush();
   const before = h.cleared();
+  const execsAfterFirstScan = h.execCount();
   h.service.setWatchers(0);
-  assert.equal(h.cleared(), before + 1);
+  assert.equal(h.cleared(), before + 1, "the timer is disarmed");
+  h.tick(); // a disarmed timer must fire nothing
+  await flush();
+  assert.equal(h.execCount(), execsAfterFirstScan, "no exec of any kind after disarm");
+});
+
+test("listener lsof succeeds but ps FAILS → scanOk:false, last good ports kept", async () => {
+  const h = harness();
+  h.service.setWatchers(1);
+  await flush();
+  const good = h.snapshots[0]!.ports;
+  assert.equal(good.length, 1);
+  h.setExec(async (cmd, args) => {
+    if (cmd === "lsof" && args.includes("-iTCP"))
+      return { code: 0, stdout: LISTENER_OUT, stderr: "" };
+    if (cmd === "ps") return { code: 1, stdout: "", stderr: "ps: boom" }; // ps fails
+    return { code: 0, stdout: CWD_OUT, stderr: "" };
+  });
+  h.tick();
+  await flush();
+  const last = h.snapshots[h.snapshots.length - 1]!;
+  assert.equal(last.scanOk, false);
+  assert.match(last.scanError ?? "", /ps/);
+  assert.deepEqual(last.ports, good, "the last good ports are retained");
+});
+
+test("listener lsof succeeds but the cwd lsof FAILS → scanOk:false, last good ports kept", async () => {
+  const h = harness();
+  h.service.setWatchers(1);
+  await flush();
+  const good = h.snapshots[0]!.ports;
+  assert.equal(good.length, 1);
+  h.setExec(async (cmd, args) => {
+    if (cmd === "lsof" && args.includes("-iTCP"))
+      return { code: 0, stdout: LISTENER_OUT, stderr: "" };
+    if (cmd === "ps") return { code: 0, stdout: PS_OUT, stderr: "" };
+    return { code: 127, stdout: "", stderr: "lsof: command not found" }; // cwd lsof unavailable
+  });
+  h.tick();
+  await flush();
+  const last = h.snapshots[h.snapshots.length - 1]!;
+  assert.equal(last.scanOk, false);
+  assert.match(last.scanError ?? "", /cwd lsof/);
+  assert.deepEqual(last.ports, good, "the last good ports are retained");
 });
 
 test("a scan finishing after the last watcher leaves publishes nothing", async () => {
@@ -200,6 +255,14 @@ test("an identical snapshot does NOT re-broadcast (projection excludes scannedAt
   h.tick();
   await flush();
   assert.equal(h.snapshots.length, 1, "identical projection is not rebroadcast");
+  // The cache must NOT advance when the broadcast was skipped: a freshly-arrived
+  // watcher is hydrated from `cachedSnapshot()`, and it must receive exactly what
+  // the existing watchers last received — not a newer snapshot no one else got.
+  assert.equal(
+    h.service.cachedSnapshot()!.scannedAt,
+    h.snapshots[0]!.scannedAt,
+    "cache stays pinned to the last BROADCAST snapshot",
+  );
 });
 
 test("a throwing scan keeps the last good ports and sets scanOk:false", async () => {

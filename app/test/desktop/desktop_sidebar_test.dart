@@ -1590,5 +1590,103 @@ void main() {
         findsNothing,
       );
     });
+
+    testWidgets(
+      'pinning the ports popover keeps line 1 in its hovered presentation '
+      '(the _portsOpen latch)',
+      (tester) async {
+        // A branch with changes so line 1 shows its diff pill when idle; the
+        // pill must give way to the actions menu while the popover is pinned,
+        // exactly as hover does — otherwise the `…` snaps back to a diff pill
+        // under the user's cursor. This pins the SIDEBAR's end state, which the
+        // popover's own onOpenChanged test cannot: it would still pass if
+        // `_portsOpen` were never OR-ed into the line-1 condition.
+        //
+        // Mutation that proves it bites: drop `_portsOpen` from the
+        // `if (_hovering || _focused || _menuOpen || _portsOpen)` guard in
+        // desktop_sidebar.dart — after the click the row shows `+5`/`−2` and no
+        // 'Worktree actions' button, and this test fails.
+        final wt = _worktree('w1', branch: 'feat', insertions: 5, deletions: 2);
+        await pumpWithPorts(
+          tester,
+          repos: [
+            _repo(
+              'p1',
+              'proj',
+              worktrees: [_worktree('main', isPrimary: true), wt],
+            ),
+          ],
+          ports: snap(wt.path),
+        );
+        await tester.pump();
+
+        // Idle (no hover/focus/menu/popover): the diff pill shows, no menu.
+        expect(find.text('+5'), findsOneWidget);
+        expect(find.byTooltip('Worktree actions'), findsNothing);
+
+        // Click the glyph to pin the popover. `tester.tap` sends no hover
+        // enter, so `_hovering` stays false: only `_portsOpen` can hold the
+        // row in its hovered presentation.
+        await tester.tap(find.byKey(ValueKey('portsSubRowTarget-${wt.path}')));
+        await tester.pump();
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+
+        // The latch stands: the actions menu replaces the diff pill.
+        expect(find.byTooltip('Worktree actions'), findsOneWidget);
+        expect(find.text('+5'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'N mounted worktree groups hold exactly one ports watch, released to 0 '
+      'on dispose',
+      (tester) async {
+        // Finding 4: the ref-counted watch must collapse every mounted group to
+        // one `{on:true}` and reach 0 (one `{on:false}`) when the tree is torn
+        // down — no churn, no leak, no double-release.
+        final calls = <bool>[];
+        final watch = PortsWatch(calls.add);
+        final container = ProviderContainer(
+          overrides: [
+            reposProvider.overrideWithValue(
+              ReposState([
+                _repo(
+                  'p1',
+                  'alpha',
+                  worktrees: [
+                    _worktree('a', branch: 'a'),
+                    _worktree('b', branch: 'b'),
+                    _worktree('c', branch: 'c'),
+                  ],
+                ),
+              ]),
+            ),
+            sessionsProvider.overrideWithValue(SessionsState(const [])),
+            portsWatchProvider.overrideWithValue(watch),
+          ],
+        );
+        addTearDown(container.dispose);
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(
+              home: Scaffold(
+                body: SizedBox(width: 320, child: DesktopSidebar()),
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Three groups mounted, one `{on:true}` sent, count == 3.
+        expect(calls, [true]);
+        expect(watch.watcherCount, 3);
+
+        // Tear the whole tree down: every group disposes exactly once.
+        await tester.pumpWidget(const SizedBox());
+        expect(watch.watcherCount, 0);
+        expect(calls, [true, false]);
+      },
+    );
   });
 }

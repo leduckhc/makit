@@ -104,6 +104,18 @@ test("listListeners: a spawn failure → ok:false + a one-line reason, no throw"
   assert.ok(!(result.error ?? "").includes("\n"), "reason is one line");
 });
 
+test("listListeners: an unavailable command (code 127, empty stdout) → ok:false + reason (missing/timed-out lsof)", async () => {
+  // git.run NEVER rejects: a spawn fault or a timeout resolves as
+  // {code:127, stdout:"", stderr:msg}. Reported as a real failure, NOT a
+  // successful empty scan (which would blank the last good ports).
+  const exec: Exec = async () => ({ code: 127, stdout: "", stderr: "lsof: command not found" });
+  const result = await listListeners(exec);
+  assert.equal(result.ok, false);
+  assert.equal(result.listeners.length, 0);
+  assert.match(result.error ?? "", /command not found/);
+  assert.ok(!(result.error ?? "").includes("\n"), "reason is one line");
+});
+
 test("listListeners: a non-zero exit that still parsed listeners returns them (lsof warns routinely)", async () => {
   const exec: Exec = async () => ({ code: 1, stdout: REAL_FIXTURE, stderr: "lsof: WARNING: ..." });
   const result = await listListeners(exec);

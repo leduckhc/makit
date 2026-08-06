@@ -68,6 +68,38 @@ App
 
 ---
 
+### Ports: what a branch is serving (SPEC-41)
+
+A worktree that has something listening on TCP shows a single **plug glyph** on
+its row — never the port numbers. The row's job is *whether*, not *which*: the
+numbers would compete with the diff and PR chips for the one line that matters,
+and they are only actionable in a browser or a terminal. A branch serving nothing
+draws no glyph at all. Colour is never the only signal: an attention dot and the
+semantics label both name the state (something bound but not answering, or bound
+past loopback).
+
+Placement differs by platform on purpose. On the phone the glyph sits in the
+branch line's trailing control column, ordered `branch · fold · ports · +`, so
+`+` stays the last child and its column stays aligned down the card. On the
+desktop it sits on the sub-row (the `PR #n · age` line), right-aligned on the
+same 8 pt edge as line 1, because line 1's right edge already swaps between the
+diff pill and the worktree menu on hover.
+
+Opening it: **hover previews, click pins** on the desktop — hover after a short
+dwell shows the list, and a click keeps it open so its buttons are reachable by
+keyboard. On the phone, **tap, then tap**: the first tap lists the ports (rows
+only, no buttons, so nothing is reachable from a flick), the second opens one
+port's facts and its actions. Every terse token (`200`, `refused`, `exposed`)
+carries one sentence, shown as a tooltip on the desktop, a long-press bubble on
+the phone, and the screen-reader label on both.
+
+Nothing is scanned unless somebody is looking: the scan is watch-gated, so no
+`lsof` runs while the app is backgrounded or disconnected. This phase is
+read-only — **Open** and **Copy URL**, both hidden when nothing answered HTTP
+and there is therefore no honest URL to offer.
+
+---
+
 ### Desktop canvas: groups (SPEC-30)
 
 The desktop window is a **sidebar** (the world) beside a **canvas** (one view

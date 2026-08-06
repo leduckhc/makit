@@ -109,6 +109,40 @@ void main() {
       await tester.pumpAndSettle();
       expect(changes.last, false);
     });
+
+    testWidgets('a pending open timer does not survive dispose', (
+      tester,
+    ) async {
+      // Finding 5: the 350 ms open timer is armed on hover-enter; if dispose
+      // did not cancel it, flutter_test's end-of-test pending-timer assertion
+      // would fail here (and a fired callback could touch an unmounted state).
+      await tester.pumpWidget(_host(_popover()));
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+      // Arm but do not fire the 350 ms open timer.
+      await tester.pump(const Duration(milliseconds: 100));
+      // Tear the widget down while the timer is still pending.
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a pending close (grace) timer does not survive dispose', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(_popover()));
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      // Open on hover, then leave to arm the 150 ms grace close timer.
+      await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(kPortsPopover), findsOneWidget);
+      await gesture.moveTo(const Offset(500, 500));
+      await tester.pump(const Duration(milliseconds: 50));
+      // Dispose while the close timer is still pending.
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 
   group('PortsPopover actions', () {

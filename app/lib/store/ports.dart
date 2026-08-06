@@ -167,10 +167,21 @@ class PortsSnapshot {
   final String? scanError;
 
   /// Tolerant decode: malformed port entries are dropped, the rest survive.
-  /// Returns null only when [scannedAt] is unrecoverable.
+  /// Returns null when the snapshot's own required scalars are unrecoverable,
+  /// so a truncated/malformed frame is dropped whole rather than fabricated
+  /// into a "healthy and empty" scan.
+  ///
+  /// A missing `ports` or `scanOk` is exactly that fabrication risk: coercing a
+  /// missing `ports` to `[]` would silently erase every glyph, and a missing
+  /// `scanOk` to `true` would claim a scan that never reported succeeded — the
+  /// opposite of the BudgetBucket/SurfaceMetrics rule that absence is never a
+  /// value. Both are required; only the *entries* inside a valid list are
+  /// dropped individually.
   static PortsSnapshot? fromJson(Map<String, dynamic> j) {
-    if (j['scannedAt'] is! num) return null;
-    final ports = (j['ports'] is List ? j['ports'] as List : const <Object?>[])
+    if (j['scannedAt'] is! num || j['ports'] is! List || j['scanOk'] is! bool) {
+      return null;
+    }
+    final ports = (j['ports'] as List)
         .whereType<Map<dynamic, dynamic>>()
         .map((m) => PortInfo.fromJson(Map<String, dynamic>.from(m)))
         .whereType<PortInfo>()
@@ -178,8 +189,7 @@ class PortsSnapshot {
     return PortsSnapshot(
       ports: ports,
       scannedAt: (j['scannedAt'] as num).toInt(),
-      // Absent ⇒ ok; only an explicit false marks the scan as failed.
-      scanOk: j['scanOk'] != false,
+      scanOk: j['scanOk'] as bool,
       scanError: j['scanError'] is String ? j['scanError'] as String : null,
     );
   }

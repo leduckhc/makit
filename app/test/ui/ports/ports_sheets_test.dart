@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/ui/ports/port_detail_sheet.dart';
+import 'package:makit/ui/ports/ports_vocabulary.dart';
 import 'package:makit/ui/ports/worktree_ports_sheet.dart';
 
 PortInfo _port({
@@ -143,6 +144,111 @@ void main() {
       await tester.pump();
       expect(calls, hasLength(1));
       expect((calls.single.arguments as Map)['text'], 'http://127.0.0.1:5173');
+    });
+  });
+
+  // SPEC-41 §"Tooltips: every terse token owns a sentence": one string per
+  // token, proven CONSUMED by the mobile surfaces — a long-press bubble and a
+  // `Semantics.label` — not merely that the vocabulary function returns a
+  // string.
+  group('the vocabulary is consumed by the mobile tokens', () {
+    const nowMs = 100000;
+    final reachSentence = portReachTooltip(PortReach.loopback);
+    final healthSentence = portHealthTooltip(
+      const PortHealth(kind: PortHealthKind.ok, status: 200, probedAt: 2000),
+      nowMs: nowMs,
+    );
+
+    testWidgets('sheet 1 rows speak the sentence as their semantics label', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          WorktreePortsSheetBody(
+            branch: 'feat/open-ports',
+            ports: [_port(port: 5173)],
+            nowMs: nowMs,
+            onOpenPort: (_) {},
+          ),
+        ),
+      );
+      // The reach + health tokens carry their vocabulary sentence, not the
+      // terse pill text, to a screen reader. (Sheet-1 rows are InkWells, which
+      // merge descendant semantics into the row node, so match a containing
+      // label rather than a standalone node.)
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(reachSentence))),
+        findsWidgets,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(healthSentence))),
+        findsWidgets,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('long-pressing a sheet-1 token shows its vocabulary bubble', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          WorktreePortsSheetBody(
+            branch: 'feat/open-ports',
+            ports: [_port(port: 5173)],
+            nowMs: nowMs,
+            onOpenPort: (_) {},
+          ),
+        ),
+      );
+      // No bubble before the gesture.
+      expect(find.text(reachSentence), findsNothing);
+      await tester.longPress(find.text('loopback'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text(reachSentence), findsOneWidget);
+    });
+
+    testWidgets('sheet 2 tokens speak the sentence as their semantics label', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _host(
+          PortDetailSheetBody(
+            port: _port(),
+            branchLabel: 'feat/open-ports',
+            sessionLabel: null,
+            nowMs: nowMs,
+          ),
+        ),
+      );
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(reachSentence))),
+        findsWidgets,
+      );
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(healthSentence))),
+        findsWidgets,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('long-pressing a sheet-2 token shows its vocabulary bubble', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PortDetailSheetBody(
+            port: _port(),
+            branchLabel: 'feat/open-ports',
+            sessionLabel: null,
+            nowMs: nowMs,
+          ),
+        ),
+      );
+      await tester.longPress(find.text('loopback'));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text(reachSentence), findsOneWidget);
     });
   });
 }

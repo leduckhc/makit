@@ -116,14 +116,33 @@ export function parseLsofListeners(stdout: string): Listener[] {
 
 /**
  * Run `lsof` and parse its listeners. Degrades to `{ok:false}` with a one-line
- * reason on a spawn fault (lsof missing / not permitted); a non-zero exit that
- * still produced output is parsed normally (see {@link ScanResult.ok}).
+ * reason when the command is UNAVAILABLE — a spawn fault or a timeout, which the
+ * shared runner (`git.run`) surfaces NOT as a rejection but as a resolved
+ * `{code:127, stdout:""}`. A non-zero exit that still produced output is parsed
+ * normally (lsof exits 1 while routinely warning; see {@link ScanResult.ok}).
  */
 export async function listListeners(exec: Exec, timeoutMs?: number): Promise<ScanResult> {
   try {
-    const { stdout } = await exec("lsof", [...LSOF_ARGS], undefined, timeoutMs);
+    const { code, stdout, stderr } = await exec("lsof", [...LSOF_ARGS], undefined, timeoutMs);
+    // A non-zero exit with NO output is an unavailable/timed-out command, not a
+    // warning — treat it as a failure so the caller keeps its last good ports
+    // instead of blanking them under a false `scanOk:true`.
+    if (code !== 0 && stdout.trim().length === 0) {
+      const reason = firstLine(stderr) || `exit ${code}`;
+      return { ok: false, listeners: [], error: `lsof failed: ${reason}` };
+    }
     return { ok: true, listeners: parseLsofListeners(stdout) };
   } catch (err) {
-    return { ok: false, listeners: [], error: `lsof failed: ${(err as Error).message}` };
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, listeners: [], error: `lsof failed: ${reason}` };
   }
+}
+
+/** The first non-empty line of a command's stderr, trimmed — the tooltip is one line. */
+function firstLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return "";
 }

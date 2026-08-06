@@ -615,3 +615,72 @@ test("a non-integer pid over loopback is rejected (SPEC-37 decision 6)", async (
     });
   }
 });
+
+// ── SPEC-41: ports.watch leak guard — a socket close clears watchingPorts and
+// recounts the watchers, disarming the scanner (server.ts close handler). ─────
+test("SPEC-41: a socket close clears watchingPorts and disarms the port scanner", async () => {
+  const home = mkdtempSync(join(tmpdir(), "makit-home-"));
+  const project = mkdtempSync(join(tmpdir(), "makit-srv-proj-"));
+  const prevHome = process.env.MAKIT_HOME;
+  process.env.MAKIT_HOME = home;
+  const cert = await loadOrCreateCert();
+  const registry = new DeviceRegistry();
+  const manager = new SessionManager({ projects: [project], adapterFactory: () => fakeAdapter() });
+
+  let armed = 0;
+  let cleared = 0;
+  const server = startWsServer({
+    host: "127.0.0.1",
+    port: 0,
+    manager,
+    cert,
+    registry,
+    trustLocalhost: true,
+    ports: {
+      // Deterministic + subprocess-free: an empty scan is enough to exercise the
+      // watch lifecycle. A fake timer lets us observe arm/disarm precisely.
+      exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+      setTimer: () => {
+        armed++;
+        return { id: armed };
+      },
+      clearTimer: () => {
+        cleared++;
+      },
+    },
+  });
+  await new Promise<void>((r) => server.https.on("listening", () => r()));
+  const port = (server.https.address() as AddressInfo).port;
+
+  const ws = new WebSocket(`wss://127.0.0.1:${port}`, { rejectUnauthorized: false });
+  const acks: string[] = [];
+  ws.on("message", (raw) => {
+    const env = JSON.parse(raw.toString()) as Envelope;
+    if (env.t === "ack") acks.push(env.id);
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      ws.on("open", () => resolve());
+      ws.on("error", reject);
+    });
+
+    ws.send(JSON.stringify({ v: PROTOCOL_VERSION, t: "cmd", id: "w1", kind: "ports.watch", on: true }));
+    for (let i = 0; i < 100 && !acks.includes("w1"); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(acks.includes("w1"), "the watch was acked");
+    assert.equal(armed, 1, "0→1 arms the scan timer");
+
+    ws.close();
+    await new Promise<void>((r) => ws.on("close", () => r()));
+    // Wait for the server to observe the close and recompute the watcher count.
+    for (let i = 0; i < 100 && cleared < 1; i++) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(cleared, 1, "the close cleared watchingPorts and disarmed the scanner (1→0)");
+  } finally {
+    ws.close();
+    await new Promise<void>((r) => server.wss.close(() => r()));
+    await new Promise<void>((r) => server.https.close(() => r()));
+    if (prevHome === undefined) delete process.env.MAKIT_HOME;
+    else process.env.MAKIT_HOME = prevHome;
+    rmSync(home, { recursive: true, force: true });
+    rmSync(project, { recursive: true, force: true });
+  }
+});

@@ -79,7 +79,7 @@ import { CpuLedger } from "./metrics/ledger.js";
 import { register as registerPortsCommands } from "./ws/commands/ports.js";
 import { PortsService } from "./ports/service.js";
 import { PortHealthProbe, createNetConnector } from "./ports/health.js";
-import { tailscaleIP } from "./pairing/cert.js";
+import { tailnetAddressFromBindHost } from "./ports/attribute.js";
 import { run as execRun } from "./git.js";
 import { stat as fsStat } from "node:fs/promises";
 import { resolve as resolvePath } from "node:path";
@@ -126,12 +126,16 @@ export interface ServerOpts {
     enabled?: boolean;
   };
   /**
-   * SPEC-41 port-scanner seam, injected only by the e2e harness so it can
-   * publish a deterministic worktree-owned snapshot without a real `lsof`/`ps`.
-   * Production leaves this undefined and scans the live machine.
+   * SPEC-41 port-scanner seam, injected only by the e2e harness / tests so they
+   * can publish a deterministic worktree-owned snapshot without a real
+   * `lsof`/`ps`, and drive the cadence with a fake timer. Production leaves this
+   * undefined and scans the live machine on a real `setInterval`.
    */
   ports?: {
     exec?: Exec;
+    now?: () => number;
+    setTimer?: (fn: () => void, ms: number) => unknown;
+    clearTimer?: (handle: unknown) => void;
   };
 }
 
@@ -457,7 +461,7 @@ export function startWsServer(opts: ServerOpts) {
   // A watch-gated `lsof`/`ps` scan (nothing runs while no client watches). Like
   // the metrics collector it takes closures for its data sources so `ports/`
   // imports neither the manager nor the session type. The tailnet address is
-  // discovered ONCE (a wildcard bind is never `tailnet`; only an exact match is).
+  // taken from the bind host (spec D2) — no `tailscale` subprocess per scan.
   const portsExec: Exec = opts.ports?.exec ?? ((cmd, args, cwd, timeoutMs) => execRun(cmd, args, cwd, timeoutMs));
   const portsProbe = new PortHealthProbe({
     connect: createNetConnector(),
@@ -492,16 +496,18 @@ export function startWsServer(opts: ServerOpts) {
     probe: portsProbe,
     listWorktreePaths,
     listSessionRoots,
-    // Resolved lazily on the first scan (never at construction — no `tailscale`
-    // subprocess in unit tests). A wildcard bind is never `tailnet` (spec D2).
-    tailnetAddress: () => tailscaleIP(),
+    // The tailnet address the server ALREADY discovered at bind time (spec D2),
+    // derived PURELY from the bind host — never a `tailscale` subprocess on the
+    // scan path (a hung CLI would block the event loop mid-scan). A wildcard
+    // bind is never `tailnet`; only an exact 100.x match is.
+    tailnetAddress: () => tailnetAddressFromBindHost(host),
     onSnapshot: (snapshot) => {
       const frame = emitPortsSnapshot(snapshot);
       for (const c of clients.values()) if (c.authed && c.watchingPorts) c.send(frame);
     },
-    now: () => Date.now(),
-    setTimer: (fn, ms) => setInterval(fn, ms),
-    clearTimer: (h) => clearInterval(h as NodeJS.Timeout),
+    now: opts.ports?.now ?? (() => Date.now()),
+    setTimer: opts.ports?.setTimer ?? ((fn, ms) => setInterval(fn, ms)),
+    clearTimer: opts.ports?.clearTimer ?? ((h) => clearInterval(h as NodeJS.Timeout)),
   });
   https.on("close", () => portsService.stop());
 

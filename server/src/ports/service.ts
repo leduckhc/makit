@@ -46,10 +46,10 @@ export interface PortsServiceDeps {
   /** Session id → agent root pid, supplied by the caller (no session import). */
   listSessionRoots: () => Map<string, number>;
   /**
-   * The host's discovered tailnet address, resolved LAZILY: a value provider so
-   * `tailscaleIP()` (a subprocess) runs on the first real scan, not at server
-   * construction — where it would spawn in every unit test. Memoised after the
-   * first call (the spec's "the tailnet IP the server already discovered").
+   * The host's discovered tailnet address (spec D2). A pure, synchronous
+   * provider — derived from the bind host, never a `tailscale` subprocess — so
+   * it can be read on the scan path without risking an event-loop stall.
+   * Memoised after the first call.
    */
   tailnetAddress: () => string | null;
   onSnapshot: (snapshot: PortsSnapshotDTO) => void;
@@ -145,9 +145,11 @@ export class PortsService {
         scanOk: outcome.scanOk,
       };
       if (outcome.scanError !== undefined) snapshot.scanError = outcome.scanError;
-      this.cached = snapshot;
 
-      // Skip a re-broadcast when nothing but the timestamp changed.
+      // Skip a re-broadcast when nothing but the timestamp changed. The cache is
+      // advanced ONLY when we actually broadcast, so a freshly-arrived watcher
+      // (hydrated from `cachedSnapshot()`) can never be handed a snapshot the
+      // existing watchers never received.
       const projection = JSON.stringify({
         ports: outcome.ports,
         scanOk: outcome.scanOk,
@@ -155,6 +157,7 @@ export class PortsService {
       });
       if (projection !== this.lastProjection) {
         this.lastProjection = projection;
+        this.cached = snapshot;
         this.deps.onSnapshot(snapshot);
       }
 
@@ -167,17 +170,18 @@ export class PortsService {
     }
   }
 
-  /**
-   * Run the three reads and attribute them. A failed listener scan or any thrown
-   * error yields `scanOk:false` with the LAST GOOD ports retained — a transient
-   * `lsof` hiccup must not blank a populated list.
-   */
   /** Resolve the tailnet address at most once, on the first scan that needs it. */
   private tailnetOnce(): string | null {
     if (this.tailnet === undefined) this.tailnet = this.deps.tailnetAddress();
     return this.tailnet;
   }
 
+  /**
+   * Run the three reads and attribute them. A failed listener scan, a failed
+   * `ps`/cwd read, or any thrown error yields `scanOk:false` with the LAST GOOD
+   * ports retained — a transient `lsof`/`ps` hiccup must not blank a populated
+   * list (spec D7: the flag means the scanner's commands ran).
+   */
   private async doScan(): Promise<ScanOutcome> {
     try {
       const scan = await listListeners(this.deps.exec, EXEC_TIMEOUT_MS);
@@ -186,9 +190,20 @@ export class PortsService {
       }
 
       const now = this.deps.now();
-      const procs = await readProcs(this.deps.exec, now, EXEC_TIMEOUT_MS);
+      const procsResult = await readProcs(this.deps.exec, now, EXEC_TIMEOUT_MS);
+      // A failed `ps` means attribution would be blind; keep the last good ports
+      // and tell the truth with scanOk:false (D7 — the flag means the commands ran).
+      if (!procsResult.ok) {
+        return { ports: this.lastGoodPorts, scanOk: false, scanError: procsResult.error };
+      }
+      const procs = procsResult.procs;
+
       const pidSet = cwdPidSet(scan.listeners.map((l) => l.pid), procs);
-      const cwds = await readCwds(this.deps.exec, [...pidSet], EXEC_TIMEOUT_MS);
+      const cwdsResult = await readCwds(this.deps.exec, [...pidSet], EXEC_TIMEOUT_MS);
+      if (!cwdsResult.ok) {
+        return { ports: this.lastGoodPorts, scanOk: false, scanError: cwdsResult.error };
+      }
+      const cwds = cwdsResult.cwds;
 
       const ports = attribute({
         listeners: scan.listeners,

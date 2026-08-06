@@ -12,6 +12,7 @@ import '../../store/ports.dart';
 import '../../store/store.dart';
 import '../widgets/sheet_header.dart';
 import 'port_detail_sheet.dart';
+import 'port_token_pill.dart';
 import 'ports_vocabulary.dart';
 
 /// Height of a port list row — a comfortable single-gesture ("open") target.
@@ -43,6 +44,7 @@ Future<void> showWorktreePortsSheet(
       child: WorktreePortsSheetBody(
         branch: branch,
         ports: ports,
+        nowMs: DateTime.now().millisecondsSinceEpoch,
         onOpenPort: (port) => showPortDetailSheet(
           sheetCtx,
           port: port,
@@ -61,11 +63,16 @@ class WorktreePortsSheetBody extends StatelessWidget {
     required this.branch,
     required this.ports,
     required this.onOpenPort,
+    this.nowMs,
   });
 
   final String branch;
   final List<PortInfo> ports;
   final void Function(PortInfo port) onOpenPort;
+
+  /// Injected clock so the health sentence's "probed N s ago" is deterministic
+  /// in tests; falls back to the wall clock in production.
+  final int? nowMs;
 
   @override
   Widget build(BuildContext context) {
@@ -79,6 +86,7 @@ class WorktreePortsSheetBody extends StatelessWidget {
             _PortListRow(
               key: ValueKey('ports-list-row-${port.port}'),
               port: port,
+              nowMs: nowMs ?? DateTime.now().millisecondsSinceEpoch,
               onTap: () => onOpenPort(port),
             ),
           const SizedBox(height: kSpace8),
@@ -91,10 +99,16 @@ class WorktreePortsSheetBody extends StatelessWidget {
 /// One 56 pt tappable port row: port number, command, a health pill + reach,
 /// and a trailing chevron. Its only gesture is "open".
 class _PortListRow extends StatelessWidget {
-  const _PortListRow({super.key, required this.port, required this.onTap});
+  const _PortListRow({
+    super.key,
+    required this.port,
+    required this.onTap,
+    required this.nowMs,
+  });
 
   final PortInfo port;
   final VoidCallback onTap;
+  final int nowMs;
 
   @override
   Widget build(BuildContext context) {
@@ -139,16 +153,15 @@ class _PortListRow extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: kSpace8),
-                      Text(
-                        portHealthPill(port.health),
-                        style: theme.textTheme.labelSmall,
+                      PortTokenPill(
+                        label: portHealthPill(port.health),
+                        sentence: portHealthTooltip(port.health, nowMs: nowMs),
                       ),
                       const SizedBox(width: kSpace8),
-                      Text(
-                        portReachPill(port.reach),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: cs.onSurfaceVariant,
-                        ),
+                      PortTokenPill(
+                        label: portReachPill(port.reach),
+                        sentence: portReachTooltip(port.reach),
+                        color: cs.onSurfaceVariant,
                       ),
                     ],
                   ),

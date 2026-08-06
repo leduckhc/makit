@@ -14,6 +14,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/theme.dart';
 import '../../store/ports.dart';
 import '../widgets/sheet_header.dart';
+import 'port_token_pill.dart';
 import 'ports_vocabulary.dart';
 
 /// Height of an action row (Open / Copy URL), a comfortable touch target.
@@ -97,16 +98,15 @@ class PortDetailSheetBody extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(kSpace16, 0, kSpace16, kSpace8),
             child: Row(
               children: [
-                Text(
-                  portHealthPill(port.health),
-                  style: theme.textTheme.labelSmall,
+                PortTokenPill(
+                  label: portHealthPill(port.health),
+                  sentence: portHealthTooltip(port.health, nowMs: nowMs),
                 ),
                 const SizedBox(width: kSpace8),
-                Text(
-                  portReachPill(port.reach),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+                PortTokenPill(
+                  label: portReachPill(port.reach),
+                  sentence: portReachTooltip(port.reach),
+                  color: cs.onSurfaceVariant,
                 ),
               ],
             ),

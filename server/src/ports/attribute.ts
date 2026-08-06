@@ -43,6 +43,26 @@ function segments(path: string): string[] {
   return path.split("/").filter((s) => s.length > 0);
 }
 
+/**
+ * Tailscale hands every node a `100.x` (CGNAT, 100.64.0.0/10) address; the
+ * discovery in `tailscaleIP()` filters on exactly this prefix.
+ */
+const TAILNET_ADDRESS_PREFIX = /^100\./;
+
+/**
+ * The tailnet address the server ALREADY discovered at bind time (spec D2), from
+ * the bind host — NO `tailscale` subprocess. The secure-by-default bind chooses
+ * the host's `100.x` tailnet IP when Tailscale is up, so when `host` is that
+ * address it IS the discovered tailnet address; any other bind (loopback, LAN,
+ * wildcard, or an explicit `--host`) means no tailnet address was discovered, so
+ * nothing is labelled `tailnet`. Pure + synchronous by construction: this must
+ * never run a subprocess on the scan path (a hung `tailscale` CLI would block
+ * the event loop mid-scan).
+ */
+export function tailnetAddressFromBindHost(host: string): string | null {
+  return TAILNET_ADDRESS_PREFIX.test(host) ? host : null;
+}
+
 /** True when `prefix` is a whole-segment prefix of `path` (so /a/b ⊄ /a/b-2). */
 function isSegmentPrefix(prefix: string[], path: string[]): boolean {
   if (prefix.length > path.length) return false;
@@ -162,7 +182,6 @@ export function attribute(input: AttributeInput): PortDTO[] {
 
   const ports = listeners.map((l): PortDTO => {
     const proc = procs.get(l.pid);
-    const verdict = health(l.address, l.port);
     const dto: PortDTO = {
       key: `${l.pid}:${l.address}:${l.port}`,
       port: l.port,
@@ -174,13 +193,19 @@ export function attribute(input: AttributeInput): PortDTO[] {
     if (proc?.startedAt !== undefined) dto.startedAt = proc.startedAt;
 
     const worktreePath = ownerOf(l.pid, procs, cwds, worktrees, resolveReal);
-    if (worktreePath !== undefined) dto.worktreePath = worktreePath;
+    if (worktreePath !== undefined) {
+      dto.worktreePath = worktreePath;
+      // Health is read ONLY once ownership is known (D3: probed only for ports
+      // attributed to a worktree). Reading it before deciding ownership would
+      // attach a stale verdict — and its openUrl — to a port that has since
+      // become unowned, which is exactly the endpoint we must NOT surface.
+      const verdict = health(l.address, l.port);
+      if (verdict !== undefined) dto.health = verdict;
+      if (hasHttpVerdict(verdict)) dto.openUrl = buildOpenUrl(l.address, l.port);
+    }
 
     const sessionId = pidToSession.get(l.pid);
     if (sessionId !== undefined) dto.sessionId = sessionId;
-
-    if (verdict !== undefined) dto.health = verdict;
-    if (hasHttpVerdict(verdict)) dto.openUrl = buildOpenUrl(l.address, l.port);
 
     return dto;
   });

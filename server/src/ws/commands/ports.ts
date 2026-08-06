@@ -17,13 +17,17 @@ import type { CommandDeps } from "./deps.js";
 export function register(r: CommandRouter, deps: CommandDeps): void {
   r.register("ports.watch", async (ctx) => {
     ctx.ack();
-    const on = ctx.env.on === true;
+    // A malformed payload is a NO-OP (plan T8): only a real boolean toggles the
+    // flag. Coercing a non-boolean to `false` would let `{on:"yes"}` silently
+    // turn a watching client OFF and disarm the scanner — leave it untouched.
+    const on = ctx.env.on;
+    if (typeof on !== "boolean") return;
     const wasWatching = ctx.client.watchingPorts === true;
     ctx.client.watchingPorts = on;
-    deps.onPortsWatchersChanged?.();
+    deps.onPortsWatchersChanged();
     // Cached snapshot only on a false → true transition. A client that re-sends
     // {on:true} (a rebuild, a reconnect handler firing twice) must NOT re-send
     // the snapshot or re-trigger a scan.
-    if (on && !wasWatching) deps.sendPortsSnapshot?.(ctx.client);
+    if (on && !wasWatching) deps.sendPortsSnapshot(ctx.client);
   });
 }

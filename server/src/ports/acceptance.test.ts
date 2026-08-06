@@ -64,9 +64,13 @@ test("a real listener in a real worktree is attributed to that worktree", { skip
     const now = Date.now();
     const scan = await listListeners(run);
     assert.ok(scan.ok, "lsof ran");
-    const procs = await readProcs(run, now);
+    const procsResult = await readProcs(run, now);
+    assert.ok(procsResult.ok, "ps ran");
+    const procs = procsResult.procs;
     const pidSet = cwdPidSet(scan.listeners.map((l) => l.pid), procs);
-    const cwds = await readCwds(run, [...pidSet]);
+    const cwdsResult = await readCwds(run, [...pidSet]);
+    assert.ok(cwdsResult.ok, "cwd lsof ran");
+    const cwds = cwdsResult.cwds;
     const ports = attribute({
       listeners: scan.listeners,
       procs,

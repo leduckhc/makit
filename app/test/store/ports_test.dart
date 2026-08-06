@@ -105,6 +105,37 @@ void main() {
       expect(snap.ports.length, 2);
     });
 
+    test('a payload with no ports key is dropped, not fabricated empty', () {
+      // A truncated frame must not decode as "healthy and empty": absence is
+      // never coerced into a value (the BudgetBucket/SurfaceMetrics rule). The
+      // codec then _warns + drops it, leaving the previous state intact.
+      expect(
+        PortsSnapshot.fromJson({'scannedAt': 3000, 'scanOk': true}),
+        isNull,
+      );
+    });
+
+    test('a payload with no scanOk is dropped, not fabricated healthy', () {
+      expect(
+        PortsSnapshot.fromJson({
+          'scannedAt': 3000,
+          'ports': const <Map<String, dynamic>>[],
+        }),
+        isNull,
+      );
+    });
+
+    test('a non-bool scanOk is dropped (never coerced to true)', () {
+      expect(
+        PortsSnapshot.fromJson({
+          'scannedAt': 3000,
+          'ports': const <Map<String, dynamic>>[],
+          'scanOk': 'yes',
+        }),
+        isNull,
+      );
+    });
+
     test('scanError stays absent when not sent, present when sent', () {
       final ok = _snap(const []);
       expect(ok.scanError, isNull);

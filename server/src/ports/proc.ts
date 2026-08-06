@@ -16,6 +16,7 @@
 
 import { realpathSync } from "node:fs";
 import type { Exec } from "../metrics/proc_table.js";
+import { log } from "../log.js";
 
 export type { Exec } from "../metrics/proc_table.js";
 
@@ -94,37 +95,84 @@ export function parseProcs(stdout: string, nowMs: number): Map<number, ProcInfo>
 const PS_ARGS = ["-axo", "pid=,ppid=,etime=,args="] as const;
 
 /**
- * Read the whole-machine process table. Degrades to an empty table on a spawn
- * fault or non-zero exit — a caller reading the ancestor map treats "no procs"
- * as "attribution unknown", never as a crash.
+ * Result of {@link readProcs}. `ok` is false when the `ps` command did not run
+ * (spawn fault, timeout, or a non-zero exit): the scanner must publish
+ * `scanOk:false` rather than claim a successful scan over an empty table (D7).
+ */
+export interface ProcsResult {
+  ok: boolean;
+  procs: Map<number, ProcInfo>;
+  /** One-line reason when `ok` is false, for the glyph's tooltip. */
+  error?: string;
+}
+
+/**
+ * Read the whole-machine process table. Degrades to an EMPTY table with
+ * `ok:false` on a spawn fault or non-zero exit — the caller then publishes
+ * `scanOk:false` with the reason rather than pretending the machine had no
+ * processes. Unlike lsof, `ps` does not warn on stderr, so a non-zero exit is a
+ * real failure.
  */
 export async function readProcs(
   exec: Exec,
   nowMs: number,
   timeoutMs?: number,
-): Promise<Map<number, ProcInfo>> {
+): Promise<ProcsResult> {
   try {
-    const { code, stdout } = await exec("ps", [...PS_ARGS], undefined, timeoutMs);
-    if (code !== 0) return new Map();
-    return parseProcs(stdout, nowMs);
-  } catch {
-    return new Map();
+    const { code, stdout, stderr } = await exec("ps", [...PS_ARGS], undefined, timeoutMs);
+    if (code !== 0) {
+      const reason = firstLine(stderr) || `exit ${code}`;
+      log.debug(`[ports] ps failed: ${reason}`);
+      return { ok: false, procs: new Map(), error: `ps failed: ${reason}` };
+    }
+    return { ok: true, procs: parseProcs(stdout, nowMs) };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log.debug(`[ports] ps failed: ${reason}`);
+    return { ok: false, procs: new Map(), error: `ps failed: ${reason}` };
   }
 }
 
-/** Parse `lsof -Fpn` cwd output: `p<pid>` then `fcwd` then `n<path>`, pure. */
+/** Parse `lsof -Fpn` cwd output: `p<pid>` then `fcwd` then `n<path>`, pure.
+ *
+ * The `fcwd` marker is load-bearing: `lsof -d cwd` requests only cwd file
+ * descriptors, but some versions emit ANNOTATION `n` lines (e.g.
+ * `n(readlink: Permission denied)`) that are not a path. We store an `n` only
+ * when the immediately preceding `f` record for this pid was `cwd`, so an
+ * annotation line cannot be mistaken for a process's working directory.
+ */
 export function parseLsofCwds(stdout: string): Map<number, string> {
   const cwds = new Map<number, string>();
   let pid: number | undefined;
+  let atCwd = false; // true only between an `fcwd` record and its `n` path
   for (const line of stdout.split("\n")) {
     if (line.length === 0) continue;
     const field = line[0];
     const value = line.slice(1);
-    if (field === "p") pid = /^\d+$/.test(value) ? Number(value) : undefined;
-    else if (field === "n" && pid !== undefined) cwds.set(pid, value);
-    // `fcwd` (the descriptor marker) carries no data we keep.
+    if (field === "p") {
+      pid = /^\d+$/.test(value) ? Number(value) : undefined;
+      atCwd = false;
+    } else if (field === "f") {
+      atCwd = value === "cwd";
+    } else if (field === "n" && pid !== undefined && atCwd) {
+      cwds.set(pid, value);
+      atCwd = false; // consume: a trailing annotation `n` is not a second cwd
+    }
   }
   return cwds;
+}
+
+/**
+ * Result of {@link readCwds}. `ok` is false only when the command was
+ * UNAVAILABLE (spawn fault / timeout / non-zero exit with no output); a
+ * non-zero exit that still produced records is fine — see the note in
+ * {@link readCwds}.
+ */
+export interface CwdsResult {
+  ok: boolean;
+  cwds: Map<number, string>;
+  /** One-line reason when `ok` is false, for the glyph's tooltip. */
+  error?: string;
 }
 
 /**
@@ -139,19 +187,40 @@ export async function readCwds(
   exec: Exec,
   pids: number[],
   timeoutMs?: number,
-): Promise<Map<number, string>> {
-  if (pids.length === 0) return new Map();
+): Promise<CwdsResult> {
+  if (pids.length === 0) return { ok: true, cwds: new Map() };
   try {
-    const { stdout } = await exec(
+    const { code, stdout, stderr } = await exec(
       "lsof",
       ["-a", "-d", "cwd", "-Fpn", "-p", pids.join(",")],
       undefined,
       timeoutMs,
     );
-    return parseLsofCwds(stdout);
-  } catch {
-    return new Map();
+    // Unlike `readProcs`, a mere non-zero exit is NOT a failure here: lsof exits
+    // 1 while routinely warning about pids it could not fully stat, yet still
+    // prints every cwd it did see. Only an UNAVAILABLE command (non-zero exit
+    // with no output at all — a spawn fault or timeout via `git.run`) is a
+    // failure. Do not "fix" this to fail on `code !== 0`.
+    if (code !== 0 && stdout.trim().length === 0) {
+      const reason = firstLine(stderr) || `exit ${code}`;
+      log.debug(`[ports] cwd lsof failed: ${reason}`);
+      return { ok: false, cwds: new Map(), error: `cwd lsof failed: ${reason}` };
+    }
+    return { ok: true, cwds: parseLsofCwds(stdout) };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log.debug(`[ports] cwd lsof failed: ${reason}`);
+    return { ok: false, cwds: new Map(), error: `cwd lsof failed: ${reason}` };
   }
+}
+
+/** The first non-empty line of a command's stderr, trimmed — the tooltip is one line. */
+function firstLine(text: string): string {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return "";
 }
 
 /**

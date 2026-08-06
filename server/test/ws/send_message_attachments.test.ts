@@ -38,6 +38,7 @@ function fakeClient(): FakeClient {
     authed: true,
     subscribed: new Set<string>(),
     watchingMetrics: false,
+    watchingPorts: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -76,6 +77,8 @@ function harness() {
     broadcastBudget: () => {},
       onMetricsWatchersChanged: () => {},
       sendMetricsHistory: () => {},
+      onPortsWatchersChanged: () => {},
+      sendPortsSnapshot: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);
@@ -222,6 +225,8 @@ test("a pending session promoted by an image-only turn gets a usable label", asy
     broadcastBudget: () => {},
       onMetricsWatchersChanged: () => {},
       sendMetricsHistory: () => {},
+      onPortsWatchersChanged: () => {},
+      sendPortsSnapshot: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps);
 
