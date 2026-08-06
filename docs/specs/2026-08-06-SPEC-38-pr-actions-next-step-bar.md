@@ -18,6 +18,8 @@ reference, incl. §10 action catalogue)
 `app/lib/ui/widgets/pr_detail.dart` (detail body + CTA menu + `PrCheckRow`),
 `app/lib/ui/widgets/wrap_up.dart` (remedy dispatch + confirms).
 *app (changed):* `app/lib/desktop/chat/pr_bar.dart` (rewritten),
+`app/lib/ui/composer/composer.dart` (`header` slot — the bar's placement, D11),
+`app/lib/ui/widgets/pr_tone.dart` (`PrDot` → colour, §8.1),
 `app/lib/ui/home/repo_chips.dart` (`PrPill` → `PrStatusChip`),
 `app/lib/ui/home/worktree_row.dart`, `app/lib/ui/session/session_pr_chip.dart` (rewritten),
 `app/lib/ui/session/session_screen.dart`, `app/lib/desktop/chat/desktop_chat_pane.dart`,
@@ -87,7 +89,8 @@ sync counts, `isPrimary`) and returns:
 ```dart
 class PrStatus {
   String identity;        // '#142', else the branch name, else 'detached'
-  PrTone tone;            // the loud signal's tone — the dot's hue
+  PrTone tone;            // the loud signal's tone — the sentence's hue
+  PrDot dot;              // what the status dot reports — the PR's own state (§8.1)
   List<PrSignal> signals; // facts, loudest first, never empty
   PrCta cta;
   double? checkProgress;  // fraction of checks reported, or null
@@ -276,7 +279,8 @@ they started with before storing. A lookup already in flight when the mutation l
 
 - **The dot is the only ambient graphic**, so it carries two things: hue for the verdict, and a
   determinate **arc** for check progress. Determinate on purpose — a rollup is a *count* (4 of 12
-  reported), so a spinner would overstate what is unknown. Hollow when there is no PR.
+  reported), so a spinner would overstate what is unknown. Hollow when there is nothing to report
+  (§8.1).
 - **Tone hues are the check hues.** `prToneColor` reads `kCheckFail`/`kCheckPending` from
   `pr_state_style.dart` rather than re-typing the literals; `landed` uses `cs.prMergedText` (the
   AA-safe purple) because a tone tints text as well as the dot. Guarded by a test.
@@ -284,6 +288,42 @@ they started with before storing. A lookup already in flight when the mutation l
   tooltip. The PR number never goes stale; SPEC-23's pill dimmed wholesale, hiding the one reliable fact.
 - **Truncation, not reflow.** The sentence elides with an ellipsis; the composer's width is not
   negotiable and a bar that reflows as CI churns is worse than one that elides.
+- **On the composer's top edge**, inside its box and above a 1px hairline (`onSurface` at 7%) —
+  see decision D11. The bar owns no insets of its own; `Composer.header` supplies them.
+
+### 8.1 The dot reports the pull request, not the loud fact (normative)
+
+`PrDot`, derived in `prStatus()` and painted by `prDotColor`. Precedence, top down — the mockup's §2
+legend:
+
+| # | Condition | Dot | Colour |
+| --- | --- | --- | --- |
+| 1 | no PR **and** no signal carries a remedy | `none` — a hollow ring | `cs.outline`, tone-independent |
+| 2 | `isDraft`, or `CLOSED` | `muted` | `cs.outline` |
+| 3 | `MERGED` | `landed` | `cs.prMergedText` |
+| 4 | any check `pending` | `pending` — an arc, `checkProgress` round | `kCheckPending` on a `cs.outlineVariant` track |
+| 5 | `checkRollup: fail` | `fail` | `kCheckFail` |
+| 6 | `checkRollup: pass` | `pass` | `kCheckPass` |
+| 7 | otherwise | `tone` | `prToneColor(tone)` |
+
+A **separate derivation from `tone`**, because the two make different claims and §4's earlier
+"tone — the dot's hue" made them one. Two consequences of collapsing them, both wrong on screen:
+
+- **A green PR's dot was grey.** The all-clear fact (`12 checks passed`) is `quiet` by §5 row 11, and
+  `prToneColor(quiet)` is `cs.outline`. The legend says solid pass.
+- **A red build's dot went amber** as soon as a local commit outranked it (§5 row 3 before row 5). The
+  sentence *should* lead with the unpushed commit — you cannot fix CI for commits the remote has never
+  seen — but the build is still red, and the dot is where that gets reported.
+
+Row 1 is `isQuiet`'s predicate, not `!hasPr`: the ring means *nothing to report*, so a branch with three
+uncommitted files and no PR is row 7 (a solid disc in its fact's hue), matching the mockup's `dirty`
+picture. Row 2 sits above rows 4–6 because §5 mutes a draft's own facts — the one graphic must not
+shout what the sentence deliberately keeps quiet.
+
+**One mockup picture disagreed:** `hot` (1 unpushed + CI red + 3 threads) drew an amber dot. That is a
+leftover — the mockup's own §8 records that this state's loud fact was corrected from `2 checks failing`
+to `1 commit unpushed`, which flipped its tone-driven dot from red to amber as a side effect. The legend
+and this table are the rule.
 
 ### 6.4 Provenance of each action
 
@@ -413,3 +453,4 @@ is guarded; this residue is one commit on a branch whose pushed history `origin/
 | D9 | Discard worktree **does** delete the branch | Symmetry with the verb: "discard" that leaves the branch behind is not discarding. A closed PR necessarily had a pushed head, so `origin/<branch>` retains the commits and a local `-D` is recoverable by re-fetch — the earlier "silent loss" argument for keeping it was wrong. The confirm names the branch, so declining is available |
 | D8 | `locateWorktree` replaces three per-field scans | Six independent scans could straddle a snapshot swap and describe two different worktrees |
 | D10 | The dialog's branch travels with the command (`expectBranch`) and a mismatch is **refused** | The server resolves the branch again when it runs, so without it the user could confirm "delete feat/x" and have a branch they checked out since — possibly with unpushed commits — deleted by `git branch -D`, which does not ask |
+| D11 | The bar sits **inside** the composer box, on its top edge above a hairline — not in its own floating row | The mockup's §5 second option, adopted after the first shipped. At this weight it reads as a caption on the box you are typing into, which is what it is: most of its actions put text there. A separate row spent full composer width on one sentence. `Composer.header` renders it regardless of `enabled`, and both composer instances (normal + free-text answer) get it — otherwise the worktree's only status line vanished for the length of an inline ask |

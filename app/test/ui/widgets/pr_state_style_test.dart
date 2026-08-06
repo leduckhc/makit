@@ -115,4 +115,49 @@ void _toneHuesTests() {
       expect(prToneColor(cs, PrTone.quiet), cs.outline);
     });
   });
+
+  // The dot legend (mockup §2). Same argument as the tones above: the dot sits
+  // beside real CI colours, so it reads the same `kCheck*` tokens rather than
+  // re-typing the literals.
+  group('dot hues are the check hues', () {
+    test('pass is the passing-check green', () {
+      expect(
+        prDotColor(cs, PrDot.pass, PrTone.quiet),
+        prCheckBucketColor(cs, 'pass'),
+      );
+    });
+
+    test('fail is the failing-check red', () {
+      expect(
+        prDotColor(cs, PrDot.fail, PrTone.quiet),
+        prCheckBucketColor(cs, 'fail'),
+      );
+    });
+
+    test('the arc is the pending-check amber', () {
+      expect(
+        prDotColor(cs, PrDot.pending, PrTone.quiet),
+        prCheckBucketColor(cs, 'pending'),
+      );
+    });
+
+    test('landed is the merged purple', () {
+      expect(prDotColor(cs, PrDot.landed, PrTone.quiet), cs.prMergedText);
+    });
+
+    test('a ring and a muted dot are grey whatever the fact says', () {
+      // The whole point of both: "nothing to report" and "not up for review".
+      // Tinting either would report something.
+      for (final tone in PrTone.values) {
+        expect(prDotColor(cs, PrDot.none, tone), cs.outline);
+        expect(prDotColor(cs, PrDot.muted, tone), cs.outline);
+      }
+    });
+
+    test('PrDot.tone defers to the loud fact', () {
+      for (final tone in PrTone.values) {
+        expect(prDotColor(cs, PrDot.tone, tone), prToneColor(cs, tone));
+      }
+    });
+  });
 }

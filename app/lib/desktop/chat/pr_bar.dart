@@ -69,30 +69,43 @@ class PrComposerBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-      child: Row(
-        children: [
-          Flexible(
-            child: _Reason(
-              status: status,
-              onOpen: () => _openDetail(context, ref),
-            ),
+    // No padding of its own: it is handed to `Composer(header:)`, which owns the
+    // insets between the composer's box edge and its hairline.
+    return Row(
+      children: [
+        // The sentence group takes the row and keeps the free space *before* the
+        // button, so the CTA hugs the right edge instead of trailing the text
+        // wherever it happens to end (the mockup's `flex:1` spacer).
+        //
+        // Expanded + an inner Row, not `Flexible` + `Spacer`: two flex children
+        // in one Row would split the free space evenly, so the sentence would
+        // elide at half the width while the spacer sat on the rest. Here the
+        // non-flex `+n more` is measured first and `_Reason` gets what is left.
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: _Reason(
+                  status: status,
+                  onOpen: () => _openDetail(context, ref),
+                ),
+              ),
+              if (status.more > 0) ...[
+                const SizedBox(width: kSpace8),
+                _MoreLink(
+                  count: status.more,
+                  onTap: () => _openDetail(context, ref),
+                ),
+              ],
+            ],
           ),
-          if (status.more > 0) ...[
-            const SizedBox(width: kSpace8),
-            _MoreLink(
-              count: status.more,
-              onTap: () => _openDetail(context, ref),
-            ),
-          ],
-          const SizedBox(width: kSpace10),
-          PrCtaButton(
-            status: status,
-            onRun: (remedy) => _run(context, ref, remedy),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: kSpace10),
+        PrCtaButton(
+          status: status,
+          onRun: (remedy) => _run(context, ref, remedy),
+        ),
+      ],
     );
   }
 
@@ -148,8 +161,8 @@ class _Reason extends StatelessWidget {
               padding: const EdgeInsets.only(right: kSpace6),
               child: PrToneDot(
                 tone: status.tone,
+                dot: status.dot,
                 progress: status.checkProgress,
-                hollow: !status.hasPr,
               ),
             ),
           ),

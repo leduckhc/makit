@@ -181,8 +181,8 @@ class PrStatusChip extends ConsumerWidget {
                   children: [
                     PrToneDot(
                       tone: status.tone,
+                      dot: status.dot,
                       progress: status.checkProgress,
-                      hollow: worktree.pr == null,
                     ),
                     const SizedBox(width: kSpace6),
                     ConstrainedBox(

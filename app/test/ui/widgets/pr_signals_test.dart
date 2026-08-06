@@ -722,6 +722,91 @@ void main() {
     });
   });
 
+  // The mockup's §2 legend, row by row. The dot reports the **pull request**,
+  // which is not the same thing as the loud fact: a PR can have a green build
+  // and an unpushed commit, and those want different colours. Before this the dot
+  // simply painted `tone`, so a green PR's dot was grey (the all-clear fact is
+  // quiet) and a red build's dot went amber the moment a local commit outranked
+  // it.
+  group('the dot (mockup §2)', () {
+    test('no PR yet, nothing to report — a ring', () {
+      expect(_status().dot, PrDot.none);
+      expect(_status(branch: 'main').dot, PrDot.none);
+    });
+
+    test('no PR but something to report — not a ring: the fact has a hue', () {
+      // The legend's row is "hollow ring — *nothing to report*", and the mockup's
+      // own `dirty` picture (no PR, 3 uncommitted files) draws a solid amber
+      // disc. A ring here would report "nothing" over three uncommitted files.
+      expect(_status(uncommitted: 3).dot, PrDot.tone);
+      expect(_status(ahead: 1).dot, PrDot.tone);
+    });
+
+    test('checks green — solid pass', () {
+      expect(_status(pr: _pr(rollup: 'pass')).dot, PrDot.pass);
+    });
+
+    test('checks green stays green under a louder local fact', () {
+      // `oneProblem` in the mockup: `#142 · 1 commit unpushed` in amber, with a
+      // green dot. The sentence carries the problem; the dot carries the build.
+      final s = _status(pr: _pr(rollup: 'pass'), ahead: 1);
+      expect(s.loud.label, '1 commit unpushed');
+      expect(s.tone, PrTone.attention);
+      expect(s.dot, PrDot.pass);
+    });
+
+    test('checks red — solid fail, even when an amber fact is louder', () {
+      // The mockup's `hot` picture draws this amber, but that is a leftover: §8
+      // records that its loud fact was changed from `2 checks failing` to
+      // `1 commit unpushed` and the dot was not revisited. The legend is the
+      // rule, and §8 of the spec says the dot's hue is the *verdict*.
+      final s = _status(pr: _pr(rollup: 'fail'), ahead: 1);
+      expect(s.loud.label, '1 commit unpushed');
+      expect(s.dot, PrDot.fail);
+    });
+
+    test('checks in flight — an arc, not a hue', () {
+      final s = _status(
+        pr: _pr(
+          rollup: 'pending',
+          checks: const [
+            PrCheck(name: 'a', bucket: 'pass'),
+            PrCheck(name: 'b', bucket: 'pending'),
+          ],
+        ),
+      );
+      expect(s.dot, PrDot.pending);
+      expect(s.checkProgress, closeTo(0.5, 0.001));
+    });
+
+    test('merged — the only purple in the pane', () {
+      expect(_status(pr: _pr(state: 'MERGED')).dot, PrDot.landed);
+    });
+
+    test('draft — muted, not up for review', () {
+      expect(_status(pr: _pr(isDraft: true)).dot, PrDot.muted);
+    });
+
+    test('a draft mutes its own build too', () {
+      // §5: a draft is not up for review, so nothing about it is loud — which
+      // has to include its dot, or the one graphic shouts what the sentence
+      // deliberately does not.
+      expect(_status(pr: _pr(isDraft: true, rollup: 'fail')).dot, PrDot.muted);
+    });
+
+    test('closed without merging — muted', () {
+      expect(_status(pr: _pr(state: 'CLOSED')).dot, PrDot.muted);
+    });
+
+    test('an open PR with no verdict falls back to the loud fact', () {
+      // Nothing to report about the build, so the dot has nothing of its own to
+      // say and defers — the mockup's `conflict`/`behind`/`threads` pictures.
+      final s = _status(pr: _pr(rollup: 'unknown'), behind: 2);
+      expect(s.dot, PrDot.tone);
+      expect(s.tone, PrTone.attention);
+    });
+  });
+
   group('isPrimary is carried, not re-derived', () {
     test('the primary checkout says so', () {
       // The menu explains *why* an action is unavailable (D3), and the reason for

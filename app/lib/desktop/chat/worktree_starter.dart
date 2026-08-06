@@ -226,37 +226,36 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                   ],
                 ),
               const SizedBox(height: kSpace16),
-              // The same next-step bar a live session gets. A fresh worktree
-              // usually has *more* to say here than a running one (nothing
-              // pushed, no PR yet), so omitting it made the starter feel like a
-              // lesser pane.
-              Builder(
-                builder: (context) {
-                  final at = ref
-                      .watch(reposProvider)
-                      .locateWorktree(worktreePath);
-                  return PrComposerBar(
-                    // `at` is null until the repos snapshot carries the worktree
-                    // this starter just created — its common state. The branch is
-                    // known regardless, so pass it: without it the bar reads
-                    // `detached`, and the wrap-up confirm could name no branch
-                    // and send no `expectBranch`.
-                    status: prStatusFor(at, fallbackBranch: branch),
-                    pr: at?.worktree.pr,
-                    projectId: at?.repo.id,
-                    worktreePath: worktreePath,
-                    branch: at?.worktree.branch ?? branch,
-                    uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
-                    onInsertPrompt: _insertPrompt,
-                  );
-                },
-              ),
-              const SizedBox(height: kSpace8),
               Composer(
                 controller: _composer,
                 onSend: _start,
                 running: _spawning,
                 alwaysExpanded: true,
+                // The same next-step bar a live session's composer carries. A
+                // fresh worktree usually has *more* to say here than a running
+                // one (nothing pushed, no PR yet), so omitting it made the
+                // starter feel like a lesser pane.
+                header: Builder(
+                  builder: (context) {
+                    final at = ref
+                        .watch(reposProvider)
+                        .locateWorktree(worktreePath);
+                    return PrComposerBar(
+                      // `at` is null until the repos snapshot carries the worktree
+                      // this starter just created — its common state. The branch is
+                      // known regardless, so pass it: without it the bar reads
+                      // `detached`, and the wrap-up confirm could name no branch
+                      // and send no `expectBranch`.
+                      status: prStatusFor(at, fallbackBranch: branch),
+                      pr: at?.worktree.pr,
+                      projectId: at?.repo.id,
+                      worktreePath: worktreePath,
+                      branch: at?.worktree.branch ?? branch,
+                      uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
+                      onInsertPrompt: _insertPrompt,
+                    );
+                  },
+                ),
                 sendChord: keymap.chordFor(ShortcutAction.sendMessage),
                 newlineChord: keymap.chordFor(ShortcutAction.composerNewline),
                 footerActions: [

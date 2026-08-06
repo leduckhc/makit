@@ -54,6 +54,24 @@ Color onPrToneFill(ColorScheme cs, PrTone tone) {
       : cs.surface;
 }
 
+/// The status dot's colour — the **pull request's** verdict, not the loud fact's
+/// tone (mockup §2; falls back to [prToneColor] for [PrDot.tone]).
+///
+/// Reads the `kCheck*` tokens rather than re-typing the literals, for the same
+/// reason [prToneColor] does: these dots sit beside CI colours elsewhere in the
+/// app and a near-miss hue reads as a third, meaningless verdict.
+Color prDotColor(ColorScheme cs, PrDot dot, PrTone tone) => switch (dot) {
+  // Grey regardless of tone: the ring means "nothing to report", so tinting it
+  // would report something.
+  PrDot.none => cs.outline,
+  PrDot.pass => kCheckPass,
+  PrDot.fail => kCheckFail,
+  PrDot.pending => kCheckPending,
+  PrDot.landed => cs.prMergedText,
+  PrDot.muted => cs.outline,
+  PrDot.tone => prToneColor(cs, tone),
+};
+
 /// WCAG relative-contrast ratio.
 double _contrast(Color a, Color b) {
   final la = a.computeLuminance();
@@ -73,25 +91,28 @@ class PrToneDot extends StatelessWidget {
   const PrToneDot({
     super.key,
     required this.tone,
+    this.dot = PrDot.tone,
     this.progress,
-    this.hollow = false,
   });
 
+  /// The fallback hue, used when [dot] is [PrDot.tone]. Also what the per-fact
+  /// dots in the detail list are drawn from — each row reports its own fact, so
+  /// there the tone *is* the verdict.
   final PrTone tone;
+
+  /// What the dot reports (mockup §2). See [PrDot].
+  final PrDot dot;
 
   /// Fraction of checks that have reported, or null for a plain dot.
   final double? progress;
-
-  /// Draw a ring instead of a disc — used when there is no PR yet, so "nothing
-  /// to report" is visibly different from "reported, and fine".
-  final bool hollow;
 
   static const double _size = 9;
   static const double _ringSize = 11;
 
   @override
   Widget build(BuildContext context) {
-    final color = prToneColor(Theme.of(context).colorScheme, tone);
+    final cs = Theme.of(context).colorScheme;
+    final color = prDotColor(cs, dot, tone);
     final p = progress;
     // Both forms occupy the ring's box: the disc is the smaller of the two, and
     // letting it size the widget made the sentence twitch 2px sideways the moment
@@ -99,12 +120,14 @@ class PrToneDot extends StatelessWidget {
     return SizedBox(
       width: _ringSize,
       height: _ringSize,
-      child: p != null
+      child: p != null && dot == PrDot.pending
           ? CircularProgressIndicator(
               value: p.clamp(0.0, 1.0),
               strokeWidth: 2.5,
               color: color,
-              backgroundColor: color.withValues(alpha: 0.22),
+              // The unreported remainder is *unknown*, not a faded version of the
+              // arc's own colour: the mockup tracks it in the outline variant.
+              backgroundColor: cs.outlineVariant,
             )
           : Center(
               child: Container(
@@ -112,8 +135,10 @@ class PrToneDot extends StatelessWidget {
                 height: _size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: hollow ? null : color,
-                  border: hollow ? Border.all(color: color, width: 1.5) : null,
+                  color: dot == PrDot.none ? null : color,
+                  border: dot == PrDot.none
+                      ? Border.all(color: color, width: 1.5)
+                      : null,
                 ),
               ),
             ),

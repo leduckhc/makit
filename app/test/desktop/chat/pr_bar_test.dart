@@ -917,21 +917,21 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
-    testWidgets('is hollow for a branch named like a PR number', (
+    testWidgets('is a ring for a branch named like a PR number', (
       tester,
     ) async {
       // `#42` is a legal branch name. Reading the display string classified such
-      // a branch as having a PR and filled its dot in.
+      // a branch as having a PR, which would take it off the `PrDot.none` row and
+      // fill its dot in.
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
           branch: '#42',
-          commitsAhead: 1,
           onInsert: (_) {},
         ),
       );
       final dot = tester.widget<PrToneDot>(find.byType(PrToneDot));
-      expect(dot.hollow, isTrue);
+      expect(dot.dot, PrDot.none);
     });
 
     testWidgets('keeps the same footprint when the checks finish', (
@@ -944,7 +944,11 @@ void main() {
         const MaterialApp(
           home: Row(
             children: [
-              PrToneDot(tone: PrTone.attention, progress: 0.5),
+              PrToneDot(
+                tone: PrTone.attention,
+                dot: PrDot.pending,
+                progress: 0.5,
+              ),
               PrToneDot(tone: PrTone.attention),
             ],
           ),
@@ -955,6 +959,67 @@ void main() {
           .map((w) => tester.getSize(find.byWidget(w)))
           .toList();
       expect(sizes[1], sizes[0]);
+    });
+  });
+
+  group('layout', () {
+    testWidgets('the CTA is flush right, the sentence stays left', (
+      tester,
+    ) async {
+      // The mockup's `.nbar` puts a `flex:1` spacer between the sentence and the
+      // button, so the button hugs the composer's right edge instead of trailing
+      // the text wherever it happens to end.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bar = tester.getRect(find.byType(PrComposerBar));
+      final cta = tester.getRect(find.byType(PrCtaButton));
+      final reason = tester.getRect(find.byType(Text).first);
+      expect(cta.right, bar.right);
+      expect(reason.left, lessThan(bar.width / 2));
+      expect(
+        cta.left - reason.right,
+        greaterThan(bar.width / 3),
+        reason: 'the free space belongs between them, not after the button',
+      );
+    });
+
+    testWidgets('a long sentence elides rather than pushing the CTA off', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          // Three problems: the loud fact plus a `+2 more` disclosure, in a
+          // narrow bar.
+          pr: _pr(
+            rollup: 'fail',
+            checks: const [
+              PrCheck(name: 'analyze', bucket: 'fail'),
+              PrCheck(name: 'test', bucket: 'fail'),
+            ],
+            unresolvedComments: 3,
+          ),
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.pumpAndSettle();
+      tester.view.physicalSize = const Size(360 * 3, 200 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final bar = tester.getRect(find.byType(PrComposerBar));
+      expect(tester.getRect(find.byType(PrCtaButton)).right, bar.right);
+      expect(find.text('+2 more'), findsOneWidget);
     });
   });
 }

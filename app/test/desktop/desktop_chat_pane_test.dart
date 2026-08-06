@@ -12,6 +12,7 @@ import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/harness_picker.dart' show HarnessCard;
 import 'package:makit/desktop/chat/worktree_starter.dart';
+import 'package:makit/ui/composer/composer.dart' show Composer;
 import 'package:makit/ui/composer/composer_draft.dart';
 import 'package:makit/ui/composer/composer_selectors.dart' show ModelConfigPill;
 import 'package:makit/ui/composer/context_usage.dart'
@@ -722,6 +723,14 @@ void main() {
       await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
 
       expect(find.byType(PrComposerBar), findsOneWidget);
+      // On the composer's top edge, not a sibling above it (SPEC-38 mockup §5).
+      expect(
+        find.descendant(
+          of: find.byType(Composer),
+          matching: find.byType(PrComposerBar),
+        ),
+        findsOneWidget,
+      );
       final bar = tester.widget<PrComposerBar>(find.byType(PrComposerBar));
       expect(
         bar.pr,

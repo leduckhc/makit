@@ -34,6 +34,44 @@ enum PrTone {
   landed,
 }
 
+/// What the status dot reports, which is the **pull request's own state** — not
+/// the loud fact.
+///
+/// The two are not the same claim and the mockup's §2 legend gives the dot to the
+/// PR: `#142 · 1 commit unpushed` reads amber in the sentence (that is the next
+/// step) over a *green* dot (the build is fine). Painting the dot from [PrTone]
+/// instead collapsed both into one hue, which made a green PR's dot grey — the
+/// all-clear fact is [PrTone.quiet] — and turned a red build amber the moment a
+/// local commit outranked it in §5.
+enum PrDot {
+  /// No pull request **and nothing outstanding**: a hollow ring in the outline
+  /// grey, "nothing to report". Tone-independent by design — see [PrDot.tone] for
+  /// why a branch with local work is not this.
+  none,
+
+  /// Checks green.
+  pass,
+
+  /// Checks red.
+  fail,
+
+  /// Checks in flight: an arc, [PrStatus.checkProgress] of the way round.
+  pending,
+
+  /// Merged — the only purple in the pane.
+  landed,
+
+  /// A draft, or closed without merging: muted, not up for review. A draft mutes
+  /// its own build here too, or the one graphic would shout what §5 deliberately
+  /// keeps quiet.
+  muted,
+
+  /// The pull request has no verdict of its own, so the dot defers to
+  /// [PrStatus.tone]: a branch with no PR but uncommitted or unpushed work, or an
+  /// open PR whose rollup says nothing (conflicts, a moved base, open threads).
+  tone,
+}
+
 /// The deterministic operations the bar runs itself, rather than asking the agent
 /// to. Each is a single unambiguous call — anything needing judgement stays a
 /// prompt.
@@ -163,6 +201,7 @@ class PrStatus {
     required this.tone,
     required this.signals,
     required this.cta,
+    this.dot = PrDot.tone,
     this.checkProgress,
     this.stale = false,
     this.hasPr = false,
@@ -173,8 +212,14 @@ class PrStatus {
   /// `#142` for a PR, else the branch name (or `detached`).
   final String identity;
 
-  /// The dot's hue — the tone of the loud signal.
+  /// The tone of the loud signal — the sentence's hue, and the dot's when [dot]
+  /// is [PrDot.tone].
   final PrTone tone;
+
+  /// What the status dot reports (mockup §2). Derived here rather than at each
+  /// surface: the three of them used to re-derive `hollow: pr == null` for
+  /// themselves, which is exactly the duplication §4 exists to prevent.
+  final PrDot dot;
 
   /// Facts, loudest first. Never empty.
   final List<PrSignal> signals;
@@ -265,6 +310,7 @@ PrStatus prStatus({
     return PrStatus(
       identity: identity,
       tone: tone,
+      dot: merged ? PrDot.landed : PrDot.muted,
       hasPr: true,
       isEnded: true,
       isPrimary: isPrimary,
@@ -463,6 +509,7 @@ PrStatus prStatus({
   return PrStatus(
     identity: identity,
     tone: loud.tone,
+    dot: _dotFor(open, draft: draft, hasPr: pr != null, signals: signals),
     hasPr: pr != null,
     isPrimary: isPrimary,
     stale: pr?.stale ?? false,
@@ -472,6 +519,34 @@ PrStatus prStatus({
         : null,
     cta: cta,
   );
+}
+
+/// The status dot for a live (neither merged nor closed) worktree, in precedence
+/// order — mockup §2.
+///
+/// [draft] comes before the check rows on purpose: §5 mutes a draft's own facts
+/// because it is not up for review, and a red arc over a deliberately quiet
+/// sentence would undo that.
+PrDot _dotFor(
+  PullRequest? open, {
+  required bool draft,
+  required bool hasPr,
+  required List<PrSignal> signals,
+}) {
+  // "Nothing to report" is the whole meaning of the ring, so it is not enough for
+  // the PR to be missing: a branch with three uncommitted files has plenty to
+  // report and gets its fact's hue (the mockup's `dirty` picture).
+  if (!hasPr && !signals.any((s) => s.remedy != null)) return PrDot.none;
+  if (draft) return PrDot.muted;
+  if (open == null) return PrDot.tone;
+  if (open.checks.any((c) => c.bucket == 'pending')) return PrDot.pending;
+  return switch (open.checkRollup) {
+    'fail' => PrDot.fail,
+    'pass' => PrDot.pass,
+    // No verdict to report (a shed lookup, or a PR with no checks at all), so the
+    // dot has nothing of its own to say and defers to the loud fact.
+    _ => PrDot.tone,
+  };
 }
 
 /// The CTA for the loud signal: its remedy, labelled with the remedy's own verb.

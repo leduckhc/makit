@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
+import 'package:makit/app/theme.dart' show kRadius16;
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/ui/composer/composer.dart';
 import 'package:makit/ui/composer/context_usage.dart' show kUsageTargetSize;
@@ -447,6 +448,98 @@ void main() {
         tester.getSize(find.byKey(const Key('trailing'))).width,
         kUsageTargetSize,
       );
+    });
+  });
+
+  group('header', () {
+    Widget withHeader({bool enabled = true}) => MaterialApp(
+      home: Scaffold(
+        body: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 375,
+            child: Composer(
+              onSend: _noop,
+              alwaysExpanded: true,
+              enabled: enabled,
+              header: const SizedBox(key: Key('header'), height: 28),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('sits inside the composer box, above the field', (
+      tester,
+    ) async {
+      await tester.pumpWidget(withHeader());
+      await tester.pumpAndSettle();
+
+      // Inside the rounded box, not a sibling above it — that placement is the
+      // whole point (SPEC-38 mockup §5, "inside the composer").
+      expect(
+        find.descendant(
+          of: find.byWidgetPredicate(
+            (w) =>
+                w is Container &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).borderRadius ==
+                    BorderRadius.circular(kRadius16),
+          ),
+          matching: find.byKey(const Key('header')),
+        ),
+        findsOneWidget,
+      );
+      final header = tester.getRect(find.byKey(const Key('header')));
+      final field = tester.getRect(find.byType(TextField));
+      expect(header.bottom, lessThanOrEqualTo(field.top));
+    });
+
+    testWidgets('is separated from the field by a hairline', (tester) async {
+      await tester.pumpWidget(withHeader());
+      await tester.pumpAndSettle();
+
+      final rule = tester.getRect(find.byKey(kComposerHeaderRuleKey));
+      expect(rule.height, 1);
+      final header = tester.getRect(find.byKey(const Key('header')));
+      final field = tester.getRect(find.byType(TextField));
+      expect(rule.top, greaterThanOrEqualTo(header.bottom));
+      expect(rule.bottom, lessThanOrEqualTo(field.top));
+    });
+
+    testWidgets('stays rendered while the composer is disabled', (
+      tester,
+    ) async {
+      // The PR bar is the only caller, and its actions (push, fix, wrap up) stay
+      // legitimate while an inline ask has the field locked — the same reason
+      // PendingQueueSlot is not a Composer child.
+      await tester.pumpWidget(withHeader(enabled: false));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(TextField), findsNothing);
+      expect(find.byKey(const Key('header')), findsOneWidget);
+      expect(find.byKey(kComposerHeaderRuleKey), findsOneWidget);
+    });
+
+    testWidgets('no header means no hairline and no reserved space', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 375,
+                child: Composer(onSend: _noop, alwaysExpanded: true),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(kComposerHeaderRuleKey), findsNothing);
     });
   });
 }

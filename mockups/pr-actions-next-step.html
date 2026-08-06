@@ -390,7 +390,10 @@ const st={
     lead:'12 checks passed',rest:[],leadTone:'quiet',
     cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
   hot:{cap:'open · 1 unpushed + CI red + 3 threads — three problems, one button',
-    num:'#142',tone:'attention',dot:{},
+    /* The dot reports the PR, not the loud fact (§2): the build is red even though
+       the unpushed commit is what to do next. This used to inherit `tone` and so
+       drew amber — see §8. */
+    num:'#142',tone:'attention',dot:{c:'var(--fail)'},
     lead:'1 commit unpushed',rest:['2 checks failing','3 threads open'],
     cta:{label:'Fix',icon:'magic-wand',tone:'attention'}},
   oneProblem:{cap:'open · exactly one problem — keeps its own specific verb',
@@ -652,13 +655,13 @@ el('detail').innerHTML=`
 
 /* ═══ 5 · placement ════════════════════════════════════════════════ */
 el('place').innerHTML=`
-<div class="col" style="width:520px"><header><div class="t"><h3>Floating <span class="tag now">today's slot</span></h3></div>
-  <div class="d">Its own row above the composer, as today. B is quiet enough that this no longer reads
-  as a third competing element.</div></header>
+<div class="col" style="width:520px"><header><div class="t"><h3>Floating <span class="tag a">superseded</span></h3></div>
+  <div class="d">Its own row above the composer, as SPEC-23 had it. B is quiet enough that this no longer
+  read as a third competing element &mdash; but it still spent a whole row on a caption.</div></header>
   <div class="body"><div class="pane">${bHTML(st.hot,'B1')}
     <div class="composer"><span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div></div></div></div>
 
-<div class="col" style="width:520px"><header><div class="t"><h3>Inside the composer <span class="tag new">suggested</span></h3></div>
+<div class="col pick" style="width:520px"><header><div class="t"><h3>Inside the composer <span class="tag new">as built</span></h3></div>
   <div class="d">One sentence on the composer's top edge, above a hairline. At this weight it reads as
   a caption on the box you're typing into — which is what it is, since most of its actions put text
   there.</div></header>
@@ -1005,6 +1008,9 @@ const WRONG=[
   ['the loud fact was the red build',
    'Every picture of the three-problem state led with <code>2 checks failing</code>, in red.',
    'Precedence puts <b>unpushed commits above a red build</b> (§5): you cannot fix CI for commits the remote has never seen. So the sentence leads with <code>1 commit unpushed</code> in amber, and “Fix” composes all three in that order — pinned by <code>pr_signals_test.dart</code>.'],
+  ['the dot inherited the sentence\u2019s tone',
+   'Every dot was <code>tone</code>\u2019s hue, so a <b>green</b> PR drew a grey dot (the all-clear fact is quiet) and a <b>red build</b> drew amber the moment a local commit outranked it \u2014 this state\u2019s own picture.',
+   'The dot reports the <b>pull request</b>, the sentence reports the next step: they are different claims. <code>PrDot</code> is now derived separately from <code>PrTone</code> (SPEC-38 \u00a78.1) straight off the \u00a72 legend \u2014 pass green, fail red, pending arc, merged purple, draft/closed grey, a ring only when there is nothing to report. The ring is grey <i>whatever</i> the tone, or it would report something.'],
   ['the home row continued the sentence',
    'The chip read <code>2 checks failing · 3 threads open</code> — the loud fact plus the next one.',
    'A row has nowhere to elide: the second fact pushed the chip past the branch name it sits beside. The chip is <code>#142 · loud fact</code> and the rest is one tap away, which is the same split the bar makes with <code>+n more</code>.'],
