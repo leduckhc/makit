@@ -228,6 +228,13 @@ export function startWsServer(opts: ServerOpts) {
   const clients = new Map<WebSocket, ClientState>();
   let reposSnapshotGeneration = 0;
   let lastEnrichedRepos: RepoDTO[] | undefined;
+  // Worktree paths for the ports scanner come from the GIT-ONLY repos snapshot,
+  // NOT `lastEnrichedRepos`: enrichment is `gh`-backed and stays undefined until
+  // it succeeds, so on any host where `gh` is missing, unauthenticated, rate-
+  // limited or slow the scanner would see zero worktrees and report every
+  // listener as unowned — the whole feature silently dead (finding 27). The
+  // git-only phase runs first and never depends on the network.
+  let lastGitOnlyRepos: RepoDTO[] | undefined;
 
   // The single GitHub gateway (SPEC-32). Owned by the manager (so its
   // listRepos/enrichPrs/listOpenPrs share the one cache + quota accounting);
@@ -473,7 +480,7 @@ export function startWsServer(opts: ServerOpts) {
   // per scan (the repos snapshot is recomputed on connect/spawn/worktree change).
   const listWorktreePaths = (): string[] => {
     const paths: string[] = [];
-    for (const repo of lastEnrichedRepos ?? []) for (const wt of repo.worktrees) paths.push(wt.path);
+    for (const repo of lastGitOnlyRepos ?? []) for (const wt of repo.worktrees) paths.push(wt.path);
     return paths;
   };
   // Session id → agent root pid. An exited session keeps its old child pid and
@@ -759,6 +766,10 @@ export function startWsServer(opts: ServerOpts) {
     try {
       gitOnly = await manager.listRepos({ includePrs: false });
       if (generation !== reposSnapshotGeneration) return;
+      // Cache the git-only worktree paths for the ports scanner BEFORE PR
+      // enrichment (which may reject or never resolve) — attribution must work
+      // regardless of `gh` health (finding 27).
+      lastGitOnlyRepos = gitOnly;
       emit(preserveLastKnownPrs(gitOnly));
     } catch (e) {
       if (generation === reposSnapshotGeneration) {

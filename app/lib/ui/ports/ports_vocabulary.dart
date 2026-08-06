@@ -42,9 +42,17 @@ String portHealthTooltip(PortHealth? health, {required int nowMs}) {
     PortHealthKind.ok =>
       'HTTP GET / → ${health.status ?? 200} ${_statusName(health.status)} — '
           'answering.',
-    PortHealthKind.httpError =>
-      'HTTP GET / → ${health.status ?? ''} ${_statusName(health.status)} — '
-          "it's alive, but nothing is mounted at the root.",
+    PortHealthKind.httpError => () {
+      // An explicit fallback so the sentence is always complete: the tolerant
+      // decoder permits a null status, and an unrecognised code has no reason
+      // phrase, so the head must never collapse to a hole (`→  —`).
+      final status = health.status;
+      final head = status == null
+          ? 'an error'
+          : '$status ${_statusName(status)}'.trim();
+      return 'HTTP GET / → $head — '
+          "it's alive, but nothing is mounted at the root.";
+    }(),
     PortHealthKind.refused =>
       'TCP connect refused — the port is bound but nothing is accepting. '
           'Usually a crashed dev server holding its socket.',

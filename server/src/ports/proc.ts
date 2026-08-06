@@ -5,7 +5,7 @@
  * Two reads, both best-effort:
  *  - `ps -axo pid=,ppid=,etime=,args=` → ppid (for the ancestor walk) + full
  *    argv (the row shows the command) + start time (uptime).
- *  - `lsof -a -d cwd -Fpn -p <csv>` → the cwd of a set of pids, in ONE call.
+ *  - `lsof -a -d cwd -Fpfn -p <csv>` → the cwd of a set of pids, in ONE call.
  *
  * This deliberately does NOT reuse `metrics/proc_table.ts`: that reader takes
  * `comm=` (no argv) and `time=` (cumulative CPU, not elapsed) and runs on the
@@ -133,7 +133,7 @@ export async function readProcs(
   }
 }
 
-/** Parse `lsof -Fpn` cwd output: `p<pid>` then `fcwd` then `n<path>`, pure.
+/** Parse `lsof -Fpfn` cwd output: `p<pid>` then `fcwd` then `n<path>`, pure.
  *
  * The `fcwd` marker is load-bearing: `lsof -d cwd` requests only cwd file
  * descriptors, but some versions emit annotation `n` lines (e.g.
@@ -172,13 +172,20 @@ export function parseLsofCwds(stdout: string): Map<number, string> {
 /**
  * A cwd we can match against a worktree path. Rejects the two shapes lsof
  * reports when it could not read the link, both seen on Linux:
- *   `n/proc/1/cwd (readlink: Permission denied)`  — annotation appended to the path
+ *   `n/proc/1/cwd (readlink: Permission denied)`  — a TRAILING parenthesised annotation
  *   `n` / a relative name                          — nothing usable at all
  * Storing either would attribute a port to a directory that does not exist.
+ *
+ * The annotation is matched only at the END of the string, so a real directory
+ * whose name legitimately contains ` (`, e.g. `/Users/x/Projects (old)/wt-a`, is
+ * kept — rejecting any ` (` anywhere silently dropped such worktrees (finding 22).
  */
 function isUsableCwd(value: string): boolean {
-  return value.startsWith("/") && !value.includes(" (");
+  return value.startsWith("/") && !TRAILING_ANNOTATION.test(value);
 }
+
+/** lsof's trailing failure annotation, e.g. ` (readlink: Permission denied)`. */
+const TRAILING_ANNOTATION = / \([^)]*\)$/;
 
 /**
  * Result of {@link readCwds}. `ok` is false only when the command was

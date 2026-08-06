@@ -7,6 +7,7 @@ import {
   PROBE_TIMEOUT_MS,
   PROBE_TTL_MS,
   PROBE_CONCURRENCY,
+  MAX_STATUS_LINE_BYTES,
   type Connector,
   type ProbeSocket,
 } from "./health.js";
@@ -259,11 +260,45 @@ test("the concurrency cap is respected", async () => {
   void p.then(() => {
     settled = true;
   });
+  // Cap the drain so a future change in health.ts that stops settling FAILS this
+  // test with a clear message instead of hanging the whole run (finding 18).
+  let drains = 0;
+  const MAX_DRAINS = PROBE_CONCURRENCY * 4;
   while (!settled) {
+    assert.ok(drains++ < MAX_DRAINS, "refresh did not settle after draining every probe");
     for (const s of sockets) s.emit("data", "HTTP/1.1 200 OK\r\n");
     await flush();
   }
   await p;
+});
+
+test("a vanished endpoint's verdict is pruned once it no longer listens (finding 19)", async () => {
+  const clock = fakeClock();
+  const connect = () => {
+    const s = new FakeSocket();
+    queueMicrotask(() => s.emit("data", "HTTP/1.1 200 OK\r\n"));
+    return s;
+  };
+  const probe = new PortHealthProbe({ connect, ...clock });
+  await probe.refresh([ownedPort()]); // 127.0.0.1:5173 probed + cached
+  assert.ok(probe.verdict("127.0.0.1", 5173), "cached after the first probe");
+  // Next scan: :5173 is gone, only :6000 listens now. The stale verdict must be
+  // dropped rather than accumulate for the process lifetime.
+  await probe.refresh([ownedPort({ port: 6000, key: "1:127.0.0.1:6000" })]);
+  assert.equal(probe.verdict("127.0.0.1", 5173), undefined, "the vanished endpoint is pruned");
+  assert.ok(probe.verdict("127.0.0.1", 6000), "the still-listening endpoint remains");
+});
+
+test("an over-long status line (no newline within MAX_STATUS_LINE_BYTES) is http-error, not an unbounded read", async () => {
+  const clock = fakeClock();
+  const sock = new FakeSocket();
+  const probe = new PortHealthProbe({ connect: () => sock, ...clock });
+  const p = probe.refresh([ownedPort()]);
+  await flush();
+  sock.emit("data", "x".repeat(MAX_STATUS_LINE_BYTES + 1)); // streams past the bound, no newline
+  await p;
+  assert.equal(probe.verdict("127.0.0.1", 5173)?.kind, "http-error");
+  assert.ok(sock.destroyed, "the socket is torn down, not left growing a buffer");
 });
 
 test("refresh never throws even if the connector itself throws", async () => {

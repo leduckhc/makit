@@ -232,6 +232,23 @@ test("ports are sorted by port then pid", () => {
   );
 });
 
+test("ports with the same pid and port are ordered by address (dual-stack, total sort)", () => {
+  // A dual-stack process listens on the same port over two addresses with ONE
+  // pid; without `address` as a third sort key their order is whatever lsof
+  // printed, which makes the dedup projection see a spurious change (finding 17).
+  const ports = run({
+    listeners: [
+      listener({ pid: 7, port: 8080, address: "::1" }),
+      listener({ pid: 7, port: 8080, address: "127.0.0.1" }),
+    ],
+  });
+  assert.deepEqual(
+    ports.map((p) => p.address),
+    ["127.0.0.1", "::1"],
+    "ascending by address once port and pid tie",
+  );
+});
+
 test("tailnetAddressFromBindHost: a 100.x bind host IS the discovered tailnet address (no subprocess)", () => {
   assert.equal(tailnetAddressFromBindHost("100.119.58.97"), "100.119.58.97");
 });

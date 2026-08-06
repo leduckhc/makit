@@ -55,6 +55,37 @@ void main() {
       expect(find.byKey(kPortsPopover), findsOneWidget);
     });
 
+    testWidgets(
+      'clicking to pin an ALREADY-OPEN popover installs the outside-tap barrier',
+      (tester) async {
+        // Comment 3 / finding 7. In the sidebar this cannot be pinned down: any
+        // ancestor rebuild re-runs `overlayChildBuilder`, so the barrier appears
+        // whether or not `_onTap` asked for a rebuild. In ISOLATION nothing else
+        // rebuilds this widget, so the barrier can only exist if flipping
+        // `_pinned` was done under `setState`.
+        //
+        // Mutation that proves it bites: `_pinned = true;` without `setState` in
+        // `_onTap` — hover-open leaves the overlay built while `_pinned` was
+        // false, `_show()` early-returns, and this expect finds no barrier.
+        await tester.pumpWidget(_host(_popover()));
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
+
+        // Hover-open first: this is the path where `_show()` early-returns.
+        await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+        expect(find.byKey(kPortsPopoverBarrier), findsNothing);
+
+        await tester.tap(find.byType(PortsPopover));
+        await tester.pump();
+        expect(find.byKey(kPortsPopoverBarrier), findsOneWidget);
+      },
+    );
+
     testWidgets('travelling into the popover keeps it open', (tester) async {
       await tester.pumpWidget(_host(_popover()));
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);

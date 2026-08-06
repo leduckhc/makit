@@ -28,7 +28,11 @@ export const SCAN_INTERVAL_MS = 4_000;
 /**
  * Per-exec timeout. A wedged `lsof` under a stalled network mount must not
  * outlive the scan interval and pile up ticks; 3 s leaves head-room for a slow
- * but live command while staying under the 4 s cadence.
+ * but live command. This is a PER-EXEC budget, and `doScan` runs three reads
+ * sequentially (listener `lsof`, `ps`, cwd `lsof`), so the worst-case whole scan
+ * is ~3× this (~9 s). That cannot pile up ticks regardless: `runScan` skips any
+ * tick that fires while a scan is still in flight (no queue), so a slow scan
+ * delays the next one rather than overlapping it.
  */
 const EXEC_TIMEOUT_MS = 3_000;
 
@@ -150,8 +154,15 @@ export class PortsService {
       // advanced ONLY when we actually broadcast, so a freshly-arrived watcher
       // (hydrated from `cachedSnapshot()`) can never be handed a snapshot the
       // existing watchers never received.
+      //
+      // `startedAt` is excluded from the projection (but NOT from the DTO — the UI
+      // needs it): `ps` reports `etime` at one-second granularity while `now` is
+      // per-scan, so `startedAt = now - elapsed` jitters by up to 1000 ms between
+      // ticks even when nothing changed, and including it would defeat the dedup
+      // on almost every tick. A process RESTART still re-broadcasts because it
+      // changes the pid, which stays in the projection (finding 25).
       const projection = JSON.stringify({
-        ports: outcome.ports,
+        ports: outcome.ports.map(({ startedAt: _startedAt, ...rest }) => rest),
         scanOk: outcome.scanOk,
         scanError: outcome.scanError,
       });

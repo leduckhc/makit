@@ -179,6 +179,14 @@ test("parseLsofCwds: a denied read is rejected, not stored as a path", () => {
   assert.equal(cwds.get(1), undefined);
 });
 
+test("parseLsofCwds: a real directory containing ' (' is KEPT (only a TRAILING annotation is dropped)", () => {
+  // The rejection is anchored to lsof's trailing parenthesised annotation, not
+  // any ' (' — a legitimate worktree path such as `/Users/x/Projects (old)/wt-a`
+  // must survive or it silently loses its owner (finding 22).
+  const cwds = parseLsofCwds("p1\nfcwd\nn/Users/x/Projects (old)/wt-a\n");
+  assert.equal(cwds.get(1), "/Users/x/Projects (old)/wt-a");
+});
+
 test("parseLsofCwds: a relative or empty name is rejected", () => {
   const cwds = parseLsofCwds("p7\nnnot-absolute\np8\nn\n");
   assert.equal(cwds.get(7), undefined);

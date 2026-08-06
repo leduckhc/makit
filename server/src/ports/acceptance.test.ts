@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { spawn, execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,7 +42,10 @@ function startListener(dir: string): Promise<{ pid: number; port: number; kill: 
         resolvePromise({ pid: child.pid!, port: Number(m[1]), kill: () => child.kill("SIGKILL") });
       }
     });
-    child.on("error", reject);
+    child.on("error", (err) => {
+      clearTimeout(timer); // else the reject timer keeps the loop busy after we settle
+      reject(err);
+    });
   });
 }
 
@@ -89,6 +92,15 @@ test("a real listener in a real worktree is attributed to that worktree", { skip
     assert.equal(realpathSync(mine!.worktreePath!), realpathSync(worktree));
   } finally {
     listener?.kill();
-    execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd: repo, stdio: "ignore" });
+    // Cleanup must never THROW: if the try block failed before the worktree was
+    // added, `git worktree remove` would throw and MASK the original error.
+    try {
+      execFileSync("git", ["worktree", "remove", "--force", worktree], { cwd: repo, stdio: "ignore" });
+    } catch {
+      // best-effort
+    }
+    // Remove BOTH mkdtemp dirs, or every run leaks two temp directories.
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
   }
 });

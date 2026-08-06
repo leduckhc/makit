@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/ports.dart';
+import 'package:makit/store/store.dart';
 import 'package:makit/ui/ports/port_detail_sheet.dart';
 import 'package:makit/ui/ports/port_token_pill.dart';
 import 'package:makit/ui/ports/ports_vocabulary.dart';
@@ -114,6 +117,44 @@ void main() {
       expect(find.text('Open'), findsNothing);
       expect(find.text('Copy URL'), findsNothing);
     });
+
+    testWidgets(
+      'Open shows a SnackBar when the launcher cannot open the port',
+      (tester) async {
+        // A valid URI with no handler makes `launchUrl` return false WITHOUT
+        // throwing (url_launcher's documented contract); only the thrown path
+        // used to surface the failure, so the false result must be handled too.
+        // (Un-mocked, this platform channel HANGS rather than fails, so the
+        // handler is mandatory.)
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          const MethodChannel('plugins.flutter.io/url_launcher'),
+          (call) async => call.method == 'launch' ? false : null,
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/url_launcher'),
+            null,
+          ),
+        );
+
+        await tester.pumpWidget(
+          _host(
+            PortDetailSheetBody(
+              port: _port(),
+              branchLabel: 'feat/open-ports',
+              sessionLabel: null,
+              nowMs: 100000,
+            ),
+          ),
+        );
+        await tester.tap(find.text('Open'));
+        await tester.pump(); // flush the async launch
+        await tester.pump(
+          const Duration(milliseconds: 400),
+        ); // animate SnackBar
+        expect(find.text('Could not open the port'), findsOneWidget);
+      },
+    );
 
     testWidgets('Copy URL writes the url to the clipboard', (tester) async {
       final calls = <MethodCall>[];
@@ -282,5 +323,61 @@ void main() {
       reason: 'the sentence is spoken twice: $label',
     );
     handle.dispose();
+  });
+
+  // Finding 5: the sheet must reflect a LATER `ports.snapshot` (a port removed,
+  // ownership changed, a dead server dropping to a refusal), not the one-shot
+  // `ref.read` captured when it opened.
+  //
+  // Mutation that proves it bites: revert `showWorktreePortsSheet` to read the
+  // ports with `ref.read(...)` outside the builder — the open sheet keeps the
+  // stale row and the `findsNothing` below fails.
+  testWidgets('an open sheet drops a port removed by a later snapshot', (
+    tester,
+  ) async {
+    final live = StateProvider<PortsSnapshot?>(
+      (ref) =>
+          PortsSnapshot(ports: [_port(port: 5173)], scannedAt: 0, scanOk: true),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        portsProvider.overrideWith((ref) => ref.watch(live)),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (ctx) => ElevatedButton(
+                onPressed: () => showWorktreePortsSheet(
+                  ctx,
+                  worktreePath: '/wt',
+                  branch: 'feat/open-ports',
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ports-list-row-5173')), findsOneWidget);
+
+    // A later snapshot no longer owns the port.
+    container.read(live.notifier).state = const PortsSnapshot(
+      ports: [],
+      scannedAt: 1,
+      scanOk: true,
+    );
+    await tester.pump();
+    expect(find.byKey(const ValueKey('ports-list-row-5173')), findsNothing);
   });
 }

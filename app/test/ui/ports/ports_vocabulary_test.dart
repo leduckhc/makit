@@ -31,6 +31,30 @@ void main() {
       expect(s, contains('200'));
     });
 
+    test(
+      'an http-error with a null status still reads as a complete sentence',
+      () {
+        // The tolerant decoder permits a null status; the sentence must not
+        // render `HTTP GET / →  — ...` with a hole where the code/reason go.
+        final s = portHealthTooltip(
+          health(PortHealthKind.httpError),
+          nowMs: nowMs,
+        );
+        expect(s, startsWith('HTTP GET / → an error — '));
+        expect(s, isNot(contains('→  ')));
+        expect(s, isNot(contains('  —')));
+      },
+    );
+
+    test('an http-error with an unrecognised status has no double space', () {
+      final s = portHealthTooltip(
+        health(PortHealthKind.httpError, status: 418),
+        nowMs: nowMs,
+      );
+      expect(s, startsWith('HTTP GET / → 418 — '));
+      expect(s, isNot(contains('418  ')));
+    });
+
     test('absent health yields the not-probed sentence, no probe age', () {
       final s = portHealthTooltip(null, nowMs: nowMs);
       expect(s, isNotEmpty);

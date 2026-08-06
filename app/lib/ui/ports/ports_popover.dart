@@ -49,6 +49,12 @@ const double _kPopoverWidth = 320;
 const double _kPopoverMargin = kSpace8;
 
 /// A glyph that opens the ports popover on hover/click. Wraps [PortsGlyph].
+/// The pinned popover's full-screen outside-tap dismisser. Keyed so a test can
+/// assert its PRESENCE, not merely the dismissal it enables — in the sidebar an
+/// unrelated ancestor rebuild also re-runs `overlayChildBuilder`, so only a
+/// direct assertion in isolation can prove the pin installed it.
+const Key kPortsPopoverBarrier = Key('portsPopoverBarrier');
+
 class PortsPopover extends StatefulWidget {
   const PortsPopover({
     super.key,
@@ -144,7 +150,11 @@ class _PortsPopoverState extends State<PortsPopover> {
       _hide();
       return;
     }
-    _pinned = true;
+    // setState so the overlay child rebuilds: on the hover-then-click path the
+    // popover is already open, so [_show] early-returns and the `if (_pinned)`
+    // outside-tap barrier — built while `_pinned` was still false — would never
+    // be installed. Flipping `_pinned` under setState re-runs overlayChildBuilder.
+    setState(() => _pinned = true);
     _show();
   }
 
@@ -197,6 +207,7 @@ class _PortsPopoverState extends State<PortsPopover> {
         // on pointer-out, so a barrier then would swallow row clicks).
         if (_pinned)
           Positioned.fill(
+            key: kPortsPopoverBarrier,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _hide,
@@ -318,7 +329,15 @@ class _PortRow extends StatelessWidget {
     final uri = Uri.tryParse(url);
     try {
       if (uri == null) throw const FormatException('bad url');
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('Could not open the port')),
+        );
+      }
     } catch (_) {
       messenger?.showSnackBar(
         const SnackBar(content: Text('Could not open the port')),

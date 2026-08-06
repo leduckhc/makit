@@ -9,10 +9,10 @@
  */
 
 import type { PortDTO, PortHealthDTO, PortReach } from "../protocol.js";
-import { childIndex, descendants, type ProcLike } from "../metrics/tree.js";
+import { childIndex, descendants } from "../metrics/tree.js";
 import type { Listener } from "./scan.js";
 import type { ProcInfo } from "./proc.js";
-import { MAX_ANCESTOR_DEPTH } from "./ancestors.js";
+import { walkAncestors } from "./ancestors.js";
 
 /**
  * Argv is trimmed to keep one pathological command (a huge `--define` blob, a
@@ -134,7 +134,9 @@ function hasHttpVerdict(health: PortHealthDTO | undefined): boolean {
 
 /**
  * The worktree owning `pid`: try its own cwd, then climb ancestors (bounded,
- * cycle-safe) to the nearest one whose cwd resolves under a worktree.
+ * cycle-safe) to the nearest one whose cwd resolves under a worktree. The walk
+ * itself lives in ancestors.ts ({@link walkAncestors}) so its bound and cycle
+ * guard cannot drift from the one {@link cwdPidSet} uses.
  */
 function ownerOf(
   pid: number,
@@ -143,20 +145,12 @@ function ownerOf(
   worktrees: Array<{ original: string; segs: string[] }>,
   resolveReal: (path: string) => string,
 ): string | undefined {
-  const seen = new Set<number>();
-  let current: number | undefined = pid;
-  let depth = 0;
-  while (current !== undefined && !seen.has(current) && depth <= MAX_ANCESTOR_DEPTH) {
-    seen.add(current);
+  for (const current of walkAncestors(pid, procs)) {
     const cwd = cwds.get(current);
     if (cwd !== undefined) {
       const match = matchWorktree(resolveReal(cwd), worktrees);
       if (match !== undefined) return match;
     }
-    const proc = procs.get(current);
-    if (!proc || proc.ppid === current) break;
-    current = proc.ppid;
-    depth++;
   }
   return undefined;
 }
@@ -168,8 +162,9 @@ function buildSessionIndex(
 ): Map<number, string> {
   const pidToSession = new Map<number, string>();
   if (sessionRoots.size === 0) return pidToSession;
-  // childIndex/descendants read only pid/ppid; ProcInfo satisfies that subset.
-  const index = childIndex(procs as unknown as Map<number, ProcLike>);
+  // childIndex/descendants read only pid/ppid; ProcInfo satisfies that subset,
+  // so no cast is needed (childIndex's param is widened to accept it).
+  const index = childIndex(procs);
   for (const [sessionId, root] of sessionRoots) {
     for (const pid of descendants(index, root)) {
       if (!pidToSession.has(pid)) pidToSession.set(pid, sessionId);
@@ -220,7 +215,16 @@ export function attribute(input: AttributeInput): PortDTO[] {
     return dto;
   });
 
-  // Ascending by port, then pid — the wire contract's sort (PortsSnapshotDTO).
-  ports.sort((a, b) => a.port - b.port || a.pid - b.pid);
+  // Ascending by port, then pid, then address — the wire contract's sort
+  // (PortsSnapshotDTO). `address` is the tie-breaker that makes the order TOTAL:
+  // a dual-stack process yields two listeners with the same pid and port but
+  // different addresses, and without it their order would depend on lsof's print
+  // order — a non-deterministic reordering the dedup projection reads as a change.
+  ports.sort(
+    (a, b) =>
+      a.port - b.port ||
+      a.pid - b.pid ||
+      (a.address < b.address ? -1 : a.address > b.address ? 1 : 0),
+  );
   return ports;
 }

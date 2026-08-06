@@ -87,7 +87,7 @@ the processes.
 
 ```
 ① lsof -nP -iTCP -sTCP:LISTEN -FpPnu        → listeners (pid, address, port, uid)
-② ps -axo pid=,ppid=,rss=,etime=,args=      → whole-machine table (ppid, argv, etime)
+② ps -axo pid=,ppid=,etime=,args=           → whole-machine table (ppid, argv, etime)
         │   derive: listener pids ∪ their ancestors (bounded, cycle-safe)
 ③ lsof -a -d cwd -Fpn -p <that whole set>   → cwd per pid, ONE call
         │

@@ -13,6 +13,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../transport/protocol.dart';
+import '../transport/transport.dart';
 import 'connection.dart';
 import 'store.dart';
 
@@ -281,13 +282,19 @@ class PortsWatch {
   }
 }
 
-/// Wires [PortsWatch] to the real socket. Fire-and-forget via `send` (not
-/// `request`), exactly like `sub`: the watch needs no ack — the server
-/// re-broadcasts the cached snapshot on watch-on regardless — and a pending
-/// request-timeout would outlive a short-lived screen.
+/// Wires [PortsWatch] to the socket, capturing the connection controller so the
+/// send is dispose-safe (a row disposing after the container is torn down must
+/// not touch a disposed provider ref). Fire-and-forget via `send` (not
+/// `request`), exactly like `sub`: the watch needs no ack.
+///
+/// Re-arms on reconnect: the server forgets per-client watchers on disconnect,
+/// so a still-held watch must re-send `{on:true}` when the socket returns — the
+/// same `ref.listen(connectionControllerProvider, …)` + `wasConnected`/
+/// `nowConnected` guard `StoreController` uses to replay `sub`s and the budget
+/// watch. Without it the row glyphs freeze after any blip.
 final portsWatchProvider = Provider<PortsWatch>((ref) {
   final conn = ref.read(connectionControllerProvider.notifier);
-  return PortsWatch((on) {
+  void sendWatch(bool on) {
     conn.send(
       Envelope(
         t: MsgType.cmd,
@@ -295,5 +302,15 @@ final portsWatchProvider = Provider<PortsWatch>((ref) {
         body: {'kind': 'ports.watch', 'on': on},
       ),
     );
+  }
+
+  final watch = PortsWatch(sendWatch);
+  ref.listen<MakitConnState>(connectionControllerProvider, (prev, next) {
+    final wasConnected = prev?.wsState == WsState.connected;
+    final nowConnected = next.wsState == WsState.connected;
+    if (!wasConnected && nowConnected && watch.watcherCount > 0) {
+      sendWatch(true);
+    }
   });
+  return watch;
 });

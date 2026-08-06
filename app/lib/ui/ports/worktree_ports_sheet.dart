@@ -18,39 +18,45 @@ import 'ports_vocabulary.dart';
 /// Height of a port list row — a comfortable single-gesture ("open") target.
 const double _kPortRowHeight = 56;
 
-/// Opens the worktree's ports sheet, resolving each port's session label from
-/// the store so the detail sheet can name it.
+/// Opens the worktree's ports sheet. The port list and the session labels are
+/// read inside the sheet builder behind a [Consumer] so a later `ports.snapshot`
+/// (a port removed, ownership changed, a dead server dropping to a refusal) is
+/// reflected live — a one-shot `ref.read` at open time would strand the sheet on
+/// stale data.
 Future<void> showWorktreePortsSheet(
-  BuildContext context,
-  WidgetRef ref, {
+  BuildContext context, {
   required String worktreePath,
   required String branch,
 }) {
-  final ports = ref.read(portsForWorktreeProvider(worktreePath));
-  final sessions = ref.read(sessionsProvider);
-  String? sessionLabel(String? id) {
-    if (id == null) return null;
-    final s = sessions.byId(id);
-    if (s == null) return null;
-    final t = s.title.trim();
-    return t.isNotEmpty ? t : s.agent;
-  }
-
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
     builder: (sheetCtx) => SafeArea(
-      child: WorktreePortsSheetBody(
-        branch: branch,
-        ports: ports,
-        nowMs: DateTime.now().millisecondsSinceEpoch,
-        onOpenPort: (port) => showPortDetailSheet(
-          sheetCtx,
-          port: port,
-          branchLabel: branch,
-          sessionLabel: sessionLabel(port.sessionId),
-        ),
+      child: Consumer(
+        builder: (ctx, ref, _) {
+          final ports = ref.watch(portsForWorktreeProvider(worktreePath));
+          final sessions = ref.watch(sessionsProvider);
+          String? sessionLabel(String? id) {
+            if (id == null) return null;
+            final s = sessions.byId(id);
+            if (s == null) return null;
+            final t = s.title.trim();
+            return t.isNotEmpty ? t : s.agent;
+          }
+
+          return WorktreePortsSheetBody(
+            branch: branch,
+            ports: ports,
+            nowMs: DateTime.now().millisecondsSinceEpoch,
+            onOpenPort: (port) => showPortDetailSheet(
+              sheetCtx,
+              port: port,
+              branchLabel: branch,
+              sessionLabel: sessionLabel(port.sessionId),
+            ),
+          );
+        },
       ),
     ),
   );

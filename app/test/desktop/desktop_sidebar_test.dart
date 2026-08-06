@@ -1501,6 +1501,12 @@ void main() {
           reposProvider.overrideWithValue(ReposState(repos)),
           sessionsProvider.overrideWithValue(SessionsState(const [])),
           portsProvider.overrideWithValue(ports),
+          // Reading `portsWatchProvider` builds the real `StoreController`,
+          // which needs a `ConnectionController`; use the fake so these tests
+          // stay I/O-isolated (as `_pumpWithStore` does).
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(const _EmptyStorage()),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -1567,6 +1573,70 @@ void main() {
       await tester.pump();
       expect(find.byKey(kPortsPopover), findsOneWidget);
     });
+
+    testWidgets(
+      'a hover-opened popover, pinned by a click, still dismisses on an '
+      'outside tap',
+      (tester) async {
+        // Comment 7 / finding 3: the existing pin test clicks while the popover
+        // is CLOSED, so `_show()` runs and builds the barrier. The documented
+        // path is hover-open THEN click-to-pin — there `_show()` early-returns
+        // (already open) and, without a rebuild, the `if (_pinned)` outside-tap
+        // barrier is never installed, so only Esc / a second click closes it.
+        //
+        // Mutation that proves it bites: revert `_onTap` to `_pinned = true;`
+        // (no setState) — overlayChildBuilder does not re-run, the barrier stays
+        // absent, the outside tap is swallowed, and the final expect (popover
+        // gone) fails with the popover still present.
+        final wt = _worktree('w1', branch: 'feat');
+        await pumpWithPorts(
+          tester,
+          repos: [
+            _repo(
+              'p1',
+              'proj',
+              worktrees: [_worktree('main', isPrimary: true), wt],
+            ),
+          ],
+          ports: snap(wt.path),
+        );
+        await tester.pump();
+
+        final target = find.byKey(ValueKey('portsSubRowTarget-${wt.path}'));
+        // Hover to open (the 350 ms dwell must elapse).
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
+        expect(find.byType(PortsPopover), findsOneWidget);
+        // Enter the row first: that flips `_hovering`, which swaps line 1 to the
+        // actions menu. Pump that rebuild, then re-aim at the glyph's settled
+        // position before the 350 ms dwell so a layout shift can't drop the
+        // pointer off the target mid-dwell.
+        await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+        await tester.pump();
+        await gesture.moveTo(tester.getCenter(find.byType(PortsPopover)));
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+
+        // Click to pin the already-open popover (hover-then-click).
+        await tester.tap(target);
+        await tester.pump();
+        expect(find.byKey(kPortsPopover), findsOneWidget);
+
+        // The pin must have installed the outside-tap barrier. Asserting the
+        // barrier DIRECTLY (not just the dismissal side-effect) is what makes
+        // this bite: without the rebuild, dismissal can still happen for
+        // unrelated reasons while the barrier is absent.
+        expect(find.byKey(const Key('portsPopoverBarrier')), findsOneWidget);
+        // An outside tap must now dismiss it — the pin installed the barrier.
+        await tester.tapAt(const Offset(2, 2));
+        await tester.pump();
+        expect(find.byKey(kPortsPopover), findsNothing);
+      },
+    );
 
     testWidgets('renders no glyph when the worktree serves nothing', (
       tester,

@@ -117,7 +117,10 @@ test("0→1 runs exactly one immediate scan and publishes it", async () => {
 
 test("SCAN_INTERVAL_MS is 4000 and a tick while watched runs another scan", async () => {
   assert.equal(SCAN_INTERVAL_MS, 4000);
-  const h = harness({ listWorktreePaths: () => [`/repo/wt-${Math.random()}`] });
+  // A deterministic per-scan worktree path (the assertion is about scanCount, not
+  // the path value) — a fresh path each scan just proves ticks re-scan.
+  let scan = 0;
+  const h = harness({ listWorktreePaths: () => [`/repo/wt-${scan++}`] });
   h.service.setWatchers(1);
   await flush();
   assert.equal(h.scanCount(), 1);
@@ -263,6 +266,31 @@ test("an identical snapshot does NOT re-broadcast (projection excludes scannedAt
     h.snapshots[0]!.scannedAt,
     "cache stays pinned to the last BROADCAST snapshot",
   );
+});
+
+test("a startedAt-only change does NOT re-broadcast (projection excludes startedAt)", async () => {
+  // `ps` reports `etime` at ONE-second granularity while `now` is per-scan, so
+  // `startedAt = now - elapsed` jitters by up to 1000 ms between ticks even when
+  // nothing changed. That jitter must not force a re-broadcast — only a real
+  // change (pid, port, address, …) should. `now` is held constant here so the
+  // ONLY difference between the two scans is `startedAt` (finding 25).
+  let etime = "01:00:00";
+  const h = makeService({
+    exec: async (cmd, args) => {
+      if (cmd === "lsof" && args.includes("-iTCP"))
+        return { code: 0, stdout: LISTENER_OUT, stderr: "" };
+      if (cmd === "ps")
+        return { code: 0, stdout: `  200 100 ${etime} node vite\n  100 1 ${etime} pnpm dev`, stderr: "" };
+      return { code: 0, stdout: CWD_OUT, stderr: "" };
+    },
+  });
+  h.service.setWatchers(1);
+  await flush();
+  assert.equal(h.snapshots.length, 1);
+  etime = "01:00:01"; // elapsed advanced 1 s → startedAt shifts by 1000 ms, nothing else
+  h.tick();
+  await flush();
+  assert.equal(h.snapshots.length, 1, "a startedAt-only difference must not re-broadcast");
 });
 
 test("a throwing scan keeps the last good ports and sets scanOk:false", async () => {

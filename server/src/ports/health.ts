@@ -22,6 +22,14 @@ export const PROBE_TIMEOUT_MS = 800;
 export const PROBE_TTL_MS = 10_000;
 /** Cap simultaneous probes so a machine with many dev servers is not hammered. */
 export const PROBE_CONCURRENCY = 12;
+/**
+ * Stop reading a probe response after this many bytes without a newline. A valid
+ * HTTP status line is short (`HTTP/1.1 200 OK\r\n`), so a listener that streams
+ * past this without a newline is not answering HTTP: bounding the read keeps up
+ * to {@link PROBE_CONCURRENCY} probes from each growing a buffer for the whole
+ * timeout window (finding 20).
+ */
+export const MAX_STATUS_LINE_BYTES = 4096;
 /** A 4xx boundary: 2xx/3xx answer, 4xx/5xx are an HTTP error. */
 const HTTP_ERROR_STATUS = 400;
 
@@ -101,6 +109,12 @@ export class PortHealthProbe {
       return cached === undefined || now - cached.probedAt >= PROBE_TTL_MS;
     });
 
+    // Drop verdicts for endpoints that no longer listen: `ports` is the full
+    // current listener list, so any cache key absent from it has vanished. Without
+    // this the cache grows monotonically for the whole process lifetime (finding 19).
+    const live = new Set(ports.map((p) => `${p.address}:${p.port}`));
+    for (const key of this.cache.keys()) if (!live.has(key)) this.cache.delete(key);
+
     await mapLimit(due, PROBE_CONCURRENCY, async (p) => {
       const host = loopbackForm(p.address)!;
       const verdict = await this.probeOne(host, p.port);
@@ -142,7 +156,13 @@ export class PortHealthProbe {
       socket.on("data", (chunk) => {
         buffer += chunk;
         const nl = buffer.indexOf("\n");
-        if (nl < 0) return; // status line not complete yet
+        if (nl < 0) {
+          // A status line is short and ends in a newline. A response that streams
+          // past MAX_STATUS_LINE_BYTES without one is not speaking HTTP: stop
+          // reading and call it http-error (a bounded verdict, not a hung buffer).
+          if (buffer.length > MAX_STATUS_LINE_BYTES) finish("http-error");
+          return; // status line not complete yet
+        }
         const { kind, status } = classifyStatusLine(buffer.slice(0, nl).trimEnd());
         finish(kind, status);
       });

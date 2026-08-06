@@ -344,7 +344,7 @@
               <span class="dim">3 files</span>
               <span class="chip pr">__PR__ #138</span>
             </div>
-            <div class="sess"><span class="dot run pulse"></span><span class="t">pi · wire the ports snapshot</span><span class="pplug" style="height:24px">__PLUG__</span></div>
+            <div class="sess"><span class="dot run pulse"></span><span class="t">pi · wire the ports snapshot</span></div>
           </div>
 
           <div class="wtrow">
@@ -362,7 +362,9 @@
             <div class="meta"><span class="dim">4d ago</span></div>
           </div>
         </div>
-        <div class="why"><b>Three branches are serving something; one of them needs you</b> (the dot badge). No numbers compete with the diff and PR chips, and the meta line is back to being pure git. Order is <code>branch · fold · ports · +</code>: the caret hugs the row it discloses, <b><code>+</code> stays last</b> so its column stays aligned down the card, and ports takes the variable slot between them. <code>chore/deps</code> reserves both middle slots but draws nothing, so every <code>+</code> still lines up.</div>
+        <div class="why"><b>Three branches are serving something; one of them needs you</b> (the dot badge). The session tile
+        carries no glyph: D1 mounts it on worktree rows only in P1, so the row it belongs to is the only place
+        it appears. No numbers compete with the diff and PR chips, and the meta line is back to being pure git. Order is <code>branch · fold · ports · +</code>: the caret hugs the row it discloses, <b><code>+</code> stays last</b> so its column stays aligned down the card, and ports takes the variable slot between them. <code>chore/deps</code> reserves both middle slots but draws nothing, so every <code>+</code> still lines up.</div>
       </div>
 
       <div class="frame">
@@ -560,14 +562,14 @@
                         <div class="kv"><span class="k">bound</span><span class="v mono">127.0.0.1:5173</span></div>
           </div>
 
-          <div class="arow pri">__EYE__<span class="t">Forward &amp; open on this phone</span>__CARETRIGHT__</div>
-          <div class="arow">__COPY__<span class="t">Copy URL</span></div>
-          <div class="arow">__LOGS__<span class="t">Show logs</span>__CARETRIGHT__</div>
-          <div class="arow">__PULSE_I__<span class="t">Watch this port</span><span class="sw-off"></span></div>
+          <div class="arow pri">__EYE__<span class="t">Forward &amp; open on this phone</span><span class="phase phlater">P4</span>__CARETRIGHT__</div>
+          <div class="arow">__COPY__<span class="t">Copy URL</span><span class="phase ph1">P1</span></div>
+          <div class="arow">__LOGS__<span class="t">Show logs</span><span class="phase phlater">P3</span>__CARETRIGHT__</div>
+          <div class="arow">__PULSE_I__<span class="t">Watch this port</span><span class="phase phlater">P4</span><span class="sw-off"></span></div>
 
           <div class="dangerzone">
             <div class="dz-lbl">danger</div>
-            <div class="arow danger">__STOP__<span class="t">Kill this process…</span></div>
+            <div class="arow danger">__STOP__<span class="t">Kill this process…</span><span class="phase phlater">P3</span></div>
           </div>
           <div style="height:14px"></div>
         </div>
@@ -841,13 +843,13 @@
     <div class="cap" style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:9px">The one real problem: a 16 pt line is below the pointer target floor</div>
     <div class="frames">
       <div class="frame">
-        <div class="cap">Hit-slop into padding that already exists</div>
+        <div class="cap">A 22 × 16 target inside the fixed 16 pt line</div>
         <div class="canvas" style="width:340px"><div class="sb" style="width:340px;padding:16px 0">
           <div class="srow"><span class="cslot">__CARETDOWN__</span>__BRANCH_P__<span class="sname">feat/open-ports</span><span class="sslot"><span class="diff mono"><span class="a">+412</span> <span class="d">−58</span></span></span></div>
           <div class="ssub"><span>PR #138 · 3d</span><span class="sspacer"></span><span class="pplug xs ring">__PLUG__</span></div>
-          <div class="sloplegend"><span class="sw" style="background:rgba(126,232,166,.2);border:1px dashed rgba(126,232,166,.75)"></span>dashed = the transparent 22 pt hit box, spilling into padding that already exists</div>
+          <div class="sloplegend"><span class="sw" style="background:rgba(126,232,166,.2);border:1px dashed rgba(126,232,166,.75)"></span>dashed = the 22 × 16 pt target — the row keeps its fixed 16 pt height, the glyph takes the width instead</div>
         </div><div class="chatpane" style="min-height:0"></div></div>
-        <div class="why"><b>Glyph 14 pt, painted inside the 16 pt line; hit area 22 pt, spilling into the 2 pt bottom padding of line 1 and the 4 pt bottom padding of the sub-row.</b> Nothing moves, nothing grows, and the target clears the floor. This is the same fight <code>_CompactMenuButton</code> already documents (“PopupMenuButton wraps the icon in a default 48 px IconButton”) — solved the same way, with <code>VisualDensity.compact</code> and an explicit box.</div>
+        <div class="why"><b>Glyph 14 pt, painted inside the 16 pt line; target 22 × 16 pt.</b> Rev 1 claimed a 22 pt box overflowing into neighbouring padding — review proved that unimplementable, because hit-testing is bounded by the parent's size, so an <code>OverflowBox</code> paints outside and still never receives the pointer. The glyph therefore takes the width the row can give and lives with the height the row already reserves: below the 20 pt guideline in ONE axis, accepted for a pointer-only surface, with the uniform-20 pt fallback named in the spec. This is the same fight <code>_CompactMenuButton</code> already documents (“PopupMenuButton wraps the icon in a default 48 px IconButton”) — solved the same way, with <code>VisualDensity.compact</code> and an explicit box.</div>
       </div>
       <div class="frame">
         <div class="cap">Rules for the sub-row glyph</div>
@@ -855,7 +857,7 @@
           <table style="font-size:12px">
             <tr><th>Property</th><th>Value</th><th>Why</th></tr>
             <tr><td>glyph size</td><td class="n">14 pt</td><td class="dimc">fits the 16 pt line; matches the sub-row's 11 pt text weight</td></tr>
-            <tr><td>hit box</td><td class="n">22 × 22 pt</td><td class="dimc">overflows into existing padding, row height unchanged</td></tr>
+            <tr><td>hit box</td><td class="n">22 × 16 pt</td><td class="dimc">wider, NOT taller — Flutter clips hit-testing to the parent box, so overflow would paint but never receive the pointer</td></tr>
             <tr><td>right edge</td><td class="n">8 pt</td><td class="dimc">identical to line 1 → the column reads as one</td></tr>
             <tr><td>hover circle</td><td class="n">18 pt</td><td class="dimc">small enough not to touch the age text or the row edge</td></tr>
             <tr><td>badge dot</td><td class="n">6 pt, top-right</td><td class="dimc">rides up into line 1's padding, clear of the glyph's prongs</td></tr>

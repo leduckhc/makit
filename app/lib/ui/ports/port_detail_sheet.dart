@@ -65,7 +65,15 @@ class PortDetailSheetBody extends StatelessWidget {
     final uri = Uri.tryParse(url);
     try {
       if (uri == null) throw const FormatException('bad url');
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Could not open the port')),
+        );
+      }
     } catch (_) {
       messenger.showSnackBar(
         const SnackBar(content: Text('Could not open the port')),

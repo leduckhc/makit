@@ -339,7 +339,6 @@ class _WorktreePortsGlyph extends ConsumerWidget {
       // not a target — the branch line's control column is).
       onTap: () => showWorktreePortsSheet(
         context,
-        ref,
         worktreePath: worktree.path,
         branch: worktree.branch ?? 'detached',
       ),

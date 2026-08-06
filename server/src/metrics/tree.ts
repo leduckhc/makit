@@ -23,8 +23,17 @@ export interface TreeTotals {
   procs: number;
 }
 
-/** Map each parent pid to the list of its direct children. Built once per tick. */
-export function childIndex(table: Map<number, ProcLike>): Map<number, number[]> {
+/**
+ * Map each parent pid to the list of its direct children. Built once per tick.
+ *
+ * Accepts a `ReadonlyMap` of anything carrying `pid`/`ppid` (the only fields it
+ * reads): SPEC-41's ports attribution passes its `ProcInfo` table here without a
+ * cast, and metrics passes its full {@link ProcLike} rows — both satisfy the
+ * narrowed value type structurally.
+ */
+export function childIndex(
+  table: ReadonlyMap<number, Pick<ProcLike, "pid" | "ppid">>,
+): Map<number, number[]> {
   const index = new Map<number, number[]>();
   for (const { pid, ppid } of table.values()) {
     const siblings = index.get(ppid);
