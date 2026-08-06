@@ -31,6 +31,10 @@ function fakeClient(): FakeClient {
     authed: true,
     subscribed: new Set<string>(),
     watchingMetrics: false,
+    // SPEC-41: the ports watch flag is required on WsClient (a router built
+    // without it would ACK `ports.watch` and then never scan), so every fake
+    // client declares it. This domain does not exercise ports.
+    watchingPorts: false,
     isLocal: true,
     send: (frame) => sent.push(frame),
     close: () => {},
@@ -54,6 +58,9 @@ function routerWith(manager: Partial<CommandDeps["manager"]>) {
     broadcastBudget: () => {},
     onMetricsWatchersChanged: () => {},
     sendMetricsHistory: () => {},
+    // SPEC-41: required members, inert here — the PR domain sends no ports frames.
+    onPortsWatchersChanged: () => {},
+    sendPortsSnapshot: () => {},
     askDevice: async () => ({}) as Envelope,
   } satisfies CommandDeps;
   register(router, deps);
