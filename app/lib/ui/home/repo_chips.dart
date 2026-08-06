@@ -96,7 +96,7 @@ class DiffChip extends StatelessWidget {
 /// identical to a live one apart from a hue. This says it, and a merged row
 /// advertises its own clean-up ("merged") so the ending is one tap away instead
 /// of hidden behind a long-press.
-///
+
 /// Widest the chip's label may get before it elides.
 ///
 /// The row also carries the branch name and a trailing age, and the chip sits
