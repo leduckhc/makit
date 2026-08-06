@@ -1,6 +1,6 @@
 # SPEC-41 — Ports: what's listening, and whose branch owns it
 
-**Status:** Draft (rev 2, post-review) · **Priority:** P2 · **Branch:** `feat/open-ports`
+**Status:** Implemented (P1, rev 2) · **Priority:** P2 · **Branch:** `feat/open-ports`
 **Depends on:** SPEC-11 (repo-centric home), SPEC-19 (`ws/commands/*` split, `repo_service.ts`),
 SPEC-32 (watch-gated cadence precedent), SPEC-37 (host-wide broadcast event, `metrics.watch`,
 `proc_table.ts` / `tree.ts`, `Session.agentPid`)
@@ -75,6 +75,13 @@ the processes.
 - No orphan or collision flags: both need port *history*, which needs a store (P2).
 - No UDP, no established connections. Listeners are what a branch owns; the rest is traffic.
 - No CPU%, no memory. Unmeasured is **absent**, never `0`.
+- **No attribution for a process whose cwd is not the worktree**, even when its binary lives in
+  one. Found during live verification: every macOS `.app` bundle launched by `flutter run` (three
+  were listening on this machine, from three different worktrees) has `cwd = /`, so it reads as
+  unowned. This is inherent to cwd-based ownership and is the right trade — the target case, a dev
+  server started by `pnpm dev`/`vite` in a worktree, does carry the cwd, and inferring ownership
+  from an executable path would attribute a *build artefact's* location rather than what is
+  actually running. A P2 with port history could close the gap by remembering who bound the port.
 
 ## Attribution: how a port gets an owner
 
@@ -365,6 +372,17 @@ feature is dead:
    the snapshot printed against `lsof -nP -iTCP -sTCP:LISTEN` on a machine with several
    worktrees serving at once.
 5. `tool/e2e.sh --mode=stub` with the new case registered in `all_stub_test.dart`.
+
+### Results (2026-08-06)
+
+| Check | Result |
+| --- | --- |
+| `tsc --noEmit` + `npm test` | clean · **1007 pass / 0 fail** (918 pre-existing + 89 new) |
+| `flutter analyze --fatal-infos` + `flutter test` | clean · **1797 pass** (1729 pre-existing + 68 new) |
+| `ports/acceptance.test.ts` (real `lsof`, real listener, real worktree) | pass in 259 ms |
+| Live snapshot vs `lsof -nP -iTCP -sTCP:LISTEN` (§4) | 33 listeners seen, 30 cwds resolved, `:9749` correctly attributed to the `fix-token-usage` worktree. Surfaced the `cwd = /` limitation recorded above. |
+| Real WSS frame path (`hello` → `ports.watch` → `ports.snapshot`) | verified: snapshot arrives, deterministic port attributed |
+| `tool/e2e.sh --mode=stub` | **not run** — needs an iOS simulator; the integration case is written and registered. Pre-existing harness breakage on this branch (same as SPEC-37 recorded). |
 
 ## Review findings applied (rev 1 → rev 2)
 
