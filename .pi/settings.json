@@ -1,0 +1,4 @@
+{
+  "//": "Project-scoped pi packages. pi installs these automatically once the project is trusted, so a contributor's pi picks up makit's own extensions with no manual step. Replaces the `ln -s` the SPEC-37 spec used to document, which dangled silently as soon as the worktree it pointed at was pruned.",
+  "packages": ["git:github.com/leduckhc/makit-pi-usage@v0.1.0"]
+}

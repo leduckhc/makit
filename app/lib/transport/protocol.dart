@@ -120,7 +120,7 @@ enum EventKind {
   /// Context-window + cost snapshot for a session (SPEC-37). Latest-wins chrome,
   /// never a chat item. Sourced from codex's `thread/tokenUsage/updated`, an ACP
   /// `usage_update`, or — for pi, which reports none of this over ACP — the
-  /// `.pi/extensions/pi-usage` reporter.
+  /// `makit-pi-usage` reporter.
   sessionUsage;
 
   String get wire => switch (this) {

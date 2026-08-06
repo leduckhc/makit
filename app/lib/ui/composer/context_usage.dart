@@ -181,7 +181,7 @@ const double kUsageTargetSize = 36;
 ///
 /// Renders nothing until something has actually been measured: no agent reports
 /// usage before its first turn, pi reports none at all unless
-/// `.pi/extensions/pi-usage` is installed, and pi's reading is null right after a
+/// the `makit-pi-usage` extension is installed, and pi's reading is null right after a
 /// compaction.
 ///
 /// [desktop] selects the presentation, mirroring `ComposerConfigOptions`: an

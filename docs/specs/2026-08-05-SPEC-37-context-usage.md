@@ -9,7 +9,9 @@
 *server:* `server/src/adapters/codex-map.ts`, `server/src/adapters/acp-map.ts`,
 `server/src/session.ts` (no-fanout kind), `server/src/bridge.ts` (new `POST /usage`),
 `server/src/manager.ts` (bridge → session event).
-*pi:* `.pi/extensions/pi-usage/` (new, self-contained, mirrors `pi-computer-use/`).
+*pi:* the `makit-pi-usage` extension — originally `.pi/extensions/pi-usage/`, since
+extracted to its own repo (github.com/leduckhc/makit-pi-usage) and consumed as a pi
+package; see "Installing the extension" below.
 *app:* `app/lib/transport/protocol.dart`, `app/lib/store/models.dart`,
 `app/lib/store/store.dart`, `app/lib/store/chat_items.dart` (exhaustive switch),
 `app/lib/ui/composer/context_usage.dart` (new — ring + details panel), mounted in
@@ -149,19 +151,36 @@ figure through drew a 33M cache row nested under a 360-token parent. `total` is
 `input + output + cacheRead + cacheWrite`, the same arithmetic `/sessions` prints,
 so the two agree to the token.
 
-### The extension needs a manual install
+### Installing the extension
 
 makit cannot inject it. `SpawnOpts.extensions` is never forwarded by `AcpAdapter`,
 because `pi-acp` spawns `pi --mode rpc` itself and gives makit no `-e` channel —
 the same constraint SPEC-36 hit. Environment variables *do* propagate
-(`spec.env` → pi-acp → pi), which is why the bridge coordinates arrive. So, once:
+(`spec.env` → pi-acp → pi), which is why the bridge coordinates arrive.
 
-```sh
-ln -s "$PWD/.pi/extensions/pi-usage" ~/.pi/agent/extensions/pi-usage
+So the extension has to be installed into pi, and it now lives in **its own repo**
+(github.com/leduckhc/makit-pi-usage) rather than in `.pi/extensions/`. makit declares
+it in `.pi/settings.json`:
+
+```json
+{ "packages": ["git:github.com/leduckhc/makit-pi-usage@v0.1.0"] }
 ```
 
-Until that link exists, pi sessions show no usage. The extension is inert outside
-makit (no `MAKIT_BRIDGE_*` → it registers nothing), so the link is safe to leave.
+pi installs project packages automatically once the project is trusted, so a
+contributor needs no manual step at all. Standalone installs are
+`pi install git:github.com/leduckhc/makit-pi-usage@v0.1.0`, kept current with
+`pi update --extensions`.
+
+This replaces the `ln -s "$PWD/.pi/extensions/pi-usage" ~/.pi/agent/extensions/…`
+that earlier revisions of this spec documented. **That approach was actively
+harmful:** the link pointed into a git worktree, and when that worktree was pruned
+after merging, the link dangled and pi silently loaded nothing — pi sessions showed
+no usage at all, with no error anywhere, until someone noticed the missing ring.
+A pi package cannot fail that way.
+
+Until it is installed, pi sessions show no usage. The extension is inert outside
+makit (no `MAKIT_BRIDGE_*` → it registers nothing), so installing it globally is
+safe.
 
 ## App surface
 
@@ -201,7 +220,7 @@ which DESIGN.md §Colors forbids).
 **There is no unmeasured rendering.** A ring means "this share of a whole", so without a
 known window there is no whole and the control is absent entirely — `ContextUsageRing.fraction`
 is non-nullable to make that unrepresentable. This covers more states than it first appears:
-before the first turn, any pi session without the `pi-usage` extension, an ACP agent reporting
+before the first turn, any pi session without the `makit-pi-usage` extension, an ACP agent reporting
 `used` with no `size`, and pi immediately after a compaction (it keeps reporting the window but
 nulls the count until the next reply, where a 0% ring would misread as "context emptied").
 An earlier draft drew a dotted track for these; the goldens showed it was not reliably
@@ -219,7 +238,7 @@ panel answers "by how much?".
 | `acp-map.test.ts` | `usage_update` → `session.usage` with `used`/`size`/`cost`; absent `cost` omits the field |
 | `contract.test.ts` + `codec_contract_test.dart` | a `session.usage` entry in the byte-identical `events.json` golden fixture round-trips in **both** languages |
 | `bridge.test.ts` | `POST /usage` requires the bearer; a body with no readings is a 400; non-numeric fields are dropped, not coerced |
-| `.pi/extensions/pi-usage/usage.test.ts` | env gate needs all three vars; null readings omit rather than zero; a real `0.00` cost is kept; unchanged repeats are suppressed; `sumUsage` counts exactly the entries `/sessions` counts (assistant, billed tool results, compaction/branch summaries) and drops non-numeric junk; a **resumed** session's inherited spend is in its first report; cached input never exceeds input |
+| `makit-pi-usage`'s `usage.test.ts` (own repo, own CI) | env gate needs all three vars; null readings omit rather than zero; a real `0.00` cost is kept; unchanged repeats are suppressed; `sumUsage` counts exactly the entries `/sessions` counts (assistant, billed tool results, compaction/branch summaries) and drops non-numeric junk; a **resumed** session's inherited spend is in its first report; cached input never exceeds input |
 | `session_usage_test.dart` | `fromJson` omits missing fields rather than zeroing them; `fraction` is null on an unmeasured half and clamps past 1.0; reducer is latest-wins and per-session |
 | `context_usage_test.dart` | `percentLabel`/`headroomLabel`/`cacheShare` return null rather than inventing a denominator; no ring until measured; the numbers are absent from the footer and present after a tap; the panel separates session total from context, and omits cost when unpriced |
 | `context_usage_golden_test.dart` | the ring ladder at the real 18 px (what a 3% arc actually looks like) plus the three panel shapes |
