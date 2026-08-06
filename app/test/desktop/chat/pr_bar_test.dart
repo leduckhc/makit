@@ -14,6 +14,7 @@ import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/ui/widgets/pr_actions.dart';
 import 'package:makit/ui/widgets/pr_signals.dart';
+import 'package:makit/ui/widgets/pr_tone.dart';
 import 'package:makit/ui/widgets/wrap_up.dart';
 
 PullRequest _pr({
@@ -242,10 +243,7 @@ void main() {
     ) async {
       String? inserted;
       await tester.pumpWidget(
-        _host(
-          PreferencesController.ephemeral(),
-          onInsert: (p) => inserted = p,
-        ),
+        _host(PreferencesController.ephemeral(), onInsert: (p) => inserted = p),
       );
       await tester.tap(find.text('Create PR'));
       await tester.pumpAndSettle();
@@ -338,12 +336,12 @@ void main() {
       );
       await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Remove the worktree at /wt/feat-x'), findsOneWidget);
-      // It names the branch it will move, rather than saying "the base branch".
       expect(
-        find.textContaining('Fast-forward release/2.0'),
+        find.textContaining('Remove the worktree at /wt/feat-x'),
         findsOneWidget,
       );
+      // It names the branch it will move, rather than saying "the base branch".
+      expect(find.textContaining('Fast-forward release/2.0'), findsOneWidget);
       // And it warns about the work it is about to destroy.
       expect(find.textContaining('will be lost'), findsOneWidget);
     });
@@ -443,7 +441,10 @@ void main() {
       );
       await tester.tap(find.text('Wrap up'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Delete the local branch feat/x'), findsOneWidget);
+      expect(
+        find.textContaining('Delete the local branch feat/x'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('discard names the branch it will delete too', (tester) async {
@@ -457,7 +458,10 @@ void main() {
       );
       await tester.tap(find.text('Discard worktree'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Delete the local branch feat/x'), findsOneWidget);
+      expect(
+        find.textContaining('Delete the local branch feat/x'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a detached worktree is not promised a branch deletion', (
@@ -476,7 +480,9 @@ void main() {
       expect(find.textContaining('Delete the local branch'), findsNothing);
     });
 
-    testWidgets('says sessions are archived, after the removal', (tester) async {
+    testWidgets('says sessions are archived, after the removal', (
+      tester,
+    ) async {
       // The server removes the worktree first and *archives* live sessions
       // (SPEC-29) rather than stopping them; the dialog claimed the reverse order
       // and the wrong verb.
@@ -545,10 +551,15 @@ void main() {
       );
       await tester.tap(find.text('go'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('2 files uncommitted here will be lost'), findsOneWidget);
+      expect(
+        find.textContaining('2 files uncommitted here will be lost'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('and it is absent when there is nothing to lose', (tester) async {
+    testWidgets('and it is absent when there is nothing to lose', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
@@ -585,7 +596,9 @@ void main() {
       expect(find.textContaining('could not be refreshed'), findsOneWidget);
     });
 
-    testWidgets('discard warns too — it is the destructive one', (tester) async {
+    testWidgets('discard warns too — it is the destructive one', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
@@ -710,6 +723,11 @@ void main() {
       expect(_sentence(tester), contains('#42'));
       expect(_sentence(tester), contains('last known'));
       expect(find.byTooltip(kStalePrTooltip), findsOneWidget);
+      // "Crisp" is the point, not merely "present": spec §8 says only the
+      // *derived* half dims. Asserting the text alone passed while the number
+      // was dimmed along with everything else.
+      expect(_spanAlpha(tester, '#42'), 1.0);
+      expect(_spanAlpha(tester, 'CI failing'), lessThan(1.0));
     });
 
     testWidgets('a fresh PR says nothing about staleness', (tester) async {
@@ -726,14 +744,33 @@ void main() {
     testWidgets('unresolvedUnknown hides the count instead of showing 0', (
       tester,
     ) async {
+      // A positive count on purpose: with the helper's default of 0 the
+      // assertion held even without the guard, so it pinned nothing.
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
-          pr: _pr(unresolvedUnknown: true, rollup: 'pass'),
+          pr: _pr(
+            unresolvedComments: 3,
+            unresolvedUnknown: true,
+            rollup: 'pass',
+          ),
           onInsert: (_) {},
         ),
       );
       expect(_sentence(tester), isNot(contains('thread')));
+    });
+
+    testWidgets('the same count is reported when it is known', (tester) async {
+      // The control for the test above: without it, "hides the count" would also
+      // pass on a bar that never shows thread counts at all.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(unresolvedComments: 3, rollup: 'pass'),
+          onInsert: (_) {},
+        ),
+      );
+      expect(_sentence(tester), contains('3 threads open'));
     });
   });
 
@@ -772,5 +809,73 @@ void main() {
       );
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
+
+    testWidgets('is hollow for a branch named like a PR number', (
+      tester,
+    ) async {
+      // `#42` is a legal branch name. Reading the display string classified such
+      // a branch as having a PR and filled its dot in.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          branch: '#42',
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      final dot = tester.widget<PrToneDot>(find.byType(PrToneDot));
+      expect(dot.hollow, isTrue);
+    });
+
+    testWidgets('keeps the same footprint when the checks finish', (
+      tester,
+    ) async {
+      // The bar's width is not negotiable and it must not twitch as CI churns:
+      // the arc and the plain dot have different diameters, so the disc has to
+      // sit inside the arc's box rather than shrink it.
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Row(
+            children: [
+              PrToneDot(tone: PrTone.attention, progress: 0.5),
+              PrToneDot(tone: PrTone.attention),
+            ],
+          ),
+        ),
+      );
+      final sizes = tester
+          .widgetList<PrToneDot>(find.byType(PrToneDot))
+          .map((w) => tester.getSize(find.byWidget(w)))
+          .toList();
+      expect(sizes[1], sizes[0]);
+    });
   });
+}
+
+/// The alpha of the sentence span carrying exactly [text].
+///
+/// Reads the style rather than the string: "the number stays crisp" is a claim
+/// about how it is painted, and a test that only looks at the text passes while
+/// it is dimmed.
+double _spanAlpha(WidgetTester tester, String text) {
+  final root = tester
+      .widget<Text>(
+        find
+            .descendant(
+              of: find.byType(PrComposerBar),
+              matching: find.byType(Text),
+            )
+            .first,
+      )
+      .textSpan!;
+  double? alpha;
+  root.visitChildren((span) {
+    if (span is TextSpan && span.text == text) {
+      alpha = span.style?.color?.a;
+      return false;
+    }
+    return true;
+  });
+  if (alpha == null) fail('no span said "$text" in: ${root.toPlainText()}');
+  return alpha!;
 }

@@ -16,7 +16,6 @@ import 'package:makit/ui/widgets/pr_tone.dart';
 PullRequest _pr(String state) =>
     PullRequest(number: 1, url: '', state: state, title: 't', isDraft: false);
 
-
 void main() {
   _toneHuesTests();
   final cs = ColorScheme.fromSeed(seedColor: kMakitAccent);

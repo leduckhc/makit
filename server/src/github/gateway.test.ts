@@ -803,6 +803,59 @@ test("a failed mutation leaves the cache alone", async () => {
   assert.equal(prCalls(), 1, "still cached");
 });
 
+test("a cold open-PR list in flight during a mutation is not cached either", async () => {
+  // The guard cannot key off the keys it happens to find in the cache: the very
+  // first `openPrs` call for a repo is in neither the cache nor the generation
+  // map while it runs, so a mutation had nothing to bump — and the pre-mutation
+  // list then seeded a cache the mutation was supposed to have emptied.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstList = true;
+  const { gateway, calls } = makeGateway(async (args) => {
+    if (args[0] === "pr" && args[1] === "list" && args.includes("--state") && firstList) {
+      firstList = false;
+      await gate;
+    }
+    return kindOf(args) === "pr" ? ok("[]") : ok("{}");
+  });
+  const listCalls = () =>
+    calls.filter((a) => a[0] === "pr" && a[1] === "list" && a.includes("--state")).length;
+
+  const inFlight = gateway.openPrs("/repo", 50);
+  await gateway.mutatePr("/repo", "feat/x", 7, "merge-squash");
+  release!();
+  await inFlight;
+  const before = listCalls();
+
+  await gateway.openPrs("/repo", 50);
+  assert.ok(listCalls() > before, "the pre-mutation list must not have been cached");
+});
+
+test("a caller arriving after a mutation is not handed the in-flight pre-mutation answer", async () => {
+  // Not caching the stale answer is only half the guard: a caller that joins the
+  // promise still *receives* it. The repos broadcast the mutation triggers is
+  // exactly such a caller, so the pill would report the state the mutation just
+  // changed until the next poll.
+  let release: (() => void) | undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  let firstPr = true;
+  const { gateway, calls } = makeGateway(async (args) => {
+    if (kindOf(args) === "pr" && firstPr) {
+      firstPr = false;
+      await gate;
+    }
+    return kindOf(args) === "pr" ? ok(PR_JSON) : ok("{}");
+  });
+  const prCalls = () => calls.filter((a) => kindOf(a) === "pr").length;
+
+  const inFlight = gateway.prForBranch("/repo", "feat/x");
+  await gateway.mutatePr("/repo", "feat/x", 7, "ready");
+  const after = gateway.prForBranch("/repo", "feat/x");
+  release!();
+  await Promise.all([inFlight, after]);
+  assert.equal(prCalls(), 2, "the post-mutation caller must start its own lookup");
+});
+
 test("a mutation also drops the repo's open-PR list", async () => {
   // The "New worktree from PR" picker reads `openPrs`. After a squash-merge the
   // merged PR must not still be offered there (checkout would then fail), and

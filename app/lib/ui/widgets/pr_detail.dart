@@ -152,7 +152,8 @@ class PrDetailBody extends StatelessWidget {
                   const SizedBox(height: kSpace6),
                   _GroupLabel(
                     icon: PhosphorIconsLight.checkCircle,
-                    text: '${checks.length} '
+                    text:
+                        '${checks.length} '
                         '${checks.length == 1 ? 'check' : 'checks'}',
                   ),
                   for (final c in checks) PrCheckRow(check: c),
@@ -274,10 +275,9 @@ class _PinnedCta extends StatelessWidget {
                     ),
               foregroundColor: direct ? cs.surface : tone,
             ),
-            icon: prRemedyIcon(remedy).build(
-              size: 16,
-              color: direct ? cs.surface : tone,
-            ),
+            icon: prRemedyIcon(
+              remedy,
+            ).build(size: 16, color: direct ? cs.surface : tone),
             label: Text(status.cta.label),
           ),
           const SizedBox(height: kSpace6),
@@ -478,8 +478,9 @@ List<Widget> buildPrActionMenu(
   ];
 }
 
-/// Why [action] is not on offer right now, in the user's terms.
-String? _whyNot(PrPromptAction action, PrStatus status, {required bool ended}) {
+/// Why [action] is not on offer right now, in the user's terms. Always has an
+/// answer: an action is listed disabled precisely because there is a reason.
+String _whyNot(PrPromptAction action, PrStatus status, {required bool ended}) {
   if (ended) return 'the pull request has already ended';
   return switch (action) {
     PrPromptAction.createPr => 'this branch has no commits to open a PR with',
@@ -502,7 +503,7 @@ class _PromptMenuItem extends ConsumerWidget {
 
   final PrPromptAction action;
   final bool enabled;
-  final String? reason;
+  final String reason;
   final void Function(PrRemedy remedy) onRun;
 
   @override
@@ -525,9 +526,9 @@ class _PromptMenuItem extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(action.label, style: Theme.of(context).textTheme.bodyMedium),
-          if (!enabled && reason != null)
+          if (!enabled)
             Text(
-              reason!,
+              reason,
               style: Theme.of(
                 context,
               ).textTheme.labelXs?.copyWith(color: cs.outline),

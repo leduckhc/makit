@@ -1,13 +1,15 @@
 /// Running a [PrRemedy], and the confirm that guards the destructive ones.
 ///
-/// Two kinds of action share one entry point ([runPrRemedy]) so every surface —
+/// Three kinds of action share one entry point ([runPrRemedy]) so every surface —
 /// the desktop bar, its menu, the detail sheet, the mobile row — dispatches
 /// identically:
 ///  * a [PromptRemedy] inserts its canned text in the composer and stops. The
 ///    user reads it and presses Send; nothing is ever sent on their behalf.
-///  * a [DirectRemedy] runs a server command. Both current direct ops destroy
-///    something (a worktree), so both ask first, and the question spells out
-///    every step rather than saying "are you sure?".
+///  * a [MagicRemedy] does the same with one prompt composed from every
+///    outstanding prompt-backed fact, in precedence order.
+///  * a [DirectRemedy] runs a server command. The three that cannot be taken
+///    back in one click ask first, and the question spells out every step rather
+///    than saying "are you sure?".
 library;
 
 import 'package:flutter/material.dart';
@@ -218,34 +220,38 @@ Future<bool?> showPrDirectConfirm(
 }) {
   final base = pr?.baseRefName;
 
-  final (IconData icon, Color Function(ColorScheme) tint, String title, String verb) =
-      switch (op) {
-        PrDirectOp.wrapUp => (
-          PhosphorIconsLight.broom,
-          (ColorScheme cs) => cs.prMergedText,
-          'Wrap up',
-          'Wrap up',
-        ),
-        PrDirectOp.discardWorktree => (
-          PhosphorIconsLight.trash,
-          (ColorScheme cs) => cs.error,
-          'Discard worktree',
-          'Discard',
-        ),
-        PrDirectOp.squashMerge => (
-          PhosphorIconsLight.gitMerge,
-          (ColorScheme cs) => cs.prMergedText,
-          'Squash & merge',
-          'Squash & merge',
-        ),
-        // Never reached: these do not ask (see [needsConfirm]).
-        _ => (
-          PhosphorIconsLight.question,
-          (ColorScheme cs) => cs.primary,
-          'Continue',
-          'Continue',
-        ),
-      };
+  final (
+    IconData icon,
+    Color Function(ColorScheme) tint,
+    String title,
+    String verb,
+  ) = switch (op) {
+    PrDirectOp.wrapUp => (
+      PhosphorIconsLight.broom,
+      (ColorScheme cs) => cs.prMergedText,
+      'Wrap up',
+      'Wrap up',
+    ),
+    PrDirectOp.discardWorktree => (
+      PhosphorIconsLight.trash,
+      (ColorScheme cs) => cs.error,
+      'Discard worktree',
+      'Discard',
+    ),
+    PrDirectOp.squashMerge => (
+      PhosphorIconsLight.gitMerge,
+      (ColorScheme cs) => cs.prMergedText,
+      'Squash & merge',
+      'Squash & merge',
+    ),
+    // Never reached: these do not ask (see [needsConfirm]).
+    _ => (
+      PhosphorIconsLight.question,
+      (ColorScheme cs) => cs.primary,
+      'Continue',
+      'Continue',
+    ),
+  };
 
   return showDialog<bool>(
     context: context,
@@ -263,18 +269,15 @@ Future<bool?> showPrDirectConfirm(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              switch (op) {
-                PrDirectOp.wrapUp =>
-                  'This pull request has merged. Tidy up after it:',
-                PrDirectOp.discardWorktree =>
-                  'This pull request was closed without merging. Remove what it '
-                      'left behind:',
-                _ =>
-                  'Land $identity on ${base ?? 'its base branch'}, GitHub-side:',
-              },
-              style: Theme.of(dctx).textTheme.bodyMedium,
-            ),
+            Text(switch (op) {
+              PrDirectOp.wrapUp =>
+                'This pull request has merged. Tidy up after it:',
+              PrDirectOp.discardWorktree =>
+                'This pull request was closed without merging. Remove what it '
+                    'left behind:',
+              _ =>
+                'Land $identity on ${base ?? 'its base branch'}, GitHub-side:',
+            }, style: Theme.of(dctx).textTheme.bodyMedium),
             // The sentence above asserts a PR state the app took from its last
             // snapshot, and nothing re-checks GitHub before acting (SPEC-38 §11a
             // L1). When that snapshot is explicitly last-known — SPEC-32 shed the

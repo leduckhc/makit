@@ -30,7 +30,8 @@ Future<String> _prompt(
           builder: (context, ref, _) {
             out = ref.magicFixPrompt([
               for (final s in status.signals)
-                if (s.remedy is PromptRemedy) (label: s.label, detail: s.detail),
+                if (s.remedy is PromptRemedy)
+                  (label: s.label, detail: s.detail),
             ]);
             return const SizedBox.shrink();
           },
@@ -64,7 +65,9 @@ void main() {
     expect(await _prompt(tester, _busy()), startsWith(kMagicFixPreamble));
   });
 
-  testWidgets('lists every prompt-backed problem, one per line', (tester) async {
+  testWidgets('lists every prompt-backed problem, one per line', (
+    tester,
+  ) async {
     final p = await _prompt(tester, _busy());
     expect(p, contains('- 2 files uncommitted'));
     expect(p, contains('- 2 checks failing'));

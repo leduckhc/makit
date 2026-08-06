@@ -328,17 +328,18 @@ state, one action, detail behind a disclosure.</p>
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <section>
 <h2>8 · Where this mock was wrong <span class="tag new">as built</span></h2>
-<p class="lede">Six things only showed up once it was running. Recorded here because the next person
-reading this page will otherwise trust the picture over the code.</p>
+<p class="lede">Nine things only showed up once it was running. The pictures above have been corrected;
+this is the record of what they used to claim, because a reader who only sees the fixed page cannot
+tell whether a difference was noticed or missed.</p>
 <div class="rules"><table id="wrong"></table></div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <section>
-<h2>9 · The two confirms</h2>
-<p class="lede">Only the irreversible actions ask, and each states what it will actually do rather
-than “are you sure?”. The merge dialog spends a line on what it will <em>not</em> do, because that is
-the assumption most likely to be wrong.</p>
+<h2>9 · The three confirms</h2>
+<p class="lede">Only the irreversible actions ask — wrap up, discard and squash&nbsp;&amp;&nbsp;merge — and
+each states what it will actually do rather than “are you sure?”. The merge dialog spends a line on
+what it will <em>not</em> do, because that is the assumption most likely to be wrong.</p>
 <div class="cols" id="confirms"></div>
 </section>
 
@@ -383,10 +384,10 @@ const st={
     num:'#142',tone:'quiet',dot:{c:'var(--pass)'},
     lead:'12 checks passed',rest:[],leadTone:'quiet',
     cta:{label:'Ask the agent',icon:'sparkle',tone:'quiet',idle:true}},
-  hot:{cap:'open · CI red + 3 threads + 1 unpushed — three problems, one button',
-    num:'#142',tone:'blocking',dot:{},
-    lead:'2 checks failing',rest:['3 threads open','1 commit unpushed'],
-    cta:{label:'Fix',icon:'magic-wand',tone:'blocking'}},
+  hot:{cap:'open · 1 unpushed + CI red + 3 threads — three problems, one button',
+    num:'#142',tone:'attention',dot:{},
+    lead:'1 commit unpushed',rest:['2 checks failing','3 threads open'],
+    cta:{label:'Fix',icon:'magic-wand',tone:'attention'}},
   oneProblem:{cap:'open · exactly one problem — keeps its own specific verb',
     num:'#142',tone:'attention',dot:{c:'var(--pass)'},
     lead:'1 commit unpushed',rest:[],
@@ -664,17 +665,21 @@ el('place').innerHTML=`
         <span>Message the agent…</span><span class="send">${ic('arrow-up','fill')}</span></div>
     </div></div></div></div>`;
 
-/* ═══ 6 · mobile ═══════════════════════════════════════════════════ */
+/* ═══ 6 · mobile ═══════════════════════════════════════════════════
+   The chip is `identity · loud fact` and nothing more: no secondary fact (the
+   row has no room to elide in), and no chip at all when the state is quiet
+   (§8 row 1). `num` is the identity, so a PR-less branch shows the fact alone
+   rather than repeating the branch name the row already carries.            */
 const mrow=(branch,m,accent)=>`<div class="wtrow">
   <span class="accent" style="background:${accent}"></span>
   <span class="bn">${branch}</span>
-  <span class="say">${dotHTML(m)} <span class="lead" style="color:${TONE[m.leadTone||m.tone]}">${m.lead}</span>${
-    m.rest.length?` · ${m.rest[0]}`:''}</span>
+  <span class="say">${m.quiet?'':`${dotHTML(m)} ${m.num.startsWith('#')?`<span style="font-weight:600">${m.num}</span> · `:''}<span class="lead" style="color:${TONE[m.leadTone||m.tone]}">${m.lead}</span>`}</span>
   <span class="go">${ic('caret-right')}</span></div>`;
 el('mobile').innerHTML=`
 <div class="col" style="width:430px"><header><div class="t"><h3>Home rows — the sentence, shrunk</h3></div>
   <div class="d">Today each row carries a <code>PR #142</code> pill whose colour is the only signal.
-  In B the row <em>says</em> what's up. A merged row says it has a worktree lying around.</div></header>
+  In B the row <em>says</em> what's up. A merged row says it has a worktree lying around, and a row
+  with nothing to say carries no chip at all.</div></header>
   <div class="body"><div class="phone"><div class="pscreen">
     ${mrow('feat/pr-actions',st.hot,'var(--fail)')}
     ${mrow('fix/composer',st.merged,'transparent')}
@@ -683,22 +688,21 @@ el('mobile').innerHTML=`
   </div></div></div></div>
 
 <div class="col" style="width:430px"><header><div class="t"><h3>Sheet — single focus</h3><span class="tag new">new</span></div>
-  <div class="d">The sentence becomes the headline. One action. Detail behind a disclosure, so the
-  sheet opens on the decision rather than on a list.</div></header>
+  <div class="d">The sentence becomes the headline — the loud fact alone, since it is also the button.
+  One action. Detail behind a disclosure, so the sheet opens on the decision rather than on a list.</div></header>
   <div class="body"><div class="phone"><div class="pscreen" style="padding:0">
     <div class="sheet"><div class="hdl"></div>
       <div class="hero">
         <div class="st">${dotHTML(st.hot)} <span>#142</span><span class="sep">·</span><span>open</span></div>
-        <div class="say">2 checks failing<span style="color:var(--outline);font-weight:400">, 3 threads
-          open and 1 commit unpushed.</span></div>
+        <div class="say">1 commit unpushed</div>
         <div class="ttl">Landing strip: composer bar &amp; pills, unified</div>
       </div>
-      <button class="big" style="background:${wash('blocking',20)};color:${TONE.blocking}">
-        ${ic('wrench')} Fix CI</button>
+      <button class="big" style="background:${wash('attention',20)};color:${TONE.attention}">
+        ${ic('magic-wand')} Fix</button>
       <div class="foot">Puts the prompt in the composer — it never sends for you.</div>
       <div class="disc">
         <div class="dh">${ic('list-dashes')} <span>Detail</span><span class="n" style="color:var(--fail)">12 checks</span>${ic('caret-down')}</div>
-        ${['x-circle|analyze|Fix|blocking','chat-circle|3 threads open|Resolve|attention','arrow-up|1 commit unpushed|Push|attention']
+        ${['arrow-up|1 commit unpushed|Push|attention','x-circle|2 checks failing|Fix|blocking','chat-circle|3 threads open|Resolve|attention']
           .map(r=>{const [g,l,f,t]=r.split('|');return `<div class="mfact">
             <i class="ph-light ph-${g} g" style="color:${TONE[t]}"></i><span class="l">${l}</span>
             <span class="fix" style="background:${wash(t,18)};color:${TONE[t]}">${f}</span></div>`}).join('')}
@@ -706,22 +710,20 @@ el('mobile').innerHTML=`
     </div></div></div></div>
 
 <div class="col" style="width:430px"><header><div class="t"><h3>Sheet — merged</h3><span class="tag new">new</span></div>
-  <div class="d">Same shape, one purple action. The headline states the fact and the leftover in one
-  breath.</div></header>
+  <div class="d">Same shape, one purple action. The headline states the fact; what wrap up will
+  actually do is the confirm's job, not the sheet's.</div></header>
   <div class="body"><div class="phone"><div class="pscreen" style="padding:0">
     <div class="sheet"><div class="hdl"></div>
       <div class="hero">
         <div class="st">${dotHTML(st.merged)} <span>#142</span><span class="sep">·</span><span>merged</span></div>
-        <div class="say">Merged 2h ago.<span style="color:var(--outline);font-weight:400"> The worktree
-          is still on disk and main is 6 commits behind.</span></div>
+        <div class="say">Merged</div>
         <div class="ttl">Landing strip: composer bar &amp; pills, unified</div>
       </div>
       <button class="big" style="background:var(--merged);color:#150a26">${ic('broom')} Wrap up</button>
-      <div class="foot">Removes the worktree and fast-forwards main. Asks first.</div>
+      <div class="foot">Runs on the server. Asks first.</div>
       <div class="disc">
-        <div class="dh">${ic('list-dashes')} <span>What wrap up will do</span>${ic('caret-down')}</div>
-        ${[['folder-minus','Remove the worktree'],['archive','Archive 1 running session'],
-           ['git-branch','Delete branch fix/composer'],['arrow-down','Fast-forward main']]
+        <div class="dh">${ic('list-dashes')} <span>Detail</span>${ic('caret-down')}</div>
+        ${[['git-branch','worktree still here']]
           .map(([g,l])=>`<div class="mfact"><i class="ph-light ph-${g} g" style="color:var(--merged)"></i>
             <span class="l">${l}</span></div>`).join('')}
       </div>
@@ -779,7 +781,7 @@ el('hybrid').innerHTML=`
   <div class="caption"><b>open · red CI + 3 threads + 1 unpushed</b></div>
   <div class="pane"><div class="nbar">
     <span class="reason" style="color:${TONE.blocking}">
-      ${dotHTML(st.hot)}<span class="num">#142</span><span class="sep">·</span>
+      ${dotHTML({tone:'blocking'})}<span class="num">#142</span><span class="sep">·</span>
       <span class="lead">2 checks failing</span></span>
     <button class="seg act" style="color:${TONE.attention};background:${wash('attention',14)};
       border-radius:var(--r6);height:20px">${ic('chat-circle')}<span>3 threads</span></button>
@@ -873,7 +875,7 @@ const ACTS=[
       'git -C <hostWorktree> merge --ff-only origin/<base>\n'+
       '<span class="c"># otherwise it is only a ref, so no checkout is needed:</span>\n'+
       'git fetch origin <base>:<base>',
-  note:'Step 4 is <b>best-effort and reported, never fatal</b>: by then the worktree is gone, so throwing would call a mostly-done job a total failure. A divergent base (local commits never pushed) is <b>refused, not forced</b> \u2014 silently discarding unpushed work while \u201ctidying\u201d would be indefensible. The ack carries <code>branchDeleted</code>, <code>baseBranch</code>, <code>baseUpdated</code> and <code>baseReason</code>, which the snackbar turns into \u201cRemoved feat/x \u00b7 main updated\u201d or \u201c\u2026 \u00b7 main unchanged\u201d with a <b>Why?</b> action.'},
+  note:'Steps 3 and 4 are <b>best-effort and reported, never fatal</b>: by then the worktree is gone, so throwing would call a mostly-done job a total failure. A divergent base (local commits never pushed) is <b>refused, not forced</b> \u2014 silently discarding unpushed work while \u201ctidying\u201d would be indefensible. The ack carries <code>branchDeleted</code>, <code>branchReason</code>, <code>baseBranch</code>, <code>baseUpdated</code> and <code>baseReason</code>, which the snackbar turns into \u201cRemoved feat/x \u00b7 main updated\u201d, \u201c\u2026 \u00b7 main unchanged\u201d or \u201c\u2026 \u00b7 branch kept\u201d with a <b>Why?</b> action.'},
 
  {n:'Discard worktree',i:'trash',kind:'d',confirm:true,
   when:'<code>state: CLOSED</code> \u00b7 not the primary checkout',
@@ -975,6 +977,15 @@ const WRONG=[
   ['“merged 2h ago” / “main moved on”',
    'Friendlier phrasing invented for the mock.',
    'Shipped as <code>merged</code> and <code>the base branch moved on</code>. Relative time is not in the PR DTO, and the base is not always <code>main</code> — <code>baseRefName</code> names it in the confirm instead.'],
+  ['the sheet listed what wrap up would do',
+   'A “What wrap up will do” disclosure under the merged sheet’s button, spelling out all four steps.',
+   'The steps belong to the <b>confirm</b> (§9), which is where the user is deciding. Listing them twice made the sheet argue the case before anyone had asked for it, so the disclosure carries the facts — the same content as every other state.'],
+  ['the loud fact was the red build',
+   'Every picture of the three-problem state led with <code>2 checks failing</code>, in red.',
+   'Precedence puts <b>unpushed commits above a red build</b> (§5): you cannot fix CI for commits the remote has never seen. So the sentence leads with <code>1 commit unpushed</code> in amber, and “Fix” composes all three in that order — pinned by <code>pr_signals_test.dart</code>.'],
+  ['the home row continued the sentence',
+   'The chip read <code>2 checks failing · 3 threads open</code> — the loud fact plus the next one.',
+   'A row has nowhere to elide: the second fact pushed the chip past the branch name it sits beside. The chip is <code>#142 · loud fact</code> and the rest is one tap away, which is the same split the bar makes with <code>+n more</code>.'],
 ];
 el('wrong').innerHTML=`<tr><th style="width:23%">the mock said</th><th style="width:32%">what that looked like</th><th>what shipped, and why</th></tr>`+
   WRONG.map(([a,b,c])=>`<tr><td><b>${a}</b></td><td>${b}</td><td>${c}</td></tr>`).join('');

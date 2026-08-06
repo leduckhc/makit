@@ -743,15 +743,14 @@ class StoreController extends StateNotifier<StoreState> {
     String worktreePath, {
     String? expectBranch,
   }) async {
-    final ack = await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {
-        'kind': 'worktree.discard',
-        'projectId': projectId,
-        'worktreePath': worktreePath,
-        'expectBranch': ?expectBranch,
-      },
-    );
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.discard',
+          'projectId': projectId,
+          'worktreePath': worktreePath,
+          'expectBranch': ?expectBranch,
+        });
     return WrapUpReport.fromJson(ack);
   }
 
@@ -769,16 +768,15 @@ class StoreController extends StateNotifier<StoreState> {
     String? baseBranch,
     String? expectBranch,
   }) async {
-    final ack = await _ref.read(connectionControllerProvider.notifier).request(
-      MsgType.cmd,
-      {
-        'kind': 'worktree.wrapUp',
-        'projectId': projectId,
-        'worktreePath': worktreePath,
-        'baseBranch': ?baseBranch,
-        'expectBranch': ?expectBranch,
-      },
-    );
+    final ack = await _ref
+        .read(connectionControllerProvider.notifier)
+        .request(MsgType.cmd, {
+          'kind': 'worktree.wrapUp',
+          'projectId': projectId,
+          'worktreePath': worktreePath,
+          'baseBranch': ?baseBranch,
+          'expectBranch': ?expectBranch,
+        });
     return WrapUpReport.fromJson(ack);
   }
 
@@ -800,11 +798,10 @@ class StoreController extends StateNotifier<StoreState> {
     String projectId,
     String worktreePath,
   ) async {
-    await _ref.read(connectionControllerProvider.notifier).request(MsgType.cmd, {
-      'kind': kind,
-      'projectId': projectId,
-      'worktreePath': worktreePath,
-    });
+    await _ref.read(connectionControllerProvider.notifier).request(
+      MsgType.cmd,
+      {'kind': kind, 'projectId': projectId, 'worktreePath': worktreePath},
+    );
   }
 
   Future<List<PiSessionMeta>> listPiSessions(String projectId) async {

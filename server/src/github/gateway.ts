@@ -278,13 +278,36 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
   function invalidate(key: string): void {
     cache.delete(key);
     generation.set(key, generationOf(key) + 1);
+    // Not caching the stale answer is only half of it: a caller arriving after
+    // the mutation would still *join* the in-flight promise and be handed it.
+    // The repos broadcast a mutation triggers is exactly such a caller, so the
+    // pill would keep reporting the state the mutation just changed. Dropping
+    // the registration makes the next caller start its own lookup; whoever
+    // already joined still gets the old promise's answer, which is all that is
+    // left to give them.
+    for (const k of inflight.keys()) {
+      if (k === key || k.startsWith(`${key}:`)) inflight.delete(k);
+    }
   }
+
+  /**
+   * The generation key guarding every `openPrs` list for a repo. Deliberately
+   * per-*repo*, not per cache key: the cache key carries a `limit`, and a mutation
+   * can only bump generations for keys it can name. The first list for a repo is
+   * in neither map while it is in flight, so a per-key generation left that one
+   * call unguarded — and it then seeded a cache the mutation had just emptied.
+   */
+  const openPrsGeneration = (repoPath: string) => `openPrs:${repoPath}`;
 
   /** One in-flight promise per key; cleared in `finally` so dedupe is per-burst. */
   function dedupe<T>(key: string, run: () => Promise<T>): Promise<T> {
     const existing = inflight.get(key);
     if (existing) return existing as Promise<T>;
-    const promise = run().finally(() => inflight.delete(key));
+    // Identity-checked: `invalidate` can drop this registration mid-flight and a
+    // fresh call take its place, which a blind `delete` would then evict.
+    const promise: Promise<T> = run().finally(() => {
+      if (inflight.get(key) === promise) inflight.delete(key);
+    });
     inflight.set(key, promise);
     return promise;
   }
@@ -716,7 +739,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
     },
 
     async mutatePr(repoPath, branch, number, verb) {
-      // Costed on `core`: both verbs are REST mutations under the hood. Spend is
+      // Costed on `core`: all three verbs are REST mutations under the hood. Spend is
       // recorded even on failure (costedExec records before the exec), which is
       // the honest accounting — GitHub charged us either way.
       const r = await costedExec(
@@ -738,11 +761,13 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // `openPrs` matters as much as the single lookup: it backs the "New worktree
       // from PR" picker, where a squash-merged PR that is still listed leads to a
       // checkout that fails, and a marked-ready PR still reads as a draft. Its key
-      // carries a `limit`, so every limit for this repo goes.
+      // carries a `limit`, so every limit for this repo goes — and its generation is
+      // repo-wide, so a first-ever list still in flight is covered too.
       invalidate(`pr:${repoPath}:${branch}`);
-      for (const key of [...cache.keys(), ...generation.keys()]) {
-        if (key.startsWith(`openPrs:${repoPath}:`)) invalidate(key);
+      for (const key of cache.keys()) {
+        if (key.startsWith(`openPrs:${repoPath}:`)) cache.delete(key);
       }
+      invalidate(openPrsGeneration(repoPath));
       return { ok: true };
     },
 
@@ -759,7 +784,7 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
       // Keyed by `interactive` for the same reason as prForBranch: the picker
       // must not inherit a background call's reserve-shed empty list.
       return dedupe(`${key}:${interactive}`, async () => {
-        const started = generationOf(key);
+        const started = generationOf(openPrsGeneration(repoPath));
         const budget = tracker.snapshot();
         const policy = decide(budget, { paused });
         if (!allow(budget, policy, interactive)) return [];
@@ -797,7 +822,9 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
             : (parsed as OpenPr[]);
           // Same generation guard as prForBranch: a list fetched before a mutation
           // must not be written back after it.
-          if (generationOf(key) === started) cacheSet(key, value, TTL_OPEN_PRS_MS);
+          if (generationOf(openPrsGeneration(repoPath)) === started) {
+            cacheSet(key, value, TTL_OPEN_PRS_MS);
+          }
           return value;
         } catch {
           return [];

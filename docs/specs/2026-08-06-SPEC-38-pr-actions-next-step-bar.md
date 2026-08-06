@@ -157,9 +157,10 @@ repo with it.
   problem's own remedy under a vaguer label. The second clause matters: the composed prompt carries
   prompt-backed facts only, so offering `Fix` while a *direct* op is outstanding (say
   `the base branch moved on`) would promise to fix everything and silently skip that one.
-- **Tone promotion.** A CTA whose loud fact is `quiet` is drawn as `attention`. The only quiet fact
-  carrying a remedy is `still a draft`, and a solid grey button for it reads as *disabled*. The fact
-  itself stays quiet wherever it is listed.
+- **Tone promotion.** A CTA whose loud fact is `quiet` is drawn as `attention`, because a solid grey
+  button reads as *disabled*. Quiet facts do carry remedies: `still a draft`, `ready to merge`, and —
+  because a draft mutes its own facts — a draft's failing build or open threads. Promotion is for the
+  button's tint only; the fact itself stays quiet wherever it is listed.
 
 ## 6 · Action catalogue (normative)
 
@@ -382,6 +383,15 @@ fork and the PR targets an upstream repo, `git fetch origin <base>` fetches the 
 the base *repository* identity through `PrLookup` is out of scope; makit creates worktrees in the
 user's own repo, and "fast-forward to `origin/<base>`" is what a tool operating on `origin` should do.
 
+**L3 — `expectBranch` pins the branch, not the commit.** The guard refuses when the worktree has moved
+to a *different* branch since the confirm (D10), but a commit made on the *same* branch between the
+confirm and the click is still deleted by `git branch -D` — unpushed, that commit is gone. Sending the
+expected HEAD oid alongside the branch was considered and **rejected**: no oid exists anywhere in the
+pipeline today, so it means a `rev-parse` per worktree on the repo-list hot path, a new DTO field, and
+plumbing through four layers — to cover the seconds a dialog is open, and at the cost of a refusal the
+user can only clear by reconfirming. The branch the dialog *named* is the irreversible half, and that
+is guarded; this residue is one commit on a branch whose pushed history `origin/<branch>` still holds.
+
 ## 12 · Decisions
 
 | # | Decision | Why |
@@ -395,3 +405,4 @@ user's own repo, and "fast-forward to `origin/<base>`" is what a tool operating 
 | D7 | One `PrDetailBody`, dialog on desktop / sheet on mobile | Let `pr_sheet.dart` be deleted rather than maintained in parallel; a hover popover cannot hold buttons |
 | D9 | Discard worktree **does** delete the branch | Symmetry with the verb: "discard" that leaves the branch behind is not discarding. A closed PR necessarily had a pushed head, so `origin/<branch>` retains the commits and a local `-D` is recoverable by re-fetch — the earlier "silent loss" argument for keeping it was wrong. The confirm names the branch, so declining is available |
 | D8 | `locateWorktree` replaces three per-field scans | Six independent scans could straddle a snapshot swap and describe two different worktrees |
+| D10 | The dialog's branch travels with the command (`expectBranch`) and a mismatch is **refused** | The server resolves the branch again when it runs, so without it the user could confirm "delete feat/x" and have a branch they checked out since — possibly with unpushed commits — deleted by `git branch -D`, which does not ask |

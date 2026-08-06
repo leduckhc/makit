@@ -53,26 +53,30 @@ class PrToneDot extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = prToneColor(Theme.of(context).colorScheme, tone);
     final p = progress;
-    if (p != null) {
-      return SizedBox(
-        width: _ringSize,
-        height: _ringSize,
-        child: CircularProgressIndicator(
-          value: p.clamp(0.0, 1.0),
-          strokeWidth: 2.5,
-          color: color,
-          backgroundColor: color.withValues(alpha: 0.22),
-        ),
-      );
-    }
-    return Container(
-      width: _size,
-      height: _size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: hollow ? null : color,
-        border: hollow ? Border.all(color: color, width: 1.5) : null,
-      ),
+    // Both forms occupy the ring's box: the disc is the smaller of the two, and
+    // letting it size the widget made the sentence twitch 2px sideways the moment
+    // a build finished.
+    return SizedBox(
+      width: _ringSize,
+      height: _ringSize,
+      child: p != null
+          ? CircularProgressIndicator(
+              value: p.clamp(0.0, 1.0),
+              strokeWidth: 2.5,
+              color: color,
+              backgroundColor: color.withValues(alpha: 0.22),
+            )
+          : Center(
+              child: Container(
+                width: _size,
+                height: _size,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: hollow ? null : color,
+                  border: hollow ? Border.all(color: color, width: 1.5) : null,
+                ),
+              ),
+            ),
     );
   }
 }

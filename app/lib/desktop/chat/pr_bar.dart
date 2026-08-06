@@ -137,7 +137,6 @@ class _Reason extends StatelessWidget {
     // so dimming it too (as the old pill did, wholesale) hid the one fact that
     // was still reliable.
     final dim = status.stale ? 0.55 : 1.0;
-
     final sentence = Text.rich(
       TextSpan(
         children: [
@@ -148,14 +147,14 @@ class _Reason extends StatelessWidget {
               child: PrToneDot(
                 tone: status.tone,
                 progress: status.checkProgress,
-                hollow: status.identity.isNotEmpty && !status.identity.startsWith('#'),
+                hollow: !status.hasPr,
               ),
             ),
           ),
           TextSpan(
             text: status.identity,
             style: base.copyWith(
-              color: cs.onSurface.withValues(alpha: dim),
+              color: cs.onSurface,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -241,11 +240,7 @@ class _MoreLink extends StatelessWidget {
 ///  * **agent prompt** — tonal fill in the fact's tone; inserts text,
 ///  * **direct op** — solid fill; runs now (behind a confirm when destructive).
 class PrCtaButton extends ConsumerWidget {
-  const PrCtaButton({
-    super.key,
-    required this.status,
-    required this.onRun,
-  });
+  const PrCtaButton({super.key, required this.status, required this.onRun});
 
   final PrStatus status;
 
@@ -262,7 +257,11 @@ class PrCtaButton extends ConsumerWidget {
     final direct = remedy is DirectRemedy;
 
     final (Color bg, Color fg, Color? border) = switch (cta) {
-      PrCta(remedy: null) => (Colors.transparent, cs.onSurfaceVariant, cs.outlineVariant),
+      PrCta(remedy: null) => (
+        Colors.transparent,
+        cs.onSurfaceVariant,
+        cs.outlineVariant,
+      ),
       _ when direct => (tone, _onDirect(cs, cta.tone), null),
       _ => (
         Color.alphaBlend(tone.withValues(alpha: 0.18), cs.surfaceContainerHigh),

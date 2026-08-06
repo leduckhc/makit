@@ -1252,7 +1252,10 @@ class WrapUpReport {
   /// `Worktree removed · branch kept · main updated` when the branch survived.
   String get summary {
     final parts = <String>[
-      if (branchDeleted != null) 'Removed $branchDeleted' else 'Worktree removed',
+      if (branchDeleted != null)
+        'Removed $branchDeleted'
+      else
+        'Worktree removed',
       // Never silently imply the branch went when it did not.
       if (branchDeleted == null && branchReason != null) 'branch kept',
       if (baseBranch != null)

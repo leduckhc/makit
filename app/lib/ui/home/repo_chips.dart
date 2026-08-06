@@ -178,7 +178,7 @@ class PrStatusChip extends ConsumerWidget {
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 190),
                       child: Text(
-                        status.identity.startsWith('#')
+                        status.hasPr
                             ? '${status.identity} · ${status.loud.label}'
                             : status.loud.label,
                         maxLines: 1,

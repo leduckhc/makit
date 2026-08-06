@@ -38,11 +38,12 @@ enum PrTone {
 /// to. Each is a single unambiguous call — anything needing judgement stays a
 /// prompt.
 ///
-/// [wrapUp] and [discardWorktree] destroy a worktree and so are confirmed;
-/// [markReady] and [updateBranch] only change state on GitHub, are reversible or
-/// additive, and run straight from the button (see `isDestructive`).
+/// [wrapUp], [discardWorktree] and [squashMerge] cannot be taken back in one
+/// click and so are confirmed; [markReady] and [updateBranch] only change state
+/// on GitHub, are reversible or additive, and run straight from the button (see
+/// [needsConfirm]).
 enum PrDirectOp {
-  /// Merged: stop the worktree's sessions, remove the worktree, delete the
+  /// Merged: remove the worktree, reconcile the sessions bound to it, delete the
   /// branch, then fast-forward the PR's base branch in the primary checkout.
   wrapUp,
 
@@ -192,8 +193,6 @@ class PrStatus {
   /// How many facts the `+n more` disclosure stands for.
   int get more => signals.length - 1;
 
-
-
   /// Nothing worth a chip on a dense list: no pull request to reach, and nothing
   /// actually outstanding.
   ///
@@ -327,9 +326,7 @@ PrStatus prStatus({
             : '${_plural(failed.length, 'check')} failing',
         draft ? PrTone.quiet : PrTone.blocking,
         remedy: const PromptRemedy(PrPromptAction.fixPr),
-        detail: failed.isEmpty
-            ? null
-            : failed.map((c) => c.name).join(' · '),
+        detail: failed.isEmpty ? null : failed.map((c) => c.name).join(' · '),
       ),
     );
   }
@@ -388,7 +385,8 @@ PrStatus prStatus({
     // BLOCKED means a required review or check is missing, so GitHub would refuse;
     // a null/UNKNOWN mergeability is not a yes, and guessing would offer a merge
     // that errors.
-    final mergeable = open != null && open.mergeable?.toUpperCase() == 'MERGEABLE';
+    final mergeable =
+        open != null && open.mergeable?.toUpperCase() == 'MERGEABLE';
     final blocked = open?.mergeStateStatus?.toUpperCase() == 'BLOCKED';
     if (mergeable && !blocked) {
       signals.add(
@@ -400,26 +398,27 @@ PrStatus prStatus({
       );
     } else {
       signals.add(
-      PrSignal(
-        open == null
-            // No PR and nothing outstanding. A secondary branch is ready to
-            // become one; the primary checkout is not — you do not raise a pull
-            // request for `main`, so it just reports that it is clean.
-            ? (isPrimary ? 'clean' : 'ready for a PR')
-            : passed > 0
-            ? '${_plural(passed, 'check')} passed'
-            : 'green and up to date',
-        PrTone.quiet,
-      ),
+        PrSignal(
+          open == null
+              // No PR and nothing outstanding. A secondary branch is ready to
+              // become one; the primary checkout is not — you do not raise a pull
+              // request for `main`, so it just reports that it is clean.
+              ? (isPrimary ? 'clean' : 'ready for a PR')
+              : passed > 0
+              ? '${_plural(passed, 'check')} passed'
+              : 'green and up to date',
+          PrTone.quiet,
+        ),
       );
     }
   }
 
   final loud = signals.first;
-  // A call to action that *has* an action must not look inert. The only quiet
-  // facts carrying a remedy are a draft's (a draft mutes its own facts), and a
-  // grey button for them reads as disabled. Promoted for the button's tint only;
-  // the facts stay quiet wherever they are listed.
+  // A call to action that *has* an action must not look inert. Several quiet
+  // facts carry a remedy — `still a draft`, `ready to merge`, and a draft's own
+  // build and threads (a draft mutes its facts) — and a grey button for them
+  // reads as disabled. Promoted for the button's tint only; the facts stay quiet
+  // wherever they are listed.
   final ctaTone = loud.tone == PrTone.quiet ? PrTone.attention : loud.tone;
 
   // "Fix everything" is the honest single next step only when it really would fix
@@ -433,8 +432,11 @@ PrStatus prStatus({
       : _ctaFor(
           loud,
           tone: ctaTone,
-          // "Create PR" is only ever offered for a branch that could have one.
-          canCreatePr: open == null && !isPrimary,
+          // "Create PR" is only ever offered for a branch that could have one —
+          // keyed off the PR itself, not off `open`: a PR in a state this
+          // derivation does not recognise leaves `open` null while very much
+          // having one.
+          canCreatePr: pr == null && !isPrimary,
           branch: branch,
         );
 

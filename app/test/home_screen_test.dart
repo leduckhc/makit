@@ -10,7 +10,6 @@ import 'package:makit/store/store.dart';
 import 'package:makit/ui/home/home_screen.dart';
 import 'package:makit/ui/widgets/glass.dart';
 
-
 Widget _host({required List<RepoInfo> repos, required List<Session> sessions}) {
   return ProviderScope(
     overrides: [
@@ -208,9 +207,35 @@ void main() {
     );
   });
 
-  testWidgets('a merged PR advertises its own clean-up', (
+  testWidgets('a branch named like a PR number is not treated as one', (
     tester,
   ) async {
+    // `#42` is a legal branch name. Deciding "this has a PR" by looking at the
+    // display string classified such a branch as one, so the chip repeated the
+    // branch name the row already shows and drew a filled (has-a-PR) dot.
+    final repo = _repo(
+      worktrees: [
+        const Worktree(
+          id: '/wt/hash',
+          path: '/wt/hash',
+          branch: '#42',
+          isPrimary: false,
+          insertions: 0,
+          deletions: 0,
+          filesChanged: 0,
+          uncommittedFiles: 3,
+          sessionIds: ['s1'],
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(repos: [repo], sessions: [_session()]));
+    await tester.pump();
+
+    expect(find.text('3 files uncommitted'), findsOneWidget);
+    expect(find.text('#42 · 3 files uncommitted'), findsNothing);
+  });
+
+  testWidgets('a merged PR advertises its own clean-up', (tester) async {
     final repo = _repo(
       worktrees: [
         const Worktree(

@@ -71,14 +71,13 @@ Future<void> _pumpSheet(
   int uncommitted = 0,
   int ahead = 0,
   void Function(PrRemedy remedy)? onRun,
-  Map<String, Object?> overrides = const {},
   bool canInsertPrompt = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         preferencesControllerProvider.overrideWith(
-          (ref) => PreferencesController(null, overrides),
+          (ref) => PreferencesController(null, const {}),
         ),
       ],
       child: MaterialApp(
@@ -108,6 +107,21 @@ void main() {
       await _pumpSheet(tester, pr: _pr());
       expect(find.text('#42'), findsOneWidget);
       expect(find.text('Add the login screen'), findsOneWidget);
+    });
+
+    testWidgets('reports a PR url it cannot open instead of throwing', (
+      tester,
+    ) async {
+      // `Uri.tryParse` rejects this outright; a real device can also refuse a
+      // perfectly good URL with no handler. Either way the tap must not escape
+      // as an unhandled framework error.
+      await _pumpSheet(tester, pr: _pr(url: 'http://['));
+
+      await tester.tap(find.text('Open #42 on GitHub'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Could not open the PR'), findsOneWidget);
     });
 
     testWidgets('opens on the decision: headline, then action, then detail', (
@@ -182,7 +196,11 @@ void main() {
         ahead: 1,
         onRun: (r) => ran = r,
       );
-      expect(find.text('1 commit unpushed'), findsOneWidget, reason: 'headline');
+      expect(
+        find.text('1 commit unpushed'),
+        findsOneWidget,
+        reason: 'headline',
+      );
       expect(find.text('1 check failing'), findsOneWidget);
       expect(find.text('2 threads open'), findsOneWidget);
       expect(find.text('ALSO NEEDS YOU'), findsOneWidget);

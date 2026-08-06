@@ -48,8 +48,7 @@ PrStatus _status({
 );
 
 /// The prompt a CTA/signal would insert, or null when it is not an agent remedy.
-PrPromptAction? _prompt(PrRemedy? r) =>
-    r is PromptRemedy ? r.action : null;
+PrPromptAction? _prompt(PrRemedy? r) => r is PromptRemedy ? r.action : null;
 
 /// The direct operation a CTA/signal would run, or null when it is not one.
 PrDirectOp? _op(PrRemedy? r) => r is DirectRemedy ? r.op : null;
@@ -85,6 +84,17 @@ void main() {
 
     test('an open PR has one', () {
       expect(_status(pr: _pr()).hasPr, isTrue);
+    });
+
+    test('a PR whose state is not one it knows is still a PR', () {
+      // The live-state derivation only recognises OPEN, so anything else falls
+      // through with no facts to report. "Create PR" was keyed off *that*
+      // absence rather than off the PR, so the button offered to open a second
+      // pull request for a branch that already had one — while the menu, which
+      // reads `hasPr`, hid the same entry as meaningless.
+      final s = _status(pr: _pr(state: 'LOCKED'));
+      expect(s.hasPr, isTrue);
+      expect(_prompt(s.cta.remedy), isNot(PrPromptAction.createPr));
     });
 
     test('isEnded follows the state, not the labels', () {
@@ -169,7 +179,9 @@ void main() {
 
   group('conflicts', () {
     test('a conflicting PR blocks ahead of a red build', () {
-      final s = _status(pr: _pr(mergeable: 'CONFLICTING', rollup: 'fail'));
+      final s = _status(
+        pr: _pr(mergeable: 'CONFLICTING', rollup: 'fail'),
+      );
       expect(s.loud.label, 'conflicts with the base');
       expect(_prompt(s.loud.remedy), PrPromptAction.pull);
       // Two fixable facts, so the button offers to take on both.
@@ -177,7 +189,9 @@ void main() {
     });
 
     test('conflicts on a merged PR are history, not a next step', () {
-      final s = _status(pr: _pr(state: 'MERGED', mergeable: 'CONFLICTING'));
+      final s = _status(
+        pr: _pr(state: 'MERGED', mergeable: 'CONFLICTING'),
+      );
       expect(_op(s.cta.remedy), PrDirectOp.wrapUp);
     });
   });
@@ -246,7 +260,9 @@ void main() {
     });
 
     test('a merged PR does not offer to update its branch', () {
-      final s = _status(pr: _pr(state: 'MERGED', mergeStateStatus: 'BEHIND'));
+      final s = _status(
+        pr: _pr(state: 'MERGED', mergeStateStatus: 'BEHIND'),
+      );
       expect(_op(s.cta.remedy), PrDirectOp.wrapUp);
     });
   });
@@ -255,7 +271,9 @@ void main() {
     test('a green, mergeable, clean PR offers to squash & merge', () {
       // This state used to be a dead end: the CTA rested at "Ask the agent" on
       // exactly the PR that was ready to land.
-      final s = _status(pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'));
+      final s = _status(
+        pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+      );
       expect(s.loud.label, 'ready to merge');
       expect(_op(s.cta.remedy), PrDirectOp.squashMerge);
       expect(s.cta.label, 'Squash & merge');
@@ -278,7 +296,9 @@ void main() {
       // `mergeable` is null on an older server and UNKNOWN while GitHub is still
       // computing. Guessing "yes" would offer a merge that fails.
       for (final m in [null, 'UNKNOWN', 'CONFLICTING']) {
-        final s = _status(pr: _pr(rollup: 'pass', mergeable: m));
+        final s = _status(
+          pr: _pr(rollup: 'pass', mergeable: m),
+        );
         expect(_op(s.cta.remedy), isNot(PrDirectOp.squashMerge), reason: '$m');
       }
     });
@@ -292,13 +312,27 @@ void main() {
 
     test('anything outstanding outranks merging', () {
       for (final s in [
-        _status(pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'), uncommitted: 1),
-        _status(pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'), ahead: 1),
-        _status(pr: _pr(rollup: 'fail', mergeable: 'MERGEABLE')),
-        _status(pr: _pr(rollup: 'pending', mergeable: 'MERGEABLE', checks: const [
-          PrCheck(name: 'a', bucket: 'pending'),
-        ])),
-        _status(pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE', unresolved: 1)),
+        _status(
+          pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+          uncommitted: 1,
+        ),
+        _status(
+          pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+          ahead: 1,
+        ),
+        _status(
+          pr: _pr(rollup: 'fail', mergeable: 'MERGEABLE'),
+        ),
+        _status(
+          pr: _pr(
+            rollup: 'pending',
+            mergeable: 'MERGEABLE',
+            checks: const [PrCheck(name: 'a', bucket: 'pending')],
+          ),
+        ),
+        _status(
+          pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE', unresolved: 1),
+        ),
       ]) {
         expect(_op(s.cta.remedy), isNot(PrDirectOp.squashMerge));
       }
@@ -318,16 +352,20 @@ void main() {
         _status(pr: null),
         _status(pr: null, uncommitted: 3),
         _status(pr: _pr(rollup: 'pass')),
-        _status(pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE')),
+        _status(
+          pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+        ),
         _status(pr: _pr(isDraft: true, rollup: 'fail')),
         _status(pr: _pr(mergeStateStatus: 'BEHIND')),
         _status(pr: _pr(mergeable: 'CONFLICTING')),
         _status(pr: _pr(state: 'MERGED'), uncommitted: 2),
         _status(pr: _pr(state: 'CLOSED')),
         _status(
-          pr: _pr(rollup: 'fail', unresolved: 3, checks: const [
-            PrCheck(name: 'a', bucket: 'fail'),
-          ]),
+          pr: _pr(
+            rollup: 'fail',
+            unresolved: 3,
+            checks: const [PrCheck(name: 'a', bucket: 'fail')],
+          ),
           uncommitted: 2,
           ahead: 1,
           behind: 1,
@@ -342,10 +380,7 @@ void main() {
       }
       // …and at least one of those states really does put it on the CTA, so this
       // test cannot pass by never reaching the magic path at all.
-      expect(
-        states.any((s) => s.cta.remedy is MagicRemedy),
-        isTrue,
-      );
+      expect(states.any((s) => s.cta.remedy is MagicRemedy), isTrue);
     });
 
     test('two or more outstanding facts collapse into one Fix', () {
@@ -387,9 +422,11 @@ void main() {
     test('the loud fact still leads the sentence', () {
       // The bar must keep saying *what* is wrong; only the button generalises.
       final s = _status(
-        pr: _pr(rollup: 'fail', unresolved: 2, checks: const [
-          PrCheck(name: 'a', bucket: 'fail'),
-        ]),
+        pr: _pr(
+          rollup: 'fail',
+          unresolved: 2,
+          checks: const [PrCheck(name: 'a', bucket: 'fail')],
+        ),
         uncommitted: 2,
       );
       expect(s.loud.label, '2 files uncommitted');
@@ -504,7 +541,10 @@ void main() {
     test('has nothing to say when it is clean', () {
       // Drives whether the home row shows a chip at all: a quiet primary
       // checkout should add no chrome to the list.
-      expect(prStatus(pr: null, branch: 'main', isPrimary: true).isQuiet, isTrue);
+      expect(
+        prStatus(pr: null, branch: 'main', isPrimary: true).isQuiet,
+        isTrue,
+      );
     });
   });
 
@@ -566,8 +606,14 @@ void main() {
     });
 
     test('the primary checkout is never offered a discard either', () {
-      final s = prStatus(pr: _pr(state: 'CLOSED'), branch: 'main', isPrimary: true);
-      expect(_op(s.cta.remedy), isNull);
+      final s = prStatus(
+        pr: _pr(state: 'CLOSED'),
+        branch: 'main',
+        isPrimary: true,
+      );
+      // The whole remedy, not just its op: `_op` reads null for a prompt too, so
+      // asserting on it would have passed on a bar that offered one.
+      expect(s.cta.remedy, isNull);
     });
 
     test('the primary checkout is never offered a wrap up', () {
@@ -578,7 +624,7 @@ void main() {
         branch: 'main',
         isPrimary: true,
       );
-      expect(_op(s.cta.remedy), isNull);
+      expect(s.cta.remedy, isNull);
     });
   });
 
