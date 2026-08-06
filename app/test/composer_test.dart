@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/shortcuts/key_chord.dart';
 import 'package:makit/ui/composer/composer.dart';
+import 'package:makit/ui/composer/context_usage.dart' show kUsageTargetSize;
 
 void _noop(String _) {}
 
@@ -308,6 +309,144 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(sent, ['ship it']);
+    });
+  });
+
+  // ─── SPEC-40: the footer distributes space by need ─────────────────────────
+
+  group('SPEC-40 — footerTrailing does not reserve flex', () {
+    /// A stand-in footer action that records the `maxWidth` the footer granted
+    /// it. The granted CONSTRAINT is the thing under test — not a rendered
+    /// width, which for a shrink-wrapping pill would report its natural size
+    /// however starved it was, and which drifts with font metrics.
+    Widget probe(void Function(double) onWidth) => LayoutBuilder(
+      builder: (context, constraints) {
+        onWidth(constraints.maxWidth);
+        return const SizedBox(height: 32);
+      },
+    );
+
+    /// A stand-in for the usage ring at its real size, taken from the constant
+    /// rather than copied: if the ring's footprint changes, this test's
+    /// arithmetic must move with it instead of failing cryptically.
+    const ring = SizedBox(width: kUsageTargetSize, height: kUsageTargetSize);
+
+    /// The gap `Composer` puts after each footer action
+    /// (`EdgeInsets.only(right: 6)` in `_buildExpanded`).
+    const actionGap = 6.0;
+
+    /// Pumps a composer of [width] and returns the maxWidth the single flexible
+    /// action was granted. [trailing] chooses where the ring goes: the new
+    /// trailing slot, or a second `footerActions` entry (today's wiring).
+    Future<double> grantedWidth(
+      WidgetTester tester, {
+      required double width,
+      required bool trailing,
+    }) async {
+      var granted = -1.0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: Composer(
+                  onSend: _noop,
+                  alwaysExpanded: true,
+                  footerActions: [
+                    probe((w) => granted = w),
+                    if (!trailing) ring,
+                  ],
+                  footerTrailing: trailing ? ring : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(granted, greaterThan(0), reason: 'the probe never laid out');
+      return granted;
+    }
+
+    testWidgets('a trailing control takes only its own width, not a share', (
+      tester,
+    ) async {
+      const width = 375.0;
+      final asAction = await grantedWidth(
+        tester,
+        width: width,
+        trailing: false,
+      );
+      final asTrailing = await grantedWidth(
+        tester,
+        width: width,
+        trailing: true,
+      );
+
+      // Today's wiring: two equal-share `Flexible` children, so the probe is
+      // capped at ~half the row even though the ring uses 36 of its share.
+      // `FlexFit.loose` does not redistribute what the ring leaves behind.
+      expect(
+        asAction,
+        lessThan(asTrailing / 1.5),
+        reason: 'a second footerActions entry should roughly halve the share',
+      );
+
+      // Exact arithmetic, both derived from the same row width:
+      //   as an action → probe gets (row / 2) - actionGap   [half, minus its pad]
+      //   as trailing  → probe gets row - ring - actionGap  [all but the ring]
+      // so the row width implied by the first measurement pins the second.
+      final row = (asAction + actionGap) * 2;
+      expect(
+        asTrailing,
+        closeTo(row - kUsageTargetSize - actionGap, 1.5),
+        reason:
+            'the trailing control must cost the actions only its own '
+            '${kUsageTargetSize}pt',
+      );
+    });
+
+    testWidgets('the trailing control renders after the actions', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 375,
+                child: Composer(
+                  onSend: _noop,
+                  alwaysExpanded: true,
+                  footerActions: [
+                    SizedBox(key: Key('action'), width: 40, height: 32),
+                  ],
+                  footerTrailing: SizedBox(
+                    key: Key('trailing'),
+                    width: kUsageTargetSize,
+                    height: kUsageTargetSize,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final action = tester.getTopLeft(find.byKey(const Key('action')));
+      final trailing = tester.getTopLeft(find.byKey(const Key('trailing')));
+      final plus = tester.getTopLeft(find.byIcon(PhosphorIconsLight.paperclip));
+      expect(action.dx, lessThan(trailing.dx));
+      expect(trailing.dx, lessThan(plus.dx));
+      // Natural width, not a flex share.
+      expect(
+        tester.getSize(find.byKey(const Key('trailing'))).width,
+        kUsageTargetSize,
+      );
     });
   });
 }

@@ -297,7 +297,7 @@ void main() {
       expect(find.text('Cost'), findsNothing);
     });
 
-    testWidgets('a pi-shaped snapshot shows cost and no token breakdown', (
+    testWidgets('an ACP-shaped snapshot shows cost and no token breakdown', (
       tester,
     ) async {
       final c = _container(

@@ -98,8 +98,8 @@ export type EventKind =
  *
  * - **codex** `thread/tokenUsage/updated` — full token breakdown + window, no cost.
  * - **ACP** `usage_update` — `used`/`size`/`cost` only, no breakdown.
- * - **pi** via `.pi/extensions/pi-usage` over the loopback bridge — pi reports
- *   nothing over ACP, so the extension reads `ctx.getContextUsage()` itself.
+ * - **pi** via the `makit-pi-usage` extension over the loopback bridge — pi
+ *   reports nothing over ACP, so the extension reads the numbers in-process.
  *
  * Hence every field but `measuredAt` is optional, and **absent is not zero**: a
  * field we never measured must render as unknown, never as `0` (the same rule

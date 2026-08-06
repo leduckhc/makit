@@ -14,8 +14,8 @@
  *   { sessionId, usage: { contextTokens?, contextWindow?, totals?, cost? } }
  *
  * Reports a context/cost snapshot (SPEC-37). Exists because pi reports no usage
- * over ACP at all, so `.pi/extensions/pi-usage` reads `ctx.getContextUsage()`
- * in-process and pushes it here. Fire-and-forget: the reply is an empty 200.
+ * over ACP at all, so the `makit-pi-usage` extension reads it in-process and
+ * pushes it here. Fire-and-forget: the reply is an empty 200.
  *
  * The url + a short-lived token are injected into each spawned agent connector
  * via environment variables (MAKIT_BRIDGE_URL, MAKIT_BRIDGE_TOKEN). The

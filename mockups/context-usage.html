@@ -135,6 +135,36 @@
   those three pills clip (see the first frame below: <code>Sonn…</code>, <code>San…</code>,
   <code>Appr…</code>). A 2-pill codex session has room and renders cleanly. Trimming that pill row is a
   separate problem — flagged, not touched.
+  <br><br>
+  <b>Re-measured in the running app (2026-08-06), and it is worse than this page implies.</b> There is no
+  <code>RenderFlex</code> overflow — the <code>Flexible</code> wrappers prevent it — but with a longer model
+  name the row wants <b>500 pt</b> of natural width (model 225.5 + thinking 88 + mode 150.5 + ring 36)
+  against the same 267 pt, so each label is squeezed to <b>21.8 pt</b>: one glyph plus an ellipsis
+  (<code>C…</code>, <code>h…</code>, <code>A…</code>). Scrolling the row would push the ring ~250 pt
+  off-screen, so the fix is the SPEC-31 shape — fold the legacy model/thinking/mode trio into one pill that
+  opens a sheet, as <code>ModelConfigFooter</code> already does for agents that send
+  <code>configOptions</code>. Still out of scope here.
+</div>
+
+<div class="note">
+  <strong>✎ Amended after the first build (2026-08-06).</strong> Two things on this page were wrong
+  about pi, and both are fixed — the frames below now show the shipped behaviour.
+  <ul style="margin:8px 0 0 18px;padding:0;line-height:1.55">
+    <li><b>pi does have a breakdown.</b> The old pi frame showed cost only, captioned "pi reports no
+      token breakdown". It reported none because the extension sent none — not because pi has none.
+      Totals are now summed from pi's own session entries, so the pi panel is as detailed as codex's.</li>
+    <li><b>Cost was per-message, not per-session.</b> The panel showed <code>$0.20</code> on a session
+      pi's own <code>/sessions</code> priced at <code>$22.16</code> — it was forwarding the last
+      assistant message's cost into a field documented as cumulative. The pi frame below now carries
+      that real session: <code>33.7M billed · 288k in context · $22.16</code>.</li>
+    <li><b>Resumed sessions count.</b> Totals are re-derived from the session entries every turn
+      rather than accumulated in memory, so a resumed session inherits its earlier spend (and a
+      compaction's own tokens, which never arrive as an assistant message).</li>
+    <li><b>The install changed.</b> The extension moved to its own repo,
+      <code>github.com/leduckhc/makit-pi-usage</code>, installed as a pi package. The symlink this page
+      used to reference dangled the moment its worktree was pruned, and pi then silently loaded
+      nothing.</li>
+  </ul>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════ -->
@@ -233,21 +263,28 @@
       </div>
 
       <div class="frame">
-        <div class="cap">pi — real capture, 3%</div>
+        <div class="cap">pi — real capture, 29% <span class="tag">amended</span></div>
         <div class="panel">
           <div class="ph"><span class="ttl">Context usage</span></div>
           <div class="hero">
-            <div class="big"><span data-ring="3" data-size="52"></span></div>
+            <div class="big"><span data-ring="29" data-size="52"></span></div>
             <div>
-              <div class="pc">3%</div>
-              <div class="of">29.4k of 1.0M tokens</div>
-              <div class="hr">971k before compaction</div>
+              <div class="pc">29%</div>
+              <div class="of">288k of 1.0M tokens</div>
+              <div class="hr">712k before compaction</div>
             </div>
           </div>
           <div class="sec">
-            <div class="kv"><span class="k">Session cost</span><span class="v big">$0.18</span></div>
+            <div class="kv"><span class="k">Session total</span><span class="v big">33.7M</span></div>
+            <div class="kv"><span class="k">Input</span><span class="v">33.5M</span></div>
+            <div class="kv"><span class="k">└ from cache</span><span class="v">33.3M · 99%</span></div>
+            <div class="mini"><span class="cache" style="width:99%"></span></div>
+            <div class="kv" style="margin-top:7px"><span class="k">Output</span><span class="v">153k</span></div>
           </div>
-          <div class="foot"><b>pi reports no token breakdown</b> — only what is in context, and the running cost.</div>
+          <div class="sec">
+            <div class="kv"><span class="k">Cost</span><span class="v big">$22.16</span></div>
+          </div>
+          <div class="foot"><b>Session total ≠ context.</b> 33.7M has been billed across all turns; 288k is what the model currently sees.</div>
         </div>
       </div>
 
@@ -321,7 +358,7 @@
       <div class="state">
         <div class="h">pi, no extension</div>
         <span class="empty">— nothing rendered —</span>
-        <p class="m">pi-acp emits no usage; without the symlink there is nothing to show.</p>
+        <p class="m">pi-acp emits no usage; until <code>makit-pi-usage</code> is installed there is nothing to show.</p>
       </div>
       <div class="state">
         <div class="h">3% · healthy</div>
@@ -387,8 +424,8 @@
 </div>
 
 <div class="note warn">
-  <strong>⚠ Still out of reach: the per-category breakdown.</strong> The panel shows
-  input / cached / output / reasoning because codex reports those. It cannot break context down into
+  <strong>⚠ Still out of reach: what the context is MADE OF.</strong> The panel shows
+  input / cached / output / reasoning, which codex and pi both report. It cannot break context down into
   system prompt vs tool definitions vs skills vs MCP vs messages — no agent protocol reports that, and
   estimating it would produce numbers that disagree with the provider's. The one exact figure available
   is a fresh session's first-turn input (system prompt + tool defs + AGENTS.md, measured at

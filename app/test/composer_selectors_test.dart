@@ -198,4 +198,43 @@ void main() {
       expect(label.overflow, TextOverflow.ellipsis);
     },
   );
+
+  // ─── SPEC-40: the model pill's label ───────────────────────────────────────
+
+  group('shortModelLabel', () {
+    test('drops the provider prefix pi-acp prepends', () {
+      // `pi-acp` builds option names as `${provider}/${name}` (getModelState),
+      // and the provider is not what you check mid-conversation.
+      expect(shortModelLabel('anthropic/Claude Opus 4.6'), 'Claude Opus 4.6');
+      expect(shortModelLabel('openai/GPT-5.6'), 'GPT-5.6');
+    });
+
+    test('leaves a name without a provider alone', () {
+      expect(shortModelLabel('gpt-5.6-codex'), 'gpt-5.6-codex');
+      expect(shortModelLabel('Stub Normal'), 'Stub Normal');
+    });
+
+    test('drops only the FIRST segment', () {
+      // A model id may legitimately contain a slash of its own.
+      expect(
+        shortModelLabel('openrouter/meta-llama/Llama-3'),
+        'meta-llama/Llama-3',
+      );
+    });
+
+    test('never turns a visible name into a blank pill', () {
+      // Degenerate inputs pinned: a silent substring bug here blanks the pill,
+      // which reads as "no model" rather than as a display quirk. A blank tail
+      // means the prefix was the whole name, so it is kept.
+      expect(shortModelLabel('x/'), 'x/');
+      expect(shortModelLabel('x/   '), 'x/   ');
+      expect(shortModelLabel('/'), '/');
+      expect(shortModelLabel('/x'), 'x');
+      // Nothing visible went in, so nothing visible comes out: these are not
+      // reachable from a real option name, and inventing a placeholder would
+      // hide a data bug rather than surface it.
+      expect(shortModelLabel(''), '');
+      expect(shortModelLabel('   '), '   ');
+    });
+  });
 }

@@ -81,6 +81,7 @@ class Composer extends StatefulWidget {
     this.focusNode,
     this.controller,
     this.footerActions = const <Widget>[],
+    this.footerTrailing,
     this.alwaysExpanded = false,
     this.initialText,
     this.onDraftChanged,
@@ -122,7 +123,27 @@ class Composer extends StatefulWidget {
   /// Leading controls placed on the left of the footer action row when the
   /// composer is in its full (expanded) form — e.g. the model + thinking
   /// selectors. Each may render nothing (a shrunk box) when it has no data.
+  ///
+  /// These SHARE the row's free space (each is `Flexible`), so labels ellipsize
+  /// instead of overflowing. A control that has a fixed size does not belong
+  /// here — see [footerTrailing].
   final List<Widget> footerActions;
+
+  /// A fixed-size control pinned to the right of [footerActions], before `[+]`
+  /// — the context-usage ring (SPEC-37) is the only caller today.
+  ///
+  /// It exists because [footerActions] entries are `Flexible`, and `Flexible`
+  /// defaults to `FlexFit.loose`: a child is *allowed* its share, lays out at
+  /// its natural size, and whatever it leaves over is **not redistributed**. A
+  /// 36pt ring passed as a second action therefore reserved half the row and
+  /// wasted it: the config pill's label was cut to 65.5pt of the 187.5pt it
+  /// wanted (`anthropic/Cl…`), codex's to 29.8pt (`gpt…`), and a session with
+  /// several options overflowed the row outright (SPEC-40).
+  ///
+  /// Singular by design: one control is all any surface needs, and a caller
+  /// wanting two can wrap them. Must be intrinsically sized — nothing here is
+  /// given flex, so a wide child eats the pills' room.
+  final Widget? footerTrailing;
 
   /// When true the composer is permanently in its full form (multiline field +
   /// footer), regardless of focus. Desktop sets this; mobile leaves it false so
@@ -543,6 +564,10 @@ class _ComposerState extends State<Composer> {
                   ],
                 ),
               ),
+              // Natural width, no flex: see [Composer.footerTrailing]. The 6pt
+              // gap before it comes from the last action's own right padding,
+              // and the gap after is flush like [+] → send.
+              ?widget.footerTrailing,
               _buildPlus(),
               // Reserve the send button's footprint so the layout doesn't
               // jump when the send button fades in/out.
