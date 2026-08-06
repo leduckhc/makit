@@ -1,6 +1,6 @@
 # SPEC-38 — PR actions: the next-step bar
 
-**Status:** Implemented (2 known gaps, see §11) · **Priority:** P2 · **Branch:** `feat-pr-actions`
+**Status:** Implemented; every gap in §11 closed, with 3 accepted limitations in §11a · **Priority:** P2 · **Branch:** `feat-pr-actions`
 **Depends on:** SPEC-23 (composer PR bar + canned prompts — this replaces its UI),
 SPEC-32 (GitHub gateway: `PrLookup`, quota ladder, cache), SPEC-11 (repo-centric mobile home),
 SPEC-19 (worktree lifecycle)
@@ -305,6 +305,13 @@ proposed by the implementer rather than asked for.
 - Reverting a merge, editing PR metadata, requesting reviewers.
 - Any A- or C-direction affordance: per-fact segments in the bar, the landing gauge.
 - Making the magic Fix's problem list user-editable.
+
+### Requires
+
+`gh` **≥ 2.40** for `pr update-branch`. No preflight probe: `mutatePr` already surfaces gh's own
+stderr, so an older CLI reports `unknown command: update-branch` — the correct diagnosis, arrived at
+without spending a subprocess per call to pre-empt it. The other two verbs (`pr ready`,
+`pr merge --squash`) have been available far longer.
 
 ## 10 · Testing
 

@@ -264,7 +264,9 @@ void main() {
     // being a purple hue you had to learn and a long-press you had to discover.
     expect(find.text('#42 · merged'), findsOneWidget);
     // A merged PR is not an open one: the repo card must not advertise it.
-    expect(find.text('1 PR'), findsNothing);
+    // The count renders as a bare `1` under this key, so asserting on the string
+    // `1 PR` passed whether or not an ended PR was counted as open.
+    expect(find.byKey(const Key('openPrCount')), findsNothing);
     // The label takes the AA-safe purple. The chip tints dot and text with one
     // colour, so that variant is now the only merged hue on the row rather than
     // a pairing (vivid icon + AA-safe label) that had to be kept in step.
@@ -301,7 +303,9 @@ void main() {
     await tester.pump();
 
     expect(find.text('#42 · closed without merging'), findsOneWidget);
-    expect(find.text('1 PR'), findsNothing);
+    // The count renders as a bare `1` under this key, so asserting on the string
+    // `1 PR` passed whether or not an ended PR was counted as open.
+    expect(find.byKey(const Key('openPrCount')), findsNothing);
   });
 
   testWidgets('a session under its worktree surfaces its status as a dot', (

@@ -83,11 +83,16 @@ section:first-of-type{border-top:0;margin-top:26px}
 .reason .stale{color:var(--outline);font-size:11px}
 
 /* B's only graphic, so it carries two things: verdict by hue, check progress by
-   arc. Inline-block so it can sit inside the truncating sentence. */
-.dot{width:9px;height:9px;border-radius:50%;flex:none;position:relative;
-  display:inline-block;vertical-align:-1px;margin-right:5px}
+   arc. Inline-block so it can sit inside the truncating sentence.
+   Every variant occupies an 11px box: the disc keeps its 9px look via a
+   transparent 1px border with `background-clip:content-box`, because sizing the
+   box to the disc shifted the sentence 2px sideways the moment a build finished
+   (the widget solves it the same way — see PrToneDot). */
+.dot{box-sizing:content-box;width:9px;height:9px;border:1px solid transparent;
+  background-clip:content-box;border-radius:50%;flex:none;position:relative;
+  display:inline-block;vertical-align:-2px;margin-right:5px}
 .dot.hollow{background:transparent;box-shadow:inset 0 0 0 1.5px var(--outline)}
-.dot.ring{width:11px;height:11px;vertical-align:-2px}
+.dot.ring{width:11px;height:11px;border:0;background-clip:border-box}
 .dot.ring::after{content:"";position:absolute;inset:2.5px;border-radius:50%;background:var(--surface)}
 
 .nbar .grow{flex:1}
@@ -799,7 +804,7 @@ el('hybrid').innerHTML=`
 
 
 
-/* ═══ 9 · the two confirms ══════════════════════════════════════════ */
+/* ═══ 9 · the three confirms ════════════════════════════════════════ */
 const step=(g,t,col)=>`<li><i class="ph-light ph-${g}" style="color:${col||'var(--primary)'}"></i><span>${t}</span></li>`;
 el('confirms').innerHTML=`
 <div class="col" style="width:440px"><header><div class="t"><h3>Squash &amp; merge</h3><span class="tag new">new</span></div>
@@ -836,6 +841,23 @@ el('confirms').innerHTML=`
     </ul>
     <div class="acts2"><button class="btn ghost">Cancel</button>
       <button class="btn" style="background:var(--merged);color:#150a26">Wrap up</button></div>
+  </div></div></div>
+
+<div class="col" style="width:440px"><header><div class="t"><h3>Discard worktree</h3><span class="tag new">new</span></div>
+  <div class="d">Wrap up minus the base-branch leg — nothing landed, so there is nothing to catch up.
+  Deleting the branch is still the default: a pull request cannot exist without a pushed head, so the
+  commits stay on <code>origin/&lt;branch&gt;</code>.</div></header>
+  <div class="body"><div class="dlg">
+    <h4>${ic('trash')}<span style="color:var(--fail)">Discard worktree</span></h4>
+    <p>This pull request was closed without merging. Remove what it left behind:</p>
+    <ul class="steps">
+      ${step('folder-minus','Remove the worktree at <b>~/.worktrees/makit/spike-gauge</b>')}
+      ${step('archive','Archive the sessions running in it (drafts are discarded)')}
+      ${step('git-branch','Delete the local branch <b>spike/gauge</b>')}
+      ${step('warning','<b>1 file</b> uncommitted here will be lost','var(--fail)')}
+    </ul>
+    <div class="acts2"><button class="btn ghost">Cancel</button>
+      <button class="btn" style="background:var(--fail);color:#fff">Discard</button></div>
   </div></div></div>`;
 
 /* ═══ 10 · action reference ══════════════════════════════════════════ */

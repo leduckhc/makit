@@ -131,7 +131,9 @@ class _Reason extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tone = prToneColor(cs, status.tone);
+    // The label, not the dot: `kCheckFail`/`kCheckPending` are dot tokens that
+    // print at 3.2:1 and 2.4:1 on the light theme's surface.
+    final tone = prToneTextColor(cs, status.tone);
     final base = Theme.of(context).textTheme.bodySmall ?? const TextStyle();
     // Only the *derived* half dims when stale. The PR number never goes stale,
     // so dimming it too (as the old pill did, wholesale) hid the one fact that
@@ -252,7 +254,7 @@ class PrCtaButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final cta = status.cta;
-    final tone = prToneColor(cs, cta.tone);
+    final tone = prToneTextColor(cs, cta.tone);
     final remedy = cta.remedy;
     final direct = remedy is DirectRemedy;
 
@@ -262,9 +264,16 @@ class PrCtaButton extends ConsumerWidget {
         cs.onSurfaceVariant,
         cs.outlineVariant,
       ),
-      _ when direct => (tone, _onDirect(cs, cta.tone), null),
+      _ when direct => (
+        prToneColor(cs, cta.tone),
+        onPrToneFill(cs, cta.tone),
+        null,
+      ),
       _ => (
-        Color.alphaBlend(tone.withValues(alpha: 0.18), cs.surfaceContainerHigh),
+        Color.alphaBlend(
+          prToneColor(cs, cta.tone).withValues(alpha: 0.18),
+          cs.surfaceContainerHigh,
+        ),
         tone,
         null,
       ),
@@ -295,10 +304,6 @@ class PrCtaButton extends ConsumerWidget {
       ),
     );
   }
-
-  /// Readable foreground on a solid tone fill.
-  static Color _onDirect(ColorScheme cs, PrTone tone) =>
-      tone == PrTone.blocking ? cs.onError : cs.surface;
 }
 
 /// A compact labelled split button: a leading action segment (icon + label) and

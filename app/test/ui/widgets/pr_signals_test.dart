@@ -464,6 +464,10 @@ void main() {
 
     test('it needs no confirm — it only writes to the composer', () {
       expect(prRemedyLabel(const MagicRemedy()), 'Fix');
+      // The name's actual claim: a magic remedy never reaches `needsConfirm` at
+      // all, because only a DirectRemedy carries an op. Asserting the label alone
+      // left that invariant unpinned.
+      expect(const MagicRemedy(), isNot(isA<DirectRemedy>()));
     });
   });
 
@@ -686,6 +690,33 @@ void main() {
       expect(s.stale, isTrue);
       expect(s.identity, '#142');
       expect(_prompt(s.cta.remedy), PrPromptAction.fixPr);
+    });
+  });
+
+  group('isPrimary is carried, not re-derived', () {
+    test('the primary checkout says so', () {
+      // The menu explains *why* an action is unavailable (D3), and the reason for
+      // "Create PR" differs by case: a secondary branch has no commits yet, while
+      // the primary checkout is simply not something you raise a PR from. Without
+      // this field the menu gave the first reason for both, which is false.
+      expect(
+        prStatus(pr: null, branch: 'main', isPrimary: true).isPrimary,
+        isTrue,
+      );
+      expect(prStatus(pr: null, branch: 'feat/x').isPrimary, isFalse);
+    });
+  });
+
+  // A surface can know the branch before the repos snapshot does — the worktree
+  // starter is the obvious case, since it renders the bar for a worktree it just
+  // asked the server to create.
+  group('prStatusFor before the snapshot catches up', () {
+    test('a missing entry falls back to the branch the caller knows', () {
+      expect(prStatusFor(null, fallbackBranch: 'feat/x').identity, 'feat/x');
+    });
+
+    test('with no fallback either, it admits it does not know', () {
+      expect(prStatusFor(null).identity, 'detached');
     });
   });
 }

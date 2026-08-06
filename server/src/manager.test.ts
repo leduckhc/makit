@@ -1696,8 +1696,17 @@ test("wrapUpWorktree skips the branch deletion for a detached worktree", async (
 /** A gateway stub that records mutatePr calls and answers prForBranch. */
 function prGateway(pr: { number: number; branch: string } | null, ok = true) {
   const calls: Array<{ branch: string; number: number; verb: string }> = [];
+  const lookups: Array<{ branch: string; interactive: boolean }> = [];
   const gateway = {
-    async prForBranch(_repoPath: string, branch: string) {
+    async prForBranch(
+      _repoPath: string,
+      branch: string,
+      opts?: { interactive?: boolean },
+    ) {
+      lookups.push({ branch, interactive: opts?.interactive === true });
+      // A background lookup below SPEC-32's reserve is shed to `unknown`. Only an
+      // interactive one draws on the reserve, so this stub answers accordingly.
+      if (!opts?.interactive) return { kind: "unknown" as const };
       return pr && pr.branch === branch
         ? {
             kind: "pr" as const,
@@ -1731,7 +1740,7 @@ function prGateway(pr: { number: number; branch: string } | null, ok = true) {
     close: () => {},
     stats: () => ({ execs: 0, cacheHits: 0 }),
   } as unknown as import("./github/gateway.js").GithubGateway;
-  return { gateway, calls };
+  return { gateway, calls, lookups };
 }
 
 test("markPrReady resolves the worktree's PR and takes it out of draft", async () => {
@@ -1848,6 +1857,39 @@ test("a PR mutation reports gh's own error rather than failing silently", async 
     const projectId = manager.listProjects()[0].id;
     const wt = await manager.createWorktree(projectId, undefined, "feat/x");
     await assert.rejects(() => manager.markPrReady(projectId, wt.path), /gh said no/);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a PR mutation looks its PR up interactively, so a tight quota cannot hide it", async () => {
+  // These three are button presses. `findOpenPr` collapses `unknown` to null, so a
+  // background lookup shed below SPEC-32's reserve made "Mark ready" fail with
+  // "no pull request for feat/x" — for a PR that plainly exists — exactly when the
+  // account is throttled. The reserve exists for user-initiated work; drawing on
+  // it is the difference between a working button and a lying error.
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const { gateway, calls, lookups } = prGateway({ number: 7, branch: "feat/x" });
+    const manager = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => stubAdapter([]),
+      gateway,
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId, undefined, "feat/x");
+    await manager.markPrReady(projectId, wt.path);
+    assert.deepEqual(calls, [{ branch: "feat/x", number: 7, verb: "ready" }]);
+    assert.ok(
+      lookups.some((l) => l.branch === "feat/x" && l.interactive),
+      "the mutation's PR lookup must be interactive",
+    );
   } finally {
     if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
     else process.env.MAKIT_WORKTREE_DIR = prevBase;

@@ -5,6 +5,8 @@
 // pr_signals_test.dart. These cover the mobile rendering: what the chip says,
 // how the sheet is ordered, and that a picked prompt reaches the composer unsent.
 import 'package:flutter/material.dart';
+import 'package:url_launcher_platform_interface/link.dart';
+import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -101,12 +103,69 @@ Future<void> _pumpSheet(
   await tester.pumpAndSettle();
 }
 
+/// A url_launcher that resolves with [succeed] rather than throwing.
+///
+/// The distinction matters: with no plugin registered `launchUrl` throws, which
+/// the `catch` already handled. A registered launcher that simply *declines*
+/// returns false, and that path needs its own fake to reach.
+class _DecliningUrlLauncher extends UrlLauncherPlatform {
+  _DecliningUrlLauncher(this.succeed);
+
+  final bool succeed;
+
+  @override
+  LinkDelegate? get linkDelegate => null;
+
+  @override
+  Future<bool> canLaunch(String url) async => true;
+
+  @override
+  Future<bool> launch(
+    String url, {
+    required bool useSafariVC,
+    required bool useWebView,
+    required bool enableJavaScript,
+    required bool enableDomStorage,
+    required bool universalLinksOnly,
+    required Map<String, String> headers,
+    String? webOnlyWindowName,
+  }) async => succeed;
+
+  @override
+  Future<bool> launchUrl(String url, LaunchOptions options) async => succeed;
+}
+
+/// Install [_DecliningUrlLauncher]; returns the teardown that puts the real one
+/// back.
+void Function() _stubUrlLauncher({required bool succeed}) {
+  final previous = UrlLauncherPlatform.instance;
+  UrlLauncherPlatform.instance = _DecliningUrlLauncher(succeed);
+  return () => UrlLauncherPlatform.instance = previous;
+}
+
 void main() {
   group('the detail sheet', () {
     testWidgets('names the PR and its title', (tester) async {
       await _pumpSheet(tester, pr: _pr());
       expect(find.text('#42'), findsOneWidget);
       expect(find.text('Add the login screen'), findsOneWidget);
+    });
+
+    testWidgets('reports a PR url the platform declines to open', (
+      tester,
+    ) async {
+      // `launchUrl` does not always throw: with no handler registered for the
+      // scheme it returns false. Ignoring the result left the tap doing nothing
+      // at all, which reads as a dead button.
+      final saved = _stubUrlLauncher(succeed: false);
+      addTearDown(saved);
+      await _pumpSheet(tester, pr: _pr());
+
+      await tester.tap(find.text('Open #42 on GitHub'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Could not open the PR'), findsOneWidget);
     });
 
     testWidgets('reports a PR url it cannot open instead of throwing', (

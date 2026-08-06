@@ -22,6 +22,16 @@ import type { RequestPlan } from "./router.js";
 
 /** Timeout (ms) for `gh pr` reads, matching git.ts. */
 export const PR_TIMEOUT_MS = 5_000;
+/**
+ * Timeout (ms) for a `gh pr` **write** (`ready` / `update-branch` / `merge`).
+ *
+ * Deliberately far above {@link PR_TIMEOUT_MS}: that cap exists because a read
+ * only buys a fresher pill, so abandoning a slow one costs nothing. Abandoning a
+ * write costs correctness — GitHub may apply it anyway, and the caller, told it
+ * failed, skips its cache invalidation and then reports the pre-mutation state
+ * until the TTL runs out.
+ */
+export const PR_MUTATION_TIMEOUT_MS = 60_000;
 /** Timeout (ms) for the open-PR list, matching git.ts. */
 export const OPEN_PRS_TIMEOUT_MS = 8_000;
 /** Timeout (ms) for the exempt rate_limit read. */
@@ -298,6 +308,12 @@ export type PrMutation = "ready" | "update-branch" | "merge-squash";
  * checked-out branch when given no argument — but these run with `cwd` set to
  * the repo, not the worktree that owns the branch, so inference would resolve
  * the repo's current branch instead. Passing the number removes the ambiguity.
+ *
+ * **Requires `gh` ≥ 2.40** (Dec 2023), which is where `pr update-branch` landed.
+ * An older CLI fails it with `unknown command`, and because `mutatePr` surfaces
+ * gh's own stderr the user sees exactly that — which is the right diagnosis, so
+ * this is documented rather than preflighted: a version probe would spend a
+ * subprocess on every call to pre-empt a message that already arrives.
  */
 export function prMutationArgv(verb: PrMutation, number: number): string[] {
   // `gh pr merge` with no strategy flag drops into an interactive prompt, which

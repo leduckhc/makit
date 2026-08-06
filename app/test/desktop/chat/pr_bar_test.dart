@@ -688,6 +688,30 @@ void main() {
       expect(ran, [PrDirectOp.wrapUp]);
     });
 
+    testWidgets('a branch-deleting op is refused when the branch is unknown', (
+      tester,
+    ) async {
+      // Wrap up and discard both end in `git branch -D`, and the server resolves
+      // the branch itself. With none in the snapshot the confirm cannot name what
+      // it will delete — it silently drops that step — and no `expectBranch`
+      // travels with the command, so the guard that stops the wrong branch going
+      // is switched off precisely when the app is least sure. Refuse instead.
+      final ran = <PrDirectOp>[];
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          pr: _pr(state: 'MERGED'),
+          branch: null,
+          onInsert: (_) {},
+          ran: ran,
+        ),
+      );
+      await tester.tap(find.text('Wrap up'));
+      await tester.pumpAndSettle();
+      expect(ran, isEmpty, reason: 'nothing may be dispatched');
+      expect(find.textContaining('which branch'), findsOneWidget);
+    });
+
     testWidgets('cancelling runs nothing', (tester) async {
       final ran = <PrDirectOp>[];
       await tester.pumpWidget(

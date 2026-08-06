@@ -9,6 +9,7 @@ import {
   type GithubGateway,
 } from "./gateway.js";
 import type { BudgetSnapshot } from "./budget.js";
+import { PR_TIMEOUT_MS } from "./queries.js";
 
 /** A `gh pr list --head` result with one open PR. */
 const PR_JSON = JSON.stringify([
@@ -869,8 +870,41 @@ test("a mutation also drops the repo's open-PR list", async () => {
   await gateway.openPrs("/repo", 50);
   await gateway.openPrs("/repo", 50);
   const cached = listCalls();
+  // Pin the premise: without this the closing assertion would also hold if the
+  // list were never cached at all, and `listCalls()` simply grew every call.
+  assert.equal(cached, 1, "the second list was served from cache");
 
   await gateway.mutatePr("/repo", "feat/x", 7, "merge-squash");
   await gateway.openPrs("/repo", 50);
   assert.ok(listCalls() > cached, "the picker must refetch after a merge");
+});
+
+test("a PR mutation is not held to the read timeout", async () => {
+  // `PR_TIMEOUT_MS` bounds *reads* — a stale pill is cheap, so a slow lookup is
+  // better abandoned. A mutation is the opposite: `gh pr merge --squash` is a
+  // write that routinely takes longer, and abandoning it reports a failure while
+  // GitHub goes on to apply it — skipping the invalidation below, so the UI then
+  // insists on the pre-mutation state for a full TTL. Precisely the race the
+  // generation guards exist to stop, reintroduced by a timeout.
+  const timeouts: Array<number | undefined> = [];
+  const calls: string[][] = [];
+  const exec: Exec = async (_cmd, args, _cwd, timeoutMs) => {
+    calls.push(args);
+    if (args[0] === "pr" && (args[1] === "merge" || args[1] === "ready")) {
+      timeouts.push(timeoutMs);
+    }
+    return ok("{}");
+  };
+  const gateway = createGithubGateway({
+    exec,
+    now: () => 0,
+    setTimer: () => ({ unref() {} }),
+    clearTimer: () => {},
+  });
+  await gateway.mutatePr("/repo", "feat/x", 7, "merge-squash");
+  assert.equal(timeouts.length, 1, "the merge ran");
+  assert.ok(
+    timeouts[0] === undefined || timeouts[0] > PR_TIMEOUT_MS,
+    `a mutation must not inherit the ${PR_TIMEOUT_MS}ms read cap, got ${timeouts[0]}`,
+  );
 });

@@ -79,6 +79,18 @@ bool needsConfirm(PrDirectOp op) => switch (op) {
   PrDirectOp.markReady || PrDirectOp.updateBranch => false,
 };
 
+/// Whether [op] ends in `git branch -D`.
+///
+/// The caller must know *which* branch before dispatching one of these: the
+/// server resolves the branch again when it runs, and the `expectBranch` guard
+/// that keeps the two answers honest can only be sent if the app has one.
+bool deletesBranch(PrDirectOp op) => switch (op) {
+  PrDirectOp.wrapUp || PrDirectOp.discardWorktree => true,
+  PrDirectOp.squashMerge ||
+  PrDirectOp.markReady ||
+  PrDirectOp.updateBranch => false,
+};
+
 /// How a signal or CTA is resolved.
 sealed class PrRemedy {
   const PrRemedy();
@@ -155,6 +167,7 @@ class PrStatus {
     this.stale = false,
     this.hasPr = false,
     this.isEnded = false,
+    this.isPrimary = false,
   });
 
   /// `#142` for a PR, else the branch name (or `detached`).
@@ -186,6 +199,11 @@ class PrStatus {
   /// — the menu used to detect this by comparing signal labels, which would have
   /// broken silently the moment a label was reworded.
   final bool isEnded;
+
+  /// The repo's own checkout, which cannot be wrapped up or discarded and is not
+  /// a branch you raise a pull request from. Carried so the menu can give the
+  /// *right* reason for a disabled action (D3) instead of the secondary-branch one.
+  final bool isPrimary;
 
   /// The one signal the bar shows in full.
   PrSignal get loud => signals.first;
@@ -221,8 +239,9 @@ String _plural(int n, String singular, [String? plural]) =>
 ///   3. unpushed commits,
 ///   4. conflicts with the base,
 ///   5. a red build,
-///   6. open review threads.
-/// Steps 1–3, 5 and 6 keep the exact precedence the shipped `_situationFor`
+///   6. the base branch moved on (`mergeStateStatus: BEHIND`),
+///   7. open review threads.
+/// Steps 1–3, 5 and 7 keep the exact precedence the shipped `_situationFor`
 /// used, so this rewrite cannot silently reshuffle the offered action.
 PrStatus prStatus({
   required PullRequest? pr,
@@ -248,6 +267,7 @@ PrStatus prStatus({
       tone: tone,
       hasPr: true,
       isEnded: true,
+      isPrimary: isPrimary,
       stale: pr!.stale,
       signals: [
         PrSignal(merged ? 'merged' : 'closed without merging', tone),
@@ -444,6 +464,7 @@ PrStatus prStatus({
     identity: identity,
     tone: loud.tone,
     hasPr: pr != null,
+    isPrimary: isPrimary,
     stale: pr?.stale ?? false,
     signals: signals,
     checkProgress: pending > 0 && open!.checks.isNotEmpty

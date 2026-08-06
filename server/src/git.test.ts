@@ -433,6 +433,32 @@ test("syncBaseBranch refuses to clobber divergent local commits", async () => {
   }
 });
 
+test("syncBaseBranch reports git's own reason when the merge fails for another cause", async () => {
+  // `merge --ff-only` fails for more than divergence: a dirty index or working
+  // tree in the host worktree fails it too. Blaming "local commits" then sends
+  // the user looking for a commit that is not there, and hides the one thing they
+  // could act on — so git's own message travels with the refusal.
+  const { repo, origin } = makeRepoWithOrigin();
+  try {
+    pushToOrigin(origin, "landed");
+    // A conflicting *uncommitted* edit to the same file the remote moved: main is
+    // still a strict ancestor of origin/main, so this is not divergence.
+    writeFileSync(join(repo, "landed.txt"), "local edit, uncommitted\n");
+    const before = headOf(repo, "main");
+    const result = await syncBaseBranch(repo, "main");
+    assert.equal(result.updated, false);
+    assert.equal(headOf(repo, "main"), before, "nothing moved");
+    assert.ok(
+      !/has local commits/.test(result.reason ?? ""),
+      `divergence is the wrong diagnosis here, got: ${result.reason}`,
+    );
+    assert.match(result.reason ?? "", /could not fast-forward main/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(origin, { recursive: true, force: true });
+  }
+});
+
 test("syncBaseBranch updates a base branch that is not checked out anywhere", async () => {
   const { repo, origin } = makeRepoWithOrigin();
   const base = mkdtempSync(join(tmpdir(), "makit-wt-"));

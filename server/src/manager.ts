@@ -718,9 +718,11 @@ export class SessionManager extends EventEmitter {
 
   /**
    * Shared body for the PR mutations: resolve the worktree's branch, look up
-   * its PR, run the verb, and turn a `gh` failure into a thrown error carrying
-   * gh's own message — the app puts that in front of the user, so swallowing it
-   * would leave a button that silently does nothing.
+   * its PR **interactively** (a button press must draw on SPEC-32's reserve, or
+   * a shed lookup reports "no pull request" for one that exists), run the verb,
+   * and turn a `gh` failure into a thrown error carrying gh's own message — the
+   * app puts that in front of the user, so swallowing it would leave a button
+   * that silently does nothing.
    */
   private async _mutatePr(
     projectId: string,
@@ -736,7 +738,9 @@ export class SessionManager extends EventEmitter {
     if (!wt) throw new Error(`worktree is not part of project ${projectId}: ${worktreePath}`);
     const branch = wt.branch;
     if (!branch) throw new Error(`worktree has no branch: ${worktreePath}`);
-    const pr = await findOpenPr(this._gateway, repoPath, branch);
+    const pr = await findOpenPr(this._gateway, repoPath, branch, {
+      interactive: true,
+    });
     if (!pr) throw new Error(`no pull request for ${branch}`);
     const result = await this._gateway.mutatePr(repoPath, branch, pr.number, verb);
     if (!result.ok) throw new Error(result.error ?? `gh pr ${verb} failed`);

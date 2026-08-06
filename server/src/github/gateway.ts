@@ -29,6 +29,7 @@ import {
   OPEN_PRS_PLAN,
   OPEN_PRS_TIMEOUT_MS,
   PR_FOR_BRANCH_PLAN,
+  PR_MUTATION_TIMEOUT_MS,
   PR_TIMEOUT_MS,
   RATE_LIMIT_TIMEOUT_MS,
   REVIEW_THREADS_MAX_PAGES,
@@ -747,7 +748,10 @@ export function createGithubGateway(deps: GatewayDeps): GithubGateway {
         1,
         prMutationArgv(verb, number),
         repoPath,
-        PR_TIMEOUT_MS,
+        // A write, not a read: see PR_MUTATION_TIMEOUT_MS. Reporting a slow merge
+        // as failed would also skip the invalidation below, while GitHub applies
+        // it anyway.
+        PR_MUTATION_TIMEOUT_MS,
       );
       if (r.code !== 0) {
         const kind = classifyFailure(r.stderr);

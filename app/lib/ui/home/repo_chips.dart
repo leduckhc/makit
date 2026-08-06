@@ -123,7 +123,8 @@ class PrStatusChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final tone = prToneColor(cs, status.tone);
+    // The chip's label; its background keeps the vivid dot hue below.
+    final tone = prToneTextColor(cs, status.tone);
 
     // The tap target is the full row height (kTouchRow) while the painted chip
     // stays content-sized: it opens a sheet, so it needs a thumb-sized target,
@@ -158,7 +159,7 @@ class PrStatusChip extends ConsumerWidget {
             widthFactor: 1,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                color: tone.withValues(alpha: 0.14),
+                color: prToneColor(cs, status.tone).withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(kRadius8),
               ),
               child: Padding(

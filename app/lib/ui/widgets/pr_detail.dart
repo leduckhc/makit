@@ -196,14 +196,19 @@ Future<void> openPrUrl(BuildContext context, String url) async {
   final uri = Uri.tryParse(url);
   try {
     if (uri == null) throw const FormatException('bad PR url');
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    // `launchUrl` reports "nobody handled it" by *returning false*, not by
+    // throwing — so the result has to be read, or a platform with no handler for
+    // the scheme leaves the tap doing nothing at all.
+    if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
   } catch (_) {
-    // The sheet that owned this messenger may be gone by now.
-    if (!messenger.mounted) return;
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Could not open the PR')),
-    );
+    // Fall through to the same report: from the user's side "it threw" and "it
+    // declined" are one outcome.
   }
+  // The sheet that owned this messenger may be gone by now.
+  if (!messenger.mounted) return;
+  messenger.showSnackBar(
+    const SnackBar(content: Text('Could not open the PR')),
+  );
 }
 
 /// The sheet's headline (mobile): the loud fact, large and toned. Just the one —
@@ -222,7 +227,7 @@ class _Hero extends StatelessWidget {
       child: Text(
         status.loud.label,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: prToneColor(cs, status.tone),
+          color: prToneTextColor(cs, status.tone),
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -253,7 +258,7 @@ class _PinnedCta extends StatelessWidget {
     if (!canInsertPrompt && remedy is! DirectRemedy) {
       return const SizedBox.shrink();
     }
-    final tone = prToneColor(cs, status.cta.tone);
+    final tone = prToneTextColor(cs, status.cta.tone);
     final direct = remedy is DirectRemedy;
     return Padding(
       padding: const EdgeInsets.only(top: kSpace12),
@@ -268,12 +273,14 @@ class _PinnedCta extends StatelessWidget {
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(46),
               backgroundColor: direct
-                  ? tone
+                  ? prToneColor(cs, status.cta.tone)
                   : Color.alphaBlend(
-                      tone.withValues(alpha: 0.20),
+                      prToneColor(cs, status.cta.tone).withValues(alpha: 0.20),
                       cs.surfaceContainerHigh,
                     ),
-              foregroundColor: direct ? cs.surface : tone,
+              foregroundColor: direct
+                  ? onPrToneFill(cs, status.cta.tone)
+                  : tone,
             ),
             icon: prRemedyIcon(
               remedy,
@@ -316,7 +323,8 @@ class _FactRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tone = prToneColor(cs, signal.tone);
+    // Label/chip text, so the AA-safe variant; the dot below keeps the vivid hue.
+    final tone = prToneTextColor(cs, signal.tone);
     final remedy = offerRemedy ? signal.remedy : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: kSpace4),
@@ -351,7 +359,10 @@ class _FactRow extends StatelessWidget {
               },
               style: TextButton.styleFrom(
                 foregroundColor: tone,
-                backgroundColor: tone.withValues(alpha: 0.14),
+                backgroundColor: prToneColor(
+                  cs,
+                  signal.tone,
+                ).withValues(alpha: 0.14),
                 padding: const EdgeInsets.symmetric(
                   horizontal: kSpace10,
                   vertical: kSpace4,
@@ -483,7 +494,13 @@ List<Widget> buildPrActionMenu(
 String _whyNot(PrPromptAction action, PrStatus status, {required bool ended}) {
   if (ended) return 'the pull request has already ended';
   return switch (action) {
-    PrPromptAction.createPr => 'this branch has no commits to open a PR with',
+    // Two different blocks wear the same label. Giving the branch reason for the
+    // primary checkout sent the user looking for commits to make, when the
+    // derivation had refused for a reason no commit would change.
+    PrPromptAction.createPr =>
+      status.isPrimary
+          ? 'the primary checkout is not a branch you open a pull request from'
+          : 'this branch has no commits to open a PR with',
     PrPromptAction.fixPr => 'the build is not failing',
     PrPromptAction.resolveComments => 'there are no unresolved threads',
     PrPromptAction.commitAndPush => 'there is nothing uncommitted',

@@ -7,6 +7,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
+import 'package:makit/ui/widgets/pr_signals.dart';
+import 'package:makit/ui/widgets/pr_tone.dart';
 
 double _contrast(Color a, Color b) {
   final la = a.computeLuminance();
@@ -102,6 +104,66 @@ void main() {
         reason:
             'the ${theme.brightness.name} PR pill label sits on its own tint',
       );
+    }
+  });
+
+  // SPEC-38's tone-coloured surfaces. `prToneColor` returns dot/wash tokens —
+  // `kCheckFail` prints at 3.2:1 and `kCheckPending` at 2.4:1 on the light
+  // surface — so text uses `prToneTextColor`, the same split `prStateStyle`
+  // already makes between `color` and `textColor`.
+  test('a tone label clears AA on the surface it is printed on', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      for (final tone in PrTone.values) {
+        expect(
+          _contrast(prToneTextColor(cs, tone), cs.surface),
+          greaterThanOrEqualTo(4.5),
+          reason: '${theme.brightness.name} ${tone.name} label',
+        );
+      }
+    }
+  });
+
+  test('a solid tone fill clears AA for the label printed on it', () {
+    // The *direct* CTA is a full-strength tone fill. The scheme's own pairing is
+    // not good enough here — `cs.onError` on `kCheckFail` is 3.35:1 — so
+    // `onPrToneFill` measures instead of assuming.
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      for (final tone in PrTone.values) {
+        expect(
+          _contrast(onPrToneFill(cs, tone), prToneColor(cs, tone)),
+          greaterThanOrEqualTo(4.5),
+          reason: '${theme.brightness.name} ${tone.name} filled CTA label',
+        );
+      }
+    }
+  });
+
+  // A tinted chip is the one surface that does NOT reach 4.5:1, and cannot with
+  // the current tokens: the tint pulls `surfaceContainerHigh` towards the label,
+  // and even at 4% alpha the worst pair sits at 3.85. Reaching AA needs a darker
+  // text token per tone per theme — a palette decision, not a code fix, so this
+  // pins the floor it does hold (3:1, AA for non-text and large text) to stop it
+  // drifting further while that is decided.
+  test('a tone-tinted chip label holds at least 3:1', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      for (final tone in PrTone.values) {
+        for (final alpha in [0.14, 0.18, 0.20]) {
+          final bg = Color.alphaBlend(
+            prToneColor(cs, tone).withValues(alpha: alpha),
+            cs.surfaceContainerHigh,
+          );
+          expect(
+            _contrast(prToneTextColor(cs, tone), bg),
+            greaterThanOrEqualTo(3.0),
+            reason:
+                '${theme.brightness.name} ${tone.name} label on its own '
+                '${(alpha * 100).round()}% tint',
+          );
+        }
+      }
     }
   });
 

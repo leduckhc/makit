@@ -369,13 +369,20 @@ export function fetchOpenPr(gateway: GithubGateway, repoPath: string, branch: st
  * info is a nice-to-have for these callers (rename guard), never a hard
  * dependency. **Must not** be used on any path that can clear a pill — it
  * cannot distinguish a vanished PR from a throttled lookup.
+ *
+ * Pass `interactive` when a *user action* depends on the answer. Collapsing
+ * `unknown` to null errs towards permitting, which is right for a guard — but on
+ * a button press it turns a shed lookup into "no pull request for <branch>", a
+ * flat contradiction of the PR the user is looking at. Interactive lookups draw
+ * on SPEC-32's reserve, which exists for exactly this.
  */
 export async function findOpenPr(
   gateway: GithubGateway,
   repoPath: string,
   branch: string,
+  opts?: { interactive?: boolean },
 ): Promise<PullRequestInfo | null> {
-  const result = await gateway.prForBranch(repoPath, branch);
+  const result = await gateway.prForBranch(repoPath, branch, opts);
   return result.kind === "pr" ? result.pr : null;
 }
 
@@ -665,9 +672,16 @@ export async function syncBaseBranch(repoPath: string, branch: string): Promise<
   if (host) {
     const merged = await run("git", ["merge", "--ff-only", `origin/${branch}`], host.path);
     if (merged.code !== 0) {
+      // Divergence is the *likely* cause but not the only one — a dirty index or
+      // working tree in the host worktree fails `--ff-only` too. Asserting
+      // "local commits" then sends the user hunting a commit that does not exist
+      // and hides the thing they could actually fix, so git's own words lead.
       return {
         updated: false,
-        reason: `${branch} has local commits that are not on origin/${branch}`,
+        reason:
+          `could not fast-forward ${branch}: ` +
+          (merged.stderr.trim() ||
+            `it has local commits that are not on origin/${branch}`),
       };
     }
     return { updated: true };

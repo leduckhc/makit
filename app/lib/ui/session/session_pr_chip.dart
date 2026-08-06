@@ -51,7 +51,8 @@ class SessionPrChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final tone = prToneColor(cs, status.tone);
+    // The chip's label; its background keeps the vivid dot hue below.
+    final tone = prToneTextColor(cs, status.tone);
 
     return InkWell(
       borderRadius: BorderRadius.circular(kRadius8),

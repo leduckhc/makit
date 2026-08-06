@@ -155,6 +155,21 @@ Future<void> runPrRemedy(
         );
         return;
       }
+      // Both branch-deleting ops end in `git branch -D`, and the server resolves
+      // the branch itself. Without one here the confirm cannot name what it will
+      // delete (it drops that step entirely) and no `expectBranch` travels with
+      // the command — so the guard against deleting the *wrong* branch is off at
+      // exactly the moment the app is least sure which branch that is. Refuse.
+      if (deletesBranch(op) && branch == null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Not sure which branch this worktree is on — refresh and try again',
+            ),
+          ),
+        );
+        return;
+      }
       // Only the irreversible ones ask (see [needsConfirm]). Marking a PR ready
       // or updating its branch is reversible/additive, and a confirm there would
       // be the kind of dialog users learn to dismiss unread — which is what makes

@@ -16,12 +16,52 @@ import 'pr_state_style.dart';
 /// `kStatusCaution` orange, because these facts sit beside CI colours and an
 /// orange that is *nearly* the amber of a running check reads as a third,
 /// meaningless hue.
+///
+/// This is the **dot/fill** hue, which only has to clear 3:1. For a *label* use
+/// [prToneTextColor] (on a surface or a tint) or [onPrToneFill] (on a solid
+/// fill): `kCheckFail` and `kCheckPending` are vivid tokens that miss AA as small
+/// text, the same split `prStateStyle` makes between `color` and `textColor`.
 Color prToneColor(ColorScheme cs, PrTone tone) => switch (tone) {
   PrTone.blocking => kCheckFail,
   PrTone.attention => kCheckPending,
   PrTone.quiet => cs.outline,
   PrTone.landed => cs.prMergedText,
 };
+
+/// The AA-safe label colour for a tone, for text on the surface or on the tone's
+/// own tint.
+///
+/// Same hue family as [prToneColor], resolved for contrast: on the light theme
+/// `kCheckFail` prints at 2.3:1 over its own 14% tint and `kCheckPending` is
+/// worse. Pinned by `theme_contrast_test.dart`.
+Color prToneTextColor(ColorScheme cs, PrTone tone) => switch (tone) {
+  PrTone.blocking => cs.diffDelText,
+  PrTone.attention => cs.statusCautionText,
+  PrTone.quiet => cs.onSurfaceVariant,
+  PrTone.landed => cs.prMergedText,
+};
+
+/// The label colour for text on a **solid** [prToneColor] fill (the direct CTA).
+///
+/// Measured rather than assumed: `cs.onError` on `kCheckFail` is 3.35:1, so the
+/// scheme's own pairing is not good enough here. `cs.surface`/`cs.onSurface` are
+/// near-white and near-black in one order on light and the other on dark, so
+/// taking whichever wins on the actual fill works for both themes.
+Color onPrToneFill(ColorScheme cs, PrTone tone) {
+  final fill = prToneColor(cs, tone);
+  return _contrast(cs.onSurface, fill) >= _contrast(cs.surface, fill)
+      ? cs.onSurface
+      : cs.surface;
+}
+
+/// WCAG relative-contrast ratio.
+double _contrast(Color a, Color b) {
+  final la = a.computeLuminance();
+  final lb = b.computeLuminance();
+  final hi = la > lb ? la : lb;
+  final lo = la > lb ? lb : la;
+  return (hi + 0.05) / (lo + 0.05);
+}
 
 /// The status dot — the bar's only graphic, so it carries two things at once:
 /// hue for the verdict, and an arc for how many checks have reported.
