@@ -664,6 +664,17 @@ export function startWsServer(opts: ServerOpts) {
         // SPEC-07 A6: a freshly-(re)subscribed client may be the woken device;
         // replay any pending srv.request it hasn't seen (de-duped per client).
         rpc.replayPendingTo(state);
+        // A session the client had open before a server restart comes back cold
+        // (no agent process). `sub` is the one signal that a session is really
+        // being opened, so it is where the agent comes back — and it must be the
+        // SERVER's call: on reconnect the client still holds its pre-restart
+        // status, so it cannot know the session went cold. No-op for live,
+        // history-only, archived and draft sessions.
+        //
+        // AFTER the replay, deliberately: history must reach the client before
+        // the resumed agent's first live events, and `handleSub` stays sync so a
+        // `cmd` arriving right behind this `sub` still sees the replay first.
+        void manager.ensureLive(String(env.sessionId ?? ""));
         return;
       case "unsub":
         hub.handleUnsub(state, env);

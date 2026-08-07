@@ -327,8 +327,16 @@ export class Session extends EventEmitter {
   }
 
   replaceAdapter(adapter: AgentAdapter): void {
+    this.unbindAdapter(this.adapter);
     this.adapter = adapter;
     this.bindAdapter(adapter);
+  }
+
+  private unbindAdapter(adapter: AgentAdapter): void {
+    adapter.removeAllListeners("event");
+    adapter.removeAllListeners("status");
+    adapter.removeAllListeners("exit");
+    adapter.removeAllListeners("title");
   }
 
   /**
@@ -499,6 +507,16 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Whether this session can be brought back to a live agent (SPEC-29): it
+   * holds either a native agent session/thread id or a legacy pi transcript
+   * path. Mirrors exactly what {@link SessionManager.reattachSession} accepts —
+   * one predicate, so the DTO can never advertise less than the server will do.
+   */
+  get resumable(): boolean {
+    return this.agentSessionId != null || this.resumeSessionPath != null;
+  }
+
+  /**
    * Promote a pending (draft) session once its worktree + agent are live.
    * Records the branch/worktree it now runs in and clears the pending flag.
    */
@@ -525,9 +543,9 @@ export class Session extends EventEmitter {
       pendingAgent: this.pendingAgent,
       branch: this.branch,
       worktreePath: this.worktreePath,
-      // SPEC-29: a session with a persisted native id can be brought back to a
-      // live agent after a server restart (the app auto-attaches cold ones).
-      resumable: this.agentSessionId != null,
+      // SPEC-29: a session with a persisted resume handle can be brought back
+      // to a live agent after a server restart (cold ones are auto-attached).
+      resumable: this.resumable,
       archived: this.archived,
       queued: this.queued.map(
         (q): QueuedMessageDTO => ({

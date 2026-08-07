@@ -162,6 +162,9 @@ export class SessionManager extends EventEmitter {
   /** In-flight draft promotions, keyed by session id, so concurrent first
    *  messages collapse onto one worktree/adapter instead of racing. */
   private readonly promoteInFlight = new Map<string, Promise<boolean>>();
+  /** In-flight re-attaches, keyed by session id, so a `sub` and a fast
+   *  `send.message` (or two devices) collapse onto one agent process. */
+  private readonly reattachInFlight = new Map<string, Promise<Session>>();
   /** Tail of the per-repo worktree-creation chain (see withWorktreeCreateLock). */
   private readonly worktreeCreateLock = new Map<string, Promise<unknown>>();
   private readonly adapterFactory?: AdapterFactory;
@@ -1287,6 +1290,50 @@ export class SessionManager extends EventEmitter {
    * and keep emitting the cold-session `session.error` on send.
    */
   async reattachSession(sessionId: string): Promise<Session> {
+    const inFlight = this.reattachInFlight.get(sessionId);
+    if (inFlight) return inFlight;
+    const task = this.doReattachSession(sessionId);
+    this.reattachInFlight.set(sessionId, task);
+    try {
+      return await task;
+    } finally {
+      this.reattachInFlight.delete(sessionId);
+    }
+  }
+
+  /**
+   * Bring a session back to a live agent if — and only if — it is cold and
+   * resumable. Idempotent and safe to call on any session id, so the request
+   * paths that need a live agent (`sub`, `send.message`) can call it blindly
+   * instead of each re-deriving "is this session cold?" from a client's cached,
+   * possibly stale snapshot.
+   *
+   * Deliberately silent on failure: a re-attach that cannot happen (unknown id,
+   * history-only, archived, a draft awaiting promotion, or an agent that won't
+   * start) must still let the caller proceed — `sub` then replays the transcript
+   * read-only, and a send falls through to the cold-session `session.error`.
+   */
+  async ensureLive(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    // Only a cold session needs this. `DetachedAdapter` is the honest signal: a
+    // live agent that merely exited keeps its real adapter, and status alone
+    // cannot tell the two apart.
+    if (!session || !(session.adapter instanceof DetachedAdapter)) return;
+    // A draft also holds a DetachedAdapter, but its path forward is promotion
+    // (which names the branch), never re-attach.
+    if (session.pending) return;
+    // Archiving deliberately stopped the process (SPEC-29); only unarchive
+    // may bring it back.
+    if (session.archived) return;
+    if (!session.resumable) return;
+    try {
+      await this.reattachSession(sessionId);
+    } catch (e) {
+      log.warn(`[makit] ensureLive(${sessionId.slice(0, 8)}): re-attach failed: ${(e as Error).message}`);
+    }
+  }
+
+  private async doReattachSession(sessionId: string): Promise<Session> {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`no such session: ${sessionId}`);
 
@@ -1297,7 +1344,7 @@ export class SessionManager extends EventEmitter {
     // fresh but live.
     const agentSessionId = session.agentSessionId;
     const resumeSessionPath = session.resumeSessionPath;
-    if (!agentSessionId && !resumeSessionPath) {
+    if (!session.resumable) {
       throw new Error(`session ${sessionId} cannot be re-attached — history only`);
     }
 
@@ -1316,8 +1363,30 @@ export class SessionManager extends EventEmitter {
     const adapter = this.adapterFactory
       ? this.adapterFactory({ projectPath: cwd, sessionId: session.id, agent: session.agent })
       : buildAdapter(session.agent).adapter;
+    // Stop the adapter being swapped out. Once replaced it is unreachable, so a
+    // live one (an explicit `session.attach` can land on a session that is
+    // still live) would leave an orphaned agent process behind. `replaceAdapter`
+    // unbinds it first, so its `exit` cannot clear the pending queue the resumed
+    // agent is about to flush. A no-op for the cold placeholder — no process.
+    const outgoing = session.adapter;
     session.replaceAdapter(adapter);
-    await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId));
+    try {
+      await outgoing.kill();
+    } catch (e) {
+      log.warn(
+        `[makit] reattachSession(${sessionId.slice(0, 8)}): stopping the outgoing agent failed: ${(e as Error).message}`,
+      );
+    }
+    try {
+      await adapter.start(this.startOpts(cwd, session.id, resumeSessionPath, agentSessionId));
+    } catch (e) {
+      // Roll back to the cold placeholder. Leaving a never-started adapter in
+      // place would make the session look live while silently swallowing input,
+      // and would wedge it forever: `ensureLive` only acts on a DetachedAdapter,
+      // so no later subscribe or message would ever retry the resume.
+      session.replaceAdapter(new DetachedAdapter(session.agent));
+      throw e;
+    }
     // The resumed adapter may report a new native id (e.g. an ACP agent that
     // could only start fresh); persist whatever it now holds.
     session.captureAgentSessionId();

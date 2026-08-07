@@ -2076,3 +2076,281 @@ test("a matching branch proceeds, and no expectation means no check", async () =
     assert.equal(existsSync(b.path), false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Automatic re-attach after a server restart
+// ---------------------------------------------------------------------------
+
+/** Seed the store with a cold session as a prior server run would have left it. */
+function seedColdSession(
+  store: SqliteEventStore,
+  id: string,
+  extra: Partial<{ agentSessionId: string; resumeSessionPath: string; archived: boolean }> = {},
+) {
+  store.saveSession({
+    id,
+    projectId: "proj-x",
+    agent: "pi",
+    title: "prior work",
+    status: "idle",
+    policy: "ask-on-risky",
+    createdAt: 1,
+    lastActivityAt: 2,
+    lastPreview: "old task",
+    ...extra,
+  });
+  store.append(id, { ts: 2, kind: "user.message", payload: { text: "old task" } });
+}
+
+/** A stub whose `start` only resolves once `release()` is called. */
+function slowStubAdapter(started: SpawnOpts[]): { adapter: AgentAdapter; release: () => void } {
+  let release = () => {};
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const e = stubAdapter(started) as any;
+  const inner = e.start;
+  e.start = async (opts: SpawnOpts) => {
+    await gate;
+    await inner(opts);
+  };
+  return { adapter: e as AgentAdapter, release };
+}
+
+test("a cold session resumable only by its legacy pi path advertises resumable", () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-legacy", { resumeSessionPath: "/tmp/prior.jsonl" });
+  const mgr = new SessionManager({ projects: [], store });
+  // reattachSession accepts either handle, so the DTO must not claim otherwise —
+  // a false `resumable: false` stops the client from ever offering re-attach.
+  assert.equal(mgr.getSession("sess-legacy")!.toDTO().resumable, true);
+  store.close();
+});
+
+test("ensureLive brings a cold resumable session back, then no-ops when it is live", async () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-cold", { agentSessionId: "pi-1" });
+  const started: SpawnOpts[] = [];
+  const mgr = new SessionManager({ projects: [], store, adapterFactory: () => stubAdapter(started) });
+
+  await mgr.ensureLive("sess-cold");
+  assert.equal(started.length, 1, "adapter started once");
+  assert.equal(started[0].resumeAgentSessionId, "pi-1", "resumed by its native id");
+
+  // Idempotent: a second subscribe must not spawn a second agent.
+  await mgr.ensureLive("sess-cold");
+  assert.equal(started.length, 1, "already live — no second spawn");
+
+  // And input now reaches a live adapter instead of the cold-session error.
+  const errs: string[] = [];
+  mgr.getSession("sess-cold")!.on("event", (e) => {
+    if (e.kind === "session.error") errs.push(String((e.payload as any).message));
+  });
+  await mgr.getSession("sess-cold")!.sendUserMessage("hi again");
+  assert.deepEqual(errs, [], "no re-attach error after ensureLive");
+  store.close();
+});
+
+test("ensureLive leaves history-only, archived, draft and unknown sessions alone", async () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-noresume"); // no resume handle at all
+  seedColdSession(store, "sess-archived", { agentSessionId: "pi-2", archived: true });
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    const started: SpawnOpts[] = [];
+    const mgr = new SessionManager({ projects: [cwd], store, adapterFactory: () => stubAdapter(started) });
+
+    // History-only: nothing to resume, so it stays read-only rather than
+    // silently starting a FRESH agent that has lost the transcript.
+    await mgr.ensureLive("sess-noresume");
+    // Archived is a deliberate stop (SPEC-29) — resurrect only via unarchive.
+    await mgr.ensureLive("sess-archived");
+    // A draft also holds a DetachedAdapter; it must promote, never re-attach.
+    const draft = await mgr.spawnPendingSession(mgr.listProjects()[0].id);
+    await mgr.ensureLive(draft.id);
+    // An unknown id must not throw — `sub` answers no-such-session itself.
+    await mgr.ensureLive("does-not-exist");
+
+    assert.deepEqual(started, [], "no agent started for any of them");
+    assert.equal(mgr.getSession("sess-noresume")!.status, "exited");
+    store.close();
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("concurrent re-attach of the same cold session starts exactly one agent", async () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-race", { agentSessionId: "pi-3" });
+  const started: SpawnOpts[] = [];
+  // One slow adapter for the first call; any later call would get a second one.
+  const slow = slowStubAdapter(started);
+  let handedOut = 0;
+  const mgr = new SessionManager({
+    projects: [],
+    store,
+    adapterFactory: () => (handedOut++ === 0 ? slow.adapter : stubAdapter(started)),
+  });
+
+  // `sub` and a fast `send.message` (or two devices) race into re-attach.
+  const all = Promise.all([
+    mgr.ensureLive("sess-race"),
+    mgr.ensureLive("sess-race"),
+    mgr.reattachSession("sess-race"),
+  ]);
+  slow.release();
+  await all;
+  assert.equal(handedOut, 1, "one adapter built");
+  assert.equal(started.length, 1, "one agent process started");
+  store.close();
+});
+
+/** A stub that rejects on its first [failures] starts, then behaves normally. */
+function flakyStubAdapter(started: SpawnOpts[], failures: number): AgentAdapter {
+  const e = stubAdapter(started) as any;
+  const inner = e.start;
+  let attempts = 0;
+  e.start = async (opts: SpawnOpts) => {
+    if (attempts++ < failures) throw new Error("agent binary is missing");
+    await inner(opts);
+  };
+  return e as AgentAdapter;
+}
+
+/** A stub that records how many times it was killed. */
+function killTrackingAdapter(started: SpawnOpts[], kills: string[]): AgentAdapter {
+  const e = stubAdapter(started) as any;
+  e.kill = async () => {
+    kills.push("kill");
+  };
+  return e as AgentAdapter;
+}
+
+test("a failed re-attach reaches every concurrent caller and does not poison the retry", async () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-flaky", { agentSessionId: "pi-4" });
+  const started: SpawnOpts[] = [];
+  const mgr = new SessionManager({
+    projects: [],
+    store,
+    // One adapter instance across calls: it fails once, then works.
+    adapterFactory: (() => {
+      const shared = flakyStubAdapter(started, 1);
+      return () => shared;
+    })(),
+  });
+
+  const [a, b] = await Promise.allSettled([
+    mgr.reattachSession("sess-flaky"),
+    mgr.reattachSession("sess-flaky"),
+  ]);
+  assert.equal(a.status, "rejected");
+  assert.equal(b.status, "rejected", "the second caller sees the same failure, not a hang");
+  assert.match(String((a as PromiseRejectedResult).reason.message), /agent binary is missing/);
+  assert.deepEqual(started, [], "nothing started");
+
+  // The in-flight entry must be gone, or the session could never be resumed
+  // again for the lifetime of the server.
+  const live = await mgr.reattachSession("sess-flaky");
+  assert.equal(live.id, "sess-flaky");
+  assert.equal(started.length, 1, "the retry really started an agent");
+  store.close();
+});
+
+test("a failed re-attach leaves the session cold, so the next attempt retries it", async () => {
+  const store = new SqliteEventStore();
+  seedColdSession(store, "sess-failstart", { agentSessionId: "pi-5" });
+  const started: SpawnOpts[] = [];
+  const mgr = new SessionManager({
+    projects: [],
+    store,
+    adapterFactory: (() => {
+      const shared = flakyStubAdapter(started, 1);
+      return () => shared;
+    })(),
+  });
+
+  // ensureLive swallows the failure — `sub` must still replay the transcript.
+  await assert.doesNotReject(() => mgr.ensureLive("sess-failstart"));
+  assert.deepEqual(started, [], "no agent started");
+
+  // And the session must be COLD again, not stuck holding a dead adapter:
+  // input still gets the actionable re-attach error...
+  const session = mgr.getSession("sess-failstart")!;
+  const errs: string[] = [];
+  session.on("event", (e) => {
+    if (e.kind === "session.error") errs.push(String((e.payload as any).message));
+  });
+  await session.sendUserMessage("hi");
+  assert.match(errs[0] ?? "", /re-attach/, "still reports itself cold");
+
+  // ...and the NEXT subscribe retries instead of giving up forever.
+  await mgr.ensureLive("sess-failstart");
+  assert.equal(started.length, 1, "retried and came back live");
+  store.close();
+});
+
+test("re-attaching a live session stops the outgoing agent instead of orphaning it", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    const started: SpawnOpts[] = [];
+    const kills: string[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => killTrackingAdapter(started, kills),
+    });
+    await mgr.ensureDefaultSessions();
+    const session = mgr.allSessions()[0]!;
+    const outgoing = session.adapter;
+    assert.equal(started.length, 1);
+
+    // An explicit `session.attach` on a session that is already live (e.g. a
+    // second device acted on a stale snapshot). The old process must be stopped
+    // — replacing the adapter alone would leave it running, unreachable.
+    await mgr.reattachSession(session.id);
+    assert.equal(kills.length, 1, "the outgoing agent was killed");
+    assert.notEqual(session.adapter, outgoing, "and swapped out");
+    assert.equal(started.length, 2, "the resumed agent started");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("a replaced adapter can no longer feed the session it was swapped out of", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "makit-proj-"));
+  try {
+    const started: SpawnOpts[] = [];
+    const mgr = new SessionManager({
+      projects: [cwd],
+      adapterFactory: () => {
+        const a = stubAdapter(started) as any;
+        a.steer = async () => false; // can't steer -> the message queues
+        return a as AgentAdapter;
+      },
+    });
+    await mgr.ensureDefaultSessions();
+    const session = mgr.allSessions()[0]!;
+    const outgoing = session.adapter;
+    // Busy + unsteerable, so the message lands in the pending queue (SPEC-35).
+    outgoing.emit("status", "running");
+    await session.sendUserMessage("queued while running");
+    assert.equal(session.queuedMessages.length, 1, "precondition: one queued message");
+    const before = session.events.length;
+
+    await mgr.reattachSession(session.id);
+
+    // A late event from the dead adapter must not land in the transcript, and
+    // its exit must not wipe the queue the resumed agent is about to flush.
+    outgoing.emit("event", { ts: Date.now(), kind: "user.message", payload: { text: "ghost" } });
+    outgoing.emit("exit", null);
+    assert.equal(
+      session.events.some((e) => (e.payload as any)?.text === "ghost"),
+      false,
+      "no ghost event from the replaced adapter",
+    );
+    assert.equal(session.events.length >= before, true);
+    assert.equal(session.queuedMessages.length, 1, "queue survived the re-attach");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
