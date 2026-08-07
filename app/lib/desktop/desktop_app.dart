@@ -202,7 +202,8 @@ class _DesktopApp extends ConsumerStatefulWidget {
   ConsumerState<_DesktopApp> createState() => _DesktopAppState();
 }
 
-class _DesktopAppState extends ConsumerState<_DesktopApp> {
+class _DesktopAppState extends ConsumerState<_DesktopApp>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -210,9 +211,28 @@ class _DesktopAppState extends ConsumerState<_DesktopApp> {
     // frame stream before the WS connects and starts pushing snapshots
     // (mirrors the mobile bootstrap in `main.dart`).
     ref.read(storeControllerProvider);
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_bootstrapConnection());
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Same foreground definition as the rest of the app (see
+    // srv_request_handler): `inactive` is a transient overlay, still on screen.
+    // macOS throttles frames for a hidden window but never touches timers, so
+    // the daemon poll has to back off on its own.
+    final visible =
+        state == AppLifecycleState.resumed ||
+        state == AppLifecycleState.inactive;
+    ref.read(desktopControllerProvider).setWindowVisible(visible);
   }
 
   /// Bring the local daemon up (if needed), then self-pair over loopback so the

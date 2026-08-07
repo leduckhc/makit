@@ -5,6 +5,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../../store/store.dart';
+import '../widgets/pulse_spinner.dart';
 import 'chat_metrics.dart';
 import 'transcript_expansion.dart';
 import 'tool_renderers.dart';
@@ -142,10 +143,13 @@ class _ToolCallCardState extends ConsumerState<ToolCallCard> {
     final item = widget.item;
 
     final status = switch (item.status) {
-      ToolStatus.running => const SizedBox(
-        width: 10,
-        height: 10,
-        child: CircularProgressIndicator(strokeWidth: 2),
+      // PulseSpinner, not Material's: this one is visible for most of a turn,
+      // and a vsync ticker here costs more than the whole card.
+      // Labelled: the header's Semantics carries button/expanded, not status, so
+      // this spinner is the only signal that the call is still in flight.
+      ToolStatus.running => const PulseSpinner(
+        size: 10,
+        semanticsLabel: 'running',
       ),
       ToolStatus.failed => Icon(
         PhosphorIconsLight.warningCircle,

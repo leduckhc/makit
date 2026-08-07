@@ -18,6 +18,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/models.dart';
 import '../widgets/glass.dart';
+import '../widgets/pulse.dart';
 import 'ask_card.dart';
 import 'chat_message.dart';
 import 'chat_metrics.dart';
@@ -343,8 +344,7 @@ class WorkingIndicator extends StatefulWidget {
   State<WorkingIndicator> createState() => _WorkingIndicatorState();
 }
 
-class _WorkingIndicatorState extends State<WorkingIndicator>
-    with SingleTickerProviderStateMixin {
+class _WorkingIndicatorState extends State<WorkingIndicator> {
   static const _words = [
     'Thinking',
     'Cooking',
@@ -366,47 +366,31 @@ class _WorkingIndicatorState extends State<WorkingIndicator>
 
   late final String _word = _words[Random().nextInt(_words.length)];
 
-  // One controller for the whole State lifetime, driving the shimmer sweep.
-  late final AnimationController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1400),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final base = cs.onSurfaceVariant.withValues(alpha: 0.18);
     final highlight = cs.onSurface;
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, child) {
-        return ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => LinearGradient(
-            colors: [base, highlight, base],
-            stops: const [0.35, 0.5, 0.65],
-            transform: _SlideGradient(_c.value),
-          ).createShader(bounds),
-          child: child,
-        );
-      },
-      child: Text(
-        _word,
-        style: Theme.of(
-          context,
-        ).textTheme.labelLarge?.copyWith(fontStyle: FontStyle.italic),
+    // Built once and closed over, so the sweep never re-lays-out the word.
+    final word = Text(
+      _word,
+      style: Theme.of(
+        context,
+      ).textTheme.labelLarge?.copyWith(fontStyle: FontStyle.italic),
+    );
+    // The sweep runs on the shared low-rate clock, so the ShaderMask's
+    // saveLayer is paid ~20 times a second instead of at every vsync.
+    return PulseBuilder(
+      period: const Duration(milliseconds: 1400),
+      reverse: false,
+      builder: (context, t) => ShaderMask(
+        blendMode: BlendMode.srcIn,
+        shaderCallback: (bounds) => LinearGradient(
+          colors: [base, highlight, base],
+          stops: const [0.35, 0.5, 0.65],
+          transform: _SlideGradient(t),
+        ).createShader(bounds),
+        child: word,
       ),
     );
   }

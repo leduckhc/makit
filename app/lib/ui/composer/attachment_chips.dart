@@ -11,6 +11,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 import '../../app/theme.dart';
 import '../../store/composer_attachments.dart';
+import '../widgets/pulse_spinner.dart';
 
 /// Horizontal, wrapping row of [AttachmentChip]s.
 class AttachmentChips extends StatelessWidget {
@@ -178,11 +179,10 @@ class AttachmentChip extends StatelessWidget {
             if (uploading)
               ColoredBox(
                 color: cs.scrim.withValues(alpha: 0.45),
+                // Labelled: the chip's Semantics is the file name, so without
+                // this the upload is a purely visual state.
                 child: const Center(
-                  child: SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                  child: PulseSpinner(size: 16, semanticsLabel: 'uploading'),
                 ),
               ),
             if (failed)

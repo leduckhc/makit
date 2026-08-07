@@ -15,6 +15,7 @@ import 'package:makit/ui/session/chat_metrics.dart';
 import 'package:makit/ui/session/chat_transcript.dart';
 import 'package:makit/ui/session/tool_call_card.dart';
 import 'package:makit/ui/session/transcript_expansion.dart';
+import 'package:makit/ui/widgets/pulse_spinner.dart';
 import 'package:makit/ui/session/tool_renderers.dart' show ToolCodeBlock;
 
 List<ChatItem> _representativeItems() => [
@@ -75,6 +76,36 @@ void main() {
     await tester.tap(find.text('reasoning trace'));
     await tester.pump();
     expect(find.byType(SelectableText), findsOneWidget);
+  });
+
+  testWidgets('a running tool call spins on the shared clock, not at vsync', (
+    tester,
+  ) async {
+    // One Material spinner is one vsync ticker, and this one is on screen for
+    // most of every turn — enough to undo the PulseClock saving on its own.
+    final item = ToolCallItem(
+      seq: 1,
+      ts: 0,
+      callId: 'c1',
+      name: 'bash',
+      args: const {'command': 'echo hi'},
+      ended: false,
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ToolCallCard(item: item, expansionKey: 'k'),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(item.status, ToolStatus.running);
+    expect(find.byType(PulseSpinner), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(tester.binding.hasScheduledFrame, isFalse);
   });
 
   testWidgets('ToolCallCard expands its body inline on tap', (tester) async {

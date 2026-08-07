@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/composer_attachments.dart';
+import 'package:makit/ui/widgets/pulse_spinner.dart';
 import 'package:makit/store/media.dart';
 import 'package:makit/ui/composer/attachment_chips.dart';
 import 'package:makit/ui/composer/composer.dart';
@@ -144,7 +145,9 @@ void main() {
           ),
         ),
       );
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      // PulseSpinner, not Material's: an upload can be in flight for a while,
+      // and a vsync ticker for it defeats the shared low-rate pulse clock.
+      expect(find.byType(PulseSpinner), findsOneWidget);
       await tester.tap(find.byType(AttachmentChip));
       expect(retried, isEmpty);
     });

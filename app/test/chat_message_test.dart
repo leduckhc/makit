@@ -158,4 +158,47 @@ void main() {
     );
     expect(await copyAll(tester), 'start code end');
   });
+
+  group('remote markdown images', () {
+    // An agent can link a 4000px screenshot; decoding it at full resolution
+    // parks ~64MB of RGBA in the image cache for a ~600pt paragraph. The
+    // makit-media path already bounds this (media_view.dart) — so must this one.
+    final uri = Uri.parse('https://example.invalid/shot.png');
+
+    test('decode is bounded to the drawn width in device pixels', () {
+      final provider = remoteImageProvider(
+        uri,
+        width: 300,
+        devicePixelRatio: 2,
+      );
+      expect(provider, isA<ResizeImage>());
+      final resize = provider as ResizeImage;
+      expect(resize.width, 600);
+      // Height is left unbounded on purpose: a tall screenshot must keep its
+      // aspect ratio, exactly as _MediaImage does for thumbnails.
+      expect(resize.height, isNull);
+      expect(resize.policy, ResizeImagePolicy.fit);
+      expect(resize.imageProvider, isA<NetworkImage>());
+    });
+
+    test('a sub-pixel width still decodes at least one pixel', () {
+      // (width * dpr).round() would be 0 here, and ResizeImagePolicy.fit would
+      // then decode to a zero-width — i.e. invisible — image.
+      final provider = remoteImageProvider(
+        uri,
+        width: 0.4,
+        devicePixelRatio: 1,
+      );
+      expect((provider as ResizeImage).width, 1);
+    });
+
+    test('an unbounded width falls back to an unresized provider', () {
+      // No finite width to size against (e.g. an unconstrained axis) — a bogus
+      // cacheWidth would be worse than none.
+      expect(
+        remoteImageProvider(uri, width: double.infinity, devicePixelRatio: 2),
+        isA<NetworkImage>(),
+      );
+    });
+  });
 }
