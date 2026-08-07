@@ -7,6 +7,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/app/theme.dart';
+import 'package:makit/ui/ports/port_token_pill.dart';
+import 'package:makit/ui/ports/ports_vocabulary.dart';
 import 'package:makit/ui/widgets/pr_signals.dart';
 import 'package:makit/ui/widgets/pr_tone.dart';
 
@@ -191,5 +193,41 @@ void main() {
       _contrast(cs.statusWarningText, cs.surface),
       greaterThanOrEqualTo(4.5),
     );
+  });
+
+  // SPEC-41 port tokens. Same shape as the tone-tinted chip above: a pill prints
+  // its label on a wash OF THAT LABEL, so the background moves toward the text
+  // and the real ratio is lower than a check against the page suggests. Unlike
+  // the PR chip this one DOES clear full AA in both themes, because the light
+  // `ok` token was darkened (#1A7F37 -> #156C2C) specifically to buy the
+  // headroom: at the old value this pairing measured 3.82:1 and the hue capped
+  // out at 5.08:1 even on pure white, so the token had to move rather than the
+  // fill. Keep this at 4.5 -- if it ever has to be relaxed, the token regressed.
+  test('port token pills clear WCAG AA on their own fill, in both themes', () {
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      // The three surfaces a pill actually lands on: the popover panel, a sheet,
+      // and the Ports screen.
+      for (final surface in [
+        cs.surfaceContainerLow,
+        cs.surface,
+        cs.surfaceContainerLowest,
+      ]) {
+        for (final tone in PortTone.values) {
+          expect(
+            _contrast(
+              portTonePillForeground(cs, tone),
+              // The same value the widget assigns, composited the way the
+              // painter will composite it.
+              Color.alphaBlend(portTonePillFill(cs, tone), surface),
+            ),
+            greaterThanOrEqualTo(4.5),
+            reason:
+                '${theme.brightness.name} $tone pill on its own fill over '
+                '${surface.toARGB32().toRadixString(16)}',
+          );
+        }
+      }
+    }
   });
 }

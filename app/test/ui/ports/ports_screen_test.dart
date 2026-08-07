@@ -7,7 +7,9 @@ import 'package:makit/store/models.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/store/store.dart';
 import 'package:makit/ui/ports/port_detail_sheet.dart';
+import 'package:makit/ui/ports/port_token_pill.dart';
 import 'package:makit/ui/ports/ports_screen.dart';
+import 'package:makit/ui/ports/ports_vocabulary.dart';
 
 PortInfo _port({
   required int port,
@@ -362,6 +364,87 @@ void main() {
     testWidgets('no banner when no port collides', (tester) async {
       await _pump(tester, _snap([_port(port: 5173)]));
       expect(find.byKey(kPortsCollisionBanner), findsNothing);
+    });
+
+    // Mockup §9's legend renders a collision as `5173 clash`, and its
+    // accessibility rule is explicit: "every tint ships with a word (refused,
+    // exposed, clash, orphan)". Without a marker ON the row, the banner names a
+    // branch but nothing says WHICH of the listed ports it means — and
+    // `portClashWord` sat in the vocabulary unused, which is how we found this.
+    testWidgets('the colliding row itself carries the clash word', (
+      tester,
+    ) async {
+      await _pump(
+        tester,
+        _snap([
+          _port(port: 5173, collision: const PortCollision(withBranch: 'x/y')),
+          _port(port: 5174),
+        ]),
+      );
+      expect(find.text(portClashWord), findsOneWidget);
+    });
+
+    testWidgets('a non-colliding row carries no clash word', (tester) async {
+      await _pump(tester, _snap([_port(port: 5173)]));
+      expect(find.text(portClashWord), findsNothing);
+    });
+
+    testWidgets('the clash token speaks its sentence once, not twice', (
+      tester,
+    ) async {
+      // The pill carries Semantics(label:) itself, so a second wrapper would
+      // read the sentence twice — the trap ports_sheets_test.dart already pins.
+      final handle = tester.ensureSemantics();
+      await _pump(
+        tester,
+        _snap([
+          _port(port: 5173, collision: const PortCollision(withBranch: 'x/y')),
+        ]),
+      );
+      final spoken = tester
+          .getSemantics(
+            find.ancestor(
+              of: find.text(portClashWord),
+              matching: find.byType(PortTokenPill),
+            ),
+          )
+          .label;
+      final sentence = portCollisionTooltip(
+        const PortCollision(withBranch: 'x/y'),
+        port: 5173,
+      );
+      expect(
+        RegExp(RegExp.escape(sentence)).allMatches(spoken).length,
+        1,
+        reason: 'the clash sentence is spoken twice: $spoken',
+      );
+      handle.dispose();
+    });
+  });
+
+  group('orphan word (mockup §9 — same rule as clash)', () {
+    testWidgets('the orphan token speaks its sentence once, not twice', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      const orphan = PortOrphan(formerBranch: 'gone/branch');
+      await _pump(tester, _snap([_port(port: 5180, orphan: orphan)]));
+      final spoken = tester
+          .getSemantics(
+            find.ancestor(
+              of: find.text(portOrphanWord),
+              matching: find.byType(PortTokenPill),
+            ),
+          )
+          .label;
+      expect(
+        RegExp(
+          RegExp.escape(portOrphanTooltip(orphan, nowMs: 0)),
+        ).allMatches(spoken).length,
+        1,
+        reason: 'the orphan sentence is spoken twice: $spoken',
+      );
+      handle.dispose();
     });
   });
 }

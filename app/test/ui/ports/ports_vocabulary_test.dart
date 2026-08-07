@@ -91,6 +91,99 @@ void main() {
     });
   });
 
+  group('command line — argv[0] stripped, args kept', () {
+    test('replaces an absolute argv[0] with its basename, keeping args', () {
+      expect(
+        portCommandLine(
+          '/opt/homebrew/Cellar/node/26.5.1/bin/node vite --port 5173',
+        ),
+        'node vite --port 5173',
+      );
+    });
+
+    test('a bare argv[0] with no args is just the basename', () {
+      expect(portCommandLine('/usr/sbin/sshd'), 'sshd');
+    });
+
+    test('a relative command is returned untouched', () {
+      expect(portCommandLine('postgres -D /data'), 'postgres -D /data');
+    });
+
+    test('preserves an argument that contains a slash', () {
+      // Only argv[0] is shortened; a path *argument* is a fact about what the
+      // process was told to do and must survive.
+      expect(
+        portCommandLine('/opt/homebrew/bin/node dist/serve.js'),
+        'node dist/serve.js',
+      );
+    });
+  });
+
+  group('process line — pid, then age, then args', () {
+    test('orders pid before uptime before the command', () {
+      final s = portProcessLine(
+        48211,
+        '/opt/homebrew/Cellar/node/26.5.1/bin/node vite --port 5173',
+        startedAt: nowMs - 41 * 60 * 1000,
+        nowMs: nowMs,
+      );
+      // The whole point: in a fixed-width popover the tail ellipses, so the age
+      // must sit ahead of the args or it is never seen (mockup §2a line 2).
+      expect(s, 'pid 48211 · up 41m · node vite --port 5173');
+      expect(s.indexOf('up 41m'), lessThan(s.indexOf('node vite')));
+    });
+
+    test('drops the age entirely when startedAt is unknown', () {
+      // Absent stays absent — never "up 0m", never a zero-epoch "up 56y".
+      expect(
+        portProcessLine(51002, '/usr/sbin/sshd', startedAt: null, nowMs: nowMs),
+        'pid 51002 · sshd',
+      );
+    });
+
+    test('never carries the argv[0] directories', () {
+      final s = portProcessLine(
+        48211,
+        '/opt/homebrew/Cellar/node/26.5.1/bin/node vite',
+        startedAt: nowMs,
+        nowMs: nowMs,
+      );
+      expect(s, isNot(contains('/opt/homebrew')));
+    });
+  });
+
+  group('token tones — colour follows the verdict', () {
+    test('a 2xx answer is ok, an HTTP error is a warning', () {
+      expect(
+        portHealthTone(health(PortHealthKind.ok, status: 200)),
+        PortTone.ok,
+      );
+      expect(
+        portHealthTone(health(PortHealthKind.httpError, status: 404)),
+        PortTone.warn,
+      );
+    });
+
+    test('a dead socket is an error, not a warning', () {
+      // refused/timeout mean "you cannot use this", a different instruction
+      // from 404's "it is up, just not mounted at /".
+      expect(portHealthTone(health(PortHealthKind.refused)), PortTone.err);
+      expect(portHealthTone(health(PortHealthKind.timeout)), PortTone.err);
+    });
+
+    test('an unprobed port is idle — never a fake verdict', () {
+      expect(portHealthTone(null), PortTone.idle);
+    });
+
+    test('reach: exposed warns, tailnet is ok, loopback is idle', () {
+      // Reach is the security token: the one that leaves this machine must be
+      // the one that is not grey (mockup 116–118).
+      expect(portReachTone(PortReach.exposed), PortTone.warn);
+      expect(portReachTone(PortReach.tailnet), PortTone.ok);
+      expect(portReachTone(PortReach.loopback), PortTone.idle);
+    });
+  });
+
   group('glyph semantic label — a word for every tinted state', () {
     test('serving/exposed/attention/unknown each name their state', () {
       expect(

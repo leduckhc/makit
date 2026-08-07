@@ -29,6 +29,11 @@ const _onSurfaceDark = Color(0xFFF5F5F5);
 const _mutedDark = Color(0xFF9E9E9E);
 const _hairlineDark = Color(0xFF333333);
 
+/// Dwell before a hover tooltip appears, app-wide (`SPEC-41 §Tooltips`:
+/// `TOOLTIP_DWELL_MS` = 500). Must stay ABOVE the ports popover's hover-open
+/// dwell so the two never race — pinned by `ports_popover_test.dart`.
+const Duration kTooltipDwell = Duration(milliseconds: 500);
+
 ThemeData _build(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final seeded = ColorScheme.fromSeed(
@@ -65,6 +70,12 @@ ThemeData _build(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
+    // Flutter's default `waitDuration` is `Duration.zero`, so a tooltip fires
+    // the instant the pointer crosses any tooltipped control. Set here rather
+    // than per widget: the ports popover's 350 ms hover dwell must never be
+    // raced by a tooltip (SPEC-41 §Tooltips locks 500), and a per-widget value
+    // would let the next tooltip silently reintroduce the zero default.
+    tooltipTheme: const TooltipThemeData(waitDuration: kTooltipDwell),
     textTheme: _makitTextTheme(
       baseTypography,
     ).apply(fontFamily: kSansFontFamily),
@@ -111,7 +122,14 @@ const Color kDiffDel = Color(0xFFF85149);
 // *text* on #FAFAFA they only reach ~2–3:1 — below WCAG AA (4.5:1). These darker
 // variants clear AA as light-theme label text; dark mode keeps the vivid hues
 // (they already clear AA on the #171717 surface). See DESIGN.md → Colors.
-const Color _diffAddTextLight = Color(0xFF1A7F37); // 4.9:1 on #FAFAFA
+//
+// `_diffAddTextLight` is darker than AA on the bare surface strictly requires,
+// because these labels are also printed on their own tinted fill (the SPEC-41
+// port pill, `PortTokenPill`), which pulls the background toward the text. At
+// the old #1A7F37 that pairing measured 3.82:1; the hue caps out at 5.08:1 even
+// on pure white, so no fill or alpha tweak could rescue it — the token itself had
+// to move. Pinned by the port-pill case in `theme_contrast_test.dart`.
+const Color _diffAddTextLight = Color(0xFF156C2C); // 6.3:1 on #FAFAFA
 const Color _diffDelTextLight = Color(0xFFC7331F); // 5.1:1
 const Color _statusWarningTextLight = Color(0xFF7E5C00); // 5.9:1
 const Color _statusCautionTextLight = Color(0xFFA64B1E); // 5.5:1
