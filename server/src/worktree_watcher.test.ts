@@ -375,3 +375,52 @@ test("watchWorktrees fires when a commit lands in a LINKED worktree", async () =
     rmSync(wtBase, { recursive: true, force: true });
   }
 });
+
+test("watchWorktrees fires for a commit on a SLASHED branch (nested ref dir)", async () => {
+  // Git stores `feature/foo` as `refs/heads/feature/foo` — a file in a *nested*
+  // directory — and `fs.watch` without `recursive: true` reports nothing for
+  // nested children on Linux or macOS. Every branch in this repo is slashed
+  // (`feat/…`, `leduckhc/…`), so a flat watch would have missed the exact case
+  // this trigger exists for.
+  const repo = makeRepo();
+  execFileSync("git", ["checkout", "-q", "-b", "feature/foo"], { cwd: repo });
+
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    fires = 0; // ignore settling from arming
+    writeFileSync(join(repo, "nested.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "on a slashed branch"], { cwd: repo });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected onChange after a commit on feature/foo");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("the per-directory fallback also fires for a nested ref", async () => {
+  // The path taken where `recursive` is refused. Same scenario as above, so the
+  // fallback is held to the same standard rather than merely existing.
+  const repo = makeRepo();
+  execFileSync("git", ["checkout", "-q", "-b", "release/1.x"], { cwd: repo });
+
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20, recursive: false });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    fires = 0;
+    writeFileSync(join(repo, "fallback.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "no recursive watch here"], { cwd: repo });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected the walked watchers to fire");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

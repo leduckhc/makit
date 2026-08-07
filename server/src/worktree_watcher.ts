@@ -19,7 +19,15 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { watch, existsSync, realpathSync, statSync, type FSWatcher } from "node:fs";
+import {
+  watch,
+  existsSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  type Dirent,
+  type FSWatcher,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -89,8 +97,16 @@ interface RepoWatch {
   git?: FSWatcher;
   /** Watch on `<repo>/.git/worktrees` — tracks worktree add/remove. */
   inner?: FSWatcher;
-  /** Watch on `<repo>/.git/refs/heads` — tracks commits and branch moves. */
-  heads?: FSWatcher;
+  /**
+   * Watches on `<repo>/.git/refs/heads` — tracks commits and branch moves.
+   *
+   * Normally one recursive watch. Git stores `feature/foo` as a file in a *nested*
+   * directory, and `fs.watch` without `recursive: true` reports nothing for nested
+   * children on Linux or macOS — so a flat watch misses every slashed branch,
+   * which is most of them. When the platform refuses a recursive watch this holds
+   * one watcher per directory instead.
+   */
+  heads: FSWatcher[];
 }
 
 /**
@@ -99,9 +115,13 @@ interface RepoWatch {
  */
 export function watchWorktrees(
   onChange: () => void,
-  opts: { debounceMs?: number } = {},
+  opts: { debounceMs?: number; recursive?: boolean } = {},
 ): WorktreeWatcher {
   const debounceMs = opts.debounceMs ?? 300;
+  // Off only in the test that exercises the per-directory fallback: it exists for
+  // a platform that refuses `recursive`, which cannot be reproduced by asking for
+  // one and hoping it fails.
+  const allowRecursive = opts.recursive ?? true;
   const repos = new Map<string, RepoWatch>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -123,9 +143,10 @@ export function watchWorktrees(
     target: string,
     onEvent: (filename: string | null) => void,
     onError: () => void,
+    options: { recursive?: boolean } = {},
   ): FSWatcher | undefined => {
     try {
-      const w = watch(target, { persistent: false }, (_evt, filename) =>
+      const w = watch(target, { persistent: false, ...options }, (_evt, filename) =>
         onEvent(filename === null ? null : filename.toString()),
       );
       w.on("error", () => {
@@ -143,9 +164,42 @@ export function watchWorktrees(
     }
   };
 
+  /**
+   * Watch [dir] and every directory under it, one watcher each. The fallback for
+   * platforms that refuse `recursive: true`; also re-run when a namespace
+   * directory appears, since a new one needs its own watcher.
+   *
+   * Bounded by the shape of the data: branch namespaces are a handful of shallow
+   * directories, not a source tree.
+   */
+  const watchTree = (dir: string, out: FSWatcher[], onEvent: () => void): void => {
+    const w = safeWatch(
+      dir,
+      () => {
+        // A new namespace directory may have just appeared (`git branch a/b/c`),
+        // so re-arm before reporting.
+        watchTree(dir, out, onEvent);
+        onEvent();
+      },
+      () => {
+        /* dir vanished; the parent's watch re-arms */
+      },
+    );
+    if (w) out.push(w);
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // missing or unreadable: nothing to descend into
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) watchTree(join(dir, e.name), out, onEvent);
+    }
+  };
+
   const arm = (repoPath: string): RepoWatch => {
     const { gitDir, worktreesDir, headsDir } = resolveGitPaths(repoPath);
-    const rw: RepoWatch = {};
+    const rw: RepoWatch = { heads: [] };
 
     const syncInner = (): void => {
       if (existsSync(worktreesDir)) {
@@ -189,13 +243,16 @@ export function watchWorktrees(
     // the repo — including the linked ones agents actually work in. Without it the
     // only triggers were connect/spawn/kill/pull-to-refresh, so the composer's bar
     // kept asserting a file count from whenever the client last connected.
-    rw.heads = safeWatch(
-      headsDir,
-      () => fire(),
-      () => {
-        rw.heads = undefined;
-      },
-    );
+    //
+    // Recursive, because `feature/foo` is a file in a nested directory and a flat
+    // watch reports nothing for those — which is most branches. Node supports
+    // `recursive` on macOS, Windows and Linux (≥ 20.13; this package requires
+    // ≥ 22.13); anywhere it is refused, fall back to one watcher per directory.
+    const recursive = allowRecursive
+      ? safeWatch(headsDir, () => fire(), () => {}, { recursive: true })
+      : undefined;
+    if (recursive) rw.heads.push(recursive);
+    else watchTree(headsDir, rw.heads, fire);
 
     syncInner();
     return rw;
@@ -204,7 +261,8 @@ export function watchWorktrees(
   const closeRepo = (rw: RepoWatch): void => {
     rw.git?.close();
     rw.inner?.close();
-    rw.heads?.close();
+    for (const w of rw.heads) w.close();
+    rw.heads.length = 0;
   };
 
   return {

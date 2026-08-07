@@ -65,10 +65,11 @@ async function waitFor(
 const isReposSnapshot = (m: Record<string, unknown>) =>
   m.t === "event" && m.kind === "repos.snapshot";
 
-const isIdle = (sessionId: string) => (m: Record<string, unknown>) => {
-  if (m.t !== "event" || m.kind !== "sessions.snapshot") return false;
-  const s = (m.sessions as Array<{ id: string; status: string }>).find((x) => x.id === sessionId);
-  return s?.status === "idle";
+/** The stub's echo of [text] — a marker that this turn actually ran. */
+const agentEcho = (text: string) => (m: Record<string, unknown>) => {
+  if (m.t !== "event" || m.kind !== "session.event") return false;
+  const e = m.event as { kind?: string; payload?: { text?: string } } | undefined;
+  return e?.kind === "agent.message" && e.payload?.text === `echo: ${text}`;
 };
 
 test("a finished turn re-derives the repos snapshot", async () => {
@@ -107,10 +108,24 @@ test("a finished turn re-derives the repos snapshot", async () => {
       c.msgs.find((m) => m.kind === "sessions.snapshot")!.sessions as Array<{ id: string }>
     );
     const sessionId = sessions[0]!.id;
+    // Wait for the connect-time burst to *settle* rather than for a fixed count:
+    // a broadcast has two phases (git-only, then PR-enriched). Drawing the line
+    // while one was still in flight would let it satisfy the assertion on its own,
+    // with no turn-end refresh involved.
     await waitFor(() => c.msgs.filter(isReposSnapshot).length > 0);
-    // Let the connect-time snapshots settle, then draw the line.
-    await new Promise((r) => setTimeout(r, 400));
-    const before = c.msgs.filter(isReposSnapshot).length;
+    let stable = -1;
+    for (let quiet = 0; quiet < 4; quiet++) {
+      await new Promise((r) => setTimeout(r, 150));
+      const n = c.msgs.filter(isReposSnapshot).length;
+      if (n !== stable) {
+        stable = n;
+        quiet = -1;
+      }
+    }
+    const before = stable;
+    // Everything at or after this index belongs to the turn, which is what makes
+    // the assertion about *this* turn rather than about connecting.
+    const cursor = c.msgs.length;
 
     // One turn. The stub echoes and returns to idle; nothing here adds or removes
     // a project, a session or a worktree, so the only remaining trigger is the
@@ -125,13 +140,24 @@ test("a finished turn re-derives the repos snapshot", async () => {
         text: "commit everything",
       }),
     );
-    await waitFor(() => c.msgs.some(isIdle(sessionId)));
+    // The turn ran: the stub's echo is a per-turn marker. Deliberately *not* a
+    // `running` sessions.snapshot — the sessions broadcast is coalesced over
+    // 150ms, so a stub turn goes running→idle inside one window and every frame
+    // that reaches the client already reads `idle`. The falling edge the server
+    // watches is `session.status`, which is not the same thing as a frame.
+    await waitFor(() => c.msgs.some(agentEcho("commit everything")));
 
-    // The trigger is coalesced over a second, so allow for the trailing edge.
-    await waitFor(() => c.msgs.filter(isReposSnapshot).length > before, 5000);
+    // The trigger is coalesced over a second, so allow for the trailing edge. The
+    // frames must land at or after the cursor: a connect-time snapshot cannot
+    // satisfy this.
+    await waitFor(() => c.msgs.slice(cursor).some(isReposSnapshot), 5000);
+    assert.ok(
+      c.msgs.slice(cursor).some(isReposSnapshot),
+      "a finished turn must push a fresh repos.snapshot",
+    );
     assert.ok(
       c.msgs.filter(isReposSnapshot).length > before,
-      "a finished turn must push a fresh repos.snapshot",
+      "…and it must be additional to the connect-time ones",
     );
   } finally {
     c.ws.close();
