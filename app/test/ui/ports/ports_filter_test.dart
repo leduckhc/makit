@@ -10,6 +10,7 @@ PortInfo _port({
   required int port,
   String? worktreePath,
   PortReach reach = PortReach.loopback,
+  PortOrphan? orphan,
 }) => PortInfo(
   key: '$port:0.0.0.0:$port',
   port: port,
@@ -18,6 +19,7 @@ PortInfo _port({
   pid: port,
   command: 'node vite --port $port',
   worktreePath: worktreePath,
+  orphan: orphan,
 );
 
 Worktree _wt(String path, String branch) => Worktree(
@@ -85,6 +87,17 @@ void main() {
     test('Exposed keeps only reach == exposed', () {
       final got = filterPorts(snap, PortsFilter.exposed, _repos);
       expect(got.map((p) => p.port), [9787]);
+    });
+
+    test('Orphans keeps only ports carrying an orphan annotation', () {
+      final orphan = _port(
+        port: 5180,
+        worktreePath: null,
+        orphan: const PortOrphan(formerBranch: 'feat/gone'),
+      );
+      final withOrphan = _snap([owned5173, system, orphan]);
+      final got = filterPorts(withOrphan, PortsFilter.orphans, _repos);
+      expect(got.map((p) => p.port), [5180]);
     });
 
     test('a null snapshot yields no ports', () {

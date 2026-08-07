@@ -23,9 +23,10 @@ List<PortInfo> portsForSession(PortsSnapshot? snapshot, String sessionId) {
   return list;
 }
 
-/// The built-in filters the screen offers (spec §6). *Orphans* is deliberately
-/// absent here — it needs the P2b history store.
-enum PortsFilter { all, thisRepo, mine, exposed }
+/// The built-in filters the screen offers (spec §6). *Orphans* keeps only
+/// ports carrying a D10 orphan annotation — the listeners whose worktree is
+/// gone.
+enum PortsFilter { all, thisRepo, mine, exposed, orphans }
 
 /// One worktree's ports within a repo group.
 class WorktreePortGroup {
@@ -83,6 +84,8 @@ List<PortInfo> filterPorts(
       return ports.where((p) => p.worktreePath != null).toList();
     case PortsFilter.exposed:
       return ports.where((p) => p.reach == PortReach.exposed).toList();
+    case PortsFilter.orphans:
+      return ports.where((p) => p.orphan != null).toList();
     case PortsFilter.thisRepo:
       if (repoId == null) return const [];
       final paths = {

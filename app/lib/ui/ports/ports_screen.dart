@@ -30,6 +30,12 @@ const Key kPortsEmptyState = ValueKey('ports-empty-state');
 /// Degraded-state banner (scan failed), keyed for tests.
 const Key kPortsDegradedBanner = ValueKey('ports-degraded-banner');
 
+/// The orphans group (D10) — listeners whose worktree is gone. Keyed for tests.
+const Key kPortsOrphansSection = ValueKey('ports-orphans-section');
+
+/// The collision banner (D12) — names the rival branch, no suggested port.
+const Key kPortsCollisionBanner = ValueKey('ports-collision-banner');
+
 /// The global Ports screen. [repoId], when set (via `?repo=<id>`), pre-selects
 /// the *This repo* filter for that repo.
 class PortsScreen extends ConsumerStatefulWidget {
@@ -94,7 +100,28 @@ class _PortsScreenState extends ConsumerState<PortsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ports'),
+        // Two lines: the name, and "how many / how stale". SPEC-41 §3 makes
+        // freshness a first-class fact because every verdict here is cached
+        // (stale-while-revalidate); a screen with no age reads as live when it
+        // may not be.
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Ports'),
+            if (snapshot != null)
+              Text(
+                portsScanSummary(
+                  listening: snapshot.ports.length,
+                  scannedAt: snapshot.scannedAt,
+                  nowMs: DateTime.now().millisecondsSinceEpoch,
+                ),
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(PhosphorIconsLight.arrowLeft),
           onPressed: () => Navigator.of(context).maybePop(),
@@ -107,6 +134,14 @@ class _PortsScreenState extends ConsumerState<PortsScreen> {
             filter: _filter,
             showThisRepo: widget.repoId != null,
             onChanged: (f) => setState(() => _filter = f),
+            exposedCount: snapshot == null
+                ? 0
+                : snapshot.ports
+                      .where((p) => p.reach == PortReach.exposed)
+                      .length,
+            orphanCount: snapshot == null
+                ? 0
+                : snapshot.ports.where((p) => p.orphan != null).length,
           ),
           const Divider(height: 1),
           Expanded(child: _body(context, snapshot, repos)),
@@ -131,19 +166,28 @@ class _PortsScreenState extends ConsumerState<PortsScreen> {
       repos,
       repoId: widget.repoId,
     );
-    final grouping = groupByRepoWorktree(filtered, repos);
+    // Orphans are unowned (D10), so they would otherwise fall into the system
+    // group; pull them out into their own section instead. Collisions ride on
+    // owned ports, so they stay in the repo groups and also surface a banner.
+    final orphanPorts = filtered.where((p) => p.orphan != null).toList();
+    final rest = filtered.where((p) => p.orphan == null).toList();
+    final collisions = rest.where((p) => p.collision != null).toList();
+    final grouping = groupByRepoWorktree(rest, repos);
     final degraded = !snapshot.scanOk;
 
     // A failed scan cannot prove the list is empty (D7), so it shows a banner —
     // above any ports it did manage to read — never the "nothing listening"
     // empty state.
-    if (!degraded && grouping.isEmpty) return _empty(context);
+    if (!degraded && grouping.isEmpty && orphanPorts.isEmpty) {
+      return _empty(context);
+    }
 
     final nowMs = DateTime.now().millisecondsSinceEpoch;
     return ListView(
       padding: const EdgeInsets.only(bottom: kSpace24),
       children: [
         if (degraded) _DegradedBanner(scanError: snapshot.scanError),
+        if (collisions.isNotEmpty) _CollisionBanner(ports: collisions),
         for (final repo in grouping.repos) ...[
           _GroupHeader(title: repo.repoName, count: _repoPortCount(repo)),
           for (final wt in repo.worktrees) ...[
@@ -157,6 +201,12 @@ class _PortsScreenState extends ConsumerState<PortsScreen> {
               ),
           ],
         ],
+        if (orphanPorts.isNotEmpty)
+          _OrphansSection(
+            ports: orphanPorts,
+            nowMs: nowMs,
+            onTap: (port) => _openPort(port, portOrphanWord),
+          ),
         if (grouping.systemPorts.isNotEmpty) ...[
           _GroupHeader(
             title: 'other / system',
@@ -215,11 +265,18 @@ class _FilterRow extends StatelessWidget {
     required this.filter,
     required this.showThisRepo,
     required this.onChanged,
+    required this.exposedCount,
+    required this.orphanCount,
   });
 
   final PortsFilter filter;
   final bool showThisRepo;
   final ValueChanged<PortsFilter> onChanged;
+
+  /// Counts for the two filters that are only worth tapping when non-zero
+  /// (mockup §6 badges exactly these). Zero is not drawn.
+  final int exposedCount;
+  final int orphanCount;
 
   @override
   Widget build(BuildContext context) {
@@ -227,7 +284,8 @@ class _FilterRow extends StatelessWidget {
       _chip('All', PortsFilter.all),
       if (showThisRepo) _chip('This repo', PortsFilter.thisRepo),
       _chip('Mine', PortsFilter.mine),
-      _chip('Exposed', PortsFilter.exposed),
+      _chip('Exposed', PortsFilter.exposed, count: exposedCount),
+      _chip('Orphans', PortsFilter.orphans, count: orphanCount),
     ];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -247,8 +305,10 @@ class _FilterRow extends StatelessWidget {
     );
   }
 
-  Widget _chip(String label, PortsFilter value) => ChoiceChip(
-    label: Text(label),
+  Widget _chip(String label, PortsFilter value, {int count = 0}) => ChoiceChip(
+    // The count rides inside the label so it is one string for a screen reader
+    // ("Exposed 1"), rather than a decorative badge it would read separately.
+    label: Text(count > 0 ? '$label $count' : label),
     selected: filter == value,
     onSelected: (_) => onChanged(value),
   );
@@ -453,6 +513,196 @@ class _PortRow extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The collision banner (D12): names the rival branch and stops there — there
+/// is deliberately NO suggested free port (that is SPEC-43/P3). One banner
+/// lists every colliding port so a duplicate [ValueKey] never lands in the
+/// tree.
+class _CollisionBanner extends StatelessWidget {
+  const _CollisionBanner({required this.ports});
+  final List<PortInfo> ports;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      key: kPortsCollisionBanner,
+      margin: const EdgeInsets.fromLTRB(kSpace12, kSpace12, kSpace12, kSpace4),
+      padding: const EdgeInsets.all(kSpace12),
+      decoration: BoxDecoration(
+        color: cs.tertiaryContainer,
+        borderRadius: BorderRadius.circular(kRadius8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            PhosphorIconsLight.warning,
+            size: 18,
+            color: cs.onTertiaryContainer,
+          ),
+          const SizedBox(width: kSpace8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final port in ports)
+                  Semantics(
+                    label: portCollisionTooltip(
+                      port.collision!,
+                      port: port.port,
+                    ),
+                    child: Text(
+                      portCollisionLabel(port.collision!, port: port.port),
+                      style: TextStyle(color: cs.onTertiaryContainer),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The orphans group (D10): listeners whose worktree is gone, in their own
+/// section with the `was <branch>, removed Nd ago` provenance line (or cwd-only
+/// when history is thin). There is deliberately NO kill affordance — the
+/// mockup's "Kill all orphans" is P3.
+class _OrphansSection extends StatelessWidget {
+  const _OrphansSection({
+    required this.ports,
+    required this.nowMs,
+    required this.onTap,
+  });
+
+  final List<PortInfo> ports;
+  final int nowMs;
+  final ValueChanged<PortInfo> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Column(
+      key: kPortsOrphansSection,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, kSpace16, 16, kSpace4),
+          child: Row(
+            children: [
+              Icon(PhosphorIconsLight.warning, size: 14, color: cs.error),
+              const SizedBox(width: kSpace6),
+              Flexible(
+                child: Text(
+                  'orphans — worktree gone'.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: cs.error,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: kSpace8),
+              Text(
+                '${ports.length}',
+                style: theme.textTheme.labelSmall?.copyWith(color: cs.error),
+              ),
+            ],
+          ),
+        ),
+        for (final port in ports)
+          _OrphanRow(
+            key: ValueKey('ports-screen-orphan-${port.key}'),
+            port: port,
+            nowMs: nowMs,
+            onTap: () => onTap(port),
+          ),
+      ],
+    );
+  }
+}
+
+/// One orphan row: port, command token, and the D10 provenance line. The word
+/// `orphan` ships beside the tint (accessibility rule), and the row's semantics
+/// label is the shared vocabulary tooltip so the consumers cannot drift.
+class _OrphanRow extends StatelessWidget {
+  const _OrphanRow({
+    super.key,
+    required this.port,
+    required this.nowMs,
+    required this.onTap,
+  });
+
+  final PortInfo port;
+  final int nowMs;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Semantics(
+      label: portOrphanTooltip(port.orphan!, nowMs: nowMs),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, kSpace6, 16, kSpace6),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 48,
+                child: Text(
+                  '${port.port}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFamily: kMonoFontFamily,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: kSpace8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      portCommandToken(port.command),
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: kMonoFontFamily,
+                      ),
+                    ),
+                    // Its OWN line, and free to wrap: "removed 2d ago" is the
+                    // whole point of an orphan row, and concatenating it after
+                    // the command made it the first thing a phone truncated.
+                    // Deliberately uncapped — an orphan is rare and worth the
+                    // extra line, and any `maxLines` here is a guess about font
+                    // metrics that a longer branch name would break again.
+                    Text(
+                      portOrphanLabel(port.orphan!, nowMs: nowMs),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: kSpace8),
+              Text(
+                portOrphanWord,
+                style: theme.textTheme.labelSmall?.copyWith(color: cs.error),
+              ),
+            ],
+          ),
         ),
       ),
     );
