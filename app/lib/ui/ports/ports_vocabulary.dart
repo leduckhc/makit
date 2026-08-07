@@ -16,6 +16,45 @@ enum PortAction { open, copyUrl }
 /// Actions that already say what they do get no tooltip.
 String? portActionTooltip(PortAction action) => null;
 
+/// The severity a terse token carries, derived from the fact rather than picked
+/// at each call site — so a 404 reads the same amber in the popover, both
+/// sheets and the global screen. Widget-free on purpose: the theme colour for a
+/// tone is resolved in `port_token_pill.dart`, the words live here.
+enum PortTone {
+  /// Answering, or reachable only where you meant it to be.
+  ok,
+
+  /// Alive but not serving (`404`), or reachable further than loopback.
+  warn,
+
+  /// Bound but unusable — a crashed server still holding its socket.
+  err,
+
+  /// No verdict yet (or none coming). Never coloured as a verdict.
+  idle,
+}
+
+/// The tone for a health verdict. `refused`/`timeout` are [PortTone.err] and
+/// not merely a warning, because they mean "you cannot use this" — a different
+/// instruction from a 404's "it is up, just not mounted at `/`".
+PortTone portHealthTone(PortHealth? health) {
+  if (health == null) return PortTone.idle;
+  return switch (health.kind) {
+    PortHealthKind.ok => PortTone.ok,
+    PortHealthKind.httpError => PortTone.warn,
+    PortHealthKind.refused || PortHealthKind.timeout => PortTone.err,
+  };
+}
+
+/// The tone for a reach. `exposed` is the only security-relevant value, so it
+/// is the one that must not be grey (mockup 116–118); `loopback` — the safe,
+/// overwhelmingly common case — stays [PortTone.idle] so a list of them is calm.
+PortTone portReachTone(PortReach reach) => switch (reach) {
+  PortReach.loopback => PortTone.idle,
+  PortReach.tailnet => PortTone.ok,
+  PortReach.exposed => PortTone.warn,
+};
+
 /// Short pill text for a health verdict, or "not probed" when absent. The
 /// glance form; [portHealthTooltip] is the explanation.
 String portHealthPill(PortHealth? health) {
@@ -163,6 +202,37 @@ String portUptimeLabel(int? startedAt, {required int nowMs}) {
 
 /// pid + command, one string for the process line.
 String portPidCommandLabel(int pid, String command) => 'pid $pid · $command';
+
+/// The command as a row shows it: argv[0] reduced to its basename, every
+/// argument kept. Only argv[0] is shortened — a path *argument* says what the
+/// process was told to do and must survive (`node dist/serve.js`).
+String portCommandLine(String command) {
+  final space = command.indexOf(' ');
+  if (space < 0) return portCommandToken(command);
+  final args = command.substring(space + 1);
+  return '${portCommandToken(command.substring(0, space))} $args';
+}
+
+/// Line 2 of a port row: `pid 48211 · up 41m · node vite --port 5173`.
+///
+/// The order is load-bearing. Every row that renders this ellipses its tail, so
+/// the age must sit AHEAD of the args or it is never seen — which is exactly
+/// what happened when this line joined the full argv first and appended the
+/// uptime last (mockup §2a puts pid, then age, then the command). The untruncated
+/// argv is still one hover away via [portPidCommandLabel].
+String portProcessLine(
+  int pid,
+  String command, {
+  required int? startedAt,
+  required int nowMs,
+}) {
+  final uptime = portUptimeLabel(startedAt, nowMs: nowMs);
+  return [
+    'pid $pid',
+    if (uptime.isNotEmpty) uptime,
+    portCommandLine(command),
+  ].join(' · ');
+}
 
 /// The global screen's subtitle: how many are listening, and how old the scan
 /// is. Freshness is a first-class fact here for the same reason the health

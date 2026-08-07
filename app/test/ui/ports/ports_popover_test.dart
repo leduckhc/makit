@@ -2,13 +2,16 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/app/theme.dart';
 import 'package:makit/store/ports.dart';
+import 'package:makit/ui/ports/ports_glyph.dart';
 import 'package:makit/ui/ports/ports_popover.dart';
 
 PortInfo _port({
   int port = 5173,
   String? openUrl = 'http://127.0.0.1:5173',
   String? command,
+  int startedAt = 1000,
 }) => PortInfo(
   key: '100:127.0.0.1:$port',
   port: port,
@@ -16,30 +19,221 @@ PortInfo _port({
   reach: PortReach.loopback,
   pid: 48211,
   command: command ?? 'node vite --port $port',
-  startedAt: 1000,
+  startedAt: startedAt,
   worktreePath: '/wt',
   sessionId: 's1',
   health: const PortHealth(kind: PortHealthKind.ok, status: 200, probedAt: 0),
   openUrl: openUrl,
 );
 
+// The real theme, so the app-wide `tooltipTheme` dwell applies here exactly as
+// it does in the product (a bare MaterialApp would silently use Flutter's
+// zero-dwell default and the tooltip tests below would prove nothing).
 Widget _host(Widget child) => MaterialApp(
+  theme: makitDarkTheme,
   home: Scaffold(body: Center(child: child)),
 );
 
 PortsPopover _popover({
   List<PortInfo>? ports,
   ValueChanged<bool>? onOpenChanged,
+  int nowMs = 0,
 }) => PortsPopover(
   state: PortsGlyphState.serving,
   count: 1,
   branch: 'feat/open-ports',
   ports: ports ?? [_port()],
-  nowMs: 0,
+  nowMs: nowMs,
   onOpenChanged: onOpenChanged,
 );
 
 void main() {
+  group('tooltip dwell (SPEC-41 §Tooltips: TOOLTIP_DWELL_MS = 500)', () {
+    test('the dwell is 500 ms and cannot race the popover open dwell', () {
+      expect(kTooltipDwell, const Duration(milliseconds: 500));
+      // The load-bearing ordering: a tooltip that fired before the popover
+      // opened would cover the glyph the pointer is aiming at.
+      expect(
+        kTooltipDwell.inMilliseconds,
+        greaterThan(kPortsHoverOpenMs),
+        reason: 'the tooltip must not appear before the popover',
+      );
+    });
+
+    test('both themes carry the dwell, not Flutter\'s zero default', () {
+      for (final theme in [makitLightTheme, makitDarkTheme]) {
+        expect(
+          theme.tooltipTheme.waitDuration,
+          kTooltipDwell,
+          reason: '${theme.brightness.name} tooltips would fire instantly',
+        );
+      }
+    });
+
+    testWidgets('a token tooltip waits out the dwell before appearing', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(_popover()));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+
+      // Hover the reach token inside the open popover.
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.text('loopback')));
+
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.textContaining('reachable only from this machine'),
+        findsNothing,
+        reason: 'the tooltip fired before the 500 ms dwell',
+      );
+
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('reachable only from this machine'),
+        findsOneWidget,
+      );
+    });
+  });
+
+  group('PortsPopover glyph hover feedback (mockup §5)', () {
+    Color? circleColor(WidgetTester tester) {
+      final box = tester.widget<Container>(find.byKey(kPortsGlyphHoverCircle));
+      return (box.decoration as BoxDecoration).color;
+    }
+
+    testWidgets('the glyph paints a circle under the pointer, and clears it', (
+      tester,
+    ) async {
+      // Without this the feature's primary control gives no sign it is a
+      // target, while the `…` right beside it does (IconButton supplies one).
+      await tester.pumpWidget(_host(_popover()));
+      expect(circleColor(tester)!.a, 0, reason: 'lit before any hover');
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await gesture.addPointer(location: Offset.zero);
+      addTearDown(gesture.removePointer);
+      await gesture.moveTo(tester.getCenter(find.byType(PortsGlyph)));
+      await tester.pump();
+      expect(circleColor(tester)!.a, greaterThan(0));
+
+      await gesture.moveTo(const Offset(600, 600));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(circleColor(tester)!.a, 0, reason: 'still lit after leaving');
+    });
+
+    testWidgets('stays lit while a pinned popover owns the glyph', (
+      tester,
+    ) async {
+      // A pinned popover with an unlit glyph loses the only clue about which
+      // control opened it.
+      await tester.pumpWidget(_host(_popover()));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+      expect(circleColor(tester)!.a, greaterThan(0));
+    });
+  });
+
+  group('PortsPopover placement', () {
+    // The glyph lives on a sidebar row's sub-row. Opening the panel BELOW it
+    // covers the sidebar — including the very row whose ports you are reading
+    // — so it opens BESIDE the glyph instead, spilling into the pane on the
+    // right where there is nothing to hide.
+    Future<void> pumpAt(
+      WidgetTester tester, {
+      required Offset at,
+      required Size window,
+      List<PortInfo>? ports,
+    }) async {
+      tester.view.physicalSize = window;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                Positioned(
+                  left: at.dx,
+                  top: at.dy,
+                  child: _popover(ports: ports),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+    }
+
+    testWidgets('opens beside the glyph, clear of it, never below', (
+      tester,
+    ) async {
+      await pumpAt(
+        tester,
+        at: const Offset(240, 300),
+        window: const Size(1400, 900),
+      );
+      final glyph = tester.getRect(find.byType(PortsGlyph));
+      final panel = tester.getRect(find.byKey(kPortsPopover));
+      expect(
+        panel.left,
+        greaterThanOrEqualTo(glyph.right),
+        reason: 'the panel overlaps the glyph and its row',
+      );
+      // Aligned to the row it belongs to, rather than floating at some
+      // unrelated height.
+      expect(panel.top, lessThanOrEqualTo(glyph.top));
+    });
+
+    testWidgets('falls back to the glyph\'s left when the right is too tight', (
+      tester,
+    ) async {
+      // A sidebar docked on the RIGHT, or a narrow window: there is no room
+      // beside the glyph, so the panel goes to the other side rather than
+      // being clamped into a position that covers it.
+      await pumpAt(
+        tester,
+        at: const Offset(600, 300),
+        window: const Size(700, 900),
+      );
+      final glyph = tester.getRect(find.byType(PortsGlyph));
+      final panel = tester.getRect(find.byKey(kPortsPopover));
+      expect(panel.right, lessThanOrEqualTo(glyph.left));
+    });
+
+    testWidgets('stays inside the window when neither side fits', (
+      tester,
+    ) async {
+      await pumpAt(
+        tester,
+        at: const Offset(180, 300),
+        window: const Size(400, 900),
+      );
+      final panel = tester.getRect(find.byKey(kPortsPopover));
+      expect(panel.left, greaterThanOrEqualTo(0));
+      expect(panel.right, lessThanOrEqualTo(400));
+    });
+
+    testWidgets('flips up when the glyph sits near the bottom', (tester) async {
+      // Pinning only the top edge would run a tall panel off the bottom, which
+      // is where a sidebar's last worktree row lives.
+      await pumpAt(
+        tester,
+        at: const Offset(240, 560),
+        window: const Size(1400, 600),
+        ports: [_port(port: 5173), _port(port: 5174), _port(port: 5175)],
+      );
+      final panel = tester.getRect(find.byKey(kPortsPopover));
+      expect(panel.bottom, lessThanOrEqualTo(600));
+      expect(panel.top, greaterThanOrEqualTo(0));
+    });
+  });
+
   group('PortsPopover hover mechanics', () {
     testWidgets('opens only after the 350 ms dwell', (tester) async {
       await tester.pumpWidget(_host(_popover()));
@@ -176,10 +370,11 @@ void main() {
   });
 
   group('PortsPopover truncated text', () {
-    // The panel is a fixed 320 pt, so both the command token and the
-    // pid · command line ellipse for any real absolute-path argv[0]. Line 1
-    // therefore shows argv[0]'s BASENAME, and both carry the full command as a
-    // tooltip — otherwise the row is unreadable with no way to read it.
+    // Both lines ellipse for any real absolute-path argv[0], so neither may
+    // spend its width on directories: line 1 shows argv[0]'s BASENAME and line
+    // 2 shows `pid · age · args`. The untruncated argv lives in the tooltip
+    // both of them share — otherwise the row is unreadable with no way to read
+    // it (spec §3).
     const long =
         '/opt/homebrew/Cellar/node/26.5.1/bin/node dist/serve.js --port 5173';
 
@@ -190,7 +385,37 @@ void main() {
       await tester.tap(find.byType(PortsPopover));
       await tester.pump();
       expect(find.text('node'), findsOneWidget);
-      expect(find.textContaining('/opt/homebrew/Cellar'), findsOneWidget);
+    });
+
+    testWidgets('no visible line spends its width on argv[0] directories', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(_popover(ports: [_port(command: long)])));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+      // The regression this replaces: line 2 rendered the full argv, so its
+      // ellipsis fell inside the path and the process age — the fact the line
+      // exists for — was pushed off the end and never rendered at all.
+      expect(find.textContaining('/opt/homebrew/Cellar'), findsNothing);
+    });
+
+    testWidgets('line 2 shows the process age ahead of the args', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          _popover(
+            ports: [_port(command: long, startedAt: 0)],
+            nowMs: 41 * 60 * 1000,
+          ),
+        ),
+      );
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+      expect(
+        find.text('pid 48211 · up 41m · node dist/serve.js --port 5173'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('the command token and the pid line both carry the full '

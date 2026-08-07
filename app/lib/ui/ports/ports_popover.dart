@@ -26,6 +26,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
 import '../../store/ports.dart';
+import 'port_token_pill.dart';
 import 'ports_glyph.dart';
 import 'ports_vocabulary.dart';
 
@@ -33,17 +34,37 @@ import 'ports_vocabulary.dart';
 const Key kPortsPopover = ValueKey('ports-popover');
 
 /// Dwell before a hover opens the popover. 350 ms so sliding the pointer across
-/// a list of worktrees opens nothing; deliberately below the tooltip's 500 ms
-/// so the two never race.
-const int _kHoverOpenMs = 350;
+/// a list of worktrees opens nothing; deliberately below [kTooltipDwell] so the
+/// two never race (public so a test can pin that ordering).
+const int kPortsHoverOpenMs = 350;
 
 /// Grace after leaving both the glyph and the panel before closing, so a
 /// diagonal overshoot into the gap is forgiven.
 const int _kHoverCloseMs = 150;
 
-/// Fixed popover width; the overlay math needs it up front to keep the panel on
-/// screen (same reason as the budget popover).
-const double _kPopoverWidth = 320;
+/// Fixed popover width. 360 pt, not 320: line 2 carries pid, age and the args,
+/// and the mockup (§2a) sizes the panel so that sentence mostly fits rather than
+/// sizing it small and then blaming the truncation on the content.
+const double _kPopoverWidth = 360;
+
+/// Width of a row's leading port-number column, which gives every row the same
+/// hanging indent so the numbers scan as a column (mockup 104 `.lead`).
+///
+/// 44 pt, not the mockup's 34: a 5-digit port (`49004`, and the mockup's own
+/// example) does not fit 34 pt in tabular mono, and it matches mobile sheet 1's
+/// existing lead width.
+const double _kPortNumberColumn = 44;
+
+/// Diameter cap for the pointer-feedback circle behind the glyph (mockup §5
+/// rules table). The mockup's 18 pt is an upper BOUND — "small enough not to
+/// touch the age text or the row edge" — and on the desktop sub-row the fixed
+/// 16 pt line clamps it to 16, which satisfies that rationale strictly better.
+/// The `…` menu beside it gets this for free from [IconButton]; the glyph is a
+/// bare [GestureDetector], so it has to paint its own.
+const double _kHoverCircle = 18;
+
+/// The hover circle, keyed so a test asserts the affordance rather than a colour.
+const Key kPortsGlyphHoverCircle = ValueKey('ports-glyph-hover');
 
 /// Minimum breathing room between the popover and the window edges.
 const double _kPopoverMargin = kSpace8;
@@ -111,7 +132,7 @@ class _PortsPopoverState extends State<PortsPopover> {
     _closeTimer?.cancel();
     if (_open) return;
     _controller.show();
-    _open = true;
+    setState(() => _open = true);
     widget.onOpenChanged?.call(true);
   }
 
@@ -120,8 +141,10 @@ class _PortsPopoverState extends State<PortsPopover> {
     _closeTimer?.cancel();
     if (!_open) return;
     _controller.hide();
-    _open = false;
-    _pinned = false;
+    setState(() {
+      _open = false;
+      _pinned = false;
+    });
     widget.onOpenChanged?.call(false);
   }
 
@@ -134,17 +157,18 @@ class _PortsPopoverState extends State<PortsPopover> {
   }
 
   void _onGlyphEnter() {
-    _overGlyph = true;
+    // setState: the hover circle is painted from this flag.
+    setState(() => _overGlyph = true);
     _closeTimer?.cancel();
     if (_open) return;
     _openTimer?.cancel();
-    _openTimer = Timer(const Duration(milliseconds: _kHoverOpenMs), () {
+    _openTimer = Timer(const Duration(milliseconds: kPortsHoverOpenMs), () {
       if (_overGlyph) _show();
     });
   }
 
   void _onGlyphExit() {
-    _overGlyph = false;
+    setState(() => _overGlyph = false);
     _openTimer?.cancel();
     _scheduleClose();
   }
@@ -164,6 +188,10 @@ class _PortsPopoverState extends State<PortsPopover> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    // Painted while the pointer is on the glyph AND while the popover owns it,
+    // so a pinned popover still shows which control opened it.
+    final lit = _overGlyph || _open;
     return OverlayPortal(
       controller: _controller,
       overlayChildBuilder: _overlay,
@@ -173,12 +201,29 @@ class _PortsPopoverState extends State<PortsPopover> {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _onTap,
-          child: KeyedSubtree(
-            key: _anchorKey,
-            child: PortsGlyph(
-              state: widget.state,
-              count: widget.count,
-              size: widget.glyphSize,
+          child: Center(
+            child: Container(
+              key: kPortsGlyphHoverCircle,
+              width: _kHoverCircle,
+              height: _kHoverCircle,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: lit
+                    ? cs.onSurface.withValues(alpha: 0.10)
+                    : Colors.transparent,
+              ),
+              // The anchor stays the GLYPH, not the circle, so the popover's 6 pt
+              // gap is measured from the icon the user is actually pointing at.
+              child: Center(
+                child: KeyedSubtree(
+                  key: _anchorKey,
+                  child: PortsGlyph(
+                    state: widget.state,
+                    count: widget.count,
+                    size: widget.glyphSize,
+                  ),
+                ),
+              ),
             ),
           ),
         ),
@@ -194,16 +239,41 @@ class _PortsPopoverState extends State<PortsPopover> {
     }
     final overlaySize = overlayBox.size;
     final topLeft = anchor.localToGlobal(Offset.zero, ancestor: overlayBox);
+    final anchorRect = Rect.fromLTWH(
+      topLeft.dx,
+      topLeft.dy,
+      anchor.size.width,
+      anchor.size.height,
+    );
 
-    // Prefer right-aligned to the glyph (the control edge), then clamp inside
-    // the window — the same load-bearing clamp the budget popover documents.
-    final preferredLeft = topLeft.dx + anchor.size.width - _kPopoverWidth;
+    // BESIDE the glyph, not below it. The glyph lives on a sidebar row's
+    // sub-row, so a downward panel covers the sidebar — including the very row
+    // whose ports you opened it to read. To the right there is a chat pane with
+    // nothing to hide. Preference order: right of the glyph, then left of it
+    // (a right-docked sidebar, or a narrow window), then clamped on-screen.
     final maxLeft = overlaySize.width - _kPopoverWidth - _kPopoverMargin;
-    final left = maxLeft <= _kPopoverMargin
-        ? _kPopoverMargin
-        : preferredLeft.clamp(_kPopoverMargin, maxLeft);
-    // Open downward, just under the glyph.
-    final top = topLeft.dy + anchor.size.height + kSpace6;
+    final rightOfGlyph = anchorRect.right + kSpace6;
+    final leftOfGlyph = anchorRect.left - _kPopoverWidth - kSpace6;
+    final double left;
+    if (rightOfGlyph <= maxLeft) {
+      left = rightOfGlyph;
+    } else if (leftOfGlyph >= _kPopoverMargin) {
+      left = leftOfGlyph;
+    } else {
+      left = maxLeft <= _kPopoverMargin
+          ? _kPopoverMargin
+          : rightOfGlyph.clamp(_kPopoverMargin, maxLeft);
+    }
+
+    // Vertically the panel is aligned to its row and grows AWAY from the nearer
+    // edge: pinning only the top would run a tall panel off the bottom, which
+    // is exactly where a sidebar's last worktree row sits. Deciding by which
+    // half the glyph is in avoids needing the panel's height up front (the
+    // overlay lays out after this runs).
+    final growsDown = anchorRect.center.dy <= overlaySize.height / 2;
+    // Cap the height either way, so a worktree with a dozen listeners scrolls
+    // instead of pushing its header or its footer off-screen.
+    final maxHeight = overlaySize.height - _kPopoverMargin * 2;
 
     return Stack(
       children: [
@@ -219,7 +289,13 @@ class _PortsPopoverState extends State<PortsPopover> {
           ),
         Positioned(
           left: left,
-          top: top,
+          top: growsDown ? anchorRect.top : null,
+          bottom: growsDown
+              ? null
+              : (overlaySize.height - anchorRect.bottom).clamp(
+                  _kPopoverMargin,
+                  double.infinity,
+                ),
           child: MouseRegion(
             onEnter: (_) {
               _overPanel = true;
@@ -239,6 +315,7 @@ class _PortsPopoverState extends State<PortsPopover> {
                   branch: widget.branch,
                   ports: widget.ports,
                   nowMs: widget.nowMs,
+                  maxHeight: maxHeight,
                 ),
               ),
             ),
@@ -256,11 +333,16 @@ class _PortsPopoverPanel extends StatelessWidget {
     required this.branch,
     required this.ports,
     required this.nowMs,
+    required this.maxHeight,
   });
 
   final String branch;
   final List<PortInfo> ports;
   final int nowMs;
+
+  /// Ceiling from the overlay, so a long list scrolls rather than running off
+  /// the window edge the panel is pinned away from.
+  final double maxHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -274,68 +356,72 @@ class _PortsPopoverPanel extends StatelessWidget {
       borderRadius: BorderRadius.circular(kRadius12),
       child: Container(
         width: _kPopoverWidth,
+        constraints: BoxConstraints(maxHeight: maxHeight),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(kRadius12),
           border: Border.all(color: cs.outlineVariant),
         ),
         padding: const EdgeInsets.symmetric(vertical: kSpace8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                kSpace12,
-                kSpace4,
-                kSpace12,
-                kSpace8,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      branch,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w600,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace12,
+                  kSpace4,
+                  kSpace12,
+                  kSpace8,
+                ),
+                child: Row(
+                  children: [
+                    Icon(PhosphorIconsLight.plug, size: 14, color: cs.primary),
+                    const SizedBox(width: kSpace6),
+                    Expanded(
+                      child: Text(
+                        branch,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
-                  Text(
-                    ports.length == 1
-                        ? '1 listening'
-                        : '${ports.length} listening',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: cs.onSurfaceVariant,
+                    Text(
+                      ports.length == 1
+                          ? '1 listening'
+                          : '${ports.length} listening',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-            for (final port in ports) _PortRow(port: port, nowMs: nowMs),
-            // The popover's own instructions: hover opens it, but the buttons
-            // are only safe to rely on once pinned, and neither the pin nor Esc
-            // is discoverable from the glyph.
-            Container(
-              key: kPortsPopoverHint,
-              margin: const EdgeInsets.only(top: kSpace8),
-              padding: const EdgeInsets.fromLTRB(
-                kSpace12,
-                kSpace6,
-                kSpace12,
-                kSpace2,
-              ),
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: cs.outlineVariant)),
-              ),
-              child: Text(
-                'Click to pin · Tab to reach buttons · Esc closes',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant,
+                  ],
                 ),
               ),
-            ),
-          ],
+              for (final port in ports) _PortRow(port: port, nowMs: nowMs),
+              // The popover's own instructions: hover opens it, but the buttons
+              // are only safe to rely on once pinned, and neither the pin nor Esc
+              // is discoverable from the glyph.
+              Container(
+                key: kPortsPopoverHint,
+                padding: const EdgeInsets.fromLTRB(
+                  kSpace12,
+                  kSpace6,
+                  kSpace12,
+                  kSpace2,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: cs.outlineVariant)),
+                ),
+                child: Text(
+                  'Click to pin · Tab to reach buttons · Esc closes',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -383,95 +469,110 @@ class _PortRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final uptime = portUptimeLabel(port.startedAt, nowMs: nowMs);
     final hasUrl = port.openUrl != null;
-    // Both truncated tokens on this row own the same sentence: the full argv.
-    // The panel is a fixed 320 pt, so line 2 always ellipses and line 1 does
-    // too for any absolute-path argv[0] — without this the row is unreadable
-    // with no way to read it (spec §3, one string per token).
+    // Line 1's token and line 2 both truncate, and both are saying the same
+    // thing: the full argv. One tooltip, both places (spec §3).
     final commandSentence = portPidCommandLabel(port.pid, port.command);
-    return Padding(
+    return Container(
+      // A hairline per row, including the first, so the header and three ports
+      // read as four bands instead of one blob (mockup 103).
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: cs.outlineVariant)),
+      ),
       padding: const EdgeInsets.symmetric(
         horizontal: kSpace12,
-        vertical: kSpace8,
+        vertical: kSpace10,
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(
-                '${port.port}',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontFamily: kMonoFontFamily,
-                  fontWeight: FontWeight.w600,
-                ),
+          SizedBox(
+            width: _kPortNumberColumn,
+            child: Text(
+              '${port.port}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: kMonoFontFamily,
+                fontWeight: FontWeight.w600,
+                // Tabular figures so a column of ports lines up digit-for-digit.
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
-              const SizedBox(width: kSpace8),
-              Flexible(
-                child: Tooltip(
+            ),
+          ),
+          const SizedBox(width: kSpace10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Tooltip(
+                        message: commandSentence,
+                        child: Text(
+                          portCommandToken(port.command),
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontFamily: kMonoFontFamily,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: kSpace6),
+                    PortTokenPill(
+                      label: portHealthPill(port.health),
+                      sentence: portHealthTooltip(port.health, nowMs: nowMs),
+                      tone: portHealthTone(port.health),
+                      showDot: true,
+                    ),
+                    const SizedBox(width: kSpace6),
+                    PortTokenPill(
+                      label: portReachPill(port.reach),
+                      sentence: portReachTooltip(port.reach),
+                      tone: portReachTone(port.reach),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: kSpace2),
+                Tooltip(
                   message: commandSentence,
                   child: Text(
-                    portCommandToken(port.command),
+                    portProcessLine(
+                      port.pid,
+                      port.command,
+                      startedAt: port.startedAt,
+                      nowMs: nowMs,
+                    ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
                       fontFamily: kMonoFontFamily,
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: kSpace8),
-              Tooltip(
-                message: portHealthTooltip(port.health, nowMs: nowMs),
-                child: Text(
-                  portHealthPill(port.health),
-                  style: theme.textTheme.labelSmall,
-                ),
-              ),
-              const SizedBox(width: kSpace8),
-              Tooltip(
-                message: portReachTooltip(port.reach),
-                child: Text(
-                  portReachPill(port.reach),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: cs.onSurfaceVariant,
+                if (hasUrl) ...[
+                  const SizedBox(height: kSpace6),
+                  Row(
+                    children: [
+                      _ActionButton(
+                        icon: PhosphorIconsLight.arrowSquareOut,
+                        label: 'Open',
+                        primary: true,
+                        onTap: () => _open(context),
+                      ),
+                      const SizedBox(width: kSpace6),
+                      _ActionButton(
+                        icon: PhosphorIconsLight.copy,
+                        label: 'Copy URL',
+                        onTap: () => _copy(context),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: kSpace2),
-          Tooltip(
-            message: commandSentence,
-            child: Text(
-              [commandSentence, if (uptime.isNotEmpty) uptime].join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
-                fontFamily: kMonoFontFamily,
-              ),
-            ),
-          ),
-          if (hasUrl) ...[
-            const SizedBox(height: kSpace6),
-            Row(
-              children: [
-                _ActionButton(
-                  icon: PhosphorIconsLight.arrowSquareOut,
-                  label: 'Open',
-                  primary: true,
-                  onTap: () => _open(context),
-                ),
-                const SizedBox(width: kSpace6),
-                _ActionButton(
-                  icon: PhosphorIconsLight.copy,
-                  label: 'Copy URL',
-                  onTap: () => _copy(context),
-                ),
+                ],
               ],
             ),
-          ],
+          ),
         ],
       ),
     );
