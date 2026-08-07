@@ -370,7 +370,7 @@ void main() {
   });
 
   group('StoreController — sub carries fromSeq cursor', () {
-    test('sub after seeing events replays only newer ones', () async {
+    test('a first sub asks for the whole history, cursor or not', () async {
       final transport = _CapturingTransport();
       final container = ProviderContainer(
         overrides: [
@@ -399,7 +399,12 @@ void main() {
       final store = container.read(storeControllerProvider.notifier);
       await Future<void>.delayed(Duration.zero); // let boot/connect settle
 
-      // Server pushes an event at seq 7 → advances the client cursor.
+      // The server auto-mirrors every session's events to every authed client,
+      // subscribed or not, and the reducer advances that session's cursor. If
+      // the cursor were used as `fromSeq` here the server would replay nothing,
+      // so the history before this client connected — including the session's
+      // one-shot `session.meta` / `session.commands` at the very start of the
+      // log — would never arrive.
       transport.pushEvent(seq: 7, sessionId: _sid);
       await Future<void>.delayed(Duration.zero);
 
@@ -408,6 +413,51 @@ void main() {
 
       final sub = transport.sent.singleWhere((e) => e.t == MsgType.sub);
       expect(sub.body['sessionId'], _sid);
+      expect(sub.body['fromSeq'], 0);
+    });
+
+    test('a resub after a full replay asks only for newer events', () async {
+      final transport = _CapturingTransport();
+      final container = ProviderContainer(
+        overrides: [
+          connectionControllerProvider.overrideWith(
+            (ref) => ConnectionController(
+              _FakeStorage({
+                'paired_server': jsonEncode({
+                  'host': '192.168.1.10',
+                  'port': 8443,
+                  'fingerprint': 'f' * 64,
+                  'bearer': 'b',
+                  'label': 'desktop',
+                }),
+              }),
+              transportFactory: () => transport,
+              browseLan:
+                  ({Duration timeout = const Duration(seconds: 3)}) async =>
+                      const [],
+              rediscoverStall: const Duration(seconds: 30),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final store = container.read(storeControllerProvider.notifier);
+      await Future<void>.delayed(Duration.zero);
+
+      // Full replay, closed by its ack → this client now holds the history
+      // contiguously, so a reconnect only needs the gap.
+      store.subscribeSession(_sid);
+      transport.pushEvent(seq: 7, sessionId: _sid);
+      transport.pushAck(id: 's-$_sid');
+      await Future<void>.delayed(Duration.zero);
+
+      transport.sent.clear();
+      transport.pushState(WsState.reconnecting);
+      transport.pushState(WsState.connected);
+      await Future<void>.delayed(Duration.zero);
+
+      final sub = transport.sent.singleWhere((e) => e.t == MsgType.sub);
       expect(sub.body['fromSeq'], 7);
     });
 
@@ -500,6 +550,88 @@ void main() {
         final state = container.read(storeControllerProvider);
         expect(state.events[_sid]!.length, 2);
         expect(state.cursors[_sid], 2);
+      },
+    );
+
+    test(
+      'a full replay rebuilds a session the auto-mirror had only tailed',
+      () async {
+        final transport = _CapturingTransport();
+        final container = ProviderContainer(
+          overrides: [
+            connectionControllerProvider.overrideWith(
+              (ref) => ConnectionController(
+                _FakeStorage({
+                  'paired_server': jsonEncode({
+                    'host': '192.168.1.10',
+                    'port': 8443,
+                    'fingerprint': 'f' * 64,
+                    'bearer': 'b',
+                    'label': 'desktop',
+                  }),
+                }),
+                transportFactory: () => transport,
+                browseLan:
+                    ({Duration timeout = const Duration(seconds: 3)}) async =>
+                        const [],
+                rediscoverStall: const Duration(seconds: 30),
+              ),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final store = container.read(storeControllerProvider.notifier);
+        await Future<void>.delayed(Duration.zero);
+
+        // A session streaming in the background: its live events reach this
+        // client (auto-mirror) long before the user opens it, so the store holds
+        // its tail — and a cursor at the head.
+        transport.pushEvent(seq: 9, sessionId: _sid, text: 'tail');
+        await Future<void>.delayed(Duration.zero);
+
+        store.subscribeSession(_sid);
+        await Future<void>.delayed(Duration.zero);
+
+        // The replay carries the whole log, including the one-shot sticky state
+        // the agent emitted at spawn (seq 1/2) and the tail we already had.
+        transport.pushEvent(
+          seq: 1,
+          sessionId: _sid,
+          kind: 'session.meta',
+          payload: {
+            'thinking': '',
+            'models': [
+              {'provider': 'anthropic', 'id': 'sonnet', 'name': 'Sonnet'},
+            ],
+          },
+        );
+        transport.pushEvent(
+          seq: 2,
+          sessionId: _sid,
+          kind: 'session.commands',
+          payload: {
+            'commands': [
+              {'name': 'skill:foo', 'description': 'd', 'source': 'skill'},
+            ],
+          },
+        );
+        transport.pushEvent(seq: 3, sessionId: _sid, text: 'history');
+        transport.pushEvent(seq: 9, sessionId: _sid, text: 'tail');
+        transport.pushAck(id: 's-$_sid');
+        await Future<void>.delayed(Duration.zero);
+
+        // Sticky state landed: without it the composer has no model selector
+        // and no slash commands.
+        expect(container.read(sessionMetaProvider(_sid))?.models, hasLength(1));
+        expect(container.read(commandsProvider(_sid)), hasLength(1));
+        // History landed too, and the tail we already held is not duplicated.
+        final texts = container
+            .read(storeControllerProvider)
+            .events[_sid]!
+            .map((e) => e.payload['text'])
+            .toList();
+        expect(texts, ['history', 'tail']);
       },
     );
 
@@ -1114,6 +1246,7 @@ class _CapturingTransport implements Transport {
     required String sessionId,
     String kind = 'agent.message',
     String? text,
+    Map<String, dynamic>? payload,
   }) {
     _frames.add(
       Envelope(
@@ -1126,7 +1259,7 @@ class _CapturingTransport implements Transport {
             'sessionId': sessionId,
             'ts': seq * 1000,
             'kind': kind,
-            'payload': {'text': text ?? 'm$seq'},
+            'payload': payload ?? {'text': text ?? 'm$seq'},
           },
         },
       ),
@@ -1136,6 +1269,9 @@ class _CapturingTransport implements Transport {
   void pushAck({required String id}) {
     _frames.add(Envelope(t: MsgType.ack, id: id));
   }
+
+  /// Drive the state stream, so a test can stage a drop + reconnect.
+  void pushState(WsState s) => _state.add(s);
 
   void pushSessions(List<Map<String, dynamic>> sessions) {
     _frames.add(

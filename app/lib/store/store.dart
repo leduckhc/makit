@@ -330,6 +330,8 @@ class StoreController extends StateNotifier<StoreState> {
         _subscribed.clear();
         _awaitingReplay.clear();
         _replayBuffer.clear();
+        _historyLoaded.clear();
+        _fullReplay.clear();
         _watchingGithubBudget = false;
         state = StoreState.empty();
         // SPEC-45 D9: the per-(agent, project) command cache belonged to the old
@@ -394,6 +396,24 @@ class StoreController extends StateNotifier<StoreState> {
   final Set<String> _awaitingReplay = <String>{};
   final Map<String, List<SessionEvent>> _replayBuffer =
       <String, List<SessionEvent>>{};
+
+  /// Sessions whose full history this client holds (a `fromSeq = 0` replay
+  /// completed). Only those may `sub` incrementally from their cursor.
+  ///
+  /// The cursor alone cannot decide that: the server auto-mirrors every
+  /// session's events to every authed client, subscribed or not (see
+  /// `SubscriptionHub.fanout`), and [reduceEvent] advances the cursor for each
+  /// one. So a session streaming in the background drags this client's cursor to
+  /// its head while the store holds nothing but the tail — and subbing from that
+  /// cursor replayed *zero* events, losing the history and, with it, the
+  /// one-shot `session.meta` / `session.commands` the agent emits at spawn: no
+  /// model selector, no slash commands, transcript starting mid-conversation.
+  final Set<String> _historyLoaded = <String>{};
+
+  /// Sessions whose in-flight `sub` asked for the whole history, so the flush
+  /// replaces their tail-only slice instead of folding into it (the cursor would
+  /// otherwise reject every replayed event as already-seen).
+  final Set<String> _fullReplay = <String>{};
 
   /// Decode the frame through [WireCodec], then fold it via the pure [reduce].
   /// Unrecognized / malformed frames decode to null (WireCodec logs a warning)
@@ -460,13 +480,27 @@ class StoreController extends StateNotifier<StoreState> {
   void _flushReplay(String sessionId) {
     _awaitingReplay.remove(sessionId);
     final buffered = _replayBuffer.remove(sessionId);
-    if (buffered == null || buffered.isEmpty) return;
+    final full = _fullReplay.remove(sessionId);
+    if (!full && (buffered == null || buffered.isEmpty)) return;
     var next = state;
-    for (final e in buffered) {
+    if (full) {
+      _historyLoaded.add(sessionId);
+      // Start this session from an empty slice: the replay is its whole log, and
+      // whatever the auto-mirror left here sits at seqs the cursor would now use
+      // to reject the replay. Dropping it first closes the hole without
+      // duplicating the tail (the replay carries those events too).
+      next = next.copyWith(
+        events: Map<String, List<SessionEvent>>.from(next.events)
+          ..remove(sessionId),
+        cursors: Map<String, int>.from(next.cursors)..remove(sessionId),
+      );
+    }
+    final events = buffered ?? const <SessionEvent>[];
+    for (final e in events) {
       next = reduceEvent(next, e);
     }
     state = next;
-    for (final e in buffered) {
+    for (final e in events) {
       _cacheCommands(e);
     }
   }
@@ -507,9 +541,12 @@ class StoreController extends StateNotifier<StoreState> {
 
   void _sendSub(String sessionId) {
     // Include the last-seen seq so the server replays only newer events on
-    // reconnect instead of the whole history. `reduceEvent` still dedups, so
-    // fromSeq=0 (fresh sub) stays correct.
-    final fromSeq = state.cursors[sessionId] ?? 0;
+    // reconnect instead of the whole history — but only once we hold that
+    // history contiguously, or the cursor an auto-mirrored session advanced for
+    // us would suppress the replay entirely (see [_historyLoaded]).
+    final loaded = _historyLoaded.contains(sessionId);
+    final fromSeq = loaded ? (state.cursors[sessionId] ?? 0) : 0;
+    if (!loaded) _fullReplay.add(sessionId);
     // Arm replay buffering so the events the server is about to stream back are
     // applied as one batch on the ack (see [_onFrame]). Re-arming resets any
     // in-flight buffer; the server re-replays from `fromSeq` so nothing is lost.
