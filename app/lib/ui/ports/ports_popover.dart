@@ -271,9 +271,11 @@ class _PortsPopoverState extends State<PortsPopover> {
     // half the glyph is in avoids needing the panel's height up front (the
     // overlay lays out after this runs).
     final growsDown = anchorRect.center.dy <= overlaySize.height / 2;
-    // Cap the height either way, so a worktree with a dozen listeners scrolls
-    // instead of pushing its header or its footer off-screen.
-    final maxHeight = overlaySize.height - _kPopoverMargin * 2;
+    // Cap the height based on the direction the panel grows. Downward: space
+    // below the glyph. Upward: space above it, clamped to a safe margin.
+    final maxHeight = growsDown
+        ? overlaySize.height - anchorRect.top - _kPopoverMargin
+        : (anchorRect.bottom - _kPopoverMargin).clamp(0.0, double.infinity);
 
     return Stack(
       children: [
@@ -361,67 +363,76 @@ class _PortsPopoverPanel extends StatelessWidget {
           borderRadius: BorderRadius.circular(kRadius12),
           border: Border.all(color: cs.outlineVariant),
         ),
-        padding: const EdgeInsets.symmetric(vertical: kSpace8),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  kSpace12,
-                  kSpace4,
-                  kSpace12,
-                  kSpace8,
-                ),
-                child: Row(
+        padding: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace12,
+                kSpace8,
+                kSpace12,
+                kSpace8,
+              ),
+              child: Row(
+                children: [
+                  Icon(PhosphorIconsLight.plug, size: 14, color: cs.primary),
+                  const SizedBox(width: kSpace6),
+                  Expanded(
+                    child: Text(
+                      branch,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    ports.length == 1
+                        ? '1 listening'
+                        : '${ports.length} listening',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(PhosphorIconsLight.plug, size: 14, color: cs.primary),
-                    const SizedBox(width: kSpace6),
-                    Expanded(
-                      child: Text(
-                        branch,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      ports.length == 1
-                          ? '1 listening'
-                          : '${ports.length} listening',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
+                    for (final port in ports)
+                      _PortRow(port: port, nowMs: nowMs),
                   ],
                 ),
               ),
-              for (final port in ports) _PortRow(port: port, nowMs: nowMs),
-              // The popover's own instructions: hover opens it, but the buttons
-              // are only safe to rely on once pinned, and neither the pin nor Esc
-              // is discoverable from the glyph.
-              Container(
-                key: kPortsPopoverHint,
-                padding: const EdgeInsets.fromLTRB(
-                  kSpace12,
-                  kSpace6,
-                  kSpace12,
-                  kSpace2,
-                ),
-                decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: cs.outlineVariant)),
-                ),
-                child: Text(
-                  'Click to pin · Tab to reach buttons · Esc closes',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
+            ),
+            // The popover's own instructions: hover opens it, but the buttons
+            // are only safe to rely on once pinned, and neither the pin nor Esc
+            // is discoverable from the glyph.
+            Container(
+              key: kPortsPopoverHint,
+              padding: const EdgeInsets.fromLTRB(
+                kSpace12,
+                kSpace6,
+                kSpace12,
+                kSpace8,
+              ),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: cs.outlineVariant)),
+              ),
+              child: Text(
+                'Click to pin · Tab to reach buttons · Esc closes',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

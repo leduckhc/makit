@@ -3,6 +3,9 @@
 # `test/sim/ports_record_test.dart` into GIFs that GitHub renders inline.
 #
 #   1. server:  pnpm exec tsx tool/capture-ports-snapshot.ts <repo> 3 > /tmp/ports-snapshot.json
+#      (`3` is the publication target used to catch the health verdict, not a
+#      requirement: the capture is deadline-bounded and settles for the freshest
+#      snapshot it has, so this step always terminates even on a quiet machine.)
 #   2. app:     PORTS_RECORD=1 flutter test --no-pub --update-goldens test/sim/ports_record_test.dart
 #   3. app:     tool/make-ports-recording.sh   (writes ../docs/media/*.gif)
 #
