@@ -28,6 +28,7 @@ import '../../app/theme.dart';
 import '../../store/metrics.dart';
 import '../../store/prefs/preference_entries.dart';
 import '../../store/prefs/preferences_providers.dart';
+import '../../ui/widgets/pulse.dart';
 import 'charts.dart';
 import 'frame_timings.dart';
 import '../window_overlays.dart';
@@ -65,19 +66,10 @@ class MetricsButton extends ConsumerStatefulWidget {
   ConsumerState<MetricsButton> createState() => _MetricsButtonState();
 }
 
-class _MetricsButtonState extends ConsumerState<MetricsButton>
-    with SingleTickerProviderStateMixin {
+class _MetricsButtonState extends ConsumerState<MetricsButton> {
   final _anchorKey = GlobalKey();
   final _controller = OverlayPortalController();
   bool _open = false;
-
-  /// Drives the Working state's glyph animation. Decision 12: working is shown
-  /// by *motion*, not by a tint — an always-on "busy" colour would be lit all
-  /// day and mean nothing.
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  );
 
   /// Held while the popover is open so the sampler runs at 1 Hz; released on
   /// dismiss and on dispose (a dispose while open must not leak the watch).
@@ -137,10 +129,7 @@ class _MetricsButtonState extends ConsumerState<MetricsButton>
 
   @override
   void dispose() {
-    // Order matters only in that both must happen: the watch is ref-counted
-    // server state, the ticker is local.
     _releaseWatch();
-    _pulse.dispose();
     super.dispose();
   }
 
@@ -157,15 +146,6 @@ class _MetricsButtonState extends ConsumerState<MetricsButton>
     );
     final color = metricsIconColor(state, cs);
 
-    // Animate only while a turn runs; a ticker that kept running while parked
-    // would itself be idle cost in the panel that measures idle cost.
-    if (state == MetricsIconState.working) {
-      if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
-    } else if (_pulse.isAnimating) {
-      _pulse.stop();
-      _pulse.value = 0;
-    }
-
     return OverlayPortal(
       controller: _controller,
       overlayChildBuilder: (ctx) => _overlay(ctx),
@@ -181,11 +161,21 @@ class _MetricsButtonState extends ConsumerState<MetricsButton>
                   backgroundColor: cs.onSurface.withValues(alpha: 0.11),
                 )
               : null,
-          icon: FadeTransition(
-            // 1.0 → 0.45 while working, constant 1.0 otherwise.
-            opacity: _pulse.drive(Tween(begin: 1, end: 0.45)),
-            child: Icon(PhosphorIconsLight.pulse, size: 18, color: color),
-          ),
+          // Decision 12: working is shown by *motion*, not a tint. Animate only
+          // while a turn runs — a ticker that kept running while parked would
+          // itself be idle cost in the panel that measures idle cost — and fade
+          // the glyph's colour on the shared low-rate clock rather than at every
+          // vsync through an opacity layer.
+          icon: state == MetricsIconState.working
+              ? PulseBuilder(
+                  period: const Duration(milliseconds: 1400),
+                  builder: (context, t) => Icon(
+                    PhosphorIconsLight.pulse,
+                    size: 18,
+                    color: color.withValues(alpha: 1 - 0.55 * t),
+                  ),
+                )
+              : Icon(PhosphorIconsLight.pulse, size: 18, color: color),
         ),
       ),
     );

@@ -11,6 +11,7 @@ import 'package:makit/desktop/chat/sidebar_layout.dart'
 import 'package:makit/desktop/chat/panes/workspace_controller.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/widgets/pulse.dart';
 
 Session _session(
   String id, {
@@ -326,6 +327,32 @@ void main() {
       );
       await _pump(tester, c, const GroupBar());
       expect(find.byKey(const Key('groupLiveDot-g1')), findsNothing);
+    });
+
+    testWidgets('pulses on the shared low-rate clock, not at vsync', (
+      tester,
+    ) async {
+      // A repeating AnimationController here kept the compositor at the display
+      // refresh rate and dragged the tab labels through re-raster with it.
+      final c = _container(
+        groups: [_wt('g1', '/tmp/wt/feat-x')],
+        sessions: [
+          _session(
+            's1',
+            worktreePath: '/tmp/wt/feat-x',
+            status: SessionStatus.running,
+          ),
+        ],
+      );
+      await _pump(tester, c, const GroupBar());
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('groupLiveDot-g1')),
+          matching: find.byType(PulseBuilder),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.binding.hasScheduledFrame, isFalse);
     });
   });
 

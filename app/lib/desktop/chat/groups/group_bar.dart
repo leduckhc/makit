@@ -18,6 +18,7 @@ import '../../../shortcuts/shortcut_action.dart';
 import '../../../store/models.dart';
 import '../../../store/store.dart';
 import '../../../ui/widgets/menu_item.dart';
+import '../../../ui/widgets/pulse.dart';
 import '../sidebar_layout.dart' show kTitleBarStripHeight;
 import 'group.dart';
 import 'group_providers.dart';
@@ -371,36 +372,23 @@ class _CloseButton extends StatelessWidget {
 /// A small pulsing dot marking that a member session is running. Mirrors
 /// [SessionStatusDot]'s pulse so "running" reads the same across the app; it
 /// only animates while mounted, so an idle group carries no ticking timer.
-class _GroupLiveDot extends StatefulWidget {
+class _GroupLiveDot extends StatelessWidget {
   const _GroupLiveDot({super.key, required this.color});
 
   final Color color;
 
   @override
-  State<_GroupLiveDot> createState() => _GroupLiveDotState();
-}
-
-class _GroupLiveDotState extends State<_GroupLiveDot>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween<double>(begin: 0.35, end: 1).animate(_controller),
-      child: Container(
+    // Shared low-rate clock: pulsing at the display refresh rate used to pull
+    // the whole tab strip's text through re-raster on every vsync.
+    return PulseBuilder(
+      builder: (context, t) => Container(
         width: 6,
         height: 6,
-        decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.35 + 0.65 * t),
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }

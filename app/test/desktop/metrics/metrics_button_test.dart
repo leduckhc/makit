@@ -11,6 +11,7 @@ import 'package:makit/desktop/metrics/metrics_icon_state.dart';
 import 'package:makit/store/metrics.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
 import 'package:makit/store/prefs/preferences_providers.dart';
+import 'package:makit/ui/widgets/pulse.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
 const int _mb = 1024 * 1024;
@@ -232,6 +233,24 @@ void main() {
     testWidgets('renders the pulse glyph in the footer', (tester) async {
       await tester.pumpWidget(_host(sample: _sample()));
       expect(find.byIcon(PhosphorIconsLight.pulse), findsOneWidget);
+    });
+
+    testWidgets('the working glyph pulses off the shared clock, not at vsync', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(sample: _sample(turnActive: true)));
+      await tester.pump();
+
+      // Decision 12's repeating glyph must not hold the compositor at the
+      // display refresh rate — it animates on the shared 20 Hz pulse clock.
+      expect(find.byType(PulseBuilder), findsOneWidget);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+    });
+
+    testWidgets('a parked footer leaves nothing pulsing', (tester) async {
+      await tester.pumpWidget(_host(sample: _sample()));
+      await tester.pumpAndSettle();
+      expect(find.byType(PulseBuilder), findsNothing);
     });
 
     testWidgets('opens on tap and closes on Esc', (tester) async {
