@@ -13,6 +13,8 @@
 /// because an empty list means "not loaded yet", never "all gone".
 library;
 
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../store/composer_attachments.dart';
@@ -23,40 +25,51 @@ import 'starter_picks.dart';
 
 /// Prefix of every starter-scoped draft key.
 ///
-/// The key is `starter:<projectId>\u0000<worktreePath>` — build it with
-/// [starterDraftKey] and read it back with [parseStarterKey], never by hand.
+/// The key is `starter:` followed by a JSON `[projectId, worktreePath]` pair —
+/// build it with [starterDraftKey] and read it back with [parseStarterKey], never
+/// by hand.
 ///
 /// The project id is in the key because the prune has to be guarded **per repo**
 /// (see below), and a worktree path alone cannot say which repo owns it: a linked
 /// worktree usually lives nowhere near its repo's directory.
-const String kStarterKeyPrefix = 'starter:';
-
-/// Separator between the two components.
 ///
-/// `\u0000`, not `:` — the same choice `cached_commands.dart` makes for the same
-/// reason. A colon is legal in both halves (POSIX permits it in a path, and the
-/// project store persists any string id), which made the parse lossy: with
-/// projects `a` and `a:b`, the key for `a:b` read back as project `a` with a path
-/// `a` does not list, and the prune deleted a live draft. NUL cannot occur in
-/// either component.
-const String _kStarterKeySep = '\u0000';
+/// Two components in one string need an encoding, and this one is
+/// **self-describing** rather than delimiter-based, because both earlier attempts
+/// assumed a character could not occur in a component and were wrong:
+///
+/// - `:` — legal in a POSIX path *and* in an id (`project-store.ts` persists any
+///   string), so with projects `a` and `a:b`, `a:b`'s key read back as project `a`
+///   with a path `a` does not list. The prune then deleted a **live draft**.
+/// - `\u0000` — impossible in a path, but not in an id, so the same collision
+///   survived in a narrower form.
+///
+/// A lossy key here costs the user typed text and staged images, so the codec is
+/// total for every input (including empty components) and is proven so by the
+/// round-trip group in `starter_prune_test.dart`. Keys are in-memory only, so
+/// their length and prettiness do not matter.
+const String kStarterKeyPrefix = 'starter:';
 
 /// The draft/picks/attachments key for a starter pane on [worktreePath] in
 /// [projectId].
 String starterDraftKey(String projectId, String worktreePath) =>
-    '$kStarterKeyPrefix$projectId$_kStarterKeySep$worktreePath';
+    '$kStarterKeyPrefix${jsonEncode([projectId, worktreePath])}';
 
-/// The `(projectId, worktreePath)` a starter key names, or null when [key] is
-/// not a starter key (a live session's draft is keyed by session id).
+/// The `(projectId, worktreePath)` a starter key names, or null when [key] is not
+/// a key [starterDraftKey] produced — a live session's draft (keyed by session
+/// id), or anything malformed. Never throws.
 ({String projectId, String path})? parseStarterKey(String key) {
   if (!key.startsWith(kStarterKeyPrefix)) return null;
-  final rest = key.substring(kStarterKeyPrefix.length);
-  final sep = rest.indexOf(_kStarterKeySep);
-  if (sep <= 0 || sep == rest.length - 1) return null;
-  return (
-    projectId: rest.substring(0, sep),
-    path: rest.substring(sep + _kStarterKeySep.length),
-  );
+  Object? decoded;
+  try {
+    decoded = jsonDecode(key.substring(kStarterKeyPrefix.length));
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! List || decoded.length != 2) return null;
+  final projectId = decoded[0];
+  final path = decoded[1];
+  if (projectId is! String || path is! String) return null;
+  return (projectId: projectId, path: path);
 }
 
 /// Drop the starter draft, picks and staged images of every worktree [repos] no

@@ -297,4 +297,84 @@ void main() {
 
     expect(container.read(composerDraftsProvider)[key], isNull);
   });
+
+  testWidgets('a draft already stale at activation is pruned', (tester) async {
+    // The listener test above only covers the repos-listener call site; the
+    // `afterPass` on provider activation is what handles the common case of a
+    // worktree removed while the app was closed, so it needs its own case.
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(
+          ReposState([
+            _repo(const [_kept]),
+          ]),
+        ),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    final key = starterDraftKey('p1', _gone);
+    container.read(composerDraftsProvider.notifier).set(key, 'typed last week');
+
+    container.listen(
+      desktopSessionPruneProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(container.read(composerDraftsProvider)[key], isNull);
+  });
+
+  group('the starter key codec is total', () {
+    // Third review, third key format. The first two (`:` then `\u0000`) each
+    // assumed a character could not appear in a component, and each assumption
+    // was wrong for some input the project store will accept — so the codec is
+    // now self-describing rather than delimiter-based, and this group is the
+    // proof rather than an argument about which byte is safe.
+    for (final (name, projectId, path) in const [
+      ('plain', 'p1', '/tmp/wt'),
+      (
+        'uuid + linked worktree',
+        'f81d4fae-7dec-11d0-a765-00a0c91e6bf6',
+        '/Users/le/.worktrees/makit/feat-x',
+      ),
+      ('colon in both halves', 'a:b', '/tmp/od:d'),
+      ('NUL in the id', 'a\u0000b', '/wt'),
+      ('NUL in the path', 'p1', '/w\u0000t'),
+      ('empty id', '', '/tmp/wt'),
+      ('empty path', 'p1', ''),
+      ('both empty', '', ''),
+      ('the prefix itself as an id', 'starter:', '/tmp/wt'),
+      ('json metacharacters', '"]},{[', '/tmp/"quoted"/\\path'),
+      ('newline and emoji', 'a\nb\u{1F600}', '/tmp/\u{1F600}'),
+    ]) {
+      test(name, () {
+        final parsed = parseStarterKey(starterDraftKey(projectId, path));
+        expect(parsed, isNotNull, reason: 'must round-trip');
+        expect(parsed!.projectId, projectId);
+        expect(parsed.path, path);
+      });
+    }
+
+    test('a live session id is not mistaken for a starter key', () {
+      // Session ids are ULIDs, but the check must not depend on that: anything
+      // that is not a key this builder produced has to read back as null, or the
+      // prune would treat a live session's draft as a dead worktree's.
+      for (final notAKey in const [
+        '01JQ8ZK7NP2T6VYB3S9A4C5D6E',
+        'starter:',
+        'starter:not-json',
+        'starter:[]',
+        'starter:["only-one"]',
+        'starter:["a","b","c"]',
+        'starter:{"projectId":"a","path":"b"}',
+        'starter:[1,2]',
+        '',
+      ]) {
+        expect(parseStarterKey(notAKey), isNull, reason: notAKey);
+      }
+    });
+  });
 }
