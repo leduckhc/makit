@@ -5,6 +5,7 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../transport/ws_client.dart';
+import 'pulse_spinner.dart';
 
 /// Small AppBar chip showing live WS connection state.
 ///
@@ -103,11 +104,7 @@ class ConnectionChip extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (spinner)
-            SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2, color: color),
-            )
+            PulseSpinner(size: 12, color: color)
           else
             Icon(icon, size: 14, color: color),
           const SizedBox(width: kSpace6),
@@ -154,7 +151,7 @@ class ConnectionChip extends ConsumerWidget {
         ? SizedBox(
             width: 18,
             height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2, color: color),
+            child: PulseSpinner(size: 12, color: color),
           )
         : Icon(icon, size: 20, color: color);
     return Tooltip(
