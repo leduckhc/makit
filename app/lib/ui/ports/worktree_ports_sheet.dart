@@ -153,7 +153,7 @@ class _PortListRow extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          port.command.split(' ').first,
+                          portCommandToken(port.command),
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontFamily: kMonoFontFamily,

@@ -5,14 +5,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/store/ports.dart';
 import 'package:makit/ui/ports/ports_popover.dart';
 
-PortInfo _port({int port = 5173, String? openUrl = 'http://127.0.0.1:5173'}) =>
-    PortInfo(
+PortInfo _port({
+  int port = 5173,
+  String? openUrl = 'http://127.0.0.1:5173',
+  String? command,
+}) => PortInfo(
       key: '100:127.0.0.1:$port',
       port: port,
       address: '127.0.0.1',
       reach: PortReach.loopback,
       pid: 48211,
-      command: 'node vite --port $port',
+      command: command ?? 'node vite --port $port',
       startedAt: 1000,
       worktreePath: '/wt',
       sessionId: 's1',
@@ -176,7 +179,48 @@ void main() {
     });
   });
 
+  group('PortsPopover truncated text', () {
+    // The panel is a fixed 320 pt, so both the command token and the
+    // pid · command line ellipse for any real absolute-path argv[0]. Line 1
+    // therefore shows argv[0]'s BASENAME, and both carry the full command as a
+    // tooltip — otherwise the row is unreadable with no way to read it.
+    const long =
+        '/opt/homebrew/Cellar/node/26.5.1/bin/node dist/serve.js --port 5173';
+
+    testWidgets('line 1 shows the command basename, not the whole path', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(_popover(ports: [_port(command: long)])));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+      expect(find.text('node'), findsOneWidget);
+      expect(find.textContaining('/opt/homebrew/Cellar'), findsOneWidget);
+    });
+
+    testWidgets('the command token and the pid line both carry the full '
+        'command as a tooltip', (tester) async {
+      await tester.pumpWidget(_host(_popover(ports: [_port(command: long)])));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+      expect(
+        find.byTooltip('pid 48211 · $long'),
+        findsNWidgets(2),
+      );
+    });
+  });
+
   group('PortsPopover actions', () {
+    testWidgets('a pinned popover states how to reach and dismiss it', (
+      tester,
+    ) async {
+      // Mockup §2a's footer: the pin and the Esc/Tab paths are otherwise
+      // undiscoverable — a hover popover holding buttons has to say so.
+      await tester.pumpWidget(_host(_popover()));
+      await tester.tap(find.byType(PortsPopover));
+      await tester.pump();
+      expect(find.byKey(kPortsPopoverHint), findsOneWidget);
+    });
+
     testWidgets('shows Open + Copy URL when openUrl is present', (
       tester,
     ) async {

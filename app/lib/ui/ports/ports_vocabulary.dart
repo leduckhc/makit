@@ -106,6 +106,21 @@ String portUptimeLabel(int? startedAt, {required int nowMs}) {
 /// pid + command, one string for the process line.
 String portPidCommandLabel(int pid, String command) => 'pid $pid · $command';
 
+/// The short command word line 1 shows: argv[0]'s basename, because a real
+/// argv[0] is an absolute path (`/opt/homebrew/Cellar/node/26.5.1/bin/node`)
+/// that ellipses to nothing in a 320 pt popover row. This is NOT the `kind`
+/// guessing D5 cut — no pattern matching, no invented vocabulary; it is still
+/// literally the command, just without the directories. The full argv stays one
+/// hover away via [portPidCommandLabel].
+String portCommandToken(String command) {
+  final argv0 = command.split(' ').first;
+  final slash = argv0.lastIndexOf('/');
+  if (slash < 0) return argv0;
+  final base = argv0.substring(slash + 1);
+  // A trailing slash leaves no basename; show the path rather than a blank slot.
+  return base.isEmpty ? argv0 : base;
+}
+
 /// The glyph's spoken label — a WORD for every tinted state, so colour is
 /// never the only signal (worktree_row.dart's rule). Returns empty for
 /// [PortsGlyphState.none] (nothing is drawn there).
