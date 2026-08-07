@@ -94,7 +94,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(composerDraftsProvider)['starter:/tmp/wt'],
+      container.read(composerDraftsProvider)['starter:p1:/tmp/wt'],
       'half typed',
     );
   });
@@ -136,9 +136,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('wt one'), findsNothing);
-    expect(container.read(composerDraftsProvider)['starter:/tmp/wt'], 'wt one');
     expect(
-      container.read(composerDraftsProvider)['starter:/tmp/other'],
+      container.read(composerDraftsProvider)['starter:p1:/tmp/wt'],
+      'wt one',
+    );
+    expect(
+      container.read(composerDraftsProvider)['starter:p1:/tmp/other'],
       isNull,
     );
   });
@@ -157,7 +160,7 @@ void main() {
 
     expect(find.text('never left the pane'), findsOneWidget);
     expect(
-      container.read(composerDraftsProvider)['starter:/tmp/wt'],
+      container.read(composerDraftsProvider)['starter:p1:/tmp/wt'],
       'never left the pane',
     );
   });

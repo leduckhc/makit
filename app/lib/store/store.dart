@@ -337,7 +337,15 @@ class StoreController extends StateNotifier<StoreState> {
         // machine's skills under another's project of the same name — and unlike
         // the rest of this state, that cache is persisted, so it would survive a
         // restart as well.
-        _ref.read(cachedCommandsControllerProvider.notifier).clearAll();
+        //
+        // Deferred to a microtask, unlike the assignment above: this listener
+        // runs inside Riverpod's refresh pass, and writing to *another* provider
+        // there is what `desktop_session_prune.dart` documents as poisoning the
+        // graph for the rest of the process. Safe today (nothing in the graph
+        // watches this cache during a connection change — only widgets do), but
+        // the failure mode is bad enough not to leave standing on that.
+        final cache = _ref.read(cachedCommandsControllerProvider.notifier);
+        Future.microtask(cache.clearAll);
       }
 
       final wasConnected = prev?.wsState == WsState.connected;

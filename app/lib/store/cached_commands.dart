@@ -58,7 +58,8 @@ class CachedCommandsController
 
   /// Builds a controller from the persisted cache. Corrupt JSON, a value that
   /// is not a list, and an entry that is not a usable command are all ignored
-  /// (treated as absent) rather than throwing.
+  /// (treated as absent) rather than throwing — this runs in the desktop
+  /// bootstrap, where an exception is a failure to start, not a lost palette.
   static CachedCommandsController load(SharedPreferences prefs) =>
       CachedCommandsController(
         prefs,
@@ -78,11 +79,20 @@ class CachedCommandsController
     for (final entry in decoded.entries) {
       final value = entry.value;
       if (value is! List) continue;
-      final cmds = value
-          .whereType<Map<dynamic, dynamic>>()
-          .map((m) => SlashCmd.fromJson(Map<String, dynamic>.from(m)))
-          .whereType<SlashCmd>()
-          .toList();
+      final cmds = <SlashCmd>[];
+      for (final entryValue in value) {
+        if (entryValue is! Map) continue;
+        try {
+          final cmd = SlashCmd.fromJson(Map<String, dynamic>.from(entryValue));
+          if (cmd != null) cmds.add(cmd);
+        } on Object {
+          // `SlashCmd.fromJson` casts (`as String?`), so a wrong-TYPED field
+          // throws instead of returning null — `whereType` cannot filter that,
+          // and one bad entry would otherwise take the whole cache (and the
+          // bootstrap that loads it) down with it.
+          continue;
+        }
+      }
       if (cmds.isNotEmpty) result['${entry.key}'] = cmds;
     }
     return result;

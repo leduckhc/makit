@@ -36,7 +36,7 @@ const _agent = AgentDescriptor(
   available: true,
 );
 
-const _key = 'starter:/tmp/wt';
+const _key = 'starter:p1:/tmp/wt';
 final _bytes = Uint8List.fromList([1, 2, 3]);
 
 /// Records the spawn + send the starter performs, so the test can assert the
@@ -46,6 +46,11 @@ class _FakeStore extends StoreController {
   final bool spawnFails;
   int spawns = 0;
   final List<List<MediaAttachmentRef>> sent = [];
+
+  /// The optimistic bubble's copy. Recorded separately: the user's own message
+  /// must show its image, so a regression that forwards attachments to the wire
+  /// but not to the transcript is a real one.
+  final List<List<MediaAttachmentRef>> echoed = [];
 
   @override
   Future<String> spawnSession(
@@ -66,7 +71,7 @@ class _FakeStore extends StoreController {
     String sessionId,
     String text, {
     List<MediaAttachmentRef> attachments = const [],
-  }) {}
+  }) => echoed.add(attachments);
 
   @override
   void sendMessage(
@@ -162,6 +167,7 @@ void main() {
 
     expect(h.store.spawns, 1);
     expect(h.store.sent.single.map((a) => a.mediaId), ['a' * 64]);
+    expect(h.store.echoed.single.map((a) => a.mediaId), ['a' * 64]);
     // Sent images are gone from the strip: a second send cannot resend them.
     expect(
       h.container.read(composerAttachmentsProvider)[_key] ?? const [],

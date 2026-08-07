@@ -200,5 +200,27 @@ void main() {
       expect(controller.commandsFor('zed', 'p1').map((c) => c.name), ['ok']);
       expect(controller.commandsFor('zed', 'p2'), isEmpty);
     });
+
+    test('a wrong-typed field does not take the whole cache down', () async {
+      // `SlashCmd.fromJson` casts with `as String?`, which THROWS on a
+      // wrong-typed field rather than returning null — so `whereType` cannot
+      // filter it. This blob is loaded during the desktop bootstrap, so an
+      // unhandled throw here is a failure to start, not a lost palette.
+      SharedPreferences.setMockInitialValues({
+        CachedCommandsController.storageKey: jsonEncode({
+          'zed\u0000p1': [
+            {'name': 123, 'description': 'name is a number'},
+            {'name': 'survivor', 'description': '', 'source': 'skill'},
+          ],
+        }),
+      });
+      final prefs = await SharedPreferences.getInstance();
+      late CachedCommandsController controller;
+      expect(
+        () => controller = CachedCommandsController.load(prefs),
+        returnsNormally,
+      );
+      expect(names(controller.commandsFor('zed', 'p1')), ['survivor']);
+    });
   });
 }

@@ -21,6 +21,7 @@ import 'pr_bar.dart';
 import 'selected_worktree.dart';
 import 'start_session.dart';
 import 'starter_picks.dart';
+import 'starter_prune.dart' show kStarterKeyPrefix;
 import '../../ui/widgets/pr_signals.dart';
 
 /// The in-pane start surface for a sessionless pane that already knows its
@@ -50,7 +51,11 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   /// [starterPicksProvider] (D2). The draft store's own doc reserves this key
   /// space for "a session that hasn't started yet"; keyed by worktree path, not
   /// tab id, so both survive the tab being closed and reopened.
-  String get _draftKey => 'starter:${widget.worktree.path}';
+  ///
+  /// The project id rides along so [pruneStarterDrafts] can guard per repo — a
+  /// worktree path cannot say which repo owns it.
+  String get _draftKey =>
+      '$kStarterKeyPrefix${widget.worktree.projectId}:${widget.worktree.path}';
 
   /// The user-picked harness id; null falls back to the first available agent.
   /// Held in [starterPicksProvider], not in this State, because a tab switch
@@ -67,8 +72,23 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   String? _error;
 
   /// The harness that will launch: the picked one, else the first available.
+  ///
+  /// A stored pick now outlives the widget (SPEC-45 D2), so it is re-validated
+  /// against the catalog: honoured while the harness is still offered and
+  /// available, dropped once the catalog says otherwise (uninstalled, or gone
+  /// unavailable since the pick). An **empty** catalog means "not loaded yet",
+  /// not "nothing available" — the pick stands, or a send during that frame would
+  /// silently spawn the host default instead of the harness the user chose.
   String? _effectiveAgentId(List<AgentDescriptor> agents) {
-    if (_chosenAgentId != null) return _chosenAgentId;
+    final chosen = _chosenAgentId;
+    if (chosen != null) {
+      if (agents.isEmpty) return chosen;
+      for (final a in agents) {
+        if (a.id != chosen) continue;
+        if (a.available) return chosen;
+        break; // offered but unavailable — fall back to a harness that can run
+      }
+    }
     for (final a in agents) {
       if (a.available) return a.id;
     }

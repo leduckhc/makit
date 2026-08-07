@@ -18,26 +18,41 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../store/composer_attachments.dart';
 import '../../store/store.dart';
 import '../../ui/composer/composer_draft.dart';
+import 'desktop_group_reconcile.dart' show closeGroupsForDeletedWorktrees;
 import 'starter_picks.dart';
 
-/// Prefix of every starter-scoped draft key. Must match `WorktreeStarter`.
+/// Prefix of every starter-scoped draft key. The key is
+/// `starter:<projectId>:<worktreePath>` — must match `WorktreeStarter._draftKey`.
+///
+/// The project id is in the key because the prune has to be guarded **per repo**
+/// (see below), and a worktree path alone cannot say which repo owns it: a linked
+/// worktree usually lives nowhere near its repo's directory.
 const String kStarterKeyPrefix = 'starter:';
+
+/// The `(projectId, worktreePath)` a starter key names, or null when [key] is
+/// not a starter key (a live session's draft is keyed by session id).
+({String projectId, String path})? parseStarterKey(String key) {
+  if (!key.startsWith(kStarterKeyPrefix)) return null;
+  final rest = key.substring(kStarterKeyPrefix.length);
+  final colon = rest.indexOf(':');
+  if (colon <= 0 || colon == rest.length - 1) return null;
+  // First colon only: a project id has none, a POSIX path may.
+  return (projectId: rest.substring(0, colon), path: rest.substring(colon + 1));
+}
 
 /// Drop the starter draft, picks and staged images of every worktree [repos] no
 /// longer lists.
 ///
-/// Says nothing (prunes nothing) when the snapshot cannot be trusted: an empty
-/// repo list is "still connecting", and a repo with an empty worktree list is
-/// mid-refresh. Live-session keys are untouched — they are not `starter:` keys.
+/// Guarded **per repo**, exactly like [closeGroupsForDeletedWorktrees]: a repo
+/// missing from the snapshot is unknown (not gone), and a repo reporting no
+/// worktrees is either mid-refresh or not a git repo at all — `repo_service.ts`
+/// hands back `worktrees: []` whenever `isGitRepo` is false. An earlier version
+/// bailed out of the whole pass when *any* repo looked unpopulated, which meant a
+/// single non-git project silently disabled pruning for everything.
+///
+/// Live-session keys are untouched — they are not `starter:` keys.
 void pruneStarterDrafts(Ref ref, ReposState repos) {
   if (repos.repos.isEmpty) return;
-  // One unpopulated repo is enough to make the union unreliable, and a git repo
-  // always has at least its primary worktree.
-  if (repos.repos.any((r) => r.worktrees.isEmpty)) return;
-  final live = {
-    for (final repo in repos.repos)
-      for (final wt in repo.worktrees) wt.path,
-  };
 
   final drafts = ref.read(composerDraftsProvider.notifier);
   final picks = ref.read(starterPicksProvider.notifier);
@@ -51,9 +66,12 @@ void pruneStarterDrafts(Ref ref, ReposState repos) {
     ...ref.read(composerAttachmentsProvider).keys,
   };
   for (final key in keys) {
-    if (!key.startsWith(kStarterKeyPrefix)) continue;
-    final path = key.substring(kStarterKeyPrefix.length);
-    if (live.contains(path)) continue;
+    final parsed = parseStarterKey(key);
+    if (parsed == null) continue;
+    final repo = repos.byId(parsed.projectId);
+    if (repo == null) continue; // not loaded yet — say nothing
+    if (repo.worktrees.isEmpty) continue; // mid-refresh, or not a git repo
+    if (repo.worktrees.any((w) => w.path == parsed.path)) continue;
     drafts.set(key, '');
     picks.clear(key);
     attachments.clear(key);

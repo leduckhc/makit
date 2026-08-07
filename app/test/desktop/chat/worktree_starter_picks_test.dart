@@ -27,7 +27,7 @@ class _EmptyStorage implements SecureStore {
   Future<void> delete({required String key}) async {}
 }
 
-const _key = 'starter:/tmp/wt';
+const _key = 'starter:p1:/tmp/wt';
 
 /// Two available harnesses, each with its own catalog — `pi` is the default
 /// (first available), so choosing `codex` is an observable user gesture.
@@ -105,11 +105,13 @@ class _FakeStore extends StoreController {
   }) {}
 }
 
-({ProviderContainer container, _FakeStore store}) _container() {
+({ProviderContainer container, _FakeStore store}) _container({
+  List<AgentDescriptor> agents = const [_pi, _codex],
+}) {
   late _FakeStore store;
   final container = ProviderContainer(
     overrides: [
-      agentsProvider.overrideWith((ref) => [_pi, _codex]),
+      agentsProvider.overrideWith((ref) => agents),
       connectionControllerProvider.overrideWith(
         (ref) => ConnectionController(const _EmptyStorage()),
       ),
@@ -223,8 +225,11 @@ void main() {
     await _send(tester);
 
     expect(h.store.agent, 'codex');
-    expect(h.store.picks?.single.id, 'model');
-    expect(h.store.picks?.single.value, 'gpt-5-codex');
+    // Length first: `.single` on a regressed 2-element list throws a StateError
+    // with a stack trace instead of a readable failure.
+    expect(h.store.picks, hasLength(1));
+    expect(h.store.picks!.single.id, 'model');
+    expect(h.store.picks!.single.value, 'gpt-5-codex');
   });
 
   testWidgets('changing the harness still drops the previous catalog picks', (
@@ -279,7 +284,7 @@ void main() {
 
     expect(_isSelected(tester, 'Pi'), isTrue);
     expect(
-      h.container.read(starterPicksProvider)['starter:/tmp/other'],
+      h.container.read(starterPicksProvider)['starter:p1:/tmp/other'],
       isNull,
     );
   });
@@ -296,5 +301,49 @@ void main() {
     // The pending session became a real one; its draft state is spent, exactly
     // as the sent message's draft text is pruned.
     expect(h.container.read(starterPicksProvider)[_key], isNull);
+  });
+
+  testWidgets('a stored pick for a harness that went unavailable is dropped', (
+    tester,
+  ) async {
+    // The pick outlives the widget now, so the catalog gets the last word: codex
+    // uninstalled (or otherwise unavailable) must fall back to a harness that can
+    // actually run, not spawn one the host cannot start.
+    final h = _container(
+      agents: const [
+        _pi,
+        AgentDescriptor(
+          id: 'codex',
+          label: 'Codex',
+          transport: 'native',
+          available: false,
+        ),
+      ],
+    );
+    h.container.read(starterPicksProvider.notifier).chooseAgent(_key, 'codex');
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: h.container,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: WorktreeStarter(
+              worktree: SelectedWorktree(
+                projectId: 'p1',
+                path: '/tmp/wt',
+                branch: 'feat',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(_isSelected(tester, 'Pi'), isTrue);
+    expect(_isSelected(tester, 'Codex'), isFalse);
+
+    await _send(tester);
+    expect(h.store.agent, 'pi');
   });
 }

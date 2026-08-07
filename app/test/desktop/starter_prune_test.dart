@@ -72,10 +72,10 @@ Future<ProviderContainer> _seeded({required ReposState repos}) async {
   final picks = container.read(starterPicksProvider.notifier);
   final atts = container.read(composerAttachmentsProvider.notifier);
   for (final path in [_gone, _kept]) {
-    drafts.set('starter:$path', 'half typed in $path');
-    picks.chooseAgent('starter:$path', 'codex');
+    drafts.set('starter:p1:$path', 'half typed in $path');
+    picks.chooseAgent('starter:p1:$path', 'codex');
     await atts.add(
-      key: 'starter:$path',
+      key: 'starter:p1:$path',
       localId: 'l-$path',
       bytes: Uint8List.fromList([1, 2, 3]),
       mime: 'image/png',
@@ -98,10 +98,10 @@ void main() {
 
     container.read(_pruner)();
 
-    expect(container.read(composerDraftsProvider)['starter:$_gone'], isNull);
-    expect(container.read(starterPicksProvider)['starter:$_gone'], isNull);
+    expect(container.read(composerDraftsProvider)['starter:p1:$_gone'], isNull);
+    expect(container.read(starterPicksProvider)['starter:p1:$_gone'], isNull);
     expect(
-      container.read(composerAttachmentsProvider)['starter:$_gone'],
+      container.read(composerAttachmentsProvider)['starter:p1:$_gone'],
       isNull,
     );
   });
@@ -118,12 +118,15 @@ void main() {
     container.read(_pruner)();
 
     expect(
-      container.read(composerDraftsProvider)['starter:$_kept'],
+      container.read(composerDraftsProvider)['starter:p1:$_kept'],
       'half typed in $_kept',
     );
-    expect(container.read(starterPicksProvider)['starter:$_kept'], isNotNull);
     expect(
-      container.read(composerAttachmentsProvider)['starter:$_kept'],
+      container.read(starterPicksProvider)['starter:p1:$_kept'],
+      isNotNull,
+    );
+    expect(
+      container.read(composerAttachmentsProvider)['starter:p1:$_kept'],
       hasLength(1),
     );
   });
@@ -150,10 +153,13 @@ void main() {
 
     container.read(_pruner)();
 
-    expect(container.read(composerDraftsProvider)['starter:$_gone'], isNotNull);
+    expect(
+      container.read(composerDraftsProvider)['starter:p1:$_gone'],
+      isNotNull,
+    );
   });
 
-  testWidgets('a repo mid-refresh (empty worktrees) prunes nothing', (
+  testWidgets('the owning repo mid-refresh (empty worktrees) prunes nothing', (
     tester,
   ) async {
     // `closeGroupsForDeletedWorktrees` guards the same way: a repo can report an
@@ -162,6 +168,51 @@ void main() {
 
     container.read(_pruner)();
 
-    expect(container.read(composerDraftsProvider)['starter:$_gone'], isNotNull);
+    expect(
+      container.read(composerDraftsProvider)['starter:p1:$_gone'],
+      isNotNull,
+    );
+  });
+
+  testWidgets('an unrelated non-git project does not block the prune', (
+    tester,
+  ) async {
+    // A non-git project legitimately reports NO worktrees (`repo_service.ts`
+    // hands back `[]` when `isGitRepo` is false). Bailing on "any repo looks
+    // unpopulated" therefore disabled pruning for everyone who has one — the
+    // guard has to be per-repo, like its sibling's.
+    final container = await _seeded(
+      repos: ReposState([
+        _repo(const [_kept]),
+        _repo(const [], id: 'notes'),
+      ]),
+    );
+
+    container.read(_pruner)();
+
+    expect(container.read(composerDraftsProvider)['starter:p1:$_gone'], isNull);
+    expect(
+      container.read(composerDraftsProvider)['starter:p1:$_kept'],
+      isNotNull,
+    );
+  });
+
+  testWidgets('a key whose project is not in the snapshot is left alone', (
+    tester,
+  ) async {
+    // Not "gone" — unknown. The snapshot cannot speak for a project it does not
+    // contain, so saying nothing is the only honest answer.
+    final container = await _seeded(
+      repos: ReposState([
+        _repo(const [_kept], id: 'other-project'),
+      ]),
+    );
+
+    container.read(_pruner)();
+
+    expect(
+      container.read(composerDraftsProvider)['starter:p1:$_gone'],
+      isNotNull,
+    );
   });
 }
