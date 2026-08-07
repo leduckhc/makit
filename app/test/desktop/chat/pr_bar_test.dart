@@ -187,7 +187,7 @@ void main() {
       // makes for a quiet bar.
       expect(find.text('3 threads open'), findsOneWidget);
       expect(find.text('1 commit unpushed'), findsOneWidget);
-      expect(find.text('Resolve threads'), findsOneWidget);
+      expect(find.text('Resolve'), findsOneWidget);
     });
 
     testWidgets('a remedy picked in the detail inserts its prompt', (
@@ -204,7 +204,7 @@ void main() {
       );
       await tester.tap(find.text('+2 more'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Resolve threads'));
+      await tester.tap(find.text('Resolve'));
       await tester.pumpAndSettle();
       expect(inserted, PrPromptAction.resolveComments.defaultPrompt);
     });
@@ -403,7 +403,7 @@ void main() {
         ),
       );
       expect(find.text('Wrap up'), findsOneWidget);
-      expect(find.text('Fix CI'), findsNothing);
+      expect(find.text('Fix'), findsNothing);
       expect(_sentence(tester), contains('merged'));
     });
 
@@ -488,7 +488,7 @@ void main() {
     testWidgets('the menu keeps a direct op the CTA is not showing', (
       tester,
     ) async {
-      // Draft + red build: the button says Fix CI, but marking it ready is still
+      // Draft + red build: the button says Fix, but marking it ready is still
       // a legitimate thing to do, so the menu must not drop it.
       await tester.pumpWidget(
         _host(
@@ -501,7 +501,7 @@ void main() {
           onInsert: (_) {},
         ),
       );
-      expect(find.text('Fix CI'), findsOneWidget, reason: 'the CTA');
+      expect(find.text('Fix'), findsOneWidget, reason: 'the CTA');
       await tester.tap(find.byTooltip('PR actions'));
       await tester.pumpAndSettle();
       expect(find.text('DO NOW'), findsOneWidget);

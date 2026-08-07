@@ -271,6 +271,31 @@ class PrStatus {
 String _plural(int n, String singular, [String? plural]) =>
     '$n ${n == 1 ? singular : (plural ?? '${singular}s')}';
 
+/// What an *ended* worktree left lying around beyond its own files: sessions
+/// still bound to it, and a primary checkout whose branch has moved on since.
+///
+/// Grouped rather than three loose parameters because they share one lifetime —
+/// they are the `left behind` half of the wrap-up brief (mockup §4) and mean
+/// nothing while the pull request is still open.
+///
+/// Both counts already exist in the repos snapshot; nothing new is fetched. The
+/// base's count is the **primary checkout's** own `behindCount`, which the server
+/// derives as `HEAD..@{upstream}` there — that is precisely "main is N behind".
+class PrResidue {
+  const PrResidue({this.sessions = 0, this.baseBranch, this.baseBehind = 0});
+
+  /// Sessions bound to the worktree. They survive its removal only as archives,
+  /// so a wrap-up is about to take them with it.
+  final int sessions;
+
+  /// The branch checked out in the primary checkout, for the fact's wording.
+  /// Null when there is no primary worktree in the snapshot, or it is detached.
+  final String? baseBranch;
+
+  /// How far that branch trails its upstream.
+  final int baseBehind;
+}
+
 /// Derive the status of a worktree.
 ///
 /// Takes primitives rather than a `Worktree` because two desktop callers hold
@@ -295,6 +320,7 @@ PrStatus prStatus({
   int commitsAhead = 0,
   int commitsBehind = 0,
   bool isPrimary = false,
+  PrResidue residue = const PrResidue(),
 }) {
   final state = pr?.state.toUpperCase();
   final identity = pr != null ? '#${pr.number}' : (branch ?? 'detached');
@@ -305,21 +331,46 @@ PrStatus prStatus({
   // primary checkout still says it landed, it just has nothing to offer.
   if (state == 'MERGED' || state == 'CLOSED') {
     final merged = state == 'MERGED';
-    final tone = merged ? PrTone.landed : PrTone.blocking;
+    // Two tones, because the fact and the button make different claims. A closed
+    // pull request is *history*, not an alarm — mockup §3 gives it a quiet lead —
+    // but the button that cleans up after it deletes a worktree and a branch, so
+    // it keeps the blocking red.
+    final factTone = merged ? PrTone.landed : PrTone.quiet;
+    final ctaTone = merged ? PrTone.landed : PrTone.blocking;
     final op = merged ? PrDirectOp.wrapUp : PrDirectOp.discardWorktree;
     return PrStatus(
       identity: identity,
-      tone: tone,
+      tone: factTone,
       dot: merged ? PrDot.landed : PrDot.muted,
       hasPr: true,
       isEnded: true,
       isPrimary: isPrimary,
       stale: pr!.stale,
       signals: [
-        PrSignal(merged ? 'merged' : 'closed without merging', tone),
+        PrSignal(merged ? 'merged' : 'closed without merging', factTone),
+        // The residue is *not* landed. Only the ending itself earns the purple:
+        // painting `2 files uncommitted` in it said the uncommitted work had
+        // merged, and the mockup's `left behind` group draws these neutral (§4).
         if (uncommittedFiles > 0)
-          PrSignal('${_plural(uncommittedFiles, 'file')} uncommitted', tone),
-        if (!isPrimary) PrSignal('worktree still here', tone),
+          PrSignal(
+            '${_plural(uncommittedFiles, 'file')} uncommitted',
+            PrTone.quiet,
+          ),
+        if (!isPrimary) const PrSignal('worktree still here', PrTone.quiet),
+        // The rest of the residue, in the mockup's `left behind` order. Reported
+        // only here: while the PR is open, "a session is running in it" is not a
+        // fact about the pull request — it is how you are working on it.
+        if (residue.sessions > 0)
+          PrSignal(
+            '${_plural(residue.sessions, 'session')} still running',
+            PrTone.quiet,
+          ),
+        if (residue.baseBranch != null && residue.baseBehind > 0)
+          PrSignal(
+            '${residue.baseBranch} is '
+            '${_plural(residue.baseBehind, 'commit')} behind',
+            PrTone.quiet,
+          ),
       ],
       cta: isPrimary
           // Nothing to tidy: the primary checkout stays. It still reports that
@@ -327,7 +378,7 @@ PrStatus prStatus({
           ? const PrCta('Ask the agent', PrTone.quiet)
           : PrCta(
               merged ? 'Wrap up' : 'Discard worktree',
-              tone,
+              ctaTone,
               remedy: DirectRemedy(op),
             ),
     );
@@ -427,6 +478,12 @@ PrStatus prStatus({
         PrTone.quiet,
       ),
     );
+  } else if (open?.checkRollup == 'pending') {
+    // The count lives in the check list, but the *verdict* lives in the rollup —
+    // and SPEC-32 sheds the list while keeping the rollup. Reading only the list
+    // made a running build indistinguishable from an all-clear, which then
+    // offered `Squash & merge` on a build that had not finished.
+    signals.add(const PrSignal('CI still running', PrTone.quiet));
   }
   // Last, so it only becomes the loud fact once the PR has nothing else
   // outstanding — marking a half-finished PR ready is not the next step.
@@ -466,10 +523,16 @@ PrStatus prStatus({
       signals.add(
         PrSignal(
           open == null
-              // No PR and nothing outstanding. A secondary branch is ready to
-              // become one; the primary checkout is not — you do not raise a pull
-              // request for `main`, so it just reports that it is clean.
-              ? (isPrimary ? 'clean' : 'ready for a PR')
+              // No PR *this derivation recognises*. A pull request in an
+              // unrecognised state is not a branch waiting for one — saying
+              // `#142 · ready for a PR` contradicted itself in four words — so it
+              // reports that the state is the thing it does not know.
+              ? (pr != null
+                    ? 'PR state unknown'
+                    // A secondary branch is ready to become one; the primary
+                    // checkout is not — you do not raise a pull request for
+                    // `main`, so it just reports that it is clean.
+                    : (isPrimary ? 'clean' : 'ready for a PR'))
               : passed > 0
               ? '${_plural(passed, 'check')} passed'
               : 'green and up to date',
@@ -485,7 +548,17 @@ PrStatus prStatus({
   // build and threads (a draft mutes its facts) — and a grey button for them
   // reads as disabled. Promoted for the button's tint only; the facts stay quiet
   // wherever they are listed.
-  final ctaTone = loud.tone == PrTone.quiet ? PrTone.attention : loud.tone;
+  //
+  // Promoted to the *remedy's* own tone where it has one: landing a pull request
+  // is what purple means everywhere else in the pane, and an amber "Squash &
+  // merge" said `attention` about the one action that is good news (mockup §3
+  // `ready`).
+  final ctaTone = loud.tone != PrTone.quiet
+      ? loud.tone
+      : switch (loud.remedy) {
+          DirectRemedy(op: PrDirectOp.squashMerge) => PrTone.landed,
+          _ => PrTone.attention,
+        };
 
   // "Fix everything" is the honest single next step only when it really would fix
   // everything. The composed prompt carries prompt-backed facts alone, so a
@@ -539,14 +612,26 @@ PrDot _dotFor(
   if (!hasPr && !signals.any((s) => s.remedy != null)) return PrDot.none;
   if (draft) return PrDot.muted;
   if (open == null) return PrDot.tone;
-  if (open.checks.any((c) => c.bucket == 'pending')) return PrDot.pending;
-  return switch (open.checkRollup) {
-    'fail' => PrDot.fail,
-    'pass' => PrDot.pass,
-    // No verdict to report (a shed lookup, or a PR with no checks at all), so the
-    // dot has nothing of its own to say and defers to the loud fact.
-    _ => PrDot.tone,
-  };
+  // In flight by either account: a reported pending check, or a rollup that says
+  // pending with its list shed.
+  if (open.checks.any((c) => c.bucket == 'pending') ||
+      open.checkRollup == 'pending') {
+    return PrDot.pending;
+  }
+  if (open.checkRollup == 'fail') return PrDot.fail;
+  // Green means *nothing needs you*, so the pass verdict only holds while nothing
+  // is pressing. A PR with conflicts, a moved base, open threads or unpushed work
+  // drew the same green as one that was ready to merge — the one ambient graphic
+  // said all-clear and left the sentence to contradict it.
+  //
+  // A red or in-flight build still outranks (both are checked above): `hot` keeps
+  // its red dot over an amber sentence, which is what §8.1 exists for.
+  if (open.checkRollup == 'pass' && signals.first.tone == PrTone.quiet) {
+    return PrDot.pass;
+  }
+  // Either something is pressing, or there is no verdict to report (a shed lookup,
+  // or a PR with no checks at all) — so the dot defers to the loud fact.
+  return PrDot.tone;
 }
 
 /// The CTA for the loud signal: its remedy, labelled with the remedy's own verb.
@@ -576,12 +661,14 @@ PrCta _ctaFor(
 String prRemedyLabel(PrRemedy remedy) => switch (remedy) {
   PromptRemedy(action: final a) => switch (a) {
     // The bar names the *situation's* verb, which is terser than the menu label
-    // ("Fix CI", not "Fix PR") because the bar has already said what is wrong.
-    PrPromptAction.fixPr => 'Fix CI',
+    // ("Fix", not "Fix PR") because the bar has already said what is wrong. The
+    // magic remedy wears the same "Fix" deliberately — both fix, and the sentence
+    // beside the button is what says how much (SPEC-38 §8 D12).
+    PrPromptAction.fixPr => 'Fix',
     PrPromptAction.pull => 'Pull',
     PrPromptAction.push => 'Push',
     PrPromptAction.commitAndPush => 'Commit & push',
-    PrPromptAction.resolveComments => 'Resolve threads',
+    PrPromptAction.resolveComments => 'Resolve',
     PrPromptAction.createPr => 'Create PR',
   },
   DirectRemedy(op: PrDirectOp.wrapUp) => 'Wrap up',
@@ -630,6 +717,17 @@ PrStatus prStatusFor(
   if (w == null) {
     return prStatus(pr: null, branch: fallbackBranch);
   }
+  // The `left behind` half of the wrap-up brief, assembled from the snapshot the
+  // caller already holds — see [PrResidue]. `firstWhereOrNull` by hand: the
+  // primary worktree is normally present, but a snapshot mid-refresh (or a
+  // non-git project) can carry none.
+  Worktree? primary;
+  for (final other in at!.repo.worktrees) {
+    if (other.isPrimary) {
+      primary = other;
+      break;
+    }
+  }
   return prStatus(
     pr: w.pr,
     branch: w.branch ?? fallbackBranch,
@@ -637,5 +735,16 @@ PrStatus prStatusFor(
     commitsAhead: w.aheadCount,
     commitsBehind: w.behindCount,
     isPrimary: w.isPrimary,
+    // Residue is what a wrap-up or discard would *take with it*, and the primary
+    // checkout is never removed (see the ending branch: it gets no direct op at
+    // all). So it has no residue to report — its sessions are not going anywhere,
+    // and naming its own branch as "behind" would report it against itself.
+    residue: w.isPrimary
+        ? const PrResidue()
+        : PrResidue(
+            sessions: w.sessionIds.length,
+            baseBranch: primary?.branch,
+            baseBehind: primary?.behindCount ?? 0,
+          ),
   );
 }

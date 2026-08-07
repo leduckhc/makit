@@ -20,7 +20,7 @@ const kStalePrTooltip =
 /// The row directly above the docked composer: **one sentence about the
 /// worktree, and the one action that moves it forward.**
 ///
-/// `<dot> #142 · 2 checks failing   +2 more            [ Fix CI ▾ ]`
+/// `<dot> #142 · 2 checks failing   +2 more            [ Fix ▾ ]`
 ///
 /// Replaces the old two-zone bar (a `PR #42` pill plus a general-purpose
 /// six-prompt split button), whose two halves secretly depended on each other:
@@ -175,7 +175,10 @@ class _Reason extends StatelessWidget {
           ),
           TextSpan(
             text: '  ·  ',
-            style: base.copyWith(color: cs.outlineVariant),
+            // Not `outlineVariant`: that is the hairline token, and at 1.07:1 on
+            // the composer's box the separator simply was not there. The mockup
+            // gives text separators their own mid-grey (§3).
+            style: base.copyWith(color: cs.outline.withValues(alpha: 0.55)),
           ),
           TextSpan(
             text: status.loud.label,
@@ -236,7 +239,10 @@ class _MoreLink extends StatelessWidget {
               color: cs.outline,
               decoration: TextDecoration.underline,
               decorationStyle: TextDecorationStyle.dotted,
-              decorationColor: cs.outlineVariant,
+              // The label's own colour, not the hairline token: at 1.07:1 the
+              // underline was invisible, and it is the only thing on the row that
+              // says this text can be tapped.
+              decorationColor: cs.outline,
             ),
           ),
         ),
@@ -270,6 +276,13 @@ class PrCtaButton extends ConsumerWidget {
     final tone = prToneTextColor(cs, cta.tone);
     final remedy = cta.remedy;
     final direct = remedy is DirectRemedy;
+    // A solid fill, and a muted one for the op that deletes things — see
+    // [prDirectCtaFill].
+    final fill = prDirectCtaFill(
+      cs,
+      cta.tone,
+      destructive: direct && remedy.op == PrDirectOp.discardWorktree,
+    );
 
     final (Color bg, Color fg, Color? border) = switch (cta) {
       PrCta(remedy: null) => (
@@ -277,11 +290,7 @@ class PrCtaButton extends ConsumerWidget {
         cs.onSurfaceVariant,
         cs.outlineVariant,
       ),
-      _ when direct => (
-        prToneColor(cs, cta.tone),
-        onPrToneFill(cs, cta.tone),
-        null,
-      ),
+      _ when direct => (fill.bg, fill.fg, null),
       _ => (
         Color.alphaBlend(
           prToneColor(cs, cta.tone).withValues(alpha: 0.18),

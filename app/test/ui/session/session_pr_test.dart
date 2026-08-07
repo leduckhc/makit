@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:url_launcher_platform_interface/link.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
+import 'package:makit/app/theme.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
@@ -21,6 +22,7 @@ import 'package:makit/ui/session/session_screen.dart';
 import 'package:makit/ui/widgets/pr_actions.dart';
 import 'package:makit/ui/widgets/pr_detail.dart';
 import 'package:makit/ui/widgets/pr_signals.dart';
+import 'package:makit/ui/widgets/pr_tone.dart';
 
 class _EmptyStorage implements SecureStore {
   const _EmptyStorage();
@@ -74,6 +76,7 @@ Future<void> _pumpSheet(
   int ahead = 0,
   void Function(PrRemedy remedy)? onRun,
   bool canInsertPrompt = true,
+  bool expandDetail = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -83,6 +86,7 @@ Future<void> _pumpSheet(
         ),
       ],
       child: MaterialApp(
+        theme: makitDarkTheme,
         home: Scaffold(
           body: PrDetailBody(
             status: prStatus(
@@ -95,6 +99,57 @@ Future<void> _pumpSheet(
             showCta: true,
             canInsertPrompt: canInsertPrompt,
             onRun: onRun ?? (_) {},
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+  // The sheet's detail is collapsed by default (SPEC-38 D15 / mockup §6). These
+  // tests are about what the detail *says*, so open it once here; the collapsing
+  // itself is covered by its own tests below.
+  //
+  // Asserted, not probed: a soft `isNotEmpty` check would let a regression that
+  // deletes the disclosure pass every positional test in this file, because the
+  // detail would then already be on screen in the right order.
+  if (expandDetail) {
+    expect(
+      find.text('Detail'),
+      findsOneWidget,
+      reason: 'the sheet must collapse its detail',
+    );
+    await tester.tap(find.text('Detail'));
+    await tester.pumpAndSettle();
+  }
+}
+
+/// The same body as the desktop dialog renders it: no pinned CTA, so no
+/// disclosure and the full fact list.
+Future<void> _pumpDialogBody(
+  WidgetTester tester, {
+  PullRequest? pr,
+  int uncommitted = 0,
+  int ahead = 0,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        preferencesControllerProvider.overrideWith(
+          (ref) => PreferencesController(null, const {}),
+        ),
+      ],
+      child: MaterialApp(
+        theme: makitDarkTheme,
+        home: Scaffold(
+          body: PrDetailBody(
+            status: prStatus(
+              pr: pr,
+              branch: 'feat',
+              uncommittedFiles: uncommitted,
+              commitsAhead: ahead,
+            ),
+            pr: pr,
+            onRun: (_) {},
           ),
         ),
       ),
@@ -218,7 +273,10 @@ void main() {
       // to take them all on at once; the individual ones are listed below it.
       expect(find.text('1 commit unpushed'), findsOneWidget);
       final headlineY = tester.getTopLeft(find.text('1 commit unpushed')).dy;
-      final ctaY = tester.getTopLeft(find.text('Fix')).dy;
+      // `.first` is the pinned CTA: the magic remedy and the CI prompt share the
+      // verb "Fix" (SPEC-38 §8 D12), so on a sheet that lists a failing build
+      // both are on screen and the pinned one comes first in the tree.
+      final ctaY = tester.getTopLeft(find.text('Fix').first).dy;
       final detailY = tester.getTopLeft(find.text('3 threads open')).dy;
       expect(headlineY, lessThan(ctaY));
       expect(ctaY, lessThan(detailY), reason: 'decision above detail');
@@ -287,7 +345,7 @@ void main() {
       expect(find.text('2 threads open'), findsOneWidget);
       expect(find.text('ALSO NEEDS YOU'), findsOneWidget);
 
-      await tester.tap(find.text('Resolve threads'));
+      await tester.tap(find.text('Resolve'));
       await tester.pumpAndSettle();
       expect((ran as PromptRemedy).action, PrPromptAction.resolveComments);
     });
@@ -311,7 +369,14 @@ void main() {
     testWidgets('pins one call to action, and says it will not send', (
       tester,
     ) async {
-      await _pumpSheet(tester, uncommitted: 3);
+      // One fact, no checks: there is nothing left to disclose, so this state
+      // renders no `Detail` row at all.
+      await _pumpSheet(tester, uncommitted: 3, expandDetail: false);
+      expect(
+        find.text('Detail'),
+        findsNothing,
+        reason: 'nothing elided, nothing to hide',
+      );
       // Exactly one: the pinned button. The fact is the headline, so it does not
       // also appear as a list row with a duplicate button.
       expect(find.text('Commit & push'), findsOneWidget);
@@ -387,18 +452,99 @@ void main() {
         ahead: 1,
         onRun: (r) => ran = r,
       );
-      expect(find.text('Fix'), findsOneWidget);
+      // Two of them: the pinned button that composes all three, and the failing
+      // build's own row remedy. They share the verb by decision (SPEC-38 §8 D12)
+      // — the pinned one is the wide button at the top.
+      expect(find.text('Fix'), findsNWidgets(2));
       // The specific remedies are still there, one row each.
-      expect(find.text('Resolve threads'), findsOneWidget);
-      await tester.tap(find.text('Fix'));
+      expect(find.text('Resolve'), findsOneWidget);
+      await tester.tap(find.text('Fix').first);
       await tester.pumpAndSettle();
       expect(ran, isA<MagicRemedy>());
+    });
+
+    testWidgets('the merged sheet groups the residue, not the ending', (
+      tester,
+    ) async {
+      // The sheet skips the loud fact before grouping (its headline already said
+      // it), and that skip used to shift the whole list: `worktree still here`
+      // landed under LANDED and vanished from LEFT BEHIND.
+      await _pumpSheet(
+        tester,
+        pr: _pr(state: 'MERGED', rollup: 'pass', checks: [_check('a', 'pass')]),
+        uncommitted: 2,
+      );
+      expect(find.text('LEFT BEHIND'), findsOneWidget);
+      expect(find.text('worktree still here'), findsOneWidget);
+      expect(find.text('2 files uncommitted'), findsOneWidget);
+      final leftBehindY = tester.getTopLeft(find.text('LEFT BEHIND')).dy;
+      expect(
+        tester.getTopLeft(find.text('worktree still here')).dy,
+        greaterThan(leftBehindY),
+        reason: 'the residue belongs under LEFT BEHIND',
+      );
+      // The headline is the ending, so the groups must not say it a second time.
+      expect(
+        find.text('merged'),
+        findsOneWidget,
+        reason: 'the hero, and only the hero',
+      );
+      expect(find.text('LANDED'), findsNothing);
+    });
+
+    testWidgets('the pinned Discard is the muted error fill, like desktop', (
+      tester,
+    ) async {
+      // Both CTAs paint the same op; the mobile one kept the CI red after the
+      // desktop one moved to the error container, so "discard" out-shouted a
+      // failing build on one surface and not the other.
+      await _pumpSheet(tester, pr: _pr(state: 'CLOSED'));
+      final cs = makitDarkTheme.colorScheme;
+      final button = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Discard worktree'),
+      );
+      expect(
+        button.style?.backgroundColor?.resolve({}),
+        prDirectCtaFill(cs, PrTone.blocking, destructive: true).bg,
+      );
+    });
+
+    testWidgets('the closed disclosure peeks at the build behind it', (
+      tester,
+    ) async {
+      // The whole point of the collapsed row is to say what is behind it, so the
+      // count carries the verdict (mockup §6 draws it in the failing red).
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+        ahead: 1,
+        expandDetail: false,
+      );
+      expect(
+        tester.widget<Text>(find.text('1 check')).style?.color,
+        prToneTextColor(makitDarkTheme.colorScheme, PrTone.blocking),
+      );
+    });
+
+    testWidgets('a green build leaves the disclosure count neutral', (
+      tester,
+    ) async {
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'pass', checks: [_check('a', 'pass')]),
+        ahead: 1,
+        expandDetail: false,
+      );
+      expect(
+        tester.widget<Text>(find.text('1 check')).style?.color,
+        makitDarkTheme.colorScheme.outline,
+      );
     });
 
     testWidgets('a surface with no composer offers no prompt remedies', (
       tester,
     ) async {
-      // The home list has nowhere to put a prompt. Rendering "Fix CI" there meant
+      // The home list has nowhere to put a prompt. Rendering "Fix" there meant
       // the tap saved a preference, composed the text, closed the sheet and
       // dropped it — a dead button with no feedback.
       await _pumpSheet(
@@ -407,8 +553,8 @@ void main() {
         ahead: 1,
         canInsertPrompt: false,
       );
-      expect(find.text('Fix CI'), findsNothing);
-      expect(find.text('Resolve threads'), findsNothing);
+      expect(find.text('Fix'), findsNothing);
+      expect(find.text('Resolve'), findsNothing);
       expect(find.text('Push'), findsNothing);
       // The facts themselves are still reported — only the dead buttons go.
       expect(find.text('2 threads open'), findsOneWidget);
@@ -437,6 +583,144 @@ void main() {
       // `mergeable` is unreported here, so there is no merge to offer either.
       await _pumpSheet(tester, pr: _pr(rollup: 'pass'));
       expect(find.byType(FilledButton), findsNothing);
+    });
+  });
+
+  group('the detail layer, desktop dialog', () {
+    testWidgets('says "Needs you" — nothing precedes it here', (tester) async {
+      // The sheet's headline already states the loud fact, so its list is what
+      // the headline left out and "Also" is true. The dialog lists everything.
+      await _pumpDialogBody(
+        tester,
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+        ahead: 1,
+      );
+      expect(find.text('NEEDS YOU'), findsOneWidget);
+      expect(find.text('ALSO NEEDS YOU'), findsNothing);
+      // ...and the loud fact is in the list, which is why "Also" would be wrong.
+      expect(find.text('1 commit unpushed'), findsOneWidget);
+    });
+
+    testWidgets('an ended PR reads as a brief, not a check list', (
+      tester,
+    ) async {
+      await _pumpDialogBody(
+        tester,
+        pr: _pr(
+          state: 'MERGED',
+          rollup: 'pass',
+          checks: [_check('a', 'pass'), _check('b', 'pass')],
+        ),
+        uncommitted: 2,
+      );
+      // What landed, and what it left behind (mockup §4).
+      expect(find.text('LANDED'), findsOneWidget);
+      expect(find.text('LEFT BEHIND'), findsOneWidget);
+      expect(find.text('merged'), findsOneWidget);
+      expect(find.text('2 checks passed'), findsOneWidget);
+      expect(find.text('worktree still here'), findsOneWidget);
+      // The build is history: no per-check rows, and no "2 checks" group header.
+      expect(find.text('2 checks'), findsNothing);
+      expect(find.byType(PrCheckRow), findsNothing);
+    });
+
+    testWidgets('a fact row writes its severity, not only its glyph', (
+      tester,
+    ) async {
+      // Every label used to print in the surface ink, so `2 checks failing` read
+      // at the same weight as `3 threads open` and the only red was a 15px glyph.
+      await _pumpDialogBody(
+        tester,
+        pr: _pr(rollup: 'fail', unresolved: 3, checks: [_check('a', 'fail')]),
+        ahead: 1,
+      );
+      final cs = makitDarkTheme.colorScheme;
+      Color? colorOf(String label) =>
+          tester.widget<Text>(find.text(label)).style?.color;
+      expect(colorOf('1 check failing'), prToneTextColor(cs, PrTone.blocking));
+      expect(colorOf('3 threads open'), prToneTextColor(cs, PrTone.attention));
+      expect(
+        colorOf('1 commit unpushed'),
+        prToneTextColor(cs, PrTone.attention),
+      );
+    });
+
+    testWidgets('a quiet fact keeps the surface ink', (tester) async {
+      // Context, not severity. A draft's build is the sharpest case: it is muted
+      // by §5 precisely because the PR is not up for review, so the row must not
+      // write it in red either.
+      await _pumpDialogBody(
+        tester,
+        pr: _pr(isDraft: true, rollup: 'fail', checks: [_check('a', 'fail')]),
+      );
+      expect(
+        tester.widget<Text>(find.text('1 check failing')).style?.color,
+        makitDarkTheme.textTheme.bodyMedium?.color,
+        reason: 'the body ink, not the failing red',
+      );
+    });
+
+    testWidgets('a shed check list says why it is empty', (tester) async {
+      // The rollup is on screen claiming a build result; with no rows and no note
+      // that reads as the app having lost them (SPEC-32 sheds the per-check
+      // lookup to stay inside GitHub's quota).
+      await _pumpDialogBody(tester, pr: _pr(rollup: 'fail'));
+      expect(find.text('CI failing'), findsOneWidget);
+      expect(find.byType(PrCheckRow), findsNothing);
+      expect(find.text(kShedChecksNote), findsOneWidget);
+    });
+
+    testWidgets('a PR with no CI at all says nothing about checks', (
+      tester,
+    ) async {
+      // `checkRollup: none` is not a shed lookup — there is genuinely no build to
+      // report, and explaining an absence nobody noticed is noise.
+      await _pumpDialogBody(tester, pr: _pr(rollup: 'none'), ahead: 1);
+      expect(find.text(kShedChecksNote), findsNothing);
+    });
+
+    testWidgets('a listed check list carries no such note', (tester) async {
+      await _pumpDialogBody(
+        tester,
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+      );
+      expect(find.byType(PrCheckRow), findsOneWidget);
+      expect(find.text(kShedChecksNote), findsNothing);
+    });
+
+    testWidgets('a live PR still lists every check', (tester) async {
+      await _pumpDialogBody(
+        tester,
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+      );
+      expect(find.byType(PrCheckRow), findsOneWidget);
+    });
+  });
+
+  group('the detail sheet, collapsed', () {
+    testWidgets('opens on the decision: the detail is behind a disclosure', (
+      tester,
+    ) async {
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'fail', unresolved: 3, checks: [_check('a', 'fail')]),
+        ahead: 1,
+        expandDetail: false,
+      );
+      // The headline and the button are there...
+      expect(find.text('1 commit unpushed'), findsOneWidget);
+      expect(find.text('Fix'), findsOneWidget);
+      // ...and the count says what is behind the door, so it is not a blind one.
+      expect(find.text('Detail'), findsOneWidget);
+      expect(find.text('1 check'), findsOneWidget);
+      // But nothing else is on screen yet.
+      expect(find.text('3 threads open'), findsNothing);
+      expect(find.byType(PrCheckRow), findsNothing);
+
+      await tester.tap(find.text('Detail'));
+      await tester.pumpAndSettle();
+      expect(find.text('3 threads open'), findsOneWidget);
+      expect(find.byType(PrCheckRow), findsOneWidget);
     });
   });
 
@@ -549,7 +833,7 @@ void main() {
       );
       await tester.tap(find.text('#42 · 1 check failing'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Fix CI').last);
+      await tester.tap(find.text('Fix').last);
       await tester.pumpAndSettle();
 
       // The prompt is in the field for the user to review and send. Matching a

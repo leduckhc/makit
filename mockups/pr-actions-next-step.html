@@ -289,7 +289,7 @@ C's gauge and without A's segments.</p>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <section>
-<h2>3 · Full state ladder <span class="tag b">B2</span></h2>
+<h2>3 · Full state ladder <span class="tag new">as built · B1</span></h2>
 <p class="lede">Every state, as a sentence. Read the left column top to bottom — it should sound like
 a person telling you where the branch stands.</p>
 <div class="cols"><div class="col wide"><div class="body" id="ladder"></div></div></div>
@@ -397,10 +397,14 @@ const st={
     lead:'1 commit unpushed',rest:['2 checks failing','3 threads open'],
     cta:{label:'Fix',icon:'magic-wand',tone:'attention'}},
   oneProblem:{cap:'open · exactly one problem — keeps its own specific verb',
-    num:'#142',tone:'attention',dot:{c:'var(--pass)'},
+    /* Was pinned green. A green build no longer reports all-clear while something
+       is pressing — see §8 and SPEC-38 D17. */
+    num:'#142',tone:'attention',dot:{},
     lead:'1 commit unpushed',rest:[],
     cta:{label:'Push',icon:'arrow-up',tone:'attention'}},
   ready:{cap:'open · green, synced, mergeable — GitHub would take it',
+    /* The button takes the remedy's own tone, not a generic amber: landing is
+       purple everywhere else in the pane (§8, D13). */
     num:'#142',tone:'quiet',dot:{c:'var(--pass)'},leadTone:'quiet',
     lead:'ready to merge',rest:[],
     cta:{label:'Squash & merge',icon:'git-merge',tone:'landed',direct:true}},
@@ -415,7 +419,7 @@ const st={
   ciUnknown:{cap:'open · rollup says fail but the checks were shed (quota)',
     num:'#142',tone:'blocking',dot:{},
     lead:'CI failing',rest:[],
-    cta:{label:'Fix CI',icon:'wrench',tone:'blocking'}},
+    cta:{label:'Fix',icon:'wrench',tone:'blocking'}},
   draft:{cap:'open · draft — ranked LAST, so it leads only when all else is clear',
     num:'#142',tone:'quiet',dot:{c:'var(--outline)'},leadTone:'quiet',
     lead:'still a draft',rest:[],
@@ -435,7 +439,7 @@ const st={
   threads:{cap:'open · unresolved review threads',
     num:'#142',tone:'attention',dot:{},
     lead:'3 threads open',rest:[],
-    cta:{label:'Resolve threads',icon:'chat-circle',tone:'attention'}},
+    cta:{label:'Resolve',icon:'chat-circle',tone:'attention'}},
   merged:{cap:'MERGED — the ending that did not exist before',
     num:'#142',tone:'landed',dot:{},
     lead:'merged',rest:['worktree still here'],
@@ -447,7 +451,7 @@ const st={
   stale:{cap:'open · stale (GitHub quota) — number crisp, the rest dimmed',
     num:'#142',tone:'blocking',dot:{},stale:true,
     lead:'2 checks failing',rest:[],
-    cta:{label:'Fix CI',icon:'wrench',tone:'blocking'}},
+    cta:{label:'Fix',icon:'wrench',tone:'blocking'}},
 };
 
 
@@ -553,7 +557,8 @@ el('flavours').innerHTML=FL.map(f=>`
 /* ═══ 2 · dots ═════════════════════════════════════════════════════ */
 const DOTS=[
   ['no PR yet','hollow ring — nothing to report',{cls:'hollow'},'quiet'],
-  ['checks green','solid pass',{c:'var(--pass)'},'quiet'],
+  ['checks green, nothing pressing','solid pass \u2014 green means nothing needs you',{c:'var(--pass)'},'quiet'],
+  ['checks green, something pressing','defers to the loud fact (D17)',{},'attention'],
   ['checks red','solid fail',{},'blocking'],
   ['4 of 12 running','arc = checks reported so far',{ring:8/12},'attention'],
   ['merged','the only purple in the pane',{},'landed'],
@@ -594,10 +599,13 @@ el('detail').innerHTML=`
 <div class="col" style="width:380px"><header><div class="t"><h3>Detail — open PR, CI red</h3></div>
   <div class="d">Opened by the sentence or <code>+n more</code>. On mobile the loud fact is the
   headline and the pinned button, so the list below carries only what they elided — stating it in all
-  three places said the same thing three times.</div></header>
+  three places said the same thing three times. The header reads <code>needs you</code> here and
+  <code>also needs you</code> on the sheet, where the headline already said the first one. Shipped
+  labels tone each row by its own fact and shorten the verbs to <code>Fix</code>/<code>Resolve</code>
+  (SPEC-38 D12).</div></header>
   <div class="body"><div class="pop">
     <div class="ph">${ic('warning')} needs you</div>
-    ${fact('x-circle','2 checks failing',{rt:'var(--fail)',fix:['Fix CI',wash('blocking',20),TONE.blocking]})}
+    ${fact('x-circle','2 checks failing',{rt:'var(--fail)',fix:['Fix',wash('blocking',20),TONE.blocking]})}
     ${fact('chat-circle','3 threads open',{rt:'var(--pending)',fix:['Resolve',wash('attention',20),TONE.attention]})}
     ${fact('arrow-up','1 commit unpushed',{rt:'var(--pending)',fix:['Push',wash('attention',20),TONE.attention]})}
     <div class="rule"></div>
@@ -1008,9 +1016,27 @@ const WRONG=[
   ['the loud fact was the red build',
    'Every picture of the three-problem state led with <code>2 checks failing</code>, in red.',
    'Precedence puts <b>unpushed commits above a red build</b> (§5): you cannot fix CI for commits the remote has never seen. So the sentence leads with <code>1 commit unpushed</code> in amber, and “Fix” composes all three in that order — pinned by <code>pr_signals_test.dart</code>.'],
+  ['the merged brief was invented, then half-built',
+   'The <code>landed</code> / <code>left behind</code> popover listed <code>Merged into main \u00b7 2h ago</code>, <code>12 checks passed</code>, <code>1 session still running</code> and <code>main is 6 commits behind</code> \u2014 none of it wired.',
+   'All of it ships except the relative time: the groups, the checks line (with the pass glyph, not a tone dot), and both residue facts, which come from data the snapshot already carries \u2014 <code>sessionIds.length</code> and the <b>primary checkout\u2019s</b> own <code>behindCount</code> (<code>HEAD..@{upstream}</code> there <i>is</i> \u201cmain is N behind\u201d). A merged PR\u2019s per-check list is dropped entirely: it is history, and it was the bulk of the scroll.'],
+  ['a green build meant a green dot',
+   'Any PR whose <code>checkRollup</code> was <code>pass</code> drew the all-clear disc \u2014 so <b>conflicts with the base</b>, <b>the base branch moved on</b>, <b>3 threads open</b>, <b>2 commits behind</b> and <b>1 commit unpushed</b> all showed the same green as <code>ready to merge</code>. The mock said so twice and contradicted itself: <code>oneProblem</code> pinned the dot green over an amber sentence, while <code>threads</code> \u2014 identical green build \u2014 drew it amber.',
+   'Green now means <b>nothing needs you</b>: the pass verdict holds only while the loud fact is <i>quiet</i>, otherwise the dot defers to that fact\u2019s tone (SPEC-38 D17). A failing or in-flight build is still checked first, so <code>hot</code> keeps its red dot over an amber sentence \u2014 the case \u00a78.1 exists for.'],
   ['the dot inherited the sentence\u2019s tone',
    'Every dot was <code>tone</code>\u2019s hue, so a <b>green</b> PR drew a grey dot (the all-clear fact is quiet) and a <b>red build</b> drew amber the moment a local commit outranked it \u2014 this state\u2019s own picture.',
    'The dot reports the <b>pull request</b>, the sentence reports the next step: they are different claims. <code>PrDot</code> is now derived separately from <code>PrTone</code> (SPEC-38 \u00a78.1) straight off the \u00a72 legend \u2014 pass green, fail red, pending arc, merged purple, draft/closed grey, a ring only when there is nothing to report. The ring is grey <i>whatever</i> the tone, or it would report something.'],
+  ['“Fix CI” and “Resolve threads” in the bar',
+   'The bar shortened only some verbs, and the fact list shortened different ones — <code>Fix CI</code> in §4, <code>Fix</code> in §6.',
+   'One verb source for every surface: <code>Fix</code> and <code>Resolve</code> (SPEC-38 D12). <code>Fix</code> is deliberately also the magic remedy’s verb — the sentence beside the button says whether one thing or three are wrong. They co-occur only on the mobile sheet, which is the accepted cost.'],
+  ['the merge button was purple only in the mock',
+   'Hand-coloured. Derived, <code>ready to merge</code> is a <i>quiet</i> fact, and the CTA promoted every quiet tone to amber — so the one action that is good news said <code>attention</code>.',
+   'The promotion now takes the <b>remedy’s</b> tone where it has one (D13): purple to land, amber for the rest. The fact stays quiet in the list.'],
+  ['a closed PR shouted',
+   'The state was tagged <code>blocking</code> wholesale, so <code>closed without merging</code> printed in CI red — and the destructive button took the same vivid red a failing build owns.',
+   'The facts are <i>quiet</i> and only the button stays loud (D14); destructive fills use <code>errorContainer</code> (§8). Nothing is failing here — the pull request simply ended.'],
+  ['the sheet was a scroll, not a decision',
+   'Facts and twelve check rows rendered inline under the pinned button — about 2.5 phone screens.',
+   'The detail sits behind a collapsed <code>Detail · 12 checks</code> disclosure on the sheet only (D15); an ended PR drops the per-check list entirely and reads as a <b>landed / left behind</b> brief (§4).'],
   ['the home row continued the sentence',
    'The chip read <code>2 checks failing · 3 threads open</code> — the loud fact plus the next one.',
    'A row has nowhere to elide: the second fact pushed the chip past the branch name it sits beside. The chip is <code>#142 · loud fact</code> and the rest is one tap away, which is the same split the bar makes with <code>+n more</code>.'],

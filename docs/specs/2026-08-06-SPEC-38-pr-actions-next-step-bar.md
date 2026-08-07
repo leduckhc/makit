@@ -139,8 +139,10 @@ inherited so the rewrite cannot silently reshuffle the offered action.
 
 Rows inherited unchanged from SPEC-23's `_situationFor()` are **1, 2, 3, 5 and 7** (uncommitted,
 behind, unpushed, red build, threads); rows 4, 6, 9, 10 and the endings are new. The *Remedy* column
-names the underlying action, not the button string — the bar shortens some (`Fix PR` → `Fix CI`,
-`Resolve comments` → `Resolve threads`) because the sentence has already said what is wrong.
+names the underlying action, not the button string — every surface shortens some (`Fix PR` → `Fix`,
+`Resolve comments` → `Resolve`) because the sentence beside the button has already said what is wrong.
+One source for those verbs (`prRemedyLabel`), so the bar, the fact rows and the menu cannot drift; see
+D12 for why `Fix` is deliberately also the magic remedy's verb.
 
 **Rationale for the new rows.** Row 4 before 5: conflicts make a build result moot. Row 6 after 5:
 updating the branch reruns CI anyway. Row 9 **last**: marking a half-finished PR ready is not a next
@@ -290,6 +292,33 @@ they started with before storing. A lookup already in flight when the mutation l
   negotiable and a bar that reflows as CI churns is worse than one that elides.
 - **On the composer's top edge**, inside its box and above a 1px hairline (`onSurface` at 7%) —
   see decision D11. The bar owns no insets of its own; `Composer.header` supplies them.
+- **Text separators and the `+n more` underline read `cs.outline`, never `cs.outlineVariant`.** The
+  latter is the *hairline* token: at 1.07:1 on `surfaceContainerHigh` the `·` was not on screen at all
+  and the dotted underline — the only thing that says `+2 more` is tappable — was invisible in both
+  themes. The mockup gives separators their own mid-grey (§3).
+- **`attention` resolves its label colour per theme.** Only the light theme needs the darkened
+  `statusCautionText` (`kCheckPending` is 2.1:1 there); on dark the label keeps the dot's own amber
+  (7.1:1 on the surface, and better than the orange on every tint). Two ambers 6px apart read as two
+  verdicts, which is the failure `prToneColor`'s docstring warns about.
+- **The destructive direct CTA is `errorContainer`/`onErrorContainer`, not `kCheckFail`.** That red is
+  the hue a failing build owns; painting "discard this worktree" in it made the one irreversible button
+  out-shout the fact beside it. Same pairing on the confirm's commit button (§9).
+- **An ended pull request's detail is a brief, not a to-do list**: `Landed` (the ending + `N checks
+  passed`) then `Left behind` (the residue), and **no per-check list** — a merged PR's build is history,
+  and twelve rows of it were the bulk of the scroll. Mockup §4's merged popover.
+- **The residue is `PrResidue`**, and every number in it is already in the repos snapshot — nothing new
+  is fetched. `sessions` is the worktree's own `sessionIds.length` (what a wrap-up would archive);
+  `baseBranch`/`baseBehind` are the **primary checkout's** branch and `behindCount`, which the server
+  derives as `HEAD..@{upstream}` there — that is exactly the mockup's `main is 6 commits behind`.
+  Reported for ended states only: while a PR is open, "a session is running in it" is not a fact about
+  the pull request, it is how you are working on it. The primary checkout is never reported against
+  itself. `merged 2h ago` stays unbuilt — relative time is not in the PR DTO (§8 records that).
+- **Only the ending is `landed`.** The residue is `quiet`: painting `2 files uncommitted` purple said
+  the uncommitted work had merged. The `N checks passed` line takes the check glyph in `kCheckPass`
+  rather than a tone dot — it is the one row in the brief that reports the build.
+- **A verdict with no checks says why.** `checkRollup != 'none'` with an empty `checks` list is a shed
+  lookup (SPEC-32 drops the second call under quota), so the detail prints `kShedChecksNote` instead of
+  an unexplained gap — which is also why the fact reads `CI failing` rather than a count.
 
 ### 8.1 The dot reports the pull request, not the loud fact (normative)
 
@@ -303,8 +332,16 @@ legend:
 | 3 | `MERGED` | `landed` | `cs.prMergedText` |
 | 4 | any check `pending` | `pending` — an arc, `checkProgress` round | `kCheckPending` on a `cs.outlineVariant` track |
 | 5 | `checkRollup: fail` | `fail` | `kCheckFail` |
-| 6 | `checkRollup: pass` | `pass` | `kCheckPass` |
+| 6 | `checkRollup: pass` **and the loud fact is `quiet`** | `pass` | `kCheckPass` |
 | 7 | otherwise | `tone` | `prToneColor(tone)` |
+
+Row 6's second clause is load-bearing: **green means *nothing needs you***, not "the build is fine,
+look elsewhere for the problem". Without it a PR with conflicts, a moved base, open review threads,
+unpushed commits or a stale local branch drew the same green disc as one that was ready to merge, and
+the only ambient graphic in the pane contradicted the sentence beside it. Rows 4 and 5 are checked
+first, so a red or in-flight build still outranks a louder amber fact — which is the case §8.1 was
+written for. Only the three all-clear states (`N checks passed`, `ready to merge`, and a `BLOCKED`
+green PR) keep the pass verdict; see D17.
 
 A **separate derivation from `tone`**, because the two make different claims and §4's earlier
 "tone — the dot's hue" made them one. Two consequences of collapsing them, both wrong on screen:
@@ -454,3 +491,13 @@ is guarded; this residue is one commit on a branch whose pushed history `origin/
 | D8 | `locateWorktree` replaces three per-field scans | Six independent scans could straddle a snapshot swap and describe two different worktrees |
 | D10 | The dialog's branch travels with the command (`expectBranch`) and a mismatch is **refused** | The server resolves the branch again when it runs, so without it the user could confirm "delete feat/x" and have a branch they checked out since — possibly with unpushed commits — deleted by `git branch -D`, which does not ask |
 | D11 | The bar sits **inside** the composer box, on its top edge above a hairline — not in its own floating row | The mockup's §5 second option, adopted after the first shipped. At this weight it reads as a caption on the box you are typing into, which is what it is: most of its actions put text there. A separate row spent full composer width on one sentence. `Composer.header` renders it regardless of `enabled`, and both composer instances (normal + free-text answer) get it — otherwise the worktree's only status line vanished for the length of an inline ask |
+| D12 | `Fix` is the verb for **both** the CI prompt and the magic remedy | User preference over the mockup, which shortened only in the fact list (`Fix CI` in §4, `Fix` in §6). One verb source (`prRemedyLabel`) beats a per-surface table, and the two never collide in the bar — the sentence beside the button says whether one thing or three are wrong. They *do* co-occur on the mobile sheet (pinned `Fix` + the build row's `Fix`), which is the accepted cost |
+| D13 | The CTA promotes a quiet tone to the **remedy's** tone, not always to `attention` | Keeps D-nothing-looks-disabled while restoring the colour language: `Squash & merge` is the landing action and landing is purple everywhere else in the pane. An amber merge button said `attention` about the one action that is good news |
+| D14 | A **closed** PR's facts are `quiet`; only its button stays `blocking` | It is history, not an alarm — nothing is failing, the pull request simply ended (mockup §3 `closed`). The button still deletes a worktree and a branch, so it keeps the loud register |
+| D15 | The detail is behind a collapsed disclosure **on the sheet only** | The point of the pinned CTA is that the sheet opens on the decision; facts plus twelve check rows above the fold undid it. The dialog has no pinned CTA, so it keeps showing everything |
+| D16 | The home-row chip loses its capsule, and tones only the fact | The row already carries an accent bar and a branch name; a third filled element is the chrome B set out to remove. `#142` is the same number whatever CI says, so it keeps the row's ink — the desktop bar always did, and painting both made a green PR's number green |
+| D17 | A green build reports `pass` **only while nothing is pressing** | The dot is the pane's one ambient graphic, so it has to answer "does this need me?", and `checkRollup: pass` alone answered a narrower question. Reverses the mockup's `oneProblem` picture (green dot over `1 commit unpushed`) deliberately: that picture and its `threads` picture — amber dot, same green build — could not both be right, and "green = nothing needs you" is the only version a user can learn. A failing or in-flight build still wins, so §8.1's founding case (red dot, amber sentence) is unchanged |
+| D18 | A **shed** rollup still reports its verdict | `pending`/`fail` come from `checkRollup`, but the *count* comes from the check list, and SPEC-32 sheds the list under quota. Deriving "in flight" from the list alone made a running build indistinguishable from an all-clear — and the all-clear branch then offered `Squash & merge` on a build that had not finished. A countless `CI still running` and `PrDot.pending` now cover it; `checkProgress` stays null, so the dot is a solid disc rather than an arc claiming a count it does not have |
+| D19 | An unrecognised PR state says so | `open` is null for any state but `OPEN`, and the all-clear branch read that as "no pull request" — so a PR whose state this derivation does not know printed `#142 · ready for a PR`, a contradiction in four words. It now reports `PR state unknown` and offers nothing |
+| D20 | Residue belongs to a **secondary** worktree only | It is what a wrap-up or discard takes with it, and the primary checkout is never removed (the ending branch gives it no direct op at all). Its sessions are not going anywhere and its own branch cannot be "behind" itself, so `prStatusFor` gives it `const PrResidue()` |
+| D21 | `PrFactLabel` is the one `#142 · fact` fragment | The home-row chip and the session subtitle chip drew it separately and had drifted the same way — both toned the whole string and bolded all of it, so a merged worktree's number read purple and a failing one's red while the bar kept it in the surface ink. One widget in `pr_tone.dart` now owns the split (identity `onSurface` w600 · separator `outline` at 55% · fact in its tone); the bar keeps its richer version (inline dot, stale suffix, larger ramp) |

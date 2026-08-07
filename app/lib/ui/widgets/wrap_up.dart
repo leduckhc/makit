@@ -23,6 +23,7 @@ import '../../store/prefs/preferences_providers.dart';
 import '../../store/store.dart';
 import 'pr_actions.dart';
 import 'pr_signals.dart';
+import 'pr_tone.dart';
 
 /// What a direct op did, for the snackbar.
 class PrOpOutcome {
@@ -234,6 +235,9 @@ Future<bool?> showPrDirectConfirm(
   int uncommittedFiles = 0,
 }) {
   final base = pr?.baseRefName;
+  // The one op that destroys work it cannot get back. It gets the muted error
+  // pairing rather than the CI red — see [prDirectCtaFill].
+  final destructive = op == PrDirectOp.discardWorktree;
 
   final (
     IconData icon,
@@ -273,10 +277,20 @@ Future<bool?> showPrDirectConfirm(
     builder: (dctx) {
       final cs = Theme.of(dctx).colorScheme;
       return AlertDialog(
+        // The mockup's dialog is a 400px card with a 16/600 title and 12.5px grey
+        // copy; M3's defaults print the title at headlineSmall and the body at
+        // full-strength onSurface, which read as a different, louder dialog.
+        titleTextStyle: Theme.of(dctx).textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+          color: tint(cs),
+        ),
         title: Row(
           children: [
             Icon(icon, size: 20, color: tint(cs)),
             const SizedBox(width: kSpace8),
+            // Tinted like the icon beside it: the mockup names the op in its own
+            // colour (§9), and an untinted word next to a purple broom read as
+            // two unrelated things.
             Text(title),
           ],
         ),
@@ -284,15 +298,24 @@ Future<bool?> showPrDirectConfirm(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(switch (op) {
-              PrDirectOp.wrapUp =>
-                'This pull request has merged. Tidy up after it:',
-              PrDirectOp.discardWorktree =>
-                'This pull request was closed without merging. Remove what it '
-                    'left behind:',
-              _ =>
-                'Land $identity on ${base ?? 'its base branch'}, GitHub-side:',
-            }, style: Theme.of(dctx).textTheme.bodyMedium),
+            // 360 rather than free: the plan is a list of short lines, and an
+            // unconstrained AlertDialog stretches to the longest path it happens
+            // to be given.
+            const SizedBox(width: 360),
+            Text(
+              switch (op) {
+                PrDirectOp.wrapUp =>
+                  'This pull request has merged. Tidy up after it:',
+                PrDirectOp.discardWorktree =>
+                  'This pull request was closed without merging. Remove what it '
+                      'left behind:',
+                _ =>
+                  'Land $identity on ${base ?? 'its base branch'}, GitHub-side:',
+              },
+              style: Theme.of(
+                dctx,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
             // The sentence above asserts a PR state the app took from its last
             // snapshot, and nothing re-checks GitHub before acting (SPEC-38 §11a
             // L1). When that snapshot is explicitly last-known — SPEC-32 shed the
@@ -306,7 +329,8 @@ Future<bool?> showPrDirectConfirm(
               const _Step(
                 'Its state could not be refreshed (GitHub quota), so this may '
                 'already be out of date',
-                warn: true,
+                icon: PhosphorIconsLight.warning,
+                tone: _StepTone.caution,
               ),
             ],
             const SizedBox(height: kSpace12),
@@ -314,46 +338,84 @@ Future<bool?> showPrDirectConfirm(
               _Step(
                 'Squash every commit on this branch into one on '
                 '${base ?? 'the base branch'}',
+                icon: PhosphorIconsLight.gitMerge,
+                emphasis: base,
               ),
               // The two things a user is most likely to assume happen and be
               // wrong about, so both are stated rather than left to be inferred.
-              const _Step('Close the pull request'),
+              const _Step(
+                'Close the pull request',
+                icon: PhosphorIconsLight.gitPullRequest,
+              ),
               const _Step(
                 'Leave this worktree and its sessions alone — tidy up '
                 'separately afterwards',
+                icon: PhosphorIconsLight.folder,
               ),
             ] else ...[
               // Order matters and mirrors the server: the worktree goes first,
               // and only then are its sessions reconciled — doing it the other
               // way round could orphan them if the git removal failed.
-              _Step('Remove the worktree at $worktreePath'),
+              _Step(
+                'Remove the worktree at $worktreePath',
+                icon: PhosphorIconsLight.folderMinus,
+                emphasis: worktreePath,
+              ),
               // Live sessions are archived, not stopped: the transcript and the
               // resume handle survive (SPEC-29). Drafts have neither, so they go.
               const _Step(
                 'Archive the sessions running in it (drafts are discarded)',
+                icon: PhosphorIconsLight.archive,
               ),
-              if (branch != null) _Step('Delete the local branch $branch'),
+              if (branch != null)
+                _Step(
+                  'Delete the local branch $branch',
+                  icon: PhosphorIconsLight.gitBranch,
+                  emphasis: branch,
+                ),
               if (op == PrDirectOp.wrapUp)
                 _Step(
                   base == null
                       ? 'Fast-forward the default branch in the primary checkout'
                       : 'Fast-forward $base in the primary checkout',
+                  icon: PhosphorIconsLight.arrowDown,
+                  emphasis: base,
                 ),
               if (uncommittedFiles > 0)
                 _Step(
                   '${uncommittedFiles == 1 ? '1 file' : '$uncommittedFiles files'}'
                   ' uncommitted here will be lost',
-                  warn: true,
+                  icon: PhosphorIconsLight.warning,
+                  emphasis: uncommittedFiles == 1
+                      ? '1 file'
+                      : '$uncommittedFiles files',
+                  tone: _StepTone.danger,
                 ),
             ],
           ],
         ),
         actions: [
+          // Declining is not an accent action: the brand green made "Cancel" the
+          // brightest thing on a dialog whose whole job is a considered yes.
           TextButton(
+            style: TextButton.styleFrom(foregroundColor: cs.onSurfaceVariant),
             onPressed: () => Navigator.pop(dctx, false),
             child: const Text('Cancel'),
           ),
+          // The op's own hue, not the theme's brand green. Green is "go, this is
+          // good" everywhere else in makit, and it was the colour on the one
+          // button that deletes a worktree (mockup §9 tints per op).
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: destructive ? cs.errorContainer : tint(cs),
+              // Measured against the fill this button actually has, not against
+              // a tone that happens to match it: the op's `tint` is the source of
+              // truth, and a future op with a different one would otherwise get
+              // ink chosen for the old one.
+              foregroundColor: destructive
+                  ? cs.onErrorContainer
+                  : inkOn(cs, tint(cs)),
+            ),
             onPressed: () => Navigator.pop(dctx, true),
             child: Text(verb),
           ),
@@ -363,38 +425,89 @@ Future<bool?> showPrDirectConfirm(
   );
 }
 
+/// What a step's glyph reports (mockup §9's third `step()` argument).
+enum _StepTone {
+  /// Something this action *will do*. Brand green: it is the plan, not a hazard.
+  plan,
+
+  /// A caveat about the plan's own accuracy — the stale-quota line.
+  caution,
+
+  /// Work that will be destroyed.
+  danger,
+}
+
 /// One line of the confirm dialog's plan.
+///
+/// **The glyph carries the colour; the text does not.** Four identical grey dots
+/// made the one dialog whose lines have to be read scan as a single block, and
+/// tinting whole lines instead made the plan compete with the warning. The
+/// mockup's split — coloured glyph, grey line, the *token* bold — is what lets
+/// four steps and one hazard sit in the same list (§9).
 class _Step extends StatelessWidget {
-  const _Step(this.text, {this.warn = false});
+  const _Step(
+    this.text, {
+    required this.icon,
+    this.emphasis,
+    this.tone = _StepTone.plan,
+  });
 
   final String text;
-  final bool warn;
+  final IconData icon;
+
+  /// The substring to print bold in the surface ink — the path, the branch, the
+  /// base, the file count. What the user actually has to check before agreeing.
+  final String? emphasis;
+
+  final _StepTone tone;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final color = warn ? cs.error : cs.onSurfaceVariant;
+    final glyph = switch (tone) {
+      _StepTone.plan => cs.primary,
+      // The dot/glyph amber, not `statusCautionText`: this is a graphic (3:1), and
+      // the orange is the second amber §8 got rid of.
+      _StepTone.caution => prToneColor(cs, PrTone.attention),
+      _StepTone.danger => cs.error,
+    };
+    final base =
+        Theme.of(
+          context,
+        ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant) ??
+        const TextStyle();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            warn ? PhosphorIconsLight.warning : PhosphorIconsLight.dot,
-            size: 15,
-            color: color,
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(icon, size: 15, color: glyph),
           ),
-          const SizedBox(width: kSpace6),
+          const SizedBox(width: kSpace8),
           Expanded(
-            child: Text(
-              text,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: color),
-            ),
+            child: Text.rich(TextSpan(children: _spans(base, cs)), style: base),
           ),
         ],
       ),
     );
+  }
+
+  /// [text] with [emphasis] bolded, or the whole line when there is nothing to
+  /// emphasise. Split on the *first* occurrence only: these are single-token
+  /// highlights, and bolding every `main` in a sentence about `main` is noise.
+  List<InlineSpan> _spans(TextStyle base, ColorScheme cs) {
+    final at = emphasis == null ? -1 : text.indexOf(emphasis!);
+    if (at < 0) return [TextSpan(text: text)];
+    final bold = base.copyWith(
+      color: cs.onSurface,
+      fontWeight: FontWeight.w600,
+    );
+    return [
+      if (at > 0) TextSpan(text: text.substring(0, at)),
+      TextSpan(text: emphasis, style: bold),
+      TextSpan(text: text.substring(at + emphasis!.length)),
+    ];
   }
 }
