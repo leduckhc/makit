@@ -338,6 +338,12 @@ class StoreController extends StateNotifier<StoreState> {
         // the rest of this state, that cache is persisted, so it would survive a
         // restart as well.
         //
+        // `prevId != null` only: boot activates null -> the persisted server,
+        // which is a change of identity by the same test but not a change of
+        // *machine* — the cache was written by the server being restored. Clearing
+        // there wiped the blob on every launch, before a pane could read it, which
+        // is exactly the emptiness persisting it was meant to prevent.
+        //
         // Deferred to a microtask, unlike the assignment above: this listener
         // runs inside Riverpod's refresh pass, and writing to *another* provider
         // there is what `desktop_session_prune.dart` documents as poisoning the
@@ -348,10 +354,12 @@ class StoreController extends StateNotifier<StoreState> {
         // `mounted` because the container can be disposed between scheduling and
         // running (app teardown right after a switch or unpair), and a disposed
         // StateNotifier throws on assignment.
-        final cache = _ref.read(cachedCommandsControllerProvider.notifier);
-        Future.microtask(() {
-          if (cache.mounted) unawaited(cache.clearAll());
-        });
+        if (prevId != null) {
+          final cache = _ref.read(cachedCommandsControllerProvider.notifier);
+          Future.microtask(() {
+            if (cache.mounted) unawaited(cache.clearAll());
+          });
+        }
       }
 
       final wasConnected = prev?.wsState == WsState.connected;

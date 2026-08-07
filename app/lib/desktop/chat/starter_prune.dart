@@ -1,8 +1,8 @@
 /// Pruning the starter pane's key spaces (SPEC-45 D10).
 ///
 /// A starter's draft text, harness/model picks and staged images are held in
-/// app-wide, non-`autoDispose` providers keyed `starter:<worktreePath>` — that
-/// is what makes them survive the tab switch that recreates the pane. Nothing
+/// app-wide, non-`autoDispose` providers under the key [starterDraftKey] builds
+/// — that is what makes them survive the tab switch that recreates the pane. Nothing
 /// dropped them, though: a worktree wrapped up or discarded left its draft (and,
 /// worse, the megabytes of a staged screenshot) held for the life of the process.
 ///

@@ -50,7 +50,7 @@ ComposerAttachmentsApi composerAttachments(
 /// The same capability for a composer whose session does not exist yet — the
 /// starter pane's first message (SPEC-45 D6/D7).
 ///
-/// [draftKey] is that pane's staging key (`starter:<worktreePath>`), so the
+/// [draftKey] is that pane's staging key (built by `starterDraftKey`), so the
 /// images survive the pane being recreated exactly as its draft text does. The
 /// live-pane session check is deliberately absent: it asks "is there a session
 /// to upload *for*", which has no meaning before one exists, and `POST /media`

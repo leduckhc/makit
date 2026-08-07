@@ -141,4 +141,24 @@ void main() {
     // The agent's own commands are exactly what this palette is for.
     expect(find.text('/skill:makit-computer-use'), findsOneWidget);
   });
+
+  testWidgets('commands cached for another project are not offered', (
+    tester,
+  ) async {
+    // Command lists are cwd-dependent, which is why the cache is keyed by
+    // project as well as harness (D3). Without this, only the agent half of
+    // `commandsFor` was constrained, and a repo-wide key would have passed.
+    final cache = await _pump(tester);
+    await cache.record(
+      agent: 'zed',
+      projectId: 'some-other-project',
+      commands: [_skill],
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), '/computer');
+    await tester.pumpAndSettle();
+
+    expect(find.text('/skill:makit-computer-use'), findsNothing);
+  });
 }

@@ -1,6 +1,7 @@
 /// SPEC-45 D10 — a removed worktree takes its starter drafts with it.
 ///
-/// The three starter key spaces (`starter:<worktreePath>`) are app-wide and NOT
+/// The three starter key spaces (keyed `starter:` + a JSON `[projectId,
+/// worktreePath]` pair — see `starterDraftKey`) are app-wide and NOT
 /// `autoDispose`, which is what makes a draft survive a tab switch. The cost is
 /// that nothing ever dropped them: a staged screenshot for a worktree that has
 /// since been wrapped up held its bytes for the life of the process.

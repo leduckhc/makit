@@ -191,4 +191,35 @@ void main() {
     // pick the file again to retry a send that never happened.
     expect(h.container.read(composerAttachmentsProvider)[_key], hasLength(1));
   });
+
+  testWidgets(
+    'with no server to upload to, the paperclip is inert but says why',
+    (tester) async {
+      // D7's precondition is a reachable server and nothing else. Unpaired, the
+      // paperclip stays visible and disabled with the reason (a connectivity gap
+      // the user can fix), rather than vanishing or silently swallowing a pick.
+      await _pump(tester, withUploader: false);
+
+      final clip = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byIcon(PhosphorIconsLight.paperclip),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(clip.onPressed, isNull);
+      expect(clip.tooltip, 'Connect to your makit server to attach images');
+    },
+  );
+
+  testWidgets('images already staged stay visible when the server goes away', (
+    tester,
+  ) async {
+    // Losing the server mid-stage must not hide images the next send would still
+    // carry — the chips are handed over regardless of `pick`.
+    final h = await _pump(tester, withUploader: false);
+    await _stage(h.container);
+    await tester.pumpAndSettle();
+
+    expect(find.text('shot.png'), findsOneWidget);
+  });
 }

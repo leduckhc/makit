@@ -233,6 +233,36 @@ void main() {
     expect(h.store.picks!.single.value, 'gpt-5-codex');
   });
 
+  testWidgets('re-tapping the selected harness keeps its picks', (
+    tester,
+  ) async {
+    // The cards stay tappable when already selected, and `chooseAgent` replaced
+    // the whole entry — so tapping Codex twice threw away the model chosen for
+    // Codex. Only a CHANGE of harness may drop picks (that is what the next test
+    // covers); re-affirming one is not a change.
+    final h = _container();
+    await tester.pumpWidget(_app(h.container));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Codex'));
+    await tester.pumpAndSettle();
+    await _pickModel(tester, 'GPT-5', 'GPT-5 Codex');
+
+    await tester.tap(find.text('Codex'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(
+        of: find.byType(ModelConfigPill),
+        matching: find.text('GPT-5 Codex'),
+      ),
+      findsOneWidget,
+    );
+    expect(h.container.read(starterPicksProvider)[_key]?.picks, {
+      'model': 'gpt-5-codex',
+    });
+  });
+
   testWidgets('changing the harness still drops the previous catalog picks', (
     tester,
   ) async {

@@ -39,7 +39,12 @@ class StarterPicksStore extends StateNotifier<Map<String, StarterPicks>> {
   /// Records the harness choice for [key], dropping any config picks made for
   /// the previous one: a different harness has its own catalog and defaults, so
   /// a stale pick could name a value it cannot honour.
+  ///
+  /// Re-affirming the harness already chosen is a no-op. The cards stay tappable
+  /// while selected, and replacing the entry unconditionally threw away the model
+  /// picked *for that harness* — only a change of harness may drop them.
   void chooseAgent(String key, String agentId) {
+    if (state[key]?.agentId == agentId) return;
     state = {...state, key: StarterPicks(agentId: agentId)};
   }
 

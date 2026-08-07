@@ -5,6 +5,8 @@
 /// keying `DesktopChatPane` by tab id destroyed the half-typed first message.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -35,9 +37,11 @@ const _agent = AgentDescriptor(
   available: true,
 );
 
-/// A store whose spawn always fails, to stage the refused-send path.
+/// A store whose spawn always fails, to stage the refused-send path. [gate] lets
+/// a test hold the spawn open long enough to unmount the pane under it.
 class _RefusingStore extends StoreController {
-  _RefusingStore(super.ref);
+  _RefusingStore(super.ref, {this.gate});
+  final Future<void>? gate;
   @override
   Future<String> spawnSession(
     String projectId, {
@@ -46,15 +50,20 @@ class _RefusingStore extends StoreController {
     String? worktreePath,
     String? branch,
     List<ConfigOptionPick>? configOptions,
-  }) async => throw StateError('worktree is gone');
+  }) async {
+    if (gate != null) await gate;
+    throw StateError('worktree is gone');
+  }
 }
 
-ProviderContainer _container({bool refuseSpawn = false}) {
+ProviderContainer _container({bool refuseSpawn = false, Future<void>? gate}) {
   final container = ProviderContainer(
     overrides: [
       agentsProvider.overrideWith((ref) => [_agent]),
       if (refuseSpawn)
-        storeControllerProvider.overrideWith((ref) => _RefusingStore(ref)),
+        storeControllerProvider.overrideWith(
+          (ref) => _RefusingStore(ref, gate: gate),
+        ),
       connectionControllerProvider.overrideWith(
         (ref) => ConnectionController(const _EmptyStorage()),
       ),
@@ -166,6 +175,41 @@ void main() {
     expect(
       container.read(composerDraftsProvider)[starterDraftKey('p1', '/tmp/wt')],
       'never left the pane',
+    );
+  });
+
+  testWidgets('a spawn refused after the pane is gone still keeps the message', (
+    tester,
+  ) async {
+    // Switching tabs while the spawn is in flight disposes this pane. If the
+    // spawn then fails, the restore must still land in the draft store: the
+    // composer already cleared its field on send, so bailing out on `!mounted`
+    // was the difference between "your message is waiting for you" and gone.
+    final gate = Completer<void>();
+    final container = _container(refuseSpawn: true, gate: gate.future);
+    await tester.pumpWidget(_app(container));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'sent into the void');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(PhosphorIconsLight.arrowUp));
+    await tester.pump();
+
+    // The tab switch, mid-spawn.
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: Scaffold(body: SizedBox())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(composerDraftsProvider)[starterDraftKey('p1', '/tmp/wt')],
+      'sent into the void',
     );
   });
 }

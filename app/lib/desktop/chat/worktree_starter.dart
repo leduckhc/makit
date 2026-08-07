@@ -186,6 +186,9 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     // Same reason: the picks are spent once the session exists, and clearing
     // them below happens after the await.
     final pending = ref.read(starterPicksProvider.notifier);
+    // Same reason again, and this one has to survive an UNMOUNTED pane: the draft
+    // restore below must land even when the user switched tabs mid-spawn.
+    final drafts = ref.read(composerDraftsProvider.notifier);
     setState(() {
       _spawning = true;
       _error = null;
@@ -208,13 +211,18 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
       // spawn keeps them, so the user can fix the cause and send again.
       pending.clear(_draftKey);
     } catch (e) {
-      if (!mounted) return;
       // The composer clears its field on send, so a refused spawn would take the
       // message with it. Give it back — the images are still staged (D6), and a
       // send that never happened must not cost the user their text.
+      //
+      // Before the `mounted` guard, and through the notifier captured above: a
+      // tab switch mid-spawn disposes this pane, and bailing out first meant the
+      // one case where the text was unrecoverable (the field is already cleared)
+      // was also the case where nothing restored it.
+      drafts.set(_draftKey, text);
+      if (!mounted) return;
       _composer.text = text;
       _composer.selection = TextSelection.collapsed(offset: text.length);
-      ref.read(composerDraftsProvider.notifier).set(_draftKey, text);
       setState(() {
         _spawning = false;
         _error = '$e';

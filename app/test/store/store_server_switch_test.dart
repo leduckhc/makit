@@ -230,6 +230,50 @@ void main() {
     );
   });
 
+  test('boot (null -> the persisted server) keeps the cached palette', () async {
+    // The point of persisting the cache (`desktop_app.dart`) is that a relaunch
+    // does not show an empty palette until a session has run. At boot the active
+    // server goes null -> A, which is a change of identity by the same test as a
+    // real switch — so clearing on it would wipe the blob on every launch, before
+    // anything could read it.
+    final container = ProviderContainer(
+      overrides: [
+        connectionControllerProvider.overrideWith(
+          (ref) => ConnectionController(
+            _Storage({
+              'paired_servers':
+                  '{"servers":[${_json(_srv('10.0.0.1', _fpA, 'work'))}],'
+                  '"activeId":"$_fpA"}',
+            }),
+            transportFactory: _Transport.new,
+            browseLan:
+                ({Duration timeout = const Duration(seconds: 3)}) async => [],
+            rediscoverStall: const Duration(seconds: 30),
+          ),
+        ),
+        // Seeded as `CachedCommandsController.load(prefs)` would at bootstrap,
+        // before the socket comes up.
+        cachedCommandsControllerProvider.overrideWith(
+          (ref) => CachedCommandsController(null, {
+            'zed\u0000makit': const [
+              SlashCmd(name: 'skill:x', description: '', source: 'skill'),
+            ],
+          }),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    container.read(storeControllerProvider.notifier);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      container.read(cachedCommandsControllerProvider),
+      isNotEmpty,
+      reason: 'a relaunch must not throw away the palette it just loaded',
+    );
+  });
+
   test('reconnecting to the SAME server keeps its data', () async {
     final container = _container();
     final conn = container.read(connectionControllerProvider.notifier);
