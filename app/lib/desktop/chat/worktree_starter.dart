@@ -4,10 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/theme.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
+import '../../store/cached_commands.dart';
+import '../../store/composer_attachments.dart';
 import '../../store/models.dart';
 import '../../store/recent_models.dart';
 import '../../store/store.dart';
+import '../../ui/composer/attachment_controller.dart';
 import '../../ui/composer/composer.dart';
+import '../../ui/composer/composer_draft.dart';
 import '../../ui/composer/composer_selectors.dart'
     show ModelConfigFooter, partitionConfigOptions;
 import '../../ui/composer/model_picker_menu.dart';
@@ -16,6 +20,7 @@ import 'harness_picker.dart' show HarnessCard;
 import 'pr_bar.dart';
 import 'selected_worktree.dart';
 import 'start_session.dart';
+import 'starter_picks.dart';
 import '../../ui/widgets/pr_signals.dart';
 
 /// The in-pane start surface for a sessionless pane that already knows its
@@ -37,16 +42,26 @@ class WorktreeStarter extends ConsumerStatefulWidget {
 
 class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   /// The composer's text, so a canned PR prompt can be dropped into it the way
-  /// the live pane does.
+  /// the live pane does. Mirrored into [composerDraftsProvider] under
+  /// [_draftKey], because this widget does not outlive a tab switch.
   final TextEditingController _composer = TextEditingController();
 
-  /// The user-picked harness id; null falls back to the first available agent.
-  String? _chosenAgentId;
+  /// This starter's slot in the app-wide draft store (SPEC-45 D1) and in
+  /// [starterPicksProvider] (D2). The draft store's own doc reserves this key
+  /// space for "a session that hasn't started yet"; keyed by worktree path, not
+  /// tab id, so both survive the tab being closed and reopened.
+  String get _draftKey => 'starter:${widget.worktree.path}';
 
-  /// Pending config-option picks, keyed by option id. Held locally (no session
-  /// yet) and forwarded to the spawn. Cleared when the harness changes, since
-  /// its catalog and defaults differ.
-  final Map<String, Object> _picks = {};
+  /// The user-picked harness id; null falls back to the first available agent.
+  /// Held in [starterPicksProvider], not in this State, because a tab switch
+  /// disposes the pane (`split_view.dart` keys it by tab id).
+  String? get _chosenAgentId =>
+      ref.read(starterPicksProvider)[_draftKey]?.agentId;
+
+  /// Pending config-option picks, keyed by option id, forwarded to the spawn.
+  /// Dropped when the harness changes, since its catalog and defaults differ.
+  Map<String, Object> get _picks =>
+      ref.read(starterPicksProvider)[_draftKey]?.picks ?? const {};
 
   bool _spawning = false;
   String? _error;
@@ -68,6 +83,9 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     _composer.selection = TextSelection.collapsed(
       offset: _composer.text.length,
     );
+    // The composer reports only the changes the *user* makes, so an injected
+    // prompt has to be persisted here or a tab switch would drop it.
+    ref.read(composerDraftsProvider.notifier).set(_draftKey, _composer.text);
   }
 
   @override
@@ -120,14 +138,18 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
           values: values,
           agent: _currentAgent,
           onSelectModel: (value) {
-            // SPEC-31 (decision a): keep the sheet open. The outer setState
-            // updates the footer chips; setSheetState rebuilds the sheet with
-            // the new active value derived from _picks (revealing its flyout).
-            setState(() => _picks[model.id] = value);
+            // SPEC-31 (decision a): keep the sheet open. The store write rebuilds
+            // the footer chips; setSheetState rebuilds the sheet with the new
+            // active value derived from the picks (revealing its flyout).
+            ref
+                .read(starterPicksProvider.notifier)
+                .setPick(_draftKey, model.id, value);
             setSheetState(() {});
           },
           onPickOption: (id, value) {
-            setState(() => _picks[id] = value);
+            ref
+                .read(starterPicksProvider.notifier)
+                .setPick(_draftKey, id, value);
             setSheetState(() {});
           },
         );
@@ -138,6 +160,12 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   Future<void> _start(String text) async {
     if (_spawning) return;
     final agents = ref.read(agentsProvider).value ?? const <AgentDescriptor>[];
+    // Captured before the await: the spawn rebinds this pane to the new session,
+    // so `ref` may be dead by the time the images are taken.
+    final staged = ref.read(composerAttachmentsProvider.notifier);
+    // Same reason: the picks are spent once the session exists, and clearing
+    // them below happens after the await.
+    final pending = ref.read(starterPicksProvider.notifier);
     setState(() {
       _spawning = true;
       _error = null;
@@ -151,9 +179,22 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
         worktreePath: widget.worktree.path,
         branch: widget.worktree.branch,
         picks: _picks,
+        // Taken after the spawn lands, so a refused spawn leaves the chips (and
+        // their finished uploads) in place — SPEC-45 D6.
+        takeAttachments: () => takeAttachmentsFrom(staged, _draftKey),
       );
+      // The pending session is now a real one, so its harness/model picks are
+      // spent — exactly as the sent message's draft text is pruned. A refused
+      // spawn keeps them, so the user can fix the cause and send again.
+      pending.clear(_draftKey);
     } catch (e) {
       if (!mounted) return;
+      // The composer clears its field on send, so a refused spawn would take the
+      // message with it. Give it back — the images are still staged (D6), and a
+      // send that never happened must not cost the user their text.
+      _composer.text = text;
+      _composer.selection = TextSelection.collapsed(offset: text.length);
+      ref.read(composerDraftsProvider.notifier).set(_draftKey, text);
       setState(() {
         _spawning = false;
         _error = '$e';
@@ -167,6 +208,10 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     final worktreePath = widget.worktree.path;
     final agentsAsync = ref.watch(agentsProvider);
     final agents = agentsAsync.value ?? const <AgentDescriptor>[];
+    // Watched so a harness or model pick repaints the cards and the footer: the
+    // picks live in the store now, not in this State, so `setState` no longer
+    // sees them change (SPEC-45 D2).
+    ref.watch(starterPicksProvider);
     final selectedId = _effectiveAgentId(agents);
     AgentDescriptor? selected;
     for (final a in agents) {
@@ -181,6 +226,14 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
     // rebuild isolation — only an extra element. `desktop_chat_pane.dart` states
     // the same reason at its own call site.
     final at = ref.watch(reposProvider).locateWorktree(worktreePath);
+    // Watched, not read: a live session in this project can populate the cache
+    // while this pane is open, and the palette should pick it up.
+    ref.watch(cachedCommandsControllerProvider);
+    final cachedCommands = selectedId == null
+        ? const <SlashCmd>[]
+        : ref
+              .read(cachedCommandsControllerProvider.notifier)
+              .commandsFor(selectedId, widget.worktree.projectId);
 
     return Center(
       child: ConstrainedBox(
@@ -221,12 +274,12 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                         agent: a,
                         selected: a.id == selectedId,
                         onTap: a.available
-                            ? () => setState(() {
-                                _chosenAgentId = a.id;
-                                // The new harness has its own catalog and
-                                // defaults, so stale picks can't carry over.
-                                _picks.clear();
-                              })
+                            // `chooseAgent` drops the previous harness's picks:
+                            // the new one has its own catalog and defaults, so
+                            // stale picks can't carry over.
+                            ? () => ref
+                                  .read(starterPicksProvider.notifier)
+                                  .chooseAgent(_draftKey, a.id)
                             : null,
                       ),
                   ],
@@ -234,9 +287,29 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
               const SizedBox(height: kSpace16),
               Composer(
                 controller: _composer,
+                // Survive the pane being recreated — a tab switch keys
+                // `DesktopChatPane` by tab id — exactly as the live pane does.
+                initialText: ref.read(composerDraftsProvider)[_draftKey],
+                onDraftChanged: (text) => ref
+                    .read(composerDraftsProvider.notifier)
+                    .set(_draftKey, text),
                 onSend: _start,
                 running: _spawning,
                 alwaysExpanded: true,
+                // SPEC-45: an image can be attached to the message that *starts*
+                // the session — `POST /media` is content-addressed and needs no
+                // session, and the server materialises the file into the cwd this
+                // spawn already resolved.
+                attachments: draftAttachments(context, ref, _draftKey),
+                // SPEC-45: agent commands only ever arrive on a live session, so
+                // the palette offers what a session of this harness in this
+                // project last advertised. Possibly stale, and unmarked: a skill
+                // list changes far less often than a session starts.
+                commands: cachedCommands,
+                // No client commands here: `_start` spawns and sends, it does not
+                // route through `handleClientCommand` (which needs a session id),
+                // so `/model` would arrive at the new agent as literal text.
+                clientCommands: false,
                 // The same next-step bar a live session's composer carries. A
                 // fresh worktree usually has *more* to say here than a running
                 // one (nothing pushed, no PR yet), so omitting it made the
@@ -263,7 +336,9 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
                       options: options,
                       values: _picks,
                       agent: selectedId ?? '',
-                      onPick: (id, value) => setState(() => _picks[id] = value),
+                      onPick: (id, value) => ref
+                          .read(starterPicksProvider.notifier)
+                          .setPick(_draftKey, id, value),
                       desktop: true,
                       menuBuilder: _buildDraftModelPicker,
                     ),

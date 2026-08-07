@@ -35,32 +35,56 @@ ComposerAttachmentsApi composerAttachments(
   BuildContext context,
   WidgetRef ref,
   String sessionId,
-) {
+) => _attachments(
+  context,
+  ref,
+  key: sessionId,
   // Only real precondition: somewhere to upload to (SPEC-33 §3.4), and a session
   // to upload for. NOT a recorded worktree — the server materialises into the
   // agent's cwd, and the default repo-root session legitimately has
   // `worktreePath == null`, so gating on it would disable the paperclip for the
   // commonest case.
-  //
+  canStage: ref.watch(sessionsProvider).byId(sessionId) != null,
+);
+
+/// The same capability for a composer whose session does not exist yet — the
+/// starter pane's first message (SPEC-45 D6/D7).
+///
+/// [draftKey] is that pane's staging key (`starter:<worktreePath>`), so the
+/// images survive the pane being recreated exactly as its draft text does. The
+/// live-pane session check is deliberately absent: it asks "is there a session
+/// to upload *for*", which has no meaning before one exists, and `POST /media`
+/// is content-addressed and session-independent. A reachable server is the whole
+/// precondition (D7).
+ComposerAttachmentsApi draftAttachments(
+  BuildContext context,
+  WidgetRef ref,
+  String draftKey,
+) => _attachments(context, ref, key: draftKey, canStage: true);
+
+/// Shared body of the two entry points: [canStage] is the caller's extra
+/// precondition, always AND-ed with "there is somewhere to upload to".
+ComposerAttachmentsApi _attachments(
+  BuildContext context,
+  WidgetRef ref, {
+  required String key,
+  required bool canStage,
+}) {
   // The uploader is watched through `mediaUploaderProvider`, NOT through the
   // attachments notifier: the paperclip must rebuild when a server is
   // (dis)connected, while the notifier must not be rebuilt by that change (it
   // holds staged bytes and in-flight uploads).
-  final canStage =
-      ref.watch(mediaUploaderProvider) != null &&
-      ref.watch(sessionsProvider).byId(sessionId) != null;
+  final canUpload = ref.watch(mediaUploaderProvider) != null && canStage;
   // Read lazily inside the callbacks: they fire long after this build.
   ComposerAttachments notifier() =>
       ref.read(composerAttachmentsProvider.notifier);
   return ComposerAttachmentsApi(
-    staged: ref.watch(composerAttachmentsProvider)[sessionId] ?? const [],
-    pick: canStage
-        ? () => _showAttachMenu(context, notifier(), sessionId)
-        : null,
-    remove: (localId) => notifier().remove(sessionId, localId),
-    retry: (localId) => notifier().retry(sessionId, localId),
+    staged: ref.watch(composerAttachmentsProvider)[key] ?? const [],
+    pick: canUpload ? () => _showAttachMenu(context, notifier(), key) : null,
+    remove: (localId) => notifier().remove(key, localId),
+    retry: (localId) => notifier().retry(key, localId),
     readClipboardImage: readClipboardImage,
-    stagePasted: (image) => _stage(notifier(), sessionId, image),
+    stagePasted: (image) => _stage(notifier(), key, image),
   );
 }
 
@@ -83,8 +107,18 @@ Future<void> _stage(
 );
 
 /// Descriptors for the wire, then clear — called around a successful send.
-List<MediaAttachmentRef> takeAttachmentsForSend(WidgetRef ref, String key) {
-  final notifier = ref.read(composerAttachmentsProvider.notifier);
+List<MediaAttachmentRef> takeAttachmentsForSend(WidgetRef ref, String key) =>
+    takeAttachmentsFrom(ref.read(composerAttachmentsProvider.notifier), key);
+
+/// Same, from a notifier captured **before** an await.
+///
+/// The starter pane takes its images only once the spawn has landed (SPEC-45
+/// D6), by which time its element may be gone — and a `WidgetRef.read` after
+/// that throws. Same reason [_stage] takes a notifier.
+List<MediaAttachmentRef> takeAttachmentsFrom(
+  ComposerAttachments notifier,
+  String key,
+) {
   final wire = notifier.wireFor(key);
   // Only the sent (ready) ones are dropped: a failed chip stays visible with its
   // retry rather than disappearing unexplained (see `clearSent`).

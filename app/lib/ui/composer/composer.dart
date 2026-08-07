@@ -92,6 +92,7 @@ class Composer extends StatefulWidget {
     this.enabled = true,
     this.disabledHint,
     this.attachments,
+    this.clientCommands = true,
   });
   final void Function(String text) onSend;
 
@@ -202,6 +203,17 @@ class Composer extends StatefulWidget {
   final bool running;
   final List<SlashCmd> commands;
 
+  /// Whether the palette also offers the built-in **client** commands
+  /// (`/cancel`, `/model`, `/compact`, …).
+  ///
+  /// False for a composer whose send path cannot run them: they are intercepted
+  /// by `handleClientCommand`, which needs a `sessionId`, so the sessionless
+  /// starter pane would send the literal text `/model` to a brand-new agent.
+  /// Same reason the queue editor excludes them (SPEC-38): a command that acts
+  /// *now* has no meaning in a message that is not sent now, or has nowhere to
+  /// act. Agent commands are unaffected.
+  final bool clientCommands;
+
   /// When true, drop the opaque background/border — a [GlassSurface] parent
   /// provides the surface, so the composer must be transparent.
   final bool glass;
@@ -297,8 +309,11 @@ class _ComposerState extends State<Composer> {
 
   /// The commands the palette is currently showing, in its order — shared with
   /// the palette so Tab can never pick a different row than the highlighted one.
-  List<SlashCmd> get _slashMatches =>
-      filterSlashCommands(_ctrl.text, widget.commands);
+  List<SlashCmd> get _slashMatches => filterSlashCommands(
+    _ctrl.text,
+    widget.commands,
+    includeBuiltins: widget.clientCommands,
+  );
 
   /// [_slashIndex] clamped to [count] rows. The agent can re-push a shorter
   /// command list with no keystroke to reset the raw index, which would leave

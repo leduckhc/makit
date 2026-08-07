@@ -9,6 +9,11 @@ import 'selected_session.dart';
 /// active pane. Shared by the New-session dialog (after it resolves/creates the
 /// worktree) and the in-pane starter (which already has one), so both doors
 /// start a session exactly the same way.
+///
+/// [takeAttachments] supplies the staged images for that first message and is
+/// called **after** the spawn succeeds (SPEC-45 D6). It takes-and-clears, so
+/// invoking it late is what keeps a refused spawn from eating an upload the user
+/// would otherwise have to redo.
 Future<String> startSessionInWorktree(
   WidgetRef ref, {
   required String projectId,
@@ -17,6 +22,7 @@ Future<String> startSessionInWorktree(
   String? worktreePath,
   String? branch,
   Map<String, Object> picks = const {},
+  List<MediaAttachmentRef> Function()? takeAttachments,
 }) async {
   final store = ref.read(storeControllerProvider.notifier);
   final sid = await store.spawnSession(
@@ -31,8 +37,9 @@ Future<String> startSessionInWorktree(
               ConfigOptionPick(id: e.key, value: e.value),
           ],
   );
-  store.appendOptimisticMessage(sid, text);
-  store.sendMessage(sid, text);
+  final attachments = takeAttachments?.call() ?? const <MediaAttachmentRef>[];
+  store.appendOptimisticMessage(sid, text, attachments: attachments);
+  store.sendMessage(sid, text, attachments: attachments);
   selectSessionExclusive(ref, sid);
   return sid;
 }

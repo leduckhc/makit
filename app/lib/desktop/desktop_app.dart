@@ -24,6 +24,7 @@ import '../app/theme.dart';
 import '../control/control_client.dart';
 import '../control/reconnecting_control_client.dart';
 import '../shortcuts/keymap_controller.dart';
+import '../store/cached_commands.dart';
 import '../store/connection.dart';
 import '../store/recent_models.dart';
 import '../store/secure_store.dart';
@@ -107,6 +108,9 @@ Future<void> runDesktopApp() async {
   );
   final preferencesController = PreferencesController.load(prefs);
   final recentModelsController = RecentModelsController.load(prefs);
+  // SPEC-45: the starter pane's slash palette, remembered across restarts —
+  // otherwise every relaunch shows it empty until a session has run.
+  final cachedCommandsController = CachedCommandsController.load(prefs);
   final groupsController = GroupsController.load(prefs);
   final controller = DesktopController(
     client: client,
@@ -174,6 +178,9 @@ Future<void> runDesktopApp() async {
         ),
         recentModelsControllerProvider.overrideWith(
           (ref) => recentModelsController,
+        ),
+        cachedCommandsControllerProvider.overrideWith(
+          (ref) => cachedCommandsController,
         ),
         groupsControllerProvider.overrideWith((ref) => groupsController),
         // SPEC-34: hand the stored rail on/off + options to the shared
