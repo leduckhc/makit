@@ -18,3 +18,6 @@ build/
 # Env / secrets
 .env
 .env.*
+
+# Frame dumps from the ports recording harness (the assembled GIFs are committed)
+app/test/sim/frames/

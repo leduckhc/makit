@@ -92,7 +92,6 @@ class PortDetailSheetBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final cs = theme.colorScheme;
     final hasUrl = port.openUrl != null;
     final uptime = portUptimeLabel(port.startedAt, nowMs: nowMs);
 
@@ -109,12 +108,14 @@ class PortDetailSheetBody extends StatelessWidget {
                 PortTokenPill(
                   label: portHealthPill(port.health),
                   sentence: portHealthTooltip(port.health, nowMs: nowMs),
+                  tone: portHealthTone(port.health),
+                  showDot: true,
                 ),
                 const SizedBox(width: kSpace8),
                 PortTokenPill(
                   label: portReachPill(port.reach),
                   sentence: portReachTooltip(port.reach),
-                  color: cs.onSurfaceVariant,
+                  tone: portReachTone(port.reach),
                 ),
               ],
             ),

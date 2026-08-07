@@ -21,6 +21,7 @@ import '../../app/theme.dart';
 import '../../store/ports.dart';
 import '../../store/store.dart';
 import 'port_detail_sheet.dart';
+import 'port_token_pill.dart';
 import 'ports_filter.dart';
 import 'ports_vocabulary.dart';
 
@@ -492,25 +493,60 @@ class _PortRow extends StatelessWidget {
             ),
             const SizedBox(width: kSpace8),
             Expanded(
-              child: Text(
-                portCommandToken(port.command),
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontFamily: kMonoFontFamily,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    portCommandToken(port.command),
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: kMonoFontFamily,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    portProcessLine(
+                      port.pid,
+                      port.command,
+                      startedAt: port.startedAt,
+                      nowMs: nowMs,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontFamily: kMonoFontFamily,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: kSpace8),
+            // Mockup §9: a collision ships the WORD `clash` on the row itself, not
+            // only in the banner — the banner names a branch, but nothing else
+            // would say which of the listed ports it is talking about.
+            if (port.collision != null) ...[
+              PortTokenPill(
+                label: portClashWord,
+                sentence: portCollisionTooltip(
+                  port.collision!,
+                  port: port.port,
                 ),
+                tone: PortTone.warn,
               ),
+              const SizedBox(width: kSpace6),
+            ],
+            PortTokenPill(
+              label: portHealthPill(port.health),
+              sentence: portHealthTooltip(port.health, nowMs: nowMs),
+              tone: portHealthTone(port.health),
+              showDot: true,
             ),
-            const SizedBox(width: kSpace8),
-            Text(
-              portHealthPill(port.health),
-              style: theme.textTheme.labelSmall,
-            ),
-            const SizedBox(width: kSpace8),
-            Text(
-              portReachPill(port.reach),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: cs.onSurfaceVariant,
-              ),
+            const SizedBox(width: kSpace6),
+            PortTokenPill(
+              label: portReachPill(port.reach),
+              sentence: portReachTooltip(port.reach),
+              tone: portReachTone(port.reach),
             ),
           ],
         ),
@@ -651,58 +687,59 @@ class _OrphanRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    return Semantics(
-      label: portOrphanTooltip(port.orphan!, nowMs: nowMs),
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, kSpace6, 16, kSpace6),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 48,
-                child: Text(
-                  '${port.port}',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontFamily: kMonoFontFamily,
-                    fontWeight: FontWeight.w600,
+    // No outer Semantics wrapper: the `orphan` pill carries the sentence as its
+    // own label, and a second copy here would make a screen reader read it
+    // twice (the trap ports_sheets_test.dart pins for the mobile tokens).
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, kSpace6, 16, kSpace6),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 48,
+              child: Text(
+                '${port.port}',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontFamily: kMonoFontFamily,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: kSpace8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    portCommandToken(port.command),
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: kMonoFontFamily,
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(width: kSpace8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      portCommandToken(port.command),
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontFamily: kMonoFontFamily,
-                      ),
+                  // Its OWN line, and free to wrap: "removed 2d ago" is the
+                  // whole point of an orphan row, and concatenating it after
+                  // the command made it the first thing a phone truncated.
+                  // Deliberately uncapped — an orphan is rare and worth the
+                  // extra line, and any `maxLines` here is a guess about font
+                  // metrics that a longer branch name would break again.
+                  Text(
+                    portOrphanLabel(port.orphan!, nowMs: nowMs),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
                     ),
-                    // Its OWN line, and free to wrap: "removed 2d ago" is the
-                    // whole point of an orphan row, and concatenating it after
-                    // the command made it the first thing a phone truncated.
-                    // Deliberately uncapped — an orphan is rare and worth the
-                    // extra line, and any `maxLines` here is a guess about font
-                    // metrics that a longer branch name would break again.
-                    Text(
-                      portOrphanLabel(port.orphan!, nowMs: nowMs),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              const SizedBox(width: kSpace8),
-              Text(
-                portOrphanWord,
-                style: theme.textTheme.labelSmall?.copyWith(color: cs.error),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: kSpace8),
+            PortTokenPill(
+              label: portOrphanWord,
+              sentence: portOrphanTooltip(port.orphan!, nowMs: nowMs),
+              tone: PortTone.err,
+            ),
+          ],
         ),
       ),
     );

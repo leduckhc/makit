@@ -191,18 +191,37 @@ class _PortListRow extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: kSpace8),
+                      const SizedBox(width: kSpace6),
                       PortTokenPill(
                         label: portHealthPill(port.health),
                         sentence: portHealthTooltip(port.health, nowMs: nowMs),
+                        tone: portHealthTone(port.health),
+                        showDot: true,
                       ),
-                      const SizedBox(width: kSpace8),
+                      const SizedBox(width: kSpace6),
                       PortTokenPill(
                         label: portReachPill(port.reach),
                         sentence: portReachTooltip(port.reach),
-                        color: cs.onSurfaceVariant,
+                        tone: portReachTone(port.reach),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: kSpace2),
+                  // pid, age, then the args — the age ahead of the command so
+                  // the phone's truncation eats the argv tail, not the fact.
+                  Text(
+                    portProcessLine(
+                      port.pid,
+                      port.command,
+                      startedAt: port.startedAt,
+                      nowMs: nowMs,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontFamily: kMonoFontFamily,
+                    ),
                   ),
                 ],
               ),
