@@ -518,7 +518,9 @@ export interface PullRequestDTO {
  * A git worktree of a repo. `isPrimary` marks the repo's main checkout. Diff
  * stats are measured against the repo's default branch; `pr` is present only
  * when an open GitHub PR heads this branch. `sessionIds` links the makit
- * sessions currently running in this worktree.
+ * sessions bound to this worktree — drafts included (their worktree is resolved
+ * before the spawn), archived ones excluded (SPEC-29 hides those everywhere else,
+ * so their ids would resolve to nothing here).
  */
 export interface WorktreeDTO {
   id: string;

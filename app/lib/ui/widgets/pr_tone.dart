@@ -34,12 +34,35 @@ Color prToneColor(ColorScheme cs, PrTone tone) => switch (tone) {
 /// Same hue family as [prToneColor], resolved for contrast: on the light theme
 /// `kCheckFail` prints at 2.3:1 over its own 14% tint and `kCheckPending` is
 /// worse. Pinned by `theme_contrast_test.dart`.
+///
+/// `attention` is resolved **per theme** rather than pinned to the app's caution
+/// orange. Only the light theme needs the swap (`kCheckPending` is 2.1:1 there);
+/// on dark it is 7.1:1 on the surface and beats the orange on every tint, so the
+/// label keeps the same amber as the dot beside it. Two ambers in one sentence
+/// read as two different verdicts — the exact failure mode [prToneColor]'s
+/// docstring warns about (mockup §3).
 Color prToneTextColor(ColorScheme cs, PrTone tone) => switch (tone) {
   PrTone.blocking => cs.diffDelText,
-  PrTone.attention => cs.statusCautionText,
+  PrTone.attention =>
+    cs.brightness == Brightness.dark ? kCheckPending : cs.statusCautionText,
   PrTone.quiet => cs.onSurfaceVariant,
   PrTone.landed => cs.prMergedText,
 };
+
+/// Background + ink for a **direct** CTA, which is a solid fill.
+///
+/// Destructive ops take the scheme's error *container* rather than the CI red:
+/// `kCheckFail` is the hue a failing build owns, and painting "discard this
+/// worktree" in it made the one irreversible button out-shout the fact it sits
+/// beside. The mockup's own destructive picture uses the muted error tint (§3
+/// `closed`).
+({Color bg, Color fg}) prDirectCtaFill(
+  ColorScheme cs,
+  PrTone tone, {
+  required bool destructive,
+}) => destructive
+    ? (bg: cs.errorContainer, fg: cs.onErrorContainer)
+    : (bg: prToneColor(cs, tone), fg: onPrToneFill(cs, tone));
 
 /// The label colour for text on a **solid** [prToneColor] fill (the direct CTA).
 ///
@@ -47,11 +70,95 @@ Color prToneTextColor(ColorScheme cs, PrTone tone) => switch (tone) {
 /// scheme's own pairing is not good enough here. `cs.surface`/`cs.onSurface` are
 /// near-white and near-black in one order on light and the other on dark, so
 /// taking whichever wins on the actual fill works for both themes.
-Color onPrToneFill(ColorScheme cs, PrTone tone) {
-  final fill = prToneColor(cs, tone);
-  return _contrast(cs.onSurface, fill) >= _contrast(cs.surface, fill)
-      ? cs.onSurface
-      : cs.surface;
+Color onPrToneFill(ColorScheme cs, PrTone tone) =>
+    inkOn(cs, prToneColor(cs, tone));
+
+/// The readable ink for text printed on an arbitrary [fill].
+///
+/// `cs.onSurface`/`cs.surface` are near-white and near-black in one order on the
+/// light theme and the other on the dark one, so taking whichever wins on the
+/// actual fill works for both. Takes a colour rather than a [PrTone] because not
+/// every filled surface comes from a tone — the confirm dialog's commit button is
+/// tinted per op.
+Color inkOn(ColorScheme cs, Color fill) =>
+    _contrast(cs.onSurface, fill) >= _contrast(cs.surface, fill)
+    ? cs.onSurface
+    : cs.surface;
+
+/// The status dot's colour — the **pull request's** verdict, not the loud fact's
+/// tone (mockup §2; falls back to [prToneColor] for [PrDot.tone]).
+///
+/// Reads the `kCheck*` tokens rather than re-typing the literals, for the same
+/// reason [prToneColor] does: these dots sit beside CI colours elsewhere in the
+/// app and a near-miss hue reads as a third, meaningless verdict.
+Color prDotColor(ColorScheme cs, PrDot dot, PrTone tone) => switch (dot) {
+  // Grey regardless of tone: the ring means "nothing to report", so tinting it
+  // would report something.
+  PrDot.none => cs.outline,
+  PrDot.pass => kCheckPass,
+  PrDot.fail => kCheckFail,
+  PrDot.pending => kCheckPending,
+  PrDot.landed => cs.prMergedText,
+  PrDot.muted => cs.outline,
+  PrDot.tone => prToneColor(cs, tone),
+};
+
+/// `#142 · 2 checks failing` as a chip draws it: the identity in the surface ink,
+/// a faint separator, then the loud fact in its own tone.
+///
+/// Shared by the home-row chip and the session subtitle chip because they draw the
+/// *same* fragment — and having written it twice, they had drifted: both painted
+/// the whole string in the tone and bolded all of it, so a merged worktree's number
+/// came out purple and a failing one's red. The identity is not part of the
+/// verdict; it is the same `#142` whatever CI says, which is what the desktop bar
+/// has always done.
+///
+/// The bar itself keeps its own richer version (a dot inside the sentence, the
+/// stale suffix, a bigger type ramp) — this is the chip-sized subset.
+class PrFactLabel extends StatelessWidget {
+  const PrFactLabel({super.key, required this.status, this.maxWidth});
+
+  final PrStatus status;
+
+  /// Cap the label so a long fact cannot push the row's own controls off screen;
+  /// it elides instead. Null leaves it unconstrained.
+  final double? maxWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final label = Text.rich(
+      TextSpan(
+        children: [
+          if (status.hasPr) ...[
+            TextSpan(
+              text: status.identity,
+              style: TextStyle(
+                color: cs.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            TextSpan(
+              text: ' · ',
+              style: TextStyle(color: cs.outline.withValues(alpha: 0.55)),
+            ),
+          ],
+          TextSpan(text: status.loud.label),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(
+        context,
+      ).textTheme.labelXs?.copyWith(color: prToneTextColor(cs, status.tone)),
+    );
+    final width = maxWidth;
+    if (width == null) return label;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: width),
+      child: label,
+    );
+  }
 }
 
 /// WCAG relative-contrast ratio.
@@ -73,25 +180,28 @@ class PrToneDot extends StatelessWidget {
   const PrToneDot({
     super.key,
     required this.tone,
+    this.dot = PrDot.tone,
     this.progress,
-    this.hollow = false,
   });
 
+  /// The fallback hue, used when [dot] is [PrDot.tone]. Also what the per-fact
+  /// dots in the detail list are drawn from — each row reports its own fact, so
+  /// there the tone *is* the verdict.
   final PrTone tone;
+
+  /// What the dot reports (mockup §2). See [PrDot].
+  final PrDot dot;
 
   /// Fraction of checks that have reported, or null for a plain dot.
   final double? progress;
-
-  /// Draw a ring instead of a disc — used when there is no PR yet, so "nothing
-  /// to report" is visibly different from "reported, and fine".
-  final bool hollow;
 
   static const double _size = 9;
   static const double _ringSize = 11;
 
   @override
   Widget build(BuildContext context) {
-    final color = prToneColor(Theme.of(context).colorScheme, tone);
+    final cs = Theme.of(context).colorScheme;
+    final color = prDotColor(cs, dot, tone);
     final p = progress;
     // Both forms occupy the ring's box: the disc is the smaller of the two, and
     // letting it size the widget made the sentence twitch 2px sideways the moment
@@ -99,12 +209,14 @@ class PrToneDot extends StatelessWidget {
     return SizedBox(
       width: _ringSize,
       height: _ringSize,
-      child: p != null
+      child: p != null && dot == PrDot.pending
           ? CircularProgressIndicator(
               value: p.clamp(0.0, 1.0),
               strokeWidth: 2.5,
               color: color,
-              backgroundColor: color.withValues(alpha: 0.22),
+              // The unreported remainder is *unknown*, not a faded version of the
+              // arc's own colour: the mockup tracks it in the outline variant.
+              backgroundColor: cs.outlineVariant,
             )
           : Center(
               child: Container(
@@ -112,8 +224,10 @@ class PrToneDot extends StatelessWidget {
                 height: _size,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: hollow ? null : color,
-                  border: hollow ? Border.all(color: color, width: 1.5) : null,
+                  color: dot == PrDot.none ? null : color,
+                  border: dot == PrDot.none
+                      ? Border.all(color: color, width: 1.5)
+                      : null,
                 ),
               ),
             ),

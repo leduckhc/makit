@@ -55,10 +55,6 @@ class SessionPrChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    // The chip's label; its background keeps the vivid dot hue below.
-    final tone = prToneTextColor(cs, status.tone);
-
     return InkWell(
       borderRadius: BorderRadius.circular(kRadius8),
       onTap: () => showPrDetail(
@@ -102,26 +98,11 @@ class SessionPrChip extends ConsumerWidget {
               children: [
                 PrToneDot(
                   tone: status.tone,
+                  dot: status.dot,
                   progress: status.checkProgress,
-                  hollow: pr == null,
                 ),
                 const SizedBox(width: kSpace6),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: _kChipLabelMaxWidth,
-                  ),
-                  child: Text(
-                    status.hasPr
-                        ? '${status.identity} · ${status.loud.label}'
-                        : status.loud.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelXs?.copyWith(
-                      color: tone,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
+                PrFactLabel(status: status, maxWidth: _kChipLabelMaxWidth),
               ],
             ),
           ),

@@ -140,6 +140,20 @@ void main() {
     }
   });
 
+  test('a destructive CTA fill clears AA for its own label', () {
+    // The muted error tint replaces the CI red on the one irreversible button
+    // (SPEC-38 §8 D13), so its pairing has to be measured too.
+    for (final theme in [makitLightTheme, makitDarkTheme]) {
+      final cs = theme.colorScheme;
+      final fill = prDirectCtaFill(cs, PrTone.blocking, destructive: true);
+      expect(
+        _contrast(fill.fg, fill.bg),
+        greaterThanOrEqualTo(4.5),
+        reason: '${theme.brightness.name} destructive CTA label',
+      );
+    }
+  });
+
   // A tinted chip is the one surface that does NOT reach 4.5:1, and cannot with
   // the current tokens: the tint pulls `surfaceContainerHigh` towards the label,
   // and even at 4% alpha the worst pair sits at 3.85. Reaching AA needs a darker

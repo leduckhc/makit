@@ -71,10 +71,18 @@ class _SessionScreenState extends ConsumerState<SessionScreen> {
   /// half-typed text rather than replacing it, and leave the caret at the end so
   /// the user can edit before sending. The draft is persisted by the composer's
   /// own controller listener.
+  ///
+  /// While a free-text ask is pending the answer composer is the mounted one, so
+  /// the prompt goes there: aimed at the message controller it wrote to a field
+  /// that is not on screen, and the text surfaced later, when the ask resolved.
   void _insertPrompt(String prompt) {
-    final existing = _composerController.text;
+    final ask = ref.read(pendingAskProvider(widget.sessionId));
+    final ctrl = ask != null && ask.freeText
+        ? _answerController
+        : _composerController;
+    final existing = ctrl.text;
     final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
-    _composerController.value = TextEditingValue(
+    ctrl.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: next.length),
     );

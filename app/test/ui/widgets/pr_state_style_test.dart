@@ -114,5 +114,83 @@ void _toneHuesTests() {
     test('quiet recedes to the muted outline', () {
       expect(prToneColor(cs, PrTone.quiet), cs.outline);
     });
+
+    test('the attention *label* keeps the amber on dark, darkens on light', () {
+      // The dot and the sentence sit 6px apart, so a label in a second amber read
+      // as a second verdict. Only the light theme needs the swap (kCheckPending is
+      // 2.1:1 there); dark keeps the dot's own hue at 7.1:1.
+      expect(
+        prToneTextColor(makitDarkTheme.colorScheme, PrTone.attention),
+        kCheckPending,
+      );
+      expect(
+        prToneTextColor(makitLightTheme.colorScheme, PrTone.attention),
+        makitLightTheme.colorScheme.statusCautionText,
+      );
+    });
+
+    test('a destructive direct CTA is the error container, not the CI red', () {
+      for (final theme in [makitLightTheme, makitDarkTheme]) {
+        final scheme = theme.colorScheme;
+        final fill = prDirectCtaFill(
+          scheme,
+          PrTone.blocking,
+          destructive: true,
+        );
+        expect(fill.bg, scheme.errorContainer);
+        expect(fill.bg, isNot(kCheckFail), reason: 'not the failing-build red');
+        expect(fill.fg, scheme.onErrorContainer);
+      }
+      // Everything else still gets the full-strength tone.
+      expect(
+        prDirectCtaFill(cs, PrTone.landed, destructive: false).bg,
+        prToneColor(cs, PrTone.landed),
+      );
+    });
+  });
+
+  // The dot legend (mockup §2). Same argument as the tones above: the dot sits
+  // beside real CI colours, so it reads the same `kCheck*` tokens rather than
+  // re-typing the literals.
+  group('dot hues are the check hues', () {
+    test('pass is the passing-check green', () {
+      expect(
+        prDotColor(cs, PrDot.pass, PrTone.quiet),
+        prCheckBucketColor(cs, 'pass'),
+      );
+    });
+
+    test('fail is the failing-check red', () {
+      expect(
+        prDotColor(cs, PrDot.fail, PrTone.quiet),
+        prCheckBucketColor(cs, 'fail'),
+      );
+    });
+
+    test('the arc is the pending-check amber', () {
+      expect(
+        prDotColor(cs, PrDot.pending, PrTone.quiet),
+        prCheckBucketColor(cs, 'pending'),
+      );
+    });
+
+    test('landed is the merged purple', () {
+      expect(prDotColor(cs, PrDot.landed, PrTone.quiet), cs.prMergedText);
+    });
+
+    test('a ring and a muted dot are grey whatever the fact says', () {
+      // The whole point of both: "nothing to report" and "not up for review".
+      // Tinting either would report something.
+      for (final tone in PrTone.values) {
+        expect(prDotColor(cs, PrDot.none, tone), cs.outline);
+        expect(prDotColor(cs, PrDot.muted, tone), cs.outline);
+      }
+    });
+
+    test('PrDot.tone defers to the loud fact', () {
+      for (final tone in PrTone.values) {
+        expect(prDotColor(cs, PrDot.tone, tone), prToneColor(cs, tone));
+      }
+    });
   });
 }

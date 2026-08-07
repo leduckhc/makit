@@ -39,7 +39,9 @@ PrStatus _status({
   int uncommitted = 0,
   int ahead = 0,
   int behind = 0,
+  PrResidue residue = const PrResidue(),
 }) => prStatus(
+  residue: residue,
   pr: pr,
   branch: branch,
   uncommittedFiles: uncommitted,
@@ -279,6 +281,18 @@ void main() {
       expect(s.cta.label, 'Squash & merge');
     });
 
+    test('the button lands in the merged purple, not a generic amber', () {
+      // `ready to merge` is a quiet fact, and a quiet button reads as disabled —
+      // so the CTA promotes. It promotes to the *remedy's* own tone where it has
+      // one: merging is the landing action, and purple is what landing looks like
+      // everywhere else in the pane (mockup §3 `ready`).
+      final s = _status(
+        pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+      );
+      expect(s.loud.tone, PrTone.quiet, reason: 'the fact stays quiet');
+      expect(s.cta.tone, PrTone.landed);
+    });
+
     test('BLOCKED means GitHub would refuse, so it is not offered', () {
       // Required reviews or required checks are missing; GitHub greys its own
       // button here, and offering ours would just produce an error.
@@ -464,6 +478,13 @@ void main() {
 
     test('it needs no confirm — it only writes to the composer', () {
       expect(prRemedyLabel(const MagicRemedy()), 'Fix');
+      // Deliberately the same verb as `fixPr` below: both fix, and the sentence
+      // beside the button says how much. See SPEC-38 §8 D12.
+      expect(prRemedyLabel(const PromptRemedy(PrPromptAction.fixPr)), 'Fix');
+      expect(
+        prRemedyLabel(const PromptRemedy(PrPromptAction.resolveComments)),
+        'Resolve',
+      );
       // The name's actual claim: a magic remedy never reaches `needsConfirm` at
       // all, because only a DirectRemedy carries an op. Asserting the label alone
       // left that invariant unpinned.
@@ -630,6 +651,86 @@ void main() {
       expect(_op(s.cta.remedy), PrDirectOp.discardWorktree);
     });
 
+    test('a closed PR reports quietly — it is history, not an alarm', () {
+      // Mockup §3 gives `closed` a quiet lead: nothing is failing, the pull
+      // request simply ended. The button stays loud (it deletes things), which is
+      // what the CTA's own promotion is for.
+      final s = _status(pr: _pr(state: 'CLOSED'), uncommitted: 1);
+      expect(s.tone, PrTone.quiet, reason: 'the sentence');
+      expect(
+        s.signals.map((x) => x.tone),
+        everyElement(PrTone.quiet),
+        reason: 'every fact of a closed PR',
+      );
+      expect(s.cta.tone, PrTone.blocking, reason: 'the button');
+    });
+
+    test('only the ending is landed — the residue is neutral', () {
+      // Purple means "this merged". Painting the leftovers in it said the
+      // uncommitted work had merged too; the mockup's `left behind` group draws
+      // them neutral (§4).
+      final s = _status(pr: _pr(state: 'MERGED'), uncommitted: 2);
+      expect(s.signals.first.tone, PrTone.landed, reason: 'merged');
+      expect(
+        s.signals.skip(1).map((x) => x.tone),
+        everyElement(PrTone.quiet),
+        reason: 'the residue',
+      );
+    });
+
+    test('the brief names the sessions and the base it left behind', () {
+      // Mockup §4's `left behind` group. Both counts are already in the snapshot:
+      // the sessions bound to this worktree, and the primary checkout's own
+      // behind-count (`HEAD..@{upstream}` there *is* "main is N behind").
+      final s = _status(
+        pr: _pr(state: 'MERGED'),
+        uncommitted: 2,
+        residue: const PrResidue(
+          sessions: 1,
+          baseBranch: 'main',
+          baseBehind: 6,
+        ),
+      );
+      expect(s.signals.map((x) => x.label), [
+        'merged',
+        '2 files uncommitted',
+        'worktree still here',
+        '1 session to archive',
+        'main is 6 commits behind',
+      ]);
+      expect(
+        s.signals.skip(1).map((x) => x.tone),
+        everyElement(PrTone.quiet),
+        reason: 'residue is not landed',
+      );
+    });
+
+    test('the brief says nothing about residue it does not have', () {
+      final s = _status(pr: _pr(state: 'MERGED'));
+      expect(s.signals.map((x) => x.label), ['merged', 'worktree still here']);
+    });
+
+    test('residue is an ending-only fact', () {
+      // A live PR's next step is never "you have a session open" — the sessions
+      // and the base only matter once the worktree is finished with.
+      final s = _status(
+        pr: _pr(rollup: 'pass'),
+        residue: const PrResidue(
+          sessions: 2,
+          baseBranch: 'main',
+          baseBehind: 6,
+        ),
+      );
+      expect(
+        s.signals.map((x) => x.label).join(' '),
+        isNot(contains('session')),
+      );
+      expect(
+        s.signals.map((x) => x.label).join(' '),
+        isNot(contains('behind')),
+      );
+    });
+
     test('a merged PR reports what is still lying around', () {
       final s = _status(pr: _pr(state: 'MERGED'), uncommitted: 2);
       expect(
@@ -658,6 +759,12 @@ void main() {
         isPrimary: true,
       );
       expect(s.cta.remedy, isNull);
+      // Nor does it report the residue that goes with that offer: there is no
+      // wrap-up to leave the checkout behind.
+      expect(
+        s.signals.map((x) => x.label),
+        isNot(contains('worktree still here')),
+      );
     });
   });
 
@@ -722,6 +829,196 @@ void main() {
     });
   });
 
+  // The mockup's §2 legend, row by row. The dot reports the **pull request**,
+  // which is not the same thing as the loud fact: a PR can have a green build
+  // and an unpushed commit, and those want different colours. Before this the dot
+  // simply painted `tone`, so a green PR's dot was grey (the all-clear fact is
+  // quiet) and a red build's dot went amber the moment a local commit outranked
+  // it.
+  group('the dot (mockup §2)', () {
+    test('no PR yet, nothing to report — a ring', () {
+      expect(_status().dot, PrDot.none);
+      expect(_status(branch: 'main').dot, PrDot.none);
+    });
+
+    test('no PR but something to report — not a ring: the fact has a hue', () {
+      // The legend's row is "hollow ring — *nothing to report*", and the mockup's
+      // own `dirty` picture (no PR, 3 uncommitted files) draws a solid amber
+      // disc. A ring here would report "nothing" over three uncommitted files.
+      expect(_status(uncommitted: 3).dot, PrDot.tone);
+      expect(_status(ahead: 1).dot, PrDot.tone);
+    });
+
+    test('checks green — solid pass', () {
+      expect(_status(pr: _pr(rollup: 'pass')).dot, PrDot.pass);
+    });
+
+    test('a green build does not report all-clear while something presses', () {
+      // The dot is the only ambient graphic, so green has to mean "nothing needs
+      // you" — not "the build is fine, look elsewhere for the problem". A PR with
+      // conflicts, a moved base, open threads or unpushed work drew the same green
+      // as one that was ready to merge.
+      //
+      // This reverses the earlier `oneProblem` reading (the mockup pinned that
+      // picture green). A red or in-flight build still outranks: `hot` stays red
+      // and a running rollup stays the arc — both are checked first.
+      for (final (name, s) in <(String, PrStatus)>[
+        (
+          'conflicts',
+          _status(
+            pr: _pr(rollup: 'pass', mergeable: 'CONFLICTING'),
+          ),
+        ),
+        (
+          'base moved on',
+          _status(
+            pr: _pr(rollup: 'pass', mergeStateStatus: 'BEHIND'),
+          ),
+        ),
+        ('threads', _status(pr: _pr(rollup: 'pass', unresolved: 3))),
+        ('behind the remote', _status(pr: _pr(rollup: 'pass'), behind: 2)),
+        ('unpushed', _status(pr: _pr(rollup: 'pass'), ahead: 1)),
+        ('uncommitted', _status(pr: _pr(rollup: 'pass'), uncommitted: 3)),
+      ]) {
+        expect(s.dot, PrDot.tone, reason: name);
+        expect(s.tone, isNot(PrTone.quiet), reason: '$name is pressing');
+      }
+    });
+
+    test('green survives when nothing is pressing', () {
+      // The pass verdict is reachable from the all-clear only, and only with a
+      // green rollup: the loud fact is quiet, so there is nothing for the dot to
+      // defer to.
+      expect(
+        _status(pr: _pr(rollup: 'pass')).dot,
+        PrDot.pass,
+        reason: 'green and up to date — a green rollup with no counted checks',
+      );
+      final counted = _status(
+        pr: _pr(
+          rollup: 'pass',
+          checks: const [
+            PrCheck(name: 'a', bucket: 'pass'),
+            PrCheck(name: 'b', bucket: 'pass'),
+          ],
+        ),
+      );
+      expect(counted.loud.label, '2 checks passed');
+      expect(
+        counted.dot,
+        PrDot.pass,
+        reason: 'an OPEN PR, so `landed` never enters into it',
+      );
+      expect(
+        _status(
+          pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
+        ).dot,
+        PrDot.pass,
+        reason: 'ready to merge',
+      );
+      expect(
+        _status(
+          pr: _pr(
+            rollup: 'pass',
+            mergeable: 'MERGEABLE',
+            mergeStateStatus: 'BLOCKED',
+          ),
+        ).dot,
+        PrDot.pass,
+        reason: 'blocked on a review',
+      );
+    });
+
+    test('checks red — solid fail, even when an amber fact is louder', () {
+      // The mockup's `hot` picture draws this amber, but that is a leftover: §8
+      // records that its loud fact was changed from `2 checks failing` to
+      // `1 commit unpushed` and the dot was not revisited. The legend is the
+      // rule, and §8 of the spec says the dot's hue is the *verdict*.
+      final s = _status(pr: _pr(rollup: 'fail'), ahead: 1);
+      expect(s.loud.label, '1 commit unpushed');
+      expect(s.dot, PrDot.fail);
+    });
+
+    test('a shed pending rollup is still in flight', () {
+      // The count comes from the check list, but the *verdict* comes from the
+      // rollup — and SPEC-32 can shed the list while keeping the rollup. Deriving
+      // "in flight" from the list alone made a running build look like an
+      // all-clear, and offered an irreversible merge on top of it.
+      final s = _status(
+        pr: _pr(rollup: 'pending', mergeable: 'MERGEABLE'),
+      );
+      expect(s.loud.label, 'CI still running');
+      expect(s.dot, PrDot.pending);
+      expect(
+        s.checkProgress,
+        isNull,
+        reason:
+            'no count, so no arc — a rollup without its list is not a count',
+      );
+      expect(
+        _op(s.cta.remedy),
+        isNot(PrDirectOp.squashMerge),
+        reason: 'never offer to land a build that has not finished',
+      );
+    });
+
+    test('checks in flight — an arc, not a hue', () {
+      final s = _status(
+        pr: _pr(
+          rollup: 'pending',
+          checks: const [
+            PrCheck(name: 'a', bucket: 'pass'),
+            PrCheck(name: 'b', bucket: 'pending'),
+          ],
+        ),
+      );
+      expect(s.dot, PrDot.pending);
+      expect(s.checkProgress, closeTo(0.5, 0.001));
+    });
+
+    test('merged — the only purple in the pane', () {
+      expect(_status(pr: _pr(state: 'MERGED')).dot, PrDot.landed);
+    });
+
+    test('draft — muted, not up for review', () {
+      expect(_status(pr: _pr(isDraft: true)).dot, PrDot.muted);
+    });
+
+    test('a draft mutes its own build too', () {
+      // §5: a draft is not up for review, so nothing about it is loud — which
+      // has to include its dot, or the one graphic shouts what the sentence
+      // deliberately does not.
+      expect(_status(pr: _pr(isDraft: true, rollup: 'fail')).dot, PrDot.muted);
+    });
+
+    test('closed without merging — muted', () {
+      expect(_status(pr: _pr(state: 'CLOSED')).dot, PrDot.muted);
+    });
+
+    test('a PR whose state is not recognised does not claim it needs one', () {
+      // `open` is null for any state but OPEN, and the all-clear branch used that
+      // to mean "no pull request" — so a PR in an unrecognised state read
+      // `#142 · ready for a PR`, which is a contradiction in four words.
+      final s = _status(pr: _pr(state: 'LOCKED'));
+      expect(s.hasPr, isTrue);
+      expect(s.loud.label, 'PR state unknown');
+      expect(s.cta.remedy, isNull, reason: 'nothing safe to offer');
+      expect(
+        s.dot,
+        PrDot.tone,
+        reason: 'no verdict to report, so the dot defers to the loud fact',
+      );
+    });
+
+    test('an open PR with no verdict falls back to the loud fact', () {
+      // Nothing to report about the build, so the dot has nothing of its own to
+      // say and defers — the mockup's `conflict`/`behind`/`threads` pictures.
+      final s = _status(pr: _pr(rollup: 'unknown'), behind: 2);
+      expect(s.dot, PrDot.tone);
+      expect(s.tone, PrTone.attention);
+    });
+  });
+
   group('isPrimary is carried, not re-derived', () {
     test('the primary checkout says so', () {
       // The menu explains *why* an action is unavailable (D3), and the reason for
@@ -739,6 +1036,88 @@ void main() {
   // A surface can know the branch before the repos snapshot does — the worktree
   // starter is the obvious case, since it renders the bar for a worktree it just
   // asked the server to create.
+  group('prStatusFor assembles the residue from the snapshot', () {
+    Worktree wt({
+      required String path,
+      required bool isPrimary,
+      String? branch,
+      int behind = 0,
+      List<String> sessions = const [],
+    }) => Worktree(
+      id: path,
+      path: path,
+      branch: branch,
+      isPrimary: isPrimary,
+      insertions: 0,
+      deletions: 0,
+      filesChanged: 0,
+      sessionIds: sessions,
+      behindCount: behind,
+      pr: _pr(state: 'MERGED'),
+    );
+
+    RepoInfo repoWith(List<Worktree> worktrees) => RepoInfo(
+      id: 'p1',
+      name: 'r',
+      path: '/repo',
+      pinned: false,
+      lastActivityAt: 0,
+      isGitRepo: true,
+      defaultBranch: 'main',
+      currentBranch: 'main',
+      worktrees: worktrees,
+    );
+
+    test('the sessions come from the worktree, the base from the primary', () {
+      final primary = wt(
+        path: '/repo',
+        isPrimary: true,
+        branch: 'main',
+        behind: 6,
+      );
+      final feature = wt(
+        path: '/wt/feat',
+        isPrimary: false,
+        branch: 'feat/x',
+        sessions: const ['s1', 's2'],
+      );
+      final s = prStatusFor((
+        repo: repoWith([primary, feature]),
+        worktree: feature,
+      ));
+      expect(
+        s.signals.map((x) => x.label),
+        containsAll(<String>[
+          '2 sessions to archive',
+          'main is 6 commits behind',
+        ]),
+      );
+    });
+
+    test('the primary checkout has no residue at all', () {
+      final primary = wt(
+        path: '/repo',
+        isPrimary: true,
+        branch: 'main',
+        behind: 6,
+        sessions: const ['s1'],
+      );
+      final s = prStatusFor((repo: repoWith([primary]), worktree: primary));
+      // Residue is what a wrap-up would take with it, and the primary checkout is
+      // never wrapped up or discarded — so neither its sessions nor its own branch
+      // are "left behind" by anything.
+      expect(
+        s.signals.map((x) => x.label).join(' '),
+        isNot(contains('behind')),
+      );
+      expect(
+        s.signals.map((x) => x.label).join(' '),
+        isNot(contains('session')),
+      );
+      expect(s.cta.remedy, isNull, reason: 'and nothing to run on it');
+    });
+  });
+
   group('prStatusFor before the snapshot catches up', () {
     test('a missing entry falls back to the branch the caller knows', () {
       expect(prStatusFor(null, fallbackBranch: 'feat/x').identity, 'feat/x');

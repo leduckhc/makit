@@ -114,14 +114,26 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   /// set the field (or append below existing text so a half-typed message is
   /// never destroyed), persist the draft, and focus the field so the user can
   /// review and hit Send.
-  void _insertPrompt(String sessionId, String prompt) {
-    final ctrl = _composerControllerFor(sessionId);
+  ///
+  /// [into] names the field that is actually on screen. A free-text ask replaces
+  /// the message composer with the answer composer, and the bar is rendered by
+  /// both (D11) — so without this the insert landed in an unmounted controller
+  /// and the text only appeared later, when the ask resolved. The answer field is
+  /// not a persisted draft and has no focus node of its own, so both of those
+  /// steps belong to the message composer alone.
+  void _insertPrompt(
+    String sessionId,
+    String prompt, {
+    TextEditingController? into,
+  }) {
+    final ctrl = into ?? _composerControllerFor(sessionId);
     final existing = ctrl.text;
     final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
     ctrl.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: next.length),
     );
+    if (into != null) return;
     ref.read(composerDraftsProvider.notifier).set(sessionId, next);
     final focusId = widget.composerFocusId;
     if (focusId != null) {
@@ -240,6 +252,30 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
     final trailer = trailerFor(running: running, awaiting: pendingAsk != null);
     final hasTrailer = trailer != TranscriptTrailer.none;
 
+    // Built once and handed to whichever composer renders: the free-text answer
+    // composer is a *different* instance, and without this the worktree's only
+    // status line vanished for the duration of an ask.
+    //
+    // No `Builder` around this: `ref.watch` registers against the enclosing
+    // ConsumerState wherever it is called, so one bought no rebuild isolation —
+    // only a local name, which `at` now is.
+    final prBar = PrComposerBar(
+      status: prStatusFor(at, fallbackBranch: session.branch),
+      pr: at?.worktree.pr,
+      projectId: at?.repo.id,
+      worktreePath: session.worktreePath,
+      branch: at?.worktree.branch ?? session.branch,
+      uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
+      onInsertPrompt: (prompt) => _insertPrompt(
+        sessionId,
+        prompt,
+        // Whichever composer is mounted below owns the field the user sees.
+        into: pendingAsk != null && pendingAsk.freeText
+            ? _answerController
+            : null,
+      ),
+    );
+
     return Column(
       children: [
         if (widget.showHeader)
@@ -341,24 +377,6 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // The next-step bar: one sentence about this worktree and
-                  // the one action that moves it forward (direction B1). Reads
-                  // the worktree out of the poller-refreshed repos snapshot, so
-                  // it updates in place as CI/state changes.
-                  //
-                  // No `Builder` around this: `ref.watch` registers against the
-                  // enclosing ConsumerState wherever it is called, so one bought
-                  // no rebuild isolation — only a local name, which `at` now is.
-                  PrComposerBar(
-                    status: prStatusFor(at, fallbackBranch: session.branch),
-                    pr: at?.worktree.pr,
-                    projectId: at?.repo.id,
-                    worktreePath: session.worktreePath,
-                    branch: at?.worktree.branch ?? session.branch,
-                    uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
-                    onInsertPrompt: (prompt) =>
-                        _insertPrompt(sessionId, prompt),
-                  ),
                   // ABOVE the composer, not inside it: as a Composer child every
                   // queued message inflated the composer's own box and ate the
                   // room the field and transcript need. As a sibling it also stays
@@ -373,6 +391,7 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                     Composer(
                       key: ValueKey('answer-${pendingAsk.requestId}'),
                       controller: _answerController,
+                      header: prBar,
                       alwaysExpanded: widget.composerExpanded,
                       onSend: (text) =>
                           _handleSend(sessionId, text, pendingAsk),
@@ -383,6 +402,11 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
                       // leaf id → same pane state) recreates the composer and
                       // re-seeds initialText, instead of leaking s1's text into s2.
                       key: ValueKey(sessionId),
+                      // The next-step bar: one sentence about this worktree and
+                      // the one action that moves it forward (direction B1), on
+                      // the composer's top edge above a hairline — a caption on
+                      // the box most of its actions type into.
+                      header: prBar,
                       // SPEC-33: the whole attachment capability, wired
                       // identically on both surfaces. Nothing paired → nowhere to
                       // upload, so the clip stays inert with a reason and paste is

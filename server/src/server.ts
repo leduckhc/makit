@@ -574,6 +574,12 @@ export function startWsServer(opts: ServerOpts) {
   // Coalesce sessions-snapshot broadcasts: at most one per interval, with a
   // trailing flush so the final state always goes out (see wireSession).
   const throttledSessionsSnapshot = throttleTrailing(() => broadcastSessionsSnapshot(), 150);
+  // A turn that just finished is the moment a worktree's git state is most likely
+  // to have changed: the agent commits, pushes, creates a branch. `listRepos` is a
+  // full git pass per worktree, so it is coalesced over a second — several
+  // sessions finishing together cost one snapshot, and the trailing edge means the
+  // last one to land is the one that is measured.
+  const throttledReposSnapshot = throttleTrailing(() => void broadcastReposSnapshot(), 1_000);
 
   for (const s of manager.allSessions()) wireSession(s);
   // Also wire any sessions created later (e.g. via ensureDefaultSessions which
@@ -730,8 +736,22 @@ export function startWsServer(opts: ServerOpts) {
     // The broadcast is additionally coalesced (leading + trailing, 150ms) via
     // throttleTrailing (#66): a burst of meta changes re-encodes the full
     // sessions list for every client at most once per window.
+    let wasRunning = session.status === "running";
     session.on("metaChanged", () => {
       throttledSessionsSnapshot();
+      // A turn ending also re-derives the repo snapshot (SPEC-38): the worktree's
+      // `uncommittedFiles`/`aheadCount` are what the composer's next-step bar
+      // asserts, and every other trigger — connect, spawn, kill, pull-to-refresh,
+      // the worktree watcher — misses an agent committing mid-turn. The bar kept
+      // offering `Commit & push` for files it had already committed and pushed.
+      //
+      // On the *falling* edge only: `running → anything` fires once per turn,
+      // where watching for `idle` alone would miss the turns that end in `error`
+      // or `exited`, and watching every meta change would rebuild the snapshot on
+      // every preview update.
+      const running = session.status === "running";
+      if (wasRunning && !running) throttledReposSnapshot();
+      wasRunning = running;
     });
   }
 
@@ -745,8 +765,9 @@ export function startWsServer(opts: ServerOpts) {
 
   /**
    * Compute + broadcast the repo-centric snapshot (branches, worktrees, diff
-   * stats, PRs). Fired on connect, spawn, session start, kill, and explicit
-   * `repo.refresh` — never per event.
+   * stats, PRs). Fired on connect, spawn, session start, kill, the end of a turn,
+   * a commit or branch move on disk, and explicit `repo.refresh` — never per
+   * event.
    *
    * Two phases so the +/- diff numbers (pure local git, instant) never wait on
    * the open-PR lookup (`gh`, network, seconds): first broadcast the git-only

@@ -10,6 +10,13 @@ import '../../ui/widgets/pr_signals.dart';
 import '../../ui/widgets/pr_tone.dart';
 import '../../ui/widgets/wrap_up.dart';
 
+/// The sentence — dot, identity, loud fact. Keyed so a test can measure or read
+/// *this* widget instead of `find.byType(Text).first`, which is whatever comes
+/// first depth-first: the layout assertions here check a left bound and a minimum
+/// gap, so a wrongly-picked `Text` would most likely still satisfy them and the
+/// test would quietly stop guarding the invariant it exists for.
+const Key kPrBarSentenceKey = ValueKey('pr-bar-sentence');
+
 /// Tooltip on a stale bar. Names *why* the data is dimmed — a refresh that could
 /// not complete against GitHub's quota — so the user can tell last-known data
 /// from current data instead of guessing at the dimming.
@@ -20,7 +27,7 @@ const kStalePrTooltip =
 /// The row directly above the docked composer: **one sentence about the
 /// worktree, and the one action that moves it forward.**
 ///
-/// `<dot> #142 · 2 checks failing   +2 more            [ Fix CI ▾ ]`
+/// `<dot> #142 · 2 checks failing   +2 more            [ Fix ▾ ]`
 ///
 /// Replaces the old two-zone bar (a `PR #42` pill plus a general-purpose
 /// six-prompt split button), whose two halves secretly depended on each other:
@@ -69,30 +76,44 @@ class PrComposerBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 0, 6, 6),
-      child: Row(
-        children: [
-          Flexible(
-            child: _Reason(
-              status: status,
-              onOpen: () => _openDetail(context, ref),
-            ),
+    // No padding of its own: it is handed to `Composer(header:)`, which owns the
+    // insets between the composer's box edge and its hairline.
+    return Row(
+      children: [
+        // The sentence group takes the row and keeps the free space *before* the
+        // button, so the CTA hugs the right edge instead of trailing the text
+        // wherever it happens to end (the mockup's `flex:1` spacer).
+        //
+        // Expanded + an inner Row, not `Flexible` + `Spacer`: two flex children
+        // in one Row would split the free space evenly, so the sentence would
+        // elide at half the width while the spacer sat on the rest. Here the
+        // non-flex `+n more` is measured first and `_Reason` gets what is left.
+        Expanded(
+          child: Row(
+            children: [
+              Flexible(
+                child: _Reason(
+                  key: kPrBarSentenceKey,
+                  status: status,
+                  onOpen: () => _openDetail(context, ref),
+                ),
+              ),
+              if (status.more > 0) ...[
+                const SizedBox(width: kSpace8),
+                _MoreLink(
+                  count: status.more,
+                  onTap: () => _openDetail(context, ref),
+                ),
+              ],
+            ],
           ),
-          if (status.more > 0) ...[
-            const SizedBox(width: kSpace8),
-            _MoreLink(
-              count: status.more,
-              onTap: () => _openDetail(context, ref),
-            ),
-          ],
-          const SizedBox(width: kSpace10),
-          PrCtaButton(
-            status: status,
-            onRun: (remedy) => _run(context, ref, remedy),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(width: kSpace10),
+        PrCtaButton(
+          status: status,
+          onRun: (remedy) => _run(context, ref, remedy),
+        ),
+      ],
     );
   }
 
@@ -123,7 +144,7 @@ class PrComposerBar extends ConsumerWidget {
 /// is not negotiable, and a bar that reflows as CI churns is worse than one that
 /// elides.
 class _Reason extends StatelessWidget {
-  const _Reason({required this.status, required this.onOpen});
+  const _Reason({super.key, required this.status, required this.onOpen});
 
   final PrStatus status;
   final VoidCallback onOpen;
@@ -148,8 +169,8 @@ class _Reason extends StatelessWidget {
               padding: const EdgeInsets.only(right: kSpace6),
               child: PrToneDot(
                 tone: status.tone,
+                dot: status.dot,
                 progress: status.checkProgress,
-                hollow: !status.hasPr,
               ),
             ),
           ),
@@ -162,7 +183,10 @@ class _Reason extends StatelessWidget {
           ),
           TextSpan(
             text: '  ·  ',
-            style: base.copyWith(color: cs.outlineVariant),
+            // Not `outlineVariant`: that is the hairline token, and at 1.07:1 on
+            // the composer's box the separator simply was not there. The mockup
+            // gives text separators their own mid-grey (§3).
+            style: base.copyWith(color: cs.outline.withValues(alpha: 0.55)),
           ),
           TextSpan(
             text: status.loud.label,
@@ -223,7 +247,10 @@ class _MoreLink extends StatelessWidget {
               color: cs.outline,
               decoration: TextDecoration.underline,
               decorationStyle: TextDecorationStyle.dotted,
-              decorationColor: cs.outlineVariant,
+              // The label's own colour, not the hairline token: at 1.07:1 the
+              // underline was invisible, and it is the only thing on the row that
+              // says this text can be tapped.
+              decorationColor: cs.outline,
             ),
           ),
         ),
@@ -257,6 +284,13 @@ class PrCtaButton extends ConsumerWidget {
     final tone = prToneTextColor(cs, cta.tone);
     final remedy = cta.remedy;
     final direct = remedy is DirectRemedy;
+    // A solid fill, and a muted one for the op that deletes things — see
+    // [prDirectCtaFill].
+    final fill = prDirectCtaFill(
+      cs,
+      cta.tone,
+      destructive: direct && remedy.op == PrDirectOp.discardWorktree,
+    );
 
     final (Color bg, Color fg, Color? border) = switch (cta) {
       PrCta(remedy: null) => (
@@ -264,11 +298,7 @@ class PrCtaButton extends ConsumerWidget {
         cs.onSurfaceVariant,
         cs.outlineVariant,
       ),
-      _ when direct => (
-        prToneColor(cs, cta.tone),
-        onPrToneFill(cs, cta.tone),
-        null,
-      ),
+      _ when direct => (fill.bg, fill.fg, null),
       _ => (
         Color.alphaBlend(
           prToneColor(cs, cta.tone).withValues(alpha: 0.18),

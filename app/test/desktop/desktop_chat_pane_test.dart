@@ -12,6 +12,7 @@ import 'package:makit/desktop/chat/groups/group.dart';
 import 'package:makit/desktop/chat/groups/groups_controller.dart';
 import 'package:makit/desktop/chat/harness_picker.dart' show HarnessCard;
 import 'package:makit/desktop/chat/worktree_starter.dart';
+import 'package:makit/ui/composer/composer.dart' show Composer;
 import 'package:makit/ui/composer/composer_draft.dart';
 import 'package:makit/ui/composer/composer_selectors.dart' show ModelConfigPill;
 import 'package:makit/ui/composer/context_usage.dart'
@@ -20,9 +21,13 @@ import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 import 'package:makit/desktop/chat/selected_session.dart';
 import 'package:makit/desktop/chat/sidebar_layout.dart';
 import 'package:makit/store/connection.dart';
+import 'package:makit/store/elicitation.dart';
+import 'package:makit/store/prefs/preferences_controller.dart';
+import 'package:makit/store/prefs/preferences_providers.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/store.dart';
+import 'package:makit/ui/widgets/pr_actions.dart';
 import 'package:makit/ui/composer/composer_selectors.dart' show ThinkingSignal;
 import 'package:makit/ui/composer/model_picker_menu.dart'
     show kModelFlyoutCaretIcon;
@@ -722,6 +727,14 @@ void main() {
       await pumpStarter(tester, worktree: _wtA, agents: [_codex()]);
 
       expect(find.byType(PrComposerBar), findsOneWidget);
+      // On the composer's top edge, not a sibling above it (SPEC-38 mockup §5).
+      expect(
+        find.descendant(
+          of: find.byType(Composer),
+          matching: find.byType(PrComposerBar),
+        ),
+        findsOneWidget,
+      );
       final bar = tester.widget<PrComposerBar>(find.byType(PrComposerBar));
       expect(
         bar.pr,
@@ -1092,6 +1105,105 @@ void main() {
         greaterThan(0.95),
         reason: 'the ring must not be taking a flex share of the pill row',
       );
+    });
+  });
+
+  group('a prompt remedy while an inline ask is pending', () {
+    // The bar is rendered by *both* composers (D11), but only one of them is
+    // mounted at a time: a free-text ask replaces the message composer with the
+    // answer composer. An insert aimed at the per-session message controller
+    // therefore lands in a field that is not on screen.
+    Future<ProviderContainer> pumpAnswering(WidgetTester tester) async {
+      final session = Session(
+        id: 's1',
+        projectId: 'p1',
+        agent: 'pi',
+        title: 'Test session',
+        status: SessionStatus.idle,
+        policy: ApprovalPolicy.askOnRisky,
+        lastPreview: '',
+        lastActivityAt: 0,
+        worktreePath: '/repo/wt',
+        branch: 'feat/x',
+      );
+      // Three uncommitted files → the loudest fact carries a *prompt* remedy,
+      // which is the half of the bar that types into the composer.
+      const repo = RepoInfo(
+        id: 'p1',
+        name: 'repo',
+        path: '/repo',
+        pinned: false,
+        lastActivityAt: 0,
+        isGitRepo: true,
+        defaultBranch: 'main',
+        currentBranch: 'main',
+        worktrees: [
+          Worktree(
+            id: 'w1',
+            path: '/repo/wt',
+            branch: 'feat/x',
+            isPrimary: false,
+            insertions: 0,
+            deletions: 0,
+            filesChanged: 0,
+            uncommittedFiles: 3,
+            sessionIds: ['s1'],
+          ),
+        ],
+      );
+      final container = ProviderContainer(
+        overrides: [
+          sessionsProvider.overrideWithValue(SessionsState([session])),
+          eventsProvider.overrideWithValue(EventsState(const {}, const {})),
+          reposProvider.overrideWithValue(ReposState([repo])),
+          preferencesControllerProvider.overrideWith(
+            (ref) => PreferencesController.ephemeral(),
+          ),
+          elicitationControllerProvider.overrideWith((ref) {
+            final c = ElicitationController(
+              respond: (_, _) {},
+              responded: const Stream<String>.empty(),
+            );
+            c.add(
+              const PendingAsk(
+                requestId: 'r1',
+                sessionId: 's1',
+                questions: [],
+                freeText: true,
+              ),
+            );
+            return c;
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: Scaffold(body: DesktopChatPane(sessionId: 's1')),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return container;
+    }
+
+    testWidgets('types into the answer field that is on screen, not the '
+        'message draft behind it', (tester) async {
+      final container = await pumpAnswering(tester);
+
+      await tester.tap(find.text('Commit & push'));
+      await tester.pumpAndSettle();
+
+      // Visible: the only mounted composer is the answer composer.
+      expect(
+        find.text(PrPromptAction.commitAndPush.defaultPrompt),
+        findsOneWidget,
+      );
+      // And the hidden message draft is left alone — it is not what the user is
+      // looking at, and it would surface the text later, out of nowhere.
+      expect(container.read(composerDraftsProvider)['s1'], isNull);
     });
   });
 }

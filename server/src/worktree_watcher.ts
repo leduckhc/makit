@@ -19,7 +19,15 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { watch, existsSync, realpathSync, statSync, type FSWatcher } from "node:fs";
+import {
+  watch,
+  existsSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  type Dirent,
+  type FSWatcher,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -29,11 +37,16 @@ import { dirname, join, resolve } from "node:path";
  * worktree (regardless of the checkout's location), and the submodule's module
  * git dir for a submodule checkout.
  */
-function resolveGitPaths(repoPath: string): { gitDir: string; worktreesDir: string } {
+function resolveGitPaths(repoPath: string): {
+  gitDir: string;
+  worktreesDir: string;
+  headsDir: string;
+} {
   const unresolvedGitDir = join(repoPath, ".git");
   const unresolved = {
     gitDir: unresolvedGitDir,
     worktreesDir: join(unresolvedGitDir, "worktrees"),
+    headsDir: join(unresolvedGitDir, "refs", "heads"),
   };
 
   try {
@@ -61,7 +74,11 @@ function resolveGitPaths(repoPath: string): { gitDir: string; worktreesDir: stri
     }
 
     const gitDir = resolve(repoPath, commonDir);
-    return { gitDir, worktreesDir: join(gitDir, "worktrees") };
+    return {
+      gitDir,
+      worktreesDir: join(gitDir, "worktrees"),
+      headsDir: join(gitDir, "refs", "heads"),
+    };
   } catch {
     // Missing/non-repo paths and git lookup failures remain best-effort no-ops.
     return unresolved;
@@ -73,6 +90,12 @@ export interface WorktreeWatcher {
   sync(repoPaths: string[]): void;
   /** Stop and drop all watchers. */
   close(): void;
+  /**
+   * Live watcher count. The per-directory fallback re-walks its tree on every
+   * event to pick up a new branch namespace, so this is the seam that holds that
+   * re-walk to *adding* watchers rather than duplicating them.
+   */
+  watcherCount(): number;
 }
 
 interface RepoWatch {
@@ -80,6 +103,21 @@ interface RepoWatch {
   git?: FSWatcher;
   /** Watch on `<repo>/.git/worktrees` — tracks worktree add/remove. */
   inner?: FSWatcher;
+  /**
+   * Watches on `<repo>/.git/refs/heads`, keyed by the directory each one covers —
+   * normally just the one recursive watch on `heads` itself.
+   *
+   * Git stores `feature/foo` as a file in a *nested* directory, and `fs.watch`
+   * without `recursive: true` reports nothing for nested children on Linux or
+   * macOS — so a flat watch misses every slashed branch, which is most of them.
+   * When the platform refuses a recursive watch this holds one watcher per
+   * directory instead.
+   *
+   * Keyed rather than listed because that fallback re-walks the tree on every
+   * event (a new namespace needs its own watcher): appending, it duplicated every
+   * directory it had already covered, and each duplicate re-walked in turn.
+   */
+  heads: Map<string, FSWatcher>;
 }
 
 /**
@@ -88,9 +126,13 @@ interface RepoWatch {
  */
 export function watchWorktrees(
   onChange: () => void,
-  opts: { debounceMs?: number } = {},
+  opts: { debounceMs?: number; recursive?: boolean } = {},
 ): WorktreeWatcher {
   const debounceMs = opts.debounceMs ?? 300;
+  // Off only in the test that exercises the per-directory fallback: it exists for
+  // a platform that refuses `recursive`, which cannot be reproduced by asking for
+  // one and hoping it fails.
+  const allowRecursive = opts.recursive ?? true;
   const repos = new Map<string, RepoWatch>();
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -112,9 +154,10 @@ export function watchWorktrees(
     target: string,
     onEvent: (filename: string | null) => void,
     onError: () => void,
+    options: { recursive?: boolean } = {},
   ): FSWatcher | undefined => {
     try {
-      const w = watch(target, { persistent: false }, (_evt, filename) =>
+      const w = watch(target, { persistent: false, ...options }, (_evt, filename) =>
         onEvent(filename === null ? null : filename.toString()),
       );
       w.on("error", () => {
@@ -132,9 +175,79 @@ export function watchWorktrees(
     }
   };
 
+  /**
+   * Watch [dir] and every directory under it, one watcher each. The fallback for
+   * platforms that refuse `recursive: true`; also re-run when a namespace
+   * directory appears, since a new one needs its own watcher.
+   *
+   * Bounded by the shape of the data: branch namespaces are a handful of shallow
+   * directories, not a source tree.
+   */
+  const watchTree = (
+    dir: string,
+    out: Map<string, FSWatcher>,
+    onEvent: () => void,
+  ): void => {
+    if (!out.has(dir)) {
+      const w = safeWatch(
+        dir,
+        () => {
+          // A new namespace directory may have just appeared (`git branch a/b/c`),
+          // so re-arm before reporting. Directories already covered are skipped,
+          // which is what keeps a re-walk from doubling the set.
+          watchTree(dir, out, onEvent);
+          onEvent();
+        },
+        () => {
+          // Gone: forget it, so a later walk re-attaches if it comes back.
+          out.delete(dir);
+        },
+      );
+      if (w) out.set(dir, w);
+    }
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return; // missing or unreadable: nothing to descend into
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) watchTree(join(dir, e.name), out, onEvent);
+    }
+  };
+
+  /**
+   * Arm the `refs/heads` watch: one recursive watcher, or the per-directory walk
+   * where the platform refuses `recursive`.
+   *
+   * Re-armed from the recursive watcher's own error handler. `fs.watch` emits
+   * `'error'` asynchronously — an inotify limit, or the directory going away — and
+   * `safeWatch` closes the watcher when it does. Leaving the key in place then
+   * stripped the repo of its only commit trigger for good: nothing re-attaches a
+   * key that is already present, and `sync()` will not re-arm a repo whose path
+   * has not changed. The fallback walk already dropped its key for this reason;
+   * the recursive path now does the same, and re-arms through here so a platform
+   * that has lost recursive watching falls through to the walk.
+   */
+  const armHeads = (rw: RepoWatch, headsDir: string): void => {
+    const recursive = allowRecursive
+      ? safeWatch(
+          headsDir,
+          () => fire(),
+          () => {
+            rw.heads.delete(headsDir);
+            armHeads(rw, headsDir);
+          },
+          { recursive: true },
+        )
+      : undefined;
+    if (recursive) rw.heads.set(headsDir, recursive);
+    else watchTree(headsDir, rw.heads, fire);
+  };
+
   const arm = (repoPath: string): RepoWatch => {
-    const { gitDir, worktreesDir } = resolveGitPaths(repoPath);
-    const rw: RepoWatch = {};
+    const { gitDir, worktreesDir, headsDir } = resolveGitPaths(repoPath);
+    const rw: RepoWatch = { heads: new Map() };
 
     const syncInner = (): void => {
       if (existsSync(worktreesDir)) {
@@ -157,10 +270,13 @@ export function watchWorktrees(
     rw.git = safeWatch(
       gitDir,
       (filename) => {
-        // Only the `worktrees` entry matters; ignore git's other churn
-        // (index.lock, HEAD, refs, …). A null filename (some platforms) is
-        // treated as "unknown" and re-evaluated.
-        if (filename !== null && filename !== "worktrees") return;
+        // `worktrees` re-arms the inner watch; `HEAD` moves when the primary
+        // checkout switches branch or detaches. Everything else here is git's own
+        // churn (`index`, `index.lock`, `COMMIT_EDITMSG`, …) and would rebuild the
+        // snapshot — a full git pass per worktree — many times per turn.
+        if (filename !== null && filename !== "worktrees" && filename !== "HEAD") {
+          return;
+        }
         syncInner();
         fire();
       },
@@ -169,6 +285,19 @@ export function watchWorktrees(
       },
     );
 
+    // Commits are what the snapshot's `uncommittedFiles`/`aheadCount` react to,
+    // and a commit moves a branch ref. Those refs live in the **common** git dir
+    // whichever worktree moved them, so this one watch covers every worktree of
+    // the repo — including the linked ones agents actually work in. Without it the
+    // only triggers were connect/spawn/kill/pull-to-refresh, so the composer's bar
+    // kept asserting a file count from whenever the client last connected.
+    //
+    // Recursive, because `feature/foo` is a file in a nested directory and a flat
+    // watch reports nothing for those — which is most branches. Node supports
+    // `recursive` on macOS, Windows and Linux (≥ 20.13; this package requires
+    // ≥ 22.13); anywhere it is refused, fall back to one watcher per directory.
+    armHeads(rw, headsDir);
+
     syncInner();
     return rw;
   };
@@ -176,6 +305,8 @@ export function watchWorktrees(
   const closeRepo = (rw: RepoWatch): void => {
     rw.git?.close();
     rw.inner?.close();
+    for (const w of rw.heads.values()) w.close();
+    rw.heads.clear();
   };
 
   return {
@@ -196,6 +327,13 @@ export function watchWorktrees(
       timer = undefined;
       for (const rw of repos.values()) closeRepo(rw);
       repos.clear();
+    },
+    watcherCount(): number {
+      let n = 0;
+      for (const rw of repos.values()) {
+        n += (rw.git ? 1 : 0) + (rw.inner ? 1 : 0) + rw.heads.size;
+      }
+      return n;
     },
   };
 }

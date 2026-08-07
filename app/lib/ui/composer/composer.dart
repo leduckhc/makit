@@ -55,6 +55,9 @@ class ComposerAttachmentsApi {
   stagePasted;
 }
 
+/// The hairline under [Composer.header], separating the caption from the field.
+const Key kComposerHeaderRuleKey = ValueKey('composer-header-rule');
+
 /// Composer = input bar with slash-command palette + send.
 ///
 /// Two visual states:
@@ -82,6 +85,7 @@ class Composer extends StatefulWidget {
     this.controller,
     this.footerActions = const <Widget>[],
     this.footerTrailing,
+    this.header,
     this.alwaysExpanded = false,
     this.initialText,
     this.onDraftChanged,
@@ -144,6 +148,21 @@ class Composer extends StatefulWidget {
   /// wanting two can wrap them. Must be intrinsically sized — nothing here is
   /// given flex, so a wide child eats the pills' room.
   final Widget? footerTrailing;
+
+  /// A single row on the composer's **top edge**, inside the box and above a
+  /// hairline — the PR next-step bar (SPEC-38) is the only caller.
+  ///
+  /// Inside rather than a sibling above, per the mockup's §5 "inside the
+  /// composer": at this weight it reads as a caption on the box you are typing
+  /// into, which is what it is — most of its actions put text there.
+  ///
+  /// Rendered regardless of [enabled]: a locked field does not make "push" or
+  /// "wrap up" any less valid, and hiding it mid-ask would take the worktree's
+  /// only status line with it.
+  ///
+  /// Must be intrinsically sized in the vertical: it is not given flex, and the
+  /// box grows to fit it.
+  final Widget? header;
 
   /// When true the composer is permanently in its full form (multiline field +
   /// footer), regardless of focus. Desktop sets this; mobile leaves it false so
@@ -428,11 +447,7 @@ class _ComposerState extends State<Composer> {
                         horizontal: kSpace4,
                         vertical: kSpace4,
                       ),
-                      child: !widget.enabled
-                          ? _buildDisabled(cs)
-                          : (_expanded
-                                ? _buildExpanded(cs)
-                                : _buildCompact(cs)),
+                      child: _buildBox(cs),
                     ),
                   ),
                 ),
@@ -494,6 +509,38 @@ class _ComposerState extends State<Composer> {
           ),
         ),
       ),
+    );
+  }
+
+  /// The box's contents: the optional [Composer.header] on the top edge above a
+  /// hairline, then the field (or the inert bar while disabled).
+  Widget _buildBox(ColorScheme cs) {
+    final body = !widget.enabled
+        ? _buildDisabled(cs)
+        : (_expanded ? _buildExpanded(cs) : _buildCompact(cs));
+    final header = widget.header;
+    if (header == null) return body;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 3 + kSpace2 above the hairline and 5 below it: the gap reads as even
+        // because the bar's own row has a little ink-free space under its text,
+        // while the field below starts immediately.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kSpace2, 0, kSpace2, 3),
+          child: header,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kSpace2, kSpace2, kSpace2, 5),
+          child: Container(
+            key: kComposerHeaderRuleKey,
+            height: 1,
+            color: cs.onSurface.withValues(alpha: 0.07),
+          ),
+        ),
+        body,
+      ],
     );
   }
 

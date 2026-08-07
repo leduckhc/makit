@@ -90,9 +90,10 @@ Widget _host(
 /// The bar renders its sentence as one rich Text; assert on the flattened runs.
 String _sentence(WidgetTester tester) {
   final text = tester.widget<Text>(
-    find
-        .descendant(of: find.byType(PrComposerBar), matching: find.byType(Text))
-        .first,
+    find.descendant(
+      of: find.byKey(kPrBarSentenceKey),
+      matching: find.byType(Text),
+    ),
   );
   return text.textSpan!.toPlainText();
 }
@@ -187,7 +188,7 @@ void main() {
       // makes for a quiet bar.
       expect(find.text('3 threads open'), findsOneWidget);
       expect(find.text('1 commit unpushed'), findsOneWidget);
-      expect(find.text('Resolve threads'), findsOneWidget);
+      expect(find.text('Resolve'), findsOneWidget);
     });
 
     testWidgets('a remedy picked in the detail inserts its prompt', (
@@ -204,7 +205,7 @@ void main() {
       );
       await tester.tap(find.text('+2 more'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Resolve threads'));
+      await tester.tap(find.text('Resolve'));
       await tester.pumpAndSettle();
       expect(inserted, PrPromptAction.resolveComments.defaultPrompt);
     });
@@ -403,7 +404,7 @@ void main() {
         ),
       );
       expect(find.text('Wrap up'), findsOneWidget);
-      expect(find.text('Fix CI'), findsNothing);
+      expect(find.text('Fix'), findsNothing);
       expect(_sentence(tester), contains('merged'));
     });
 
@@ -488,7 +489,7 @@ void main() {
     testWidgets('the menu keeps a direct op the CTA is not showing', (
       tester,
     ) async {
-      // Draft + red build: the button says Fix CI, but marking it ready is still
+      // Draft + red build: the button says Fix, but marking it ready is still
       // a legitimate thing to do, so the menu must not drop it.
       await tester.pumpWidget(
         _host(
@@ -501,7 +502,7 @@ void main() {
           onInsert: (_) {},
         ),
       );
-      expect(find.text('Fix CI'), findsOneWidget, reason: 'the CTA');
+      expect(find.text('Fix'), findsOneWidget, reason: 'the CTA');
       await tester.tap(find.byTooltip('PR actions'));
       await tester.pumpAndSettle();
       expect(find.text('DO NOW'), findsOneWidget);
@@ -917,21 +918,21 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 
-    testWidgets('is hollow for a branch named like a PR number', (
+    testWidgets('is a ring for a branch named like a PR number', (
       tester,
     ) async {
       // `#42` is a legal branch name. Reading the display string classified such
-      // a branch as having a PR and filled its dot in.
+      // a branch as having a PR, which would take it off the `PrDot.none` row and
+      // fill its dot in.
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
           branch: '#42',
-          commitsAhead: 1,
           onInsert: (_) {},
         ),
       );
       final dot = tester.widget<PrToneDot>(find.byType(PrToneDot));
-      expect(dot.hollow, isTrue);
+      expect(dot.dot, PrDot.none);
     });
 
     testWidgets('keeps the same footprint when the checks finish', (
@@ -944,7 +945,11 @@ void main() {
         const MaterialApp(
           home: Row(
             children: [
-              PrToneDot(tone: PrTone.attention, progress: 0.5),
+              PrToneDot(
+                tone: PrTone.attention,
+                dot: PrDot.pending,
+                progress: 0.5,
+              ),
               PrToneDot(tone: PrTone.attention),
             ],
           ),
@@ -955,6 +960,71 @@ void main() {
           .map((w) => tester.getSize(find.byWidget(w)))
           .toList();
       expect(sizes[1], sizes[0]);
+    });
+  });
+
+  group('layout', () {
+    testWidgets('the CTA is flush right, the sentence stays left', (
+      tester,
+    ) async {
+      // The mockup's `.nbar` puts a `flex:1` spacer between the sentence and the
+      // button, so the button hugs the composer's right edge instead of trailing
+      // the text wherever it happens to end.
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bar = tester.getRect(find.byType(PrComposerBar));
+      final cta = tester.getRect(find.byType(PrCtaButton));
+      // The sentence by key, not `byType(Text).first`: that is whatever comes
+      // first depth-first, and both assertions below would likely still pass on
+      // the wrong widget.
+      final reason = tester.getRect(find.byKey(kPrBarSentenceKey));
+      expect(cta.right, bar.right);
+      expect(reason.left, lessThan(bar.left + bar.width / 2));
+      expect(
+        cta.left - reason.right,
+        greaterThan(bar.width / 3),
+        reason: 'the free space belongs between them, not after the button',
+      );
+    });
+
+    testWidgets('a long sentence elides rather than pushing the CTA off', (
+      tester,
+    ) async {
+      // Narrowed *before* the first pump: resizing afterwards only proves the bar
+      // re-lays-out, and the frame that overflows is the first one.
+      tester.view.physicalSize = const Size(360 * 3, 200 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _host(
+          PreferencesController.ephemeral(),
+          // Three problems: the loud fact plus a `+2 more` disclosure, in a
+          // narrow bar.
+          pr: _pr(
+            rollup: 'fail',
+            checks: const [
+              PrCheck(name: 'analyze', bucket: 'fail'),
+              PrCheck(name: 'test', bucket: 'fail'),
+            ],
+            unresolvedComments: 3,
+          ),
+          commitsAhead: 1,
+          onInsert: (_) {},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      final bar = tester.getRect(find.byType(PrComposerBar));
+      expect(tester.getRect(find.byType(PrCtaButton)).right, bar.right);
+      expect(find.text('+2 more'), findsOneWidget);
     });
   });
 }

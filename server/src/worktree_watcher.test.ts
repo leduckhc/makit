@@ -325,3 +325,152 @@ test("watchWorktrees does not fire for an existing directory that is not part of
     rmSync(wtBase, { recursive: true, force: true });
   }
 });
+
+test("watchWorktrees fires when a commit lands in the primary checkout", async () => {
+  // The snapshot carries `uncommittedFiles`/`aheadCount` per worktree, and the
+  // only other triggers are connect/spawn/kill/pull-to-refresh — so without this
+  // the composer's next-step bar kept asserting a file count that was true when
+  // the client connected, and offered `Commit & push` for files already
+  // committed and pushed.
+  const repo = makeRepo();
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(80);
+    writeFileSync(join(repo, "new.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "second"], { cwd: repo });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected onChange after a commit");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees fires when a commit lands in a LINKED worktree", async () => {
+  // The branch ref lives in the *common* git dir whatever worktree moved it, so
+  // one watch on `refs/heads` covers every worktree of the repo — which is the
+  // case that matters, because agents work in linked worktrees.
+  const repo = makeRepo();
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  const wt = join(wtBase, "feat");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "feat", wt], { cwd: repo });
+
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    fires = 0; // ignore any settling from arming
+    writeFileSync(join(wt, "in-worktree.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: wt });
+    execFileSync("git", ["commit", "-q", "-m", "from the linked worktree"], { cwd: wt });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected onChange after a commit in a linked worktree");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees fires for a commit on a SLASHED branch (nested ref dir)", async () => {
+  // Git stores `feature/foo` as `refs/heads/feature/foo` — a file in a *nested*
+  // directory — and `fs.watch` without `recursive: true` reports nothing for
+  // nested children on Linux or macOS. Every branch in this repo is slashed
+  // (`feat/…`, `leduckhc/…`), so a flat watch would have missed the exact case
+  // this trigger exists for.
+  const repo = makeRepo();
+  execFileSync("git", ["checkout", "-q", "-b", "feature/foo"], { cwd: repo });
+
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    fires = 0; // ignore settling from arming
+    writeFileSync(join(repo, "nested.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "on a slashed branch"], { cwd: repo });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected onChange after a commit on feature/foo");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("the per-directory fallback also fires for a nested ref", async () => {
+  // The path taken where `recursive` is refused. Same scenario as above, so the
+  // fallback is held to the same standard rather than merely existing.
+  const repo = makeRepo();
+  execFileSync("git", ["checkout", "-q", "-b", "release/1.x"], { cwd: repo });
+
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20, recursive: false });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    fires = 0;
+    writeFileSync(join(repo, "fallback.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "no recursive watch here"], { cwd: repo });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected the walked watchers to fire");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("the fallback's re-walk adds watchers, it does not duplicate them", async () => {
+  // The walk re-runs on every event so a brand-new namespace directory
+  // (`git branch a/b/c`) gets its own watcher. Re-running it pushed a second
+  // watcher for every directory it had already covered — and each of those then
+  // re-walked on the next event, so the set grew with every commit and each event
+  // was handled as many times over.
+  const repo = makeRepo();
+  execFileSync("git", ["checkout", "-q", "-b", "release/1.x"], { cwd: repo });
+
+  // Counted, not ignored: the walk re-runs *inside* the event handler and
+  // `onChange` lands after it, so a fire is the proof that a re-walk happened. On
+  // a fixed sleep this test passed for the wrong reason — nothing had re-walked
+  // yet, so of course the count had not grown.
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 10, recursive: false });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    const armed = watcher.watcherCount();
+    assert.ok(armed > 0, "expected the walk to have armed something");
+
+    for (const name of ["one", "two", "three"]) {
+      const before = fires;
+      writeFileSync(join(repo, `${name}.txt`), "x\n");
+      execFileSync("git", ["add", "."], { cwd: repo });
+      execFileSync("git", ["commit", "-q", "-m", name], { cwd: repo });
+      await waitFor(() => fires > before);
+    }
+    assert.equal(
+      watcher.watcherCount(),
+      armed,
+      "three re-walks on the same tree must not add a watcher",
+    );
+
+    // A new namespace *is* new ground: exactly one directory appears, so exactly
+    // one watcher does.
+    const beforeBranch = fires;
+    execFileSync("git", ["branch", "hotfix/urgent"], { cwd: repo });
+    await waitFor(() => fires > beforeBranch);
+    assert.equal(
+      watcher.watcherCount(),
+      armed + 1,
+      "a new branch namespace gets its own watcher",
+    );
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});

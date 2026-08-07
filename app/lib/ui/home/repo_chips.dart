@@ -98,7 +98,11 @@ const double _kChipLabelMaxWidth = 190;
 // ──
 
 /// The worktree's status, as a sentence fragment: a tone dot plus the loudest
-/// fact — `● 2 checks failing`. Tapping opens the shared detail sheet.
+/// fact — `● #142 · 2 checks failing`. Tapping opens the shared detail sheet.
+///
+/// **No capsule.** The row already carries an accent bar and a branch name, and
+/// a third filled element is the chrome direction B set out to remove — the
+/// mockup's §6 row is plain text between the two (SPEC-38 §8 D15).
 ///
 /// Replaces the old `PR #42` pill, whose colour was the only signal it carried:
 /// you could see that *something* was wrong but not what, and a merged PR looked
@@ -131,10 +135,6 @@ class PrStatusChip extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cs = Theme.of(context).colorScheme;
-    // The chip's label; its background keeps the vivid dot hue below.
-    final tone = prToneTextColor(cs, status.tone);
-
     // The tap target is the full row height (kTouchRow) while the painted chip
     // stays content-sized: it opens a sheet, so it needs a thumb-sized target,
     // but inflating the visible chip to 44px would make a blob of it and push
@@ -166,43 +166,22 @@ class PrStatusChip extends ConsumerWidget {
           constraints: const BoxConstraints(minHeight: kTouchRow),
           child: Center(
             widthFactor: 1,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: prToneColor(cs, status.tone).withValues(alpha: 0.14),
-                borderRadius: BorderRadius.circular(kRadius8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: kSpace2,
+                vertical: kSpace2,
               ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: kSpace8,
-                  vertical: kSpace2,
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    PrToneDot(
-                      tone: status.tone,
-                      progress: status.checkProgress,
-                      hollow: worktree.pr == null,
-                    ),
-                    const SizedBox(width: kSpace6),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: _kChipLabelMaxWidth,
-                      ),
-                      child: Text(
-                        status.hasPr
-                            ? '${status.identity} · ${status.loud.label}'
-                            : status.loud.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelXs?.copyWith(
-                          color: tone,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PrToneDot(
+                    tone: status.tone,
+                    dot: status.dot,
+                    progress: status.checkProgress,
+                  ),
+                  const SizedBox(width: kSpace6),
+                  PrFactLabel(status: status, maxWidth: _kChipLabelMaxWidth),
+                ],
               ),
             ),
           ),

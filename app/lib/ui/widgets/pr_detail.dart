@@ -26,6 +26,14 @@ import 'pr_state_style.dart';
 import 'pr_tone.dart';
 import 'sheet_header.dart';
 
+/// Why a pull request can report a build verdict with no checks to show: GitHub
+/// answered with the rollup only. SPEC-32 sheds the per-check lookup when the
+/// quota is tight, which is also why the bar's wording is the vague `CI failing`
+/// rather than a count.
+const kShedChecksNote =
+    'Per-check results were not fetched (GitHub quota), so only the overall '
+    'verdict is known.';
+
 /// Show the fact list + checks for [status].
 Future<void> showPrDetail(
   BuildContext context, {
@@ -101,6 +109,114 @@ class PrDetailBody extends StatelessWidget {
         s.remedy != null && (canInsertPrompt || s.remedy is! PromptRemedy);
     final actionable = rest.where(offerable).toList();
     final context_ = rest.where((s) => !offerable(s)).toList();
+    // An ended pull request has no next step, so its facts read as a wrap-up
+    // brief rather than a to-do list: what landed, and what it left lying around
+    // (mockup §4's merged popover).
+    //
+    // Grouped off `status.signals`, **not** off `rest`: the sheet drops the loud
+    // fact before grouping (its headline already said it), and taking the first of
+    // what remained put `worktree still here` under `Landed` and took it out of
+    // `Left behind`. The ending is `signals.first` by construction.
+    final ended = status.isEnded;
+    final landed = ended && !showCta
+        ? status.signals.take(1).toList()
+        : const <PrSignal>[];
+    final leftBehind = ended ? status.signals.skip(1).toList() : context_;
+    // A merged PR's build is history: a 12-row check list is 12 rows of nothing
+    // to do, so it collapses to the one line the brief actually needs.
+    final passed = checks.where((c) => c.bucket == 'pass').length;
+
+    final detail = <Widget>[
+      if (actionable.isNotEmpty) ...[
+        const SizedBox(height: kSpace10),
+        _GroupLabel(
+          icon: PhosphorIconsLight.warning,
+          // "Also" is only true where something already said the loud fact — the
+          // sheet's headline. The dialog lists every fact, so there is nothing
+          // for "also" to refer to.
+          text: showCta ? 'Also needs you' : 'Needs you',
+        ),
+        for (final s in actionable)
+          _FactRow(signal: s, onRun: onRun, offerRemedy: true),
+      ],
+      if (landed.isNotEmpty || (ended && !showCta && passed > 0)) ...[
+        const SizedBox(height: kSpace8),
+        const _GroupLabel(icon: PhosphorIconsLight.gitMerge, text: 'Landed'),
+        for (final s in landed)
+          _FactRow(signal: s, onRun: onRun, offerRemedy: false),
+        if (passed > 0)
+          _FactRow(
+            signal: PrSignal(
+              '$passed ${passed == 1 ? 'check' : 'checks'} passed',
+              PrTone.quiet,
+            ),
+            onRun: onRun,
+            offerRemedy: false,
+            // The build's own verdict, so the check glyph in the check green —
+            // a grey dot here reported nothing about the thing it names.
+            glyphIcon: prCheckBucketIcon('pass'),
+            glyphColor: prCheckBucketColor(
+              Theme.of(context).colorScheme,
+              'pass',
+            ),
+          ),
+      ],
+      if (leftBehind.isNotEmpty) ...[
+        const SizedBox(height: kSpace8),
+        if (ended)
+          const _GroupLabel(
+            icon: PhosphorIconsLight.broom,
+            text: 'Left behind',
+          ),
+        // Reported, but with no button: either there is nothing to do about it,
+        // or there is nowhere to put the prompt.
+        for (final s in leftBehind)
+          _FactRow(signal: s, onRun: onRun, offerRemedy: false),
+      ],
+      if (checks.isNotEmpty && !ended) ...[
+        const SizedBox(height: kSpace10),
+        const Divider(height: 1),
+        const SizedBox(height: kSpace6),
+        _GroupLabel(
+          icon: PhosphorIconsLight.checkCircle,
+          text:
+              '${checks.length} '
+              '${checks.length == 1 ? 'check' : 'checks'}',
+        ),
+        for (final c in checks) PrCheckRow(check: c),
+      ]
+      // A verdict with no rows behind it. Saying nothing here reads as "the app
+      // lost them": the rollup is on screen claiming a build result while the list
+      // that would explain it is simply absent. Name the reason instead — and it
+      // is the same reason the fact itself says `CI failing` rather than a count.
+      else if (!ended && (pr?.checkRollup ?? 'none') != 'none') ...[
+        const SizedBox(height: kSpace10),
+        const Divider(height: 1),
+        const SizedBox(height: kSpace6),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: kSpace4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                PhosphorIconsLight.listDashes,
+                size: 15,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              const SizedBox(width: kSpace10),
+              Expanded(
+                child: Text(
+                  kShedChecksNote,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ];
 
     return SingleChildScrollView(
       child: Column(
@@ -130,34 +246,28 @@ class PrDetailBody extends StatelessWidget {
                     onRun: onRun,
                     canInsertPrompt: canInsertPrompt,
                   ),
-                if (actionable.isNotEmpty) ...[
-                  const SizedBox(height: kSpace10),
-                  const _GroupLabel(
-                    icon: PhosphorIconsLight.warning,
-                    text: 'Also needs you',
-                  ),
-                  for (final s in actionable)
-                    _FactRow(signal: s, onRun: onRun, offerRemedy: true),
-                ],
-                if (context_.isNotEmpty) ...[
-                  const SizedBox(height: kSpace8),
-                  // Reported, but with no button: either there is nothing to do
-                  // about it, or there is nowhere to put the prompt.
-                  for (final s in context_)
-                    _FactRow(signal: s, onRun: onRun, offerRemedy: false),
-                ],
-                if (checks.isNotEmpty) ...[
-                  const SizedBox(height: kSpace10),
-                  const Divider(height: 1),
-                  const SizedBox(height: kSpace6),
-                  _GroupLabel(
-                    icon: PhosphorIconsLight.checkCircle,
-                    text:
-                        '${checks.length} '
-                        '${checks.length == 1 ? 'check' : 'checks'}',
-                  ),
-                  for (final c in checks) PrCheckRow(check: c),
-                ],
+                // On the sheet the detail goes behind a disclosure: with the
+                // decision pinned at the top, a phone that opens on twelve check
+                // rows opens on a list instead of on the choice (mockup §6).
+                if (showCta && detail.isNotEmpty)
+                  _DetailDisclosure(
+                    summary: checks.isEmpty || ended
+                        ? null
+                        : '${checks.length} '
+                              '${checks.length == 1 ? 'check' : 'checks'}',
+                    // The closed row's one job is to say what is behind it, so the
+                    // count is tinted by the build it stands for (mockup §6 draws
+                    // it in `--fail`). Grey for a green or absent verdict — there
+                    // is nothing to peek at.
+                    summaryTone: switch (pr?.checkRollup) {
+                      'fail' => PrTone.blocking,
+                      'pending' => PrTone.attention,
+                      _ => null,
+                    },
+                    children: detail,
+                  )
+                else
+                  ...detail,
                 if ((pr?.url ?? '').isNotEmpty) ...[
                   const SizedBox(height: kSpace8),
                   Align(
@@ -264,8 +374,16 @@ class _PinnedCta extends StatelessWidget {
     // how they came apart: the label moved to `onPrToneFill` while the icon kept
     // `cs.surface`, so on the amber fill — where `onPrToneFill` picks the dark
     // ink — the label went dark and the icon stayed near-white and vanished.
-    final fill = prToneColor(cs, status.cta.tone);
-    final fg = direct ? onPrToneFill(cs, status.cta.tone) : tone;
+    //
+    // The fill comes from the shared [prDirectCtaFill], so this button and the
+    // desktop bar's cannot disagree about the same op — which they did: the muted
+    // error pairing for `discard` reached the bar and not the sheet.
+    final fill = prDirectCtaFill(
+      cs,
+      status.cta.tone,
+      destructive: direct && remedy.op == PrDirectOp.discardWorktree,
+    );
+    final fg = direct ? fill.fg : tone;
     return Padding(
       padding: const EdgeInsets.only(top: kSpace12),
       child: Column(
@@ -279,9 +397,9 @@ class _PinnedCta extends StatelessWidget {
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(46),
               backgroundColor: direct
-                  ? fill
+                  ? fill.bg
                   : Color.alphaBlend(
-                      fill.withValues(alpha: 0.20),
+                      fill.bg.withValues(alpha: 0.20),
                       cs.surfaceContainerHigh,
                     ),
               foregroundColor: fg,
@@ -307,16 +425,114 @@ class _PinnedCta extends StatelessWidget {
   }
 }
 
-/// One fact: tone dot, label (+ optional detail), and its remedy as a button.
+/// The sheet's collapsed detail (mockup §6): `≡ Detail · 12 checks ▾`.
+///
+/// Collapsed by default and only on the sheet — the point of the pinned CTA is
+/// that the sheet opens on the decision, which a list of facts and twelve check
+/// rows above the fold undoes. The dialog has no pinned CTA, so it keeps showing
+/// everything.
+class _DetailDisclosure extends StatefulWidget {
+  const _DetailDisclosure({
+    required this.children,
+    this.summary,
+    this.summaryTone,
+  });
+
+  final List<Widget> children;
+
+  /// A count worth showing on the closed row, so the disclosure is not a blind
+  /// door. Null when there is nothing to count.
+  final String? summary;
+
+  /// The build's verdict, so the count reads as a peek rather than chrome. Null
+  /// leaves it in the neutral outline.
+  final PrTone? summaryTone;
+
+  @override
+  State<_DetailDisclosure> createState() => _DetailDisclosureState();
+}
+
+class _DetailDisclosureState extends State<_DetailDisclosure> {
+  /// Tracked because a custom `trailing` replaces the one `ExpansionTile` would
+  /// have rotated for us — so without this the open row and the closed row look
+  /// identical and the control reports nothing about its own state.
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final summary = widget.summary;
+    final tone = widget.summaryTone;
+    return Theme(
+      // The tile's own dividers would draw a second hairline against the groups'
+      // labels; the rows below supply their own separation.
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: EdgeInsets.zero,
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        expandedAlignment: Alignment.centerLeft,
+        onExpansionChanged: (open) => setState(() => _open = open),
+        leading: Icon(
+          PhosphorIconsLight.listDashes,
+          size: 16,
+          color: cs.outline,
+        ),
+        title: Text(
+          'Detail',
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (summary != null)
+              Text(
+                summary,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: tone == null ? cs.outline : prToneTextColor(cs, tone),
+                  fontWeight: tone == null ? null : FontWeight.w600,
+                ),
+              ),
+            // Same turn and duration as the bar's split-button caret, so the two
+            // disclosures in this feature animate alike.
+            AnimatedRotation(
+              turns: _open ? 0.5 : 0,
+              duration: const Duration(milliseconds: 150),
+              child: Icon(
+                PhosphorIconsLight.caretDown,
+                size: 14,
+                color: cs.outline,
+              ),
+            ),
+          ],
+        ),
+        children: widget.children,
+      ),
+    );
+  }
+}
+
+/// One fact: its glyph, the label (+ optional detail), and its remedy as a
+/// button.
 class _FactRow extends StatelessWidget {
   const _FactRow({
     required this.signal,
     required this.onRun,
     this.offerRemedy = true,
+    this.glyphIcon,
+    this.glyphColor,
   });
 
   final PrSignal signal;
   final void Function(PrRemedy remedy) onRun;
+
+  /// Overrides the leading graphic. Used for the landed brief's `N checks passed`
+  /// line, which reports the build and so wants the check glyph rather than the
+  /// tone dot a remedy-less fact would otherwise get.
+  final IconData? glyphIcon;
+  final Color? glyphColor;
 
   /// Draw the remedy button. False for a fact that cannot be acted on here —
   /// see [PrDetailBody.canInsertPrompt].
@@ -328,11 +544,34 @@ class _FactRow extends StatelessWidget {
     // Label/chip text, so the AA-safe variant; the dot below keeps the vivid hue.
     final tone = prToneTextColor(cs, signal.tone);
     final remedy = offerRemedy ? signal.remedy : null;
+    // The label carries its fact's tone — a failing build is red *in words*, not
+    // only in the glyph beside it and the chip after it. Quiet facts keep the
+    // surface ink: they are context, and tinting them grey would make the list's
+    // own reading order (loud first) harder to see, not easier.
+    //
+    // A departure from the mockup, which prints every row's label untoned.
+    final labelColor = signal.tone == PrTone.quiet ? null : tone;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: kSpace4),
       child: Row(
         children: [
-          PrToneDot(tone: signal.tone),
+          // The fact's own glyph where it has one, so a list of four reads as four
+          // different things (mockup §4). A fact with no remedy has no glyph of
+          // its own and keeps the tone dot.
+          if (glyphIcon != null)
+            SizedBox(
+              width: 15,
+              child: Icon(glyphIcon, size: 15, color: glyphColor),
+            )
+          else if (signal.remedy != null)
+            SizedBox(
+              width: 15,
+              child: prRemedyIcon(
+                signal.remedy,
+              ).build(size: 15, color: prToneColor(cs, signal.tone)),
+            )
+          else
+            PrToneDot(tone: signal.tone),
           const SizedBox(width: kSpace10),
           Expanded(
             child: Column(
@@ -340,7 +579,9 @@ class _FactRow extends StatelessWidget {
               children: [
                 Text(
                   signal.label,
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: labelColor),
                 ),
                 if (signal.detail != null)
                   Text(
