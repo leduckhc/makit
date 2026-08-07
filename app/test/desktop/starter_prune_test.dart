@@ -235,33 +235,40 @@ void main() {
     );
   });
 
-  testWidgets('a project id containing the separator cannot eat another\'s draft', (
-    tester,
-  ) async {
-    // Ids are `randomUUID()` today, but the loader accepts any persisted string
-    // (`project-store.ts` only checks `typeof id === "string"`), so the key must
-    // be parsed losslessly. With a `:` separator, project `a:b`'s key
-    // `starter:a:b:/wt` parsed as project `a` + path `b:/wt`, which project `a`
-    // does not list — and the prune deleted a LIVE draft. Deleting typed text is
-    // the one outcome this function may never produce.
-    final container = ProviderContainer(
-      overrides: [
-        reposProvider.overrideWithValue(
-          ReposState([
-            _repo(const ['/other'], id: 'a'),
-            _repo(const ['/wt'], id: 'a:b'),
-          ]),
-        ),
-      ],
-    );
-    addTearDown(container.dispose);
-    final key = starterDraftKey('a:b', '/wt');
-    container.read(composerDraftsProvider.notifier).set(key, 'still wanted');
+  // Ids are `randomUUID()` today, but the loader accepts any persisted string
+  // (`project-store.ts` only checks `typeof id === "string"`), so a key that is
+  // not parsed losslessly can name the WRONG project — and this function deletes
+  // typed text and staged image bytes. Each id below broke a previous key format:
+  // `a:b` broke the `:` separator (read back as project `a` with a path `a` does
+  // not list), `a\u0000b` broke the `\u0000` separator the same way. Both must now
+  // survive a prune in which the decoy project is present and populated.
+  for (final (name, hostileId) in const [
+    ('a colon', 'a:b'),
+    ('a NUL', 'a\u0000b'),
+  ]) {
+    testWidgets('a project id containing $name cannot eat another\'s draft', (
+      tester,
+    ) async {
+      final decoy = hostileId.split(RegExp(r'[:\u0000]')).first; // 'a'
+      final container = ProviderContainer(
+        overrides: [
+          reposProvider.overrideWithValue(
+            ReposState([
+              _repo(const ['/other'], id: decoy),
+              _repo(const ['/wt'], id: hostileId),
+            ]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final key = starterDraftKey(hostileId, '/wt');
+      container.read(composerDraftsProvider.notifier).set(key, 'still wanted');
 
-    container.read(_pruner)();
+      container.read(_pruner)();
 
-    expect(container.read(composerDraftsProvider)[key], 'still wanted');
-  });
+      expect(container.read(composerDraftsProvider)[key], 'still wanted');
+    });
+  }
 
   testWidgets('the prune is wired to the repos snapshot, not just callable', (
     tester,
