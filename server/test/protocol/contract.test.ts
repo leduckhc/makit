@@ -11,7 +11,7 @@ import {
   encodeFrame,
   WireErrorCode,
 } from "../../src/protocol/codec.js";
-import type { SessionEvent } from "../../src/protocol.js";
+import type { PortDTO, SessionEvent } from "../../src/protocol.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixtures = join(here, "..", "fixtures");
@@ -135,4 +135,32 @@ test("ports.snapshot decodes as a frame but never as a session event", () => {
     null,
     "ports.snapshot must be in HOST_ONLY_KINDS — a host broadcast may not enter a session log",
   );
+});
+
+// ── SPEC-42 P2b ────────────────────────────────────────────────────────────
+// The orphan/collision annotations are OPTIONAL fields on an EXISTING event, so
+// no `EventKind` / `HOST_ONLY_KINDS` entry is added. This asserts both halves
+// still hold with the richer payload: the frame round-trips, and the carve-out
+// was not disturbed. It is deliberately typed against `PortDTO` so the fixture
+// cannot drift from the interface without `tsc` failing.
+test("ports.snapshot carries orphan and collision annotations", () => {
+  const frame = snapshots.find((f) => f.kind === "ports.snapshot");
+  assert.ok(frame);
+  const decoded = decodeFrame(JSON.stringify(frame));
+  assert.notEqual(decoded, null);
+
+  const ports = (frame as { snapshot: { ports: PortDTO[] } }).snapshot.ports;
+  const orphan = ports.find((p) => p.orphan !== undefined);
+  assert.ok(orphan, "fixture must cover an orphan-annotated port");
+  assert.equal(orphan.orphan?.formerBranch, "feat/desktop-tabs");
+  assert.equal(orphan.orphan?.removedAt, 2500);
+  assert.equal(
+    orphan.worktreePath,
+    undefined,
+    "an orphan is by definition unowned — it has no active worktree",
+  );
+
+  const collision = ports.find((p) => p.collision !== undefined);
+  assert.ok(collision, "fixture must cover a collision-annotated port");
+  assert.equal(collision.collision?.withBranch, "chore/deps");
 });

@@ -55,6 +55,10 @@ const double _kPopoverMargin = kSpace8;
 /// direct assertion in isolation can prove the pin installed it.
 const Key kPortsPopoverBarrier = Key('portsPopoverBarrier');
 
+/// The footer strip that names the pin, the keyboard walk and the dismiss —
+/// mockup §2a. Keyed so the test asserts the affordance, not its wording.
+const Key kPortsPopoverHint = Key('portsPopoverHint');
+
 class PortsPopover extends StatefulWidget {
   const PortsPopover({
     super.key,
@@ -309,6 +313,28 @@ class _PortsPopoverPanel extends StatelessWidget {
               ),
             ),
             for (final port in ports) _PortRow(port: port, nowMs: nowMs),
+            // The popover's own instructions: hover opens it, but the buttons
+            // are only safe to rely on once pinned, and neither the pin nor Esc
+            // is discoverable from the glyph.
+            Container(
+              key: kPortsPopoverHint,
+              margin: const EdgeInsets.only(top: kSpace8),
+              padding: const EdgeInsets.fromLTRB(
+                kSpace12,
+                kSpace6,
+                kSpace12,
+                kSpace2,
+              ),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: cs.outlineVariant)),
+              ),
+              child: Text(
+                'Click to pin · Tab to reach buttons · Esc closes',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -359,6 +385,11 @@ class _PortRow extends StatelessWidget {
     final cs = theme.colorScheme;
     final uptime = portUptimeLabel(port.startedAt, nowMs: nowMs);
     final hasUrl = port.openUrl != null;
+    // Both truncated tokens on this row own the same sentence: the full argv.
+    // The panel is a fixed 320 pt, so line 2 always ellipses and line 1 does
+    // too for any absolute-path argv[0] — without this the row is unreadable
+    // with no way to read it (spec §3, one string per token).
+    final commandSentence = portPidCommandLabel(port.pid, port.command);
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: kSpace12,
@@ -378,11 +409,14 @@ class _PortRow extends StatelessWidget {
               ),
               const SizedBox(width: kSpace8),
               Flexible(
-                child: Text(
-                  port.command.split(' ').first,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: kMonoFontFamily,
+                child: Tooltip(
+                  message: commandSentence,
+                  child: Text(
+                    portCommandToken(port.command),
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: kMonoFontFamily,
+                    ),
                   ),
                 ),
               ),
@@ -407,16 +441,16 @@ class _PortRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: kSpace2),
-          Text(
-            [
-              portPidCommandLabel(port.pid, port.command),
-              if (uptime.isNotEmpty) uptime,
-            ].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: cs.onSurfaceVariant,
-              fontFamily: kMonoFontFamily,
+          Tooltip(
+            message: commandSentence,
+            child: Text(
+              [commandSentence, if (uptime.isNotEmpty) uptime].join(' · '),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: cs.onSurfaceVariant,
+                fontFamily: kMonoFontFamily,
+              ),
             ),
           ),
           if (hasUrl) ...[

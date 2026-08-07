@@ -121,6 +121,26 @@ void main() {
     });
   });
 
+  group('portCommandToken', () {
+    test('reduces an absolute argv[0] to its basename', () {
+      expect(
+        portCommandToken('/opt/homebrew/Cellar/node/26.5.1/bin/node dist/x.js'),
+        'node',
+      );
+    });
+
+    test('leaves a bare command word alone', () {
+      expect(portCommandToken('vite --port 5173'), 'vite');
+    });
+
+    test('never returns empty for a path-shaped or empty command', () {
+      // A trailing slash would leave an empty basename, and an empty command
+      // has no token at all. Neither may render as a blank slot on line 1.
+      expect(portCommandToken('/usr/local/bin/ x'), '/usr/local/bin/');
+      expect(portCommandToken(''), '');
+    });
+  });
+
   group('controls that already say what they do get no tooltip', () {
     test('Open and Copy URL have no tooltip', () {
       expect(portActionTooltip(PortAction.open), isNull);

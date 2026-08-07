@@ -66,8 +66,11 @@ void main() {
       final snap = (decoded as PortsSnapshotFrame).snapshot;
       expect(snap.scanOk, true);
       expect(snap.scannedAt, 3000);
-      expect(snap.ports.length, 1);
-      final p = snap.ports.single;
+      // Select the port under test rather than asserting the fixture's total:
+      // `snapshots.json` is a SHARED golden that later phases add ports to (P2b
+      // appended an orphan and a collision), and a count assertion turns every
+      // such addition into an unrelated failure here.
+      final p = snap.ports.firstWhere((p) => p.port == 5173);
       expect(p.key, '48211:127.0.0.1:5173');
       expect(p.port, 5173);
       expect(p.address, '127.0.0.1');
@@ -82,6 +85,37 @@ void main() {
       expect(p.health!.kind, PortHealthKind.ok);
       expect(p.health!.status, 200);
       expect(p.health!.probedAt, 2000);
+    });
+
+    // T8 golden: the frozen contract carries one orphan-annotated and one
+    // collision-annotated port. This reads the APP's mirror of
+    // `snapshots.json`, which is kept byte-identical to the server's copy on
+    // purpose — reaching across into `server/` would give the app a second
+    // source of truth and a path that depends on the test's cwd.
+    test('ports.snapshot T8 golden decodes orphan + collision fields', () {
+      final snapshots = _fixture('snapshots.json');
+      final env = _envFromFixture(
+        Map<String, dynamic>.from(snapshots[2] as Map),
+      );
+      final decoded = WireCodec.decode(env);
+      expect(decoded, isA<PortsSnapshotFrame>());
+      final snap = (decoded as PortsSnapshotFrame).snapshot;
+      expect(snap.ports.length, 3);
+
+      final orphaned = snap.ports.firstWhere((p) => p.port == 5180);
+      expect(orphaned.worktreePath, isNull);
+      expect(orphaned.orphan, isNotNull);
+      expect(orphaned.orphan!.formerBranch, 'feat/desktop-tabs');
+      expect(orphaned.orphan!.formerWorktreePath, '/repo/makit-gone');
+      expect(orphaned.orphan!.removedAt, 2500);
+      expect(orphaned.collision, isNull);
+
+      final collided = snap.ports.firstWhere((p) => p.port == 5174);
+      expect(collided.worktreePath, '/repo/makit-wt');
+      expect(collided.collision, isNotNull);
+      expect(collided.collision!.withBranch, 'chore/deps');
+      expect(collided.collision!.withWorktreePath, '/repo/makit-deps');
+      expect(collided.orphan, isNull);
     });
 
     test('every event fixture decodes to a typed SessionEvent', () {

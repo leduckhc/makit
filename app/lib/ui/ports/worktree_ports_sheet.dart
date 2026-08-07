@@ -5,8 +5,10 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/ports.dart';
 import '../../store/store.dart';
@@ -55,6 +57,12 @@ Future<void> showWorktreePortsSheet(
               branchLabel: branch,
               sessionLabel: sessionLabel(port.sessionId),
             ),
+            // Jump to the global Ports screen (SPEC-42 P2a). Pop the sheet
+            // first so backing out of the screen doesn't land on it.
+            onOpenPortsScreen: () {
+              Navigator.of(sheetCtx).pop();
+              sheetCtx.go(kRoutePorts);
+            },
           );
         },
       ),
@@ -69,12 +77,17 @@ class WorktreePortsSheetBody extends StatelessWidget {
     required this.branch,
     required this.ports,
     required this.onOpenPort,
+    this.onOpenPortsScreen,
     this.nowMs,
   });
 
   final String branch;
   final List<PortInfo> ports;
   final void Function(PortInfo port) onOpenPort;
+
+  /// Opens the global Ports screen (SPEC-42 P2a). When null the button is
+  /// hidden — the pure body carries no navigation of its own.
+  final VoidCallback? onOpenPortsScreen;
 
   /// Injected clock so the health sentence's "probed N s ago" is deterministic
   /// in tests; falls back to the wall clock in production.
@@ -97,6 +110,23 @@ class WorktreePortsSheetBody extends StatelessWidget {
               port: port,
               nowMs: referenceNowMs,
               onTap: () => onOpenPort(port),
+            ),
+          if (onOpenPortsScreen != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                kSpace16,
+                kSpace8,
+                kSpace16,
+                0,
+              ),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: onOpenPortsScreen,
+                  icon: const Icon(PhosphorIconsLight.plug, size: 16),
+                  label: const Text('Open the Ports screen'),
+                ),
+              ),
             ),
           const SizedBox(height: kSpace8),
         ],
@@ -153,7 +183,7 @@ class _PortListRow extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          port.command.split(' ').first,
+                          portCommandToken(port.command),
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
                             fontFamily: kMonoFontFamily,

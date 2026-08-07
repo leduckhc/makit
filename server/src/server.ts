@@ -78,6 +78,7 @@ import { WireMeter } from "./metrics/wire_meter.js";
 import { CpuLedger } from "./metrics/ledger.js";
 import { register as registerPortsCommands } from "./ws/commands/ports.js";
 import { PortsService } from "./ports/service.js";
+import { loadHistory, saveHistory, historyFile } from "./ports/history_store.js";
 import { PortHealthProbe, createNetConnector } from "./ports/health.js";
 import { tailnetAddressFromBindHost } from "./ports/attribute.js";
 import { run as execRun } from "./git.js";
@@ -483,6 +484,14 @@ export function startWsServer(opts: ServerOpts) {
     for (const repo of lastGitOnlyRepos ?? []) for (const wt of repo.worktrees) paths.push(wt.path);
     return paths;
   };
+  // Worktree path → branch, feeding the port history's `branch` (orphan "was
+  // <branch>"); detached worktrees (branch null) are omitted rather than zeroed.
+  const listWorktreeBranches = (): Map<string, string> => {
+    const branches = new Map<string, string>();
+    for (const repo of lastGitOnlyRepos ?? [])
+      for (const wt of repo.worktrees) if (wt.branch !== null) branches.set(wt.path, wt.branch);
+    return branches;
+  };
   // Session id → agent root pid. An exited session keeps its old child pid and
   // the OS reuses pids, so omit it — the same guard the metrics `liveAgents` uses.
   const listSessionRoots = (): Map<string, number> => {
@@ -502,6 +511,11 @@ export function startWsServer(opts: ServerOpts) {
     exec: portsExec,
     probe: portsProbe,
     listWorktreePaths,
+    listWorktreeBranches,
+    // Port history: the real JSON-file store (SPEC-42 D11), injected so the
+    // service depends only on the two function handles. Both never throw.
+    loadHistory: () => loadHistory(historyFile()),
+    saveHistory: (history) => saveHistory(historyFile(), history, Date.now()),
     listSessionRoots,
     // The tailnet address the server ALREADY discovered at bind time (spec D2),
     // derived PURELY from the bind host — never a `tailscale` subprocess on the

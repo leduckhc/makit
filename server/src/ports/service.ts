@@ -15,8 +15,12 @@ import type { PortDTO, PortHealthDTO, PortsSnapshotDTO } from "../protocol.js";
 import type { Exec } from "./scan.js";
 import { listListeners } from "./scan.js";
 import { readProcs, readCwds, createRealpathResolver } from "./proc.js";
+import type { ProcInfo } from "./proc.js";
 import { cwdPidSet } from "./ancestors.js";
 import { attribute } from "./attribute.js";
+import { annotate } from "./derive.js";
+import { upsertEntry, type PortHistory } from "./history_store.js";
+import { log } from "../log.js";
 
 /**
  * Poll cadence while watched: 4 s. Fast enough that a dev server that just came
@@ -47,6 +51,19 @@ export interface PortsServiceDeps {
   probe: HealthProbeLike;
   /** Absolute worktree paths from the cached repos snapshot (no git per scan). */
   listWorktreePaths: () => string[];
+  /**
+   * Worktree path → branch, from the cached repos snapshot. Feeds the port
+   * history's `branch` so an orphan can later say "was <branch>" — supplied here
+   * (like {@link listWorktreePaths}) so the service imports no git/repos type.
+   */
+  listWorktreeBranches: () => Map<string, string>;
+  /**
+   * Port-history store, INJECTED (like {@link exec}) so tests use an in-memory
+   * fake and `server.ts` wires the real JSON-file functions. A throwing read must
+   * not fail the scan — `scanOk` reflects the scan, not the store (D7).
+   */
+  loadHistory: () => PortHistory;
+  saveHistory: (history: PortHistory) => void;
   /** Session id → agent root pid, supplied by the caller (no session import). */
   listSessionRoots: () => Map<string, number>;
   /**
@@ -69,6 +86,8 @@ interface ScanOutcome {
   ports: PortDTO[];
   scanOk: boolean;
   scanError?: string;
+  /** History to persist when this snapshot is actually broadcast (debounced). */
+  historyToSave?: PortHistory;
 }
 
 export class PortsService {
@@ -170,6 +189,9 @@ export class PortsService {
         this.lastProjection = projection;
         this.cached = snapshot;
         this.deps.onSnapshot(snapshot);
+        // Persist the history only when we actually broadcast: an unchanged
+        // projection means the steady-state scan does no disk I/O (D11).
+        if (outcome.historyToSave !== undefined) this.deps.saveHistory(outcome.historyToSave);
       }
 
       // Health probes run AFTER publishing (stale-while-revalidate): the socket
@@ -227,14 +249,58 @@ export class PortsService {
         resolveReal: this.resolveReal,
       });
 
-      this.lastGoodPorts = ports;
-      return { ports, scanOk: true };
+      // Fold the port history in: record every owned port, then annotate orphans
+      // and collisions from the (updated) history before publishing.
+      const { annotated, historyToSave } = this.foldHistory(ports, procs, cwds, now);
+
+      this.lastGoodPorts = annotated;
+      return { ports: annotated, scanOk: true, historyToSave };
     } catch (err) {
       return {
         ports: this.lastGoodPorts,
         scanOk: false,
         scanError: `port scan failed: ${(err as Error).message}`,
       };
+    }
+  }
+
+  /**
+   * Record every owned port into the history and annotate orphans/collisions
+   * from the updated history. Isolated in its own try/catch: a throwing store
+   * degrades to the plain attributed ports with no annotation and no write,
+   * leaving `scanOk` untouched (D7 — the flag means the scanner's commands ran).
+   */
+  private foldHistory(
+    ports: PortDTO[],
+    procs: Map<number, ProcInfo>,
+    cwds: Map<number, string>,
+    now: number,
+  ): { annotated: PortDTO[]; historyToSave?: PortHistory } {
+    try {
+      const branches = this.deps.listWorktreeBranches();
+      let history = this.deps.loadHistory();
+      for (const port of ports) {
+        if (port.worktreePath === undefined) continue;
+        history = upsertEntry(history, {
+          worktreePath: port.worktreePath,
+          branch: branches.get(port.worktreePath),
+          port: port.port,
+          now,
+        });
+      }
+      const annotated = annotate({
+        ports,
+        cwds,
+        procs,
+        history,
+        activeWorktreePaths: this.deps.listWorktreePaths(),
+        resolveReal: this.resolveReal,
+        now,
+      });
+      return { annotated, historyToSave: history };
+    } catch (err) {
+      log.warn(`[makit] port history unavailable this scan: ${(err as Error).message}`);
+      return { annotated: ports };
     }
   }
 }

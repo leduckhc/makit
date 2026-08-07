@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart' hide Tab;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../app/routes.dart';
 import '../../shortcuts/keymap_controller.dart';
 import '../../shortcuts/shortcut_action.dart';
 import '../../store/store.dart';
@@ -171,6 +173,8 @@ class _DesktopKeymapScopeState extends ConsumerState<DesktopKeymapScope> {
         }
       case ShortcutAction.openSettings:
         widget.onOpenSettings();
+      case ShortcutAction.openPorts:
+        context.go(kRoutePorts);
       case ShortcutAction.newSession:
         showNewWorktreeDialog(context, ref, projectId: _currentProjectId(ref));
       case ShortcutAction.nextSession:
