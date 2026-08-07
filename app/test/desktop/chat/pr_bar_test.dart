@@ -986,7 +986,7 @@ void main() {
       // the wrong widget.
       final reason = tester.getRect(find.byKey(kPrBarSentenceKey));
       expect(cta.right, bar.right);
-      expect(reason.left, lessThan(bar.width / 2));
+      expect(reason.left, lessThan(bar.left + bar.width / 2));
       expect(
         cta.left - reason.right,
         greaterThan(bar.width / 3),

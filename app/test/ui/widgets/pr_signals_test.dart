@@ -759,6 +759,12 @@ void main() {
         isPrimary: true,
       );
       expect(s.cta.remedy, isNull);
+      // Nor does it report the residue that goes with that offer: there is no
+      // wrap-up to leave the checkout behind.
+      expect(
+        s.signals.map((x) => x.label),
+        isNot(contains('worktree still here')),
+      );
     });
   });
 

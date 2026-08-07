@@ -434,7 +434,12 @@ test("the fallback's re-walk adds watchers, it does not duplicate them", async (
   const repo = makeRepo();
   execFileSync("git", ["checkout", "-q", "-b", "release/1.x"], { cwd: repo });
 
-  const watcher = watchWorktrees(() => {}, { debounceMs: 10, recursive: false });
+  // Counted, not ignored: the walk re-runs *inside* the event handler and
+  // `onChange` lands after it, so a fire is the proof that a re-walk happened. On
+  // a fixed sleep this test passed for the wrong reason — nothing had re-walked
+  // yet, so of course the count had not grown.
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 10, recursive: false });
   watcher.sync([repo]);
   try {
     await delay(120);
@@ -442,21 +447,23 @@ test("the fallback's re-walk adds watchers, it does not duplicate them", async (
     assert.ok(armed > 0, "expected the walk to have armed something");
 
     for (const name of ["one", "two", "three"]) {
+      const before = fires;
       writeFileSync(join(repo, `${name}.txt`), "x\n");
       execFileSync("git", ["add", "."], { cwd: repo });
       execFileSync("git", ["commit", "-q", "-m", name], { cwd: repo });
-      await delay(120);
+      await waitFor(() => fires > before);
     }
     assert.equal(
       watcher.watcherCount(),
       armed,
-      "three commits on the same tree must not add a watcher",
+      "three re-walks on the same tree must not add a watcher",
     );
 
     // A new namespace *is* new ground: exactly one directory appears, so exactly
     // one watcher does.
+    const beforeBranch = fires;
     execFileSync("git", ["branch", "hotfix/urgent"], { cwd: repo });
-    await delay(150);
+    await waitFor(() => fires > beforeBranch);
     assert.equal(
       watcher.watcherCount(),
       armed + 1,
