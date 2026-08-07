@@ -480,8 +480,10 @@ class StoreController extends StateNotifier<StoreState> {
   void _flushReplay(String sessionId) {
     _awaitingReplay.remove(sessionId);
     final buffered = _replayBuffer.remove(sessionId);
+    final full = _fullReplay.remove(sessionId);
+    if (!full && (buffered == null || buffered.isEmpty)) return;
     var next = state;
-    if (_fullReplay.remove(sessionId)) {
+    if (full) {
       _historyLoaded.add(sessionId);
       // Start this session from an empty slice: the replay is its whole log, and
       // whatever the auto-mirror left here sits at seqs the cursor would now use
