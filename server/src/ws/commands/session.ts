@@ -126,6 +126,11 @@ export function register(r: CommandRouter, deps: CommandDeps): void {
       return;
     }
     ctx.ack();
+    // Backstop for the `sub`-triggered re-attach: a message can race ahead of it
+    // (reconnect resubscribe + a queued message), and no input may be answered
+    // with the cold-session error while a resume is still possible. Collapses
+    // onto the same in-flight re-attach rather than starting a second agent.
+    await manager.ensureLive(sid);
     // A pending (draft) session materializes its worktree + agent on the
     // first real request, which names the branch. The manager routes any
     // promotion failure through the session's own event pipeline (a real,

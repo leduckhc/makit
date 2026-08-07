@@ -12,13 +12,19 @@ import { DeviceRegistry, type PairedDevice } from "../src/pairing/registry.js";
 import { StubAdapter } from "../src/adapters/stub.js";
 import { startFakeModelServer, type FakeModelHandle } from "./fake-model/server.js";
 import type { UIResponse } from "../src/uicall.js";
+import { guardAgainstRealBilling, currentModelFromEvents, FAKE_MODEL } from "./fake-model/billing-guard.js";
 
 /** Absolute path to the fake-model provider extension pi loads via `-e`. */
 const FAKE_PROVIDER_EXT = fileURLToPath(
   new URL("./fake-model/provider-extension.ts", import.meta.url),
 );
-/** Provider/model id registered by FAKE_PROVIDER_EXT. */
-const FAKE_MODEL = "makit-fake/fake-1";
+
+function assertFakeModelInEffect(manager: SessionManager): void {
+  guardAgainstRealBilling(
+    "--mode real",
+    currentModelFromEvents(manager.allSessions()[0]?.events ?? []),
+  );
+}
 
 interface E2EArgs {
   port: number;
@@ -119,9 +125,10 @@ async function main(): Promise<void> {
     return env as unknown as UIResponse;
   };
 
-  // In real mode we run the genuine `pi` binary but swap its LLM for a local
-  // deterministic fake-model server. pi reaches it via the makit-fake provider
-  // registered by FAKE_PROVIDER_EXT, which reads MAKIT_FAKE_MODEL_URL.
+  // In real mode we run the genuine `pi` binary and ASK for the local
+  // deterministic fake-model server. Whether pi actually honours that is
+  // verified after the first session starts (see assertFakeModelInEffect) —
+  // it cannot be assumed, and getting it wrong costs real money.
   let fakeModel: FakeModelHandle | undefined;
   if (args.mode === "real") {
     fakeModel = await startFakeModelServer();
@@ -171,6 +178,7 @@ async function main(): Promise<void> {
   });
 
   await manager.ensureDefaultSessions();
+  if (args.mode === "real") assertFakeModelInEffect(manager);
 
   const printReady = () => {
     console.log(JSON.stringify({

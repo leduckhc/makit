@@ -37,7 +37,14 @@ export interface SpawnOpts {
   systemPrompt?: string;
   /** Extra env vars for the spawned process (e.g. MAKIT_BRIDGE_*). */
   env?: Record<string, string>;
-  /** Paths to pi extensions to load via `-e`. */
+  /**
+   * Paths to pi extensions to load.
+   *
+   * NOT honoured on the ACP path: pi runs behind the `pi-acp` bridge, which
+   * spawns pi with a fixed argv (`--mode rpc --no-themes` [+ `--session`]) and
+   * forwards no `-e`. {@link AcpAdapter} warns and ignores them rather than
+   * pretending. Loading an extension per session needs a pi-acp change.
+   */
   extensions?: string[];
   /** Session id used for routing reverse-RPC. */
   /** Session id used for routing reverse-RPC. */
@@ -64,8 +71,16 @@ export interface SpawnOpts {
    */
   resumeAgentSessionId?: string;
   /**
-   * Force a specific model (`--model <provider>/<id>`). When unset, pi uses its
-   * own configured default. Used by the real-pi e2e to select the fake model.
+   * REQUEST a specific model — best-effort, not a guarantee. When unset the
+   * agent keeps its own configured default; when the agent does not offer the
+   * requested id it ALSO keeps its default (with a warning) rather than failing
+   * to start. Callers that must not run on an unintended provider have to verify
+   * the model after start (see test/fake-model/billing-guard.ts).
+   *
+   * Delivered per back end, NOT as a CLI flag: codex passes it on
+   * `turn/start.model`; the ACP path applies it over the SPEC-26 config-option
+   * surface (`pi-acp`'s argv is fixed, so `--model` never reaches pi). An agent
+   * that does not offer the model stays on its default and logs a warning.
    */
   model?: string;
 }

@@ -326,9 +326,39 @@ export class Session extends EventEmitter {
     this.store?.saveSession(this.toMeta());
   }
 
+  /**
+   * Swap in a new adapter, detaching the outgoing one first. Without the unbind
+   * the replaced adapter keeps feeding this session: its late events land in the
+   * transcript as ghost entries, and its `exit` clears the pending queue the
+   * INCOMING adapter is about to flush.
+   */
   replaceAdapter(adapter: AgentAdapter): void {
+    this.unbindAdapter(this.adapter);
     this.adapter = adapter;
     this.bindAdapter(adapter);
+  }
+
+  /**
+   * The listeners this session installed on its CURRENT adapter, kept so they
+   * can be removed individually on replacement. A blanket
+   * `removeAllListeners(kind)` would also cancel subscriptions the session does
+   * not own (a metrics collector, a probe, a test harness).
+   */
+  private bound?: {
+    event: (e: AdapterEvent) => void;
+    status: (s: string) => void;
+    exit: () => void;
+    title: (t: string) => void;
+  };
+
+  private unbindAdapter(adapter: AgentAdapter): void {
+    const bound = this.bound;
+    if (!bound) return;
+    adapter.off("event", bound.event);
+    adapter.off("status", bound.status);
+    adapter.off("exit", bound.exit);
+    adapter.off("title", bound.title);
+    this.bound = undefined;
   }
 
   /**
@@ -398,6 +428,16 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Record and emit a `session.status` through the normal event pipeline, so it
+   * gets a real monotonic seq and is persisted. Used when the manager knows the
+   * session's liveness changed without the adapter saying so — e.g. a resume that
+   * reported `idle` and then failed to start.
+   */
+  recordStatus(status: SessionStatus): void {
+    this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
+  }
+
+  /**
    * Record and emit a `session.usage` snapshot (SPEC-37). Used by the loopback
    * bridge's `POST /usage` for pi, which reports no usage over ACP; the codex and
    * ACP paths arrive as ordinary adapter events instead. Latest-wins in the app,
@@ -421,11 +461,11 @@ export class Session extends EventEmitter {
   }
 
   private bindAdapter(adapter: AgentAdapter): void {
-    adapter.on("event", (e) => {
+    const onEvent = (e: AdapterEvent) => {
       this.emit("event", this.record(e));
-    });
+    };
 
-    adapter.on("status", (s) => {
+    const onStatus = (s: string) => {
       const status = s === "running" ? "running" : "idle";
       // Don't pre-assign this.status here — record() owns the mutation + the
       // before/after comparison that decides whether to fan out metaChanged.
@@ -433,13 +473,19 @@ export class Session extends EventEmitter {
       // The agent is ready for a new turn: hand it the next queued message
       // (SPEC-35). One per transition — the next flush waits for the next idle.
       if (status === "idle" && this.queued.length > 0) void this.flushNext();
-    });
+    };
 
     // A dead agent will never flush the queue; drop it rather than leave chips
     // pinned in the composer forever (SPEC-35).
-    adapter.on("exit", () => this.clearQueue());
+    const onExit = () => this.clearQueue();
 
-    adapter.on("title", (title) => this.setTitle(title));
+    const onTitle = (title: string) => this.setTitle(title);
+
+    this.bound = { event: onEvent, status: onStatus, exit: onExit, title: onTitle };
+    adapter.on("event", onEvent);
+    adapter.on("status", onStatus);
+    adapter.on("exit", onExit);
+    adapter.on("title", onTitle);
   }
 
   /** Live lifecycle state (SPEC-17 P4). Read-only view for typed transitions. */
@@ -499,6 +545,16 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Whether this session can be brought back to a live agent (SPEC-29): it
+   * holds either a native agent session/thread id or a legacy pi transcript
+   * path. Mirrors exactly what {@link SessionManager.reattachSession} accepts —
+   * one predicate, so the DTO can never advertise less than the server will do.
+   */
+  get resumable(): boolean {
+    return this.agentSessionId != null || this.resumeSessionPath != null;
+  }
+
+  /**
    * Promote a pending (draft) session once its worktree + agent are live.
    * Records the branch/worktree it now runs in and clears the pending flag.
    */
@@ -525,9 +581,9 @@ export class Session extends EventEmitter {
       pendingAgent: this.pendingAgent,
       branch: this.branch,
       worktreePath: this.worktreePath,
-      // SPEC-29: a session with a persisted native id can be brought back to a
-      // live agent after a server restart (the app auto-attaches cold ones).
-      resumable: this.agentSessionId != null,
+      // SPEC-29: a session with a persisted resume handle can be brought back
+      // to a live agent after a server restart (cold ones are auto-attached).
+      resumable: this.resumable,
       archived: this.archived,
       queued: this.queued.map(
         (q): QueuedMessageDTO => ({

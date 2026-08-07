@@ -1358,3 +1358,86 @@ test("acp cannot steer: ACP has no mid-turn injection primitive (SPEC-35 T1)", a
   assert.equal(await adapter.steer({ text: "mid-turn" }), false);
   assert.equal(events.length, before, "steer() must not echo or emit anything");
 });
+
+// ---------------------------------------------------------------------------
+// SpawnOpts.model on the ACP path
+//
+// pi runs behind the `pi-acp` bridge, whose argv is fixed (`--mode rpc
+// --no-themes` [+ --session]) — it forwards neither `--model` nor `-e`. So a
+// requested model can only be delivered over ACP, via the SPEC-26 config-option
+// surface. Before this, `SpawnOpts.model` was silently dropped for pi: the real
+// e2e loop believed it had swapped in the local fake model while actually
+// billing the user's configured one.
+// ---------------------------------------------------------------------------
+
+/** A scripted agent advertising a `model` select, recording config-option sets. */
+function modelAwarePair(values: string[], current: string) {
+  const sets: { configId: string; value: unknown }[] = [];
+  const { transport } = pair((conn) => {
+    const a = new ScriptedAgent(conn, async () => {});
+    const cfg = {
+      configOptions: [
+        {
+          id: "model",
+          name: "Model",
+          type: "select",
+          currentValue: current,
+          options: values.map((v) => ({ value: v, name: v })),
+        },
+      ],
+    };
+    (a as unknown as { newSession: () => Promise<unknown> }).newSession = async () => ({
+      sessionId: "acp-sess-1",
+      ...cfg,
+    });
+    (a as unknown as {
+      setSessionConfigOption: (p: { configId: string; value: unknown }) => Promise<unknown>;
+    }).setSessionConfigOption = async (p) => {
+      sets.push({ configId: p.configId, value: p.value });
+      return {
+        configOptions: [{ ...cfg.configOptions[0], currentValue: String(p.value) }],
+      };
+    };
+    return a;
+  });
+  return { transport, sets };
+}
+
+test("start() applies a requested model through the ACP config-option surface", async () => {
+  const { transport, sets } = modelAwarePair(
+    ["real/expensive-1", "makit-fake/fake-1"],
+    "real/expensive-1",
+  );
+  const adapter = new AcpAdapter({
+    spec: { agent: "pi", command: "unused" },
+    connect: () => transport,
+    media: undefined,
+  });
+  await adapter.start({ cwd: process.cwd(), sessionId: "s1", model: "makit-fake/fake-1" });
+  assert.deepEqual(
+    sets,
+    [{ configId: "model", value: "makit-fake/fake-1" }],
+    "the requested model was actually selected on the agent",
+  );
+  await adapter.kill();
+});
+
+test("start() leaves the agent's model alone when it already matches, or is unknown", async () => {
+  // Already current: no redundant round-trip.
+  const same = modelAwarePair(["makit-fake/fake-1"], "makit-fake/fake-1");
+  const a1 = new AcpAdapter({ spec: { agent: "pi", command: "unused" }, connect: () => same.transport });
+  await a1.start({ cwd: process.cwd(), sessionId: "s1", model: "makit-fake/fake-1" });
+  assert.deepEqual(same.sets, [], "no set call when the model is already current");
+  await a1.kill();
+
+  // Not offered by this agent: must NOT be sent (the agent would reject it), and
+  // the session must still come up live rather than failing to start.
+  const missing = modelAwarePair(["real/expensive-1"], "real/expensive-1");
+  const a2 = new AcpAdapter({ spec: { agent: "pi", command: "unused" }, connect: () => missing.transport });
+  const statuses: string[] = [];
+  a2.on("status", (s: string) => statuses.push(s));
+  await a2.start({ cwd: process.cwd(), sessionId: "s2", model: "makit-fake/fake-1" });
+  assert.deepEqual(missing.sets, [], "an unoffered model is never sent to the agent");
+  assert.ok(statuses.includes("idle"), "the session still started");
+  await a2.kill();
+});
