@@ -53,6 +53,13 @@ class DesktopController extends ChangeNotifier {
   /// installed (drives the "install the CLI" affordance).
   bool get cliMissing => _cliMissing;
 
+  /// Incremented per [refresh]; only the newest may publish its result.
+  int _refreshGeneration = 0;
+
+  Duration _visibleInterval = const Duration(seconds: 3);
+  Duration _hiddenInterval = const Duration(seconds: 30);
+  bool _windowVisible = true;
+
   static const _stopped = DaemonSummary(
     state: DaemonState.stopped,
     pairedDevices: 0,
@@ -61,12 +68,21 @@ class DesktopController extends ChangeNotifier {
 
   /// Polls the daemon for status + devices + sessions and updates [summary].
   /// A control error means the daemon is not reachable → [DaemonState.stopped].
+  ///
+  /// Refreshes can overlap — the poll timer does not await the previous tick,
+  /// [_act] refreshes after an action, and returning from hidden refreshes at
+  /// once — so a slow earlier request could otherwise land after a newer one and
+  /// repaint the window with the state it went to sleep with. Results from
+  /// anything but the latest request are dropped.
   Future<void> refresh() async {
+    final generation = ++_refreshGeneration;
+    DaemonSummary summary;
+    String? error;
     try {
       final status = await client.status();
       final devices = await client.devicesList();
       final sessions = await client.sessionsList();
-      _summary = DaemonSummary(
+      summary = DaemonSummary(
         state: DaemonState.running,
         pid: status.pid,
         pairedDevices: status.pairedDevices,
@@ -74,11 +90,13 @@ class DesktopController extends ChangeNotifier {
         deviceLabels: [for (final d in devices) d.label],
         sessionTitles: [for (final s in sessions) s.title],
       );
-      _lastError = null;
     } catch (e) {
-      _summary = _stopped;
-      _lastError = e.toString();
+      summary = _stopped;
+      error = e.toString();
     }
+    if (generation != _refreshGeneration) return;
+    _summary = summary;
+    _lastError = error;
     notifyListeners();
   }
 
@@ -104,6 +122,11 @@ class DesktopController extends ChangeNotifier {
     DaemonState? transient,
   }) async {
     if (transient != null) {
+      // Counts as newer than any refresh already in flight: an action's
+      // `starting`/`stopping` state has to survive until the action's own
+      // refresh replaces it, or a poll that left before the button was pressed
+      // repaints it as stopped mid-start.
+      ++_refreshGeneration;
       _summary = DaemonSummary(
         state: transient,
         pid: _summary.pid,
@@ -118,13 +141,45 @@ class DesktopController extends ChangeNotifier {
     return result;
   }
 
-  /// Starts periodic polling: refreshes immediately, then every [interval].
+  /// Starts periodic polling: refreshes immediately, then every [interval]
+  /// while the window is visible, dropping to [hiddenInterval] while it is not.
   /// Cancels any previous poll. Owned here so the app can stop it cleanly on
   /// quit (no orphaned timer).
-  void startPolling({Duration interval = const Duration(seconds: 3)}) {
-    _poll?.cancel();
+  ///
+  /// Each refresh is three control RPCs, so at 3s that is ~3600 calls an hour —
+  /// wakeups the machine pays for even when nobody is looking at the window.
+  /// Polling cannot stop outright while hidden: the tray menu and tooltip read
+  /// [summary] (see `desktop_app.dart`), so a stopped poll would show stale
+  /// device/session counts to someone who never opens the window.
+  void startPolling({
+    Duration interval = const Duration(seconds: 3),
+    Duration hiddenInterval = const Duration(seconds: 30),
+  }) {
+    _visibleInterval = interval;
+    _hiddenInterval = hiddenInterval;
     unawaited(refresh());
-    _poll = Timer.periodic(interval, (_) => unawaited(refresh()));
+    _restartPoll();
+  }
+
+  /// Tells the controller whether the app's window is on screen, so polling can
+  /// back off while it is not. Wired from the desktop app's lifecycle observer.
+  ///
+  /// Coming back refreshes immediately: state gathered up to [_hiddenInterval]
+  /// ago must not be what the window paints on return.
+  void setWindowVisible(bool visible) {
+    if (visible == _windowVisible) return;
+    _windowVisible = visible;
+    if (_poll == null) return; // not polling; nothing to re-cadence
+    _restartPoll();
+    if (visible) unawaited(refresh());
+  }
+
+  void _restartPoll() {
+    _poll?.cancel();
+    _poll = Timer.periodic(
+      _windowVisible ? _visibleInterval : _hiddenInterval,
+      (_) => unawaited(refresh()),
+    );
   }
 
   @override
