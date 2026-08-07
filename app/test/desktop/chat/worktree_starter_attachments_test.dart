@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/selected_worktree.dart';
+import 'package:makit/desktop/chat/starter_prune.dart';
 import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/store/composer_attachments.dart';
 import 'package:makit/store/connection.dart';
@@ -36,7 +37,7 @@ const _agent = AgentDescriptor(
   available: true,
 );
 
-const _key = 'starter:p1:/tmp/wt';
+final _key = starterDraftKey('p1', '/tmp/wt');
 final _bytes = Uint8List.fromList([1, 2, 3]);
 
 /// Records the spawn + send the starter performs, so the test can assert the

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/selected_worktree.dart';
+import 'package:makit/desktop/chat/starter_prune.dart';
 import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -94,7 +95,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      container.read(composerDraftsProvider)['starter:p1:/tmp/wt'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', '/tmp/wt')],
       'half typed',
     );
   });
@@ -137,11 +138,14 @@ void main() {
 
     expect(find.text('wt one'), findsNothing);
     expect(
-      container.read(composerDraftsProvider)['starter:p1:/tmp/wt'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', '/tmp/wt')],
       'wt one',
     );
     expect(
-      container.read(composerDraftsProvider)['starter:p1:/tmp/other'],
+      container.read(composerDraftsProvider)[starterDraftKey(
+        'p1',
+        '/tmp/other',
+      )],
       isNull,
     );
   });
@@ -160,7 +164,7 @@ void main() {
 
     expect(find.text('never left the pane'), findsOneWidget);
     expect(
-      container.read(composerDraftsProvider)['starter:p1:/tmp/wt'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', '/tmp/wt')],
       'never left the pane',
     );
   });

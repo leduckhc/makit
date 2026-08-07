@@ -21,23 +21,42 @@ import '../../ui/composer/composer_draft.dart';
 import 'desktop_group_reconcile.dart' show closeGroupsForDeletedWorktrees;
 import 'starter_picks.dart';
 
-/// Prefix of every starter-scoped draft key. The key is
-/// `starter:<projectId>:<worktreePath>` — must match `WorktreeStarter._draftKey`.
+/// Prefix of every starter-scoped draft key.
+///
+/// The key is `starter:<projectId>\u0000<worktreePath>` — build it with
+/// [starterDraftKey] and read it back with [parseStarterKey], never by hand.
 ///
 /// The project id is in the key because the prune has to be guarded **per repo**
 /// (see below), and a worktree path alone cannot say which repo owns it: a linked
 /// worktree usually lives nowhere near its repo's directory.
 const String kStarterKeyPrefix = 'starter:';
 
+/// Separator between the two components.
+///
+/// `\u0000`, not `:` — the same choice `cached_commands.dart` makes for the same
+/// reason. A colon is legal in both halves (POSIX permits it in a path, and the
+/// project store persists any string id), which made the parse lossy: with
+/// projects `a` and `a:b`, the key for `a:b` read back as project `a` with a path
+/// `a` does not list, and the prune deleted a live draft. NUL cannot occur in
+/// either component.
+const String _kStarterKeySep = '\u0000';
+
+/// The draft/picks/attachments key for a starter pane on [worktreePath] in
+/// [projectId].
+String starterDraftKey(String projectId, String worktreePath) =>
+    '$kStarterKeyPrefix$projectId$_kStarterKeySep$worktreePath';
+
 /// The `(projectId, worktreePath)` a starter key names, or null when [key] is
 /// not a starter key (a live session's draft is keyed by session id).
 ({String projectId, String path})? parseStarterKey(String key) {
   if (!key.startsWith(kStarterKeyPrefix)) return null;
   final rest = key.substring(kStarterKeyPrefix.length);
-  final colon = rest.indexOf(':');
-  if (colon <= 0 || colon == rest.length - 1) return null;
-  // First colon only: a project id has none, a POSIX path may.
-  return (projectId: rest.substring(0, colon), path: rest.substring(colon + 1));
+  final sep = rest.indexOf(_kStarterKeySep);
+  if (sep <= 0 || sep == rest.length - 1) return null;
+  return (
+    projectId: rest.substring(0, sep),
+    path: rest.substring(sep + _kStarterKeySep.length),
+  );
 }
 
 /// Drop the starter draft, picks and staged images of every worktree [repos] no

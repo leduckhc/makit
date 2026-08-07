@@ -9,7 +9,9 @@ library;
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:makit/desktop/chat/desktop_session_prune.dart';
 import 'package:makit/desktop/chat/starter_picks.dart';
 import 'package:makit/desktop/chat/starter_prune.dart';
 import 'package:makit/store/composer_attachments.dart';
@@ -21,6 +23,14 @@ import 'package:makit/ui/composer/composer_draft.dart';
 
 const _gone = '/tmp/wt-gone';
 const _kept = '/tmp/wt-kept';
+
+/// A repos snapshot the wiring test can push new values into, so the prune runs
+/// through `desktopSessionPruneProvider`'s own listener rather than being called.
+final _reposFeed = StateProvider<ReposState>(
+  (ref) => ReposState([
+    _repo(const [_gone, _kept]),
+  ]),
+);
 
 /// The prune takes a `Ref` (production calls it from
 /// `desktopSessionPruneProvider`), so drive it through a throwaway provider that
@@ -72,10 +82,10 @@ Future<ProviderContainer> _seeded({required ReposState repos}) async {
   final picks = container.read(starterPicksProvider.notifier);
   final atts = container.read(composerAttachmentsProvider.notifier);
   for (final path in [_gone, _kept]) {
-    drafts.set('starter:p1:$path', 'half typed in $path');
-    picks.chooseAgent('starter:p1:$path', 'codex');
+    drafts.set(starterDraftKey('p1', path), 'half typed in $path');
+    picks.chooseAgent(starterDraftKey('p1', path), 'codex');
     await atts.add(
-      key: 'starter:p1:$path',
+      key: starterDraftKey('p1', path),
       localId: 'l-$path',
       bytes: Uint8List.fromList([1, 2, 3]),
       mime: 'image/png',
@@ -98,10 +108,16 @@ void main() {
 
     container.read(_pruner)();
 
-    expect(container.read(composerDraftsProvider)['starter:p1:$_gone'], isNull);
-    expect(container.read(starterPicksProvider)['starter:p1:$_gone'], isNull);
     expect(
-      container.read(composerAttachmentsProvider)['starter:p1:$_gone'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _gone)],
+      isNull,
+    );
+    expect(
+      container.read(starterPicksProvider)[starterDraftKey('p1', _gone)],
+      isNull,
+    );
+    expect(
+      container.read(composerAttachmentsProvider)[starterDraftKey('p1', _gone)],
       isNull,
     );
   });
@@ -118,15 +134,15 @@ void main() {
     container.read(_pruner)();
 
     expect(
-      container.read(composerDraftsProvider)['starter:p1:$_kept'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _kept)],
       'half typed in $_kept',
     );
     expect(
-      container.read(starterPicksProvider)['starter:p1:$_kept'],
+      container.read(starterPicksProvider)[starterDraftKey('p1', _kept)],
       isNotNull,
     );
     expect(
-      container.read(composerAttachmentsProvider)['starter:p1:$_kept'],
+      container.read(composerAttachmentsProvider)[starterDraftKey('p1', _kept)],
       hasLength(1),
     );
   });
@@ -154,7 +170,7 @@ void main() {
     container.read(_pruner)();
 
     expect(
-      container.read(composerDraftsProvider)['starter:p1:$_gone'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _gone)],
       isNotNull,
     );
   });
@@ -169,7 +185,7 @@ void main() {
     container.read(_pruner)();
 
     expect(
-      container.read(composerDraftsProvider)['starter:p1:$_gone'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _gone)],
       isNotNull,
     );
   });
@@ -190,9 +206,12 @@ void main() {
 
     container.read(_pruner)();
 
-    expect(container.read(composerDraftsProvider)['starter:p1:$_gone'], isNull);
     expect(
-      container.read(composerDraftsProvider)['starter:p1:$_kept'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _gone)],
+      isNull,
+    );
+    expect(
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _kept)],
       isNotNull,
     );
   });
@@ -211,8 +230,71 @@ void main() {
     container.read(_pruner)();
 
     expect(
-      container.read(composerDraftsProvider)['starter:p1:$_gone'],
+      container.read(composerDraftsProvider)[starterDraftKey('p1', _gone)],
       isNotNull,
     );
+  });
+
+  testWidgets('a project id containing the separator cannot eat another\'s draft', (
+    tester,
+  ) async {
+    // Ids are `randomUUID()` today, but the loader accepts any persisted string
+    // (`project-store.ts` only checks `typeof id === "string"`), so the key must
+    // be parsed losslessly. With a `:` separator, project `a:b`'s key
+    // `starter:a:b:/wt` parsed as project `a` + path `b:/wt`, which project `a`
+    // does not list — and the prune deleted a LIVE draft. Deleting typed text is
+    // the one outcome this function may never produce.
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWithValue(
+          ReposState([
+            _repo(const ['/other'], id: 'a'),
+            _repo(const ['/wt'], id: 'a:b'),
+          ]),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final key = starterDraftKey('a:b', '/wt');
+    container.read(composerDraftsProvider.notifier).set(key, 'still wanted');
+
+    container.read(_pruner)();
+
+    expect(container.read(composerDraftsProvider)[key], 'still wanted');
+  });
+
+  testWidgets('the prune is wired to the repos snapshot, not just callable', (
+    tester,
+  ) async {
+    // Every other test here calls `pruneStarterDrafts` directly, so they would
+    // all still pass with both production call sites deleted. This one goes
+    // through `desktopSessionPruneProvider` and its `afterPass` microtask.
+    final container = ProviderContainer(
+      overrides: [
+        reposProvider.overrideWith((ref) => ref.watch(_reposFeed)),
+        sessionsProvider.overrideWithValue(SessionsState(const [])),
+      ],
+    );
+    addTearDown(container.dispose);
+    final key = starterDraftKey('p1', _gone);
+    container.read(composerDraftsProvider.notifier).set(key, 'typed here');
+    // `listen`, not `read`: the provider (and therefore its repos listener) is
+    // only alive while something subscribes to it — `desktop_session_prune_test`
+    // documents the same requirement, mirroring the widget-level `ref.watch`.
+    container.listen(
+      desktopSessionPruneProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    await tester.pump();
+
+    // The worktree is removed (wrap up / discard), so the next snapshot drops it.
+    container.read(_reposFeed.notifier).state = ReposState([
+      _repo(const [_kept]),
+    ]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1));
+
+    expect(container.read(composerDraftsProvider)[key], isNull);
   });
 }

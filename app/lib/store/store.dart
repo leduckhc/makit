@@ -344,8 +344,14 @@ class StoreController extends StateNotifier<StoreState> {
         // graph for the rest of the process. Safe today (nothing in the graph
         // watches this cache during a connection change — only widgets do), but
         // the failure mode is bad enough not to leave standing on that.
+        //
+        // `mounted` because the container can be disposed between scheduling and
+        // running (app teardown right after a switch or unpair), and a disposed
+        // StateNotifier throws on assignment.
         final cache = _ref.read(cachedCommandsControllerProvider.notifier);
-        Future.microtask(cache.clearAll);
+        Future.microtask(() {
+          if (cache.mounted) unawaited(cache.clearAll());
+        });
       }
 
       final wasConnected = prev?.wsState == WsState.connected;

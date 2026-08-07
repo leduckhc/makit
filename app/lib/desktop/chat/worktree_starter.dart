@@ -21,7 +21,7 @@ import 'pr_bar.dart';
 import 'selected_worktree.dart';
 import 'start_session.dart';
 import 'starter_picks.dart';
-import 'starter_prune.dart' show kStarterKeyPrefix;
+import 'starter_prune.dart' show starterDraftKey;
 import '../../ui/widgets/pr_signals.dart';
 
 /// The in-pane start surface for a sessionless pane that already knows its
@@ -55,7 +55,7 @@ class _WorktreeStarterState extends ConsumerState<WorktreeStarter> {
   /// The project id rides along so [pruneStarterDrafts] can guard per repo — a
   /// worktree path cannot say which repo owns it.
   String get _draftKey =>
-      '$kStarterKeyPrefix${widget.worktree.projectId}:${widget.worktree.path}';
+      starterDraftKey(widget.worktree.projectId, widget.worktree.path);
 
   /// The user-picked harness id; null falls back to the first available agent.
   /// Held in [starterPicksProvider], not in this State, because a tab switch

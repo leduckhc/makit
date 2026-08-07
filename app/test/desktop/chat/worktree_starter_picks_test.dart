@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:makit/desktop/chat/harness_picker.dart' show HarnessCard;
 import 'package:makit/desktop/chat/selected_worktree.dart';
 import 'package:makit/desktop/chat/starter_picks.dart';
+import 'package:makit/desktop/chat/starter_prune.dart';
 import 'package:makit/desktop/chat/worktree_starter.dart';
 import 'package:makit/store/connection.dart';
 import 'package:makit/store/models.dart';
@@ -27,7 +28,7 @@ class _EmptyStorage implements SecureStore {
   Future<void> delete({required String key}) async {}
 }
 
-const _key = 'starter:p1:/tmp/wt';
+final _key = starterDraftKey('p1', '/tmp/wt');
 
 /// Two available harnesses, each with its own catalog — `pi` is the default
 /// (first available), so choosing `codex` is an observable user gesture.
@@ -284,7 +285,10 @@ void main() {
 
     expect(_isSelected(tester, 'Pi'), isTrue);
     expect(
-      h.container.read(starterPicksProvider)['starter:p1:/tmp/other'],
+      h.container.read(starterPicksProvider)[starterDraftKey(
+        'p1',
+        '/tmp/other',
+      )],
       isNull,
     );
   });
@@ -345,5 +349,36 @@ void main() {
 
     await _send(tester);
     expect(h.store.agent, 'pi');
+  });
+
+  testWidgets('an empty catalog keeps the picked harness, and spawns it', (
+    tester,
+  ) async {
+    // An empty `agents` list means "not loaded yet", never "nothing available".
+    // Treating it as the latter would make a send during that frame spawn the
+    // host default instead of the harness the user picked.
+    final h = _container(agents: const []);
+    h.container.read(starterPicksProvider.notifier).chooseAgent(_key, 'codex');
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: h.container,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: WorktreeStarter(
+              worktree: SelectedWorktree(
+                projectId: 'p1',
+                path: '/tmp/wt',
+                branch: 'feat',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _send(tester);
+    expect(h.store.agent, 'codex');
   });
 }
