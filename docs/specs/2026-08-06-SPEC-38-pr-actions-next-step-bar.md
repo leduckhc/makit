@@ -316,6 +316,13 @@ they started with before storing. A lookup already in flight when the mutation l
 - **Only the ending is `landed`.** The residue is `quiet`: painting `2 files uncommitted` purple said
   the uncommitted work had merged. The `N checks passed` line takes the check glyph in `kCheckPass`
   rather than a tone dot — it is the one row in the brief that reports the build.
+- **The snapshot is re-derived when a turn ends, and when a branch ref moves.** The bar asserts a
+  *count* and offers a button to clear it, and `uncommittedFiles`/`aheadCount` come from the repos
+  snapshot — which was recomputed only on connect, spawn, kill, pull-to-refresh and worktree
+  add/remove. None of those covers the case the feature exists for: an agent committing mid-turn. The
+  bar went on offering `Commit & push` for files it had already committed and pushed until the client
+  reconnected. Two triggers now cover it (D22), both coalesced, because `listRepos` is a full git pass
+  per worktree.
 - **A verdict with no checks says why.** `checkRollup != 'none'` with an empty `checks` list is a shed
   lookup (SPEC-32 drops the second call under quota), so the detail prints `kShedChecksNote` instead of
   an unexplained gap — which is also why the fact reads `CI failing` rather than a count.
@@ -501,3 +508,4 @@ is guarded; this residue is one commit on a branch whose pushed history `origin/
 | D19 | An unrecognised PR state says so | `open` is null for any state but `OPEN`, and the all-clear branch read that as "no pull request" — so a PR whose state this derivation does not know printed `#142 · ready for a PR`, a contradiction in four words. It now reports `PR state unknown` and offers nothing |
 | D20 | Residue belongs to a **secondary** worktree only | It is what a wrap-up or discard takes with it, and the primary checkout is never removed (the ending branch gives it no direct op at all). Its sessions are not going anywhere and its own branch cannot be "behind" itself, so `prStatusFor` gives it `const PrResidue()` |
 | D21 | `PrFactLabel` is the one `#142 · fact` fragment | The home-row chip and the session subtitle chip drew it separately and had drifted the same way — both toned the whole string and bolded all of it, so a merged worktree's number read purple and a failing one's red while the bar kept it in the surface ink. One widget in `pr_tone.dart` now owns the split (identity `onSurface` w600 · separator `outline` at 55% · fact in its tone); the bar keeps its richer version (inline dot, stale suffix, larger ramp) |
+| D22 | The repos snapshot is re-derived on **turn end** and on **`refs/heads` change** | The bar's count was only as fresh as the last connect. Turn end (`running` → anything, once per turn, trailing-throttled 1s) catches the agent's own commits — the reported failure. A watch on the *common* git dir's `refs/heads` catches a commit or branch move from any source, and because a branch ref lives in the common dir whichever worktree moved it, one watch covers every linked worktree. Deliberately **not** `index`/`index.lock`: git rewrites those throughout a turn, and each snapshot is a git pass per worktree. `HEAD` is watched too, for a checkout in the primary checkout |

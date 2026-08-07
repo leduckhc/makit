@@ -325,3 +325,53 @@ test("watchWorktrees does not fire for an existing directory that is not part of
     rmSync(wtBase, { recursive: true, force: true });
   }
 });
+
+test("watchWorktrees fires when a commit lands in the primary checkout", async () => {
+  // The snapshot carries `uncommittedFiles`/`aheadCount` per worktree, and the
+  // only other triggers are connect/spawn/kill/pull-to-refresh — so without this
+  // the composer's next-step bar kept asserting a file count that was true when
+  // the client connected, and offered `Commit & push` for files already
+  // committed and pushed.
+  const repo = makeRepo();
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(80);
+    writeFileSync(join(repo, "new.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: repo });
+    execFileSync("git", ["commit", "-q", "-m", "second"], { cwd: repo });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected onChange after a commit");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("watchWorktrees fires when a commit lands in a LINKED worktree", async () => {
+  // The branch ref lives in the *common* git dir whatever worktree moved it, so
+  // one watch on `refs/heads` covers every worktree of the repo — which is the
+  // case that matters, because agents work in linked worktrees.
+  const repo = makeRepo();
+  const wtBase = mkdtempSync(join(tmpdir(), "makit-wt-"));
+  const wt = join(wtBase, "feat");
+  execFileSync("git", ["worktree", "add", "-q", "-b", "feat", wt], { cwd: repo });
+
+  let fires = 0;
+  const watcher = watchWorktrees(() => fires++, { debounceMs: 20 });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    fires = 0; // ignore any settling from arming
+    writeFileSync(join(wt, "in-worktree.txt"), "x\n");
+    execFileSync("git", ["add", "."], { cwd: wt });
+    execFileSync("git", ["commit", "-q", "-m", "from the linked worktree"], { cwd: wt });
+    await waitFor(() => fires > 0);
+    assert.ok(fires > 0, "expected onChange after a commit in a linked worktree");
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(wtBase, { recursive: true, force: true });
+  }
+});

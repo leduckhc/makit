@@ -29,11 +29,16 @@ import { dirname, join, resolve } from "node:path";
  * worktree (regardless of the checkout's location), and the submodule's module
  * git dir for a submodule checkout.
  */
-function resolveGitPaths(repoPath: string): { gitDir: string; worktreesDir: string } {
+function resolveGitPaths(repoPath: string): {
+  gitDir: string;
+  worktreesDir: string;
+  headsDir: string;
+} {
   const unresolvedGitDir = join(repoPath, ".git");
   const unresolved = {
     gitDir: unresolvedGitDir,
     worktreesDir: join(unresolvedGitDir, "worktrees"),
+    headsDir: join(unresolvedGitDir, "refs", "heads"),
   };
 
   try {
@@ -61,7 +66,11 @@ function resolveGitPaths(repoPath: string): { gitDir: string; worktreesDir: stri
     }
 
     const gitDir = resolve(repoPath, commonDir);
-    return { gitDir, worktreesDir: join(gitDir, "worktrees") };
+    return {
+      gitDir,
+      worktreesDir: join(gitDir, "worktrees"),
+      headsDir: join(gitDir, "refs", "heads"),
+    };
   } catch {
     // Missing/non-repo paths and git lookup failures remain best-effort no-ops.
     return unresolved;
@@ -80,6 +89,8 @@ interface RepoWatch {
   git?: FSWatcher;
   /** Watch on `<repo>/.git/worktrees` — tracks worktree add/remove. */
   inner?: FSWatcher;
+  /** Watch on `<repo>/.git/refs/heads` — tracks commits and branch moves. */
+  heads?: FSWatcher;
 }
 
 /**
@@ -133,7 +144,7 @@ export function watchWorktrees(
   };
 
   const arm = (repoPath: string): RepoWatch => {
-    const { gitDir, worktreesDir } = resolveGitPaths(repoPath);
+    const { gitDir, worktreesDir, headsDir } = resolveGitPaths(repoPath);
     const rw: RepoWatch = {};
 
     const syncInner = (): void => {
@@ -157,15 +168,32 @@ export function watchWorktrees(
     rw.git = safeWatch(
       gitDir,
       (filename) => {
-        // Only the `worktrees` entry matters; ignore git's other churn
-        // (index.lock, HEAD, refs, …). A null filename (some platforms) is
-        // treated as "unknown" and re-evaluated.
-        if (filename !== null && filename !== "worktrees") return;
+        // `worktrees` re-arms the inner watch; `HEAD` moves when the primary
+        // checkout switches branch or detaches. Everything else here is git's own
+        // churn (`index`, `index.lock`, `COMMIT_EDITMSG`, …) and would rebuild the
+        // snapshot — a full git pass per worktree — many times per turn.
+        if (filename !== null && filename !== "worktrees" && filename !== "HEAD") {
+          return;
+        }
         syncInner();
         fire();
       },
       () => {
         rw.git = undefined;
+      },
+    );
+
+    // Commits are what the snapshot's `uncommittedFiles`/`aheadCount` react to,
+    // and a commit moves a branch ref. Those refs live in the **common** git dir
+    // whichever worktree moved them, so this one watch covers every worktree of
+    // the repo — including the linked ones agents actually work in. Without it the
+    // only triggers were connect/spawn/kill/pull-to-refresh, so the composer's bar
+    // kept asserting a file count from whenever the client last connected.
+    rw.heads = safeWatch(
+      headsDir,
+      () => fire(),
+      () => {
+        rw.heads = undefined;
       },
     );
 
@@ -176,6 +204,7 @@ export function watchWorktrees(
   const closeRepo = (rw: RepoWatch): void => {
     rw.git?.close();
     rw.inner?.close();
+    rw.heads?.close();
   };
 
   return {
