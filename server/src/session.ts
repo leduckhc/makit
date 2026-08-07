@@ -326,17 +326,39 @@ export class Session extends EventEmitter {
     this.store?.saveSession(this.toMeta());
   }
 
+  /**
+   * Swap in a new adapter, detaching the outgoing one first. Without the unbind
+   * the replaced adapter keeps feeding this session: its late events land in the
+   * transcript as ghost entries, and its `exit` clears the pending queue the
+   * INCOMING adapter is about to flush.
+   */
   replaceAdapter(adapter: AgentAdapter): void {
     this.unbindAdapter(this.adapter);
     this.adapter = adapter;
     this.bindAdapter(adapter);
   }
 
+  /**
+   * The listeners this session installed on its CURRENT adapter, kept so they
+   * can be removed individually on replacement. A blanket
+   * `removeAllListeners(kind)` would also cancel subscriptions the session does
+   * not own (a metrics collector, a probe, a test harness).
+   */
+  private bound?: {
+    event: (e: AdapterEvent) => void;
+    status: (s: string) => void;
+    exit: () => void;
+    title: (t: string) => void;
+  };
+
   private unbindAdapter(adapter: AgentAdapter): void {
-    adapter.removeAllListeners("event");
-    adapter.removeAllListeners("status");
-    adapter.removeAllListeners("exit");
-    adapter.removeAllListeners("title");
+    const bound = this.bound;
+    if (!bound) return;
+    adapter.off("event", bound.event);
+    adapter.off("status", bound.status);
+    adapter.off("exit", bound.exit);
+    adapter.off("title", bound.title);
+    this.bound = undefined;
   }
 
   /**
@@ -439,11 +461,11 @@ export class Session extends EventEmitter {
   }
 
   private bindAdapter(adapter: AgentAdapter): void {
-    adapter.on("event", (e) => {
+    const onEvent = (e: AdapterEvent) => {
       this.emit("event", this.record(e));
-    });
+    };
 
-    adapter.on("status", (s) => {
+    const onStatus = (s: string) => {
       const status = s === "running" ? "running" : "idle";
       // Don't pre-assign this.status here — record() owns the mutation + the
       // before/after comparison that decides whether to fan out metaChanged.
@@ -451,13 +473,19 @@ export class Session extends EventEmitter {
       // The agent is ready for a new turn: hand it the next queued message
       // (SPEC-35). One per transition — the next flush waits for the next idle.
       if (status === "idle" && this.queued.length > 0) void this.flushNext();
-    });
+    };
 
     // A dead agent will never flush the queue; drop it rather than leave chips
     // pinned in the composer forever (SPEC-35).
-    adapter.on("exit", () => this.clearQueue());
+    const onExit = () => this.clearQueue();
 
-    adapter.on("title", (title) => this.setTitle(title));
+    const onTitle = (title: string) => this.setTitle(title);
+
+    this.bound = { event: onEvent, status: onStatus, exit: onExit, title: onTitle };
+    adapter.on("event", onEvent);
+    adapter.on("status", onStatus);
+    adapter.on("exit", onExit);
+    adapter.on("title", onTitle);
   }
 
   /** Live lifecycle state (SPEC-17 P4). Read-only view for typed transitions. */

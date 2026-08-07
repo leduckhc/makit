@@ -591,3 +591,28 @@ test("agentPid returns the adapter's pid when the adapter exposes one", () => {
   const session = new Session({ projectId: "p", agent: "pi", adapter });
   assert.equal(session.agentPid, 4242);
 });
+
+test("replaceAdapter unbinds only the session's own listeners, not a third party's", () => {
+  const outgoing = fakeAdapter();
+  const session = new Session({ projectId: "p", agent: "pi", adapter: outgoing });
+
+  // Somebody else is also watching this adapter — e.g. a metrics collector, a
+  // test harness, or a probe. Replacing the session's adapter must not silently
+  // cancel their subscription.
+  const foreignExits: unknown[] = [];
+  const foreignEvents: unknown[] = [];
+  outgoing.on("exit", (code) => foreignExits.push(code));
+  outgoing.on("event", (e) => foreignEvents.push(e));
+
+  session.replaceAdapter(fakeAdapter());
+
+  const before = session.events.length;
+  outgoing.emit("event", { ts: Date.now(), kind: "user.message", payload: { text: "ghost" } });
+  outgoing.emit("exit", 0);
+
+  // The session must be deaf to its old adapter...
+  assert.equal(session.events.length, before, "no ghost event reached the session");
+  // ...while the third party keeps hearing it.
+  assert.deepEqual(foreignExits, [0], "a foreign exit listener survived the swap");
+  assert.equal(foreignEvents.length, 1, "a foreign event listener survived the swap");
+});
