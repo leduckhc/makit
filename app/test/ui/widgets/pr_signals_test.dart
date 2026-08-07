@@ -888,6 +888,21 @@ void main() {
         PrDot.pass,
         reason: 'green and up to date — a green rollup with no counted checks',
       );
+      final counted = _status(
+        pr: _pr(
+          rollup: 'pass',
+          checks: const [
+            PrCheck(name: 'a', bucket: 'pass'),
+            PrCheck(name: 'b', bucket: 'pass'),
+          ],
+        ),
+      );
+      expect(counted.loud.label, '2 checks passed');
+      expect(
+        counted.dot,
+        PrDot.pass,
+        reason: 'an OPEN PR, so `landed` never enters into it',
+      );
       expect(
         _status(
           pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),

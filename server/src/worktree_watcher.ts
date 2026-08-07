@@ -90,6 +90,12 @@ export interface WorktreeWatcher {
   sync(repoPaths: string[]): void;
   /** Stop and drop all watchers. */
   close(): void;
+  /**
+   * Live watcher count. The per-directory fallback re-walks its tree on every
+   * event to pick up a new branch namespace, so this is the seam that holds that
+   * re-walk to *adding* watchers rather than duplicating them.
+   */
+  watcherCount(): number;
 }
 
 interface RepoWatch {
@@ -98,15 +104,20 @@ interface RepoWatch {
   /** Watch on `<repo>/.git/worktrees` — tracks worktree add/remove. */
   inner?: FSWatcher;
   /**
-   * Watches on `<repo>/.git/refs/heads` — tracks commits and branch moves.
+   * Watches on `<repo>/.git/refs/heads`, keyed by the directory each one covers —
+   * normally just the one recursive watch on `heads` itself.
    *
-   * Normally one recursive watch. Git stores `feature/foo` as a file in a *nested*
-   * directory, and `fs.watch` without `recursive: true` reports nothing for nested
-   * children on Linux or macOS — so a flat watch misses every slashed branch,
-   * which is most of them. When the platform refuses a recursive watch this holds
-   * one watcher per directory instead.
+   * Git stores `feature/foo` as a file in a *nested* directory, and `fs.watch`
+   * without `recursive: true` reports nothing for nested children on Linux or
+   * macOS — so a flat watch misses every slashed branch, which is most of them.
+   * When the platform refuses a recursive watch this holds one watcher per
+   * directory instead.
+   *
+   * Keyed rather than listed because that fallback re-walks the tree on every
+   * event (a new namespace needs its own watcher): appending, it duplicated every
+   * directory it had already covered, and each duplicate re-walked in turn.
    */
-  heads: FSWatcher[];
+  heads: Map<string, FSWatcher>;
 }
 
 /**
@@ -172,20 +183,28 @@ export function watchWorktrees(
    * Bounded by the shape of the data: branch namespaces are a handful of shallow
    * directories, not a source tree.
    */
-  const watchTree = (dir: string, out: FSWatcher[], onEvent: () => void): void => {
-    const w = safeWatch(
-      dir,
-      () => {
-        // A new namespace directory may have just appeared (`git branch a/b/c`),
-        // so re-arm before reporting.
-        watchTree(dir, out, onEvent);
-        onEvent();
-      },
-      () => {
-        /* dir vanished; the parent's watch re-arms */
-      },
-    );
-    if (w) out.push(w);
+  const watchTree = (
+    dir: string,
+    out: Map<string, FSWatcher>,
+    onEvent: () => void,
+  ): void => {
+    if (!out.has(dir)) {
+      const w = safeWatch(
+        dir,
+        () => {
+          // A new namespace directory may have just appeared (`git branch a/b/c`),
+          // so re-arm before reporting. Directories already covered are skipped,
+          // which is what keeps a re-walk from doubling the set.
+          watchTree(dir, out, onEvent);
+          onEvent();
+        },
+        () => {
+          // Gone: forget it, so a later walk re-attaches if it comes back.
+          out.delete(dir);
+        },
+      );
+      if (w) out.set(dir, w);
+    }
     let entries: Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
@@ -199,7 +218,7 @@ export function watchWorktrees(
 
   const arm = (repoPath: string): RepoWatch => {
     const { gitDir, worktreesDir, headsDir } = resolveGitPaths(repoPath);
-    const rw: RepoWatch = { heads: [] };
+    const rw: RepoWatch = { heads: new Map() };
 
     const syncInner = (): void => {
       if (existsSync(worktreesDir)) {
@@ -251,7 +270,7 @@ export function watchWorktrees(
     const recursive = allowRecursive
       ? safeWatch(headsDir, () => fire(), () => {}, { recursive: true })
       : undefined;
-    if (recursive) rw.heads.push(recursive);
+    if (recursive) rw.heads.set(headsDir, recursive);
     else watchTree(headsDir, rw.heads, fire);
 
     syncInner();
@@ -261,8 +280,8 @@ export function watchWorktrees(
   const closeRepo = (rw: RepoWatch): void => {
     rw.git?.close();
     rw.inner?.close();
-    for (const w of rw.heads) w.close();
-    rw.heads.length = 0;
+    for (const w of rw.heads.values()) w.close();
+    rw.heads.clear();
   };
 
   return {
@@ -283,6 +302,13 @@ export function watchWorktrees(
       timer = undefined;
       for (const rw of repos.values()) closeRepo(rw);
       repos.clear();
+    },
+    watcherCount(): number {
+      let n = 0;
+      for (const rw of repos.values()) {
+        n += (rw.git ? 1 : 0) + (rw.inner ? 1 : 0) + rw.heads.size;
+      }
+      return n;
     },
   };
 }

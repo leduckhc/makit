@@ -424,3 +424,46 @@ test("the per-directory fallback also fires for a nested ref", async () => {
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("the fallback's re-walk adds watchers, it does not duplicate them", async () => {
+  // The walk re-runs on every event so a brand-new namespace directory
+  // (`git branch a/b/c`) gets its own watcher. Re-running it pushed a second
+  // watcher for every directory it had already covered — and each of those then
+  // re-walked on the next event, so the set grew with every commit and each event
+  // was handled as many times over.
+  const repo = makeRepo();
+  execFileSync("git", ["checkout", "-q", "-b", "release/1.x"], { cwd: repo });
+
+  const watcher = watchWorktrees(() => {}, { debounceMs: 10, recursive: false });
+  watcher.sync([repo]);
+  try {
+    await delay(120);
+    const armed = watcher.watcherCount();
+    assert.ok(armed > 0, "expected the walk to have armed something");
+
+    for (const name of ["one", "two", "three"]) {
+      writeFileSync(join(repo, `${name}.txt`), "x\n");
+      execFileSync("git", ["add", "."], { cwd: repo });
+      execFileSync("git", ["commit", "-q", "-m", name], { cwd: repo });
+      await delay(120);
+    }
+    assert.equal(
+      watcher.watcherCount(),
+      armed,
+      "three commits on the same tree must not add a watcher",
+    );
+
+    // A new namespace *is* new ground: exactly one directory appears, so exactly
+    // one watcher does.
+    execFileSync("git", ["branch", "hotfix/urgent"], { cwd: repo });
+    await delay(150);
+    assert.equal(
+      watcher.watcherCount(),
+      armed + 1,
+      "a new branch namespace gets its own watcher",
+    );
+  } finally {
+    watcher.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
