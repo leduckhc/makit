@@ -258,8 +258,43 @@ export class AcpAdapter extends SubprocessAdapter {
       this.captureConfigOptions(res.configOptions);
     }
     this.agentSessionId = this.acpSessionId;
+    // A requested model must be applied BEFORE we report idle, so the first turn
+    // already runs on it. The ACP config-option surface is the only channel that
+    // works here: pi sits behind the `pi-acp` bridge, whose argv is fixed, so it
+    // forwards neither `--model` nor `-e` (see SpawnOpts.model).
+    if (opts.model) await this.applyRequestedModel(opts.model);
+    if (opts.extensions?.length) {
+      log.warn(
+        `[makit] AcpAdapter: ${this.agent} cannot load per-session extensions ` +
+          `(the ACP bridge's argv is fixed) — ignoring ${opts.extensions.length}`,
+      );
+    }
     this.emit("status", "idle");
     this.emitMeta();
+  }
+
+  /**
+   * Select {@link SpawnOpts.model} on the agent via the SPEC-26 config-option
+   * surface. Deliberately best-effort: an agent that does not offer the model is
+   * left on its own default (with a loud warning) rather than being sent a value
+   * it would reject — a session that starts on the wrong model is still usable,
+   * one that fails to start is not.
+   */
+  private async applyRequestedModel(model: string): Promise<void> {
+    const option = this.configOptions?.find((o) => o.id === "model");
+    const offered =
+      option?.options?.map((o) => o.value) ??
+      option?.groups?.flatMap((g) => g.options.map((o) => o.value)) ??
+      [];
+    if (!option || !offered.includes(model)) {
+      log.warn(
+        `[makit] AcpAdapter: ${this.agent} does not offer model "${model}" — ` +
+          `staying on ${option?.currentValue ?? "its default"}`,
+      );
+      return;
+    }
+    if (option.currentValue === model) return;
+    await this.setConfigOption({ id: "model", value: model });
   }
 
   async send(input: UserInput): Promise<void> {

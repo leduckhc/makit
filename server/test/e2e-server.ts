@@ -12,6 +12,35 @@ import { DeviceRegistry, type PairedDevice } from "../src/pairing/registry.js";
 import { StubAdapter } from "../src/adapters/stub.js";
 import { startFakeModelServer, type FakeModelHandle } from "./fake-model/server.js";
 import type { UIResponse } from "../src/uicall.js";
+import type { SessionConfigOption } from "../src/protocol.js";
+
+/**
+ * Real mode advertises that pi's LLM is swapped for the local fake-model server,
+ * i.e. deterministic and keyless. That swap currently CANNOT take effect: pi runs
+ * behind `pi-acp`, which spawns pi with a fixed argv and forwards no `-e`, so the
+ * fake provider extension never loads and `makit-fake/fake-1` is never offered.
+ * The old silent fallback was the operator's own configured model — real,
+ * billable calls from a loop documented as keyless. Fail closed instead.
+ */
+function assertFakeModelInEffect(manager: SessionManager): void {
+  const session = manager.allSessions()[0];
+  const meta = [...(session?.events ?? [])].reverse().find((e) => e.kind === "session.meta");
+  const options = (meta?.payload as { configOptions?: SessionConfigOption[] } | undefined)
+    ?.configOptions;
+  const current = options?.find((o) => o.id === "model")?.currentValue;
+  if (current === FAKE_MODEL) return;
+  const msg =
+    `[makit] --mode real: the fake model is NOT in effect (model=${current ?? "unknown"}).\n` +
+    `        pi-acp spawns pi with a fixed argv, so the fake provider extension never\n` +
+    `        loads — turns will bill that provider for real.\n` +
+    `        Re-run with MAKIT_E2E_ALLOW_REAL_MODEL=1 to accept that cost.`;
+  if (process.env.MAKIT_E2E_ALLOW_REAL_MODEL === "1") {
+    console.warn(msg);
+    return;
+  }
+  console.error(msg);
+  process.exit(1);
+}
 
 /** Absolute path to the fake-model provider extension pi loads via `-e`. */
 const FAKE_PROVIDER_EXT = fileURLToPath(
@@ -119,9 +148,10 @@ async function main(): Promise<void> {
     return env as unknown as UIResponse;
   };
 
-  // In real mode we run the genuine `pi` binary but swap its LLM for a local
-  // deterministic fake-model server. pi reaches it via the makit-fake provider
-  // registered by FAKE_PROVIDER_EXT, which reads MAKIT_FAKE_MODEL_URL.
+  // In real mode we run the genuine `pi` binary and ASK for the local
+  // deterministic fake-model server. Whether pi actually honours that is
+  // verified after the first session starts (see assertFakeModelInEffect) —
+  // it cannot be assumed, and getting it wrong costs real money.
   let fakeModel: FakeModelHandle | undefined;
   if (args.mode === "real") {
     fakeModel = await startFakeModelServer();
@@ -171,6 +201,7 @@ async function main(): Promise<void> {
   });
 
   await manager.ensureDefaultSessions();
+  if (args.mode === "real") assertFakeModelInEffect(manager);
 
   const printReady = () => {
     console.log(JSON.stringify({
