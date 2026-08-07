@@ -2167,6 +2167,10 @@ test("ensureLive leaves history-only, archived, draft and unknown sessions alone
     await mgr.ensureLive("sess-archived");
     // A draft also holds a DetachedAdapter; it must promote, never re-attach.
     const draft = await mgr.spawnPendingSession(mgr.listProjects()[0].id);
+    // Give the draft a resume handle so `pending` is the ONLY thing that can
+    // stop it: without this the case passes even with the pending guard removed,
+    // because a draft has no handle and `resumable` would have rejected it.
+    draft.agentSessionId = "pi-draft";
     await mgr.ensureLive(draft.id);
     // An unknown id must not throw — `sub` answers no-such-session itself.
     await mgr.ensureLive("does-not-exist");

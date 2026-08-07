@@ -9,6 +9,7 @@
  *   pnpm exec tsx test/probe-acp-resume.ts
  */
 
+import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,14 +19,16 @@ import { AcpAdapter } from "../src/adapters/acp.js";
 import { startBridge } from "../src/bridge.js";
 import { piAcpSpec } from "../src/agent_factory.js";
 import { startFakeModelServer } from "./fake-model/server.js";
+import { guardAgainstRealBilling, currentModelFromEvents } from "./fake-model/billing-guard.js";
 
 const FAKE_PROVIDER_EXT = fileURLToPath(
   new URL("./fake-model/provider-extension.ts", import.meta.url),
 );
 const FAKE_MODEL = "makit-fake/fake-1";
 
-function makeAdapter(tag: string) {
+function makeAdapter(tag: string, events: { kind: string; payload?: unknown }[]) {
   const a = new AcpAdapter({ spec: piAcpSpec() });
+  a.on("event", (e: { kind: string; payload?: unknown }) => events.push(e));
   a.on("event", (e: { kind: string; payload?: unknown }) => {
     if (e.kind === "session.error" || e.kind === "agent.message") {
       console.log(`  [${tag}] ${e.kind}: ${JSON.stringify(e.payload).slice(0, 160)}`);
@@ -77,9 +80,11 @@ async function main() {
 
   try {
     // ---- run 1: fresh session -------------------------------------------
-    const a1 = makeAdapter("fresh");
+    const e1: { kind: string; payload?: unknown }[] = [];
+    const a1 = makeAdapter("fresh", e1);
     await a1.start({ ...startOpts, sessionId: "probe-1" });
     console.log("fresh: capabilities =", JSON.stringify(a1.capabilities));
+    guardAgainstRealBilling("probe-acp-resume (fresh)", currentModelFromEvents(e1));
     const p1 = firstReply(a1);
     await a1.send({ text: "hello one" });
     console.log("fresh: reply =", JSON.stringify(await p1));
@@ -88,10 +93,16 @@ async function main() {
     await a1.kill();
 
     // ---- run 2: resume by native id -------------------------------------
-    const a2 = makeAdapter("resumed");
+    const e2: { kind: string; payload?: unknown }[] = [];
+    const a2 = makeAdapter("resumed", e2);
     await a2.start({ ...startOpts, sessionId: "probe-1", resumeAgentSessionId: nativeId });
     console.log("resumed: capabilities =", JSON.stringify(a2.capabilities));
     console.log("resumed: agentSessionId =", a2.agentSessionId);
+    // The point of the probe: assert identity, don't just print it. Without this
+    // it prints PROBE PASS even when the agent quietly started a fresh session.
+    assert.ok(nativeId, "the fresh session reported a native id to resume by");
+    assert.equal(a2.agentSessionId, nativeId, "the resumed adapter kept the same native session id");
+    guardAgainstRealBilling("probe-acp-resume (resumed)", currentModelFromEvents(e2));
     // PROBE_DELAY_MS: idle gap between a successful resume and the first prompt.
     // A real user opens the session (which re-attaches) and types seconds later.
     const gap = Number(process.env.PROBE_DELAY_MS ?? 0);

@@ -71,8 +71,11 @@ export interface SpawnOpts {
    */
   resumeAgentSessionId?: string;
   /**
-   * Force a specific model. When unset the agent keeps its own configured
-   * default.
+   * REQUEST a specific model — best-effort, not a guarantee. When unset the
+   * agent keeps its own configured default; when the agent does not offer the
+   * requested id it ALSO keeps its default (with a warning) rather than failing
+   * to start. Callers that must not run on an unintended provider have to verify
+   * the model after start (see test/fake-model/billing-guard.ts).
    *
    * Delivered per back end, NOT as a CLI flag: codex passes it on
    * `turn/start.model`; the ACP path applies it over the SPEC-26 config-option

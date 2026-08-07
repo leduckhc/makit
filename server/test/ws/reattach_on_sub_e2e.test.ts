@@ -169,6 +169,9 @@ test("`sub` re-attaches a cold session after a server restart", async () => {
       await waitOpen(c.ws);
       const cold = await waitFor(c, isSessionsSnapshot);
       assert.equal(sessionsOf(cold)[0]!.status, "exited", "client first sees it cold");
+      // Highest seq that already existed BEFORE the restart, so live events can
+      // be told apart from replayed ones.
+      const coldMax = manager.getSession(sessionId)!.events.at(-1)?.seq ?? 0;
 
       // The app re-issues exactly this on reconnect — no send, no attach cmd.
       c.ws.send(JSON.stringify({ v: 1, t: "sub", id: "s1", sessionId }));
@@ -182,7 +185,21 @@ test("`sub` re-attaches a cold session after a server restart", async () => {
 
       // Ordering: the re-attach is fired AFTER the replay, so the transcript
       // reaches the client before the resumed agent's first live events.
-      assertInOrder(arrivalSeqs(c, sessionId), "replayed history precedes live events");
+      //
+      // Wait for an event NEWER than the pre-restart max first: without that the
+      // arrival list can hold replay only, and a replay-only list is trivially
+      // sorted, so the assertion would pass while proving nothing about ordering.
+      await waitFor(
+        c,
+        (m) => {
+          if (m.t !== "event" || m.kind !== "session.event") return false;
+          const e = m.event as { sessionId?: string; seq?: number };
+          return e.sessionId === sessionId && (e.seq ?? 0) > coldMax;
+        },
+      );
+      const seqs = arrivalSeqs(c, sessionId);
+      assert.ok(seqs.some((q) => q > coldMax), "a post-restart live event arrived");
+      assertInOrder(seqs, "replayed history precedes live events");
     } finally {
       c.ws.close();
       srv.wss.close();

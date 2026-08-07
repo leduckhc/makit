@@ -14,11 +14,14 @@
  *   2. a plain `sub` brings it back live — no client-side attach command;
  *   3. pi honours the resume: its native session id is UNCHANGED, i.e. the
  *      adapter resumed rather than silently starting a fresh agent;
- *   4. the resumed agent still has the pre-restart context — asserted from the
- *      messages pi sends to the model, not from a reply we scripted.
+ *   4. the resumed session takes a NEW turn (new reply, no new error), scoped by
+ *      `seq` so a replayed pre-restart event cannot be mistaken for proof.
  *
- * The LLM is the local deterministic fake-model server (no API key), fronted by
- * a recording proxy so (4) is observable.
+ * It ASKS for the local fake-model server, but that swap does not currently take
+ * effect for pi (pi-acp forwards no `-e`, so the fake provider never loads), so
+ * prompting here bills the configured provider. The billing guard refuses to run
+ * unless MAKIT_E2E_ALLOW_REAL_MODEL=1. Context retention is therefore reported,
+ * not asserted.
  */
 
 import assert from "node:assert/strict";
@@ -37,6 +40,7 @@ import { loadOrCreateCert } from "../src/pairing/cert.js";
 import { DeviceRegistry } from "../src/pairing/registry.js";
 import { SqliteEventStore } from "../src/storage/sqlite_event_store.js";
 import { startFakeModelServer } from "./fake-model/server.js";
+import { guardAgainstRealBilling, currentModelFromEvents } from "./fake-model/billing-guard.js";
 
 const FAKE_PROVIDER_EXT = fileURLToPath(
   new URL("./fake-model/provider-extension.ts", import.meta.url),
@@ -199,6 +203,9 @@ async function main() {
     await first.manager.ensureDefaultSessions();
     const session = first.manager.allSessions()[0]!;
     const sessionId = session.id;
+
+    // Before the FIRST prompt: refuse to bill a real provider by accident.
+    guardAgainstRealBilling("e2e-reattach-real", currentModelFromEvents(session.events));
 
     const c1 = await connect(first.port);
     c1.ws.send(JSON.stringify({ v: 1, t: "sub", id: "s1", sessionId }));

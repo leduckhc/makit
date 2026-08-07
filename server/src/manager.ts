@@ -148,6 +148,15 @@ export interface BridgeBinding {
   askUser?: AskUser;
 }
 
+/**
+ * A message for a caught value that may not be an Error. `(e as Error).message`
+ * throws on `null`/`undefined`, which inside a catch block turns a handled
+ * failure back into an unhandled one.
+ */
+function reason(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
 interface ProjectEntry {
   dto: ProjectDTO;
 }
@@ -1314,6 +1323,17 @@ export class SessionManager extends EventEmitter {
    * read-only, and a send falls through to the cold-session `session.error`.
    */
   async ensureLive(sessionId: string): Promise<void> {
+    // Join an in-flight re-attach BEFORE the cold check. `doReattachSession`
+    // installs the new adapter before `start()` resolves, so a racing caller
+    // would otherwise see a non-detached adapter and run ahead of the resume —
+    // handing `send.message` a prompt for an adapter that has not finished
+    // initialising (ACP rejects that with "send before start"). The failure, if
+    // any, belongs to the caller that started the re-attach.
+    const inFlight = this.reattachInFlight.get(sessionId);
+    if (inFlight) {
+      await inFlight.catch(() => {});
+      return;
+    }
     const session = this.sessions.get(sessionId);
     // Only a cold session needs this. `DetachedAdapter` is the honest signal: a
     // live agent that merely exited keeps its real adapter, and status alone
@@ -1329,7 +1349,7 @@ export class SessionManager extends EventEmitter {
     try {
       await this.reattachSession(sessionId);
     } catch (e) {
-      log.warn(`[makit] ensureLive(${sessionId.slice(0, 8)}): re-attach failed: ${(e as Error).message}`);
+      log.warn(`[makit] ensureLive(${sessionId.slice(0, 8)}): re-attach failed: ${reason(e)}`);
     }
   }
 
@@ -1374,7 +1394,7 @@ export class SessionManager extends EventEmitter {
       await outgoing.kill();
     } catch (e) {
       log.warn(
-        `[makit] reattachSession(${sessionId.slice(0, 8)}): stopping the outgoing agent failed: ${(e as Error).message}`,
+        `[makit] reattachSession(${sessionId.slice(0, 8)}): stopping the outgoing agent failed: ${reason(e)}`,
       );
     }
     try {
@@ -1384,7 +1404,21 @@ export class SessionManager extends EventEmitter {
       // place would make the session look live while silently swallowing input,
       // and would wedge it forever: `ensureLive` only acts on a DetachedAdapter,
       // so no later subscribe or message would ever retry the resume.
+      const failed = session.adapter;
       session.replaceAdapter(new DetachedAdapter(session.agent));
+      // A half-started agent (ACP spawned + handshook, then model config failed)
+      // leaves a live child behind; unbound by replaceAdapter, it would never be
+      // reaped.
+      try {
+        await failed.kill();
+      } catch (killErr) {
+        log.warn(
+          `[makit] reattachSession(${sessionId.slice(0, 8)}): stopping the half-started agent failed: ${reason(killErr)}`,
+        );
+      }
+      // That agent may already have reported `idle`. The session is not live, so
+      // it must not keep advertising a status its own transcript contradicts.
+      if (session.status !== "exited") session.recordStatus("exited");
       throw e;
     }
     // The resumed adapter may report a new native id (e.g. an ACP agent that

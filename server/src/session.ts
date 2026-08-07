@@ -406,6 +406,16 @@ export class Session extends EventEmitter {
   }
 
   /**
+   * Record and emit a `session.status` through the normal event pipeline, so it
+   * gets a real monotonic seq and is persisted. Used when the manager knows the
+   * session's liveness changed without the adapter saying so — e.g. a resume that
+   * reported `idle` and then failed to start.
+   */
+  recordStatus(status: SessionStatus): void {
+    this.emit("event", this.record({ ts: Date.now(), kind: "session.status", payload: { status } }));
+  }
+
+  /**
    * Record and emit a `session.usage` snapshot (SPEC-37). Used by the loopback
    * bridge's `POST /usage` for pi, which reports no usage over ACP; the codex and
    * ACP paths arrive as ordinary adapter events instead. Latest-wins in the app,
