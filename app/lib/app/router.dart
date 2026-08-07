@@ -8,6 +8,7 @@ import '../pairing/onboarding_screen.dart';
 import '../pairing/readiness.dart';
 import '../ui/home/archived_screen.dart';
 import '../ui/home/home_screen.dart';
+import '../ui/ports/ports_screen.dart';
 import '../ui/session/session_screen.dart';
 import '../ui/settings/settings_screen.dart';
 import 'routes.dart';
@@ -58,6 +59,11 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: 'archived',
                 builder: (_, _) => const ArchivedScreen(),
+              ),
+              GoRoute(
+                path: 'ports',
+                builder: (_, s) =>
+                    PortsScreen(repoId: s.uri.queryParameters['repo']),
               ),
               GoRoute(
                 path: 'diagnostics',

@@ -444,10 +444,7 @@ class _PortRow extends StatelessWidget {
           Tooltip(
             message: commandSentence,
             child: Text(
-              [
-                commandSentence,
-                if (uptime.isNotEmpty) uptime,
-              ].join(' · '),
+              [commandSentence, if (uptime.isNotEmpty) uptime].join(' · '),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(

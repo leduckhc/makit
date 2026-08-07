@@ -10,22 +10,18 @@ PortInfo _port({
   String? openUrl = 'http://127.0.0.1:5173',
   String? command,
 }) => PortInfo(
-      key: '100:127.0.0.1:$port',
-      port: port,
-      address: '127.0.0.1',
-      reach: PortReach.loopback,
-      pid: 48211,
-      command: command ?? 'node vite --port $port',
-      startedAt: 1000,
-      worktreePath: '/wt',
-      sessionId: 's1',
-      health: const PortHealth(
-        kind: PortHealthKind.ok,
-        status: 200,
-        probedAt: 0,
-      ),
-      openUrl: openUrl,
-    );
+  key: '100:127.0.0.1:$port',
+  port: port,
+  address: '127.0.0.1',
+  reach: PortReach.loopback,
+  pid: 48211,
+  command: command ?? 'node vite --port $port',
+  startedAt: 1000,
+  worktreePath: '/wt',
+  sessionId: 's1',
+  health: const PortHealth(kind: PortHealthKind.ok, status: 200, probedAt: 0),
+  openUrl: openUrl,
+);
 
 Widget _host(Widget child) => MaterialApp(
   home: Scaffold(body: Center(child: child)),
@@ -202,10 +198,7 @@ void main() {
       await tester.pumpWidget(_host(_popover(ports: [_port(command: long)])));
       await tester.tap(find.byType(PortsPopover));
       await tester.pump();
-      expect(
-        find.byTooltip('pid 48211 · $long'),
-        findsNWidgets(2),
-      );
+      expect(find.byTooltip('pid 48211 · $long'), findsNWidgets(2));
     });
   });
 

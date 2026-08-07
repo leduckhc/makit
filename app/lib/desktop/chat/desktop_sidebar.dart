@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:phosphoricons_flutter/phosphoricons_flutter.dart';
 
+import '../../app/routes.dart';
 import '../../app/theme.dart';
 import '../../store/connection.dart';
 import '../../store/models.dart';
@@ -9,6 +11,7 @@ import '../../store/ports.dart';
 import '../../store/store.dart';
 import '../../ui/home/repo_chips.dart';
 import '../../ui/ports/ports_popover.dart';
+import '../../ui/ports/session_ports_glyph.dart';
 import '../../ui/widgets/pr_state_style.dart';
 import '../../ui/project/folder_browser.dart';
 import '../../ui/widgets/connection_chip.dart';
@@ -621,6 +624,14 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
                                       _renameBranch();
                                     case 'delete':
                                       _deleteWorktree();
+                                    case 'ports':
+                                      // D8: explicit navigation to the global
+                                      // Ports screen pre-filtered to this repo —
+                                      // never a lift of the popover's private
+                                      // open/pinned controller.
+                                      context.go(
+                                        '$kRoutePorts?repo=${repo.id}',
+                                      );
                                   }
                                 },
                               )
@@ -782,7 +793,7 @@ class _WorktreeGroupState extends ConsumerState<_WorktreeGroup> {
 /// owns the dialogs and store calls with a context/ref that outlives the menu.
 /// "Rename branch" and "Delete worktree" are disabled for the primary worktree;
 /// "Rename branch" is also disabled for detached worktrees and open PRs.
-class _WorktreeMenuButton extends StatelessWidget {
+class _WorktreeMenuButton extends ConsumerWidget {
   const _WorktreeMenuButton({
     required this.worktree,
     required this.onMenuOpened,
@@ -796,10 +807,13 @@ class _WorktreeMenuButton extends StatelessWidget {
   bool get _hasOpenPr => worktree.pr?.state.toUpperCase() == 'OPEN';
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isPrimary = worktree.isPrimary;
     final isDetached = worktree.branch == null;
     final canRename = !_hasOpenPr && !isPrimary && !isDetached;
+    // The count is a glance at what this branch is serving; the item routes to
+    // the global Ports screen either way (D8), so it shows even at zero.
+    final portCount = ref.watch(portsForWorktreeProvider(worktree.path)).length;
     return _CompactMenuButton(
       tooltip: 'Worktree actions',
       icon: PhosphorIconsRegular.dotsThree,
@@ -849,6 +863,15 @@ class _WorktreeMenuButton extends StatelessWidget {
                     : Theme.of(context).colorScheme.error,
               ),
             ),
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'ports',
+          height: 36,
+          child: Text(
+            'Ports ($portCount)…',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
         ),
       ],
@@ -1069,6 +1092,9 @@ class _SessionTileState extends ConsumerState<_SessionTile> {
                 style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
               ),
             ),
+            // The session's own ports glyph (D14): quiet, renders only when a
+            // listener is attributed to this session.
+            SessionPortsGlyph(sessionId: session.id),
           ],
         ),
         trailing: trailing,
