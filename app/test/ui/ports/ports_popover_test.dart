@@ -232,6 +232,45 @@ void main() {
       expect(panel.bottom, lessThanOrEqualTo(600));
       expect(panel.top, greaterThanOrEqualTo(0));
     });
+
+    testWidgets('at the height cap, only the rows scroll', (tester) async {
+      // The cap exists so a worktree with a dozen listeners scrolls instead of
+      // running off the window edge. Scrolling the WHOLE column would take the
+      // branch name and the hint with it — and the hint is the only place the
+      // pin and Esc are documented, so losing it strands a hover-opened panel.
+      await pumpAt(
+        tester,
+        at: const Offset(240, 20),
+        window: const Size(1400, 360),
+        ports: [for (var i = 0; i < 24; i++) _port(port: 5173 + i)],
+      );
+
+      final scroller = find.descendant(
+        of: find.byKey(kPortsPopover),
+        matching: find.byType(Scrollable),
+      );
+      final header = find.text('feat/open-ports');
+      final hint = find.byKey(kPortsPopoverHint);
+
+      final headerBefore = tester.getRect(header);
+      final hintBefore = tester.getRect(hint);
+      final offsetBefore = tester
+          .state<ScrollableState>(scroller)
+          .position
+          .pixels;
+
+      await tester.drag(scroller, const Offset(0, -140));
+      await tester.pumpAndSettle();
+
+      // The rows really did move, so the assertions below are not vacuous.
+      expect(
+        tester.state<ScrollableState>(scroller).position.pixels,
+        greaterThan(offsetBefore),
+        reason: 'the row list did not scroll, so this proves nothing',
+      );
+      expect(tester.getRect(header), headerBefore);
+      expect(tester.getRect(hint), hintBefore);
+    });
   });
 
   group('PortsPopover hover mechanics', () {
