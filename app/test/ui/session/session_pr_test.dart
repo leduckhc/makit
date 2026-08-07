@@ -509,6 +509,24 @@ void main() {
       );
     });
 
+    testWidgets('the disclosure caret reports its own state', (tester) async {
+      // A custom `trailing` replaces the one ExpansionTile would have rotated, so
+      // without an explicit rotation the open row and the closed row look
+      // identical and the control says nothing about itself.
+      await _pumpSheet(
+        tester,
+        pr: _pr(rollup: 'fail', unresolved: 3, checks: [_check('a', 'fail')]),
+        ahead: 1,
+        expandDetail: false,
+      );
+      double turns() =>
+          tester.widget<AnimatedRotation>(find.byType(AnimatedRotation)).turns;
+      expect(turns(), 0, reason: 'closed');
+      await tester.tap(find.text('Detail'));
+      await tester.pumpAndSettle();
+      expect(turns(), 0.5, reason: 'open');
+    });
+
     testWidgets('the closed disclosure peeks at the build behind it', (
       tester,
     ) async {

@@ -431,7 +431,7 @@ class _PinnedCta extends StatelessWidget {
 /// that the sheet opens on the decision, which a list of facts and twelve check
 /// rows above the fold undoes. The dialog has no pinned CTA, so it keeps showing
 /// everything.
-class _DetailDisclosure extends StatelessWidget {
+class _DetailDisclosure extends StatefulWidget {
   const _DetailDisclosure({
     required this.children,
     this.summary,
@@ -449,8 +449,20 @@ class _DetailDisclosure extends StatelessWidget {
   final PrTone? summaryTone;
 
   @override
+  State<_DetailDisclosure> createState() => _DetailDisclosureState();
+}
+
+class _DetailDisclosureState extends State<_DetailDisclosure> {
+  /// Tracked because a custom `trailing` replaces the one `ExpansionTile` would
+  /// have rotated for us — so without this the open row and the closed row look
+  /// identical and the control reports nothing about its own state.
+  bool _open = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final summary = widget.summary;
+    final tone = widget.summaryTone;
     return Theme(
       // The tile's own dividers would draw a second hairline against the groups'
       // labels; the rows below supply their own separation.
@@ -460,6 +472,7 @@ class _DetailDisclosure extends StatelessWidget {
         childrenPadding: EdgeInsets.zero,
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         expandedAlignment: Alignment.centerLeft,
+        onExpansionChanged: (open) => setState(() => _open = open),
         leading: Icon(
           PhosphorIconsLight.listDashes,
           size: 16,
@@ -476,18 +489,26 @@ class _DetailDisclosure extends StatelessWidget {
           children: [
             if (summary != null)
               Text(
-                summary!,
+                summary,
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: summaryTone == null
-                      ? cs.outline
-                      : prToneTextColor(cs, summaryTone!),
-                  fontWeight: summaryTone == null ? null : FontWeight.w600,
+                  color: tone == null ? cs.outline : prToneTextColor(cs, tone),
+                  fontWeight: tone == null ? null : FontWeight.w600,
                 ),
               ),
-            Icon(PhosphorIconsLight.caretDown, size: 14, color: cs.outline),
+            // Same turn and duration as the bar's split-button caret, so the two
+            // disclosures in this feature animate alike.
+            AnimatedRotation(
+              turns: _open ? 0.5 : 0,
+              duration: const Duration(milliseconds: 150),
+              child: Icon(
+                PhosphorIconsLight.caretDown,
+                size: 14,
+                color: cs.outline,
+              ),
+            ),
           ],
         ),
-        children: children,
+        children: widget.children,
       ),
     );
   }

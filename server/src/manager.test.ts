@@ -389,6 +389,46 @@ test("removeWorktree preserves archived sessions and auto-archives live ones (SP
   }
 });
 
+test("listRepos counts only live sessions in worktree.sessionIds (SPEC-29)", async () => {
+  // The field's own protocol doc says it links the sessions bound to the worktree,
+  // and archived ones are hidden from `listSessions()` and so from every
+  // client-side session list — their ids resolved to nothing in the consumers that
+  // map this field to rows, and SPEC-38's wrap-up brief counted them as work left
+  // behind. `listRepos` is handed `allSessions()`, which keeps them.
+  const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
+  const store = new SqliteEventStore();
+  const cwd = makeGitRepo();
+  const base = mkdtempSync(join(tmpdir(), "makit-wtbase-"));
+  const prevBase = process.env.MAKIT_WORKTREE_DIR;
+  process.env.MAKIT_WORKTREE_DIR = base;
+  try {
+    const manager = new SessionManager({
+      projects: [cwd],
+      store,
+      adapterFactory: () => stubAdapter([]),
+    });
+    const projectId = manager.listProjects()[0].id;
+    const wt = await manager.createWorktree(projectId);
+
+    const live = await manager.spawnPendingSession(projectId, "pi", wt.path);
+    await manager.promotePendingSession(live, "live one");
+    const gone = await manager.spawnPendingSession(projectId, "pi", wt.path);
+    await manager.promotePendingSession(gone, "archived one");
+    await manager.archiveSession(gone.id);
+
+    const repos = await manager.listRepos();
+    const snap = repos.find((r) => r.id === projectId)!;
+    const target = snap.worktrees.find((w) => w.path === wt.path)!;
+    assert.deepEqual(target.sessionIds, [live.id]);
+  } finally {
+    if (prevBase === undefined) delete process.env.MAKIT_WORKTREE_DIR;
+    else process.env.MAKIT_WORKTREE_DIR = prevBase;
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+    store.close();
+  }
+});
+
 test("unarchive of an orphaned session detaches it to the repo root (SPEC-29)", async () => {
   const { SqliteEventStore } = await import("./storage/sqlite_event_store.js");
   const store = new SqliteEventStore();

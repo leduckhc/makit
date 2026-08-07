@@ -90,9 +90,10 @@ Widget _host(
 /// The bar renders its sentence as one rich Text; assert on the flattened runs.
 String _sentence(WidgetTester tester) {
   final text = tester.widget<Text>(
-    find
-        .descendant(of: find.byType(PrComposerBar), matching: find.byType(Text))
-        .first,
+    find.descendant(
+      of: find.byKey(kPrBarSentenceKey),
+      matching: find.byType(Text),
+    ),
   );
   return text.textSpan!.toPlainText();
 }
@@ -980,7 +981,10 @@ void main() {
 
       final bar = tester.getRect(find.byType(PrComposerBar));
       final cta = tester.getRect(find.byType(PrCtaButton));
-      final reason = tester.getRect(find.byType(Text).first);
+      // The sentence by key, not `byType(Text).first`: that is whatever comes
+      // first depth-first, and both assertions below would likely still pass on
+      // the wrong widget.
+      final reason = tester.getRect(find.byKey(kPrBarSentenceKey));
       expect(cta.right, bar.right);
       expect(reason.left, lessThan(bar.width / 2));
       expect(

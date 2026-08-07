@@ -10,6 +10,13 @@ import '../../ui/widgets/pr_signals.dart';
 import '../../ui/widgets/pr_tone.dart';
 import '../../ui/widgets/wrap_up.dart';
 
+/// The sentence — dot, identity, loud fact. Keyed so a test can measure or read
+/// *this* widget instead of `find.byType(Text).first`, which is whatever comes
+/// first depth-first: the layout assertions here check a left bound and a minimum
+/// gap, so a wrongly-picked `Text` would most likely still satisfy them and the
+/// test would quietly stop guarding the invariant it exists for.
+const Key kPrBarSentenceKey = ValueKey('pr-bar-sentence');
+
 /// Tooltip on a stale bar. Names *why* the data is dimmed — a refresh that could
 /// not complete against GitHub's quota — so the user can tell last-known data
 /// from current data instead of guessing at the dimming.
@@ -86,6 +93,7 @@ class PrComposerBar extends ConsumerWidget {
             children: [
               Flexible(
                 child: _Reason(
+                  key: kPrBarSentenceKey,
                   status: status,
                   onOpen: () => _openDetail(context, ref),
                 ),
@@ -136,7 +144,7 @@ class PrComposerBar extends ConsumerWidget {
 /// is not negotiable, and a bar that reflows as CI churns is worse than one that
 /// elides.
 class _Reason extends StatelessWidget {
-  const _Reason({required this.status, required this.onOpen});
+  const _Reason({super.key, required this.status, required this.onOpen});
 
   final PrStatus status;
   final VoidCallback onOpen;
