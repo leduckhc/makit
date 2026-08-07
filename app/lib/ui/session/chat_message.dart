@@ -224,6 +224,32 @@ class _AgentMessageState extends State<AgentMessage> {
   }
 }
 
+/// A provider for a remote markdown image, decoding at the width it is drawn at.
+///
+/// `Image.network` decodes at full resolution and parks that bitmap in the
+/// image cache, so a 4000px screenshot linked by an agent costs ~64MB of RGBA to
+/// show in a ~600pt paragraph. Height stays unbounded so a tall screenshot keeps
+/// its aspect ratio — the same trade-off `_MediaImage` makes for thumbnails.
+///
+/// Falls back to an unresized provider when there is no finite width to size
+/// against; a made-up decode width would be worse than none. A sub-pixel width
+/// still decodes one pixel: rounding it to 0 would make
+/// [ResizeImagePolicy.fit] decode a zero-width, invisible image.
+ImageProvider remoteImageProvider(
+  Uri uri, {
+  required double width,
+  required double devicePixelRatio,
+}) {
+  final provider = NetworkImage(uri.toString());
+  final target = width * devicePixelRatio;
+  if (!target.isFinite || target <= 0) return provider;
+  return ResizeImage(
+    provider,
+    width: target < 1 ? 1 : target.round(),
+    policy: ResizeImagePolicy.fit,
+  );
+}
+
 /// Renders markdown images in agent prose.
 ///
 /// `makit-media:<mediaId>` is what the server rewrites the agent's
@@ -253,9 +279,16 @@ Widget _mediaImageBuilder(Uri uri, String? title, String? alt) {
     );
   }
   if (uri.scheme == 'http' || uri.scheme == 'https') {
-    return Image.network(
-      uri.toString(),
-      errorBuilder: (_, _, _) => MediaPlaceholder(label: label),
+    // Bounded decode: see [remoteImageProvider].
+    return LayoutBuilder(
+      builder: (context, constraints) => Image(
+        image: remoteImageProvider(
+          uri,
+          width: constraints.maxWidth,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        ),
+        errorBuilder: (_, _, _) => MediaPlaceholder(label: label),
+      ),
     );
   }
   return MediaPlaceholder(label: label);
