@@ -5,6 +5,7 @@ import 'desktop_group_reconcile.dart';
 import 'groups/group.dart';
 import 'groups/group_providers.dart';
 import 'groups/groups_controller.dart';
+import 'starter_prune.dart';
 
 /// Keeps the groups layer honest about what the server still has.
 ///
@@ -17,7 +18,9 @@ import 'groups/groups_controller.dart';
 /// 1. unpin vanished members (here), so membership is correct;
 /// 2. [reconcileActiveCanvas], which reconciles the canvas *against* that
 ///    membership;
-/// 3. [closeGroupsForDeletedWorktrees], on repo updates.
+/// 3. [closeGroupsForDeletedWorktrees], on repo updates, followed by
+///    [pruneStarterDrafts] — the same evidence (a worktree gone from the repo
+///    snapshot) retires that worktree's group and its unstarted draft together.
 ///
 /// The order in (1) → (2) is why these are function calls rather than separate
 /// providers: two listeners on the same `sessions.snapshot` would leave it
@@ -85,10 +88,17 @@ final desktopSessionPruneProvider = Provider<void>((ref) {
   });
   ref.listen(
     reposProvider,
-    (_, next) => afterPass(() => closeGroupsForDeletedWorktrees(ref, next)),
+    (_, next) => afterPass(() {
+      closeGroupsForDeletedWorktrees(ref, next);
+      // SPEC-45 D10: and with the group goes the starter draft, picks and staged
+      // images keyed on that worktree — nothing else ever dropped them, and a
+      // staged screenshot is megabytes.
+      pruneStarterDrafts(ref, next);
+    }),
   );
   afterPass(() {
     prune(ref.read(sessionsProvider));
     closeGroupsForDeletedWorktrees(ref, ref.read(reposProvider));
+    pruneStarterDrafts(ref, ref.read(reposProvider));
   });
 });

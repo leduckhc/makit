@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/legacy.dart';
 import '../transport/codec.dart';
 import '../transport/protocol.dart';
 import '../transport/ws_client.dart';
+import 'cached_commands.dart';
 import 'connection.dart';
 import 'metrics.dart';
 import 'models.dart';
@@ -331,6 +332,34 @@ class StoreController extends StateNotifier<StoreState> {
         _replayBuffer.clear();
         _watchingGithubBudget = false;
         state = StoreState.empty();
+        // SPEC-45 D9: the per-(agent, project) command cache belonged to the old
+        // desktop too. Project ids are host-local, so keeping it would offer one
+        // machine's skills under another's project of the same name — and unlike
+        // the rest of this state, that cache is persisted, so it would survive a
+        // restart as well.
+        //
+        // `prevId != null` only: boot activates null -> the persisted server,
+        // which is a change of identity by the same test but not a change of
+        // *machine* — the cache was written by the server being restored. Clearing
+        // there wiped the blob on every launch, before a pane could read it, which
+        // is exactly the emptiness persisting it was meant to prevent.
+        //
+        // Deferred to a microtask, unlike the assignment above: this listener
+        // runs inside Riverpod's refresh pass, and writing to *another* provider
+        // there is what `desktop_session_prune.dart` documents as poisoning the
+        // graph for the rest of the process. Safe today (nothing in the graph
+        // watches this cache during a connection change — only widgets do), but
+        // the failure mode is bad enough not to leave standing on that.
+        //
+        // `mounted` because the container can be disposed between scheduling and
+        // running (app teardown right after a switch or unpair), and a disposed
+        // StateNotifier throws on assignment.
+        if (prevId != null) {
+          final cache = _ref.read(cachedCommandsControllerProvider.notifier);
+          Future.microtask(() {
+            if (cache.mounted) unawaited(cache.clearAll());
+          });
+        }
       }
 
       final wasConnected = prev?.wsState == WsState.connected;
@@ -390,6 +419,40 @@ class StoreController extends StateNotifier<StoreState> {
       return;
     }
     state = reduce(state, decoded);
+    if (decoded is SessionEventFrame) _cacheCommands(decoded.event);
+  }
+
+  /// SPEC-45 D4: mirror a session's advertised commands into the per-(agent,
+  /// project) cache, so the sessionless starter pane for that project can offer
+  /// the same palette.
+  ///
+  /// Driven by the event, not by watching the reduced `commands` map: a diff of
+  /// that map would run on every streamed token, while `session.commands`
+  /// arrives a handful of times per session.
+  void _cacheCommands(SessionEvent ev) {
+    if (ev.kind != EventKind.sessionCommands) return;
+    final commands = state.commands[ev.sessionId];
+    if (commands == null || commands.isEmpty) return;
+    final session = state.sessions.firstWhereOrNull(
+      (s) => s.id == ev.sessionId,
+    );
+    // No session means no (agent, project) to key by. Dropping the palette is
+    // the only honest option — a guessed key would offer one harness's commands
+    // under another's name.
+    if (session == null) return;
+    final agent = session.agent.isNotEmpty
+        ? session.agent
+        : (session.pendingAgent ?? '');
+    if (agent.isEmpty) return;
+    unawaited(
+      _ref
+          .read(cachedCommandsControllerProvider.notifier)
+          .record(
+            agent: agent,
+            projectId: session.projectId,
+            commands: commands,
+          ),
+    );
   }
 
   /// Apply the buffered replay for [sessionId] in a single state assignment,
@@ -403,6 +466,9 @@ class StoreController extends StateNotifier<StoreState> {
       next = reduceEvent(next, e);
     }
     state = next;
+    for (final e in buffered) {
+      _cacheCommands(e);
+    }
   }
 
   /// Currently-subscribed sessionIds. We replay these on every reconnect.
