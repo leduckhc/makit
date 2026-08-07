@@ -880,9 +880,14 @@ void main() {
     });
 
     test('green survives when nothing is pressing', () {
-      // The three all-clear states keep the pass verdict: the loud fact is quiet,
-      // so there is nothing for the dot to defer to.
-      expect(_status(pr: _pr(rollup: 'pass')).dot, PrDot.pass);
+      // The pass verdict is reachable from the all-clear only, and only with a
+      // green rollup: the loud fact is quiet, so there is nothing for the dot to
+      // defer to.
+      expect(
+        _status(pr: _pr(rollup: 'pass')).dot,
+        PrDot.pass,
+        reason: 'green and up to date — a green rollup with no counted checks',
+      );
       expect(
         _status(
           pr: _pr(rollup: 'pass', mergeable: 'MERGEABLE'),
@@ -977,6 +982,11 @@ void main() {
       expect(s.hasPr, isTrue);
       expect(s.loud.label, 'PR state unknown');
       expect(s.cta.remedy, isNull, reason: 'nothing safe to offer');
+      expect(
+        s.dot,
+        PrDot.tone,
+        reason: 'no verdict to report, so the dot defers to the loud fact',
+      );
     });
 
     test('an open PR with no verdict falls back to the loud fact', () {

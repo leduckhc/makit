@@ -352,7 +352,8 @@ legend:
 | 1 | no PR **and** no signal carries a remedy | `none` — a hollow ring | `cs.outline`, tone-independent |
 | 2 | `isDraft`, or `CLOSED` | `muted` | `cs.outline` |
 | 3 | `MERGED` | `landed` | `cs.prMergedText` |
-| 4 | any check `pending` | `pending` — an arc, `checkProgress` round | `kCheckPending` on a `cs.outlineVariant` track |
+| — | a PR in a state this derivation does not recognise (short-circuits rows 4–6, which all read the open PR) | `tone` — deferring to the loud fact, which reads `PR state unknown` when there is nothing else to report (D19) | `prToneColor(tone)` |
+| 4 | any check `pending`, **or** `checkRollup: pending` with its list shed (D18) | `pending` — an arc, `checkProgress` round; a solid disc when the list was shed, since there is no count to draw | `kCheckPending` on a `cs.outlineVariant` track |
 | 5 | `checkRollup: fail` | `fail` | `kCheckFail` |
 | 6 | `checkRollup: pass` **and the loud fact is `quiet`** | `pass` | `kCheckPass` |
 | 7 | otherwise | `tone` | `prToneColor(tone)` |
@@ -362,8 +363,10 @@ look elsewhere for the problem". Without it a PR with conflicts, a moved base, o
 unpushed commits or a stale local branch drew the same green disc as one that was ready to merge, and
 the only ambient graphic in the pane contradicted the sentence beside it. Rows 4 and 5 are checked
 first, so a red or in-flight build still outranks a louder amber fact — which is the case §8.1 was
-written for. Only the three all-clear states (`N checks passed`, `ready to merge`, and a `BLOCKED`
-green PR) keep the pass verdict; see D17.
+written for. The pass verdict is reachable only from the all-clear (§5 rows 10–11) and only with a
+green rollup: `ready to merge`, `N checks passed`, and `green and up to date` — the last being that same
+green PR when the count was shed or the merge is `BLOCKED`. `ready for a PR` and `clean` have no rollup
+to report and fall to row 1's ring. See D17.
 
 A **separate derivation from `tone`**, because the two make different claims and §4's earlier
 "tone — the dot's hue" made them one. Two consequences of collapsing them, both wrong on screen:
@@ -513,3 +516,4 @@ is guarded; this residue is one commit on a branch whose pushed history `origin/
 | D22a | The `refs/heads` watch is **recursive** | Git stores `feature/foo` as a file in a *nested* directory, and `fs.watch` without `recursive: true` reports nothing for nested children on Linux or macOS — so a flat watch misses every slashed branch, which is every branch in this repo. Node supports `recursive` on macOS, Windows and Linux (≥ 20.13; this package requires ≥ 22.13). Where a platform refuses it, the watcher falls back to one watch per directory, re-walked when a namespace appears — and that path is held to the same regression test rather than merely existing |
 | D22 | The repos snapshot is re-derived on **turn end** and on **`refs/heads` change** | The bar's count was only as fresh as the last connect. Turn end (`running` → anything, once per turn, trailing-throttled 1s) catches the agent's own commits — the reported failure. A watch on the *common* git dir's `refs/heads` catches a commit or branch move from any source, and because a branch ref lives in the common dir whichever worktree moved it, one watch covers every linked worktree. Deliberately **not** `index`/`index.lock`: git rewrites those throughout a turn, and each snapshot is a git pass per worktree. `HEAD` is watched too, for a checkout in the primary checkout |
 | D23 | `WorktreeDTO.sessionIds` excludes **archived** sessions, and the residue fact says `to archive` | The field's own protocol doc always said it links the sessions bound to the worktree, but `listRepos` is handed `allSessions()`, which keeps archived ones — so their ids resolved to nothing in the two consumers that map this field to session rows, and the wrap-up brief counted them as work left behind. Filtered at source. The remaining set is still not "running" (idle, awaiting and exited are in it), and a wrap-up archives every one, so the fact names that instead |
+| D24 | A prompt remedy types into the composer that is **mounted** | The bar is rendered by both composers (D11), but only one of them is on screen: a free-text ask replaces the message composer with the answer composer. Aimed at the per-session message controller, the insert wrote to a field that was not there — the user saw nothing, and the text surfaced later, when the ask resolved and that composer came back. It now follows the visible field on both surfaces. The answer field is not a persisted draft, so that path writes no `composerDraftsProvider` entry and does not take the pane's composer focus node, which is wired to the message composer alone |

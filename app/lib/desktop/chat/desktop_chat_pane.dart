@@ -114,14 +114,26 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
   /// set the field (or append below existing text so a half-typed message is
   /// never destroyed), persist the draft, and focus the field so the user can
   /// review and hit Send.
-  void _insertPrompt(String sessionId, String prompt) {
-    final ctrl = _composerControllerFor(sessionId);
+  ///
+  /// [into] names the field that is actually on screen. A free-text ask replaces
+  /// the message composer with the answer composer, and the bar is rendered by
+  /// both (D11) — so without this the insert landed in an unmounted controller
+  /// and the text only appeared later, when the ask resolved. The answer field is
+  /// not a persisted draft and has no focus node of its own, so both of those
+  /// steps belong to the message composer alone.
+  void _insertPrompt(
+    String sessionId,
+    String prompt, {
+    TextEditingController? into,
+  }) {
+    final ctrl = into ?? _composerControllerFor(sessionId);
     final existing = ctrl.text;
     final next = existing.trim().isEmpty ? prompt : '$existing\n\n$prompt';
     ctrl.value = TextEditingValue(
       text: next,
       selection: TextSelection.collapsed(offset: next.length),
     );
+    if (into != null) return;
     ref.read(composerDraftsProvider.notifier).set(sessionId, next);
     final focusId = widget.composerFocusId;
     if (focusId != null) {
@@ -254,7 +266,14 @@ class _DesktopChatPaneState extends ConsumerState<DesktopChatPane> {
       worktreePath: session.worktreePath,
       branch: at?.worktree.branch ?? session.branch,
       uncommittedFiles: at?.worktree.uncommittedFiles ?? 0,
-      onInsertPrompt: (prompt) => _insertPrompt(sessionId, prompt),
+      onInsertPrompt: (prompt) => _insertPrompt(
+        sessionId,
+        prompt,
+        // Whichever composer is mounted below owns the field the user sees.
+        into: pendingAsk != null && pendingAsk.freeText
+            ? _answerController
+            : null,
+      ),
     );
 
     return Column(

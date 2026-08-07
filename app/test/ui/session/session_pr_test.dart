@@ -12,6 +12,7 @@ import 'package:url_launcher_platform_interface/url_launcher_platform_interface.
 
 import 'package:makit/app/theme.dart';
 import 'package:makit/store/connection.dart';
+import 'package:makit/store/elicitation.dart';
 import 'package:makit/store/models.dart';
 import 'package:makit/store/secure_store.dart';
 import 'package:makit/store/prefs/preferences_controller.dart';
@@ -752,6 +753,7 @@ void main() {
       int uncommitted = 0,
       bool primary = false,
       String branch = 'feat',
+      bool freeTextAsk = false,
     }) async {
       final session = Session(
         id: sessionId,
@@ -799,6 +801,27 @@ void main() {
             sessionMetaProvider(sessionId).overrideWithValue(null),
             sessionActionErrorProvider(sessionId).overrideWithValue(null),
             commandsProvider(sessionId).overrideWithValue(const []),
+            // A pending free-text ask swaps the message composer for the
+            // dedicated answer composer — the chip stays, so its prompts have
+            // to reach the field that is actually on screen.
+            if (freeTextAsk)
+              elicitationControllerProvider.overrideWith((ref) {
+                final c = ElicitationController(
+                  respond: (_, _) {},
+                  responded: const Stream<String>.empty(),
+                );
+                c.add(
+                  const PendingAsk(
+                    requestId: 'r1',
+                    sessionId: sessionId,
+                    questions: [
+                      {'question': 'Which one?', 'options': <Object>[]},
+                    ],
+                    freeText: true,
+                  ),
+                );
+                return c;
+              }),
           ],
           child: const MaterialApp(home: SessionScreen(sessionId: sessionId)),
         ),
@@ -862,6 +885,29 @@ void main() {
       );
       // The sheet is gone, so the composer is what the user is looking at.
       expect(find.byType(PrDetailBody), findsNothing);
+    });
+
+    testWidgets('a picked prompt lands in the answer field while an ask is '
+        'pending, not in the message draft behind it', (tester) async {
+      await pumpScreen(
+        tester,
+        worktreePath: '/repo/wt',
+        pr: _pr(rollup: 'fail', checks: [_check('a', 'fail')]),
+        freeTextAsk: true,
+      );
+      await tester.tap(find.text('#42 · 1 check failing'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fix').last);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PrDetailBody), findsNothing);
+      // The answer composer is the only field mounted, so a match here *is* the
+      // visible one. Before this, the text went to the hidden message draft and
+      // only appeared once the ask resolved.
+      expect(
+        find.textContaining('CI checks on this pull request'),
+        findsWidgets,
+      );
     });
   });
 }
