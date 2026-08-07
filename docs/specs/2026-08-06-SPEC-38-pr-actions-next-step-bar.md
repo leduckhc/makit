@@ -14,12 +14,11 @@ reference, incl. §10 action catalogue)
 
 **Scope:**
 *app (new):* `app/lib/ui/widgets/pr_signals.dart` (derivation),
-`app/lib/ui/widgets/pr_tone.dart` (tone → colour, status dot),
+`app/lib/ui/widgets/pr_tone.dart` (tone → colour, `PrDot` → colour (§8.1), `PrFactLabel`),
 `app/lib/ui/widgets/pr_detail.dart` (detail body + CTA menu + `PrCheckRow`),
 `app/lib/ui/widgets/wrap_up.dart` (remedy dispatch + confirms).
 *app (changed):* `app/lib/desktop/chat/pr_bar.dart` (rewritten),
 `app/lib/ui/composer/composer.dart` (`header` slot — the bar's placement, D11),
-`app/lib/ui/widgets/pr_tone.dart` (`PrDot` → colour, §8.1),
 `app/lib/ui/home/repo_chips.dart` (`PrPill` → `PrStatusChip`),
 `app/lib/ui/home/worktree_row.dart`, `app/lib/ui/session/session_pr_chip.dart` (rewritten),
 `app/lib/ui/session/session_screen.dart`, `app/lib/desktop/chat/desktop_chat_pane.dart`,
@@ -251,6 +250,19 @@ Each dialog states what it will actually do, in order, and names the branches in
 dialog additionally states what it will **not** do ("leave this worktree and its sessions alone"),
 because GitHub's own button offers to delete the branch there and then.
 
+### 6.4 Provenance of each action
+
+Recorded because AGENTS.md §3 requires every change to trace to a request, and two of these were
+proposed by the implementer rather than asked for.
+
+| Action | Asked for |
+| --- | --- |
+| Wrap up (remove worktree + sync base branch) | Directly: *"a new action that will delete the worktree and update the target branch"* |
+| Squash & merge | Directly: *"include a button that will run Squash & Merge similarly as github does it"* |
+| Magic Fix | Directly: *"one 'magic' button '[magic icon] Fix', that will resolve all the open PR issues"* |
+| Discard worktree | Implied — the closed-PR counterpart of Wrap up, needed so `CLOSED` is not left a dead end |
+| **Mark ready**, **Update branch** | **Proposed in the mockup and explicitly flagged as speculative**; approved on review with *"do it, of course"* |
+
 ## 7 · Server protocol
 
 New `CmdKind`s, each acking and rebroadcasting the repos snapshot:
@@ -368,19 +380,6 @@ shout what the sentence deliberately keeps quiet.
 leftover — the mockup's own §8 records that this state's loud fact was corrected from `2 checks failing`
 to `1 commit unpushed`, which flipped its tone-driven dot from red to amber as a side effect. The legend
 and this table are the rule.
-
-### 6.4 Provenance of each action
-
-Recorded because AGENTS.md §3 requires every change to trace to a request, and two of these were
-proposed by the implementer rather than asked for.
-
-| Action | Asked for |
-| --- | --- |
-| Wrap up (remove worktree + sync base branch) | Directly: *"a new action that will delete the worktree and update the target branch"* |
-| Squash & merge | Directly: *"include a button that will run Squash & Merge similarly as github does it"* |
-| Magic Fix | Directly: *"one 'magic' button '[magic icon] Fix', that will resolve all the open PR issues"* |
-| Discard worktree | Implied — the closed-PR counterpart of Wrap up, needed so `CLOSED` is not left a dead end |
-| **Mark ready**, **Update branch** | **Proposed in the mockup and explicitly flagged as speculative**; approved on review with *"do it, of course"* |
 
 ## 9 · Non-goals
 
