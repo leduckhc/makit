@@ -997,6 +997,11 @@ void main() {
     testWidgets('a long sentence elides rather than pushing the CTA off', (
       tester,
     ) async {
+      // Narrowed *before* the first pump: resizing afterwards only proves the bar
+      // re-lays-out, and the frame that overflows is the first one.
+      tester.view.physicalSize = const Size(360 * 3, 200 * 3);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         _host(
           PreferencesController.ephemeral(),
@@ -1014,10 +1019,6 @@ void main() {
           onInsert: (_) {},
         ),
       );
-      await tester.pumpAndSettle();
-      tester.view.physicalSize = const Size(360 * 3, 200 * 3);
-      tester.view.devicePixelRatio = 3;
-      addTearDown(tester.view.reset);
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);

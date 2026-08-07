@@ -524,6 +524,9 @@ class _ComposerState extends State<Composer> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 3 + kSpace2 above the hairline and 5 below it: the gap reads as even
+        // because the bar's own row has a little ink-free space under its text,
+        // while the field below starts immediately.
         Padding(
           padding: const EdgeInsets.fromLTRB(kSpace2, 0, kSpace2, 3),
           child: header,

@@ -216,6 +216,35 @@ export function watchWorktrees(
     }
   };
 
+  /**
+   * Arm the `refs/heads` watch: one recursive watcher, or the per-directory walk
+   * where the platform refuses `recursive`.
+   *
+   * Re-armed from the recursive watcher's own error handler. `fs.watch` emits
+   * `'error'` asynchronously — an inotify limit, or the directory going away — and
+   * `safeWatch` closes the watcher when it does. Leaving the key in place then
+   * stripped the repo of its only commit trigger for good: nothing re-attaches a
+   * key that is already present, and `sync()` will not re-arm a repo whose path
+   * has not changed. The fallback walk already dropped its key for this reason;
+   * the recursive path now does the same, and re-arms through here so a platform
+   * that has lost recursive watching falls through to the walk.
+   */
+  const armHeads = (rw: RepoWatch, headsDir: string): void => {
+    const recursive = allowRecursive
+      ? safeWatch(
+          headsDir,
+          () => fire(),
+          () => {
+            rw.heads.delete(headsDir);
+            armHeads(rw, headsDir);
+          },
+          { recursive: true },
+        )
+      : undefined;
+    if (recursive) rw.heads.set(headsDir, recursive);
+    else watchTree(headsDir, rw.heads, fire);
+  };
+
   const arm = (repoPath: string): RepoWatch => {
     const { gitDir, worktreesDir, headsDir } = resolveGitPaths(repoPath);
     const rw: RepoWatch = { heads: new Map() };
@@ -267,11 +296,7 @@ export function watchWorktrees(
     // watch reports nothing for those — which is most branches. Node supports
     // `recursive` on macOS, Windows and Linux (≥ 20.13; this package requires
     // ≥ 22.13); anywhere it is refused, fall back to one watcher per directory.
-    const recursive = allowRecursive
-      ? safeWatch(headsDir, () => fire(), () => {}, { recursive: true })
-      : undefined;
-    if (recursive) rw.heads.set(headsDir, recursive);
-    else watchTree(headsDir, rw.heads, fire);
+    armHeads(rw, headsDir);
 
     syncInner();
     return rw;
